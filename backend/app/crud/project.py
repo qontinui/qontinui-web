@@ -1,18 +1,19 @@
 from uuid import UUID
 
 import structlog
-from app.models.project import Project
-from app.schemas.project import ProjectCreate, ProjectUpdate
-from app.services.project_directory import ProjectDirectoryManager
-from app.services.stripe_service import StripeService
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.project import Project
+from app.schemas.project import ProjectCreate, ProjectUpdate
+from app.services.project_directory import ProjectDirectoryManager
+from app.services.stripe_service import StripeService
+
 logger = structlog.get_logger(__name__)
 
 
-async def get_project(db: AsyncSession, project_id: str) -> Project | None:
+async def get_project(db: AsyncSession, project_id: UUID) -> Project | None:
     result = await db.execute(select(Project).filter(Project.id == project_id))
     return result.scalar_one_or_none()
 
@@ -65,7 +66,7 @@ async def create_project(
     try:
         directory_manager = ProjectDirectoryManager()
         directory_manager.create_project_directory(
-            project_id=db_project.id,
+            project_id=db_project.id,  # type: ignore[arg-type]
             project_name=project.name,
             description=project.description or "",
         )
@@ -95,13 +96,13 @@ async def create_project(
 async def update_project(
     db: AsyncSession, project: Project, project_update: ProjectUpdate
 ) -> Project:
-    update_data = project_update.dict(exclude_unset=True)
+    update_data = project_update.model_dump(exclude_unset=True)
 
     for field, value in update_data.items():
         setattr(project, field, value)
 
     # Increment version on every update
-    project.version += 1
+    project.version += 1  # type: ignore[assignment]
 
     db.add(project)
     await db.commit()
@@ -109,7 +110,7 @@ async def update_project(
     return project
 
 
-async def delete_project(db: AsyncSession, project_id: str) -> bool:
+async def delete_project(db: AsyncSession, project_id: UUID) -> bool:
     project = await get_project(db, project_id)
     if project:
         # Delete project from database

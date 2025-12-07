@@ -4,13 +4,24 @@
  * Shows detailed view of sync queue items for debugging/monitoring.
  */
 
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { syncQueue, SyncQueueItem, SyncQueueStats } from '@/lib/sync-queue';
-import { syncProcessor } from '@/lib/sync-processor';
-import { retryScreenshotUpload, cancelScreenshotUpload } from '@/lib/offline-screenshot-upload';
-import { RefreshCw, X, RotateCcw, CheckCircle, XCircle, Clock, Loader } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { syncQueue, SyncQueueItem, SyncQueueStats } from "@/lib/sync-queue";
+import { syncProcessor } from "@/lib/sync-processor";
+import {
+  retryScreenshotUpload,
+  cancelScreenshotUpload,
+} from "@/lib/offline-screenshot-upload";
+import {
+  RefreshCw,
+  X,
+  RotateCcw,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Loader,
+} from "lucide-react";
 
 export function SyncQueueViewer() {
   const [items, setItems] = useState<SyncQueueItem[]>([]);
@@ -118,23 +129,33 @@ export function SyncQueueViewer() {
           {/* Stats */}
           <div className="px-4 py-2 border-b dark:border-gray-700 grid grid-cols-5 gap-2 text-xs">
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">Pending</div>
+              <div className="font-semibold text-gray-500 dark:text-gray-400">
+                Pending
+              </div>
               <div className="text-lg">{stats.pending}</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">Syncing</div>
+              <div className="font-semibold text-gray-500 dark:text-gray-400">
+                Syncing
+              </div>
               <div className="text-lg">{stats.syncing}</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">Done</div>
+              <div className="font-semibold text-gray-500 dark:text-gray-400">
+                Done
+              </div>
               <div className="text-lg">{stats.completed}</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">Failed</div>
+              <div className="font-semibold text-gray-500 dark:text-gray-400">
+                Failed
+              </div>
               <div className="text-lg">{stats.failed}</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">Cancelled</div>
+              <div className="font-semibold text-gray-500 dark:text-gray-400">
+                Cancelled
+              </div>
               <div className="text-lg">{stats.cancelled}</div>
             </div>
           </div>
@@ -154,22 +175,22 @@ export function SyncQueueViewer() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           {/* Status icon */}
-                          {item.status === 'completed' && (
+                          {item.status === "completed" && (
                             <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
                           )}
-                          {item.status === 'failed' && (
+                          {item.status === "failed" && (
                             <XCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
                           )}
-                          {item.status === 'syncing' && (
+                          {item.status === "syncing" && (
                             <Loader className="w-4 h-4 text-blue-600 flex-shrink-0 animate-spin" />
                           )}
-                          {item.status === 'pending' && (
+                          {item.status === "pending" && (
                             <Clock className="w-4 h-4 text-gray-600 flex-shrink-0" />
                           )}
 
                           {/* Type */}
                           <span className="text-sm font-medium truncate">
-                            {item.type.replace(/_/g, ' ')}
+                            {item.type.replace(/_/g, " ")}
                           </span>
                         </div>
 
@@ -181,10 +202,11 @@ export function SyncQueueViewer() {
                         )}
 
                         {/* Retry info */}
-                        {item.status === 'failed' && item.retryCount > 0 && (
+                        {item.status === "failed" && item.retryCount > 0 && (
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                             Retry {item.retryCount}/{item.maxRetries}
-                            {item.nextRetryAt && ` - Next: ${new Date(item.nextRetryAt).toLocaleTimeString()}`}
+                            {item.nextRetryAt &&
+                              ` - Next: ${new Date(item.nextRetryAt).toLocaleTimeString()}`}
                           </p>
                         )}
 
@@ -196,7 +218,7 @@ export function SyncQueueViewer() {
 
                       {/* Actions */}
                       <div className="flex items-center gap-1">
-                        {item.status === 'failed' && (
+                        {item.status === "failed" && (
                           <button
                             onClick={() => handleRetry(item.id)}
                             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
@@ -206,7 +228,8 @@ export function SyncQueueViewer() {
                           </button>
                         )}
 
-                        {(item.status === 'pending' || item.status === 'failed') && (
+                        {(item.status === "pending" ||
+                          item.status === "failed") && (
                           <button
                             onClick={() => handleCancel(item.id)}
                             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"

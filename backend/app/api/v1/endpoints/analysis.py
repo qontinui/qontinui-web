@@ -4,16 +4,16 @@ API endpoints for GUI element analysis
 
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, cast
 from uuid import UUID
 
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.api.deps import get_async_db, get_current_user_async
-from app.models.analysis_result import (
-    AnalysisJob,
-    AnalyzerResult,
-    DetectedElementModel,
-    FusedElement,
-)
+from app.models.analysis_result import AnalysisJob, FusedElement
 from app.models.annotation import AnnotationSet
 from app.models.user import User
 from app.schemas.analysis import (
@@ -35,10 +35,6 @@ from app.services.analysis.base import AnalysisInput
 from app.services.analysis.orchestrator import analyzer_registry
 from app.services.analysis.progress import ProgressTracker
 from app.services.object_storage import object_storage
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +108,8 @@ async def run_analysis(
             raise HTTPException(status_code=403, detail="Access denied")
 
         # Get screenshots metadata
-        screenshots = annotation_set.screenshots or []
+        screenshots_raw = annotation_set.screenshots
+        screenshots: list[Any] = list(screenshots_raw) if screenshots_raw else []
         if not screenshots:
             # Fall back to single screenshot mode
             screenshots = [
@@ -236,8 +233,8 @@ async def run_quick_analysis(
 
 @router.get("/jobs", response_model=AnalysisJobListResponse)
 async def list_analysis_jobs(
-    annotation_set_id: Optional[UUID] = None,
-    status: Optional[str] = None,
+    annotation_set_id: UUID | None = None,
+    status: str | None = None,
     page: int = 1,
     page_size: int = 20,
     db: AsyncSession = Depends(get_async_db),
@@ -270,7 +267,7 @@ async def list_analysis_jobs(
         # Count total
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await db.execute(count_query)
-        total = total_result.scalar()
+        total = total_result.scalar() or 0
 
         # Add pagination
         query = query.order_by(desc(AnalysisJob.created_at))
@@ -319,42 +316,33 @@ async def get_analysis_job(
         if job.created_by_id != current_user.id and not current_user.is_superuser:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        # Convert to schema
-        job_dict = {
-            "id": job.id,
-            "annotation_set_id": job.annotation_set_id,
-            "analyzers_used": job.analyzers_used,
-            "parameters": job.parameters,
-            "fusion_enabled": bool(job.fusion_enabled),
-            "fusion_config": job.fusion_config,
-            "status": job.status,
-            "started_at": job.started_at,
-            "completed_at": job.completed_at,
-            "error_message": job.error_message,
-            "total_elements_found": job.total_elements_found,
-            "total_fused_elements": job.total_fused_elements,
-            "analyzer_statistics": job.analyzer_statistics,
-            "created_at": job.created_at,
-            "created_by_id": job.created_by_id,
-            "fused_elements": [
-                FusedElementSchema(
-                    bounding_box=BoundingBoxSchema(
-                        x=elem.x, y=elem.y, width=elem.width, height=elem.height
-                    ),
-                    confidence=elem.confidence,
-                    sources=elem.sources,
-                    source_confidences=elem.source_confidences,
-                    votes=elem.votes,
-                    label=elem.label,
-                    element_type=elem.element_type,
-                    screenshot_index=elem.screenshot_index,
-                    metadata=elem.metadata or {},
-                )
-                for elem in job.fused_elements
-            ],
-        }
+        # Convert to schema - use model_validate with custom fused_elements
+        # Build the base schema from the job model
+        job_schema = AnalysisJobSchema.model_validate(job)
 
-        return AnalysisJobDetailSchema(**job_dict)
+        # Build fused_elements list separately
+        fused_elements_list = [
+            FusedElementSchema(
+                bounding_box=BoundingBoxSchema(
+                    x=elem.x, y=elem.y, width=elem.width, height=elem.height
+                ),
+                confidence=elem.confidence,
+                sources=elem.sources,
+                source_confidences=elem.source_confidences,
+                votes=elem.votes,
+                label=elem.label,
+                element_type=elem.element_type,
+                screenshot_index=elem.screenshot_index,
+                metadata=elem.element_metadata or {},
+            )
+            for elem in job.fused_elements
+        ]
+
+        # Create detail schema by combining base schema with fused elements
+        return AnalysisJobDetailSchema(
+            **job_schema.model_dump(),
+            fused_elements=fused_elements_list,
+        )
 
     except HTTPException:
         raise
@@ -486,7 +474,9 @@ async def _save_analysis_to_db(
                 db.add(elem)
 
         await db.commit()
-        return job.id
+        # After flush, job.id is populated with the actual UUID value
+        assert job.id is not None
+        return cast(UUID, job.id)
 
     except Exception as e:
         logger.error(f"Error saving analysis to database: {e}", exc_info=True)

@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { ImageSelector } from "@/components/image-selector"
-import { ActionPropertiesComponentProps } from "../types"
-import { TimingProperties } from "../TimingProperties"
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ImageSelector } from "@/components/image-selector";
+import { ActionPropertiesComponentProps } from "../types";
+import { TimingProperties } from "../TimingProperties";
 
 /**
  * Properties component for VANISH action.
@@ -13,20 +13,22 @@ import { TimingProperties } from "../TimingProperties"
 export function VanishActionProperties({
   action,
   updateConfig,
-  images
+  images,
 }: ActionPropertiesComponentProps) {
   // Extract imageId from the new target structure
-  const imageId = action.config.target?.type === 'image'
-    ? action.config.target.imageId
-    : null
+  const imageId =
+    action.config.target?.type === "image"
+      ? action.config.target.imageId
+      : null;
 
-  const handleImageSelect = (selectedImageId: string) => {
+  const handleImageSelect = (selectedImageId: string | null) => {
+    if (!selectedImageId) return;
     // Generate the new target structure
     updateConfig("target", {
       type: "image",
-      imageId: selectedImageId
-    })
-  }
+      imageId: selectedImageId,
+    });
+  };
 
   return (
     <>
@@ -34,7 +36,8 @@ export function VanishActionProperties({
         <Label className="text-xs text-gray-400">Image to Wait For</Label>
         {action.config.removedImage && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
-            <span className="font-medium">Removed Image:</span> {action.config.removedImage}
+            <span className="font-medium">Removed Image:</span>{" "}
+            {action.config.removedImage}
             <p className="text-xs text-red-400 mt-1">
               This image was deleted. Please select a new image.
             </p>
@@ -54,7 +57,9 @@ export function VanishActionProperties({
           type="number"
           min="0"
           value={action.config.maxWaitTime || 5000}
-          onChange={(e) => updateConfig("maxWaitTime", Number.parseInt(e.target.value))}
+          onChange={(e) =>
+            updateConfig("maxWaitTime", Number.parseInt(e.target.value))
+          }
           className="bg-transparent border-gray-700"
         />
       </div>
@@ -65,12 +70,14 @@ export function VanishActionProperties({
           type="number"
           min="0"
           value={action.config.pollInterval || 500}
-          onChange={(e) => updateConfig("pollInterval", Number.parseInt(e.target.value))}
+          onChange={(e) =>
+            updateConfig("pollInterval", Number.parseInt(e.target.value))
+          }
           className="bg-transparent border-gray-700"
         />
       </div>
 
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
-  )
+  );
 }

@@ -4,7 +4,12 @@
  * API calls for organization management including invitations and members.
  */
 
-import type { Invitation, InvitationCreate, TeamMember, Organization } from '@/types/collaboration';
+import type {
+  Invitation,
+  InvitationCreate,
+  TeamMember,
+  Organization,
+} from "@/types/collaboration";
 
 /**
  * Send an invitation to join an organization
@@ -13,15 +18,18 @@ export async function inviteMember(
   organizationId: string,
   data: InvitationCreate
 ): Promise<Invitation> {
-  const response = await fetch(`/api/v1/organizations/${organizationId}/members/invite`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+  const response = await fetch(
+    `/api/v1/organizations/${organizationId}/members/invite`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to send invitation');
+    throw new Error(error.detail || "Failed to send invitation");
   }
 
   return response.json();
@@ -30,11 +38,15 @@ export async function inviteMember(
 /**
  * Get all pending invitations for an organization
  */
-export async function getInvitations(organizationId: string): Promise<Invitation[]> {
-  const response = await fetch(`/api/v1/organizations/${organizationId}/invitations`);
+export async function getInvitations(
+  organizationId: string
+): Promise<Invitation[]> {
+  const response = await fetch(
+    `/api/v1/organizations/${organizationId}/invitations`
+  );
 
   if (!response.ok) {
-    throw new Error('Failed to get invitations');
+    throw new Error("Failed to get invitations");
   }
 
   return response.json();
@@ -43,14 +55,19 @@ export async function getInvitations(organizationId: string): Promise<Invitation
 /**
  * Accept an invitation using the token from email link
  */
-export async function acceptInvitation(token: string): Promise<{ organization: Organization }> {
-  const response = await fetch(`/api/v1/organizations/invitations/${token}/accept`, {
-    method: 'POST',
-  });
+export async function acceptInvitation(
+  token: string
+): Promise<{ organization: Organization }> {
+  const response = await fetch(
+    `/api/v1/organizations/invitations/${token}/accept`,
+    {
+      method: "POST",
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to accept invitation');
+    throw new Error(error.detail || "Failed to accept invitation");
   }
 
   return response.json();
@@ -59,12 +76,14 @@ export async function acceptInvitation(token: string): Promise<{ organization: O
 /**
  * Get invitation details from token (to show organization info before accepting)
  */
-export async function getInvitationDetails(token: string): Promise<Invitation & { organization: Organization }> {
+export async function getInvitationDetails(
+  token: string
+): Promise<Invitation & { organization: Organization }> {
   const response = await fetch(`/api/v1/organizations/invitations/${token}`);
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to get invitation details');
+    throw new Error(error.detail || "Failed to get invitation details");
   }
 
   return response.json();
@@ -80,12 +99,12 @@ export async function cancelInvitation(
   const response = await fetch(
     `/api/v1/organizations/${organizationId}/invitations/${invitationId}`,
     {
-      method: 'DELETE',
+      method: "DELETE",
     }
   );
 
   if (!response.ok) {
-    throw new Error('Failed to cancel invitation');
+    throw new Error("Failed to cancel invitation");
   }
 }
 
@@ -99,13 +118,13 @@ export async function resendInvitation(
   const response = await fetch(
     `/api/v1/organizations/${organizationId}/invitations/${invitationId}/resend`,
     {
-      method: 'POST',
+      method: "POST",
     }
   );
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to resend invitation');
+    throw new Error(error.detail || "Failed to resend invitation");
   }
 
   return response.json();
@@ -115,24 +134,31 @@ export async function resendInvitation(
  * Decline an invitation
  */
 export async function declineInvitation(token: string): Promise<void> {
-  const response = await fetch(`/api/v1/organizations/invitations/${token}/decline`, {
-    method: 'POST',
-  });
+  const response = await fetch(
+    `/api/v1/organizations/invitations/${token}/decline`,
+    {
+      method: "POST",
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to decline invitation');
+    throw new Error(error.detail || "Failed to decline invitation");
   }
 }
 
 /**
  * Get all members of an organization
  */
-export async function getOrganizationMembers(organizationId: string): Promise<TeamMember[]> {
-  const response = await fetch(`/api/v1/organizations/${organizationId}/members`);
+export async function getOrganizationMembers(
+  organizationId: string
+): Promise<TeamMember[]> {
+  const response = await fetch(
+    `/api/v1/organizations/${organizationId}/members`
+  );
 
   if (!response.ok) {
-    throw new Error('Failed to get organization members');
+    throw new Error("Failed to get organization members");
   }
 
   return response.json();

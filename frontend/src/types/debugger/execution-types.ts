@@ -1,8 +1,19 @@
-import { Action } from '../../contexts/automation-context/types';
+import type { Action } from "../../lib/action-schema/action-types";
 
-export type ExecutionState = 'idle' | 'running' | 'paused' | 'stepping' | 'completed' | 'error';
-export type ActionExecutionStatus = 'pending' | 'executing' | 'success' | 'failed' | 'skipped';
-export type ExecutionSpeed = 'slow' | 'normal' | 'fast';
+export type ExecutionState =
+  | "idle"
+  | "running"
+  | "paused"
+  | "stepping"
+  | "completed"
+  | "error";
+export type ActionExecutionStatus =
+  | "pending"
+  | "executing"
+  | "success"
+  | "failed"
+  | "skipped";
+export type ExecutionSpeed = "slow" | "normal" | "fast";
 
 export interface VariableValue {
   value: any;
@@ -23,7 +34,7 @@ export interface ConditionEvaluation {
   result: boolean;
   evaluatedAt: number;
   variables: Record<string, any>;
-  branch: 'if' | 'else' | 'elseif';
+  branch: "if" | "else" | "elseif";
 }
 
 export interface LoopState {
@@ -57,8 +68,8 @@ export interface BreakpointConfig {
 export interface ExecutionLogEntry {
   id: string;
   timestamp: number;
-  level: 'info' | 'warning' | 'error' | 'debug';
-  category: 'action' | 'condition' | 'loop' | 'variable' | 'system';
+  level: "info" | "warning" | "error" | "debug";
+  category: "action" | "condition" | "loop" | "variable" | "system";
   message: string;
   actionIndex?: number;
   details?: any;

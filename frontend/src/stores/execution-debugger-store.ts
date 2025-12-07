@@ -1,17 +1,15 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 import {
   ExecutionDebuggerState,
   ExecutionState,
   ActionExecutionEvent,
-  ActionExecutionStatus,
   ConditionEvaluation,
   LoopState,
-  BreakpointConfig,
   ExecutionLogEntry,
   VariableValue,
   ExecutionSpeed,
-} from '../types/debugger/execution-types';
-import { Action } from '../contexts/automation-context/types';
+} from "../types/debugger/execution-types";
+import type { Action } from "../lib/action-schema/action-types";
 
 interface ExecutionDebuggerStore extends ExecutionDebuggerState {
   // State management
@@ -27,7 +25,11 @@ interface ExecutionDebuggerStore extends ExecutionDebuggerState {
 
   // Control flow tracking
   recordConditionEvaluation: (evaluation: ConditionEvaluation) => void;
-  startLoop: (actionId: string, maxIterations: number, loopVariable?: string) => void;
+  startLoop: (
+    actionId: string,
+    maxIterations: number,
+    loopVariable?: string
+  ) => void;
   updateLoopIteration: (actionId: string) => void;
   endLoop: (actionId: string) => void;
 
@@ -51,8 +53,8 @@ interface ExecutionDebuggerStore extends ExecutionDebuggerState {
 
   // Logging
   addLog: (
-    level: ExecutionLogEntry['level'],
-    category: ExecutionLogEntry['category'],
+    level: ExecutionLogEntry["level"],
+    category: ExecutionLogEntry["category"],
     message: string,
     actionIndex?: number,
     details?: any
@@ -69,7 +71,7 @@ interface ExecutionDebuggerStore extends ExecutionDebuggerState {
 }
 
 const initialState: ExecutionDebuggerState = {
-  state: 'idle',
+  state: "idle",
   currentActionIndex: -1,
   totalActions: 0,
   actionEvents: [],
@@ -83,7 +85,7 @@ const initialState: ExecutionDebuggerState = {
   },
   variableHistory: [],
   breakpoints: [],
-  speed: 'normal',
+  speed: "normal",
   stepMode: false,
   logs: [],
   metrics: {
@@ -93,409 +95,522 @@ const initialState: ExecutionDebuggerState = {
   },
 };
 
-export const useExecutionDebugger = create<ExecutionDebuggerStore>((set, get) => ({
-  ...initialState,
-  debugEnabled: false,
+export const useExecutionDebugger = create<ExecutionDebuggerStore>(
+  (set, get) => ({
+    ...initialState,
+    debugEnabled: false,
 
-  setState: (state: ExecutionState) => {
-    set({ state });
-    get().addLog('info', 'system', `Execution state changed to: ${state}`);
-  },
+    setState: (state: ExecutionState) => {
+      set({ state });
+      get().addLog("info", "system", `Execution state changed to: ${state}`);
+    },
 
-  reset: () => {
-    set({
-      ...initialState,
-      debugEnabled: get().debugEnabled,
-    });
-  },
-
-  initialize: (totalActions: number) => {
-    set({
-      ...initialState,
-      totalActions,
-      state: 'idle',
-      startTime: undefined,
-      debugEnabled: get().debugEnabled,
-    });
-    get().addLog('info', 'system', `Initialized debugger with ${totalActions} actions`);
-  },
-
-  startAction: (actionIndex: number, action: Action) => {
-    const now = Date.now();
-    const existingEvent = get().actionEvents.find(e => e.actionIndex === actionIndex);
-    const executionCount = existingEvent ? existingEvent.executionCount + 1 : 1;
-
-    const event: ActionExecutionEvent = {
-      id: `${actionIndex}-${now}`,
-      actionIndex,
-      action,
-      status: 'executing',
-      startTime: now,
-      executionCount,
-    };
-
-    set(state => ({
-      currentActionIndex: actionIndex,
-      actionEvents: [
-        ...state.actionEvents.filter(e => e.actionIndex !== actionIndex),
-        event,
-      ],
-      startTime: state.startTime || now,
-    }));
-
-    get().addLog('info', 'action', `Executing: ${action.type}`, actionIndex, action.config);
-  },
-
-  completeAction: (actionIndex: number, result: any, error?: string) => {
-    const now = Date.now();
-    const event = get().actionEvents.find(e => e.actionIndex === actionIndex);
-
-    if (event) {
-      const completedEvent: ActionExecutionEvent = {
-        ...event,
-        status: error ? 'failed' : 'success',
-        endTime: now,
-        duration: event.startTime ? now - event.startTime : 0,
-        result,
-        error,
-      };
-
-      set(state => ({
-        actionEvents: state.actionEvents.map(e =>
-          e.actionIndex === actionIndex ? completedEvent : e
-        ),
-        executionHistory: [...state.executionHistory, completedEvent],
-      }));
-
-      get().addLog(
-        error ? 'error' : 'info',
-        'action',
-        error ? `Failed: ${error}` : `Completed: ${event.action.type}`,
-        actionIndex,
-        { result, duration: completedEvent.duration }
-      );
-
-      get().updateMetrics();
-    }
-  },
-
-  failAction: (actionIndex: number, error: string, stackTrace?: string) => {
-    const now = Date.now();
-    const event = get().actionEvents.find(e => e.actionIndex === actionIndex);
-
-    if (event) {
-      const failedEvent: ActionExecutionEvent = {
-        ...event,
-        status: 'failed',
-        endTime: now,
-        duration: event.startTime ? now - event.startTime : 0,
-        error,
-        stackTrace,
-      };
-
-      set(state => ({
-        actionEvents: state.actionEvents.map(e =>
-          e.actionIndex === actionIndex ? failedEvent : e
-        ),
-        executionHistory: [...state.executionHistory, failedEvent],
-        state: 'error',
-      }));
-
-      get().addLog('error', 'action', `Action failed: ${error}`, actionIndex, {
-        stackTrace,
+    reset: () => {
+      set({
+        ...initialState,
+        debugEnabled: get().debugEnabled,
       });
+    },
 
-      get().updateMetrics();
-    }
-  },
+    initialize: (totalActions: number) => {
+      set({
+        ...initialState,
+        totalActions,
+        state: "idle",
+        startTime: undefined,
+        debugEnabled: get().debugEnabled,
+      });
+      get().addLog(
+        "info",
+        "system",
+        `Initialized debugger with ${totalActions} actions`
+      );
+    },
 
-  skipAction: (actionIndex: number, reason: string) => {
-    const event = get().actionEvents.find(e => e.actionIndex === actionIndex);
+    startAction: (actionIndex: number, action: Action) => {
+      const now = Date.now();
+      const existingEvent = get().actionEvents.find(
+        (e) => e.actionIndex === actionIndex
+      );
+      const executionCount = existingEvent
+        ? existingEvent.executionCount + 1
+        : 1;
 
-    if (event) {
-      const skippedEvent: ActionExecutionEvent = {
-        ...event,
-        status: 'skipped',
+      const event: ActionExecutionEvent = {
+        id: `${actionIndex}-${now}`,
+        actionIndex,
+        action,
+        status: "executing",
+        startTime: now,
+        executionCount,
       };
 
-      set(state => ({
-        actionEvents: state.actionEvents.map(e =>
-          e.actionIndex === actionIndex ? skippedEvent : e
-        ),
+      set((state) => ({
+        currentActionIndex: actionIndex,
+        actionEvents: [
+          ...state.actionEvents.filter((e) => e.actionIndex !== actionIndex),
+          event,
+        ],
+        startTime: state.startTime || now,
       }));
 
-      get().addLog('warning', 'action', `Action skipped: ${reason}`, actionIndex);
-    }
-  },
-
-  recordConditionEvaluation: (evaluation: ConditionEvaluation) => {
-    set(state => ({
-      conditionEvaluations: [...state.conditionEvaluations, evaluation],
-    }));
-
-    get().addLog(
-      'debug',
-      'condition',
-      `Condition evaluated: ${evaluation.condition} = ${evaluation.result} (${evaluation.branch} branch)`,
-      undefined,
-      evaluation
-    );
-  },
-
-  startLoop: (actionId: string, maxIterations: number, loopVariable?: string) => {
-    const loopState: LoopState = {
-      actionId,
-      currentIteration: 0,
-      maxIterations,
-      loopVariable,
-      startTime: Date.now(),
-    };
-
-    set(state => ({
-      loopStates: [...state.loopStates, loopState],
-      context: {
-        ...state.context,
-        loopIterations: {
-          ...state.context.loopIterations,
-          [actionId]: 0,
-        },
-      },
-    }));
-
-    get().addLog('info', 'loop', `Loop started: ${actionId} (max: ${maxIterations})`, undefined, {
-      loopVariable,
-    });
-  },
-
-  updateLoopIteration: (actionId: string) => {
-    set(state => ({
-      loopStates: state.loopStates.map(loop =>
-        loop.actionId === actionId
-          ? { ...loop, currentIteration: loop.currentIteration + 1 }
-          : loop
-      ),
-      context: {
-        ...state.context,
-        loopIterations: {
-          ...state.context.loopIterations,
-          [actionId]: (state.context.loopIterations[actionId] || 0) + 1,
-        },
-      },
-    }));
-
-    const loop = get().loopStates.find(l => l.actionId === actionId);
-    if (loop) {
       get().addLog(
-        'debug',
-        'loop',
-        `Loop iteration: ${loop.currentIteration + 1}/${loop.maxIterations}`,
-        undefined,
-        { actionId }
+        "info",
+        "action",
+        `Executing: ${action.type}`,
+        actionIndex,
+        action.config
       );
-    }
-  },
+    },
 
-  endLoop: (actionId: string) => {
-    const loop = get().loopStates.find(l => l.actionId === actionId);
-    const duration = loop ? Date.now() - loop.startTime : 0;
+    completeAction: (actionIndex: number, result: any, error?: string) => {
+      const now = Date.now();
+      const event = get().actionEvents.find(
+        (e) => e.actionIndex === actionIndex
+      );
 
-    set(state => ({
-      loopStates: state.loopStates.filter(l => l.actionId !== actionId),
-    }));
+      if (event) {
+        const completedEvent: ActionExecutionEvent = {
+          ...event,
+          status: error ? "failed" : "success",
+          endTime: now,
+          duration: event.startTime ? now - event.startTime : 0,
+          result,
+          error,
+        };
 
-    get().addLog('info', 'loop', `Loop completed: ${actionId}`, undefined, {
-      duration,
-      iterations: loop?.currentIteration,
-    });
-  },
+        set((state) => ({
+          actionEvents: state.actionEvents.map((e) =>
+            e.actionIndex === actionIndex ? completedEvent : e
+          ),
+          executionHistory: [...state.executionHistory, completedEvent],
+        }));
 
-  setVariable: (name: string, value: any, actionIndex: number) => {
-    const now = Date.now();
-    const previousValue = get().context.variables[name]?.value;
-
-    const variableValue: VariableValue = {
-      value,
-      type: typeof value,
-      lastModified: now,
-      previousValue,
-    };
-
-    set(state => ({
-      context: {
-        ...state.context,
-        variables: {
-          ...state.context.variables,
-          [name]: variableValue,
-        },
-      },
-      variableHistory: [
-        ...state.variableHistory,
-        {
-          timestamp: now,
-          variableName: name,
-          value,
+        get().addLog(
+          error ? "error" : "info",
+          "action",
+          error ? `Failed: ${error}` : `Completed: ${event.action.type}`,
           actionIndex,
-        },
-      ],
-    }));
+          { result, duration: completedEvent.duration }
+        );
 
-    get().addLog('debug', 'variable', `Variable set: ${name} = ${JSON.stringify(value)}`, actionIndex, {
-      previousValue,
-    });
-  },
+        get().updateMetrics();
+      }
+    },
 
-  getVariable: (name: string) => {
-    return get().context.variables[name]?.value;
-  },
+    failAction: (actionIndex: number, error: string, stackTrace?: string) => {
+      const now = Date.now();
+      const event = get().actionEvents.find(
+        (e) => e.actionIndex === actionIndex
+      );
 
-  deleteVariable: (name: string) => {
-    set(state => {
-      const { [name]: deleted, ...rest } = state.context.variables;
-      return {
+      if (event) {
+        const failedEvent: ActionExecutionEvent = {
+          ...event,
+          status: "failed",
+          endTime: now,
+          duration: event.startTime ? now - event.startTime : 0,
+          error,
+          stackTrace,
+        };
+
+        set((state) => ({
+          actionEvents: state.actionEvents.map((e) =>
+            e.actionIndex === actionIndex ? failedEvent : e
+          ),
+          executionHistory: [...state.executionHistory, failedEvent],
+          state: "error",
+        }));
+
+        get().addLog(
+          "error",
+          "action",
+          `Action failed: ${error}`,
+          actionIndex,
+          {
+            stackTrace,
+          }
+        );
+
+        get().updateMetrics();
+      }
+    },
+
+    skipAction: (actionIndex: number, reason: string) => {
+      const event = get().actionEvents.find(
+        (e) => e.actionIndex === actionIndex
+      );
+
+      if (event) {
+        const skippedEvent: ActionExecutionEvent = {
+          ...event,
+          status: "skipped",
+        };
+
+        set((state) => ({
+          actionEvents: state.actionEvents.map((e) =>
+            e.actionIndex === actionIndex ? skippedEvent : e
+          ),
+        }));
+
+        get().addLog(
+          "warning",
+          "action",
+          `Action skipped: ${reason}`,
+          actionIndex
+        );
+      }
+    },
+
+    recordConditionEvaluation: (evaluation: ConditionEvaluation) => {
+      set((state) => ({
+        conditionEvaluations: [...state.conditionEvaluations, evaluation],
+      }));
+
+      get().addLog(
+        "debug",
+        "condition",
+        `Condition evaluated: ${evaluation.condition} = ${evaluation.result} (${evaluation.branch} branch)`,
+        undefined,
+        evaluation
+      );
+    },
+
+    startLoop: (
+      actionId: string,
+      maxIterations: number,
+      loopVariable?: string
+    ) => {
+      const loopState: LoopState = {
+        actionId,
+        currentIteration: 0,
+        maxIterations,
+        loopVariable,
+        startTime: Date.now(),
+      };
+
+      set((state) => ({
+        loopStates: [...state.loopStates, loopState],
         context: {
           ...state.context,
-          variables: rest,
+          loopIterations: {
+            ...state.context.loopIterations,
+            [actionId]: 0,
+          },
         },
+      }));
+
+      get().addLog(
+        "info",
+        "loop",
+        `Loop started: ${actionId} (max: ${maxIterations})`,
+        undefined,
+        {
+          loopVariable,
+        }
+      );
+    },
+
+    updateLoopIteration: (actionId: string) => {
+      set((state) => ({
+        loopStates: state.loopStates.map((loop) =>
+          loop.actionId === actionId
+            ? { ...loop, currentIteration: loop.currentIteration + 1 }
+            : loop
+        ),
+        context: {
+          ...state.context,
+          loopIterations: {
+            ...state.context.loopIterations,
+            [actionId]: (state.context.loopIterations[actionId] || 0) + 1,
+          },
+        },
+      }));
+
+      const loop = get().loopStates.find((l) => l.actionId === actionId);
+      if (loop) {
+        get().addLog(
+          "debug",
+          "loop",
+          `Loop iteration: ${loop.currentIteration + 1}/${loop.maxIterations}`,
+          undefined,
+          { actionId }
+        );
+      }
+    },
+
+    endLoop: (actionId: string) => {
+      const loop = get().loopStates.find((l) => l.actionId === actionId);
+      const duration = loop ? Date.now() - loop.startTime : 0;
+
+      set((state) => ({
+        loopStates: state.loopStates.filter((l) => l.actionId !== actionId),
+      }));
+
+      get().addLog("info", "loop", `Loop completed: ${actionId}`, undefined, {
+        duration,
+        iterations: loop?.currentIteration,
+      });
+    },
+
+    setVariable: (name: string, value: any, actionIndex: number) => {
+      const now = Date.now();
+      const previousValue = get().context.variables[name]?.value;
+
+      const variableValue: VariableValue = {
+        value,
+        type: typeof value,
+        lastModified: now,
+        previousValue,
       };
-    });
 
-    get().addLog('debug', 'variable', `Variable deleted: ${name}`);
-  },
+      set((state) => ({
+        context: {
+          ...state.context,
+          variables: {
+            ...state.context.variables,
+            [name]: variableValue,
+          },
+        },
+        variableHistory: [
+          ...state.variableHistory,
+          {
+            timestamp: now,
+            variableName: name,
+            value,
+            actionIndex,
+          },
+        ],
+      }));
 
-  addBreakpoint: (actionIndex: number, condition?: string) => {
-    set(state => ({
-      breakpoints: [
-        ...state.breakpoints.filter(bp => bp.actionIndex !== actionIndex),
-        { actionIndex, enabled: true, condition },
-      ],
-    }));
+      get().addLog(
+        "debug",
+        "variable",
+        `Variable set: ${name} = ${JSON.stringify(value)}`,
+        actionIndex,
+        {
+          previousValue,
+        }
+      );
+    },
 
-    get().addLog('info', 'system', `Breakpoint added at action ${actionIndex}`, actionIndex, {
-      condition,
-    });
-  },
+    getVariable: (name: string) => {
+      return get().context.variables[name]?.value;
+    },
 
-  removeBreakpoint: (actionIndex: number) => {
-    set(state => ({
-      breakpoints: state.breakpoints.filter(bp => bp.actionIndex !== actionIndex),
-    }));
+    deleteVariable: (name: string) => {
+      set((state) => {
+        const { [name]: deleted, ...rest } = state.context.variables;
+        return {
+          context: {
+            ...state.context,
+            variables: rest,
+          },
+        };
+      });
 
-    get().addLog('info', 'system', `Breakpoint removed at action ${actionIndex}`, actionIndex);
-  },
+      get().addLog("debug", "variable", `Variable deleted: ${name}`);
+    },
 
-  toggleBreakpoint: (actionIndex: number) => {
-    const breakpoint = get().breakpoints.find(bp => bp.actionIndex === actionIndex);
+    addBreakpoint: (actionIndex: number, condition?: string) => {
+      set((state) => ({
+        breakpoints: [
+          ...state.breakpoints.filter((bp) => bp.actionIndex !== actionIndex),
+          { actionIndex, enabled: true, condition },
+        ],
+      }));
 
-    if (breakpoint) {
-      set(state => ({
-        breakpoints: state.breakpoints.map(bp =>
-          bp.actionIndex === actionIndex ? { ...bp, enabled: !bp.enabled } : bp
+      get().addLog(
+        "info",
+        "system",
+        `Breakpoint added at action ${actionIndex}`,
+        actionIndex,
+        {
+          condition,
+        }
+      );
+    },
+
+    removeBreakpoint: (actionIndex: number) => {
+      set((state) => ({
+        breakpoints: state.breakpoints.filter(
+          (bp) => bp.actionIndex !== actionIndex
         ),
       }));
-    } else {
-      get().addBreakpoint(actionIndex);
-    }
-  },
 
-  shouldBreakAt: (actionIndex: number) => {
-    const breakpoint = get().breakpoints.find(
-      bp => bp.actionIndex === actionIndex && bp.enabled
-    );
+      get().addLog(
+        "info",
+        "system",
+        `Breakpoint removed at action ${actionIndex}`,
+        actionIndex
+      );
+    },
 
-    if (!breakpoint) return false;
+    toggleBreakpoint: (actionIndex: number) => {
+      const breakpoint = get().breakpoints.find(
+        (bp) => bp.actionIndex === actionIndex
+      );
 
-    // TODO: Implement condition evaluation if condition is set
-    return true;
-  },
+      if (breakpoint) {
+        set((state) => ({
+          breakpoints: state.breakpoints.map((bp) =>
+            bp.actionIndex === actionIndex
+              ? { ...bp, enabled: !bp.enabled }
+              : bp
+          ),
+        }));
+      } else {
+        get().addBreakpoint(actionIndex);
+      }
+    },
 
-  play: () => {
-    set({ state: 'running', stepMode: false });
-    get().addLog('info', 'system', 'Execution started');
-  },
+    shouldBreakAt: (actionIndex: number) => {
+      const breakpoint = get().breakpoints.find(
+        (bp) => bp.actionIndex === actionIndex && bp.enabled
+      );
 
-  pause: () => {
-    set({ state: 'paused' });
-    get().addLog('info', 'system', 'Execution paused');
-  },
+      if (!breakpoint) return false;
 
-  stop: () => {
-    set({
-      state: 'idle',
-      currentActionIndex: -1,
-      endTime: Date.now(),
-    });
-    get().addLog('info', 'system', 'Execution stopped');
-    get().updateMetrics();
-  },
+      // If no condition is set, always break
+      if (!breakpoint.condition || breakpoint.condition.trim() === "") {
+        return true;
+      }
 
-  step: () => {
-    set({ state: 'stepping', stepMode: true });
-    get().addLog('debug', 'system', 'Step forward');
-  },
+      // Evaluate the condition with current variables
+      try {
+        const variables = get().context.variables;
+        const variableValues: Record<string, any> = {};
 
-  setSpeed: (speed: ExecutionSpeed) => {
-    set({ speed });
-    get().addLog('info', 'system', `Execution speed set to: ${speed}`);
-  },
+        // Extract raw values from VariableValue objects
+        for (const [name, varValue] of Object.entries(variables)) {
+          variableValues[name] = varValue.value;
+        }
 
-  addLog: (level, category, message, actionIndex?, details?) => {
-    const log: ExecutionLogEntry = {
-      id: `${Date.now()}-${Math.random()}`,
-      timestamp: Date.now(),
-      level,
-      category,
-      message,
-      actionIndex,
-      details,
-    };
+        // Create a function that evaluates the condition
+        // The condition expression has access to all variables by name
+        const conditionFn = new Function(
+          ...Object.keys(variableValues),
+          `return (${breakpoint.condition});`
+        );
 
-    set(state => ({
-      logs: [...state.logs, log],
-    }));
-  },
+        const result = conditionFn(...Object.values(variableValues));
 
-  clearLogs: () => {
-    set({ logs: [] });
-  },
+        get().addLog(
+          "debug",
+          "system",
+          `Breakpoint condition evaluated: ${breakpoint.condition} = ${result}`,
+          actionIndex,
+          { condition: breakpoint.condition, variables: variableValues, result }
+        );
 
-  exportLogs: () => {
-    const logs = get().logs;
-    return JSON.stringify(logs, null, 2);
-  },
+        return Boolean(result);
+      } catch (error) {
+        // If condition evaluation fails, log the error and don't break
+        get().addLog(
+          "error",
+          "system",
+          `Failed to evaluate breakpoint condition: ${error instanceof Error ? error.message : String(error)}`,
+          actionIndex,
+          { condition: breakpoint.condition, error }
+        );
+        return false;
+      }
+    },
 
-  updateMetrics: () => {
-    const { executionHistory, startTime, endTime } = get();
+    play: () => {
+      set({ state: "running", stepMode: false });
+      get().addLog("info", "system", "Execution started");
+    },
 
-    const successfulActions = executionHistory.filter(e => e.status === 'success').length;
-    const totalExecutionTime = endTime && startTime ? endTime - startTime : 0;
+    pause: () => {
+      set({ state: "paused" });
+      get().addLog("info", "system", "Execution paused");
+    },
 
-    const actionTimes = executionHistory
-      .filter(e => e.duration !== undefined)
-      .map(e => e.duration!);
+    stop: () => {
+      set({
+        state: "idle",
+        currentActionIndex: -1,
+        endTime: Date.now(),
+      });
+      get().addLog("info", "system", "Execution stopped");
+      get().updateMetrics();
+    },
 
-    const averageActionTime =
-      actionTimes.length > 0
-        ? actionTimes.reduce((sum, time) => sum + time, 0) / actionTimes.length
-        : 0;
+    step: () => {
+      set({ state: "stepping", stepMode: true });
+      get().addLog("debug", "system", "Step forward");
+    },
 
-    const successRate =
-      executionHistory.length > 0 ? (successfulActions / executionHistory.length) * 100 : 0;
+    setSpeed: (speed: ExecutionSpeed) => {
+      set({ speed });
+      get().addLog("info", "system", `Execution speed set to: ${speed}`);
+    },
 
-    set({
-      metrics: {
-        totalExecutionTime,
-        averageActionTime,
-        successRate,
-      },
-    });
-  },
+    addLog: (level, category, message, actionIndex?, details?) => {
+      const log: ExecutionLogEntry = {
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: Date.now(),
+        level,
+        category,
+        message,
+        actionIndex,
+        details,
+      };
 
-  setDebugEnabled: (enabled: boolean) => {
-    set({ debugEnabled: enabled });
-    if (enabled) {
-      get().addLog('info', 'system', 'Debugger enabled');
-    } else {
-      get().reset();
-    }
-  },
-}));
+      set((state) => ({
+        logs: [...state.logs, log],
+      }));
+    },
+
+    clearLogs: () => {
+      set({ logs: [] });
+    },
+
+    exportLogs: () => {
+      const logs = get().logs;
+      return JSON.stringify(logs, null, 2);
+    },
+
+    updateMetrics: () => {
+      const { executionHistory, startTime, endTime } = get();
+
+      const successfulActions = executionHistory.filter(
+        (e) => e.status === "success"
+      ).length;
+      const totalExecutionTime = endTime && startTime ? endTime - startTime : 0;
+
+      const actionTimes = executionHistory
+        .filter((e) => e.duration !== undefined)
+        .map((e) => e.duration!);
+
+      const averageActionTime =
+        actionTimes.length > 0
+          ? actionTimes.reduce((sum, time) => sum + time, 0) /
+            actionTimes.length
+          : 0;
+
+      const successRate =
+        executionHistory.length > 0
+          ? (successfulActions / executionHistory.length) * 100
+          : 0;
+
+      set({
+        metrics: {
+          totalExecutionTime,
+          averageActionTime,
+          successRate,
+        },
+      });
+    },
+
+    setDebugEnabled: (enabled: boolean) => {
+      set({ debugEnabled: enabled });
+      if (enabled) {
+        get().addLog("info", "system", "Debugger enabled");
+      } else {
+        get().reset();
+      }
+    },
+  })
+);

@@ -5,9 +5,9 @@
  * Supports retry logic, error handling, and progress tracking.
  */
 
-import { syncQueue, SyncQueueItem, SyncOperationType } from './sync-queue';
-import { apiClient } from './api-client';
-import { screenshotDB } from './screenshot-db';
+import { syncQueue, SyncQueueItem } from "./sync-queue";
+import { apiClient } from "./api-client";
+import { screenshotDB } from "./screenshot-db";
 
 /**
  * Result of processing a sync item
@@ -36,13 +36,13 @@ class SyncProcessor {
   async processQueue(force = false): Promise<number> {
     // Prevent concurrent processing
     if (this.processing && !force) {
-      console.log('[SyncProcessor] Already processing queue, skipping');
+      console.log("[SyncProcessor] Already processing queue, skipping");
       return 0;
     }
 
     // Check if online
     if (!navigator.onLine) {
-      console.log('[SyncProcessor] Offline, skipping sync');
+      console.log("[SyncProcessor] Offline, skipping sync");
       return 0;
     }
 
@@ -50,10 +50,10 @@ class SyncProcessor {
     syncQueue.setSyncing(true);
 
     try {
-      console.log('[SyncProcessor] Starting queue processing...');
+      console.log("[SyncProcessor] Starting queue processing...");
 
       // Get pending items
-      const pending = await syncQueue.getAll({ status: 'pending' });
+      const pending = await syncQueue.getAll({ status: "pending" });
 
       // Get items ready to retry
       const retryReady = await syncQueue.getReadyToRetry();
@@ -61,7 +61,9 @@ class SyncProcessor {
       // Combine and sort by priority
       const itemsToProcess = [...pending, ...retryReady];
 
-      console.log(`[SyncProcessor] Found ${itemsToProcess.length} items to process (${pending.length} pending, ${retryReady.length} retry)`);
+      console.log(
+        `[SyncProcessor] Found ${itemsToProcess.length} items to process (${pending.length} pending, ${retryReady.length} retry)`
+      );
 
       let processedCount = 0;
 
@@ -70,7 +72,7 @@ class SyncProcessor {
           // Mark as syncing
           await syncQueue.update({
             ...item,
-            status: 'syncing',
+            status: "syncing",
           });
 
           // Process the item
@@ -82,18 +84,26 @@ class SyncProcessor {
             processedCount++;
           } else {
             // Mark as failed
-            await syncQueue.markFailed(item.id, result.error || 'Unknown error');
+            await syncQueue.markFailed(
+              item.id,
+              result.error || "Unknown error"
+            );
           }
         } catch (error) {
-          console.error(`[SyncProcessor] Error processing item ${item.id}:`, error);
+          console.error(
+            `[SyncProcessor] Error processing item ${item.id}:`,
+            error
+          );
           await syncQueue.markFailed(
             item.id,
-            error instanceof Error ? error.message : 'Unknown error'
+            error instanceof Error ? error.message : "Unknown error"
           );
         }
       }
 
-      console.log(`[SyncProcessor] Processed ${processedCount} items successfully`);
+      console.log(
+        `[SyncProcessor] Processed ${processedCount} items successfully`
+      );
 
       return processedCount;
     } finally {
@@ -110,16 +120,16 @@ class SyncProcessor {
 
     try {
       switch (item.type) {
-        case 'upload_screenshot':
+        case "upload_screenshot":
           return await this.processScreenshotUpload(item);
 
-        case 'upload_multiple_screenshots':
+        case "upload_multiple_screenshots":
           return await this.processMultipleScreenshotUploads(item);
 
-        case 'delete_screenshot':
+        case "delete_screenshot":
           return await this.processScreenshotDelete(item);
 
-        case 'update_screenshot':
+        case "update_screenshot":
           return await this.processScreenshotUpdate(item);
 
         default:
@@ -131,7 +141,7 @@ class SyncProcessor {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -139,7 +149,9 @@ class SyncProcessor {
   /**
    * Process screenshot upload
    */
-  private async processScreenshotUpload(item: SyncQueueItem): Promise<SyncResult> {
+  private async processScreenshotUpload(
+    item: SyncQueueItem
+  ): Promise<SyncResult> {
     const { file, projectId, name, description, tags } = item.data;
 
     try {
@@ -155,13 +167,19 @@ class SyncProcessor {
         }
       );
 
+      // Use presigned_url from backend response (fallback to presigned_urls.original for legacy compatibility)
+      const uploadUrl =
+        result.presigned_url || result.presigned_urls?.original || result.url;
+
       // Update IndexedDB with server response
       await screenshotDB.update({
         id: result.image_id,
         name: name || file.name,
-        url: result.url,
-        size: result.size,
-        uploadedAt: new Date(result.created_at),
+        url: uploadUrl || "",
+        size: result.size || 0,
+        uploadedAt: result.created_at
+          ? new Date(result.created_at)
+          : new Date(),
         description,
         tags,
         projectId,
@@ -173,14 +191,14 @@ class SyncProcessor {
         success: true,
         data: {
           imageId: result.image_id,
-          url: result.url,
+          url: uploadUrl || "",
           s3Key: result.s3_key,
         },
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Upload failed',
+        error: error instanceof Error ? error.message : "Upload failed",
       };
     }
   }
@@ -188,7 +206,9 @@ class SyncProcessor {
   /**
    * Process multiple screenshot uploads (batch)
    */
-  private async processMultipleScreenshotUploads(item: SyncQueueItem): Promise<SyncResult> {
+  private async processMultipleScreenshotUploads(
+    item: SyncQueueItem
+  ): Promise<SyncResult> {
     const { files, projectId } = item.data;
     const results = [];
     const errors = [];
@@ -202,7 +222,8 @@ class SyncProcessor {
           file,
           (fileProgress) => {
             // Calculate overall progress
-            const overallProgress = ((i + fileProgress / 100) / files.length) * 100;
+            const overallProgress =
+              ((i + fileProgress / 100) / files.length) * 100;
             const callback = this.progressCallbacks.get(item.id);
             if (callback) {
               callback(item.id, overallProgress);
@@ -212,13 +233,19 @@ class SyncProcessor {
 
         results.push(result);
 
+        // Use presigned_url from backend response (fallback to presigned_urls.original for legacy compatibility)
+        const batchUploadUrl =
+          result.presigned_url || result.presigned_urls?.original || result.url;
+
         // Update IndexedDB
         await screenshotDB.update({
           id: result.image_id,
           name: file.name,
-          url: result.url,
-          size: result.size,
-          uploadedAt: new Date(result.created_at),
+          url: batchUploadUrl || "",
+          size: result.size || 0,
+          uploadedAt: result.created_at
+            ? new Date(result.created_at)
+            : new Date(),
           projectId,
           s3Key: result.s3_key,
           urlExpiresAt: new Date(Date.now() + 7 * 86400000),
@@ -226,7 +253,7 @@ class SyncProcessor {
       } catch (error) {
         errors.push({
           file: file.name,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : "Unknown error",
         });
       }
     }
@@ -248,7 +275,9 @@ class SyncProcessor {
   /**
    * Process screenshot deletion
    */
-  private async processScreenshotDelete(item: SyncQueueItem): Promise<SyncResult> {
+  private async processScreenshotDelete(
+    item: SyncQueueItem
+  ): Promise<SyncResult> {
     const { screenshotId, projectId } = item.data;
 
     try {
@@ -262,7 +291,7 @@ class SyncProcessor {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Delete failed',
+        error: error instanceof Error ? error.message : "Delete failed",
       };
     }
   }
@@ -270,7 +299,9 @@ class SyncProcessor {
   /**
    * Process screenshot update
    */
-  private async processScreenshotUpdate(item: SyncQueueItem): Promise<SyncResult> {
+  private async processScreenshotUpdate(
+    item: SyncQueueItem
+  ): Promise<SyncResult> {
     const { screenshotId, updates } = item.data;
 
     try {
@@ -278,7 +309,7 @@ class SyncProcessor {
       // For now, we just update local IndexedDB
       const screenshot = await screenshotDB.get(screenshotId);
       if (!screenshot) {
-        return { success: false, error: 'Screenshot not found' };
+        return { success: false, error: "Screenshot not found" };
       }
 
       await screenshotDB.update({
@@ -290,7 +321,7 @@ class SyncProcessor {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Update failed',
+        error: error instanceof Error ? error.message : "Update failed",
       };
     }
   }
@@ -323,9 +354,9 @@ export const syncProcessor = new SyncProcessor();
 /**
  * Auto-process queue on network connectivity change
  */
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    console.log('[SyncProcessor] Network online, processing queue...');
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    console.log("[SyncProcessor] Network online, processing queue...");
     syncProcessor.processQueue();
   });
 }

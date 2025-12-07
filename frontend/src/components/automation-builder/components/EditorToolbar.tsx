@@ -11,8 +11,8 @@
  * Adapts its appearance and actions based on the current mode and item type.
  */
 
-import React from 'react'
-import { Button } from '@/components/ui/button'
+import React from "react";
+import { Button } from "@/components/ui/button";
 import {
   Save,
   Trash2,
@@ -25,29 +25,31 @@ import {
   Download,
   Upload,
   Share2,
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
-import type { LibraryItem, BuilderMode } from '../types'
-import { isLinearWorkflow } from '../types'
+  FolderDown,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { LibraryItem, BuilderMode } from "../types";
+import { isLinearWorkflow } from "../types";
 
 export interface EditorToolbarProps {
-  item: LibraryItem | null
-  mode: BuilderMode
-  onSave?: () => void
-  onDelete?: () => void
-  onDuplicate?: () => void
-  onConvert?: () => void
-  onRun?: () => void
-  onTest?: () => void
-  onUndo?: () => void
-  onRedo?: () => void
-  onExport?: () => void
-  onImport?: () => void
-  onShare?: () => void
-  canUndo?: boolean
-  canRedo?: boolean
-  isSaving?: boolean
-  className?: string
+  item: LibraryItem | null;
+  mode: BuilderMode;
+  onSave?: () => void;
+  onDelete?: () => void;
+  onDuplicate?: () => void;
+  onConvert?: () => void;
+  onRun?: () => void;
+  onTest?: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onExport?: () => void;
+  onImport?: () => void;
+  onExportProject?: () => void;
+  onShare?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  isSaving?: boolean;
+  className?: string;
 }
 
 export function EditorToolbar({
@@ -63,22 +65,23 @@ export function EditorToolbar({
   onRedo,
   onExport,
   onImport,
+  onExportProject,
   onShare,
   canUndo = false,
   canRedo = false,
   isSaving = false,
   className,
 }: EditorToolbarProps) {
-  const isSequential = mode === 'sequential'
-  const isLinear = item ? isLinearWorkflow(item) : false
+  const isSequential = mode === "sequential";
+  const isLinear = item ? isLinearWorkflow(item) : false;
 
   // Color theme based on mode
-  const accentColor = isSequential ? '#00D9FF' : '#00FF88'
+  const accentColor = isSequential ? "#00D9FF" : "#00FF88";
 
   return (
     <div
       className={cn(
-        'flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-950',
+        "flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-950",
         className
       )}
     >
@@ -90,18 +93,19 @@ export function EditorToolbar({
             onClick={onSave}
             disabled={!item || isSaving}
             size="sm"
+            data-tutorial-id="save-workflow"
             style={{
               backgroundColor: item ? `${accentColor}22` : undefined,
               borderColor: item ? `${accentColor}44` : undefined,
               color: item ? accentColor : undefined,
             }}
             className={cn(
-              'border transition-colors',
-              !item && 'bg-gray-800 border-gray-700 text-gray-400'
+              "border transition-colors",
+              !item && "bg-gray-800 border-gray-700 text-gray-400"
             )}
           >
             <Save className="w-4 h-4 mr-2" />
-            {isSaving ? 'Saving...' : 'Save'}
+            {isSaving ? "Saving..." : "Save"}
           </Button>
         )}
 
@@ -148,6 +152,7 @@ export function EditorToolbar({
                 onClick={onRun}
                 size="sm"
                 variant="ghost"
+                data-tutorial-id="run-workflow"
                 className="text-gray-300 hover:text-white hover:bg-gray-800"
               >
                 <Play className="w-4 h-4 mr-2" />
@@ -186,11 +191,26 @@ export function EditorToolbar({
         )}
 
         {/* Divider */}
-        {item && onShare && (
-          <div className="h-6 w-px bg-gray-700 mx-1" />
+        {item && onShare && <div className="h-6 w-px bg-gray-700 mx-1" />}
+
+        {/* Export Project */}
+        {onExportProject && (
+          <Button
+            onClick={onExportProject}
+            size="sm"
+            variant="ghost"
+            className="text-gray-300 hover:text-white hover:bg-gray-800"
+            title="Export entire project for qontinui-runner"
+          >
+            <FolderDown className="w-4 h-4 mr-2" />
+            Export Project
+          </Button>
         )}
 
-        {/* Import/Export */}
+        {/* Divider */}
+        {onExportProject && <div className="h-6 w-px bg-gray-700 mx-1" />}
+
+        {/* Import/Export Workflow */}
         {item && (
           <>
             {onExport && (
@@ -199,7 +219,7 @@ export function EditorToolbar({
                 size="sm"
                 variant="ghost"
                 className="text-gray-400 hover:text-white hover:bg-gray-800"
-                title="Export"
+                title="Export Workflow"
               >
                 <Download className="w-4 h-4" />
               </Button>
@@ -210,7 +230,7 @@ export function EditorToolbar({
                 size="sm"
                 variant="ghost"
                 className="text-gray-400 hover:text-white hover:bg-gray-800"
-                title="Import"
+                title="Import Workflow"
               >
                 <Upload className="w-4 h-4" />
               </Button>
@@ -246,8 +266,8 @@ export function EditorToolbar({
             className="text-gray-400 hover:text-white hover:bg-gray-800"
             title={
               isLinear
-                ? 'Convert to Graph Workflow'
-                : 'Convert to Sequential Workflow'
+                ? "Convert to Graph Workflow"
+                : "Convert to Sequential Workflow"
             }
           >
             <ArrowLeftRight className="w-4 h-4 mr-2" />
@@ -270,14 +290,14 @@ export function EditorToolbar({
         )}
       </div>
     </div>
-  )
+  );
 }
 
 /**
  * Compact variant with icons only
  */
 export interface CompactToolbarProps extends EditorToolbarProps {
-  showLabels?: false
+  showLabels?: false;
 }
 
 export function CompactToolbar({
@@ -295,14 +315,14 @@ export function CompactToolbar({
   isSaving = false,
   className,
 }: CompactToolbarProps) {
-  const isSequential = mode === 'sequential'
-  const isLinear = item ? isLinearWorkflow(item) : false
-  const accentColor = isSequential ? '#00D9FF' : '#00FF88'
+  const isSequential = mode === "sequential";
+  const isLinear = item ? isLinearWorkflow(item) : false;
+  const accentColor = isSequential ? "#00D9FF" : "#00FF88";
 
   return (
     <div
       className={cn(
-        'flex items-center gap-1 px-2 py-1.5 border-b border-gray-800 bg-gray-950',
+        "flex items-center gap-1 px-2 py-1.5 border-b border-gray-800 bg-gray-950",
         className
       )}
     >
@@ -313,6 +333,7 @@ export function CompactToolbar({
           disabled={!item || isSaving}
           size="sm"
           variant="ghost"
+          data-tutorial-id="save-workflow"
           className="h-8 w-8 p-0"
           style={{
             color: item ? accentColor : undefined,
@@ -357,6 +378,7 @@ export function CompactToolbar({
           onClick={onRun}
           size="sm"
           variant="ghost"
+          data-tutorial-id="run-workflow"
           className="h-8 w-8 p-0"
           title="Run"
         >
@@ -385,9 +407,7 @@ export function CompactToolbar({
           variant="ghost"
           className="h-8 w-8 p-0"
           title={
-            isLinear
-              ? 'Convert to Workflow'
-              : 'Convert to Sequential Workflow'
+            isLinear ? "Convert to Workflow" : "Convert to Sequential Workflow"
           }
         >
           <ArrowLeftRight className="w-4 h-4" />
@@ -407,5 +427,5 @@ export function CompactToolbar({
         </Button>
       )}
     </div>
-  )
+  );
 }

@@ -11,6 +11,10 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import current_active_user, get_async_db
 from app.crud import variable as variable_crud
 from app.models.project import Project
@@ -27,9 +31,6 @@ from app.schemas.variable import (
     VariableUpdate,
 )
 from app.utils.authorization import verify_project_access
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -55,15 +56,35 @@ async def get_project_or_404(db: AsyncSession, project_id: str) -> Project:
     return project
 
 
-def verify_workflow_ownership(project: Project, workflow_id: str) -> None:
+async def verify_workflow_ownership(
+    project: Project, workflow_id: str, db: AsyncSession
+) -> None:
     """
     Verify that a workflow belongs to the project.
 
-    For now, we assume workflow_id is valid if provided.
-    In a full implementation, this would query a Workflow model.
+    Workflows are stored in the project's configuration JSON.
+    This checks if the workflow_id exists in the project's workflows list.
     """
-    # TODO: Add proper workflow validation when Workflow model exists
-    pass
+    # Workflows are stored in project.configuration as a JSON field
+    # Expected structure: {"workflows": [{"id": "uuid", ...}, ...]}
+    if not project.configuration:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project has no workflows configured",
+        )
+
+    workflows = project.configuration.get("workflows", [])
+
+    # Check if workflow_id exists in the project's workflows
+    workflow_exists = any(
+        str(w.get("id")) == workflow_id for w in workflows if isinstance(w, dict)
+    )
+
+    if not workflow_exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow '{workflow_id}' not found in project",
+        )
 
 
 # ============================================================================
@@ -255,7 +276,7 @@ async def update_global_variable(
     if variable_update.value is not None and old_value != variable.value:
         await variable_crud.record_variable_change(
             db,
-            variable.id,
+            UUID(str(variable.id)),
             old_value,
             variable.value,
             changed_by_action="manual_update",
@@ -342,7 +363,7 @@ async def list_workflow_variables(
     verify_project_access(project, current_user, "view variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # List workflow variables
     project_uuid = UUID(project_id)
@@ -393,7 +414,7 @@ async def create_workflow_variable(
     verify_project_access(project, current_user, "create variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Force scope to WORKFLOW
     variable_data.scope = VariableScope.WORKFLOW
@@ -447,7 +468,7 @@ async def get_workflow_variable(
     verify_project_access(project, current_user, "view variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Get variable
     project_uuid = UUID(project_id)
@@ -496,7 +517,7 @@ async def update_workflow_variable(
     verify_project_access(project, current_user, "update variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Get variable
     project_uuid = UUID(project_id)
@@ -521,7 +542,7 @@ async def update_workflow_variable(
     if variable_update.value is not None and old_value != variable.value:
         await variable_crud.record_variable_change(
             db,
-            variable.id,
+            UUID(str(variable.id)),
             old_value,
             variable.value,
             changed_by_action="manual_update",
@@ -560,7 +581,7 @@ async def delete_workflow_variable(
     verify_project_access(project, current_user, "delete variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Get variable
     project_uuid = UUID(project_id)
@@ -668,7 +689,7 @@ async def get_run_variables_snapshot(
     verify_project_access(project, current_user, "view variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Get all applicable variables
     project_uuid = UUID(project_id)
@@ -682,10 +703,10 @@ async def get_run_variables_snapshot(
 
     snapshots = [
         VariableSnapshot(
-            name=v.name,
+            name=str(v.name),
             value=v.value,
-            scope=v.scope,
-            description=v.description,
+            scope=v.scope,  # type: ignore[arg-type]
+            description=str(v.description) if v.description else None,
         )
         for v in variables
     ]
@@ -734,7 +755,9 @@ async def get_run_variable_changes(
     # Verify user has access to the project (by checking first variable if any)
     if changes:
         first_change = changes[0]
-        variable = await variable_crud.get_variable_by_id(db, first_change.variable_id)
+        variable = await variable_crud.get_variable_by_id(
+            db, UUID(str(first_change.variable_id))
+        )
         if variable:
             project = await get_project_or_404(db, str(variable.project_id))
             verify_project_access(project, current_user, "view variable changes")

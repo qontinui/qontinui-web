@@ -13,7 +13,7 @@ appearance on hover, which is a strong indicator of clickability.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -59,7 +59,7 @@ class ButtonHoverDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 2  # Needs at least 2 screenshots to compare
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Difference detection parameters
             "min_color_change": 15,  # Minimum color difference to detect change
@@ -168,7 +168,7 @@ class ButtonHoverDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -176,7 +176,7 @@ class ButtonHoverDetector(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color (BGR for OpenCV)"""
         images = []
         for data in screenshot_data:
@@ -194,14 +194,14 @@ class ButtonHoverDetector(BaseAnalyzer):
         img2_color: np.ndarray,
         idx1: int,
         idx2: int,
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """
         Compare two screenshots to detect hover state changes
 
         Returns list of detected buttons that changed between screenshots
         """
-        elements = []
+        elements: list[DetectedElement] = []
 
         # Ensure images are the same size
         if img1_gray.shape != img2_gray.shape:
@@ -323,8 +323,8 @@ class ButtonHoverDetector(BaseAnalyzer):
         region1: np.ndarray,
         region2: np.ndarray,
         change_mask: np.ndarray,
-        params: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Analyze how a region changed between two screenshots
 
@@ -377,8 +377,8 @@ class ButtonHoverDetector(BaseAnalyzer):
         width: int,
         height: int,
         aspect_ratio: float,
-        change_info: Dict[str, Any],
-        params: Dict[str, Any],
+        change_info: dict[str, Any],
+        params: dict[str, Any],
     ) -> float:
         """
         Calculate confidence score for hover-based button detection
@@ -412,11 +412,12 @@ class ButtonHoverDetector(BaseAnalyzer):
         ratio_score = max(0, 1.0 - (ratio_diff / 3.0))
         confidence += ratio_score * 0.1
 
-        return min(1.0, max(0.0, confidence))
+        final_confidence: float = min(1.0, max(0.0, confidence))
+        return final_confidence
 
     def _merge_overlapping_elements(
-        self, elements: List[DetectedElement]
-    ) -> List[DetectedElement]:
+        self, elements: list[DetectedElement]
+    ) -> list[DetectedElement]:
         """
         Merge overlapping button detections from different screenshot comparisons
 
@@ -425,7 +426,7 @@ class ButtonHoverDetector(BaseAnalyzer):
         if not elements:
             return []
 
-        merged = []
+        merged: list[DetectedElement] = []
 
         for element in elements:
             # Check if this overlaps with any existing merged element

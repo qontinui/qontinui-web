@@ -1,33 +1,39 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { ArrowRight, Zap, Brain, Target, X, Check, LogIn, Globe } from "lucide-react"
-import { AuthDialog } from "@/components/auth-dialog"
-import { AuthProvider, useAuth } from "@/contexts/auth-context"
-import { Footer } from "@/components/marketing/footer"
-import { toast } from "sonner"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  ArrowRight,
+  Zap,
+  Brain,
+  Target,
+  X,
+  Check,
+  LogIn,
+  Globe,
+} from "lucide-react";
+import { AuthDialog } from "@/components/auth-dialog";
+import { AuthProvider, useAuth } from "@/contexts/auth-context";
+import { Footer } from "@/components/marketing/footer";
 
 function LandingContent() {
-  const [authDialogOpen, setAuthDialogOpen] = useState(false)
-  const [signupMode, setSignupMode] = useState(true) // Start in signup mode
-  const { user } = useAuth()
-  const router = useRouter()
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [signupMode, setSignupMode] = useState(true); // Start in signup mode
+  const { user } = useAuth();
+  const router = useRouter();
 
   // Remove auto-redirect - let users stay on landing page even if logged in
   // They can click their dashboard link in the header if they want
 
   const handleGetStarted = () => {
-    setSignupMode(true)
-    setAuthDialogOpen(true)
-  }
-
+    setSignupMode(true);
+    setAuthDialogOpen(true);
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -38,7 +44,7 @@ function LandingContent() {
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              onClick={() => router.push('/demo')}
+              onClick={() => router.push("/demo")}
               className="hover:bg-primary/10"
             >
               <Globe className="mr-2 h-4 w-4" />
@@ -46,24 +52,26 @@ function LandingContent() {
             </Button>
             <Button
               variant="ghost"
-              onClick={() => router.push('/runner/download')}
+              onClick={() => router.push("/runner/download")}
               className="hover:bg-primary/10"
             >
               Download
             </Button>
             <Button
               variant="ghost"
-              onClick={() => router.push('/docs')}
+              onClick={() => router.push("/docs")}
               className="hover:bg-primary/10"
             >
               Docs
             </Button>
             {user ? (
               <div className="flex items-center space-x-4">
-                <span className="text-sm text-muted-foreground">{user.email}</span>
+                <span className="text-sm text-muted-foreground">
+                  {user.email}
+                </span>
                 <Button
                   variant="outline"
-                  onClick={() => router.push('/dashboard')}
+                  onClick={() => router.push("/dashboard")}
                   className="border-primary/50 hover:border-primary hover:bg-primary/10"
                 >
                   Go to Dashboard
@@ -72,7 +80,7 @@ function LandingContent() {
                 {user.is_superuser && (
                   <Button
                     variant="outline"
-                    onClick={() => router.push('/admin')}
+                    onClick={() => router.push("/admin")}
                     className="border-secondary/50 hover:border-secondary hover:bg-secondary/10"
                   >
                     Go to Admin
@@ -84,8 +92,8 @@ function LandingContent() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setSignupMode(false)
-                  setAuthDialogOpen(true)
+                  setSignupMode(false);
+                  setAuthDialogOpen(true);
                 }}
                 className="border-primary/50 hover:border-primary hover:bg-primary/10"
               >
@@ -106,11 +114,13 @@ function LandingContent() {
           </Badge>
 
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 text-balance">
-            GUI Automation That <span className="text-primary">Thinks Like You Do</span>
+            GUI Automation That{" "}
+            <span className="text-primary">Thinks Like You Do</span>
           </h1>
 
           <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-3xl mx-auto text-pretty">
-            Introducing model-based GUI automation - a system that adapts to unexpected changes instead of breaking
+            Introducing model-based GUI automation - a system that adapts to
+            unexpected changes instead of breaking
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -125,7 +135,7 @@ function LandingContent() {
             <Button
               size="lg"
               variant="outline"
-              onClick={() => router.push('/demo')}
+              onClick={() => router.push("/demo")}
               className="text-lg px-8 py-4 border-primary/30 hover:border-primary hover:bg-primary/10"
             >
               <Globe className="mr-2 h-5 w-5" />
@@ -138,7 +148,9 @@ function LandingContent() {
       {/* Key Benefits Section */}
       <section className="py-20 px-4">
         <div className="container mx-auto">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-16">Why Qontinui Changes Everything</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-center mb-16">
+            Why Qontinui Changes Everything
+          </h2>
 
           <div className="grid md:grid-cols-3 gap-8">
             <Card className="p-8 bg-card border-border hover:border-primary/50 transition-all duration-300 group hover:glow-cyan">
@@ -147,10 +159,12 @@ function LandingContent() {
                   <Brain className="h-6 w-6 text-primary" />
                 </div>
               </div>
-              <h3 className="text-xl font-semibold mb-4">Robust Against Changes</h3>
+              <h3 className="text-xl font-semibold mb-4">
+                Robust Against Changes
+              </h3>
               <p className="text-muted-foreground">
-                Unlike traditional scripting that breaks when UI changes, Qontinui adapts in real-time - just like a
-                human would
+                Unlike traditional scripting that breaks when UI changes,
+                Qontinui adapts in real-time - just like a human would
               </p>
             </Card>
 
@@ -160,10 +174,12 @@ function LandingContent() {
                   <Target className="h-6 w-6 text-secondary" />
                 </div>
               </div>
-              <h3 className="text-xl font-semibold mb-4">Handles Complex Tasks</h3>
+              <h3 className="text-xl font-semibold mb-4">
+                Handles Complex Tasks
+              </h3>
               <p className="text-muted-foreground">
-                Navigate complex workflows with multiple paths and unexpected scenarios - from simple clicks to entire
-                business processes
+                Navigate complex workflows with multiple paths and unexpected
+                scenarios - from simple clicks to entire business processes
               </p>
             </Card>
 
@@ -173,10 +189,13 @@ function LandingContent() {
                   <Zap className="h-6 w-6 text-accent" />
                 </div>
               </div>
-              <h3 className="text-xl font-semibold mb-4">Continuous, Not Discrete</h3>
+              <h3 className="text-xl font-semibold mb-4">
+                Continuous, Not Discrete
+              </h3>
               <p className="text-muted-foreground">
-                Works like you do - continuously adapting to the current state rather than following rigid scripts that
-                fail at the first obstacle
+                Works like you do - continuously adapting to the current state
+                rather than following rigid scripts that fail at the first
+                obstacle
               </p>
             </Card>
           </div>
@@ -186,7 +205,9 @@ function LandingContent() {
       {/* Comparison Section */}
       <section className="py-20 px-4 bg-muted/20">
         <div className="container mx-auto">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-16">Beyond Traditional Automation</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-center mb-16">
+            Beyond Traditional Automation
+          </h2>
 
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             <Card className="p-8 bg-card/50 border-destructive/30 opacity-75">
@@ -223,7 +244,9 @@ function LandingContent() {
       {/* How It Works Section */}
       <section className="py-20 px-4">
         <div className="container mx-auto">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-16">How It Works</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-center mb-16">
+            How It Works
+          </h2>
 
           <div className="max-w-4xl mx-auto">
             <div className="flex flex-col md:flex-row items-center justify-between space-y-8 md:space-y-0 md:space-x-8">
@@ -233,7 +256,9 @@ function LandingContent() {
                     <span className="text-2xl font-bold text-primary">1</span>
                   </div>
                   <h3 className="font-semibold mb-2">Observe State</h3>
-                  <p className="text-sm text-muted-foreground">Continuously monitors the current UI state</p>
+                  <p className="text-sm text-muted-foreground">
+                    Continuously monitors the current UI state
+                  </p>
                 </Card>
               </div>
 
@@ -245,7 +270,9 @@ function LandingContent() {
                     <span className="text-2xl font-bold text-secondary">2</span>
                   </div>
                   <h3 className="font-semibold mb-2">Adapt Path</h3>
-                  <p className="text-sm text-muted-foreground">Dynamically adjusts approach based on changes</p>
+                  <p className="text-sm text-muted-foreground">
+                    Dynamically adjusts approach based on changes
+                  </p>
                 </Card>
               </div>
 
@@ -257,7 +284,9 @@ function LandingContent() {
                     <span className="text-2xl font-bold text-accent">3</span>
                   </div>
                   <h3 className="font-semibold mb-2">Execute Action</h3>
-                  <p className="text-sm text-muted-foreground">Performs the optimal action for current state</p>
+                  <p className="text-sm text-muted-foreground">
+                    Performs the optimal action for current state
+                  </p>
                 </Card>
               </div>
             </div>
@@ -269,10 +298,15 @@ function LandingContent() {
       <section className="py-20 px-4 bg-muted/20">
         <div className="container mx-auto max-w-5xl">
           <div className="text-center mb-12">
-            <Badge className="mb-4 bg-primary/20 text-primary border-primary/30">Peer-Reviewed Research</Badge>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Built on Published Science, Open to Everyone</h2>
+            <Badge className="mb-4 bg-primary/20 text-primary border-primary/30">
+              Peer-Reviewed Research
+            </Badge>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              Built on Published Science, Open to Everyone
+            </h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Qontinui is based on peer-reviewed research published in Springer's Software and Systems Modeling journal (October 2025)
+              Qontinui is based on peer-reviewed research published in
+              Springer's Software and Systems Modeling journal (October 2025)
             </p>
           </div>
 
@@ -283,7 +317,9 @@ function LandingContent() {
                 Peer-Reviewed Foundation
               </h3>
               <p className="text-muted-foreground mb-6">
-                Published in Springer SoSyM - the first mathematically-proven approach to GUI automation that reduces complexity from exponential to polynomial growth.
+                Published in Springer SoSyM - the first mathematically-proven
+                approach to GUI automation that reduces complexity from
+                exponential to polynomial growth.
               </p>
               <a
                 href="https://link.springer.com/article/10.1007/s10270-025-01319-9"
@@ -302,7 +338,9 @@ function LandingContent() {
                 Open-Source Implementation
               </h3>
               <p className="text-muted-foreground mb-6">
-                All core libraries are open-source. The qontinui Python library, multistate framework, runner, and API bridge are freely available on GitHub.
+                All core libraries are open-source. The qontinui Python library,
+                multistate framework, runner, and API bridge are freely
+                available on GitHub.
               </p>
               <div className="space-y-2">
                 <a
@@ -327,7 +365,10 @@ function LandingContent() {
 
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
-              <code className="bg-muted px-2 py-1 rounded">pip install qontinui</code> to get started with the open-source library
+              <code className="bg-muted px-2 py-1 rounded">
+                pip install qontinui
+              </code>{" "}
+              to get started with the open-source library
             </p>
           </div>
         </div>
@@ -338,7 +379,8 @@ function LandingContent() {
         <div className="container mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold mb-4">Ready to Try It?</h2>
           <p className="text-muted-foreground mb-8">
-            Start building intelligent, adaptive GUI automation today - free during early access
+            Start building intelligent, adaptive GUI automation today - free
+            during early access
           </p>
           <Button
             size="lg"
@@ -361,7 +403,7 @@ function LandingContent() {
       {/* Footer */}
       <Footer />
     </div>
-  )
+  );
 }
 
 export default function QontinuiLanding() {
@@ -369,5 +411,5 @@ export default function QontinuiLanding() {
     <AuthProvider>
       <LandingContent />
     </AuthProvider>
-  )
+  );
 }

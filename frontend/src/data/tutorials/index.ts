@@ -6,7 +6,17 @@
  * specific automation workflows and features.
  */
 
-export { civ6EarlyGameTutorial } from './civ6-early-game';
+import { civ6EarlyGameTutorial } from "./civ6-early-game";
+import firstAutomationTutorial from "./workflow-builder/first-automation";
+import visualWorkflowTutorial from "./workflow-builder/visual-workflow";
+import annotationBasicsTutorial from "./image-annotation/annotation-basics";
+
+export {
+  civ6EarlyGameTutorial,
+  firstAutomationTutorial,
+  visualWorkflowTutorial,
+  annotationBasicsTutorial,
+};
 
 /**
  * Array of all available tutorials
@@ -17,7 +27,12 @@ export { civ6EarlyGameTutorial } from './civ6-early-game';
  * - Build tutorial navigation and learning paths
  * - Implement tutorial search functionality
  */
-export const allTutorials = [civ6EarlyGameTutorial];
+export const allTutorials = [
+  firstAutomationTutorial,
+  visualWorkflowTutorial,
+  annotationBasicsTutorial,
+  civ6EarlyGameTutorial,
+];
 
 /**
  * Helper function to get a tutorial by ID

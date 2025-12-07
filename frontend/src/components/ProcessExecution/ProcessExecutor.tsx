@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Play,
   Pause,
@@ -6,21 +6,21 @@ import {
   RotateCcw,
   CheckCircle,
   XCircle,
-  AlertCircle,
   Loader2,
   Terminal,
   ChevronRight,
   Clock,
   Activity,
-  Bug
-} from 'lucide-react';
-import { Process, Action, State } from '../../contexts/automation-context';
-import { qontinuiAPI } from '../../lib/qontinui-api-client';
-import { ExecutionDebugger } from '../ExecutionDebugger';
-import { useExecutionDebugger } from '../../stores/execution-debugger-store';
+  Bug,
+} from "lucide-react";
+import { State } from "../../contexts/automation-context";
+import type { Workflow, Action } from "../../lib/action-schema/action-types";
+import { qontinuiAPI } from "../../lib/qontinui-api-client";
+import { ExecutionDebugger } from "../ExecutionDebugger";
+import { useExecutionDebugger } from "../../stores/execution-debugger-store";
 
 interface ProcessExecutorProps {
-  process: Process;
+  process: Workflow;
   states: State[];
   onComplete?: (success: boolean, results: ExecutionResult[]) => void;
 }
@@ -47,15 +47,14 @@ interface ExecutionStatus {
 
 export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
   process,
-  states,
-  onComplete
+  onComplete,
 }) => {
   const [status, setStatus] = useState<ExecutionStatus>({
     isRunning: false,
     isPaused: false,
     currentAction: -1,
     totalActions: process.actions.length,
-    results: []
+    results: [],
   });
 
   const [apiConnected, setApiConnected] = useState(false);
@@ -75,7 +74,6 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
     pause: pauseDebugger,
     stop: stopDebugger,
     step: stepDebugger,
-    state: debuggerState,
     speed: debuggerSpeed,
     shouldBreakAt,
   } = useExecutionDebugger();
@@ -96,19 +94,25 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
     setApiConnected(connected);
   };
 
-  const addLog = (message: string, level: 'info' | 'success' | 'error' | 'warning' = 'info') => {
+  const addLog = (
+    message: string,
+    level: "info" | "success" | "error" | "warning" = "info"
+  ) => {
     const timestamp = new Date().toLocaleTimeString();
     const prefix = {
-      info: 'ℹ️',
-      success: '✅',
-      error: '❌',
-      warning: '⚠️'
+      info: "ℹ️",
+      success: "✅",
+      error: "❌",
+      warning: "⚠️",
     }[level];
 
-    setExecutionLog(prev => [...prev, `[${timestamp}] ${prefix} ${message}`]);
+    setExecutionLog((prev) => [...prev, `[${timestamp}] ${prefix} ${message}`]);
   };
 
-  const executeAction = async (action: Action, index: number): Promise<ExecutionResult> => {
+  const executeAction = async (
+    action: Action,
+    index: number
+  ): Promise<ExecutionResult> => {
     const startTime = Date.now();
 
     // Notify debugger of action start
@@ -117,7 +121,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
     }
 
     try {
-      addLog(`Executing action ${index + 1}: ${action.type}`, 'info');
+      addLog(`Executing action ${index + 1}: ${action.type}`, "info");
 
       // Simulate action execution based on type
       // In production, this would call the actual qontinui API
@@ -126,61 +130,72 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       let error: string | undefined;
 
       switch (action.type) {
-        case 'FIND':
-        case 'FIND_STATE_IMAGE':
+        case "FIND":
           // Simulate find operation
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 500));
           success = Math.random() > 0.2; // 80% success rate for demo
           if (success) {
-            matches = [{
-              region: { x: 100, y: 100, width: 50, height: 50 },
-              score: 0.85 + Math.random() * 0.15
-            }];
-            addLog(`Found ${matches.length} match(es)`, 'success');
+            matches = [
+              {
+                region: { x: 100, y: 100, width: 50, height: 50 },
+                score: 0.85 + Math.random() * 0.15,
+              },
+            ];
+            addLog(`Found ${matches.length} match(es)`, "success");
           } else {
-            error = 'No matches found';
-            addLog(error, 'warning');
+            error = "No matches found";
+            addLog(error, "warning");
           }
           break;
 
-        case 'CLICK':
-          await new Promise(resolve => setTimeout(resolve, 300));
+        case "CLICK":
+          await new Promise((resolve) => setTimeout(resolve, 300));
           success = true;
-          addLog(`Clicked at position`, 'success');
+          addLog(`Clicked at position`, "success");
           break;
 
-        case 'TYPE':
-          await new Promise(resolve => setTimeout(resolve, 800));
+        case "TYPE":
+          await new Promise((resolve) => setTimeout(resolve, 800));
           success = true;
-          addLog(`Typed text: "${action.config.text || ''}"`, 'success');
+          const typeConfig = action.config as any;
+          addLog(`Typed text: "${typeConfig.text || ""}"`, "success");
           break;
 
-        case 'WAIT':
-          const waitTime = action.config.duration || 1000;
-          await new Promise(resolve => setTimeout(resolve, waitTime));
+        case "WAIT":
+          const waitConfig = action.config as any;
+          const waitTime = waitConfig.duration || 1000;
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
           success = true;
-          addLog(`Waited ${waitTime}ms`, 'success');
+          addLog(`Waited ${waitTime}ms`, "success");
           break;
 
-        case 'GO_TO_STATE':
-          await new Promise(resolve => setTimeout(resolve, 400));
+        case "GO_TO_STATE":
+          await new Promise((resolve) => setTimeout(resolve, 400));
           success = Math.random() > 0.1; // 90% success rate
+          const goToStateConfig = action.config as any;
           if (success) {
-            addLog(`Transitioned to state: ${action.config.targetState}`, 'success');
+            addLog(
+              `Transitioned to state: ${goToStateConfig.stateIds?.[0] || "unknown"}`,
+              "success"
+            );
           } else {
-            error = 'Failed to transition to state';
-            addLog(error, 'error');
+            error = "Failed to transition to state";
+            addLog(error, "error");
           }
           break;
 
-        case 'RUN_WORKFLOW':
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        case "RUN_WORKFLOW":
+          await new Promise((resolve) => setTimeout(resolve, 1000));
           success = true;
-          addLog(`Running sub-workflow: ${action.config.workflowId}`, 'info');
+          const runWorkflowConfig = action.config as any;
+          addLog(
+            `Running sub-workflow: ${runWorkflowConfig.workflowId}`,
+            "info"
+          );
           break;
 
         default:
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise((resolve) => setTimeout(resolve, 200));
           success = true;
           break;
       }
@@ -193,8 +208,11 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       }
 
       // Handle SET_VARIABLE action for debugger
-      if (debugEnabled && action.type === 'SET_VARIABLE' && action.config.variableName) {
-        setVariable(action.config.variableName, action.config.value, index);
+      if (debugEnabled && action.type === "SET_VARIABLE") {
+        const setVarConfig = action.config as any;
+        if (setVarConfig.variableName) {
+          setVariable(setVarConfig.variableName, setVarConfig.value, index);
+        }
       }
 
       return {
@@ -203,16 +221,20 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         success,
         duration,
         error,
-        matches
+        matches,
       };
     } catch (err) {
       const duration = Date.now() - startTime;
-      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-      addLog(`Action failed: ${errorMsg}`, 'error');
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      addLog(`Action failed: ${errorMsg}`, "error");
 
       // Notify debugger of action failure
       if (debugEnabled) {
-        failAction(index, errorMsg, err instanceof Error ? err.stack : undefined);
+        failAction(
+          index,
+          errorMsg,
+          err instanceof Error ? err.stack : undefined
+        );
       }
 
       return {
@@ -220,24 +242,27 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         action,
         success: false,
         duration,
-        error: errorMsg
+        error: errorMsg,
       };
     }
   };
 
   const startExecution = async () => {
     if (!apiConnected) {
-      addLog('API not connected. Please ensure qontinui-api is running.', 'error');
+      addLog(
+        "API not connected. Please ensure qontinui-api is running.",
+        "error"
+      );
       return;
     }
 
-    setStatus(prev => ({
+    setStatus((prev) => ({
       ...prev,
       isRunning: true,
       isPaused: false,
       currentAction: 0,
       startTime: Date.now(),
-      results: []
+      results: [],
     }));
 
     // Notify debugger
@@ -245,8 +270,8 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       playDebugger();
     }
 
-    addLog(`Starting execution of process: ${process.name}`, 'info');
-    addLog(`Total actions to execute: ${process.actions.length}`, 'info');
+    addLog(`Starting execution of process: ${process.name}`, "info");
+    addLog(`Total actions to execute: ${process.actions.length}`, "info");
 
     const results: ExecutionResult[] = [];
 
@@ -256,46 +281,53 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       // Check for breakpoints
       if (debugEnabled && shouldBreakAt(i)) {
         pauseDebugger();
-        setStatus(prev => ({ ...prev, isPaused: true }));
-        addLog(`Execution paused at breakpoint (action ${i})`, 'warning');
+        setStatus((prev) => ({ ...prev, isPaused: true }));
+        addLog(`Execution paused at breakpoint (action ${i})`, "warning");
         break;
       }
 
-      setStatus(prev => ({ ...prev, currentAction: i }));
+      setStatus((prev) => ({ ...prev, currentAction: i }));
 
-      const result = await executeAction(process.actions[i], i);
+      const action = process.actions[i];
+      if (!action) continue;
+      const result = await executeAction(action, i);
       results.push(result);
 
-      setStatus(prev => ({
+      setStatus((prev) => ({
         ...prev,
-        results: [...prev.results, result]
+        results: [...prev.results, result],
       }));
 
       if (!result.success) {
-        addLog(`Process stopped due to failed action at step ${i + 1}`, 'error');
+        addLog(
+          `Process stopped due to failed action at step ${i + 1}`,
+          "error"
+        );
         break;
       }
 
       // Apply speed delay based on debugger settings
       if (debugEnabled) {
         const delayMap = { slow: 2000, normal: 500, fast: 100 };
-        await new Promise(resolve => setTimeout(resolve, delayMap[debuggerSpeed]));
+        await new Promise((resolve) =>
+          setTimeout(resolve, delayMap[debuggerSpeed])
+        );
       }
     }
 
     const endTime = Date.now();
-    const success = results.every(r => r.success);
+    const success = results.every((r) => r.success);
 
-    setStatus(prev => ({
+    setStatus((prev) => ({
       ...prev,
       isRunning: false,
       currentAction: -1,
-      endTime
+      endTime,
     }));
 
     addLog(
-      `Process completed: ${success ? 'SUCCESS' : 'FAILED'} (${results.length}/${process.actions.length} actions)`,
-      success ? 'success' : 'error'
+      `Process completed: ${success ? "SUCCESS" : "FAILED"} (${results.length}/${process.actions.length} actions)`,
+      success ? "success" : "error"
     );
 
     if (onComplete) {
@@ -304,44 +336,48 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
   };
 
   const pauseExecution = () => {
-    setStatus(prev => ({ ...prev, isPaused: true }));
+    setStatus((prev) => ({ ...prev, isPaused: true }));
     if (debugEnabled) {
       pauseDebugger();
     }
-    addLog('Execution paused', 'warning');
+    addLog("Execution paused", "warning");
   };
 
   const resumeExecution = () => {
-    setStatus(prev => ({ ...prev, isPaused: false }));
+    setStatus((prev) => ({ ...prev, isPaused: false }));
     if (debugEnabled) {
       playDebugger();
     }
-    addLog('Execution resumed', 'info');
+    addLog("Execution resumed", "info");
   };
 
   const stopExecution = () => {
-    setStatus(prev => ({
+    setStatus((prev) => ({
       ...prev,
       isRunning: false,
       isPaused: false,
-      currentAction: -1
+      currentAction: -1,
     }));
     if (debugEnabled) {
       stopDebugger();
     }
-    addLog('Execution stopped by user', 'warning');
+    addLog("Execution stopped by user", "warning");
   };
 
   const stepForward = async () => {
     if (!apiConnected) {
-      addLog('API not connected. Please ensure qontinui-api is running.', 'error');
+      addLog(
+        "API not connected. Please ensure qontinui-api is running.",
+        "error"
+      );
       return;
     }
 
-    const currentIndex = status.currentAction === -1 ? 0 : status.currentAction + 1;
+    const currentIndex =
+      status.currentAction === -1 ? 0 : status.currentAction + 1;
 
     if (currentIndex >= process.actions.length) {
-      addLog('No more actions to execute', 'info');
+      addLog("No more actions to execute", "info");
       return;
     }
 
@@ -349,7 +385,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       stepDebugger();
     }
 
-    setStatus(prev => ({
+    setStatus((prev) => ({
       ...prev,
       isRunning: true,
       isPaused: false,
@@ -357,15 +393,20 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       startTime: prev.startTime || Date.now(),
     }));
 
-    const result = await executeAction(process.actions[currentIndex], currentIndex);
+    const action = process.actions[currentIndex];
+    if (!action) return;
+    const result = await executeAction(action, currentIndex);
 
-    setStatus(prev => ({
+    setStatus((prev) => ({
       ...prev,
       results: [...prev.results, result],
       isPaused: true,
     }));
 
-    addLog(`Step completed: ${result.success ? 'SUCCESS' : 'FAILED'}`, result.success ? 'success' : 'error');
+    addLog(
+      `Step completed: ${result.success ? "SUCCESS" : "FAILED"}`,
+      result.success ? "success" : "error"
+    );
   };
 
   const resetExecution = () => {
@@ -374,23 +415,23 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       isPaused: false,
       currentAction: -1,
       totalActions: process.actions.length,
-      results: []
+      results: [],
     });
     setExecutionLog([]);
-    addLog('Execution reset', 'info');
+    addLog("Execution reset", "info");
   };
 
   const getElapsedTime = () => {
-    if (!status.startTime) return '0:00';
+    if (!status.startTime) return "0:00";
     const elapsed = (status.endTime || Date.now()) - status.startTime;
     const minutes = Math.floor(elapsed / 60000);
     const seconds = Math.floor((elapsed % 60000) / 1000);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
   const getSuccessRate = () => {
     if (status.results.length === 0) return 0;
-    const successful = status.results.filter(r => r.success).length;
+    const successful = status.results.filter((r) => r.success).length;
     return (successful / status.results.length) * 100;
   };
 
@@ -421,9 +462,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
                     Action {status.currentAction + 1} of {status.totalActions}
                   </>
                 ) : (
-                  <>
-                    {status.totalActions} actions ready
-                  </>
+                  <>{status.totalActions} actions ready</>
                 )}
               </p>
             </div>
@@ -436,8 +475,8 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
               onClick={() => setDebuggerOpen(!debuggerOpen)}
               className={`p-2 rounded-lg transition-colors ${
                 debuggerOpen
-                  ? 'bg-blue-600 text-white'
-                  : 'hover:bg-gray-100 text-gray-600'
+                  ? "bg-blue-600 text-white"
+                  : "hover:bg-gray-100 text-gray-600"
               }`}
               title="Toggle debugger"
             >
@@ -450,8 +489,8 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
                 disabled={!apiConnected}
                 className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
                   apiConnected
-                    ? 'bg-green-600 text-white hover:bg-green-700'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    ? "bg-green-600 text-white hover:bg-green-700"
+                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
                 }`}
               >
                 <Play className="w-4 h-4" />
@@ -500,7 +539,9 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
               onClick={() => setShowDetails(!showDetails)}
               className="p-2 hover:bg-gray-100 rounded-lg"
             >
-              <ChevronRight className={`w-4 h-4 transition-transform ${showDetails ? 'rotate-90' : ''}`} />
+              <ChevronRight
+                className={`w-4 h-4 transition-transform ${showDetails ? "rotate-90" : ""}`}
+              />
             </button>
           </div>
         </div>
@@ -510,12 +551,17 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
           <div className="mt-4">
             <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
               <span>Progress</span>
-              <span>{Math.round((status.currentAction / status.totalActions) * 100)}%</span>
+              <span>
+                {Math.round((status.currentAction / status.totalActions) * 100)}
+                %
+              </span>
             </div>
             <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
               <div
                 className="h-full bg-blue-600 transition-all"
-                style={{ width: `${(status.currentAction / status.totalActions) * 100}%` }}
+                style={{
+                  width: `${(status.currentAction / status.totalActions) * 100}%`,
+                }}
               />
             </div>
           </div>
@@ -534,11 +580,11 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-green-500" />
-              <span>{status.results.filter(r => r.success).length}</span>
+              <span>{status.results.filter((r) => r.success).length}</span>
             </div>
             <div className="flex items-center gap-2">
               <XCircle className="w-4 h-4 text-red-500" />
-              <span>{status.results.filter(r => !r.success).length}</span>
+              <span>{status.results.filter((r) => !r.success).length}</span>
             </div>
           </div>
         )}
@@ -549,22 +595,28 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         <div className="border-t">
           {/* Action List */}
           <div className="max-h-64 overflow-y-auto">
-            {process.actions.map((action, index) => {
-              const result = status.results.find(r => r.actionIndex === index);
+            {process.actions.map((action: any, index: number) => {
+              const result = status.results.find(
+                (r) => r.actionIndex === index
+              );
               const isCurrent = status.currentAction === index;
 
               return (
                 <div
                   key={index}
                   className={`px-4 py-2 border-b flex items-center justify-between ${
-                    isCurrent ? 'bg-blue-50' : ''
+                    isCurrent ? "bg-blue-50" : ""
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-mono text-gray-500">{index + 1}</span>
+                    <span className="text-sm font-mono text-gray-500">
+                      {index + 1}
+                    </span>
                     <span className="text-sm font-medium">{action.type}</span>
                     {action.config.description && (
-                      <span className="text-sm text-gray-600">{action.config.description}</span>
+                      <span className="text-sm text-gray-600">
+                        {action.config.description}
+                      </span>
                     )}
                   </div>
 
@@ -579,7 +631,9 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
                         ) : (
                           <XCircle className="w-4 h-4 text-red-500" />
                         )}
-                        <span className="text-xs text-gray-500">{result.duration}ms</span>
+                        <span className="text-xs text-gray-500">
+                          {result.duration}ms
+                        </span>
                       </>
                     )}
                   </div>

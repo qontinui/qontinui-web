@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import { useState } from "react"
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,17 +8,22 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Workflow as WorkflowIcon, List, AlertTriangle, ArrowRight } from "lucide-react"
-import type { Workflow } from "@/lib/action-schema/action-types"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Workflow as WorkflowIcon,
+  List,
+  AlertTriangle,
+  ArrowRight,
+} from "lucide-react";
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 interface FormatConversionDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  item: Workflow | null
-  onConvert: (converted: Workflow) => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  item: Workflow | null;
+  onConvert: (converted: Workflow) => void;
 }
 
 /**
@@ -26,15 +31,16 @@ interface FormatConversionDialogProps {
  */
 function isLinearWorkflow(workflow: Workflow): boolean {
   for (const sourceId in workflow.connections) {
-    const outputs = workflow.connections[sourceId]
-    if (outputs.error && outputs.error.length > 0) return false
-    if (outputs.success && outputs.success.length > 0) return false
+    const outputs = workflow.connections[sourceId];
+    if (!outputs) continue;
+    if (outputs.error && outputs.error.length > 0) return false;
+    if (outputs.success && outputs.success.length > 0) return false;
     if (outputs.main) {
-      if (outputs.main.length > 1) return false
-      if (outputs.main[0] && outputs.main[0].length > 1) return false
+      if (outputs.main.length > 1) return false;
+      if (outputs.main[0] && outputs.main[0].length > 1) return false;
     }
   }
-  return true
+  return true;
 }
 
 export function FormatConversionDialog({
@@ -43,29 +49,38 @@ export function FormatConversionDialog({
   item,
   onConvert,
 }: FormatConversionDialogProps) {
-  const [converting, setConverting] = useState(false)
+  const [converting, setConverting] = useState(false);
 
-  if (!item) return null
+  if (!item) return null;
 
-  const currentViewMode = item.metadata?.viewMode || (isLinearWorkflow(item) ? 'sequential' : 'graph')
-  const isSequentialToGraph = currentViewMode === 'sequential'
-  const targetViewMode = isSequentialToGraph ? 'graph' : 'sequential'
+  const currentViewMode =
+    item.metadata?.viewMode ||
+    (isLinearWorkflow(item) ? "sequential" : "graph");
+  const isSequentialToGraph = currentViewMode === "sequential";
+  const targetViewMode = isSequentialToGraph ? "graph" : "sequential";
 
   // Check if conversion is possible
-  const canConvert = isSequentialToGraph || isLinearWorkflow(item)
-  const warnings: string[] = []
+  const canConvert = isSequentialToGraph || isLinearWorkflow(item);
+  const warnings: string[] = [];
 
   if (!isSequentialToGraph && !isLinearWorkflow(item)) {
-    warnings.push("This workflow has branching logic and cannot be converted to sequential view")
+    warnings.push(
+      "This workflow has branching logic and cannot be converted to sequential view"
+    );
   }
 
   const handleConvert = async () => {
-    if (!canConvert) return
+    if (!canConvert) return;
 
-    setConverting(true)
+    setConverting(true);
 
     try {
-      console.log('[FormatConversion] Converting workflow:', item.name, 'to', targetViewMode)
+      console.log(
+        "[FormatConversion] Converting workflow:",
+        item.name,
+        "to",
+        targetViewMode
+      );
 
       // Simply change the viewMode metadata
       const converted: Workflow = {
@@ -75,17 +90,17 @@ export function FormatConversionDialog({
           viewMode: targetViewMode,
           updated: new Date().toISOString(),
         },
-      }
+      };
 
-      console.log('[FormatConversion] Conversion complete, calling onConvert')
-      onConvert(converted)
-      onOpenChange(false)
+      console.log("[FormatConversion] Conversion complete, calling onConvert");
+      onConvert(converted);
+      onOpenChange(false);
     } catch (error) {
-      console.error('[FormatConversion] Conversion error:', error)
+      console.error("[FormatConversion] Conversion error:", error);
     } finally {
-      setConverting(false)
+      setConverting(false);
     }
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -121,7 +136,8 @@ export function FormatConversionDialog({
             <div className="text-sm text-gray-300">
               <div className="font-medium mb-1">{item.name}</div>
               <div className="text-xs text-gray-500">
-                {item.actions.length} actions • {isLinearWorkflow(item) ? 'Linear' : 'Branching'}
+                {item.actions.length} actions •{" "}
+                {isLinearWorkflow(item) ? "Linear" : "Branching"}
               </div>
             </div>
           </div>
@@ -134,7 +150,9 @@ export function FormatConversionDialog({
               <AlertDescription className="text-amber-200">
                 <ul className="list-disc list-inside space-y-1 mt-2">
                   {warnings.map((warning, i) => (
-                    <li key={i} className="text-sm">{warning}</li>
+                    <li key={i} className="text-sm">
+                      {warning}
+                    </li>
                   ))}
                 </ul>
               </AlertDescription>
@@ -183,5 +201,5 @@ export function FormatConversionDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

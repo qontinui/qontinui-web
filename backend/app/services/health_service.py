@@ -15,14 +15,15 @@ from typing import Any
 
 import psutil
 import structlog
+from redis.exceptions import RedisError
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.redis_config import RedisConfig
 from app.core.config import settings
 from app.models.audit_log import AuditLog
 from app.models.device_session import DeviceSession
 from app.models.session_activity import SessionActivity
-from redis.exceptions import RedisError
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -598,15 +599,20 @@ class HealthService:
             pool_stats_available = False
 
             try:
-                pool = db.get_bind().pool
-                pool_size = pool.size()
-                checked_out = pool.checked_out_connections
-                active = checked_out
-                idle = pool_size - checked_out
-                pool_usage_percent = (
-                    (active / pool_size * 100) if pool_size > 0 else 0.0
-                )
-                pool_stats_available = True
+                bind = db.get_bind()
+                if hasattr(bind, "pool"):
+                    pool = bind.pool
+                    if hasattr(pool, "size") and hasattr(
+                        pool, "checked_out_connections"
+                    ):
+                        pool_size = pool.size()
+                        checked_out = pool.checked_out_connections
+                        active = checked_out
+                        idle = pool_size - checked_out
+                        pool_usage_percent = (
+                            (active / pool_size * 100) if pool_size > 0 else 0.0
+                        )
+                        pool_stats_available = True
             except Exception as pool_error:
                 # Pool statistics not available in this environment (e.g., AWS with async pools)
                 logger.warning("pool_statistics_unavailable", error=str(pool_error))

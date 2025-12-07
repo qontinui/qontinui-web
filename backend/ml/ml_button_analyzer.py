@@ -13,10 +13,11 @@ backend_path = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_path))
 
 import io
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
-import torch
+from PIL import Image
+
 from app.services.analysis.base import (
     AnalysisInput,
     AnalysisResult,
@@ -26,7 +27,6 @@ from app.services.analysis.base import (
     DetectedElement,
 )
 from ml.inference import ButtonDetectorInference
-from PIL import Image
 
 
 class MLButtonAnalyzer(BaseAnalyzer):
@@ -44,7 +44,7 @@ class MLButtonAnalyzer(BaseAnalyzer):
         - NMS post-processing for overlapping detections
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize ML Button Analyzer
 
@@ -112,7 +112,7 @@ class MLButtonAnalyzer(BaseAnalyzer):
 
         return True
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         """Get default parameters for this analyzer"""
         return {"confidence_threshold": 0.5, "nms_threshold": 0.45, "mode": "detection"}
 
@@ -140,12 +140,12 @@ class MLButtonAnalyzer(BaseAnalyzer):
         )
 
         # Process each screenshot
-        for idx, (screenshot_meta, screenshot_bytes) in enumerate(
-            zip(input_data.screenshots, input_data.screenshot_data)
+        for idx, (_screenshot_meta, screenshot_bytes) in enumerate(
+            zip(input_data.screenshots, input_data.screenshot_data, strict=False)
         ):
             # Load image
             image = Image.open(io.BytesIO(screenshot_bytes)).convert("RGB")
-            image_np = np.array(image)
+            np.array(image)
 
             # Run inference based on mode
             if self.mode == "detection" and isinstance(
@@ -204,8 +204,8 @@ class MLButtonAnalyzer(BaseAnalyzer):
         )
 
     def _apply_nms_to_elements(
-        self, elements: List[DetectedElement], iou_threshold: float = None
-    ) -> List[DetectedElement]:
+        self, elements: list[DetectedElement], iou_threshold: float = None
+    ) -> list[DetectedElement]:
         """
         Apply NMS to detected elements
 
@@ -262,7 +262,7 @@ class MLButtonAnalyzer(BaseAnalyzer):
 
         return filtered_elements
 
-    def _calculate_overall_confidence(self, elements: List[DetectedElement]) -> float:
+    def _calculate_overall_confidence(self, elements: list[DetectedElement]) -> float:
         """Calculate overall confidence for the analysis"""
         if not elements:
             return 0.0
@@ -277,8 +277,8 @@ class MLButtonAnalyzer(BaseAnalyzer):
         return avg_confidence * (0.7 + 0.3 * detection_factor)
 
     def analyze_regions(
-        self, image: np.ndarray, regions: List[List[int]]
-    ) -> List[DetectedElement]:
+        self, image: np.ndarray, regions: list[list[int]]
+    ) -> list[DetectedElement]:
         """
         Analyze specific regions in an image
 
@@ -325,7 +325,7 @@ class MLButtonAnalyzer(BaseAnalyzer):
         return elements
 
 
-def create_ml_button_analyzer(config: Dict[str, Any]) -> MLButtonAnalyzer:
+def create_ml_button_analyzer(config: dict[str, Any]) -> MLButtonAnalyzer:
     """
     Factory function to create ML button analyzer
 

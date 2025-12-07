@@ -20,7 +20,7 @@ export interface RunnerTokenWithSecret extends RunnerToken {
 
 export interface RunnerConnection {
   id: number;
-  runner_token_id: string;
+  runner_token_id: string | null; // null for JWT auth connections (not using runner token)
   runner_name: string;
   connected_at: string;
   disconnected_at: string | null;
@@ -28,6 +28,7 @@ export interface RunnerConnection {
   ip_address: string | null;
   project_id: number | null;
   project_name?: string | null;
+  ws_connected: boolean; // Whether the runner is WebSocket-connected and can receive commands
 }
 
 export interface ConnectionHistoryParams {
@@ -41,6 +42,7 @@ export interface ConnectionHistoryParams {
 export interface ConnectionHistoryResponse {
   connections: RunnerConnection[];
   total: number;
+  active_count: number;
   limit: number;
   offset: number;
 }
@@ -60,11 +62,22 @@ export interface ConnectionInfo {
   runnerTokenId?: string; // If using a dedicated runner token
 }
 
-export type TokenStatus = 'active' | 'expired' | 'revoked';
+export type TokenStatus = "active" | "expired" | "revoked";
 
 export interface RunnerTokenCardProps {
   token: RunnerToken;
   onRevoke: (tokenId: string) => void;
   onDelete: (tokenId: string) => void;
   onViewConnections: (tokenId: string) => void;
+}
+
+export interface TestConnectionResponse {
+  success: boolean;
+  message: string;
+  user_id: string;
+  username: string;
+  auth_method: "jwt" | "runner_token";
+  token_name: string | null;
+  connection_id: number;
+  tested_at: string;
 }

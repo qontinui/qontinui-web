@@ -1,13 +1,13 @@
-"use client"
+"use client";
 
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Plus, X } from "lucide-react"
-import { ActionPropertiesComponentProps } from "../../types"
-import { TimingProperties } from "../../TimingProperties"
-import { ConditionEditor } from "../../shared"
-import { BreakActionConfig } from "@/lib/action-schema"
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Plus, X } from "lucide-react";
+import { ActionPropertiesComponentProps } from "../../types";
+import { TimingProperties } from "../../TimingProperties";
+import { ConditionEditor } from "../../shared";
+import { BreakActionConfig } from "@/lib/action-schema";
 
 /**
  * Properties component for BREAK action.
@@ -20,14 +20,16 @@ export function BreakActionProperties({
   action,
   updateConfig,
 }: ActionPropertiesComponentProps) {
-  const config = action.config as BreakActionConfig
+  const config = action.config as BreakActionConfig;
 
   return (
     <>
       {/* Optional Condition */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">Break Condition (Optional)</Label>
+          <Label className="text-xs text-gray-400">
+            Break Condition (Optional)
+          </Label>
           {!config.condition ? (
             <Button
               variant="ghost"
@@ -35,10 +37,10 @@ export function BreakActionProperties({
               className="h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
               onClick={() =>
                 updateConfig("condition", {
-                  type: 'variable',
-                  variableName: '',
-                  operator: '==',
-                  expectedValue: '',
+                  type: "variable",
+                  variableName: "",
+                  operator: "==",
+                  expectedValue: "",
                 })
               }
             >
@@ -71,7 +73,8 @@ export function BreakActionProperties({
 
         {!config.condition && (
           <p className="text-xs text-gray-500">
-            Without a condition, the loop will always break when this action executes.
+            Without a condition, the loop will always break when this action
+            executes.
           </p>
         )}
       </div>
@@ -81,7 +84,7 @@ export function BreakActionProperties({
         <Label className="text-xs text-gray-400">Message (Optional)</Label>
         <Input
           type="text"
-          value={config.message || ''}
+          value={config.message || ""}
           onChange={(e) => updateConfig("message", e.target.value || undefined)}
           placeholder="e.g., Breaking due to error"
           className="bg-transparent border-gray-700"
@@ -94,5 +97,5 @@ export function BreakActionProperties({
       {/* Timing Properties */}
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
-  )
+  );
 }

@@ -5,267 +5,263 @@
  * Used when creating new actions from palette or programmatically.
  */
 
-import { ActionType, ActionConfigMap } from './action-types';
+import { ActionType, ActionConfigMap } from "./action-types";
 
 /**
  * Get default configuration for a given action type
  */
-export function getDefaultConfig<T extends ActionType>(type: T): ActionConfigMap[T] {
+export function getDefaultConfig<T extends ActionType>(
+  type: T
+): ActionConfigMap[T] {
   switch (type) {
     // ========================================================================
     // Find Actions
     // ========================================================================
-    case 'FIND':
+    case "FIND":
       return {
         target: {
-          type: 'image',
-          imageId: null as any
-        }
+          type: "image",
+          imageId: null as any,
+        },
       } as ActionConfigMap[T];
 
-    case 'FIND_STATE_IMAGE':
-      return {
-        stateId: '',
-        imageId: ''
-      } as ActionConfigMap[T];
-
-    case 'VANISH':
+    case "VANISH":
       return {
         target: {
-          type: 'image',
-          imageId: null as any
+          type: "image",
+          imageId: null as any,
         },
         maxWaitTime: 5000,
-        pollInterval: 500
+        pollInterval: 500,
       } as ActionConfigMap[T];
 
-    case 'EXISTS':
+    case "EXISTS":
       return {
         target: {
-          type: 'image',
-          imageId: null as any
-        }
+          type: "image",
+          imageId: null as any,
+        },
       } as ActionConfigMap[T];
 
-    case 'WAIT':
+    case "WAIT":
       return {
-        waitFor: 'time',
-        duration: 1000
+        waitFor: "time",
+        duration: 1000,
       } as ActionConfigMap[T];
 
     // ========================================================================
     // Mouse Actions
     // ========================================================================
-    case 'CLICK':
+    case "CLICK":
       return {
         target: {
-          type: 'currentPosition'
+          type: "currentPosition",
         },
-        mouseButton: 'LEFT',
-        numberOfClicks: 1
-      } as ActionConfigMap[T];
+        mouseButton: "LEFT",
+        numberOfClicks: 1,
+      } as unknown as ActionConfigMap[T];
 
-    case 'MOUSE_MOVE':
+    case "MOUSE_MOVE":
       return {
         target: {
-          type: 'currentPosition'
-        }
+          type: "currentPosition",
+        },
       } as ActionConfigMap[T];
 
-    case 'MOUSE_DOWN':
+    case "MOUSE_DOWN":
       return {
-        button: 'left'
-      } as ActionConfigMap[T];
+        button: "left",
+      } as unknown as ActionConfigMap[T];
 
-    case 'MOUSE_UP':
+    case "MOUSE_UP":
       return {
-        button: 'left'
-      } as ActionConfigMap[T];
+        button: "left",
+      } as unknown as ActionConfigMap[T];
 
-    case 'DRAG':
+    case "DRAG":
       return {
         from: {
-          type: 'currentPosition'
+          type: "currentPosition",
         },
         to: {
-          type: 'currentPosition'
-        }
-      } as ActionConfigMap[T];
+          type: "currentPosition",
+        },
+      } as unknown as ActionConfigMap[T];
 
-    case 'SCROLL':
+    case "SCROLL":
       return {
-        direction: 'down',
-        amount: 3
-      } as ActionConfigMap[T];
+        direction: "down",
+        amount: 3,
+      } as unknown as ActionConfigMap[T];
 
     // ========================================================================
     // Keyboard Actions
     // ========================================================================
-    case 'TYPE':
+    case "TYPE":
       return {
-        text: ''
+        text: "",
       } as ActionConfigMap[T];
 
-    case 'KEY_PRESS':
+    case "KEY_PRESS":
       return {
-        key: ''
-      } as ActionConfigMap[T];
+        key: "",
+      } as unknown as ActionConfigMap[T];
 
-    case 'KEY_DOWN':
+    case "KEY_DOWN":
       return {
-        key: ''
-      } as ActionConfigMap[T];
+        key: "",
+      } as unknown as ActionConfigMap[T];
 
-    case 'KEY_UP':
+    case "KEY_UP":
       return {
-        key: ''
-      } as ActionConfigMap[T];
+        key: "",
+      } as unknown as ActionConfigMap[T];
 
-    case 'HOTKEY':
+    case "HOTKEY":
       return {
-        keys: []
-      } as ActionConfigMap[T];
+        keys: [],
+      } as unknown as ActionConfigMap[T];
 
     // ========================================================================
     // Control Flow Actions
     // ========================================================================
-    case 'IF':
+    case "IF":
       return {
         condition: {
-          type: 'javascript',
-          expression: 'true'
+          type: "javascript",
+          expression: "true",
         },
-        thenBranch: []
-      } as ActionConfigMap[T];
+        thenBranch: [],
+      } as unknown as ActionConfigMap[T];
 
-    case 'LOOP':
+    case "LOOP":
       return {
-        loopType: 'count',
+        loopType: "count",
         count: 10,
-        body: []
-      } as ActionConfigMap[T];
+        body: [],
+      } as unknown as ActionConfigMap[T];
 
-    case 'BREAK':
+    case "BREAK":
       return {} as ActionConfigMap[T];
 
-    case 'CONTINUE':
+    case "CONTINUE":
       return {} as ActionConfigMap[T];
 
-    case 'SWITCH':
+    case "SWITCH":
       return {
         value: {
-          type: 'javascript',
-          expression: ''
+          type: "javascript",
+          expression: "",
         },
-        cases: []
-      } as ActionConfigMap[T];
+        cases: [],
+      } as unknown as ActionConfigMap[T];
 
-    case 'TRY_CATCH':
+    case "TRY_CATCH":
       return {
         tryBranch: [],
-        catchBranch: []
-      } as ActionConfigMap[T];
+        catchBranch: [],
+      } as unknown as ActionConfigMap[T];
 
     // ========================================================================
     // Data Actions
     // ========================================================================
-    case 'SET_VARIABLE':
+    case "SET_VARIABLE":
       return {
-        variableName: '',
+        variableName: "",
         value: {
-          type: 'literal',
-          value: ''
-        }
-      } as ActionConfigMap[T];
-
-    case 'GET_VARIABLE':
-      return {
-        variableName: '',
-        outputVariable: ''
-      } as ActionConfigMap[T];
-
-    case 'SORT':
-      return {
-        array: {
-          type: 'variable',
-          variableName: ''
+          type: "literal",
+          value: "",
         },
-        order: 'ascending',
-        outputVariable: ''
       } as ActionConfigMap[T];
 
-    case 'FILTER':
+    case "GET_VARIABLE":
+      return {
+        variableName: "",
+        outputVariable: "",
+      } as ActionConfigMap[T];
+
+    case "SORT":
       return {
         array: {
-          type: 'variable',
-          variableName: ''
+          type: "variable",
+          variableName: "",
+        },
+        order: "ascending",
+        outputVariable: "",
+      } as unknown as ActionConfigMap[T];
+
+    case "FILTER":
+      return {
+        array: {
+          type: "variable",
+          variableName: "",
         },
         condition: {
-          type: 'javascript',
-          expression: ''
+          type: "javascript",
+          expression: "",
         },
-        outputVariable: ''
-      } as ActionConfigMap[T];
+        outputVariable: "",
+      } as unknown as ActionConfigMap[T];
 
-    case 'MAP':
+    case "MAP":
       return {
         array: {
-          type: 'variable',
-          variableName: ''
+          type: "variable",
+          variableName: "",
         },
         transform: {
-          type: 'javascript',
-          expression: ''
+          type: "javascript",
+          expression: "",
         },
-        outputVariable: ''
-      } as ActionConfigMap[T];
+        outputVariable: "",
+      } as unknown as ActionConfigMap[T];
 
-    case 'REDUCE':
+    case "REDUCE":
       return {
         array: {
-          type: 'variable',
-          variableName: ''
+          type: "variable",
+          variableName: "",
         },
         reducer: {
-          type: 'javascript',
-          expression: ''
+          type: "javascript",
+          expression: "",
         },
         initialValue: null,
-        outputVariable: ''
-      } as ActionConfigMap[T];
+        outputVariable: "",
+      } as unknown as ActionConfigMap[T];
 
-    case 'STRING_OPERATION':
+    case "STRING_OPERATION":
       return {
-        operation: 'concat',
+        operation: "concat",
         inputs: [],
-        outputVariable: ''
-      } as ActionConfigMap[T];
+        outputVariable: "",
+      } as unknown as ActionConfigMap[T];
 
-    case 'MATH_OPERATION':
+    case "MATH_OPERATION":
       return {
-        operation: 'add',
+        operation: "add",
         operands: [],
-        outputVariable: ''
-      } as ActionConfigMap[T];
+        outputVariable: "",
+      } as unknown as ActionConfigMap[T];
 
     // ========================================================================
     // State Actions
     // ========================================================================
-    case 'GO_TO_STATE':
+    case "GO_TO_STATE":
       return {
-        stateId: ''
+        stateId: "",
       } as ActionConfigMap[T];
 
-    case 'RUN_WORKFLOW':
+    case "RUN_WORKFLOW":
       return {
-        workflowId: ''
+        workflowId: "",
       } as ActionConfigMap[T];
 
-    case 'SCREENSHOT':
+    case "SCREENSHOT":
       return {
-        region: 'fullscreen',
-        outputVariable: 'screenshot'
-      } as ActionConfigMap[T];
+        region: "fullscreen",
+        outputVariable: "screenshot",
+      } as unknown as ActionConfigMap[T];
 
     default:
       return {} as ActionConfigMap[T];
@@ -275,21 +271,24 @@ export function getDefaultConfig<T extends ActionType>(type: T): ActionConfigMap
 /**
  * Check if an action config is valid (has required fields)
  */
-export function isValidConfig<T extends ActionType>(type: T, config: any): config is ActionConfigMap[T] {
+export function isValidConfig<T extends ActionType>(
+  type: T,
+  config: any
+): config is ActionConfigMap[T] {
   // Basic validation - could be expanded
   switch (type) {
-    case 'FIND':
-    case 'EXISTS':
-    case 'VANISH':
-      return config?.target?.type === 'image';
+    case "FIND":
+    case "EXISTS":
+    case "VANISH":
+      return config?.target?.type === "image";
 
-    case 'TYPE':
-      return typeof config?.text === 'string';
+    case "TYPE":
+      return typeof config?.text === "string";
 
-    case 'KEY_PRESS':
-    case 'KEY_DOWN':
-    case 'KEY_UP':
-      return typeof config?.key === 'string';
+    case "KEY_PRESS":
+    case "KEY_DOWN":
+    case "KEY_UP":
+      return typeof config?.key === "string";
 
     default:
       return true; // Assume valid for other types

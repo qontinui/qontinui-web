@@ -7,14 +7,14 @@ the time of each input event.
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
 from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.automation_log import AutomationLog
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.screenshot_input_association import ScreenshotInputAssociation
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class InputAssociationService:
@@ -26,7 +26,7 @@ class InputAssociationService:
     @staticmethod
     async def process_log_for_input_events(
         log_entry: AutomationLog, db: AsyncSession
-    ) -> Optional[ScreenshotInputAssociation]:
+    ) -> ScreenshotInputAssociation | None:
         """
         Process an automation log entry and create screenshot associations for input events.
 
@@ -110,7 +110,7 @@ class InputAssociationService:
         timestamp: datetime,
         time_window_seconds: int,
         db: AsyncSession,
-    ) -> Optional[AutomationScreenshot]:
+    ) -> AutomationScreenshot | None:
         """
         Find the screenshot closest to the given timestamp within the time window.
 

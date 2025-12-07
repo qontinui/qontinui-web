@@ -1,8 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Pause, CheckCircle, XCircle, AlertCircle, RefreshCw } from 'lucide-react';
-import { Screenshot } from '../../types/Screenshot';
-import { State } from '../../contexts/automation-context/types';
-import { qontinuiAPI, runStateDetection, getCurrentActiveStates } from '../../lib/qontinui-api-client';
+import React, { useState, useEffect } from "react";
+import {
+  Play,
+  Pause,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
+import { Screenshot } from "../../types/Screenshot";
+import { State } from "../../contexts/automation-context/types";
+import {
+  qontinuiAPI,
+  runStateDetection,
+  getCurrentActiveStates,
+} from "../../lib/qontinui-api-client";
 
 interface VisualTestRunnerProps {
   screenshots: Screenshot[];
@@ -13,7 +24,11 @@ interface VisualTestRunnerProps {
 interface TestCase {
   id: string;
   name: string;
-  type: 'state_detection' | 'location_validation' | 'transition' | 'mask_matching';
+  type:
+    | "state_detection"
+    | "location_validation"
+    | "transition"
+    | "mask_matching";
   screenshot: Screenshot;
   expectedStates?: string[];
   similarity?: number;
@@ -39,7 +54,7 @@ interface TestResults {
 const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
   screenshots,
   states,
-  onTestComplete
+  onTestComplete,
 }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
@@ -68,27 +83,27 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
     const cases: TestCase[] = [];
 
     // Create state detection tests for each screenshot
-    screenshots.forEach(screenshot => {
+    screenshots.forEach((screenshot) => {
       if (screenshot.associatedStates.length > 0) {
         cases.push({
           id: `state-detect-${screenshot.id}`,
           name: `State Detection: ${screenshot.name}`,
-          type: 'state_detection',
+          type: "state_detection",
           screenshot,
           expectedStates: screenshot.associatedStates,
-          similarity: 0.8
+          similarity: 0.8,
         });
 
         // Add mask matching test if masks are available
         cases.push({
           id: `mask-match-${screenshot.id}`,
           name: `Mask Matching: ${screenshot.name}`,
-          type: 'mask_matching',
+          type: "mask_matching",
           screenshot,
           expectedStates: screenshot.associatedStates,
           similarity: 0.9,
           useMask: true,
-          maskThreshold: 0.5
+          maskThreshold: 0.5,
         });
       }
     });
@@ -98,7 +113,9 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
 
   const runTests = async () => {
     if (!apiConnected) {
-      alert('Qontinui API is not connected. Please ensure the API service is running.');
+      alert(
+        "Qontinui API is not connected. Please ensure the API service is running."
+      );
       return;
     }
 
@@ -109,6 +126,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
     for (let i = 0; i < testCases.length; i++) {
       setCurrentTestIndex(i);
       const testCase = testCases[i];
+      if (!testCase) continue;
       const startTime = Date.now();
 
       try {
@@ -118,14 +136,14 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
           passed: result.passed,
           message: result.message,
           details: result.details,
-          duration: Date.now() - startTime
+          duration: Date.now() - startTime,
         });
       } catch (error) {
         results.push({
           testId: testCase.id,
           passed: false,
           message: `Test failed: ${error}`,
-          duration: Date.now() - startTime
+          duration: Date.now() - startTime,
         });
       }
 
@@ -137,9 +155,9 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
 
     const summary: TestResults = {
       total: results.length,
-      passed: results.filter(r => r.passed).length,
-      failed: results.filter(r => !r.passed).length,
-      results
+      passed: results.filter((r) => r.passed).length,
+      failed: results.filter((r) => !r.passed).length,
+      results,
     };
 
     if (onTestComplete) {
@@ -147,13 +165,15 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
     }
   };
 
-  const runTestCase = async (testCase: TestCase): Promise<{
+  const runTestCase = async (
+    testCase: TestCase
+  ): Promise<{
     passed: boolean;
     message: string;
     details?: any;
   }> => {
     switch (testCase.type) {
-      case 'state_detection':
+      case "state_detection":
         // First reset state manager
         await qontinuiAPI.resetStateManager();
 
@@ -163,66 +183,71 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
         // Run state detection
         const detectedStates = await runStateDetection(
           testCase.screenshot,
-          states.filter(s => testCase.expectedStates?.includes(s.id)),
+          states.filter((s) => testCase.expectedStates?.includes(s.id)),
           testCase.similarity || 0.8
         );
 
         // Get active states from Qontinui
         const activeStates = await getCurrentActiveStates();
 
-        const detectedIds = detectedStates.map(ds => ds.state_id);
+        const detectedIds = detectedStates.map((ds) => ds.state_id);
         const expectedIds = testCase.expectedStates || [];
 
-        const allExpectedFound = expectedIds.every(id => activeStates.includes(id));
-        const noUnexpectedFound = activeStates.every(id => expectedIds.includes(id));
+        const allExpectedFound = expectedIds.every((id) =>
+          activeStates.includes(id)
+        );
+        const noUnexpectedFound = activeStates.every((id) =>
+          expectedIds.includes(id)
+        );
 
         return {
           passed: allExpectedFound && noUnexpectedFound,
-          message: allExpectedFound && noUnexpectedFound
-            ? `All ${expectedIds.length} expected states detected`
-            : `Expected: ${expectedIds.length}, Found: ${activeStates.length}`,
+          message:
+            allExpectedFound && noUnexpectedFound
+              ? `All ${expectedIds.length} expected states detected`
+              : `Expected: ${expectedIds.length}, Found: ${activeStates.length}`,
           details: {
             expected: expectedIds,
             detected: detectedIds,
             activeStates,
-            detectedStates
-          }
+            detectedStates,
+          },
         };
 
       default:
         return {
           passed: false,
-          message: 'Unsupported test type'
+          message: "Unsupported test type",
         };
     }
   };
 
   const getTestStatus = (testId: string) => {
-    const result = testResults.find(r => r.testId === testId);
+    const result = testResults.find((r) => r.testId === testId);
     if (!result) {
       if (currentTestIndex >= 0 && testCases[currentTestIndex]?.id === testId) {
-        return 'running';
+        return "running";
       }
-      return 'pending';
+      return "pending";
     }
-    return result.passed ? 'passed' : 'failed';
+    return result.passed ? "passed" : "failed";
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'passed':
+      case "passed":
         return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'failed':
+      case "failed":
         return <XCircle className="w-5 h-5 text-red-500" />;
-      case 'running':
+      case "running":
         return <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />;
       default:
         return <AlertCircle className="w-5 h-5 text-gray-400" />;
     }
   };
 
-  const passedCount = testResults.filter(r => r.passed).length;
-  const failedCount = testResults.filter(r => !r.passed).length;
+  const passedCount = testResults.filter((r) => r.passed).length;
+  const failedCount = testResults.filter((r) => !r.passed).length;
 
   return (
     <div className="p-6 bg-white rounded-lg shadow">
@@ -237,13 +262,19 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
 
         {/* API Status */}
         <div className="flex items-center gap-4">
-          <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
-            apiConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-          }`}>
-            <div className={`w-2 h-2 rounded-full ${
-              apiConnected ? 'bg-green-500' : 'bg-red-500'
-            }`} />
-            {apiConnected ? 'API Connected' : 'API Disconnected'}
+          <div
+            className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+              apiConnected
+                ? "bg-green-100 text-green-700"
+                : "bg-red-100 text-red-700"
+            }`}
+          >
+            <div
+              className={`w-2 h-2 rounded-full ${
+                apiConnected ? "bg-green-500" : "bg-red-500"
+              }`}
+            />
+            {apiConnected ? "API Connected" : "API Disconnected"}
           </div>
 
           <button
@@ -251,8 +282,8 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
             disabled={isRunning || !apiConnected || testCases.length === 0}
             className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors ${
               isRunning || !apiConnected
-                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                : "bg-blue-600 text-white hover:bg-blue-700"
             }`}
           >
             {isRunning ? (
@@ -299,15 +330,17 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
 
       {/* Test Cases List */}
       <div className="space-y-2">
-        {testCases.map((testCase, index) => {
+        {testCases.map((testCase) => {
           const status = getTestStatus(testCase.id);
-          const result = testResults.find(r => r.testId === testCase.id);
+          const result = testResults.find((r) => r.testId === testCase.id);
 
           return (
             <div
               key={testCase.id}
               className={`p-4 border rounded-lg transition-colors ${
-                status === 'running' ? 'border-blue-300 bg-blue-50' : 'border-gray-200'
+                status === "running"
+                  ? "border-blue-300 bg-blue-50"
+                  : "border-gray-200"
               }`}
             >
               <div className="flex items-start justify-between">
@@ -316,11 +349,14 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
                   <div>
                     <h4 className="font-medium">{testCase.name}</h4>
                     <p className="text-sm text-gray-600 mt-1">
-                      Type: {testCase.type} | Screenshot: {testCase.screenshot.name}
+                      Type: {testCase.type} | Screenshot:{" "}
+                      {testCase.screenshot.name}
                     </p>
                     {result && (
                       <div className="mt-2">
-                        <p className={`text-sm ${result.passed ? 'text-green-600' : 'text-red-600'}`}>
+                        <p
+                          className={`text-sm ${result.passed ? "text-green-600" : "text-red-600"}`}
+                        >
                           {result.message}
                         </p>
                         {result.details && (
@@ -353,7 +389,9 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
         <div className="text-center py-12 text-gray-500">
           <AlertCircle className="w-12 h-12 mx-auto mb-3" />
           <p>No test cases generated</p>
-          <p className="text-sm mt-1">Upload screenshots and associate them with states</p>
+          <p className="text-sm mt-1">
+            Upload screenshots and associate them with states
+          </p>
         </div>
       )}
     </div>

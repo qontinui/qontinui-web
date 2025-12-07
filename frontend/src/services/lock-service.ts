@@ -9,13 +9,12 @@
 
 import type {
   Lock,
-  LockResourceType,
-  LockStatus,
-  AcquireLockRequest,
-} from '@/types/collaboration';
-import { httpClient } from './http-client';
+  ResourceType,
+  LockAcquireRequest,
+} from "@/types/collaboration";
+import { httpClient } from "./service-factory";
 
-const API_BASE = '/api/locks';
+const API_BASE = "/api/locks";
 
 // ============================================================================
 // Lock Service
@@ -29,16 +28,15 @@ class LockService {
    * Acquire a lock on a resource
    */
   async acquireLock(
-    projectId: string,
-    resourceType: LockResourceType,
+    _projectId: string,
+    resourceType: ResourceType,
     resourceId: string,
     autoRefresh: boolean = true
   ): Promise<Lock> {
-    const data: AcquireLockRequest = {
-      project_id: projectId,
+    const data: LockAcquireRequest = {
       resource_type: resourceType,
       resource_id: resourceId,
-      auto_refresh: autoRefresh,
+      timeout_seconds: autoRefresh ? 300 : 60,
     };
 
     const lock = await httpClient.post<Lock>(API_BASE, data);
@@ -74,16 +72,18 @@ class LockService {
    */
   async getLockStatus(
     projectId: string,
-    resourceType: LockResourceType,
+    resourceType: ResourceType,
     resourceId: string
-  ): Promise<LockStatus> {
+  ): Promise<Lock | null> {
     const params = new URLSearchParams({
       project_id: projectId,
       resource_type: resourceType,
       resource_id: resourceId,
     });
 
-    const status = await httpClient.get<LockStatus>(`${API_BASE}/status?${params}`);
+    const status = await httpClient.get<Lock | null>(
+      `${API_BASE}/status?${params}`
+    );
     return status;
   }
 
@@ -91,7 +91,9 @@ class LockService {
    * Get all locks for a project
    */
   async getProjectLocks(projectId: string): Promise<Lock[]> {
-    const locks = await httpClient.get<Lock[]>(`${API_BASE}/project/${projectId}`);
+    const locks = await httpClient.get<Lock[]>(
+      `${API_BASE}/project/${projectId}`
+    );
     return locks;
   }
 
@@ -123,7 +125,10 @@ class LockService {
         await this.refreshLock(lockId);
         console.log(`[LockService] Auto-refreshed lock ${lockId}`);
       } catch (error) {
-        console.error(`[LockService] Failed to auto-refresh lock ${lockId}:`, error);
+        console.error(
+          `[LockService] Failed to auto-refresh lock ${lockId}:`,
+          error
+        );
         this.stopAutoRefresh(lockId);
       }
     }, this.REFRESH_INTERVAL);

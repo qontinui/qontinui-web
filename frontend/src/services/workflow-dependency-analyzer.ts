@@ -10,8 +10,12 @@
  * - Validation and cache management
  */
 
-import { Workflow, Action, isActionOfType } from '../lib/action-schema/action-types';
-import { RunWorkflowActionConfig } from '../lib/action-schema/configs/state-actions';
+import {
+  Workflow,
+  Action,
+  isActionOfType,
+} from "../lib/action-schema/action-types";
+import { RunWorkflowActionConfig } from "../lib/action-schema/configs/state-actions";
 
 // ============================================================================
 // Types
@@ -102,7 +106,7 @@ export interface ImpactAnalysis {
   /** Critical paths through this workflow */
   criticalPaths: string[][];
   /** Estimated impact level */
-  impactLevel: 'low' | 'medium' | 'high' | 'critical';
+  impactLevel: "low" | "medium" | "high" | "critical";
   /** Number of workflows affected */
   affectedCount: number;
 }
@@ -152,7 +156,11 @@ export interface DependencyValidation {
  */
 export interface DependencyError {
   /** Error type */
-  type: 'missing_workflow' | 'circular_dependency' | 'invalid_reference' | 'orphaned_workflow';
+  type:
+    | "missing_workflow"
+    | "circular_dependency"
+    | "invalid_reference"
+    | "orphaned_workflow";
   /** Workflow ID where error occurs */
   workflowId: string;
   /** Action ID where error occurs (if applicable) */
@@ -162,7 +170,7 @@ export interface DependencyError {
   /** Error message */
   message: string;
   /** Severity level */
-  severity: 'error' | 'warning';
+  severity: "error" | "warning";
 }
 
 /**
@@ -270,7 +278,7 @@ export class WorkflowDependencyAnalyzer {
     const dependencies = new Set<string>();
 
     for (const action of workflow.actions) {
-      if (isActionOfType(action, 'RUN_WORKFLOW')) {
+      if (isActionOfType(action, "RUN_WORKFLOW")) {
         const config = action.config as RunWorkflowActionConfig;
         if (config.workflowId) {
           dependencies.add(config.workflowId);
@@ -284,9 +292,9 @@ export class WorkflowDependencyAnalyzer {
   /**
    * Find all RUN_WORKFLOW actions in a workflow
    */
-  findRunWorkflowActions(workflow: Workflow): Action<'RUN_WORKFLOW'>[] {
-    return workflow.actions.filter((action): action is Action<'RUN_WORKFLOW'> =>
-      isActionOfType(action, 'RUN_WORKFLOW')
+  findRunWorkflowActions(workflow: Workflow): Action<"RUN_WORKFLOW">[] {
+    return workflow.actions.filter((action): action is Action<"RUN_WORKFLOW"> =>
+      isActionOfType(action, "RUN_WORKFLOW")
     );
   }
 
@@ -374,7 +382,10 @@ export class WorkflowDependencyAnalyzer {
   /**
    * Build complete dependency graph
    */
-  buildDependencyGraph(workflows: Workflow[], useCache = true): DependencyGraph {
+  buildDependencyGraph(
+    workflows: Workflow[],
+    useCache = true
+  ): DependencyGraph {
     // Check cache
     const now = Date.now();
     if (useCache && this.cache && now - this.cacheTimestamp < this.CACHE_TTL) {
@@ -383,7 +394,6 @@ export class WorkflowDependencyAnalyzer {
 
     const nodes = new Map<string, DependencyNode>();
     const edges: DependencyEdge[] = [];
-    const workflowMap = new Map(workflows.map((w) => [w.id, w]));
 
     // Initialize nodes
     for (const workflow of workflows) {
@@ -429,7 +439,9 @@ export class WorkflowDependencyAnalyzer {
         }
 
         // Create or update edge
-        const existingEdge = edges.find((e) => e.from === workflow.id && e.to === targetId);
+        const existingEdge = edges.find(
+          (e) => e.from === workflow.id && e.to === targetId
+        );
         if (existingEdge) {
           existingEdge.actionIds.push(action.id);
         } else {
@@ -459,7 +471,7 @@ export class WorkflowDependencyAnalyzer {
         }
 
         // Mark nodes as circular
-        const node = nodes.get(from);
+        const node = nodes.get(from!);
         if (node) {
           node.isCircular = true;
         }
@@ -516,7 +528,12 @@ export class WorkflowDependencyAnalyzer {
 
     if (!isCircular) {
       for (const depId of dependencies) {
-        const childTree = this.buildDependencyTree(depId, workflows, new Set(visited), currentDepth + 1);
+        const childTree = this.buildDependencyTree(
+          depId,
+          workflows,
+          new Set(visited),
+          currentDepth + 1
+        );
         childTrees.push(childTree);
         maxDepth = Math.max(maxDepth, childTree.depth);
       }
@@ -551,7 +568,9 @@ export class WorkflowDependencyAnalyzer {
           const cycle = [...path.slice(cycleStart), workflowId];
           // Check if this cycle is already recorded (in any rotation)
           const cycleKey = this.normalizeCycle(cycle);
-          const existing = cycles.find((c) => this.normalizeCycle(c) === cycleKey);
+          const existing = cycles.find(
+            (c) => this.normalizeCycle(c) === cycleKey
+          );
           if (!existing) {
             cycles.push(cycle);
           }
@@ -610,16 +629,16 @@ export class WorkflowDependencyAnalyzer {
     const criticalPaths = this.findCriticalPaths(workflowId, workflows);
 
     const affectedCount = allDependents.length;
-    let impactLevel: 'low' | 'medium' | 'high' | 'critical';
+    let impactLevel: "low" | "medium" | "high" | "critical";
 
     if (affectedCount === 0) {
-      impactLevel = 'low';
+      impactLevel = "low";
     } else if (affectedCount <= 2) {
-      impactLevel = 'medium';
+      impactLevel = "medium";
     } else if (affectedCount <= 5) {
-      impactLevel = 'high';
+      impactLevel = "high";
     } else {
-      impactLevel = 'critical';
+      impactLevel = "critical";
     }
 
     return {
@@ -660,8 +679,10 @@ export class WorkflowDependencyAnalyzer {
       maxDepth = Math.max(maxDepth, node.depth);
     }
 
-    const avgDependenciesPerWorkflow = totalWorkflows > 0 ? totalDeps / totalWorkflows : 0;
-    const avgDependentsPerWorkflow = totalWorkflows > 0 ? totalDependents / totalWorkflows : 0;
+    const avgDependenciesPerWorkflow =
+      totalWorkflows > 0 ? totalDeps / totalWorkflows : 0;
+    const avgDependentsPerWorkflow =
+      totalWorkflows > 0 ? totalDependents / totalWorkflows : 0;
 
     // Most depended-upon workflows
     const mostDepended = Array.from(graph.nodes.values())
@@ -700,7 +721,6 @@ export class WorkflowDependencyAnalyzer {
    * Get graph data for visualization (React Flow format)
    */
   getGraphData(workflows: Workflow[]): GraphVisualizationData {
-    const graph = this.buildDependencyGraph(workflows);
     return this.getNodesAndEdges(workflows);
   }
 
@@ -720,7 +740,11 @@ export class WorkflowDependencyAnalyzer {
 
       nodes.push({
         id,
-        type: node.isCircular ? 'circular' : node.inDegree === 0 ? 'leaf' : 'default',
+        type: node.isCircular
+          ? "circular"
+          : node.inDegree === 0
+            ? "leaf"
+            : "default",
         data: {
           label: node.name || id,
           category: node.category,
@@ -739,9 +763,10 @@ export class WorkflowDependencyAnalyzer {
         id: `${edge.from}-${edge.to}`,
         source: edge.from,
         target: edge.to,
-        type: edge.isCyclic ? 'cyclic' : 'default',
+        type: edge.isCyclic ? "cyclic" : "default",
         animated: edge.isCyclic,
-        label: edge.actionIds.length > 1 ? `${edge.actionIds.length}x` : undefined,
+        label:
+          edge.actionIds.length > 1 ? `${edge.actionIds.length}x` : undefined,
         data: {
           actionCount: edge.actionIds.length,
           isCyclic: edge.isCyclic,
@@ -779,7 +804,10 @@ export class WorkflowDependencyAnalyzer {
   /**
    * Validate dependencies for a workflow
    */
-  validateDependencies(workflow: Workflow, workflows: Workflow[]): DependencyValidation {
+  validateDependencies(
+    workflow: Workflow,
+    workflows: Workflow[]
+  ): DependencyValidation {
     const errors: DependencyError[] = [];
     const warnings: string[] = [];
 
@@ -792,35 +820,35 @@ export class WorkflowDependencyAnalyzer {
 
       if (!targetId) {
         errors.push({
-          type: 'invalid_reference',
+          type: "invalid_reference",
           workflowId: workflow.id,
           actionId: action.id,
-          message: 'RUN_WORKFLOW action has no workflowId specified',
-          severity: 'error',
+          message: "RUN_WORKFLOW action has no workflowId specified",
+          severity: "error",
         });
         continue;
       }
 
       if (!workflowIds.has(targetId)) {
         errors.push({
-          type: 'missing_workflow',
+          type: "missing_workflow",
           workflowId: workflow.id,
           actionId: action.id,
           referencedId: targetId,
           message: `Referenced workflow "${targetId}" does not exist`,
-          severity: 'error',
+          severity: "error",
         });
       }
 
       // Check for self-reference
       if (targetId === workflow.id) {
         errors.push({
-          type: 'circular_dependency',
+          type: "circular_dependency",
           workflowId: workflow.id,
           actionId: action.id,
           referencedId: targetId,
-          message: 'Workflow references itself',
-          severity: 'error',
+          message: "Workflow references itself",
+          severity: "error",
         });
       }
     }
@@ -829,7 +857,9 @@ export class WorkflowDependencyAnalyzer {
     const cycles = this.findCircularDependencies(workflows);
     for (const cycle of cycles) {
       if (cycle.includes(workflow.id)) {
-        warnings.push(`Workflow is part of circular dependency: ${cycle.join(' -> ')}`);
+        warnings.push(
+          `Workflow is part of circular dependency: ${cycle.join(" -> ")}`
+        );
       }
     }
 
@@ -852,7 +882,11 @@ export class WorkflowDependencyAnalyzer {
       const config = action.config as RunWorkflowActionConfig;
       const targetId = config.workflowId;
 
-      if (targetId && !workflowIds.has(targetId) && !missing.includes(targetId)) {
+      if (
+        targetId &&
+        !workflowIds.has(targetId) &&
+        !missing.includes(targetId)
+      ) {
         missing.push(targetId);
       }
     }
@@ -868,13 +902,13 @@ export class WorkflowDependencyAnalyzer {
     const cycles = this.findCircularDependencies(workflows);
 
     for (const cycle of cycles) {
-      const cycleStr = cycle.join(' -> ');
+      const cycleStr = cycle.join(" -> ");
       for (const workflowId of cycle) {
         errors.push({
-          type: 'circular_dependency',
+          type: "circular_dependency",
           workflowId,
           message: `Workflow is part of circular dependency: ${cycleStr}`,
-          severity: 'error',
+          severity: "error",
         });
       }
     }
@@ -898,7 +932,9 @@ export class WorkflowDependencyAnalyzer {
    * Check if cache is valid
    */
   isCacheValid(): boolean {
-    return this.cache !== null && Date.now() - this.cacheTimestamp < this.CACHE_TTL;
+    return (
+      this.cache !== null && Date.now() - this.cacheTimestamp < this.CACHE_TTL
+    );
   }
 
   /**
@@ -939,7 +975,7 @@ export class WorkflowDependencyAnalyzer {
       metadata: {
         generated: new Date().toISOString(),
         totalWorkflows: workflows.length,
-        version: '1.0.0',
+        version: "1.0.0",
       },
       statistics: stats,
       workflows: workflowsData,
@@ -956,11 +992,15 @@ export class WorkflowDependencyAnalyzer {
     const graph = this.buildDependencyGraph(workflows);
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
     xml += '<graphml xmlns="http://graphml.graphdrawing.org/xmlns">\n';
-    xml += '  <key id="name" for="node" attr.name="name" attr.type="string"/>\n';
-    xml += '  <key id="category" for="node" attr.name="category" attr.type="string"/>\n';
+    xml +=
+      '  <key id="name" for="node" attr.name="name" attr.type="string"/>\n';
+    xml +=
+      '  <key id="category" for="node" attr.name="category" attr.type="string"/>\n';
     xml += '  <key id="depth" for="node" attr.name="depth" attr.type="int"/>\n';
-    xml += '  <key id="circular" for="node" attr.name="circular" attr.type="boolean"/>\n';
-    xml += '  <key id="actions" for="edge" attr.name="actions" attr.type="int"/>\n';
+    xml +=
+      '  <key id="circular" for="node" attr.name="circular" attr.type="boolean"/>\n';
+    xml +=
+      '  <key id="actions" for="edge" attr.name="actions" attr.type="int"/>\n';
     xml += '  <graph id="WorkflowDependencies" edgedefault="directed">\n';
 
     // Nodes
@@ -972,19 +1012,20 @@ export class WorkflowDependencyAnalyzer {
       }
       xml += `      <data key="depth">${node.depth}</data>\n`;
       xml += `      <data key="circular">${node.isCircular}</data>\n`;
-      xml += '    </node>\n';
+      xml += "    </node>\n";
     }
 
     // Edges
     for (let i = 0; i < graph.edges.length; i++) {
       const edge = graph.edges[i];
+      if (!edge) continue;
       xml += `    <edge id="e${i}" source="${this.escapeXml(edge.from)}" target="${this.escapeXml(edge.to)}">\n`;
       xml += `      <data key="actions">${edge.actionIds.length}</data>\n`;
-      xml += '    </edge>\n';
+      xml += "    </edge>\n";
     }
 
-    xml += '  </graph>\n';
-    xml += '</graphml>';
+    xml += "  </graph>\n";
+    xml += "</graphml>";
 
     return xml;
   }
@@ -996,7 +1037,9 @@ export class WorkflowDependencyAnalyzer {
   /**
    * Calculate layout positions for nodes
    */
-  private calculateLayout(graph: DependencyGraph): Map<string, { x: number; y: number }> {
+  private calculateLayout(
+    graph: DependencyGraph
+  ): Map<string, { x: number; y: number }> {
     const layout = new Map<string, { x: number; y: number }>();
     const layers = this.groupByDepth(graph);
 
@@ -1024,7 +1067,9 @@ export class WorkflowDependencyAnalyzer {
    */
   private groupByDepth(graph: DependencyGraph): string[][] {
     const layers: string[][] = [];
-    const maxDepth = Math.max(...Array.from(graph.nodes.values()).map((n) => n.depth));
+    const maxDepth = Math.max(
+      ...Array.from(graph.nodes.values()).map((n) => n.depth)
+    );
 
     for (let depth = 0; depth <= maxDepth; depth++) {
       const layer: string[] = [];
@@ -1126,7 +1171,9 @@ export class WorkflowDependencyAnalyzer {
 
     const allPaths: string[][] = [];
     for (const depId of node.dependencies) {
-      const subPaths = this.findAllPaths(depId, graph, new Set(visited), [...currentPath]);
+      const subPaths = this.findAllPaths(depId, graph, new Set(visited), [
+        ...currentPath,
+      ]);
       allPaths.push(...subPaths);
     }
 
@@ -1136,7 +1183,10 @@ export class WorkflowDependencyAnalyzer {
   /**
    * Find critical paths through a workflow
    */
-  private findCriticalPaths(workflowId: string, workflows: Workflow[]): string[][] {
+  private findCriticalPaths(
+    workflowId: string,
+    workflows: Workflow[]
+  ): string[][] {
     const graph = this.buildDependencyGraph(workflows);
     const paths: string[][] = [];
 
@@ -1184,11 +1234,13 @@ export class WorkflowDependencyAnalyzer {
    * Normalize cycle for comparison (rotate to start with smallest ID)
    */
   private normalizeCycle(cycle: string[]): string {
-    if (cycle.length === 0) return '';
+    if (cycle.length === 0) return "";
 
-    const minIndex = cycle.indexOf(Math.min(...cycle.map((id) => id)));
+    const minIndex = cycle.indexOf(
+      String(Math.min(...cycle.map((id) => Number(id))))
+    );
     const rotated = [...cycle.slice(minIndex), ...cycle.slice(0, minIndex)];
-    return rotated.join('->');
+    return rotated.join("->");
   }
 
   /**
@@ -1196,11 +1248,11 @@ export class WorkflowDependencyAnalyzer {
    */
   private escapeXml(text: string): string {
     return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
   }
 }
 
@@ -1208,4 +1260,5 @@ export class WorkflowDependencyAnalyzer {
 // Exports
 // ============================================================================
 
-export const workflowDependencyAnalyzer = WorkflowDependencyAnalyzer.getInstance();
+export const workflowDependencyAnalyzer =
+  WorkflowDependencyAnalyzer.getInstance();

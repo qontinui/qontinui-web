@@ -3,34 +3,44 @@
  * Single Responsibility: Coordinate between different state discovery modules
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { StateImage, DiscoveredState, AnalysisConfig, DeletionImpact } from '@/types/stateDiscovery';
-import { StateDiscoveryAPIClient } from './stateDiscovery/apiClient';
-import { StateDiscoveryWebSocketManager } from './stateDiscovery/websocketManager';
-import { StateDiscoveryStateManager } from './stateDiscovery/stateManager';
+import { useState, useCallback, useRef, useEffect } from "react";
+import {
+  StateImage,
+  DiscoveredState,
+  AnalysisConfig,
+  DeletionImpact,
+} from "@/types/stateDiscovery";
+import { StateDiscoveryAPIClient } from "./stateDiscovery/apiClient";
+import { StateDiscoveryWebSocketManager } from "./stateDiscovery/websocketManager";
+import { StateDiscoveryStateManager } from "./stateDiscovery/stateManager";
 
 // Use the Qontinui API URL for State Discovery endpoints
-const API_BASE_URL = process.env.NEXT_PUBLIC_QONTINUI_API_URL || 'http://localhost:8000';
-const API_PATH = '/api';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8000";
+const API_PATH = "/api";
 
 export function useStateDiscovery() {
   // Module instances
-  const apiClientRef = useRef<StateDiscoveryAPIClient>();
-  const wsManagerRef = useRef<StateDiscoveryWebSocketManager>();
-  const stateManagerRef = useRef<StateDiscoveryStateManager>();
+  const apiClientRef = useRef<StateDiscoveryAPIClient | undefined>(undefined);
+  const wsManagerRef = useRef<StateDiscoveryWebSocketManager | undefined>(
+    undefined
+  );
+  const stateManagerRef = useRef<StateDiscoveryStateManager | undefined>(
+    undefined
+  );
 
   // Local React state
   const [stateImages, setStateImages] = useState<StateImage[]>([]);
   const [states, setStates] = useState<DiscoveredState[]>([]);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
-  const [uploadId, setUploadId] = useState<string>('');
-  const [analysisId, setAnalysisId] = useState<string>('');
+  const [uploadId, setUploadId] = useState<string>("");
+  const [analysisId, setAnalysisId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Initialize modules
   useEffect(() => {
-    console.log('[useStateDiscovery] Initializing modules');
+    console.log("[useStateDiscovery] Initializing modules");
 
     // Create module instances
     apiClientRef.current = new StateDiscoveryAPIClient(API_BASE_URL, API_PATH);
@@ -39,16 +49,16 @@ export function useStateDiscovery() {
 
     // Subscribe to state manager changes
     const unsubscribe = stateManagerRef.current.subscribe((type, data) => {
-      console.log('[useStateDiscovery] State change:', type);
+      console.log("[useStateDiscovery] State change:", type);
 
       switch (type) {
-        case 'stateImages':
+        case "stateImages":
           setStateImages([...data]);
           break;
-        case 'states':
+        case "states":
           setStates([...data]);
           break;
-        case 'clear':
+        case "clear":
           setStateImages([]);
           setStates([]);
           break;
@@ -57,7 +67,7 @@ export function useStateDiscovery() {
 
     // Cleanup
     return () => {
-      console.log('[useStateDiscovery] Cleaning up');
+      console.log("[useStateDiscovery] Cleaning up");
       unsubscribe();
       wsManagerRef.current?.disconnect();
     };
@@ -65,22 +75,22 @@ export function useStateDiscovery() {
 
   // Upload screenshots
   const uploadScreenshots = useCallback(async (files: File[]) => {
-    console.log('[useStateDiscovery] Uploading screenshots:', files.length);
+    console.log("[useStateDiscovery] Uploading screenshots:", files.length);
     setError(null);
     setIsLoading(true);
 
     try {
       if (!apiClientRef.current) {
-        throw new Error('API client not initialized');
+        throw new Error("API client not initialized");
       }
 
       const data = await apiClientRef.current.uploadScreenshots(files);
       setUploadId(data.upload_id);
-      console.log('[useStateDiscovery] Upload complete:', data.upload_id);
+      console.log("[useStateDiscovery] Upload complete:", data.upload_id);
       return data;
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Upload failed';
-      console.error('[useStateDiscovery] Upload failed:', errorMsg);
+      const errorMsg = err instanceof Error ? err.message : "Upload failed";
+      console.error("[useStateDiscovery] Upload failed:", errorMsg);
       setError(errorMsg);
       throw err;
     } finally {
@@ -89,196 +99,240 @@ export function useStateDiscovery() {
   }, []);
 
   // Start analysis
-  const startAnalysis = useCallback(async (
-    config: AnalysisConfig,
-    onProgress?: (progress: any) => void,
-    onComplete?: () => void
-  ) => {
-    console.log('[useStateDiscovery] Starting analysis:', {
-      uploadId,
-      config,
-      timestamp: new Date().toISOString()
-    });
+  const startAnalysis = useCallback(
+    async (
+      config: AnalysisConfig,
+      onProgress?: (progress: any) => void,
+      onComplete?: () => void
+    ) => {
+      console.log("[useStateDiscovery] Starting analysis:", {
+        uploadId,
+        config,
+        timestamp: new Date().toISOString(),
+      });
 
-    if (!uploadId) {
-      throw new Error('No screenshots uploaded');
-    }
-
-    setError(null);
-    setIsLoading(true);
-
-    try {
-      if (!apiClientRef.current || !wsManagerRef.current || !stateManagerRef.current) {
-        throw new Error('Modules not initialized');
+      if (!uploadId) {
+        throw new Error("No screenshots uploaded");
       }
 
-      // Start analysis via API
-      const data = await apiClientRef.current.startAnalysis(uploadId, config);
-      setAnalysisId(data.analysis_id);
+      setError(null);
+      setIsLoading(true);
 
-      // Connect WebSocket for progress updates
-      if (data.websocket_url) {
-        console.log('[useStateDiscovery] Setting up WebSocket connection');
+      try {
+        if (
+          !apiClientRef.current ||
+          !wsManagerRef.current ||
+          !stateManagerRef.current
+        ) {
+          throw new Error("Modules not initialized");
+        }
 
-        wsManagerRef.current.connect(
-          data.analysis_id,
-          API_BASE_URL,
-          API_PATH,
-          {
-            onProgress: (progress) => {
-              console.log('[useStateDiscovery] Progress:', progress);
-              if (onProgress) onProgress(progress);
-            },
-            onStateImageFound: (stateImage) => {
-              console.log('[useStateDiscovery] State image found:', stateImage);
-              stateManagerRef.current?.addStateImage(stateImage);
-            },
-            onComplete: (data) => {
-              console.log('[useStateDiscovery] Analysis complete:', {
-                states: data.states?.length || 0,
-                stateImages: data.state_images?.length || 0
-              });
+        // Start analysis via API
+        const data = await apiClientRef.current.startAnalysis(uploadId, config);
+        setAnalysisId(data.analysis_id);
 
-              setAnalysisResult(data);
+        // Connect WebSocket for progress updates
+        if (data.websocket_url) {
+          console.log("[useStateDiscovery] Setting up WebSocket connection");
 
-              if (data.state_images) {
-                stateManagerRef.current?.setStateImages(data.state_images);
-              }
-              if (data.states) {
-                stateManagerRef.current?.setStates(data.states);
-              }
+          wsManagerRef.current.connect(
+            data.analysis_id,
+            API_BASE_URL,
+            API_PATH,
+            {
+              onProgress: (progress) => {
+                console.log("[useStateDiscovery] Progress:", progress);
+                if (onProgress) onProgress(progress);
+              },
+              onStateImageFound: (stateImage) => {
+                console.log(
+                  "[useStateDiscovery] State image found:",
+                  stateImage
+                );
+                stateManagerRef.current?.addStateImage(stateImage);
+              },
+              onComplete: (data) => {
+                console.log("[useStateDiscovery] Analysis complete:", {
+                  states: data.states?.length || 0,
+                  stateImages: data.state_images?.length || 0,
+                });
 
-              setIsLoading(false);
-              if (onComplete) onComplete();
-            },
-            onError: (errorMsg) => {
-              console.error('[useStateDiscovery] WebSocket error:', errorMsg);
-              setError(errorMsg);
-              setIsLoading(false);
+                setAnalysisResult(data);
+
+                if (data.state_images) {
+                  stateManagerRef.current?.setStateImages(data.state_images);
+                }
+                if (data.states) {
+                  stateManagerRef.current?.setStates(data.states);
+                }
+
+                setIsLoading(false);
+                if (onComplete) onComplete();
+              },
+              onError: (errorMsg) => {
+                console.error("[useStateDiscovery] WebSocket error:", errorMsg);
+                setError(errorMsg);
+                setIsLoading(false);
+              },
             }
-          }
-        );
-      }
+          );
+        }
 
-      return data;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Analysis failed';
-      console.error('[useStateDiscovery] Analysis failed:', errorMsg);
-      setError(errorMsg);
-      setIsLoading(false);
-      throw err;
-    }
-  }, [uploadId]);
+        return data;
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : "Analysis failed";
+        console.error("[useStateDiscovery] Analysis failed:", errorMsg);
+        setError(errorMsg);
+        setIsLoading(false);
+        throw err;
+      }
+    },
+    [uploadId]
+  );
 
   // Get deletion impact
-  const getDeleteImpact = useCallback(async (stateImageId: string): Promise<DeletionImpact> => {
-    console.log('[useStateDiscovery] Getting deletion impact:', stateImageId);
+  const getDeleteImpact = useCallback(
+    async (stateImageId: string): Promise<DeletionImpact> => {
+      console.log("[useStateDiscovery] Getting deletion impact:", stateImageId);
 
-    if (!apiClientRef.current) {
-      throw new Error('API client not initialized');
-    }
+      if (!apiClientRef.current) {
+        throw new Error("API client not initialized");
+      }
 
-    return apiClientRef.current.getDeleteImpact(stateImageId);
-  }, []);
+      return apiClientRef.current.getDeleteImpact(stateImageId);
+    },
+    []
+  );
 
   // Delete StateImage
-  const deleteStateImage = useCallback(async (
-    stateImageId: string,
-    options?: { cascade?: boolean; force?: boolean }
-  ) => {
-    console.log('[useStateDiscovery] Deleting state image:', stateImageId);
+  const deleteStateImage = useCallback(
+    async (
+      stateImageId: string,
+      options?: { cascade?: boolean; force?: boolean }
+    ) => {
+      console.log("[useStateDiscovery] Deleting state image:", stateImageId);
 
-    if (!apiClientRef.current || !stateManagerRef.current) {
-      throw new Error('Modules not initialized');
-    }
+      if (!apiClientRef.current || !stateManagerRef.current) {
+        throw new Error("Modules not initialized");
+      }
 
-    const result = await apiClientRef.current.deleteStateImage(stateImageId, options);
-    stateManagerRef.current.removeStateImage(stateImageId);
+      const result = await apiClientRef.current.deleteStateImage(
+        stateImageId,
+        options
+      );
+      stateManagerRef.current.removeStateImage(stateImageId);
 
-    return result;
-  }, []);
+      return result;
+    },
+    []
+  );
 
   // Bulk delete StateImages
-  const bulkDeleteStateImages = useCallback(async (
-    ids: string[],
-    options?: any
-  ) => {
-    console.log('[useStateDiscovery] Bulk deleting state images:', ids.length);
+  const bulkDeleteStateImages = useCallback(
+    async (ids: string[], options?: any) => {
+      console.log(
+        "[useStateDiscovery] Bulk deleting state images:",
+        ids.length
+      );
 
-    if (!apiClientRef.current || !stateManagerRef.current) {
-      throw new Error('Modules not initialized');
-    }
+      if (!apiClientRef.current || !stateManagerRef.current) {
+        throw new Error("Modules not initialized");
+      }
 
-    const result = await apiClientRef.current.bulkDeleteStateImages(ids, options);
+      const result = await apiClientRef.current.bulkDeleteStateImages(
+        ids,
+        options
+      );
 
-    if (result.deleted && Array.isArray(result.deleted)) {
-      stateManagerRef.current.bulkRemoveStateImages(result.deleted);
-    }
+      if (result.deleted && Array.isArray(result.deleted)) {
+        stateManagerRef.current.bulkRemoveStateImages(result.deleted);
+      }
 
-    return result;
-  }, []);
+      return result;
+    },
+    []
+  );
 
   // Update StateImage
-  const updateStateImage = useCallback(async (
-    stateImageId: string,
-    updates: Partial<StateImage>
-  ) => {
-    console.log('[useStateDiscovery] Updating state image:', stateImageId);
+  const updateStateImage = useCallback(
+    async (stateImageId: string, updates: Partial<StateImage>) => {
+      console.log("[useStateDiscovery] Updating state image:", stateImageId);
 
-    if (!apiClientRef.current || !stateManagerRef.current) {
-      throw new Error('Modules not initialized');
-    }
+      if (!apiClientRef.current || !stateManagerRef.current) {
+        throw new Error("Modules not initialized");
+      }
 
-    const result = await apiClientRef.current.updateStateImage(stateImageId, updates);
-    stateManagerRef.current.updateStateImage(stateImageId, updates);
+      const result = await apiClientRef.current.updateStateImage(
+        stateImageId,
+        updates
+      );
+      stateManagerRef.current.updateStateImage(stateImageId, updates);
 
-    return result;
-  }, []);
+      return result;
+    },
+    []
+  );
 
   // Merge StateImages
-  const mergeStateImages = useCallback(async (
-    sourceIds: string[],
-    targetName: string,
-    strategy: string = 'union'
-  ) => {
-    console.log('[useStateDiscovery] Merging state images:', sourceIds.length);
+  const mergeStateImages = useCallback(
+    async (
+      sourceIds: string[],
+      targetName: string,
+      strategy: string = "union"
+    ) => {
+      console.log(
+        "[useStateDiscovery] Merging state images:",
+        sourceIds.length
+      );
 
-    if (!apiClientRef.current) {
-      throw new Error('API client not initialized');
-    }
+      if (!apiClientRef.current) {
+        throw new Error("API client not initialized");
+      }
 
-    return apiClientRef.current.mergeStateImages(sourceIds, targetName, strategy);
-  }, []);
+      return apiClientRef.current.mergeStateImages(
+        sourceIds,
+        targetName,
+        strategy
+      );
+    },
+    []
+  );
 
   // Save state structure
-  const saveStructure = useCallback(async (name: string, description?: string) => {
-    console.log('[useStateDiscovery] Saving structure:', name);
+  const saveStructure = useCallback(
+    async (name: string, description?: string) => {
+      console.log("[useStateDiscovery] Saving structure:", name);
 
-    if (!analysisId) {
-      throw new Error('No analysis to save');
-    }
+      if (!analysisId) {
+        throw new Error("No analysis to save");
+      }
 
-    if (!apiClientRef.current) {
-      throw new Error('API client not initialized');
-    }
+      if (!apiClientRef.current) {
+        throw new Error("API client not initialized");
+      }
 
-    return apiClientRef.current.saveStructure(analysisId, name, description);
-  }, [analysisId]);
+      return apiClientRef.current.saveStructure(analysisId, name, description);
+    },
+    [analysisId]
+  );
 
   // Export state structure
-  const exportStructure = useCallback(async (structureId: string, format: string = 'json') => {
-    console.log('[useStateDiscovery] Exporting structure:', structureId);
+  const exportStructure = useCallback(
+    async (structureId: string, format: string = "json") => {
+      console.log("[useStateDiscovery] Exporting structure:", structureId);
 
-    if (!apiClientRef.current) {
-      throw new Error('API client not initialized');
-    }
+      if (!apiClientRef.current) {
+        throw new Error("API client not initialized");
+      }
 
-    return apiClientRef.current.exportStructure(structureId, format);
-  }, []);
+      return apiClientRef.current.exportStructure(structureId, format);
+    },
+    []
+  );
 
   // Cleanup on unmount
   const cleanup = useCallback(() => {
-    console.log('[useStateDiscovery] Manual cleanup');
+    console.log("[useStateDiscovery] Manual cleanup");
     wsManagerRef.current?.disconnect();
     stateManagerRef.current?.clear();
   }, []);
@@ -303,6 +357,6 @@ export function useStateDiscovery() {
     mergeStateImages,
     saveStructure,
     exportStructure,
-    cleanup
+    cleanup,
   };
 }

@@ -5,17 +5,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { AlertTriangle } from "lucide-react"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
 
 interface DeleteConfirmationDialogProps {
-  open: boolean
-  title: string
-  itemName: string
-  description?: string
-  onClose: () => void
-  onConfirm: () => void
+  open: boolean;
+  title: string;
+  itemName: string;
+  description?: string;
+  onClose: () => void;
+  onConfirm: () => void;
 }
 
 export function DeleteConfirmationDialog({
@@ -35,7 +35,8 @@ export function DeleteConfirmationDialog({
             {title}
           </DialogTitle>
           <DialogDescription>
-            {description || `Are you sure you want to delete "${itemName}"? This action cannot be undone.`}
+            {description ||
+              `Are you sure you want to delete "${itemName}"? This action cannot be undone.`}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -56,5 +57,5 @@ export function DeleteConfirmationDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

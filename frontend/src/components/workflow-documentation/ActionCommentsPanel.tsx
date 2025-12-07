@@ -1,25 +1,18 @@
-'use client';
+"use client";
 
-import React, { useState, useMemo } from 'react';
-import {
-  Workflow,
-  Action,
-} from '@/lib/action-schema/action-types';
-import {
-  ActionComment,
-  WorkflowDocumentationService,
-} from '@/services/workflow-documentation-service';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+import React, { useState, useMemo } from "react";
+import { Workflow, Action } from "@/lib/action-schema/action-types";
+import { ActionComment } from "@/services/workflow-documentation-service";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +22,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 import {
   MessageSquare,
   Plus,
@@ -38,12 +31,11 @@ import {
   MoreVertical,
   Search,
   Download,
-  FileText,
   X,
   Check,
   ChevronRight,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Props
@@ -73,14 +65,12 @@ export function ActionCommentsPanel({
   className,
 }: ActionCommentsPanelProps) {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState('');
-  const [newCommentText, setNewCommentText] = useState('');
+  const [editingText, setEditingText] = useState("");
+  const [newCommentText, setNewCommentText] = useState("");
   const [showNewCommentForm, setShowNewCommentForm] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'selected' | 'all'>('selected');
-
-  const docService = WorkflowDocumentationService.getInstance();
+  const [viewMode, setViewMode] = useState<"selected" | "all">("selected");
 
   // Get action by ID
   const getAction = (actionId: string): Action | undefined => {
@@ -127,7 +117,7 @@ export function ActionCommentsPanel({
     if (!selectedActionId || !newCommentText.trim()) return;
 
     onAddComment(selectedActionId, newCommentText);
-    setNewCommentText('');
+    setNewCommentText("");
     setShowNewCommentForm(false);
   };
 
@@ -143,13 +133,13 @@ export function ActionCommentsPanel({
 
     onUpdateComment(editingCommentId, editingText);
     setEditingCommentId(null);
-    setEditingText('');
+    setEditingText("");
   };
 
   // Handle cancel edit
   const handleCancelEdit = () => {
     setEditingCommentId(null);
-    setEditingText('');
+    setEditingText("");
   };
 
   // Handle delete
@@ -176,10 +166,10 @@ export function ActionCommentsPanel({
     }));
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: 'application/json',
+      type: "application/json",
     });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `${workflow.name}-comments.json`;
     a.click();
@@ -198,21 +188,25 @@ export function ActionCommentsPanel({
       <div
         key={comment.id}
         className={cn(
-          'p-4 rounded-lg border transition-colors',
-          isSelected && 'border-primary bg-accent',
-          !isSelected && 'border-border hover:border-primary/50'
+          "p-4 rounded-lg border transition-colors",
+          isSelected && "border-primary bg-accent",
+          !isSelected && "border-border hover:border-primary/50"
         )}
       >
         {/* Action Info */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <h4 className="font-medium text-sm">{action.name || action.id}</h4>
+              <h4 className="font-medium text-sm">
+                {action.name || action.id}
+              </h4>
               <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
                 {action.type}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">ID: {action.id}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              ID: {action.id}
+            </p>
           </div>
 
           {!isEditing && (
@@ -254,11 +248,7 @@ export function ActionCommentsPanel({
                 <Check className="size-4" />
                 Save
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleCancelEdit}
-              >
+              <Button size="sm" variant="outline" onClick={handleCancelEdit}>
                 <X className="size-4" />
                 Cancel
               </Button>
@@ -272,13 +262,9 @@ export function ActionCommentsPanel({
 
             {/* Metadata */}
             <div className="mt-3 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-              <div>
-                {comment.author && <span>by {comment.author}</span>}
-              </div>
+              <div>{comment.author && <span>by {comment.author}</span>}</div>
               <div className="flex items-center gap-2">
-                <span>
-                  {new Date(comment.updated).toLocaleDateString()}
-                </span>
+                <span>{new Date(comment.updated).toLocaleDateString()}</span>
                 {comment.updated !== comment.created && (
                   <span className="text-xs">(edited)</span>
                 )}
@@ -291,7 +277,7 @@ export function ActionCommentsPanel({
   };
 
   return (
-    <div className={cn('flex flex-col h-full bg-background', className)}>
+    <div className={cn("flex flex-col h-full bg-background", className)}>
       {/* Header */}
       <div className="p-4 border-b space-y-3">
         <div className="flex items-center justify-between">
@@ -327,17 +313,17 @@ export function ActionCommentsPanel({
         {/* View Mode Toggle */}
         <div className="flex items-center gap-2">
           <Button
-            variant={viewMode === 'selected' ? 'default' : 'outline'}
+            variant={viewMode === "selected" ? "default" : "outline"}
             size="sm"
-            onClick={() => setViewMode('selected')}
+            onClick={() => setViewMode("selected")}
             disabled={!selectedActionId}
           >
             Selected Action
           </Button>
           <Button
-            variant={viewMode === 'all' ? 'default' : 'outline'}
+            variant={viewMode === "all" ? "default" : "outline"}
             size="sm"
-            onClick={() => setViewMode('all')}
+            onClick={() => setViewMode("all")}
           >
             All Comments ({comments.length})
           </Button>
@@ -348,7 +334,7 @@ export function ActionCommentsPanel({
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {/* Selected Action View */}
-          {viewMode === 'selected' && selectedActionId && (
+          {viewMode === "selected" && selectedActionId && (
             <div className="space-y-4">
               {/* Selected Action Info */}
               <div className="p-4 rounded-lg bg-muted/50 border border-border">
@@ -382,9 +368,7 @@ export function ActionCommentsPanel({
                 <div className="space-y-2">
                   {showNewCommentForm ? (
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">
-                        Add Comment
-                      </Label>
+                      <Label className="text-sm font-medium">Add Comment</Label>
                       <Textarea
                         value={newCommentText}
                         onChange={(e) => setNewCommentText(e.target.value)}
@@ -402,7 +386,7 @@ export function ActionCommentsPanel({
                           variant="outline"
                           onClick={() => {
                             setShowNewCommentForm(false);
-                            setNewCommentText('');
+                            setNewCommentText("");
                           }}
                         >
                           <X className="size-4" />
@@ -427,8 +411,8 @@ export function ActionCommentsPanel({
               {!selectedActionComment && !showNewCommentForm && (
                 <div className="p-4 rounded-lg bg-muted/30 border border-dashed">
                   <p className="text-sm text-muted-foreground">
-                    Add comments to document what this action does, why it's needed,
-                    or any important notes for other developers.
+                    Add comments to document what this action does, why it's
+                    needed, or any important notes for other developers.
                   </p>
                 </div>
               )}
@@ -436,12 +420,13 @@ export function ActionCommentsPanel({
           )}
 
           {/* All Comments View */}
-          {viewMode === 'all' && (
+          {viewMode === "all" && (
             <div className="space-y-4">
               {filteredActions.length > 0 ? (
                 <>
                   <div className="text-sm text-muted-foreground">
-                    {filteredActions.length} action{filteredActions.length !== 1 && 's'} with comments
+                    {filteredActions.length} action
+                    {filteredActions.length !== 1 && "s"} with comments
                   </div>
 
                   {filteredActions.map(({ action, comment }) => (
@@ -468,12 +453,13 @@ export function ActionCommentsPanel({
           )}
 
           {/* No Selection State */}
-          {viewMode === 'selected' && !selectedActionId && (
+          {viewMode === "selected" && !selectedActionId && (
             <div className="text-center py-12 text-muted-foreground">
               <ChevronRight className="size-12 mx-auto mb-4 opacity-50" />
               <p className="mb-2">No action selected</p>
               <p className="text-sm">
-                Select an action from the workflow canvas to view or add comments
+                Select an action from the workflow canvas to view or add
+                comments
               </p>
             </div>
           )}
@@ -481,12 +467,16 @@ export function ActionCommentsPanel({
       </ScrollArea>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteConfirmId !== null} onOpenChange={() => setDeleteConfirmId(null)}>
+      <AlertDialog
+        open={deleteConfirmId !== null}
+        onOpenChange={() => setDeleteConfirmId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Comment</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this comment? This action cannot be undone.
+              Are you sure you want to delete this comment? This action cannot
+              be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -502,11 +492,15 @@ export function ActionCommentsPanel({
 }
 
 // Label component (if not already in your project)
-function Label({ children, className, ...props }: React.ComponentProps<'label'>) {
+function Label({
+  children,
+  className,
+  ...props
+}: React.ComponentProps<"label">) {
   return (
     <label
       className={cn(
-        'text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
+        "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
         className
       )}
       {...props}

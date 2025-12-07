@@ -8,7 +8,7 @@ import {
   FileText,
   Settings,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
 export interface AutomationRoute {
   name: string;
@@ -20,52 +20,52 @@ export interface AutomationRoute {
 
 export const automationBuilderRoutes: AutomationRoute[] = [
   {
-    name: 'Dashboard',
-    path: '/dashboard',
+    name: "Dashboard",
+    path: "/dashboard",
     icon: LayoutDashboard,
-    description: 'Dashboard and project overview',
+    description: "Dashboard and project overview",
   },
   {
-    name: 'Workflows',
-    path: '/automation-builder',
+    name: "Workflows",
+    path: "/automation-builder",
     icon: GitBranch,
-    description: 'Manage and edit workflows',
+    description: "Manage and edit workflows",
   },
   {
-    name: 'Dependencies',
-    path: '/automation-builder/dependencies',
+    name: "Dependencies",
+    path: "/automation-builder/dependencies",
     icon: Network,
-    description: 'Visualize workflow dependencies',
+    description: "Visualize workflow dependencies",
   },
   {
-    name: 'Components',
-    path: '/automation-builder/components',
+    name: "Components",
+    path: "/automation-builder/components",
     icon: Package,
-    description: 'Reusable workflow components',
+    description: "Reusable workflow components",
   },
   {
-    name: 'Testing',
-    path: '/automation-builder/testing',
+    name: "Testing",
+    path: "/automation-builder/testing",
     icon: TestTube,
-    description: 'Test workflows and view results',
+    description: "Test workflows and view results",
   },
   {
-    name: 'Analytics',
-    path: '/automation-builder/analytics',
+    name: "Analytics",
+    path: "/automation-builder/analytics",
     icon: BarChart3,
-    description: 'Performance metrics and insights',
+    description: "Performance metrics and insights",
   },
   {
-    name: 'Documentation',
-    path: '/automation-builder/documentation',
+    name: "Documentation",
+    path: "/automation-builder/documentation",
     icon: FileText,
-    description: 'API docs and guides',
+    description: "API docs and guides",
   },
   {
-    name: 'Settings',
-    path: '/automation-builder/settings',
+    name: "Settings",
+    path: "/automation-builder/settings",
     icon: Settings,
-    description: 'Configuration and preferences',
+    description: "Configuration and preferences",
   },
 ];
 
@@ -81,14 +81,14 @@ export function getRouteByPath(path: string): AutomationRoute | undefined {
  */
 export function getRouteNameByPath(path: string): string {
   const route = getRouteByPath(path);
-  return route?.name || 'Automation Builder';
+  return route?.name || "Automation Builder";
 }
 
 /**
  * Check if a path is an automation builder route
  */
 export function isAutomationBuilderRoute(path: string): boolean {
-  return path.startsWith('/automation-builder');
+  return path.startsWith("/automation-builder");
 }
 
 /**
@@ -96,14 +96,19 @@ export function isAutomationBuilderRoute(path: string): boolean {
  */
 export function getActiveRoute(pathname: string): AutomationRoute | undefined {
   // Exact match first
-  const exactMatch = automationBuilderRoutes.find((route) => route.path === pathname);
+  const exactMatch = automationBuilderRoutes.find(
+    (route) => route.path === pathname
+  );
   if (exactMatch) return exactMatch;
 
   // Try to match by prefix (for nested routes)
   return automationBuilderRoutes.find((route) => {
-    if (route.path === '/automation-builder' && pathname === '/automation-builder') {
+    if (
+      route.path === "/automation-builder" &&
+      pathname === "/automation-builder"
+    ) {
       return true;
     }
-    return pathname.startsWith(route.path + '/');
+    return pathname.startsWith(route.path + "/");
   });
 }

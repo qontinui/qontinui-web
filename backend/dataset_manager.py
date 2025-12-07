@@ -12,7 +12,6 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 
 class DatasetManager:
@@ -29,17 +28,17 @@ class DatasetManager:
         self.images_dir = self.dataset_dir / "images"
         self.annotations_dir = self.dataset_dir / "annotations"
 
-    def load_coco_dataset(self, split: str) -> Optional[Dict]:
+    def load_coco_dataset(self, split: str) -> dict | None:
         """Load COCO format dataset."""
         annotation_file = self.annotations_dir / f"{split}.json"
 
         if not annotation_file.exists():
             return None
 
-        with open(annotation_file, "r") as f:
+        with open(annotation_file) as f:
             return json.load(f)
 
-    def save_coco_dataset(self, dataset: Dict, split: str):
+    def save_coco_dataset(self, dataset: dict, split: str):
         """Save COCO format dataset."""
         self.annotations_dir.mkdir(parents=True, exist_ok=True)
         annotation_file = self.annotations_dir / f"{split}.json"
@@ -47,7 +46,7 @@ class DatasetManager:
         with open(annotation_file, "w") as f:
             json.dump(dataset, f, indent=2)
 
-    def calculate_statistics(self, split: str = None) -> Dict:
+    def calculate_statistics(self, split: str = None) -> dict:
         """
         Calculate comprehensive dataset statistics.
 
@@ -163,7 +162,7 @@ class DatasetManager:
 
         return all_stats
 
-    def verify_dataset(self, split: str = None) -> Dict:
+    def verify_dataset(self, split: str = None) -> dict:
         """
         Verify dataset integrity and quality.
 
@@ -196,7 +195,7 @@ class DatasetManager:
                 issues.append(f"Missing {len(missing_images)} image files")
 
             # Check for orphaned annotations
-            image_ids = set(img["id"] for img in dataset["images"])
+            image_ids = {img["id"] for img in dataset["images"]}
             orphaned_anns = []
             for ann in dataset["annotations"]:
                 if ann["image_id"] not in image_ids:
@@ -219,7 +218,7 @@ class DatasetManager:
 
             # Check for images without annotations
             images_without_anns = []
-            ann_image_ids = set(ann["image_id"] for ann in dataset["annotations"])
+            ann_image_ids = {ann["image_id"] for ann in dataset["annotations"]}
             for img in dataset["images"]:
                 if img["id"] not in ann_image_ids:
                     images_without_anns.append(img["id"])
@@ -260,7 +259,7 @@ class DatasetManager:
         test_ratio: float = 0.15,
         shuffle: bool = True,
         seed: int = 42,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """
         Split a dataset into train/val/test sets.
 
@@ -297,7 +296,7 @@ class DatasetManager:
         num_images = len(images)
         num_train = int(num_images * train_ratio)
         num_val = int(num_images * val_ratio)
-        num_test = num_images - num_train - num_val
+        num_images - num_train - num_val
 
         # Split images
         train_images = images[:num_train]
@@ -349,9 +348,9 @@ class DatasetManager:
 
         return stats
 
-    def _create_split_dataset(self, source_dataset: Dict, images: List[Dict]) -> Dict:
+    def _create_split_dataset(self, source_dataset: dict, images: list[dict]) -> dict:
         """Create a dataset for a specific split."""
-        image_ids = set(img["id"] for img in images)
+        image_ids = {img["id"] for img in images}
 
         # Filter annotations
         annotations = [
@@ -513,7 +512,7 @@ names: ['button']  # class names
 
         print(f"Converted to Pascal VOC format: {output_path}")
 
-    def merge_datasets(self, dataset_paths: List[str], output_split: str = "train"):
+    def merge_datasets(self, dataset_paths: list[str], output_split: str = "train"):
         """
         Merge multiple datasets into one.
 
@@ -545,7 +544,7 @@ names: ['button']  # class names
             for split in ["train", "val", "test"]:
                 ann_file = dataset_dir / "annotations" / f"{split}.json"
                 if ann_file.exists():
-                    with open(ann_file, "r") as f:
+                    with open(ann_file) as f:
                         dataset = json.load(f)
 
                     # Update IDs

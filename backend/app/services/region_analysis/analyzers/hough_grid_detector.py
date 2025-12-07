@@ -6,13 +6,22 @@ grid structures.
 """
 
 import logging
-from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from io import BytesIO
+from typing import Any
 
 import cv2
 import numpy as np
+from PIL import Image
 
-from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
+from ..base import (
+    BaseRegionAnalyzer,
+    BoundingBox,
+    DetectedRegion,
+    RegionAnalysisInput,
+    RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +40,18 @@ class HoughGridDetector(BaseRegionAnalyzer):
     """
 
     @property
+    def analysis_type(self) -> RegionAnalysisType:
+        return RegionAnalysisType.EDGE_DETECTION
+
+    @property
     def name(self) -> str:
         return "hough_grid_detector"
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    @property
+    def supported_region_types(self) -> list[RegionType]:
+        return [RegionType.INVENTORY_GRID]
+
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "canny_low": 50,
             "canny_high": 150,
@@ -49,9 +66,40 @@ class HoughGridDetector(BaseRegionAnalyzer):
             "min_grid_cols": 2,
         }
 
-    def analyze(self, image: np.ndarray, **kwargs) -> List[DetectedRegion]:
+    async def analyze(self, input_data: RegionAnalysisInput) -> RegionAnalysisResult:
         """Detect inventory grids using Hough line detection"""
-        params = {**self.get_default_parameters(), **kwargs}
+        all_regions = []
+
+        # Process each screenshot
+        for idx, screenshot_bytes in enumerate(input_data.screenshot_data):
+            # Convert bytes to numpy array
+            image = Image.open(BytesIO(screenshot_bytes))
+            image_np = np.array(image)
+
+            # Detect regions in this screenshot
+            regions = self._analyze_image(image_np, idx, input_data.parameters)
+            all_regions.extend(regions)
+
+        # Calculate overall confidence
+        overall_confidence = (
+            sum(r.confidence for r in all_regions) / len(all_regions)
+            if all_regions
+            else 0.0
+        )
+
+        return RegionAnalysisResult(
+            analyzer_type=self.analysis_type,
+            analyzer_name=self.name,
+            regions=all_regions,
+            confidence=overall_confidence,
+            metadata={"total_grids_detected": len(all_regions)},
+        )
+
+    def _analyze_image(
+        self, image: np.ndarray, screenshot_index: int, params: dict[str, Any]
+    ) -> list[DetectedRegion]:
+        """Detect inventory grids using Hough line detection"""
+        params = {**self.get_default_parameters(), **params}
 
         # Convert to grayscale
         if len(image.shape) == 3:
@@ -93,15 +141,17 @@ class HoughGridDetector(BaseRegionAnalyzer):
         # Extract grid regions from configurations
         regions = []
         for config in grid_configs:
-            region = self._extract_grid_from_lines(config, gray.shape, params)
+            region = self._extract_grid_from_lines(
+                config, gray.shape, params, screenshot_index
+            )
             if region:
                 regions.append(region)
 
         return regions
 
     def _separate_lines(
-        self, lines: np.ndarray, params: Dict[str, Any]
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        self, lines: np.ndarray, params: dict[str, Any]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         Separate lines into horizontal and vertical
 
@@ -157,10 +207,10 @@ class HoughGridDetector(BaseRegionAnalyzer):
 
     def _find_grid_configurations(
         self,
-        h_lines: List[Dict[str, Any]],
-        v_lines: List[Dict[str, Any]],
-        params: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
+        h_lines: list[dict[str, Any]],
+        v_lines: list[dict[str, Any]],
+        params: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         """
         Find grid configurations from lines with uniform spacing
 
@@ -213,8 +263,8 @@ class HoughGridDetector(BaseRegionAnalyzer):
         return configs
 
     def _find_evenly_spaced_lines(
-        self, lines: List[Dict[str, Any]], position_key: str, params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, lines: list[dict[str, Any]], position_key: str, params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """
         Find groups of evenly-spaced lines
 
@@ -257,14 +307,18 @@ class HoughGridDetector(BaseRegionAnalyzer):
 
         # Return best group (most lines)
         if groups:
-            groups.sort(key=lambda g: len(g["lines"]), reverse=True)
+            groups.sort(key=lambda g: len(g["lines"]), reverse=True)  # type: ignore
             return groups[:3]  # Return top 3 groups
 
         return []
 
     def _extract_grid_from_lines(
-        self, config: Dict[str, Any], img_shape: Tuple[int, int], params: Dict[str, Any]
-    ) -> Optional[DetectedRegion]:
+        self,
+        config: dict[str, Any],
+        img_shape: tuple[int, int],
+        params: dict[str, Any],
+        screenshot_index: int,
+    ) -> DetectedRegion | None:
         """Extract grid region from line configuration"""
         h_lines = config["h_lines"]
         v_lines = config["v_lines"]
@@ -320,6 +374,7 @@ class HoughGridDetector(BaseRegionAnalyzer):
             confidence=confidence,
             region_type=RegionType.INVENTORY_GRID,
             label="Inventory Grid",
+            screenshot_index=screenshot_index,
             metadata={
                 "grid_rows": rows,
                 "grid_cols": cols,

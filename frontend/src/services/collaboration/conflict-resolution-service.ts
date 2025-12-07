@@ -13,27 +13,25 @@ import {
   Resolution,
   ConflictCheckResult,
   ConflictDetails,
-  Change,
   ResourceType,
   ConflictDetectorConfig,
   AutoResolutionResult,
-  ThreeWayMergeInfo,
-  VersionInfo
-} from '../../types/collaboration/conflict-types'
+  VersionInfo,
+} from "../../types/collaboration/conflict-types";
 
 /**
  * Detects conflicts between different versions of a resource
  */
 export class ConflictDetector {
-  private config: ConflictDetectorConfig
+  private config: ConflictDetectorConfig;
 
   constructor(config: Partial<ConflictDetectorConfig> = {}) {
     this.config = {
       detectPropertyChanges: true,
       detectStructuralChanges: true,
-      minimumSeverity: 'low',
-      ...config
-    }
+      minimumSeverity: "low",
+      ...config,
+    };
   }
 
   /**
@@ -44,30 +42,46 @@ export class ConflictDetector {
     serverVersion: any,
     baseVersion: any
   ): Conflict[] {
-    const conflicts: Conflict[] = []
+    const conflicts: Conflict[] = [];
 
     // Detect property changes
     if (this.config.detectPropertyChanges) {
-      conflicts.push(...this.detectPropertyConflicts(localVersion, serverVersion, baseVersion))
+      conflicts.push(
+        ...this.detectPropertyConflicts(
+          localVersion,
+          serverVersion,
+          baseVersion
+        )
+      );
     }
 
     // Detect structural changes
     if (this.config.detectStructuralChanges) {
-      conflicts.push(...this.detectStructuralConflicts(localVersion, serverVersion, baseVersion))
+      conflicts.push(
+        ...this.detectStructuralConflicts(
+          localVersion,
+          serverVersion,
+          baseVersion
+        )
+      );
     }
 
     // Apply custom rules
     if (this.config.customRules) {
       for (const rule of this.config.customRules) {
-        const conflict = rule(localVersion, serverVersion, baseVersion)
+        const conflict = rule(localVersion, serverVersion, baseVersion);
         if (conflict) {
-          conflicts.push(conflict)
+          conflicts.push(conflict);
         }
       }
     }
 
     // Filter by minimum severity
-    return conflicts.filter(c => this.getSeverityLevel(c.severity) >= this.getSeverityLevel(this.config.minimumSeverity))
+    return conflicts.filter(
+      (c) =>
+        this.getSeverityLevel(c.severity) >=
+        this.getSeverityLevel(this.config.minimumSeverity)
+    );
   }
 
   /**
@@ -79,57 +93,94 @@ export class ConflictDetector {
     base: any,
     path: string[] = []
   ): Conflict[] {
-    const conflicts: Conflict[] = []
+    const conflicts: Conflict[] = [];
 
-    if (!local || !remote || !base) return conflicts
+    if (!local || !remote || !base) return conflicts;
 
     // Handle different types
-    if (typeof local !== 'object' || typeof remote !== 'object' || typeof base !== 'object') {
+    if (
+      typeof local !== "object" ||
+      typeof remote !== "object" ||
+      typeof base !== "object"
+    ) {
       if (local !== base && remote !== base && local !== remote) {
-        conflicts.push(this.createConflict('PropertyChanged', local, remote, base, path))
+        conflicts.push(
+          this.createConflict("PropertyChanged", local, remote, base, path)
+        );
       }
-      return conflicts
+      return conflicts;
     }
 
     // Get all keys from all versions
     const allKeys = new Set([
       ...Object.keys(local),
       ...Object.keys(remote),
-      ...Object.keys(base)
-    ])
+      ...Object.keys(base),
+    ]);
 
     for (const key of allKeys) {
-      const localValue = local[key]
-      const remoteValue = remote[key]
-      const baseValue = base[key]
+      const localValue = local[key];
+      const remoteValue = remote[key];
+      const baseValue = base[key];
 
       // Check if both modified the same property
-      if (localValue !== baseValue && remoteValue !== baseValue && localValue !== remoteValue) {
+      if (
+        localValue !== baseValue &&
+        remoteValue !== baseValue &&
+        localValue !== remoteValue
+      ) {
         // Recursively check nested objects
         if (
-          typeof localValue === 'object' &&
-          typeof remoteValue === 'object' &&
-          typeof baseValue === 'object' &&
+          typeof localValue === "object" &&
+          typeof remoteValue === "object" &&
+          typeof baseValue === "object" &&
           !Array.isArray(localValue) &&
           !Array.isArray(remoteValue) &&
           !Array.isArray(baseValue)
         ) {
-          conflicts.push(...this.detectPropertyConflicts(localValue, remoteValue, baseValue, [...path, key]))
+          conflicts.push(
+            ...this.detectPropertyConflicts(
+              localValue,
+              remoteValue,
+              baseValue,
+              [...path, key]
+            )
+          );
         } else {
-          conflicts.push(this.createConflict('PropertyChanged', localValue, remoteValue, baseValue, [...path, key]))
+          conflicts.push(
+            this.createConflict(
+              "PropertyChanged",
+              localValue,
+              remoteValue,
+              baseValue,
+              [...path, key]
+            )
+          );
         }
       }
 
       // Check if one deleted while other modified
       if (
-        (localValue === undefined && remoteValue !== baseValue && baseValue !== undefined) ||
-        (remoteValue === undefined && localValue !== baseValue && baseValue !== undefined)
+        (localValue === undefined &&
+          remoteValue !== baseValue &&
+          baseValue !== undefined) ||
+        (remoteValue === undefined &&
+          localValue !== baseValue &&
+          baseValue !== undefined)
       ) {
-        conflicts.push(this.createConflict('ActionRemoved', localValue, remoteValue, baseValue, [...path, key]))
+        conflicts.push(
+          this.createConflict(
+            "ActionRemoved",
+            localValue,
+            remoteValue,
+            baseValue,
+            [...path, key]
+          )
+        );
       }
     }
 
-    return conflicts
+    return conflicts;
   }
 
   /**
@@ -141,19 +192,35 @@ export class ConflictDetector {
     base: any,
     path: string[] = []
   ): Conflict[] {
-    const conflicts: Conflict[] = []
+    const conflicts: Conflict[] = [];
 
     // Check actions array
     if (local.actions && remote.actions && base.actions) {
-      conflicts.push(...this.detectArrayConflicts(local.actions, remote.actions, base.actions, [...path, 'actions'], 'ActionModified'))
+      conflicts.push(
+        ...this.detectArrayConflicts(
+          local.actions,
+          remote.actions,
+          base.actions,
+          [...path, "actions"],
+          "ActionModified"
+        )
+      );
     }
 
     // Check connections
     if (local.connections && remote.connections && base.connections) {
-      conflicts.push(...this.detectArrayConflicts(local.connections, remote.connections, base.connections, [...path, 'connections'], 'ConnectionChanged'))
+      conflicts.push(
+        ...this.detectArrayConflicts(
+          local.connections,
+          remote.connections,
+          base.connections,
+          [...path, "connections"],
+          "ConnectionChanged"
+        )
+      );
     }
 
-    return conflicts
+    return conflicts;
   }
 
   /**
@@ -166,44 +233,77 @@ export class ConflictDetector {
     path: string[],
     conflictType: ConflictType
   ): Conflict[] {
-    const conflicts: Conflict[] = []
+    const conflicts: Conflict[] = [];
 
     // Create maps by id for easier comparison
-    const localMap = new Map(local.map(item => [item.id, item]))
-    const remoteMap = new Map(remote.map(item => [item.id, item]))
-    const baseMap = new Map(base.map(item => [item.id, item]))
+    const localMap = new Map(local.map((item) => [item.id, item]));
+    const remoteMap = new Map(remote.map((item) => [item.id, item]));
+    const baseMap = new Map(base.map((item) => [item.id, item]));
 
     // Get all IDs
     const allIds = new Set([
       ...localMap.keys(),
       ...remoteMap.keys(),
-      ...baseMap.keys()
-    ])
+      ...baseMap.keys(),
+    ]);
 
     for (const id of allIds) {
-      const localItem = localMap.get(id)
-      const remoteItem = remoteMap.get(id)
-      const baseItem = baseMap.get(id)
+      const localItem = localMap.get(id);
+      const remoteItem = remoteMap.get(id);
+      const baseItem = baseMap.get(id);
 
       // Both modified
       if (localItem && remoteItem && baseItem) {
-        if (JSON.stringify(localItem) !== JSON.stringify(baseItem) &&
-            JSON.stringify(remoteItem) !== JSON.stringify(baseItem) &&
-            JSON.stringify(localItem) !== JSON.stringify(remoteItem)) {
-          conflicts.push(this.createConflict(conflictType, localItem, remoteItem, baseItem, [...path, id]))
+        if (
+          JSON.stringify(localItem) !== JSON.stringify(baseItem) &&
+          JSON.stringify(remoteItem) !== JSON.stringify(baseItem) &&
+          JSON.stringify(localItem) !== JSON.stringify(remoteItem)
+        ) {
+          conflicts.push(
+            this.createConflict(conflictType, localItem, remoteItem, baseItem, [
+              ...path,
+              id,
+            ])
+          );
         }
       }
 
       // One deleted, one modified
-      if (!localItem && remoteItem && baseItem && JSON.stringify(remoteItem) !== JSON.stringify(baseItem)) {
-        conflicts.push(this.createConflict('ActionRemoved', localItem, remoteItem, baseItem, [...path, id]))
+      if (
+        !localItem &&
+        remoteItem &&
+        baseItem &&
+        JSON.stringify(remoteItem) !== JSON.stringify(baseItem)
+      ) {
+        conflicts.push(
+          this.createConflict(
+            "ActionRemoved",
+            localItem,
+            remoteItem,
+            baseItem,
+            [...path, id]
+          )
+        );
       }
-      if (localItem && !remoteItem && baseItem && JSON.stringify(localItem) !== JSON.stringify(baseItem)) {
-        conflicts.push(this.createConflict('ActionRemoved', localItem, remoteItem, baseItem, [...path, id]))
+      if (
+        localItem &&
+        !remoteItem &&
+        baseItem &&
+        JSON.stringify(localItem) !== JSON.stringify(baseItem)
+      ) {
+        conflicts.push(
+          this.createConflict(
+            "ActionRemoved",
+            localItem,
+            remoteItem,
+            baseItem,
+            [...path, id]
+          )
+        );
       }
     }
 
-    return conflicts
+    return conflicts;
   }
 
   /**
@@ -220,85 +320,109 @@ export class ConflictDetector {
       id: `conflict-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type,
       resourceType: this.inferResourceType(path),
-      resourceId: path[0] || '',
+      resourceId: path[0] || "",
       localVersion: localValue,
       serverVersion: remoteValue,
       baseVersion: baseValue,
       path,
       severity: this.determineSeverity(type, path),
-      autoResolvable: this.isAutoResolvable(type, localValue, remoteValue, baseValue),
-      createdAt: new Date()
-    }
+      autoResolvable: this.isAutoResolvable(
+        type,
+        localValue,
+        remoteValue,
+        baseValue
+      ),
+      createdAt: new Date(),
+    };
   }
 
   /**
    * Determine if a conflict can be automatically resolved
    */
-  private isAutoResolvable(type: ConflictType, local: any, remote: any, base: any): boolean {
+  private isAutoResolvable(
+    type: ConflictType,
+    local: any,
+    remote: any,
+    base: any
+  ): boolean {
     // Simple heuristics for auto-resolution
     switch (type) {
-      case 'PropertyChanged':
+      case "PropertyChanged":
         // Can auto-resolve if values are compatible (e.g., both incremented a counter)
-        if (typeof local === 'number' && typeof remote === 'number' && typeof base === 'number') {
-          return true
+        if (
+          typeof local === "number" &&
+          typeof remote === "number" &&
+          typeof base === "number"
+        ) {
+          return true;
         }
-        return false
+        return false;
 
-      case 'MetadataChanged':
+      case "MetadataChanged":
         // Metadata changes are usually safe to merge
-        return true
+        return true;
 
-      case 'ActionRemoved':
-      case 'ConnectionChanged':
-      case 'StructureChanged':
+      case "ActionRemoved":
+      case "ConnectionChanged":
+      case "StructureChanged":
         // These require manual resolution
-        return false
+        return false;
 
       default:
-        return false
+        return false;
     }
   }
 
   /**
    * Determine severity of a conflict
    */
-  private determineSeverity(type: ConflictType, path: string[]): 'low' | 'medium' | 'high' {
+  private determineSeverity(
+    type: ConflictType,
+    _path?: string[]
+  ): "low" | "medium" | "high" {
     // High severity for structural changes
-    if (type === 'ActionRemoved' || type === 'StructureChanged' || type === 'ConnectionChanged') {
-      return 'high'
+    if (
+      type === "ActionRemoved" ||
+      type === "StructureChanged" ||
+      type === "ConnectionChanged"
+    ) {
+      return "high";
     }
 
     // Medium severity for action modifications
-    if (type === 'ActionModified') {
-      return 'medium'
+    if (type === "ActionModified") {
+      return "medium";
     }
 
     // Low severity for property and metadata changes
-    return 'low'
+    return "low";
   }
 
   /**
    * Infer resource type from path
    */
   private inferResourceType(path: string[]): ResourceType {
-    if (path.length === 0) return 'workflow'
+    if (path.length === 0) return "workflow";
 
-    const firstSegment = path[0].toLowerCase()
-    if (firstSegment.includes('action')) return 'action'
-    if (firstSegment.includes('connection')) return 'connection'
-    if (firstSegment.includes('state')) return 'state'
-    if (firstSegment.includes('image')) return 'image'
-    if (firstSegment.includes('transition')) return 'transition'
+    const firstSegment = path[0];
+    if (!firstSegment) return "workflow";
 
-    return 'workflow'
+    const segment = firstSegment.toLowerCase();
+    if (segment.includes("action")) return "action";
+    if (segment.includes("connection")) return "connection";
+    if (segment.includes("state")) return "state";
+    if (segment.includes("image")) return "image";
+    if (segment.includes("transition")) return "transition";
+
+    return "workflow";
   }
 
   /**
    * Get numeric severity level
    */
-  private getSeverityLevel(severity: 'low' | 'medium' | 'high'): number {
-    const levels = { low: 1, medium: 2, high: 3 }
-    return levels[severity]
+  private getSeverityLevel(severity: "low" | "medium" | "high"): number {
+    const levels = { low: 1, medium: 2, high: 3 };
+    return levels[severity];
   }
 
   /**
@@ -306,20 +430,22 @@ export class ConflictDetector {
    */
   resolveConflict(conflict: Conflict, strategy: ResolutionStrategy): any {
     switch (strategy) {
-      case 'KeepLocal':
-        return conflict.localVersion
+      case "KeepLocal":
+        return conflict.localVersion;
 
-      case 'KeepRemote':
-        return conflict.serverVersion
+      case "KeepRemote":
+        return conflict.serverVersion;
 
-      case 'Merge':
-        return this.attemptAutoMerge(conflict)
+      case "Merge":
+        return this.attemptAutoMerge(conflict);
 
-      case 'Manual':
-        throw new Error('Manual resolution required - no automatic resolution available')
+      case "Manual":
+        throw new Error(
+          "Manual resolution required - no automatic resolution available"
+        );
 
       default:
-        throw new Error(`Unknown resolution strategy: ${strategy}`)
+        throw new Error(`Unknown resolution strategy: ${strategy}`);
     }
   }
 
@@ -327,30 +453,39 @@ export class ConflictDetector {
    * Attempt to automatically merge a conflict
    */
   private attemptAutoMerge(conflict: Conflict): any {
-    const { localVersion, serverVersion, baseVersion, type } = conflict
+    const { localVersion, serverVersion, baseVersion, type } = conflict;
 
     switch (type) {
-      case 'PropertyChanged':
+      case "PropertyChanged":
         // For numeric values, try to merge changes
-        if (typeof localVersion === 'number' && typeof serverVersion === 'number' && typeof baseVersion === 'number') {
-          const localDelta = localVersion - baseVersion
-          const remoteDelta = serverVersion - baseVersion
-          return baseVersion + localDelta + remoteDelta
+        if (
+          typeof localVersion === "number" &&
+          typeof serverVersion === "number" &&
+          typeof baseVersion === "number"
+        ) {
+          const localDelta = localVersion - baseVersion;
+          const remoteDelta = serverVersion - baseVersion;
+          return baseVersion + localDelta + remoteDelta;
         }
         // For strings, keep the longer one (heuristic)
-        if (typeof localVersion === 'string' && typeof serverVersion === 'string') {
-          return localVersion.length >= serverVersion.length ? localVersion : serverVersion
+        if (
+          typeof localVersion === "string" &&
+          typeof serverVersion === "string"
+        ) {
+          return localVersion.length >= serverVersion.length
+            ? localVersion
+            : serverVersion;
         }
         // Default to local version
-        return localVersion
+        return localVersion;
 
-      case 'MetadataChanged':
+      case "MetadataChanged":
         // Merge metadata objects
-        return { ...baseVersion, ...serverVersion, ...localVersion }
+        return { ...baseVersion, ...serverVersion, ...localVersion };
 
       default:
         // For other types, default to local version
-        return localVersion
+        return localVersion;
     }
   }
 
@@ -358,23 +493,23 @@ export class ConflictDetector {
    * Perform three-way merge
    */
   threeWayMerge(local: any, remote: any, base: any): MergeResult {
-    const conflicts = this.detectConflicts(local, remote, base)
-    const resolutions: Resolution[] = []
-    let mergedVersion = { ...base }
+    const conflicts = this.detectConflicts(local, remote, base);
+    const resolutions: Resolution[] = [];
+    const mergedVersion = { ...base };
 
     // Try to auto-resolve conflicts
     for (const conflict of conflicts) {
       if (conflict.autoResolvable) {
         try {
-          const resolvedValue = this.resolveConflict(conflict, 'Merge')
-          this.applyResolution(mergedVersion, conflict.path, resolvedValue)
+          const resolvedValue = this.resolveConflict(conflict, "Merge");
+          this.applyResolution(mergedVersion, conflict.path, resolvedValue);
 
           resolutions.push({
             conflictId: conflict.id,
-            strategy: 'Merge',
+            strategy: "Merge",
             resolvedValue,
-            resolvedAt: new Date()
-          })
+            resolvedAt: new Date(),
+          });
         } catch (error) {
           // Leave conflict unresolved
         }
@@ -382,34 +517,39 @@ export class ConflictDetector {
     }
 
     // Apply non-conflicting changes from local
-    this.applyNonConflictingChanges(mergedVersion, local, base, conflicts, 'local')
+    this.applyNonConflictingChanges(mergedVersion, local, base, conflicts);
 
     // Apply non-conflicting changes from remote
-    this.applyNonConflictingChanges(mergedVersion, remote, base, conflicts, 'remote')
+    this.applyNonConflictingChanges(mergedVersion, remote, base, conflicts);
 
     return {
-      success: conflicts.filter(c => !c.autoResolvable).length === 0,
-      conflicts: conflicts.filter(c => !c.autoResolvable),
+      success: conflicts.filter((c) => !c.autoResolvable).length === 0,
+      conflicts: conflicts.filter((c) => !c.autoResolvable),
       mergedVersion,
-      resolutions
-    }
+      resolutions,
+    };
   }
 
   /**
    * Apply resolution to merged version
    */
   private applyResolution(target: any, path: string[], value: any): void {
-    if (path.length === 0) return
+    if (path.length === 0) return;
 
-    let current = target
+    let current = target;
     for (let i = 0; i < path.length - 1; i++) {
-      if (!current[path[i]]) {
-        current[path[i]] = {}
+      const key = path[i];
+      if (!key) continue;
+      if (!current[key]) {
+        current[key] = {};
       }
-      current = current[path[i]]
+      current = current[key];
     }
 
-    current[path[path.length - 1]] = value
+    const lastKey = path[path.length - 1];
+    if (lastKey !== undefined) {
+      current[lastKey] = value;
+    }
   }
 
   /**
@@ -419,23 +559,21 @@ export class ConflictDetector {
     target: any,
     source: any,
     base: any,
-    conflicts: Conflict[],
-    side: 'local' | 'remote'
+    conflicts: Conflict[]
   ): void {
-    if (!source || typeof source !== 'object') return
+    if (!source || typeof source !== "object") return;
 
     for (const key in source) {
-      const sourcePath = [key]
-      const hasConflict = conflicts.some(c =>
-        c.path.length > 0 && c.path[0] === key
-      )
+      const hasConflict = conflicts.some(
+        (c) => c.path.length > 0 && c.path[0] === key
+      );
 
       if (!hasConflict) {
-        const sourceValue = source[key]
-        const baseValue = base?.[key]
+        const sourceValue = source[key];
+        const baseValue = base?.[key];
 
         if (JSON.stringify(sourceValue) !== JSON.stringify(baseValue)) {
-          target[key] = sourceValue
+          target[key] = sourceValue;
         }
       }
     }
@@ -446,12 +584,15 @@ export class ConflictDetector {
  * Main conflict resolution service
  */
 export class ConflictResolutionService {
-  private detector: ConflictDetector
-  private apiBaseUrl: string
+  private detector: ConflictDetector;
+  private apiBaseUrl: string;
 
-  constructor(apiBaseUrl: string = '/api', detectorConfig?: Partial<ConflictDetectorConfig>) {
-    this.apiBaseUrl = apiBaseUrl
-    this.detector = new ConflictDetector(detectorConfig)
+  constructor(
+    apiBaseUrl: string = "/api",
+    detectorConfig?: Partial<ConflictDetectorConfig>
+  ) {
+    this.apiBaseUrl = apiBaseUrl;
+    this.detector = new ConflictDetector(detectorConfig);
   }
 
   /**
@@ -467,27 +608,34 @@ export class ConflictResolutionService {
       // Get current server version
       const response = await fetch(
         `${this.apiBaseUrl}/projects/${projectId}/${resourceType}/${resourceId}/version`
-      )
+      );
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch server version: ${response.statusText}`)
+        throw new Error(
+          `Failed to fetch server version: ${response.statusText}`
+        );
       }
 
-      const { version: serverVersion, baseVersion } = await response.json()
+      const { version: serverVersion, baseVersion } = await response.json();
 
       // Detect conflicts
-      const conflicts = this.detector.detectConflicts(localChanges, serverVersion, baseVersion)
+      const conflicts = this.detector.detectConflicts(
+        localChanges,
+        serverVersion,
+        baseVersion
+      );
 
       // Determine if we can save
-      const canSave = conflicts.length === 0 || conflicts.every(c => c.autoResolvable)
+      const canSave =
+        conflicts.length === 0 || conflicts.every((c) => c.autoResolvable);
 
       // Suggest resolution strategy
-      let suggestedStrategy: ResolutionStrategy | undefined
+      let suggestedStrategy: ResolutionStrategy | undefined;
       if (conflicts.length > 0) {
-        if (conflicts.every(c => c.autoResolvable)) {
-          suggestedStrategy = 'Merge'
+        if (conflicts.every((c) => c.autoResolvable)) {
+          suggestedStrategy = "Merge";
         } else {
-          suggestedStrategy = 'Manual'
+          suggestedStrategy = "Manual";
         }
       }
 
@@ -496,11 +644,11 @@ export class ConflictResolutionService {
         conflicts,
         serverVersion,
         canSave,
-        suggestedStrategy
-      }
+        suggestedStrategy,
+      };
     } catch (error) {
-      console.error('Error checking for conflicts:', error)
-      throw error
+      console.error("Error checking for conflicts:", error);
+      throw error;
     }
   }
 
@@ -509,29 +657,39 @@ export class ConflictResolutionService {
    */
   async getConflictDetails(conflictId: string): Promise<ConflictDetails> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/conflicts/${conflictId}`)
+      const response = await fetch(
+        `${this.apiBaseUrl}/conflicts/${conflictId}`
+      );
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch conflict details: ${response.statusText}`)
+        throw new Error(
+          `Failed to fetch conflict details: ${response.statusText}`
+        );
       }
 
-      const conflict = await response.json()
+      const conflict = await response.json();
 
       // Generate strategy previews
       const strategyPreviews: Record<ResolutionStrategy, any> = {
         KeepLocal: conflict.localVersion,
         KeepRemote: conflict.serverVersion,
-        Merge: this.detector.resolveConflict(conflict, 'Merge'),
-        Manual: null
-      }
+        Merge: this.detector.resolveConflict(conflict, "Merge"),
+        Manual: null,
+      };
 
       // Determine available and recommended strategies
-      const availableStrategies: ResolutionStrategy[] = ['KeepLocal', 'KeepRemote', 'Manual']
+      const availableStrategies: ResolutionStrategy[] = [
+        "KeepLocal",
+        "KeepRemote",
+        "Manual",
+      ];
       if (conflict.autoResolvable) {
-        availableStrategies.push('Merge')
+        availableStrategies.push("Merge");
       }
 
-      const recommendedStrategy: ResolutionStrategy = conflict.autoResolvable ? 'Merge' : 'Manual'
+      const recommendedStrategy: ResolutionStrategy = conflict.autoResolvable
+        ? "Merge"
+        : "Manual";
 
       return {
         ...conflict,
@@ -539,11 +697,11 @@ export class ConflictResolutionService {
         remoteChanges: [],
         availableStrategies,
         recommendedStrategy,
-        strategyPreviews
-      }
+        strategyPreviews,
+      };
     } catch (error) {
-      console.error('Error fetching conflict details:', error)
-      throw error
+      console.error("Error fetching conflict details:", error);
+      throw error;
     }
   }
 
@@ -556,23 +714,26 @@ export class ConflictResolutionService {
     resolution?: any
   ): Promise<void> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/conflicts/${conflictId}/resolve`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          strategy,
-          resolution
-        })
-      })
+      const response = await fetch(
+        `${this.apiBaseUrl}/conflicts/${conflictId}/resolve`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            strategy,
+            resolution,
+          }),
+        }
+      );
 
       if (!response.ok) {
-        throw new Error(`Failed to resolve conflict: ${response.statusText}`)
+        throw new Error(`Failed to resolve conflict: ${response.statusText}`);
       }
     } catch (error) {
-      console.error('Error resolving conflict:', error)
-      throw error
+      console.error("Error resolving conflict:", error);
+      throw error;
     }
   }
 
@@ -580,35 +741,42 @@ export class ConflictResolutionService {
    * Automatically resolve conflicts when possible
    */
   async autoResolve(conflicts: Conflict[]): Promise<AutoResolutionResult> {
-    const resolved: Resolution[] = []
-    const requiresManual: Conflict[] = []
+    const resolved: Resolution[] = [];
+    const requiresManual: Conflict[] = [];
 
     for (const conflict of conflicts) {
       if (conflict.autoResolvable) {
         try {
-          const resolvedValue = this.detector.resolveConflict(conflict, 'Merge')
-          await this.resolveConflict(conflict.id, 'Merge', resolvedValue)
+          const resolvedValue = this.detector.resolveConflict(
+            conflict,
+            "Merge"
+          );
+          await this.resolveConflict(conflict.id, "Merge", resolvedValue);
 
           resolved.push({
             conflictId: conflict.id,
-            strategy: 'Merge',
+            strategy: "Merge",
             resolvedValue,
-            resolvedAt: new Date()
-          })
+            resolvedAt: new Date(),
+          });
         } catch (error) {
-          console.error(`Failed to auto-resolve conflict ${conflict.id}:`, error)
-          requiresManual.push(conflict)
+          console.error(
+            `Failed to auto-resolve conflict ${conflict.id}:`,
+            error
+          );
+          requiresManual.push(conflict);
         }
       } else {
-        requiresManual.push(conflict)
+        requiresManual.push(conflict);
       }
     }
 
     return {
       resolved,
       requiresManual,
-      successRate: conflicts.length > 0 ? resolved.length / conflicts.length : 1
-    }
+      successRate:
+        conflicts.length > 0 ? resolved.length / conflicts.length : 1,
+    };
   }
 
   /**
@@ -623,14 +791,18 @@ export class ConflictResolutionService {
       const [sourceVersion, targetVersion, baseVersion] = await Promise.all([
         this.fetchVersion(sourceVersionId),
         this.fetchVersion(targetVersionId),
-        this.findCommonBase(sourceVersionId, targetVersionId)
-      ])
+        this.findCommonBase(sourceVersionId, targetVersionId),
+      ]);
 
       // Perform three-way merge
-      return this.detector.threeWayMerge(sourceVersion.data, targetVersion.data, baseVersion.data)
+      return this.detector.threeWayMerge(
+        sourceVersion.data,
+        targetVersion.data,
+        baseVersion.data
+      );
     } catch (error) {
-      console.error('Error merging branches:', error)
-      throw error
+      console.error("Error merging branches:", error);
+      throw error;
     }
   }
 
@@ -638,37 +810,40 @@ export class ConflictResolutionService {
    * Fetch a version by ID
    */
   private async fetchVersion(versionId: string): Promise<VersionInfo> {
-    const response = await fetch(`${this.apiBaseUrl}/versions/${versionId}`)
+    const response = await fetch(`${this.apiBaseUrl}/versions/${versionId}`);
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch version: ${response.statusText}`)
+      throw new Error(`Failed to fetch version: ${response.statusText}`);
     }
 
-    return response.json()
+    return response.json();
   }
 
   /**
    * Find common base version for two versions
    */
-  private async findCommonBase(versionId1: string, versionId2: string): Promise<VersionInfo> {
+  private async findCommonBase(
+    versionId1: string,
+    versionId2: string
+  ): Promise<VersionInfo> {
     const response = await fetch(
       `${this.apiBaseUrl}/versions/common-base?v1=${versionId1}&v2=${versionId2}`
-    )
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to find common base: ${response.statusText}`)
+      throw new Error(`Failed to find common base: ${response.statusText}`);
     }
 
-    return response.json()
+    return response.json();
   }
 
   /**
    * Get the conflict detector instance
    */
   getDetector(): ConflictDetector {
-    return this.detector
+    return this.detector;
   }
 }
 
 // Export singleton instance
-export const conflictResolutionService = new ConflictResolutionService()
+export const conflictResolutionService = new ConflictResolutionService();

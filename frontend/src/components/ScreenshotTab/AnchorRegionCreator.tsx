@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
-import { Plus, Anchor } from 'lucide-react';
-import { ScreenshotLocation, ScreenshotRegion } from '../../types/Screenshot';
-import { createRegionFromAnchors, canCreateRegionFromAnchors, getAnchorTypeName } from '../../lib/region-utils';
+import React, { useState } from "react";
+import { Plus, Anchor } from "lucide-react";
+import { ScreenshotLocation, ScreenshotRegion } from "../../types/Screenshot";
+import {
+  createRegionFromAnchors,
+  canCreateRegionFromAnchors,
+  getAnchorTypeName,
+} from "../../lib/region-utils";
 
 interface AnchorRegionCreatorProps {
   locations: ScreenshotLocation[];
@@ -10,23 +14,23 @@ interface AnchorRegionCreatorProps {
 
 const AnchorRegionCreator: React.FC<AnchorRegionCreatorProps> = ({
   locations,
-  onRegionCreate
+  onRegionCreate,
 }) => {
-  const [anchor1Id, setAnchor1Id] = useState<string>('');
-  const [anchor2Id, setAnchor2Id] = useState<string>('');
-  const [regionName, setRegionName] = useState<string>('');
+  const [anchor1Id, setAnchor1Id] = useState<string>("");
+  const [anchor2Id, setAnchor2Id] = useState<string>("");
+  const [regionName, setRegionName] = useState<string>("");
 
   // Filter locations to only show anchors
-  const anchors = locations.filter(loc => loc.anchor);
+  const anchors = locations.filter((loc) => loc.anchor);
 
   const handleCreateRegion = () => {
-    const anchor1 = anchors.find(a => a.id === anchor1Id);
-    const anchor2 = anchors.find(a => a.id === anchor2Id);
+    const anchor1 = anchors.find((a) => a.id === anchor1Id);
+    const anchor2 = anchors.find((a) => a.id === anchor2Id);
 
     if (!anchor1 || !anchor2) return;
 
     if (!canCreateRegionFromAnchors(anchor1, anchor2)) {
-      alert('Cannot create a valid region from these anchors');
+      alert("Cannot create a valid region from these anchors");
       return;
     }
 
@@ -41,14 +45,14 @@ const AnchorRegionCreator: React.FC<AnchorRegionCreatorProps> = ({
     onRegionCreate(region);
 
     // Reset form
-    setAnchor1Id('');
-    setAnchor2Id('');
-    setRegionName('');
+    setAnchor1Id("");
+    setAnchor2Id("");
+    setRegionName("");
   };
 
   const isValid = () => {
-    const anchor1 = anchors.find(a => a.id === anchor1Id);
-    const anchor2 = anchors.find(a => a.id === anchor2Id);
+    const anchor1 = anchors.find((a) => a.id === anchor1Id);
+    const anchor2 = anchors.find((a) => a.id === anchor2Id);
     return canCreateRegionFromAnchors(anchor1 || null, anchor2 || null);
   };
 
@@ -82,7 +86,7 @@ const AnchorRegionCreator: React.FC<AnchorRegionCreatorProps> = ({
             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Select first anchor</option>
-            {anchors.map(anchor => (
+            {anchors.map((anchor) => (
               <option key={anchor.id} value={anchor.id}>
                 {anchor.name} ({getAnchorTypeName(anchor.anchorType)})
               </option>
@@ -103,8 +107,8 @@ const AnchorRegionCreator: React.FC<AnchorRegionCreatorProps> = ({
           >
             <option value="">Select second anchor</option>
             {anchors
-              .filter(a => a.id !== anchor1Id)
-              .map(anchor => (
+              .filter((a) => a.id !== anchor1Id)
+              .map((anchor) => (
                 <option key={anchor.id} value={anchor.id}>
                   {anchor.name} ({getAnchorTypeName(anchor.anchorType)})
                 </option>
@@ -133,8 +137,8 @@ const AnchorRegionCreator: React.FC<AnchorRegionCreatorProps> = ({
           disabled={!isValid()}
           className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium transition-colors ${
             isValid()
-              ? 'bg-blue-600 text-white hover:bg-blue-700'
-              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              ? "bg-blue-600 text-white hover:bg-blue-700"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed"
           }`}
         >
           <Plus className="w-4 h-4" />
@@ -144,9 +148,9 @@ const AnchorRegionCreator: React.FC<AnchorRegionCreatorProps> = ({
         {/* Info Text */}
         {anchor1Id && anchor2Id && (
           <div className="text-xs text-gray-500 p-2 bg-blue-50 rounded">
-            A region will be created spanning from{' '}
-            <strong>{anchors.find(a => a.id === anchor1Id)?.name}</strong> to{' '}
-            <strong>{anchors.find(a => a.id === anchor2Id)?.name}</strong>
+            A region will be created spanning from{" "}
+            <strong>{anchors.find((a) => a.id === anchor1Id)?.name}</strong> to{" "}
+            <strong>{anchors.find((a) => a.id === anchor2Id)?.name}</strong>
           </div>
         )}
       </div>

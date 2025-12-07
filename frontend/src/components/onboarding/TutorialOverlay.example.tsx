@@ -5,8 +5,8 @@
  * into your application. Follow these steps to add interactive tours.
  */
 
-import { TutorialOverlay } from './TutorialOverlay';
-import { useOnboardingStore } from '@/stores/onboarding-store';
+import { TutorialOverlay } from "./TutorialOverlay";
+import { useOnboardingStore } from "@/stores/onboarding-store";
 
 // ============================================================================
 // Step 1: Add TutorialOverlay to your root layout or page
@@ -27,7 +27,9 @@ export function DashboardWithTutorial() {
 
         <button
           data-tour="new-project"
-          onClick={() => {/* create project */}}
+          onClick={() => {
+            /* create project */
+          }}
           className="btn-primary"
         >
           New Project
@@ -46,9 +48,7 @@ export function DashboardWithTutorial() {
         </button>
 
         {/* Button to start tutorial */}
-        <button onClick={startTour}>
-          Take Tour
-        </button>
+        <button onClick={startTour}>Take Tour</button>
       </div>
 
       {/* Add the TutorialOverlay component */}
@@ -126,12 +126,8 @@ export function WelcomeModal() {
     <div className="modal">
       <h2>Welcome to Qontinui!</h2>
       <p>Would you like to take a quick tour?</p>
-      <button onClick={handleTakeTour}>
-        Take Tour
-      </button>
-      <button onClick={() => toggleWelcomeModal(false)}>
-        Skip
-      </button>
+      <button onClick={handleTakeTour}>Take Tour</button>
+      <button onClick={() => toggleWelcomeModal(false)}>Skip</button>
     </div>
   );
 }
@@ -153,17 +149,11 @@ export function TutorialControls() {
     <div className="tutorial-controls">
       {/* Start tutorial button */}
       {!showTutorialOverlay && (
-        <button onClick={startTour}>
-          Start Tutorial
-        </button>
+        <button onClick={startTour}>Start Tutorial</button>
       )}
 
       {/* Skip tutorial button */}
-      {showTutorialOverlay && (
-        <button onClick={skipTour}>
-          Skip Tutorial
-        </button>
-      )}
+      {showTutorialOverlay && <button onClick={skipTour}>Skip Tutorial</button>}
 
       {/* Jump to specific step */}
       {showTutorialOverlay && (
@@ -308,19 +298,14 @@ For additional mobile customizations:
 // ============================================================================
 
 export function TutorialAnalytics() {
-  const {
-    hasStartedTour,
-    hasCompletedWelcome,
-    currentTourStep,
-  } = useOnboardingStore();
-
   // Track tutorial progress
+  // Removed unused onboardingState variable
   // You can send this data to your analytics service
-  const tutorialProgress = {
-    started: hasStartedTour,
-    completed: hasCompletedWelcome,
-    currentStep: currentTourStep,
-  };
+  // const tutorialProgress = {
+  //   started: hasStartedTour,
+  //   completed: hasCompletedWelcome,
+  //   currentStep: currentTourStep,
+  // };
 
   // Example: Send to analytics
   // useEffect(() => {

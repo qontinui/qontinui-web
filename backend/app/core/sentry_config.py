@@ -12,10 +12,14 @@ Features:
 - Breadcrumbs for debugging
 """
 
+import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
+
+if TYPE_CHECKING:
+    from sentry_sdk.types import Event, Hint
 
 logger = structlog.get_logger(__name__)
 
@@ -26,7 +30,7 @@ def configure_sentry(
     release: str | None = None,
     traces_sample_rate: float = 0.1,
     profiles_sample_rate: float = 0.1,
-):
+) -> None:
     """
     Configure Sentry for error tracking and APM
 
@@ -57,11 +61,12 @@ def configure_sentry(
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+        from sentry_sdk.types import Event, Hint
 
         # Logging integration (capture ERROR and CRITICAL logs)
         logging_integration = LoggingIntegration(
             level=None,  # Don't capture logs as breadcrumbs
-            event_level="ERROR",  # Capture ERROR and CRITICAL as events
+            event_level=logging.ERROR,  # Capture ERROR and CRITICAL as events
         )
 
         sentry_sdk.init(
@@ -101,9 +106,7 @@ def configure_sentry(
         )
 
 
-def before_send_filter(
-    event: dict[str, Any], hint: dict[str, Any]
-) -> dict[str, Any] | None:
+def before_send_filter(event: "Event", hint: "Hint") -> "Event | None":
     """
     Filter events before sending to Sentry
 
@@ -115,26 +118,39 @@ def before_send_filter(
         Filtered event or None to drop the event
     """
     # Don't send health check errors
-    if event.get("request", {}).get("url", "").endswith("/health"):
-        return None
+    request = event.get("request")
+    if request and isinstance(request, dict):
+        url = request.get("url", "")
+        if isinstance(url, str) and url.endswith("/health"):
+            return None
 
     # Don't send 404 errors (client-side issues)
-    if event.get("exception"):
-        for exception in event["exception"].get("values", []):
-            if "404" in str(exception.get("value", "")):
-                return None
+    exception_data = event.get("exception")
+    if exception_data and isinstance(exception_data, dict):
+        values = exception_data.get("values", [])
+        if isinstance(values, list):
+            for exception in values:
+                if isinstance(exception, dict) and "404" in str(
+                    exception.get("value", "")
+                ):
+                    return None
 
     # Don't send rate limit errors (expected behavior)
-    if event.get("exception"):
-        for exception in event["exception"].get("values", []):
-            if "rate limit" in str(exception.get("value", "")).lower():
-                return None
+    if exception_data and isinstance(exception_data, dict):
+        values = exception_data.get("values", [])
+        if isinstance(values, list):
+            for exception in values:
+                if (
+                    isinstance(exception, dict)
+                    and "rate limit" in str(exception.get("value", "")).lower()
+                ):
+                    return None
 
     return event
 
 
 def before_breadcrumb_filter(
-    crumb: dict[str, Any], hint: dict[str, Any]
+    crumb: dict[str, Any], hint: "Hint"
 ) -> dict[str, Any] | None:
     """
     Filter breadcrumbs before adding to Sentry
@@ -156,7 +172,9 @@ def before_breadcrumb_filter(
     return crumb
 
 
-def set_user_context(user_id: str, email: str | None = None, **extra_context):
+def set_user_context(
+    user_id: str, email: str | None = None, **extra_context: Any
+) -> None:
     """
     Set user context for Sentry events
 
@@ -173,7 +191,7 @@ def set_user_context(user_id: str, email: str | None = None, **extra_context):
         pass
 
 
-def clear_user_context():
+def clear_user_context() -> None:
     """Clear user context (e.g., on logout)"""
     try:
         import sentry_sdk
@@ -183,7 +201,7 @@ def clear_user_context():
         pass
 
 
-def capture_exception(exception: Exception, **extra_context):
+def capture_exception(exception: Exception, **extra_context: Any) -> None:
     """
     Manually capture an exception to Sentry
 
@@ -207,7 +225,11 @@ def capture_exception(exception: Exception, **extra_context):
         )
 
 
-def capture_message(message: str, level: str = "info", **extra_context):
+def capture_message(
+    message: str,
+    level: Literal["fatal", "critical", "error", "warning", "info", "debug"] = "info",
+    **extra_context: Any,
+) -> None:
     """
     Manually capture a message to Sentry
 

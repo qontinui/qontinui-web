@@ -1,3 +1,5 @@
+from fastapi import APIRouter
+
 from app.api.v1.endpoints import (
     admin,
     admin_ws,
@@ -5,7 +7,7 @@ from app.api.v1.endpoints import (
     analytics,
     annotations,
     audit_logs,
-    auth,
+    auth_endpoints,
     automation,
     automation_ws,
     background_removal,
@@ -18,6 +20,7 @@ from app.api.v1.endpoints import (
     conflicts,
     custom_functions,
     export,
+    extraction,
     feedback,
     health,
     images,
@@ -28,25 +31,29 @@ from app.api.v1.endpoints import (
     project_files,
     projects,
     public,
+    recordings,
     region_analysis,
+    runner_command_ws,
+    runner_devices,
+    runner_status_ws,
     runners,
-    security,
+    security_endpoints,
     settings,
     snapshots,
     state_discovery,
     testing,
+    training_datasets,
     users,
     variables,
     versions,
     videos,
 )
-from fastapi import APIRouter
 
 api_router = APIRouter()
 
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(public.router, prefix="/public", tags=["public"])
-api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(auth_endpoints.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(
@@ -101,8 +108,13 @@ api_router.include_router(
 )
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(runners.router, prefix="/runners", tags=["runners"])
+api_router.include_router(
+    runner_devices.router, prefix="/runner-devices", tags=["runner-devices"]
+)
 api_router.include_router(versions.router, prefix="/projects", tags=["versions"])
-api_router.include_router(security.router, prefix="/security", tags=["security"])
+api_router.include_router(
+    security_endpoints.router, prefix="/security", tags=["security"]
+)
 api_router.include_router(variables.router, tags=["variables"])
 api_router.include_router(
     code_packages.router, prefix="/code-packages", tags=["code-packages"]
@@ -110,3 +122,12 @@ api_router.include_router(
 api_router.include_router(custom_functions.router, tags=["custom-functions"])
 api_router.include_router(capture.router, prefix="/capture", tags=["capture-sessions"])
 api_router.include_router(testing.router, prefix="/testing", tags=["testing"])
+api_router.include_router(
+    training_datasets.router, prefix="/datasets", tags=["training-datasets"]
+)
+api_router.include_router(recordings.router, prefix="/recordings", tags=["recordings"])
+api_router.include_router(extraction.router, tags=["extraction"])
+api_router.include_router(
+    runner_command_ws.router, prefix="/automation", tags=["runner-command-websockets"]
+)
+api_router.include_router(runner_status_ws.router, tags=["runner-status-websockets"])

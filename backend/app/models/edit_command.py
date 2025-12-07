@@ -1,7 +1,15 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -18,13 +26,23 @@ class EditCommand(Base):
     - Detailed change history for debugging
     - Granular undo/redo capabilities (future enhancement)
     """
+
     __tablename__ = "edit_commands"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     command_type = Column(String, nullable=False)  # 'update', 'create', 'delete'
-    entity_type = Column(String, nullable=False)  # 'workflow', 'state', 'action', 'project', etc.
+    entity_type = Column(
+        String, nullable=False
+    )  # 'workflow', 'state', 'action', 'project', etc.
     entity_id = Column(String, nullable=False)  # ID of the entity being modified
     payload = Column(JSON, nullable=False)  # What changed (new values, delta, etc.)
     sequence_number = Column(Integer, nullable=False)  # Ensures ordering and no gaps
@@ -35,5 +53,7 @@ class EditCommand(Base):
     user = relationship("User", back_populates="edit_commands")
 
     __table_args__ = (
-        UniqueConstraint('project_id', 'sequence_number', name='uq_project_command_seq'),
+        UniqueConstraint(
+            "project_id", "sequence_number", name="uq_project_command_seq"
+        ),
     )

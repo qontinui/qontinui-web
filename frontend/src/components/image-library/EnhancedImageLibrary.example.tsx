@@ -6,8 +6,8 @@
 
 "use client";
 
-import React from 'react';
-import { EnhancedImageLibrary } from './EnhancedImageLibrary';
+import React from "react";
+import { EnhancedImageLibrary } from "./EnhancedImageLibrary";
 
 /**
  * Example 1: Basic Usage
@@ -47,10 +47,10 @@ export function TabExample() {
  *
  * Using the organization hook separately for custom UI.
  */
-import { useImageOrganization } from './useImageOrganization';
-import { useAutomation } from '@/contexts/automation-context';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useImageOrganization } from "./useImageOrganization";
+import { useAutomation } from "@/contexts/automation-context";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 export function CustomOrganizationExample() {
   const { images, updateImage } = useAutomation();
@@ -64,10 +64,13 @@ export function CustomOrganizationExample() {
     currentFilter,
     setCurrentFilter,
     selectedImageIds,
-    toggleImageSelection,
     clearSelection,
   } = useImageOrganization({
-    images: images.map(img => ({ ...img, folderId: (img as any).folderId, tags: (img as any).tags || [] })),
+    images: images.map((img) => ({
+      ...img,
+      folderId: (img as any).folderId,
+      tags: (img as any).tags || [],
+    })),
     onUpdateImage: updateImage as any,
   });
 
@@ -81,10 +84,10 @@ export function CustomOrganizationExample() {
       </div>
 
       <div className="flex gap-2">
-        <Button onClick={() => createFolder('New Folder', null, '#3b82f6')}>
+        <Button onClick={() => createFolder("New Folder", null, "#3b82f6")}>
           Create Folder
         </Button>
-        <Button onClick={() => createCollection('New Collection')}>
+        <Button onClick={() => createCollection("New Collection")}>
           Create Collection
         </Button>
         {selectedImageIds.size > 0 && (
@@ -99,8 +102,11 @@ export function CustomOrganizationExample() {
         <div className="border rounded-lg p-4">
           <h3 className="font-semibold mb-2">Folders</h3>
           <div className="space-y-1">
-            {folderTree.map(folder => (
-              <div key={folder.id} className="flex items-center justify-between text-sm">
+            {folderTree.map((folder) => (
+              <div
+                key={folder.id}
+                className="flex items-center justify-between text-sm"
+              >
                 <span>{folder.name}</span>
                 <Badge variant="outline">{folder.totalImageCount}</Badge>
               </div>
@@ -111,8 +117,11 @@ export function CustomOrganizationExample() {
         <div className="border rounded-lg p-4">
           <h3 className="font-semibold mb-2">Collections</h3>
           <div className="space-y-1">
-            {collections.map(collection => (
-              <div key={collection.id} className="flex items-center justify-between text-sm">
+            {collections.map((collection) => (
+              <div
+                key={collection.id}
+                className="flex items-center justify-between text-sm"
+              >
                 <span>{collection.name}</span>
                 <Badge variant="outline">{collection.imageIds.length}</Badge>
               </div>
@@ -126,20 +135,31 @@ export function CustomOrganizationExample() {
             <input
               type="text"
               placeholder="Search..."
-              value={currentFilter.query || ''}
-              onChange={(e) => setCurrentFilter({ ...currentFilter, query: e.target.value })}
+              value={currentFilter.query || ""}
+              onChange={(e) =>
+                setCurrentFilter({ ...currentFilter, query: e.target.value })
+              }
               className="w-full px-3 py-2 border rounded"
             />
             <div className="flex gap-1 flex-wrap">
-              {['uploaded', 'pattern_optimization', 'image_extraction', 'state_discovery'].map(source => (
+              {[
+                "uploaded",
+                "pattern_optimization",
+                "image_extraction",
+                "state_discovery",
+              ].map((source) => (
                 <Badge
                   key={source}
-                  variant={currentFilter.sources?.includes(source as any) ? 'default' : 'outline'}
+                  variant={
+                    currentFilter.sources?.includes(source as any)
+                      ? "default"
+                      : "outline"
+                  }
                   className="cursor-pointer"
                   onClick={() => {
                     const sources = currentFilter.sources || [];
                     const newSources = sources.includes(source as any)
-                      ? sources.filter(s => s !== source)
+                      ? sources.filter((s) => s !== source)
                       : [...sources, source as any];
                     setCurrentFilter({ ...currentFilter, sources: newSources });
                   }}
@@ -161,56 +181,67 @@ export function CustomOrganizationExample() {
  * Demonstrates programmatic control of the image library.
  */
 export function ProgrammaticExample() {
-  const { images, updateImage, addImage } = useAutomation();
+  const { images, updateImage } = useAutomation();
 
   const {
-    folders,
     createFolder,
-    collections,
     createCollection,
     addImagesToCollection,
     addTagToImages,
-    selectedImageIds,
     selectAllImages,
     clearSelection,
   } = useImageOrganization({
-    images: images.map(img => ({ ...img, folderId: (img as any).folderId, tags: (img as any).tags || [] })),
+    images: images.map((img) => ({
+      ...img,
+      folderId: (img as any).folderId,
+      tags: (img as any).tags || [],
+    })),
     onUpdateImage: updateImage as any,
   });
 
   const handleOrganizeImages = () => {
     // Create folder structure
-    const uiFolder = createFolder('UI Components', null, '#3b82f6');
-    const buttonsFolder = createFolder('Buttons', uiFolder.id, '#10b981');
-    const iconsFolder = createFolder('Icons', uiFolder.id, '#f59e0b');
+    const uiFolder = createFolder("UI Components", null, "#3b82f6");
+    const buttonsFolder = createFolder("Buttons", uiFolder.id, "#10b981");
+    const iconsFolder = createFolder("Icons", uiFolder.id, "#f59e0b");
 
     // Create collections
     const loginCollection = createCollection(
-      'Login Screen',
-      'All assets for login screen'
+      "Login Screen",
+      "All assets for login screen"
     );
 
     // Auto-organize by name patterns
-    images.forEach(image => {
-      if (image.name.toLowerCase().includes('button')) {
+    images.forEach((image) => {
+      if (image.name.toLowerCase().includes("button")) {
         updateImage({ ...image, folderId: buttonsFolder.id } as any);
-      } else if (image.name.toLowerCase().includes('icon')) {
+      } else if (image.name.toLowerCase().includes("icon")) {
         updateImage({ ...image, folderId: iconsFolder.id } as any);
       }
     });
 
     // Auto-tag
-    const buttonImages = images.filter(img => img.name.toLowerCase().includes('button'));
-    addTagToImages(buttonImages.map(img => img.id), 'interactive');
+    const buttonImages = images.filter((img) =>
+      img.name.toLowerCase().includes("button")
+    );
+    addTagToImages(
+      buttonImages.map((img) => img.id),
+      "interactive"
+    );
 
     // Add to collection
-    const loginImages = images.filter(img => img.name.toLowerCase().includes('login'));
-    addImagesToCollection(loginCollection.id, loginImages.map(img => img.id));
+    const loginImages = images.filter((img) =>
+      img.name.toLowerCase().includes("login")
+    );
+    addImagesToCollection(
+      loginCollection.id,
+      loginImages.map((img) => img.id)
+    );
   };
 
   const handleSelectAllUnused = () => {
-    const unusedImages = images.filter(img => img.usageCount === 0);
-    selectAllImages(unusedImages.map(img => img.id));
+    const unusedImages = images.filter((img) => img.usageCount === 0);
+    selectAllImages(unusedImages.map((img) => img.id));
   };
 
   return (
@@ -221,7 +252,11 @@ export function ProgrammaticExample() {
         <Button onClick={handleOrganizeImages} className="w-full">
           Auto-Organize Images
         </Button>
-        <Button onClick={handleSelectAllUnused} variant="outline" className="w-full">
+        <Button
+          onClick={handleSelectAllUnused}
+          variant="outline"
+          className="w-full"
+        >
           Select All Unused Images
         </Button>
         <Button onClick={clearSelection} variant="outline" className="w-full">
@@ -241,12 +276,17 @@ export function ProgrammaticExample() {
  *
  * Shows how to integrate with workflow builder for image selection.
  */
-import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function WorkflowIntegrationExample() {
   const [showImagePicker, setShowImagePicker] = useState(false);
-  const [selectedImageForWorkflow, setSelectedImageForWorkflow] = useState<string | null>(null);
+  const [selectedImageForWorkflow] = useState<string | null>(null);
 
   const handleSelectImageForAction = () => {
     setShowImagePicker(true);
@@ -258,17 +298,17 @@ export function WorkflowIntegrationExample() {
 
       <div className="border rounded-lg p-4 space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-2">Selected Image</label>
+          <label className="block text-sm font-medium mb-2">
+            Selected Image
+          </label>
           <div className="flex gap-2">
             <input
               type="text"
-              value={selectedImageForWorkflow || 'No image selected'}
+              value={selectedImageForWorkflow || "No image selected"}
               readOnly
               className="flex-1 px-3 py-2 border rounded bg-gray-50"
             />
-            <Button onClick={handleSelectImageForAction}>
-              Choose Image
-            </Button>
+            <Button onClick={handleSelectImageForAction}>Choose Image</Button>
           </div>
         </div>
       </div>
@@ -297,18 +337,18 @@ export function DashboardExample() {
 
   const stats = {
     total: images.length,
-    uploaded: images.filter(img => img.source === 'uploaded').length,
-    used: images.filter(img => img.usageCount > 0).length,
-    unused: images.filter(img => img.usageCount === 0).length,
+    uploaded: images.filter((img) => img.source === "uploaded").length,
+    used: images.filter((img) => img.usageCount > 0).length,
+    unused: images.filter((img) => img.usageCount === 0).length,
     totalSize: images.reduce((acc, img) => acc + img.size, 0),
   };
 
   const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return "0 Bytes";
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
   return (
@@ -320,27 +360,37 @@ export function DashboardExample() {
         <div className="grid grid-cols-5 gap-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border">
             <div className="text-sm text-gray-500 mb-1">Total Images</div>
-            <div className="text-3xl font-bold text-blue-500">{stats.total}</div>
+            <div className="text-3xl font-bold text-blue-500">
+              {stats.total}
+            </div>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border">
             <div className="text-sm text-gray-500 mb-1">Uploaded</div>
-            <div className="text-3xl font-bold text-green-500">{stats.uploaded}</div>
+            <div className="text-3xl font-bold text-green-500">
+              {stats.uploaded}
+            </div>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border">
             <div className="text-sm text-gray-500 mb-1">In Use</div>
-            <div className="text-3xl font-bold text-purple-500">{stats.used}</div>
+            <div className="text-3xl font-bold text-purple-500">
+              {stats.used}
+            </div>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border">
             <div className="text-sm text-gray-500 mb-1">Unused</div>
-            <div className="text-3xl font-bold text-amber-500">{stats.unused}</div>
+            <div className="text-3xl font-bold text-amber-500">
+              {stats.unused}
+            </div>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border">
             <div className="text-sm text-gray-500 mb-1">Total Size</div>
-            <div className="text-2xl font-bold text-cyan-500">{formatBytes(stats.totalSize)}</div>
+            <div className="text-2xl font-bold text-cyan-500">
+              {formatBytes(stats.totalSize)}
+            </div>
           </div>
         </div>
       </div>

@@ -1,23 +1,22 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  Workflow,
-} from '@/lib/action-schema/action-types';
+import React, { useState, useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
+import { Workflow } from "@/lib/action-schema/action-types";
 import {
   WorkflowDocumentation,
   WorkflowDocumentationService,
-} from '@/services/workflow-documentation-service';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+} from "@/services/workflow-documentation-service";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   Edit,
   Download,
@@ -30,9 +29,9 @@ import {
   Sun,
   Copy,
   Check,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useTheme } from 'next-themes';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useTheme } from "next-themes";
 
 // ============================================================================
 // Props
@@ -73,9 +72,11 @@ export function DocumentationViewer({
   onEdit,
   className,
 }: DocumentationViewerProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeSection, setActiveSection] = useState<string>('');
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeSection, setActiveSection] = useState<string>("");
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
+    new Set()
+  );
   const [copiedLink, setCopiedLink] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const { theme, setTheme } = useTheme();
@@ -84,11 +85,11 @@ export function DocumentationViewer({
 
   // Parse content into sections
   const parseSections = (): Section[] => {
-    const lines = documentation.content.split('\n');
+    const lines = documentation.content.split("\n");
     const sections: Section[] = [];
     let currentSection: Section | null = null;
 
-    lines.forEach((line, idx) => {
+    lines.forEach((line) => {
       const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
 
       if (headerMatch) {
@@ -97,21 +98,21 @@ export function DocumentationViewer({
           sections.push(currentSection);
         }
 
-        const level = headerMatch[1].length;
-        const text = headerMatch[2].trim();
+        const level = headerMatch[1]?.length ?? 1;
+        const text = headerMatch[2]?.trim() ?? "";
         const id = text
           .toLowerCase()
-          .replace(/[^\w\s-]/g, '')
-          .replace(/\s+/g, '-');
+          .replace(/[^\w\s-]/g, "")
+          .replace(/\s+/g, "-");
 
         currentSection = {
           id,
           title: text,
-          content: '',
+          content: "",
           level,
         };
       } else if (currentSection) {
-        currentSection.content += line + '\n';
+        currentSection.content += line + "\n";
       }
     });
 
@@ -138,14 +139,20 @@ export function DocumentationViewer({
       };
 
       // Find parent in stack
-      while (stack.length > 0 && stack[stack.length - 1].level >= item.level) {
+      while (
+        stack.length > 0 &&
+        (stack[stack.length - 1]?.level ?? 0) >= item.level
+      ) {
         stack.pop();
       }
 
       if (stack.length === 0) {
         toc.push(item);
       } else {
-        stack[stack.length - 1].children.push(item);
+        const parent = stack[stack.length - 1];
+        if (parent) {
+          parent.children.push(item);
+        }
       }
 
       stack.push(item);
@@ -160,7 +167,7 @@ export function DocumentationViewer({
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
       setActiveSection(id);
     }
   };
@@ -187,7 +194,7 @@ export function DocumentationViewer({
   };
 
   // Export functionality
-  const handleExport = (format: 'markdown' | 'html' | 'pdf') => {
+  const handleExport = (format: "markdown" | "html" | "pdf") => {
     const exported = docService.exportDocumentation(workflow.id, {
       format,
       includeTOC: true,
@@ -198,12 +205,12 @@ export function DocumentationViewer({
 
     if (exported) {
       const blob = new Blob([exported], {
-        type: format === 'html' ? 'text/html' : 'text/markdown',
+        type: format === "html" ? "text/html" : "text/markdown",
       });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `${workflow.name}-docs.${format === 'pdf' ? 'pdf' : format === 'html' ? 'html' : 'md'}`;
+      a.download = `${workflow.name}-docs.${format === "pdf" ? "pdf" : format === "html" ? "html" : "md"}`;
       a.click();
       URL.revokeObjectURL(url);
     }
@@ -216,32 +223,43 @@ export function DocumentationViewer({
 
   // Render markdown content (simplified - use react-markdown in production)
   const renderContent = (content: string) => {
-    const lines = content.split('\n');
+    const lines = content.split("\n");
 
     return lines.map((line, idx) => {
       // Code blocks
-      if (line.startsWith('```')) {
+      if (line.startsWith("```")) {
         const language = line.slice(3).trim();
         return (
-          <div key={idx} className="bg-muted p-4 rounded-lg my-4 font-mono text-sm overflow-x-auto">
-            <div className="text-xs text-muted-foreground mb-2">{language || 'code'}</div>
+          <div
+            key={idx}
+            className="bg-muted p-4 rounded-lg my-4 font-mono text-sm overflow-x-auto"
+          >
+            <div className="text-xs text-muted-foreground mb-2">
+              {language || "code"}
+            </div>
             <pre>{line}</pre>
           </div>
         );
       }
 
       // Tables
-      if (line.includes('|')) {
+      if (line.includes("|")) {
         return (
           <div key={idx} className="overflow-x-auto my-4">
             <table className="min-w-full border-collapse border border-border">
               <tbody>
                 <tr>
-                  {line.split('|').filter(Boolean).map((cell, cellIdx) => (
-                    <td key={cellIdx} className="border border-border px-4 py-2">
-                      {cell.trim()}
-                    </td>
-                  ))}
+                  {line
+                    .split("|")
+                    .filter(Boolean)
+                    .map((cell, cellIdx) => (
+                      <td
+                        key={cellIdx}
+                        className="border border-border px-4 py-2"
+                      >
+                        {cell.trim()}
+                      </td>
+                    ))}
                 </tr>
               </tbody>
             </table>
@@ -253,11 +271,11 @@ export function DocumentationViewer({
       if (line.match(/^\d+\.\s/)) {
         return (
           <li key={idx} className="ml-6 mb-2 list-decimal">
-            {line.replace(/^\d+\.\s/, '')}
+            {line.replace(/^\d+\.\s/, "")}
           </li>
         );
       }
-      if (line.startsWith('- ')) {
+      if (line.startsWith("- ")) {
         return (
           <li key={idx} className="ml-6 mb-2 list-disc">
             {line.slice(2)}
@@ -266,10 +284,19 @@ export function DocumentationViewer({
       }
 
       // Bold
-      const boldText = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      const boldText = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 
       // Inline code
-      const codeText = boldText.replace(/`(.+?)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm">$1</code>');
+      const codeText = boldText.replace(
+        /`(.+?)`/g,
+        '<code class="bg-muted px-1.5 py-0.5 rounded text-sm">$1</code>'
+      );
+
+      // Sanitize HTML to prevent XSS
+      const sanitizedHtml = DOMPurify.sanitize(codeText, {
+        ALLOWED_TAGS: ["strong", "code"],
+        ALLOWED_ATTR: ["class"],
+      });
 
       // Regular paragraph
       if (line.trim()) {
@@ -277,7 +304,7 @@ export function DocumentationViewer({
           <p
             key={idx}
             className="mb-4 leading-7"
-            dangerouslySetInnerHTML={{ __html: codeText }}
+            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
           />
         );
       }
@@ -301,9 +328,9 @@ export function DocumentationViewer({
             scrollToSection(item.id);
           }}
           className={cn(
-            'w-full flex items-center gap-2 text-left px-2 py-1.5 rounded text-sm transition-colors',
-            isActive && 'bg-accent font-medium',
-            !isActive && 'hover:bg-accent/50'
+            "w-full flex items-center gap-2 text-left px-2 py-1.5 rounded text-sm transition-colors",
+            isActive && "bg-accent font-medium",
+            !isActive && "hover:bg-accent/50"
           )}
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
         >
@@ -338,7 +365,7 @@ export function DocumentationViewer({
           }
         });
       },
-      { rootMargin: '-20% 0px -70% 0px' }
+      { rootMargin: "-20% 0px -70% 0px" }
     );
 
     sections.forEach((section) => {
@@ -361,13 +388,15 @@ export function DocumentationViewer({
     : sections;
 
   return (
-    <div className={cn('flex h-full bg-background', className)}>
+    <div className={cn("flex h-full bg-background", className)}>
       {/* Table of Contents Sidebar */}
       <div className="w-64 border-r flex flex-col bg-muted/20">
         <div className="p-4 border-b space-y-3">
           <div>
             <h3 className="font-semibold">Contents</h3>
-            <p className="text-xs text-muted-foreground mt-1">{workflow.name}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {workflow.name}
+            </p>
           </div>
 
           {/* Search in TOC */}
@@ -394,7 +423,7 @@ export function DocumentationViewer({
             variant="outline"
             size="sm"
             className="w-full"
-            onClick={() => scrollToSection(sections[0]?.id)}
+            onClick={() => scrollToSection(sections[0]?.id!)}
           >
             Back to Top
           </Button>
@@ -426,10 +455,10 @@ export function DocumentationViewer({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               title="Toggle theme"
             >
-              {theme === 'dark' ? (
+              {theme === "dark" ? (
                 <Sun className="size-4" />
               ) : (
                 <Moon className="size-4" />
@@ -453,7 +482,9 @@ export function DocumentationViewer({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={() => copyLinkToSection(activeSection || sections[0]?.id)}
+                  onClick={() =>
+                    copyLinkToSection(activeSection || sections[0]?.id!)
+                  }
                 >
                   {copiedLink ? (
                     <>
@@ -478,13 +509,13 @@ export function DocumentationViewer({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExport('markdown')}>
+                <DropdownMenuItem onClick={() => handleExport("markdown")}>
                   Export as Markdown
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExport('html')}>
+                <DropdownMenuItem onClick={() => handleExport("html")}>
                   Export as HTML
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExport('pdf')}>
+                <DropdownMenuItem onClick={() => handleExport("pdf")}>
                   Export as PDF
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -506,7 +537,11 @@ export function DocumentationViewer({
             className="max-w-4xl mx-auto p-8 prose prose-sm md:prose-base lg:prose-lg dark:prose-invert"
           >
             {filteredSections.map((section) => (
-              <section key={section.id} id={section.id} className="mb-8 scroll-mt-4">
+              <section
+                key={section.id}
+                id={section.id}
+                className="mb-8 scroll-mt-4"
+              >
                 {/* Section Header */}
                 <div className="flex items-center justify-between group">
                   {section.level === 1 && (
@@ -539,7 +574,9 @@ export function DocumentationViewer({
                 </div>
 
                 {/* Section Content */}
-                <div className={cn(collapsedSections.has(section.id) && 'hidden')}>
+                <div
+                  className={cn(collapsedSections.has(section.id) && "hidden")}
+                >
                   {renderContent(section.content)}
                 </div>
               </section>

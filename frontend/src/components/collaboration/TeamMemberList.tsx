@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import * as React from 'react';
+import * as React from "react";
 import {
   Search,
   UserPlus,
@@ -13,9 +13,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -23,26 +23,26 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
-import { formatDistanceToNow } from 'date-fns';
+} from "@/components/ui/dropdown-menu";
+import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
 
-export type MemberRole = 'owner' | 'admin' | 'member' | 'viewer';
+export type MemberRole = "owner" | "admin" | "member" | "viewer";
 
 export interface TeamMember {
   id: string;
@@ -51,7 +51,7 @@ export interface TeamMember {
   avatar_url?: string;
   role: MemberRole;
   last_active: Date | string;
-  status?: 'active' | 'invited' | 'inactive';
+  status?: "active" | "invited" | "inactive";
 }
 
 interface TeamMemberListProps {
@@ -75,28 +75,30 @@ const roleIcons = {
 };
 
 const roleColors = {
-  owner: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
-  admin: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  member: 'bg-green-500/10 text-green-500 border-green-500/20',
-  viewer: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
+  owner: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  admin: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  member: "bg-green-500/10 text-green-500 border-green-500/20",
+  viewer: "bg-gray-500/10 text-gray-500 border-gray-500/20",
 };
 
 export function TeamMemberList({
   members,
   currentUserId,
-  currentUserRole = 'viewer',
+  currentUserRole = "viewer",
   onInvite,
   onRoleChange,
   onRemove,
   loading = false,
   className,
 }: TeamMemberListProps) {
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [roleFilter, setRoleFilter] = React.useState<MemberRole | 'all'>('all');
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [roleFilter, setRoleFilter] = React.useState<MemberRole | "all">("all");
   const [currentPage, setCurrentPage] = React.useState(1);
-  const [updatingMember, setUpdatingMember] = React.useState<string | null>(null);
+  const [updatingMember, setUpdatingMember] = React.useState<string | null>(
+    null
+  );
 
-  const canManageMembers = ['owner', 'admin'].includes(currentUserRole);
+  const canManageMembers = ["owner", "admin"].includes(currentUserRole);
 
   // Filter members
   const filteredMembers = React.useMemo(() => {
@@ -104,7 +106,7 @@ export function TeamMemberList({
       const matchesSearch =
         member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         member.email.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesRole = roleFilter === 'all' || member.role === roleFilter;
+      const matchesRole = roleFilter === "all" || member.role === roleFilter;
       return matchesSearch && matchesRole;
     });
   }, [members, searchQuery, roleFilter]);
@@ -126,7 +128,7 @@ export function TeamMemberList({
   };
 
   const handleRemove = async (memberId: string) => {
-    if (!confirm('Are you sure you want to remove this member?')) return;
+    if (!confirm("Are you sure you want to remove this member?")) return;
     setUpdatingMember(memberId);
     try {
       await onRemove(memberId);
@@ -137,20 +139,20 @@ export function TeamMemberList({
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
 
   const formatLastActive = (date: Date | string) => {
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    const dateObj = typeof date === "string" ? new Date(date) : date;
     return formatDistanceToNow(dateObj, { addSuffix: true });
   };
 
   return (
-    <div className={cn('space-y-4', className)}>
+    <div className={cn("space-y-4", className)}>
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-[200px] max-w-sm">
@@ -172,7 +174,7 @@ export function TeamMemberList({
           <Select
             value={roleFilter}
             onValueChange={(value) => {
-              setRoleFilter(value as MemberRole | 'all');
+              setRoleFilter(value as MemberRole | "all");
               setCurrentPage(1);
             }}
           >
@@ -203,9 +205,9 @@ export function TeamMemberList({
         </div>
       ) : paginatedMembers.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
-          {searchQuery || roleFilter !== 'all'
-            ? 'No members found matching your filters'
-            : 'No team members yet'}
+          {searchQuery || roleFilter !== "all"
+            ? "No members found matching your filters"
+            : "No team members yet"}
         </div>
       ) : (
         <>
@@ -217,7 +219,9 @@ export function TeamMemberList({
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Last Active</TableHead>
-                  {canManageMembers && <TableHead className="text-right">Actions</TableHead>}
+                  {canManageMembers && (
+                    <TableHead className="text-right">Actions</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -248,7 +252,7 @@ export function TeamMemberList({
                                 </span>
                               )}
                             </span>
-                            {member.status === 'invited' && (
+                            {member.status === "invited" && (
                               <Badge variant="outline" className="w-fit mt-1">
                                 Invited
                               </Badge>
@@ -260,7 +264,9 @@ export function TeamMemberList({
                         {member.email}
                       </TableCell>
                       <TableCell>
-                        {canManageMembers && !isCurrentUser && member.role !== 'owner' ? (
+                        {canManageMembers &&
+                        !isCurrentUser &&
+                        member.role !== "owner" ? (
                           <Select
                             value={member.role}
                             onValueChange={(value) =>
@@ -270,7 +276,7 @@ export function TeamMemberList({
                           >
                             <SelectTrigger
                               className={cn(
-                                'w-[120px]',
+                                "w-[120px]",
                                 roleColors[member.role]
                               )}
                               aria-label={`Change role for ${member.name}`}
@@ -292,7 +298,8 @@ export function TeamMemberList({
                             className={roleColors[member.role]}
                           >
                             <RoleIcon className="mr-1 h-3 w-3" />
-                            {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                            {member.role.charAt(0).toUpperCase() +
+                              member.role.slice(1)}
                           </Badge>
                         )}
                       </TableCell>
@@ -301,7 +308,7 @@ export function TeamMemberList({
                       </TableCell>
                       {canManageMembers && (
                         <TableCell className="text-right">
-                          {!isCurrentUser && member.role !== 'owner' && (
+                          {!isCurrentUser && member.role !== "owner" && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button
@@ -341,9 +348,9 @@ export function TeamMemberList({
           {totalPages > 1 && (
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
-                Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to{' '}
-                {Math.min(currentPage * ITEMS_PER_PAGE, filteredMembers.length)} of{' '}
-                {filteredMembers.length} members
+                Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to{" "}
+                {Math.min(currentPage * ITEMS_PER_PAGE, filteredMembers.length)}{" "}
+                of {filteredMembers.length} members
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -361,7 +368,9 @@ export function TeamMemberList({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
                   disabled={currentPage === totalPages}
                   aria-label="Next page"
                 >

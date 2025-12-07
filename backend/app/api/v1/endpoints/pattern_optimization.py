@@ -1,10 +1,11 @@
 from typing import Any
 
 import structlog
-from app.services.pattern_optimization_service import PatternOptimizationService
-from app.services.pattern_optimization_service import Region as ServiceRegion
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from app.services.pattern_optimization_service import PatternOptimizationService
+from app.services.pattern_optimization_service import Region as ServiceRegion
 
 logger = structlog.get_logger(__name__)
 
@@ -94,7 +95,7 @@ async def optimize_pattern(request: OptimizePatternRequest):
         stats = service.calculate_statistics(similarity_matrix, pattern_ids)
 
         # Evaluate strategies
-        evaluations = service.evaluate_strategies(patterns, request.strategies)
+        evaluations = service.evaluate_strategies(patterns, request.strategies)  # type: ignore[arg-type]
 
         # Prepare response data (remove numpy arrays)
         extracted_patterns = service.prepare_response_data(patterns)

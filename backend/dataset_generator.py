@@ -10,7 +10,6 @@ import json
 import random
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -125,7 +124,7 @@ class ButtonDatasetGenerator:
         self.image_id = 1
         self.annotation_id = 1
 
-    def _init_coco_dataset(self) -> Dict:
+    def _init_coco_dataset(self) -> dict:
         """Initialize a COCO format dataset structure."""
         return {
             "info": {
@@ -142,8 +141,8 @@ class ButtonDatasetGenerator:
         }
 
     def _adjust_color_for_state(
-        self, color: Tuple[int, int, int], state: str
-    ) -> Tuple[int, int, int]:
+        self, color: tuple[int, int, int], state: str
+    ) -> tuple[int, int, int]:
         """Adjust button color based on state."""
         r, g, b = color
 
@@ -172,7 +171,7 @@ class ButtonDatasetGenerator:
         width: int,
         height: int,
         style: str,
-        color: Tuple[int, int, int],
+        color: tuple[int, int, int],
         shape: str,
         state: str,
         label: str,
@@ -253,7 +252,7 @@ class ButtonDatasetGenerator:
 
         elif style == "ghost":
             # Subtle background with border
-            bg_color = tuple(int(c * 0.15) for c in button_color) + (50,)
+            tuple(int(c * 0.15) for c in button_color) + (50,)
             self._draw_rounded_rectangle(
                 draw, x, y, x + width, y + height, radius, fill=button_color + (30,)
             )
@@ -373,7 +372,7 @@ class ButtonDatasetGenerator:
 
         return img
 
-    def generate_sample(self, split: str = "train", num_buttons: int = None) -> Dict:
+    def generate_sample(self, split: str = "train", num_buttons: int = None) -> dict:
         """
         Generate a single screenshot sample with buttons.
 
@@ -402,7 +401,7 @@ class ButtonDatasetGenerator:
         annotations = []
         placed_buttons = []
 
-        for i in range(num_buttons):
+        for _i in range(num_buttons):
             # Button properties
             size_name = random.choice(list(self.SIZES.keys()))
             width, height = self.SIZES[size_name]
@@ -419,7 +418,7 @@ class ButtonDatasetGenerator:
 
             # Find non-overlapping position
             max_attempts = 50
-            for attempt in range(max_attempts):
+            for _attempt in range(max_attempts):
                 x = random.randint(20, img_width - width - 20)
                 y = random.randint(20, img_height - height - 20)
 
@@ -492,7 +491,7 @@ class ButtonDatasetGenerator:
         train_ratio: float = 0.7,
         val_ratio: float = 0.15,
         test_ratio: float = 0.15,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """
         Generate a complete dataset.
 

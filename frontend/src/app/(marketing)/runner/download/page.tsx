@@ -1,12 +1,20 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Download, Shield, CheckCircle2, Github, AlertCircle, Apple, MonitorSmartphone, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  Download,
+  CheckCircle2,
+  Github,
+  AlertCircle,
+  Apple,
+  MonitorSmartphone,
+  Loader2,
+} from "lucide-react";
 import Link from "next/link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
-type Platform = 'windows' | 'macos' | 'linux' | 'unknown';
+type Platform = "windows" | "macos" | "linux" | "unknown";
 
 interface ReleaseInfo {
   version: string;
@@ -16,30 +24,30 @@ interface ReleaseInfo {
 
 // Latest release info - update this when releasing
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.1.0',
-  date: 'November 9, 2025',
-  github_url: 'https://github.com/qontinui/qontinui-runner/releases/tag/v0.1.0'
+  version: "0.1.0",
+  date: "November 9, 2025",
+  github_url: "https://github.com/qontinui/qontinui-runner/releases/tag/v0.1.0",
 };
 
 function detectPlatform(): Platform {
-  if (typeof window === 'undefined') return 'unknown';
+  if (typeof window === "undefined") return "unknown";
 
   const userAgent = window.navigator.userAgent.toLowerCase();
 
-  if (userAgent.includes('win')) return 'windows';
-  if (userAgent.includes('mac')) return 'macos';
-  if (userAgent.includes('linux')) return 'linux';
+  if (userAgent.includes("win")) return "windows";
+  if (userAgent.includes("mac")) return "macos";
+  if (userAgent.includes("linux")) return "linux";
 
-  return 'unknown';
+  return "unknown";
 }
 
 function getPlatformIcon(platform: Platform) {
   switch (platform) {
-    case 'windows':
+    case "windows":
       return <MonitorSmartphone className="h-6 w-6" />;
-    case 'macos':
+    case "macos":
       return <Apple className="h-6 w-6" />;
-    case 'linux':
+    case "linux":
       return <MonitorSmartphone className="h-6 w-6" />;
     default:
       return <Download className="h-6 w-6" />;
@@ -48,29 +56,36 @@ function getPlatformIcon(platform: Platform) {
 
 function getPlatformName(platform: Platform): string {
   switch (platform) {
-    case 'windows': return 'Windows';
-    case 'macos': return 'macOS';
-    case 'linux': return 'Linux';
-    default: return 'Unknown';
+    case "windows":
+      return "Windows";
+    case "macos":
+      return "macOS";
+    case "linux":
+      return "Linux";
+    default:
+      return "Unknown";
   }
 }
 
 export default function DownloadPage() {
-  const [platform, setPlatform] = useState<Platform>('unknown');
+  const [platform, setPlatform] = useState<Platform>("unknown");
   const [downloading, setDownloading] = useState<string | null>(null);
 
   useEffect(() => {
     setPlatform(detectPlatform());
   }, []);
 
-  const handleDownload = async (selectedPlatform: Platform, filename: string) => {
+  const handleDownload = async (
+    selectedPlatform: Platform,
+    filename: string
+  ) => {
     setDownloading(filename);
 
     // Track download (privacy-friendly)
     try {
-      await fetch('/api/analytics/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/analytics/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           platform: selectedPlatform,
           version: LATEST_RELEASE.version,
@@ -79,11 +94,11 @@ export default function DownloadPage() {
       });
     } catch (e) {
       // Silent fail - don't block download
-      console.error('Analytics error:', e);
+      console.error("Analytics error:", e);
     }
 
     // Redirect to GitHub release download
-    const downloadUrl = `${LATEST_RELEASE.github_url.replace('/tag/', '/download/')}/${filename}`;
+    const downloadUrl = `${LATEST_RELEASE.github_url.replace("/tag/", "/download/")}/${filename}`;
     window.location.href = downloadUrl;
 
     // Reset downloading state after a delay
@@ -99,7 +114,9 @@ export default function DownloadPage() {
             Download Qontinui Runner
           </h1>
           <p className="text-lg text-slate-600 mb-2">
-            Latest version: <span className="font-semibold">{LATEST_RELEASE.version}</span> (Beta)
+            Latest version:{" "}
+            <span className="font-semibold">{LATEST_RELEASE.version}</span>{" "}
+            (Beta)
           </p>
           <p className="text-sm text-slate-500">
             Released {LATEST_RELEASE.date}
@@ -108,7 +125,7 @@ export default function DownloadPage() {
       </section>
 
       {/* Detected Platform Callout */}
-      {platform !== 'unknown' && (
+      {platform !== "unknown" && (
         <section className="container mx-auto px-4 pb-8">
           <div className="max-w-4xl mx-auto">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
@@ -119,16 +136,24 @@ export default function DownloadPage() {
                 </h2>
               </div>
               <p className="text-slate-700 mb-4">
-                We've detected you're using {getPlatformName(platform)}. Download the recommended version below.
+                We've detected you're using {getPlatformName(platform)}.
+                Download the recommended version below.
               </p>
-              {platform === 'windows' && (
+              {platform === "windows" && (
                 <Button
                   size="lg"
-                  disabled={downloading === 'Qontinui.Runner_0.1.0_x64_en-US.msi'}
-                  onClick={() => handleDownload('windows', 'Qontinui.Runner_0.1.0_x64_en-US.msi')}
+                  disabled={
+                    downloading === "Qontinui.Runner_0.1.0_x64_en-US.msi"
+                  }
+                  onClick={() =>
+                    handleDownload(
+                      "windows",
+                      "Qontinui.Runner_0.1.0_x64_en-US.msi"
+                    )
+                  }
                   className="bg-blue-600 hover:bg-blue-700"
                 >
-                  {downloading === 'Qontinui.Runner_0.1.0_x64_en-US.msi' ? (
+                  {downloading === "Qontinui.Runner_0.1.0_x64_en-US.msi" ? (
                     <>
                       <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                       Starting Download...
@@ -141,7 +166,7 @@ export default function DownloadPage() {
                   )}
                 </Button>
               )}
-              {platform === 'macos' && (
+              {platform === "macos" && (
                 <div className="text-center">
                   <p className="text-slate-700 mb-3 font-medium">
                     macOS builds coming soon!
@@ -157,7 +182,7 @@ export default function DownloadPage() {
                   </a>
                 </div>
               )}
-              {platform === 'linux' && (
+              {platform === "linux" && (
                 <div className="text-center">
                   <p className="text-slate-700 mb-3 font-medium">
                     Linux builds coming soon!
@@ -184,10 +209,13 @@ export default function DownloadPage() {
           <Alert className="border-amber-300 bg-amber-50">
             <AlertCircle className="h-4 w-4 text-amber-600" />
             <AlertDescription className="text-slate-700">
-              <strong>First time installation:</strong> You may see security warnings
-              because the app is not yet code-signed. We're working on this!
-              {' '}
-              <Link href="/docs/runner/installation" className="underline text-blue-600 hover:text-blue-800">
+              <strong>First time installation:</strong> You may see security
+              warnings because the app is not yet code-signed. We're working on
+              this!{" "}
+              <Link
+                href="/docs/runner/installation"
+                className="underline text-blue-600 hover:text-blue-800"
+              >
                 See installation guide →
               </Link>
             </AlertDescription>
@@ -210,9 +238,15 @@ export default function DownloadPage() {
                 size: "~6 MB",
                 type: "MSI Package",
                 signed: false, // Update to true when signed
-                description: "Recommended - Standard Windows installer (Windows 10 or later)",
-                onDownload: () => handleDownload('windows', 'Qontinui.Runner_0.1.0_x64_en-US.msi'),
-                downloading: downloading === 'Qontinui.Runner_0.1.0_x64_en-US.msi'
+                description:
+                  "Recommended - Standard Windows installer (Windows 10 or later)",
+                onDownload: () =>
+                  handleDownload(
+                    "windows",
+                    "Qontinui.Runner_0.1.0_x64_en-US.msi"
+                  ),
+                downloading:
+                  downloading === "Qontinui.Runner_0.1.0_x64_en-US.msi",
               },
               {
                 name: "Windows Installer (EXE)",
@@ -221,8 +255,13 @@ export default function DownloadPage() {
                 type: "NSIS Installer",
                 signed: false,
                 description: "Alternative installer for Windows 10 or later",
-                onDownload: () => handleDownload('windows', 'Qontinui.Runner_0.1.0_x64-setup.exe'),
-                downloading: downloading === 'Qontinui.Runner_0.1.0_x64-setup.exe'
+                onDownload: () =>
+                  handleDownload(
+                    "windows",
+                    "Qontinui.Runner_0.1.0_x64-setup.exe"
+                  ),
+                downloading:
+                  downloading === "Qontinui.Runner_0.1.0_x64-setup.exe",
               },
             ]}
           />
@@ -240,7 +279,8 @@ export default function DownloadPage() {
             </div>
             <div className="p-6">
               <p className="text-slate-600 mb-4">
-                Pre-built macOS binaries are not yet available. For now, please build from source.
+                Pre-built macOS binaries are not yet available. For now, please
+                build from source.
               </p>
               <a
                 href="https://github.com/qontinui/qontinui-runner#macos"
@@ -267,7 +307,8 @@ export default function DownloadPage() {
             </div>
             <div className="p-6">
               <p className="text-slate-600 mb-4">
-                Pre-built Linux binaries are not yet available. For now, please build from source.
+                Pre-built Linux binaries are not yet available. For now, please
+                build from source.
               </p>
               <a
                 href="https://github.com/qontinui/qontinui-runner#linux"
@@ -294,7 +335,8 @@ export default function DownloadPage() {
               </h2>
             </div>
             <p className="text-slate-600 mb-4">
-              All releases are available on GitHub with checksums and release notes.
+              All releases are available on GitHub with checksums and release
+              notes.
             </p>
             <a
               href={LATEST_RELEASE.github_url}
@@ -330,9 +372,12 @@ export default function DownloadPage() {
             />
 
             <div className="bg-slate-50 p-6 rounded-lg border border-slate-200">
-              <h3 className="text-lg font-semibold mb-4 text-slate-900">macOS & Linux</h3>
+              <h3 className="text-lg font-semibold mb-4 text-slate-900">
+                macOS & Linux
+              </h3>
               <p className="text-slate-700 mb-3">
-                Pre-built binaries for macOS and Linux are coming soon. For now, please build from source:
+                Pre-built binaries for macOS and Linux are coming soon. For now,
+                please build from source:
               </p>
               <a
                 href="https://github.com/qontinui/qontinui-runner#installation"
@@ -401,9 +446,7 @@ export default function DownloadPage() {
       {/* Support */}
       <section className="container mx-auto px-4 py-16">
         <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-2xl font-bold mb-4 text-slate-900">
-            Need Help?
-          </h2>
+          <h2 className="text-2xl font-bold mb-4 text-slate-900">Need Help?</h2>
           <p className="text-slate-600 mb-6">
             Check out our documentation or report issues on GitHub
           </p>
@@ -458,8 +501,12 @@ function DownloadSection({
   const isCurrentPlatform = platform.toLowerCase() === currentPlatform;
 
   return (
-    <div className={`bg-white rounded-lg border ${isCurrentPlatform ? 'border-blue-400 shadow-lg' : 'border-slate-200'} overflow-hidden`}>
-      <div className={`${isCurrentPlatform ? 'bg-blue-50' : 'bg-slate-50'} px-6 py-4 border-b border-slate-200`}>
+    <div
+      className={`bg-white rounded-lg border ${isCurrentPlatform ? "border-blue-400 shadow-lg" : "border-slate-200"} overflow-hidden`}
+    >
+      <div
+        className={`${isCurrentPlatform ? "bg-blue-50" : "bg-slate-50"} px-6 py-4 border-b border-slate-200`}
+      >
         <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
           <span className="text-3xl">{icon}</span>
           {platform}

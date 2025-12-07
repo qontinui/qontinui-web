@@ -5,11 +5,11 @@
  * Handles ghost images, drop zones, position calculation, and grid snapping.
  */
 
-import { RefObject, useCallback, useState, useEffect, useRef } from 'react';
-import { ActionType, createAction } from '@/lib/action-schema/action-types';
-import { getDefaultConfig } from '@/lib/action-schema/default-configs';
-import { useCanvasStore } from '@/stores/canvas-store';
-import { useReactFlow, ReactFlowInstance } from '@xyflow/react';
+import { RefObject, useCallback, useState, useEffect } from "react";
+import { ActionType, createAction } from "@/lib/action-schema/action-types";
+import { getDefaultConfig } from "@/lib/action-schema/default-configs";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { useReactFlow } from "@xyflow/react";
 
 // ============================================================================
 // Types
@@ -46,7 +46,7 @@ export interface PaletteDragHandlers {
 // Constants
 // ============================================================================
 
-const DRAG_DATA_TYPE = 'application/qontinui-node';
+const DRAG_DATA_TYPE = "application/qontinui-node";
 const GHOST_OFFSET_X = 20;
 const GHOST_OFFSET_Y = 20;
 
@@ -57,21 +57,24 @@ const GHOST_OFFSET_Y = 20;
 /**
  * Create a ghost image element for dragging
  */
-function createGhostElement(nodeType: ActionType, displayName: string): HTMLElement {
-  const ghost = document.createElement('div');
-  ghost.className = 'node-palette-ghost';
+function createGhostElement(
+  _nodeType: ActionType,
+  displayName: string
+): HTMLElement {
+  const ghost = document.createElement("div");
+  ghost.className = "node-palette-ghost";
   ghost.innerHTML = `
     <div class="ghost-content">
       <div class="ghost-icon">+</div>
       <div class="ghost-label">${displayName}</div>
     </div>
   `;
-  ghost.style.position = 'absolute';
-  ghost.style.top = '-9999px';
-  ghost.style.left = '-9999px';
-  ghost.style.pointerEvents = 'none';
-  ghost.style.opacity = '0.8';
-  ghost.style.zIndex = '9999';
+  ghost.style.position = "absolute";
+  ghost.style.top = "-9999px";
+  ghost.style.left = "-9999px";
+  ghost.style.pointerEvents = "none";
+  ghost.style.opacity = "0.8";
+  ghost.style.zIndex = "9999";
 
   document.body.appendChild(ghost);
   return ghost;
@@ -121,10 +124,7 @@ function snapToGrid(position: DragPosition, gridSize: number): DragPosition {
 /**
  * Check if position is within canvas bounds
  */
-function isValidDropZone(
-  position: DragPosition,
-  canvasRect: DOMRect
-): boolean {
+function isValidDropZone(position: DragPosition, canvasRect: DOMRect): boolean {
   return (
     position.x >= 0 &&
     position.y >= 0 &&
@@ -150,7 +150,12 @@ export function usePaletteDrag(
     dropZone: null,
   });
 
-  const { addAction, snapToGrid: shouldSnap, gridSize, viewport } = useCanvasStore();
+  const {
+    addAction,
+    snapToGrid: shouldSnap,
+    gridSize,
+    viewport,
+  } = useCanvasStore();
   const reactFlowInstance = useReactFlow();
 
   // Clean up ghost element on unmount
@@ -165,7 +170,7 @@ export function usePaletteDrag(
   // Handle Escape key to cancel drag
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && state.isDragging) {
+      if (e.key === "Escape" && state.isDragging) {
         setState((prev) => ({
           ...prev,
           isDragging: false,
@@ -179,16 +184,17 @@ export function usePaletteDrag(
     };
 
     if (state.isDragging) {
-      document.addEventListener('keydown', handleEscape);
-      return () => document.removeEventListener('keydown', handleEscape);
+      document.addEventListener("keydown", handleEscape);
+      return () => document.removeEventListener("keydown", handleEscape);
     }
+    return undefined;
   }, [state.isDragging, state.ghostElement]);
 
   const onDragStart = useCallback(
     (nodeType: ActionType, event: React.DragEvent) => {
       // Set drag data
       event.dataTransfer.setData(DRAG_DATA_TYPE, nodeType);
-      event.dataTransfer.effectAllowed = 'copy';
+      event.dataTransfer.effectAllowed = "copy";
 
       // Create ghost element
       const displayName = nodeType; // Would get from metadata in real implementation
@@ -210,7 +216,7 @@ export function usePaletteDrag(
   );
 
   const onDragEnd = useCallback(
-    (event: React.DragEvent) => {
+    (_event: React.DragEvent) => {
       // Clean up
       if (state.ghostElement) {
         removeGhostElement(state.ghostElement);
@@ -229,7 +235,7 @@ export function usePaletteDrag(
   const onDragOver = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
-      event.dataTransfer.dropEffect = 'copy';
+      event.dataTransfer.dropEffect = "copy";
 
       if (!canvasRef.current || !state.isDragging) return;
 
@@ -335,15 +341,12 @@ export function usePaletteDrag(
  * Hook for click-to-add functionality (adds node at viewport center)
  */
 export function useClickToAdd() {
-  const { addAction, viewport } = useCanvasStore();
+  const { addAction } = useCanvasStore();
   const reactFlowInstance = useReactFlow();
 
   const addNodeAtCenter = useCallback(
     (nodeType: ActionType) => {
       if (!reactFlowInstance) return;
-
-      // Get viewport center
-      const center = reactFlowInstance.getViewport();
 
       // Calculate center position in workflow coordinates
       // Viewport center is at the middle of the visible area
@@ -356,11 +359,10 @@ export function useClickToAdd() {
       });
 
       // Create action at center with proper default config
-      const newAction = createAction(
-        nodeType,
-        getDefaultConfig(nodeType),
-        [centerPosition.x, centerPosition.y]
-      );
+      const newAction = createAction(nodeType, getDefaultConfig(nodeType), [
+        centerPosition.x,
+        centerPosition.y,
+      ]);
 
       addAction(newAction);
     },
@@ -369,11 +371,10 @@ export function useClickToAdd() {
 
   const addNodeAtPosition = useCallback(
     (nodeType: ActionType, x: number, y: number) => {
-      const newAction = createAction(
-        nodeType,
-        getDefaultConfig(nodeType),
-        [x, y]
-      );
+      const newAction = createAction(nodeType, getDefaultConfig(nodeType), [
+        x,
+        y,
+      ]);
 
       addAction(newAction);
     },
@@ -394,10 +395,10 @@ export function useClickToAdd() {
  * Inject ghost element styles if not present
  */
 export function injectGhostStyles() {
-  if (document.getElementById('palette-ghost-styles')) return;
+  if (document.getElementById("palette-ghost-styles")) return;
 
-  const style = document.createElement('style');
-  style.id = 'palette-ghost-styles';
+  const style = document.createElement("style");
+  style.id = "palette-ghost-styles";
   style.textContent = `
     .node-palette-ghost {
       background: white;

@@ -5,9 +5,11 @@ Comprehensive UI components for managing software deficiencies (bugs) with workf
 ## Components
 
 ### DeficiencyWorkflow
+
 Status workflow UI for deficiency lifecycle management.
 
 **Features:**
+
 - Visual status badges with colors
 - Workflow state transitions (new → acknowledged → investigating → fixed → closed)
 - Status change actions with validation
@@ -15,22 +17,25 @@ Status workflow UI for deficiency lifecycle management.
 - User information for each status change
 
 **Usage:**
+
 ```tsx
-import { DeficiencyWorkflow } from '@/components/testing/deficiencies';
+import { DeficiencyWorkflow } from "@/components/testing/deficiencies";
 
 <DeficiencyWorkflow
   deficiency={deficiency}
   activities={activities}
   onStatusChange={handleStatusChange}
-/>
+/>;
 ```
 
 ---
 
 ### DeficiencyDetails
+
 Full defect details modal with comprehensive information display.
 
 **Features:**
+
 - Tabbed interface (Overview, Workflow, Comments, Activity)
 - Screenshot gallery integration
 - Reproduction steps visualization
@@ -39,8 +44,9 @@ Full defect details modal with comprehensive information display.
 - Keyboard navigation support
 
 **Usage:**
+
 ```tsx
-import { DeficiencyDetails } from '@/components/testing/deficiencies';
+import { DeficiencyDetails } from "@/components/testing/deficiencies";
 
 <DeficiencyDetails
   deficiency={deficiency}
@@ -51,15 +57,17 @@ import { DeficiencyDetails } from '@/components/testing/deficiencies';
   onStatusChange={handleStatusChange}
   onAssignmentChange={handleAssignment}
   onCommentAdd={handleCommentAdd}
-/>
+/>;
 ```
 
 ---
 
 ### DeficiencyComments
+
 Team comments and discussion thread.
 
 **Features:**
+
 - Add new comments with rich text
 - @mention team members
 - File attachments (images, documents)
@@ -69,22 +77,25 @@ Team comments and discussion thread.
 - Keyboard shortcuts (Ctrl+Enter to submit)
 
 **Usage:**
+
 ```tsx
-import { DeficiencyComments } from '@/components/testing/deficiencies';
+import { DeficiencyComments } from "@/components/testing/deficiencies";
 
 <DeficiencyComments
   deficiencyId={deficiency.id}
   comments={comments}
   onCommentAdd={handleCommentAdd}
-/>
+/>;
 ```
 
 ---
 
 ### DeficiencyAssignment
+
 Assign deficiency to team members.
 
 **Features:**
+
 - Assign/unassign deficiencies to users
 - Display currently assigned user with avatar
 - Show assignment date
@@ -93,22 +104,25 @@ Assign deficiency to team members.
 - Loading states during assignment changes
 
 **Usage:**
+
 ```tsx
-import { DeficiencyAssignment } from '@/components/testing/deficiencies';
+import { DeficiencyAssignment } from "@/components/testing/deficiencies";
 
 <DeficiencyAssignment
   deficiency={deficiency}
   availableUsers={users}
   onAssignmentChange={handleAssignment}
-/>
+/>;
 ```
 
 ---
 
 ### DeficiencyFilters
+
 Advanced filtering for deficiency list.
 
 **Features:**
+
 - Search by title/description
 - Filter by severity (multiple selection)
 - Filter by type (multiple selection)
@@ -121,23 +135,26 @@ Advanced filtering for deficiency list.
 - Collapsible sections
 
 **Usage:**
+
 ```tsx
-import { DeficiencyFilters } from '@/components/testing/deficiencies';
+import { DeficiencyFilters } from "@/components/testing/deficiencies";
 
 <DeficiencyFilters
   filters={filters}
   onFiltersChange={setFilters}
   availableUsers={users}
   availableTags={tags}
-/>
+/>;
 ```
 
 ---
 
 ### DeficiencyExport
+
 Export dialog for generating reports in multiple formats.
 
 **Features:**
+
 - Export format selection (PDF, CSV, JSON)
 - Include/exclude options (comments, activity, screenshots)
 - Template selection for PDF exports
@@ -146,23 +163,26 @@ Export dialog for generating reports in multiple formats.
 - Success/error feedback
 
 **Usage:**
+
 ```tsx
-import { DeficiencyExport } from '@/components/testing/deficiencies';
+import { DeficiencyExport } from "@/components/testing/deficiencies";
 
 <DeficiencyExport
   open={exportOpen}
   onOpenChange={setExportOpen}
   onExport={handleExport}
-  availableTemplates={['Standard', 'Detailed', 'Executive Summary']}
-/>
+  availableTemplates={["Standard", "Detailed", "Executive Summary"]}
+/>;
 ```
 
 ---
 
 ### ScreenshotGallery
+
 Lightbox viewer for screenshots with zoom and navigation.
 
 **Features:**
+
 - Grid thumbnail view
 - Click to open lightbox
 - Navigation between images (prev/next)
@@ -173,18 +193,21 @@ Lightbox viewer for screenshots with zoom and navigation.
 - Responsive design
 
 **Usage:**
-```tsx
-import { ScreenshotGallery } from '@/components/testing/deficiencies';
 
-<ScreenshotGallery screenshots={deficiency.screenshot_urls} />
+```tsx
+import { ScreenshotGallery } from "@/components/testing/deficiencies";
+
+<ScreenshotGallery screenshots={deficiency.screenshot_urls} />;
 ```
 
 ---
 
 ### ReproductionPathViewer
+
 Step-by-step visualization of reproduction steps.
 
 **Features:**
+
 - Numbered steps with connecting lines
 - Expandable/collapsible steps
 - Mark steps as completed (for verification)
@@ -193,10 +216,11 @@ Step-by-step visualization of reproduction steps.
 - Responsive design
 
 **Usage:**
-```tsx
-import { ReproductionPathViewer } from '@/components/testing/deficiencies';
 
-<ReproductionPathViewer steps={deficiency.reproduction_steps} />
+```tsx
+import { ReproductionPathViewer } from "@/components/testing/deficiencies";
+
+<ReproductionPathViewer steps={deficiency.reproduction_steps} />;
 ```
 
 ---
@@ -225,6 +249,7 @@ The deficiency lifecycle follows this workflow:
 5. **CLOSED** - Fix has been verified and deployed
 
 Alternative path:
+
 - **WON'T FIX** - Issue will not be addressed (by design, out of scope, etc.)
 
 Valid transitions are defined in `WORKFLOW_TRANSITIONS` in the types file.
@@ -239,16 +264,16 @@ These components expect callback functions for API integration:
 // Status change
 const handleStatusChange = async (newStatus: DeficiencyStatus) => {
   await fetch(`/api/deficiencies/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status: newStatus })
+    method: "PATCH",
+    body: JSON.stringify({ status: newStatus }),
   });
 };
 
 // Assignment change
 const handleAssignment = async (userId: string | null) => {
   await fetch(`/api/deficiencies/${id}/assign`, {
-    method: 'POST',
-    body: JSON.stringify({ user_id: userId })
+    method: "POST",
+    body: JSON.stringify({ user_id: userId }),
   });
 };
 
@@ -259,21 +284,21 @@ const handleCommentAdd = async (
   attachments: File[]
 ) => {
   const formData = new FormData();
-  formData.append('content', content);
-  formData.append('mentions', JSON.stringify(mentions));
-  attachments.forEach(file => formData.append('attachments', file));
+  formData.append("content", content);
+  formData.append("mentions", JSON.stringify(mentions));
+  attachments.forEach((file) => formData.append("attachments", file));
 
   await fetch(`/api/deficiencies/${id}/comments`, {
-    method: 'POST',
-    body: formData
+    method: "POST",
+    body: formData,
   });
 };
 
 // Export
 const handleExport = async (options: DeficiencyExportOptions) => {
   const response = await fetch(`/api/deficiencies/export`, {
-    method: 'POST',
-    body: JSON.stringify(options)
+    method: "POST",
+    body: JSON.stringify(options),
   });
   const blob = await response.blob();
   // Download blob...
@@ -285,7 +310,7 @@ const handleExport = async (options: DeficiencyExportOptions) => {
 Pass available users from your auth context:
 
 ```tsx
-import { useAuth } from '@/contexts/auth-context';
+import { useAuth } from "@/contexts/auth-context";
 
 const { users } = useAuth(); // Or fetch from API
 
@@ -293,7 +318,7 @@ const { users } = useAuth(); // Or fetch from API
   deficiency={deficiency}
   availableUsers={users}
   onAssignmentChange={handleAssignment}
-/>
+/>;
 ```
 
 ## Accessibility
@@ -318,27 +343,36 @@ Components use shadcn/ui components and Tailwind CSS:
 ## Example: Full Integration
 
 ```tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   DeficiencyDetails,
   DeficiencyFilters,
-  DeficiencyExport
-} from '@/components/testing/deficiencies';
-import { Deficiency, DeficiencyFilters as Filters } from '@/types/deficiency';
+  DeficiencyExport,
+} from "@/components/testing/deficiencies";
+import { Deficiency, DeficiencyFilters as Filters } from "@/types/deficiency";
 
 export function DeficiencyDashboard() {
   const [deficiencies, setDeficiencies] = useState<Deficiency[]>([]);
   const [filters, setFilters] = useState<Filters>({});
-  const [selectedDeficiency, setSelectedDeficiency] = useState<Deficiency | null>(null);
+  const [selectedDeficiency, setSelectedDeficiency] =
+    useState<Deficiency | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
 
   // API handlers
-  const handleStatusChange = async (newStatus) => { /* ... */ };
-  const handleAssignment = async (userId) => { /* ... */ };
-  const handleCommentAdd = async (content, mentions, files) => { /* ... */ };
-  const handleExport = async (options) => { /* ... */ };
+  const handleStatusChange = async (newStatus) => {
+    /* ... */
+  };
+  const handleAssignment = async (userId) => {
+    /* ... */
+  };
+  const handleCommentAdd = async (content, mentions, files) => {
+    /* ... */
+  };
+  const handleExport = async (options) => {
+    /* ... */
+  };
 
   return (
     <div className="flex gap-6">
@@ -355,8 +389,11 @@ export function DeficiencyDashboard() {
       {/* Main: Deficiency List */}
       <main className="flex-1">
         {/* List of deficiencies */}
-        {deficiencies.map(deficiency => (
-          <div key={deficiency.id} onClick={() => setSelectedDeficiency(deficiency)}>
+        {deficiencies.map((deficiency) => (
+          <div
+            key={deficiency.id}
+            onClick={() => setSelectedDeficiency(deficiency)}
+          >
             {/* Deficiency card */}
           </div>
         ))}

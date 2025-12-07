@@ -1,10 +1,17 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Globe, Eye, Calendar } from 'lucide-react';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Globe, Eye, Calendar } from "lucide-react";
 
 interface PublicProject {
   id: string;
@@ -22,17 +29,18 @@ export default function DemoPage() {
   useEffect(() => {
     const fetchPublicProjects = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const response = await fetch(`${apiUrl}/api/v1/public/projects`);
 
         if (!response.ok) {
-          throw new Error('Failed to fetch public projects');
+          throw new Error("Failed to fetch public projects");
         }
 
         const data = await response.json();
         setProjects(data);
       } catch (err: any) {
-        setError(err.message || 'An error occurred');
+        setError(err.message || "An error occurred");
       } finally {
         setLoading(false);
       }
@@ -59,12 +67,16 @@ export default function DemoPage() {
               Explore Qontinui Automations
             </h1>
             <p className="max-w-2xl mx-auto text-xl text-zinc-600 dark:text-zinc-400">
-              Browse and view public automation projects created by the Qontinui community.
-              See real-world examples of workflow automation in action.
+              Browse and view public automation projects created by the Qontinui
+              community. See real-world examples of workflow automation in
+              action.
             </p>
             <div className="mt-8 flex justify-center gap-4">
               <Link href="/auth/register">
-                <Button size="lg" className="bg-[#00D9FF] hover:bg-[#00B8D9] text-black font-semibold">
+                <Button
+                  size="lg"
+                  className="bg-[#00D9FF] hover:bg-[#00B8D9] text-black font-semibold"
+                >
                   Create Your Own Project
                 </Button>
               </Link>
@@ -82,7 +94,9 @@ export default function DemoPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {loading ? (
           <div className="text-center py-12">
-            <p className="text-zinc-600 dark:text-zinc-400">Loading public projects...</p>
+            <p className="text-zinc-600 dark:text-zinc-400">
+              Loading public projects...
+            </p>
           </div>
         ) : error ? (
           <div className="text-center py-12">
@@ -112,21 +126,25 @@ export default function DemoPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {projects.map((project) => (
-                <Card key={project.id} className="hover:shadow-lg transition-shadow duration-200">
+                <Card
+                  key={project.id}
+                  className="hover:shadow-lg transition-shadow duration-200"
+                >
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                       {project.name}
                     </CardTitle>
                     <CardDescription>
-                      {project.description || 'No description provided'}
+                      {project.description || "No description provided"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center gap-2 text-sm text-zinc-500">
                       <Calendar className="w-4 h-4" />
                       <span>
-                        Updated: {new Date(project.updated_at).toLocaleDateString()}
+                        Updated:{" "}
+                        {new Date(project.updated_at).toLocaleDateString()}
                       </span>
                     </div>
                   </CardContent>
@@ -152,11 +170,14 @@ export default function DemoPage() {
             Ready to Build Your Own Automation?
           </h2>
           <p className="text-blue-50 text-lg mb-8 max-w-2xl mx-auto">
-            Join Qontinui and create powerful automation workflows with our visual builder.
-            No coding required.
+            Join Qontinui and create powerful automation workflows with our
+            visual builder. No coding required.
           </p>
           <Link href="/auth/register">
-            <Button size="lg" className="bg-white text-blue-600 hover:bg-zinc-100 font-semibold">
+            <Button
+              size="lg"
+              className="bg-white text-blue-600 hover:bg-zinc-100 font-semibold"
+            >
               Get Started Free
             </Button>
           </Link>

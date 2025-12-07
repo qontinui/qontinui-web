@@ -1,80 +1,65 @@
-// PRICING PAGE HIDDEN DURING EARLY ACCESS
-// This page will be re-enabled for the February 2026 launch
+"use client";
 
-'use client';
+export const dynamic = "force-dynamic";
 
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-
-// Redirect to dashboard
-export default function PricingPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.push('/dashboard');
-  }, [router]);
-
-  return null;
-}
-
-/*
-// ORIGINAL PRICING PAGE (COMMENTED OUT FOR EARLY ACCESS)
-'use client';
-
-export const dynamic = 'force-dynamic'
-
-import { useState, useEffect } from 'react';
-import { Check } from 'lucide-react';
-import { billingService } from '@/services/service-factory';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import type { Subscription } from '@/services/billing-service';
+import { useState, useEffect } from "react";
+import { Check } from "lucide-react";
+import { billingService } from "@/services/service-factory";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import type { Subscription } from "@/services/billing-service";
 
 const tiers = [
   {
-    name: 'Free',
-    tier: 'free' as const,
-    price: '$0',
-    description: 'Perfect for trying out Qontinui',
+    name: "Free",
+    tier: "free" as const,
+    price: "$0",
+    description: "Perfect for trying out Qontinui",
     features: [
-      '5 configurations',
-      '50 images',
-      '25 MB storage',
-      'Community support',
+      "5 configurations",
+      "50 images",
+      "25 MB storage",
+      "Community support",
     ],
-    buttonText: 'Current Plan',
+    buttonText: "Current Plan",
     disabled: true,
   },
   {
-    name: 'Hobby',
-    tier: 'hobby' as const,
-    price: '$7',
-    description: 'For individual developers and hobbyists',
+    name: "Hobby",
+    tier: "hobby" as const,
+    price: "$7",
+    description: "For individual developers and hobbyists",
     features: [
-      '100 configurations',
-      '500 images',
-      '200 MB storage',
-      'Email support',
-      'Export to JSON',
+      "100 configurations",
+      "500 images",
+      "200 MB storage",
+      "Email support",
+      "Export to JSON",
     ],
-    buttonText: 'Upgrade to Hobby',
+    buttonText: "Upgrade to Hobby",
     disabled: false,
     popular: true,
   },
   {
-    name: 'Pro',
-    tier: 'pro' as const,
-    price: '$24',
-    description: 'For professional automation projects',
+    name: "Pro",
+    tier: "pro" as const,
+    price: "$24",
+    description: "For professional automation projects",
     features: [
-      'Unlimited configurations',
-      '5,000 images',
-      '2 GB storage',
-      'Priority support',
-      'Export to JSON',
-      'Advanced analytics',
+      "Unlimited configurations",
+      "5,000 images",
+      "2 GB storage",
+      "Priority support",
+      "Export to JSON",
+      "Advanced analytics",
     ],
-    buttonText: 'Upgrade to Pro',
+    buttonText: "Upgrade to Pro",
     disabled: false,
   },
 ];
@@ -93,13 +78,13 @@ export default function PricingPage() {
       const sub = await billingService.getSubscription();
       setSubscription(sub);
     } catch (error) {
-      console.error('Failed to load subscription:', error);
+      console.error("Failed to load subscription:", error);
     } finally {
       setLoadingSub(false);
     }
   };
 
-  const handleUpgrade = async (tier: 'hobby' | 'pro') => {
+  const handleUpgrade = async (tier: "hobby" | "pro") => {
     // Prevent purchasing current tier
     if (subscription?.tier === tier) {
       alert(`You already have the ${tier} plan!`);
@@ -110,54 +95,54 @@ export default function PricingPage() {
       setLoading(tier);
       await billingService.redirectToCheckout(tier);
     } catch (error) {
-      console.error('Checkout error:', error);
-      alert('Failed to start checkout. Please try again.');
+      console.error("Checkout error:", error);
+      alert("Failed to start checkout. Please try again.");
       setLoading(null);
     }
   };
 
-  const getButtonText = (tier: typeof tiers[number]) => {
-    if (loadingSub) return 'Loading...';
-    if (loading === tier.tier) return 'Loading...';
+  const getButtonText = (tier: (typeof tiers)[number]) => {
+    if (loadingSub) return "Loading...";
+    if (loading === tier.tier) return "Loading...";
 
-    const currentTier = subscription?.tier || 'free';
+    const currentTier = subscription?.tier || "free";
 
-    if (tier.tier === 'free') {
-      return currentTier === 'free' ? 'Current Plan' : 'Downgrade to Free';
+    if (tier.tier === "free") {
+      return currentTier === "free" ? "Current Plan" : "Downgrade to Free";
     }
 
     if (currentTier === tier.tier) {
-      return 'Current Plan';
+      return "Current Plan";
     }
 
-    if (currentTier === 'free') {
+    if (currentTier === "free") {
       return tier.buttonText;
     }
 
     // Upgrading from hobby to pro
-    if (currentTier === 'hobby' && tier.tier === 'pro') {
-      return 'Upgrade to Pro';
+    if (currentTier === "hobby" && tier.tier === "pro") {
+      return "Upgrade to Pro";
     }
 
     // Downgrading from pro to hobby
-    if (currentTier === 'pro' && tier.tier === 'hobby') {
-      return 'Downgrade to Hobby';
+    if (currentTier === "pro" && tier.tier === "hobby") {
+      return "Downgrade to Hobby";
     }
 
     return tier.buttonText;
   };
 
-  const isButtonDisabled = (tier: typeof tiers[number]) => {
+  const isButtonDisabled = (tier: (typeof tiers)[number]) => {
     if (loadingSub || loading !== null) return true;
 
-    const currentTier = subscription?.tier || 'free';
+    const currentTier = subscription?.tier || "free";
 
     // Can't purchase current tier
     if (currentTier === tier.tier) return true;
 
     // Can't downgrade on pricing page (use billing portal)
-    if (tier.tier === 'free' && currentTier !== 'free') return true;
-    if (tier.tier === 'hobby' && currentTier === 'pro') return true;
+    if (tier.tier === "free" && currentTier !== "free") return true;
+    if (tier.tier === "hobby" && currentTier === "pro") return true;
 
     return tier.disabled;
   };
@@ -176,7 +161,7 @@ export default function PricingPage() {
           <Card
             key={tier.name}
             className={`relative ${
-              tier.popular ? 'border-primary shadow-lg scale-105' : ''
+              tier.popular ? "border-primary shadow-lg scale-105" : ""
             }`}
           >
             {tier.popular && (
@@ -189,7 +174,7 @@ export default function PricingPage() {
               <CardDescription>{tier.description}</CardDescription>
               <div className="mt-4">
                 <span className="text-4xl font-bold">{tier.price}</span>
-                {tier.tier !== 'free' && (
+                {tier.tier !== "free" && (
                   <span className="text-muted-foreground">/month</span>
                 )}
               </div>
@@ -206,8 +191,8 @@ export default function PricingPage() {
               <Button
                 className="w-full"
                 disabled={isButtonDisabled(tier)}
-                onClick={() => tier.tier !== 'free' && handleUpgrade(tier.tier)}
-                variant={tier.popular ? 'default' : 'outline'}
+                onClick={() => tier.tier !== "free" && handleUpgrade(tier.tier)}
+                variant={tier.popular ? "default" : "outline"}
               >
                 {getButtonText(tier)}
               </Button>
@@ -219,8 +204,11 @@ export default function PricingPage() {
       <div className="mt-16 text-center text-sm text-muted-foreground">
         <p>All plans include core automation features and JSON export.</p>
         <p className="mt-2">
-          Need something custom?{' '}
-          <a href="mailto:support@qontinui.com" className="text-primary hover:underline">
+          Need something custom?{" "}
+          <a
+            href="mailto:support@qontinui.com"
+            className="text-primary hover:underline"
+          >
             Contact us
           </a>
         </p>
@@ -228,4 +216,3 @@ export default function PricingPage() {
     </div>
   );
 }
-*/

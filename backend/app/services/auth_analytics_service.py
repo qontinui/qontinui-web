@@ -10,15 +10,16 @@ This service provides comprehensive analytics tracking including:
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import structlog
+from sqlalchemy import and_, desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.analytics_event import AnalyticsEvent
 from app.models.device_session import DeviceSession
 from app.models.user import User
-from sqlalchemy import and_, desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -201,7 +202,7 @@ class AuthAnalyticsService:
             .order_by(desc(AnalyticsEvent.timestamp))
             .limit(1)
         )
-        last_occurrence = result.scalar()
+        last_occurrence = cast(datetime | None, result.scalar())
 
         return EventSummary(
             event_name=event_name,
@@ -335,7 +336,7 @@ class AuthAnalyticsService:
 
         # Get users with most login events in the period
         result = await db.execute(
-            select(
+            select(  # type: ignore[call-overload]
                 User.id,
                 User.username,
                 User.email,

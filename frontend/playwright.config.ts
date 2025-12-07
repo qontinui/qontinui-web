@@ -74,16 +74,17 @@ export default defineConfig({
   ],
 
   // Run your local dev server before starting the tests
-  webServer: {
+  // Set SKIP_WEB_SERVER=1 to skip when servers are already running
+  webServer: process.env.SKIP_WEB_SERVER ? undefined : {
     command: 'npm run dev',
     url: 'http://localhost:3001',
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },
 
-  // Global setup/teardown
-  globalSetup: './tests/e2e/global-setup.ts',
-  globalTeardown: './tests/e2e/global-teardown.ts',
+  // Global setup/teardown - skip when running against existing servers
+  globalSetup: process.env.SKIP_WEB_SERVER ? undefined : './tests/e2e/global-setup.ts',
+  globalTeardown: process.env.SKIP_WEB_SERVER ? undefined : './tests/e2e/global-teardown.ts',
 
   // Output folder for test artifacts
   outputDir: 'test-results',

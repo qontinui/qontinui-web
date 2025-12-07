@@ -26,7 +26,6 @@ import {
   CreateFolderOptions,
   UpdateFolderOptions,
   DeleteFolderOptions,
-  GetWorkflowsOptions,
   FolderSearchOptions,
   FolderSearchResult,
   FolderStorageData,
@@ -35,7 +34,7 @@ import {
   DEFAULT_VALIDATION_RULES,
   STORAGE_VERSION,
   STORAGE_KEY,
-} from '../types/workflow-organization/types';
+} from "../types/workflow-organization/types";
 
 // ============================================================================
 // WorkflowFolderManager Class
@@ -71,7 +70,10 @@ export class WorkflowFolderManager {
   createFolder(options: CreateFolderOptions): FolderOperationResult {
     try {
       // Validate folder name
-      const validation = this.validateFolderName(options.name, options.parentId);
+      const validation = this.validateFolderName(
+        options.name,
+        options.parentId
+      );
       if (!validation.valid) {
         return {
           success: false,
@@ -141,7 +143,7 @@ export class WorkflowFolderManager {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to create folder: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -149,7 +151,10 @@ export class WorkflowFolderManager {
   /**
    * Update an existing folder
    */
-  updateFolder(id: string, updates: UpdateFolderOptions): FolderOperationResult {
+  updateFolder(
+    id: string,
+    updates: UpdateFolderOptions
+  ): FolderOperationResult {
     try {
       const folder = this.folders.get(id);
       if (!folder) {
@@ -161,7 +166,11 @@ export class WorkflowFolderManager {
 
       // Validate name if provided
       if (updates.name !== undefined) {
-        const validation = this.validateFolderName(updates.name, folder.parentId, id);
+        const validation = this.validateFolderName(
+          updates.name,
+          folder.parentId,
+          id
+        );
         if (!validation.valid) {
           return {
             success: false,
@@ -172,7 +181,10 @@ export class WorkflowFolderManager {
       }
 
       // Validate parent change
-      if (updates.parentId !== undefined && updates.parentId !== folder.parentId) {
+      if (
+        updates.parentId !== undefined &&
+        updates.parentId !== folder.parentId
+      ) {
         const canMove = this.canMoveFolder(id, updates.parentId);
         if (!canMove.valid) {
           return {
@@ -202,10 +214,14 @@ export class WorkflowFolderManager {
       const updatedFolder: WorkflowFolder = {
         ...folder,
         name: updates.name !== undefined ? updates.name.trim() : folder.name,
-        parentId: updates.parentId !== undefined ? updates.parentId : folder.parentId,
+        parentId:
+          updates.parentId !== undefined ? updates.parentId : folder.parentId,
         color: updates.color !== undefined ? updates.color : folder.color,
         icon: updates.icon !== undefined ? updates.icon : folder.icon,
-        description: updates.description !== undefined ? updates.description?.trim() : folder.description,
+        description:
+          updates.description !== undefined
+            ? updates.description?.trim()
+            : folder.description,
         order: updates.order !== undefined ? updates.order : folder.order,
         metadata: {
           ...folder.metadata,
@@ -230,7 +246,7 @@ export class WorkflowFolderManager {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to update folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to update folder: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -238,7 +254,10 @@ export class WorkflowFolderManager {
   /**
    * Delete a folder
    */
-  deleteFolder(id: string, options: DeleteFolderOptions = {}): FolderOperationResult {
+  deleteFolder(
+    id: string,
+    options: DeleteFolderOptions = {}
+  ): FolderOperationResult {
     try {
       const folder = this.folders.get(id);
       if (!folder) {
@@ -304,7 +323,7 @@ export class WorkflowFolderManager {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to delete folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to delete folder: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -357,13 +376,13 @@ export class WorkflowFolderManager {
       const folders = Array.from(this.folders.values());
       return {
         success: true,
-        folders: folders.map(f => ({ ...f })),
+        folders: folders.map((f) => ({ ...f })),
       };
     } catch (error) {
       return {
         success: false,
         folders: [],
-        error: `Failed to get folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to get folders: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -382,7 +401,7 @@ export class WorkflowFolderManager {
       return {
         success: false,
         tree: [],
-        error: `Failed to build folder tree: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to build folder tree: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -405,12 +424,14 @@ export class WorkflowFolderManager {
       }
 
       // Check if already in a folder
-      const existing = this.associations.find(a => a.workflowId === workflowId);
+      const existing = this.associations.find(
+        (a) => a.workflowId === workflowId
+      );
       if (existing) {
         if (existing.folderId === folderId) {
           return {
             success: true,
-            warnings: ['Workflow already in this folder'],
+            warnings: ["Workflow already in this folder"],
           };
         }
 
@@ -435,7 +456,7 @@ export class WorkflowFolderManager {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to add workflow to folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to add workflow to folder: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -445,11 +466,13 @@ export class WorkflowFolderManager {
    */
   removeWorkflowFromFolder(workflowId: string): MoveResult {
     try {
-      const index = this.associations.findIndex(a => a.workflowId === workflowId);
+      const index = this.associations.findIndex(
+        (a) => a.workflowId === workflowId
+      );
       if (index === -1) {
         return {
           success: true,
-          warnings: ['Workflow not in any folder'],
+          warnings: ["Workflow not in any folder"],
         };
       }
 
@@ -457,7 +480,7 @@ export class WorkflowFolderManager {
       this.associations.splice(index, 1);
 
       // Update workflow count
-      this.updateWorkflowCounts(association.folderId);
+      this.updateWorkflowCounts(association?.folderId);
       this.save();
 
       return {
@@ -466,7 +489,7 @@ export class WorkflowFolderManager {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to remove workflow from folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to remove workflow from folder: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -482,7 +505,9 @@ export class WorkflowFolderManager {
    * Get folder containing a workflow
    */
   getWorkflowFolder(workflowId: string): FolderOperationResult {
-    const association = this.associations.find(a => a.workflowId === workflowId);
+    const association = this.associations.find(
+      (a) => a.workflowId === workflowId
+    );
     if (!association) {
       return {
         success: false,
@@ -496,7 +521,10 @@ export class WorkflowFolderManager {
   /**
    * Get all workflows in a folder
    */
-  getWorkflowsInFolder(folderId: string, recursive = false): WorkflowListResult {
+  getWorkflowsInFolder(
+    folderId: string,
+    recursive = false
+  ): WorkflowListResult {
     try {
       if (!this.folders.has(folderId)) {
         return {
@@ -510,16 +538,16 @@ export class WorkflowFolderManager {
 
       // Add workflows from this folder
       this.associations
-        .filter(a => a.folderId === folderId)
-        .forEach(a => workflowIds.add(a.workflowId));
+        .filter((a) => a.folderId === folderId)
+        .forEach((a) => workflowIds.add(a.workflowId));
 
       // Add workflows from subfolders if recursive
       if (recursive) {
         const descendants = this.getFolderDescendants(folderId);
         for (const descendant of descendants) {
           this.associations
-            .filter(a => a.folderId === descendant.id)
-            .forEach(a => workflowIds.add(a.workflowId));
+            .filter((a) => a.folderId === descendant.id)
+            .forEach((a) => workflowIds.add(a.workflowId));
         }
       }
 
@@ -531,7 +559,7 @@ export class WorkflowFolderManager {
       return {
         success: false,
         workflowIds: [],
-        error: `Failed to get workflows: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to get workflows: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -567,7 +595,7 @@ export class WorkflowFolderManager {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to move folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to move folder: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -614,13 +642,16 @@ export class WorkflowFolderManager {
   /**
    * Check if folder can be moved to new parent (prevents circular dependencies)
    */
-  canMoveFolder(folderId: string, newParentId: string | null): ValidationResult {
+  canMoveFolder(
+    folderId: string,
+    newParentId: string | null
+  ): ValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
 
     // Cannot move to itself
     if (folderId === newParentId) {
-      errors.push('Cannot move folder to itself');
+      errors.push("Cannot move folder to itself");
       return { valid: false, errors, warnings };
     }
 
@@ -633,8 +664,10 @@ export class WorkflowFolderManager {
     // Check for circular dependency
     if (newParentId) {
       const descendants = this.getFolderDescendants(folderId);
-      if (descendants.some(d => d.id === newParentId)) {
-        errors.push('Cannot move folder to one of its descendants (circular dependency)');
+      if (descendants.some((d) => d.id === newParentId)) {
+        errors.push(
+          "Cannot move folder to one of its descendants (circular dependency)"
+        );
         return { valid: false, errors, warnings };
       }
     }
@@ -643,7 +676,9 @@ export class WorkflowFolderManager {
     const newDepth = this.calculateDepth(newParentId) + 1;
     const maxDescendantDepth = this.getMaxDescendantDepth(folderId);
     if (newDepth + maxDescendantDepth > DEFAULT_VALIDATION_RULES.maxDepth) {
-      errors.push(`Move would exceed maximum depth of ${DEFAULT_VALIDATION_RULES.maxDepth}`);
+      errors.push(
+        `Move would exceed maximum depth of ${DEFAULT_VALIDATION_RULES.maxDepth}`
+      );
       return { valid: false, errors, warnings };
     }
 
@@ -669,14 +704,18 @@ export class WorkflowFolderManager {
     const results: FolderSearchResult[] = [];
 
     for (const folder of this.folders.values()) {
-      const matches: FolderSearchResult['matches'] = [];
+      const matches: FolderSearchResult["matches"] = [];
       let score = 0;
 
       // Search name
-      const folderName = caseSensitive ? folder.name : folder.name.toLowerCase();
-      if (exactMatch ? folderName === searchTerm : folderName.includes(searchTerm)) {
+      const folderName = caseSensitive
+        ? folder.name
+        : folder.name.toLowerCase();
+      if (
+        exactMatch ? folderName === searchTerm : folderName.includes(searchTerm)
+      ) {
         matches.push({
-          field: 'name',
+          field: "name",
           value: folder.name,
           matchedText: query,
         });
@@ -685,10 +724,16 @@ export class WorkflowFolderManager {
 
       // Search description
       if (includeDescription && folder.description) {
-        const folderDesc = caseSensitive ? folder.description : folder.description.toLowerCase();
-        if (exactMatch ? folderDesc === searchTerm : folderDesc.includes(searchTerm)) {
+        const folderDesc = caseSensitive
+          ? folder.description
+          : folder.description.toLowerCase();
+        if (
+          exactMatch
+            ? folderDesc === searchTerm
+            : folderDesc.includes(searchTerm)
+        ) {
           matches.push({
-            field: 'description',
+            field: "description",
             value: folder.description,
             matchedText: query,
           });
@@ -714,11 +759,11 @@ export class WorkflowFolderManager {
    */
   findFolderByPath(path: string): FolderOperationResult {
     try {
-      const parts = path.split('/').filter(p => p.trim());
+      const parts = path.split("/").filter((p) => p.trim());
       if (parts.length === 0) {
         return {
           success: false,
-          error: 'Invalid path',
+          error: "Invalid path",
         };
       }
 
@@ -726,7 +771,7 @@ export class WorkflowFolderManager {
 
       for (const part of parts) {
         const children = this.getChildren(currentParentId);
-        const found = children.find(c => c.name === part);
+        const found = children.find((c) => c.name === part);
 
         if (!found) {
           return {
@@ -741,7 +786,7 @@ export class WorkflowFolderManager {
       if (!currentParentId) {
         return {
           success: false,
-          error: 'Folder not found',
+          error: "Folder not found",
         };
       }
 
@@ -749,7 +794,7 @@ export class WorkflowFolderManager {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to find folder by path: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to find folder by path: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -774,7 +819,7 @@ export class WorkflowFolderManager {
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (error) {
-      console.error('Failed to save folders to storage:', error);
+      console.error("Failed to save folders to storage:", error);
     }
   }
 
@@ -790,7 +835,9 @@ export class WorkflowFolderManager {
 
       // Validate version
       if (data.version !== STORAGE_VERSION) {
-        console.warn(`Storage version mismatch. Expected ${STORAGE_VERSION}, got ${data.version}`);
+        console.warn(
+          `Storage version mismatch. Expected ${STORAGE_VERSION}, got ${data.version}`
+        );
         // Could trigger migration here
       }
 
@@ -803,7 +850,7 @@ export class WorkflowFolderManager {
       // Update counts
       this.recalculateAllCounts();
     } catch (error) {
-      console.error('Failed to load folders from storage:', error);
+      console.error("Failed to load folders from storage:", error);
     }
   }
 
@@ -815,7 +862,7 @@ export class WorkflowFolderManager {
       folders: Array.from(this.folders.values()),
       associations: this.associations,
       exportedAt: new Date().toISOString(),
-      exportedBy: 'Qontinui',
+      exportedBy: "Qontinui",
       version: STORAGE_VERSION,
     };
   }
@@ -842,7 +889,9 @@ export class WorkflowFolderManager {
       // Import folders
       for (const folder of data.folders) {
         if (this.folders.has(folder.id) && merge) {
-          result.warnings.push(`Skipped duplicate folder: ${folder.name} (${folder.id})`);
+          result.warnings.push(
+            `Skipped duplicate folder: ${folder.name} (${folder.id})`
+          );
           continue;
         }
 
@@ -853,11 +902,15 @@ export class WorkflowFolderManager {
       // Import associations
       for (const association of data.associations) {
         const exists = this.associations.some(
-          a => a.workflowId === association.workflowId && a.folderId === association.folderId
+          (a) =>
+            a.workflowId === association.workflowId &&
+            a.folderId === association.folderId
         );
 
         if (exists && merge) {
-          result.warnings.push(`Skipped duplicate association for workflow: ${association.workflowId}`);
+          result.warnings.push(
+            `Skipped duplicate association for workflow: ${association.workflowId}`
+          );
           continue;
         }
 
@@ -872,7 +925,9 @@ export class WorkflowFolderManager {
       this.save();
     } catch (error) {
       result.success = false;
-      result.errors.push(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      result.errors.push(
+        `Import failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
 
     return result;
@@ -901,19 +956,25 @@ export class WorkflowFolderManager {
   /**
    * Validate folder name
    */
-  private validateFolderName(name: string, parentId: string | null | undefined, excludeId?: string): ValidationResult {
+  private validateFolderName(
+    name: string,
+    parentId: string | null | undefined,
+    excludeId?: string
+  ): ValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
 
     // Check empty
     if (!name || !name.trim()) {
-      errors.push('Folder name cannot be empty');
+      errors.push("Folder name cannot be empty");
       return { valid: false, errors, warnings };
     }
 
     // Check length
     if (name.length > DEFAULT_VALIDATION_RULES.maxNameLength) {
-      errors.push(`Folder name cannot exceed ${DEFAULT_VALIDATION_RULES.maxNameLength} characters`);
+      errors.push(
+        `Folder name cannot exceed ${DEFAULT_VALIDATION_RULES.maxNameLength} characters`
+      );
       return { valid: false, errors, warnings };
     }
 
@@ -925,7 +986,9 @@ export class WorkflowFolderManager {
 
     // Check uniqueness within parent
     const siblings = this.getChildren(parentId || null);
-    const duplicate = siblings.find(s => s.name === name && s.id !== excludeId);
+    const duplicate = siblings.find(
+      (s) => s.name === name && s.id !== excludeId
+    );
     if (duplicate) {
       errors.push(`A folder named "${name}" already exists in this location`);
       return { valid: false, errors, warnings };
@@ -970,7 +1033,7 @@ export class WorkflowFolderManager {
    */
   private getChildren(parentId: string | null): WorkflowFolder[] {
     return Array.from(this.folders.values())
-      .filter(f => f.parentId === parentId)
+      .filter((f) => f.parentId === parentId)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }
 
@@ -981,7 +1044,7 @@ export class WorkflowFolderManager {
     const children = this.getChildren(parentId || null);
     if (children.length === 0) return 0;
 
-    const maxOrder = Math.max(...children.map(c => c.order ?? 0));
+    const maxOrder = Math.max(...children.map((c) => c.order ?? 0));
     return maxOrder + 1;
   }
 
@@ -1009,7 +1072,9 @@ export class WorkflowFolderManager {
     const children = this.getChildren(folderId);
     if (children.length === 0) return currentDepth;
 
-    const childDepths = children.map(c => this.getMaxDescendantDepth(c.id, currentDepth + 1));
+    const childDepths = children.map((c) =>
+      this.getMaxDescendantDepth(c.id, currentDepth + 1)
+    );
     return Math.max(...childDepths);
   }
 
@@ -1019,12 +1084,12 @@ export class WorkflowFolderManager {
   private buildTree(rootId: string | null, depth = 0): FolderTreeNode[] {
     const children = this.getChildren(rootId);
 
-    return children.map(folder => {
+    return children.map((folder) => {
       const node: FolderTreeNode = {
         ...folder,
         children: this.buildTree(folder.id, depth + 1),
         depth,
-        path: this.getFolderPath(folder.id).map(p => p.name),
+        path: this.getFolderPath(folder.id).map((p) => p.name),
         hasChildren: this.getChildren(folder.id).length > 0,
       };
 
@@ -1042,7 +1107,9 @@ export class WorkflowFolderManager {
     if (!folder) return;
 
     // Count workflows in this folder
-    const count = this.associations.filter(a => a.folderId === folderId).length;
+    const count = this.associations.filter(
+      (a) => a.folderId === folderId
+    ).length;
 
     folder.metadata.workflowCount = count;
     folder.metadata.updated = new Date().toISOString();
@@ -1079,7 +1146,9 @@ export class WorkflowFolderManager {
   private recalculateAllCounts(): void {
     // Update workflow counts
     for (const folder of this.folders.values()) {
-      const count = this.associations.filter(a => a.folderId === folder.id).length;
+      const count = this.associations.filter(
+        (a) => a.folderId === folder.id
+      ).length;
       folder.metadata.workflowCount = count;
     }
 
@@ -1102,10 +1171,14 @@ export class WorkflowFolderManager {
    */
   cleanupOrphanedWorkflows(): number {
     const validFolderIds = new Set(this.folders.keys());
-    const orphaned = this.associations.filter(a => !validFolderIds.has(a.folderId));
+    const orphaned = this.associations.filter(
+      (a) => !validFolderIds.has(a.folderId)
+    );
 
     // Remove orphaned associations
-    this.associations = this.associations.filter(a => validFolderIds.has(a.folderId));
+    this.associations = this.associations.filter((a) =>
+      validFolderIds.has(a.folderId)
+    );
 
     if (orphaned.length > 0) {
       this.save();

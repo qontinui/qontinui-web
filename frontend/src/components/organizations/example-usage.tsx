@@ -5,14 +5,20 @@
  * component into an organization settings or members page.
  */
 
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { UserPlus, Users } from 'lucide-react';
-import { InviteMemberDialog } from './InviteMemberDialog';
-import type { Invitation } from '@/types/collaboration';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { UserPlus, Users } from "lucide-react";
+import { InviteMemberDialog } from "./InviteMemberDialog";
+import type { Invitation } from "@/types/collaboration";
 
 // ============================================================================
 // Example: Organization Settings Page
@@ -23,12 +29,12 @@ export function OrganizationMembersExample() {
 
   // Replace with actual organization data from your state/context
   const organization = {
-    id: 'org-123',
-    name: 'My Organization',
+    id: "org-123",
+    name: "My Organization",
   };
 
   const handleInvitationSent = (invitation: Invitation) => {
-    console.log('Invitation sent successfully:', invitation);
+    console.log("Invitation sent successfully:", invitation);
     // You can update your local state, show a notification, etc.
   };
 
@@ -152,7 +158,7 @@ export function OrganizationSettingsInlineExample() {
         organizationName="My Organization"
         onClose={() => setShowInviteDialog(false)}
         onInvitationSent={(invitation) => {
-          console.log('New invitation:', invitation);
+          console.log("New invitation:", invitation);
         }}
       />
     </div>

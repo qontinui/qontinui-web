@@ -1,10 +1,10 @@
-import { HttpClient } from './http-client';
-import { ApiConfig } from './api-config';
+import { HttpClient } from "./http-client";
+import { ApiConfig } from "./api-config";
 import type {
   Project,
   ProjectCreate,
   ProjectUpdate,
-} from '@/lib/api-client/types';
+} from "@/lib/api-client/types";
 
 // Re-export types for backwards compatibility
 export type { Project, ProjectCreate, ProjectUpdate };
@@ -19,10 +19,20 @@ export class ProjectService {
   }
 
   async getProjects(): Promise<Project[]> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/projects/`);
+    const url = `${this.apiUrl}/api/v1/projects/`;
+    console.log("[ProjectService] Fetching projects from:", url);
+
+    const response = await this.httpClient.fetch(url);
+
+    console.log("[ProjectService] Response:", {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+    });
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('[ProjectService] Failed to get projects:', {
+      console.error("[ProjectService] Failed to get projects:", {
         status: response.status,
         statusText: response.statusText,
         errorData,
@@ -30,25 +40,31 @@ export class ProjectService {
       throw new Error(`Failed to get projects: ${response.statusText}`);
     }
     const projects = await response.json();
+    console.log("[ProjectService] Projects received:", projects?.length || 0);
     return projects;
   }
 
   async getProject(id: string): Promise<Project> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/projects/${id}`);
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/projects/${id}`
+    );
     if (!response.ok) {
-      throw new Error('Failed to get project');
+      throw new Error("Failed to get project");
     }
     return response.json();
   }
 
   async createProject(data: ProjectCreate): Promise<Project> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/projects/`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/projects/`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    );
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('Project creation failed:', {
+      console.error("Project creation failed:", {
         status: response.status,
         statusText: response.statusText,
         errorData,
@@ -59,22 +75,28 @@ export class ProjectService {
   }
 
   async updateProject(id: string, data: ProjectUpdate): Promise<Project> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/projects/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/projects/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
     if (!response.ok) {
-      throw new Error('Failed to update project');
+      throw new Error("Failed to update project");
     }
     return response.json();
   }
 
   async deleteProject(id: string): Promise<void> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/projects/${id}`, {
-      method: 'DELETE',
-    });
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/projects/${id}`,
+      {
+        method: "DELETE",
+      }
+    );
     if (!response.ok) {
-      throw new Error('Failed to delete project');
+      throw new Error("Failed to delete project");
     }
   }
 }

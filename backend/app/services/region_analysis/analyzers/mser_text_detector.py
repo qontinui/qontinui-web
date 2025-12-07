@@ -10,7 +10,7 @@ Accuracy: 70-85% for clear text, good for stylized fonts
 """
 
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -39,14 +39,14 @@ class MSERTextDetector(BaseRegionAnalyzer):
         return "mser_text_detector"
 
     @property
-    def supported_region_types(self) -> List[RegionType]:
+    def supported_region_types(self) -> list[RegionType]:
         return [RegionType.TEXT_AREA]
 
     @property
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize MSER text detector.
 
@@ -68,7 +68,7 @@ class MSERTextDetector(BaseRegionAnalyzer):
         self.group_nearby = params["group_nearby"]
         self.grouping_distance = params["grouping_distance"]
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "delta": 5,
             "min_area": 60,
@@ -126,10 +126,10 @@ class MSERTextDetector(BaseRegionAnalyzer):
 
     def _detect_text_regions(
         self, gray: np.ndarray, screenshot_index: int
-    ) -> List[DetectedRegion]:
+    ) -> list[DetectedRegion]:
         """Detect text regions in a grayscale image."""
         # Create MSER detector
-        mser = cv2.MSER_create(
+        mser = cv2.MSER_create(  # type: ignore
             _delta=self.delta,
             _min_area=self.min_area,
             _max_area=self.max_area,
@@ -141,7 +141,9 @@ class MSERTextDetector(BaseRegionAnalyzer):
 
         detected_regions = []
 
-        for i, (region_points, bbox) in enumerate(zip(regions_mser, bboxes)):
+        for i, (region_points, bbox) in enumerate(
+            zip(regions_mser, bboxes, strict=False)
+        ):
             x, y, w, h = bbox
 
             # Skip invalid regions
@@ -188,8 +190,8 @@ class MSERTextDetector(BaseRegionAnalyzer):
         return detected_regions
 
     def _group_nearby_regions(
-        self, regions: List[DetectedRegion]
-    ) -> List[DetectedRegion]:
+        self, regions: list[DetectedRegion]
+    ) -> list[DetectedRegion]:
         """Group nearby text regions into text blocks."""
         if not regions:
             return regions
@@ -249,7 +251,7 @@ class MSERTextDetector(BaseRegionAnalyzer):
 
         return x_overlap and y_overlap
 
-    def _merge_regions(self, regions: List[DetectedRegion]) -> DetectedRegion:
+    def _merge_regions(self, regions: list[DetectedRegion]) -> DetectedRegion:
         """Merge multiple regions into one text block."""
         # Find bounding box that encompasses all
         min_x = min(r.bounding_box.x for r in regions)

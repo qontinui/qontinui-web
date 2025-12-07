@@ -23,11 +23,12 @@ os.environ["MAX_QUERIES_PER_REQUEST"] = "5"
 
 async def test_query_timing():
     """Test the database query timing functionality."""
+    from sqlalchemy import text
+
     from app.config.logging_config import configure_logging, get_logger
     from app.core.config import settings
     from app.db.session import AsyncSessionLocal, async_engine, sync_engine
     from app.middleware.database_timing import init_database_timing
-    from sqlalchemy import text
 
     # Configure logging
     configure_logging("development")
@@ -54,12 +55,16 @@ async def test_query_timing():
     logger.info("\n--- Test 2: Slow Query (should trigger warning) ---")
     async with AsyncSessionLocal() as session:
         # Sleep for 100ms to trigger slow query warning
-        result = await session.execute(text("SELECT pg_sleep(0.1), 'slow query' as message"))
+        result = await session.execute(
+            text("SELECT pg_sleep(0.1), 'slow query' as message")
+        )
         row = result.first()
         logger.info("slow_query_result", message=row[1] if row else None)
 
     # Test 3: Multiple queries
-    logger.info("\n--- Test 3: Multiple Queries (should warn about excessive queries) ---")
+    logger.info(
+        "\n--- Test 3: Multiple Queries (should warn about excessive queries) ---"
+    )
     async with AsyncSessionLocal() as session:
         for i in range(7):  # More than MAX_QUERIES_PER_REQUEST (5)
             result = await session.execute(text(f"SELECT {i} as query_num"))
@@ -74,7 +79,9 @@ async def test_query_timing():
         summary = stats.get_summary()
         logger.info("query_stats_summary", **summary)
     else:
-        logger.info("no_query_stats", note="Stats only available within request context")
+        logger.info(
+            "no_query_stats", note="Stats only available within request context"
+        )
 
     logger.info("\n=== Tests Complete ===")
     logger.info(
@@ -85,10 +92,11 @@ async def test_query_timing():
 
 async def test_with_request_context():
     """Test query timing within a simulated request context."""
+    from sqlalchemy import text
+
     from app.config.logging_config import get_logger
     from app.db.session import AsyncSessionLocal
     from app.middleware.database_timing import track_request_queries
-    from sqlalchemy import text
 
     logger = get_logger(__name__)
 

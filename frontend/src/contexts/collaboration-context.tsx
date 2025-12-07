@@ -1,6 +1,12 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 import type {
   Organization,
   UserPresence,
@@ -8,23 +14,16 @@ import type {
   Comment,
   Activity,
   ResourceType,
-} from '@/types/collaboration';
-import type { PermissionLevel } from '@/lib/permissions';
-import {
-  hasPermission,
-  canUserView,
-  canUserComment,
-  canUserEdit,
-  canUserAdmin,
-} from '@/lib/permissions';
+} from "@/types/collaboration";
+import type { PermissionLevel } from "@/lib/permissions";
+import { hasPermission } from "@/lib/permissions";
 import {
   organizationService,
   lockService,
   commentService,
   activityService,
-} from '@/services/service-factory';
-import { websocketCollaborationService } from '@/services/websocket-collaboration-service';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/services/service-factory";
+import { websocketCollaborationService } from "@/services/websocket-collaboration-service";
 
 // ============================================================================
 // Context Types
@@ -54,12 +53,18 @@ interface CollaborationContextValue {
 
   // Locks
   currentLock: Lock | null;
-  acquireEditLock: (resourceType: ResourceType, resourceId: string) => Promise<void>;
+  acquireEditLock: (
+    resourceType: ResourceType,
+    resourceId: string
+  ) => Promise<void>;
   releaseEditLock: () => Promise<void>;
 
   // Comments
   comments: Comment[];
-  addComment: (content: string, position?: { x: number; y: number }) => Promise<void>;
+  addComment: (
+    content: string,
+    position?: { x: number; y: number }
+  ) => Promise<void>;
 
   // Activity
   activityFeed: Activity[];
@@ -70,9 +75,9 @@ interface CollaborationContextValue {
   disconnect: () => void;
 }
 
-const CollaborationContext = createContext<CollaborationContextValue | undefined>(
-  undefined
-);
+const CollaborationContext = createContext<
+  CollaborationContextValue | undefined
+>(undefined);
 
 // ============================================================================
 // Provider Props
@@ -98,7 +103,7 @@ export function CollaborationProvider({
   const [organizations, setOrganizations] = useState<Organization[]>([]);
 
   // Permission state
-  const [projectAccess, setProjectAccess] = useState<PermissionLevel | null>(null);
+  const [projectAccess] = useState<PermissionLevel | null>(null);
 
   // Presence state
   const [activeUsers, setActiveUsers] = useState<UserPresence[]>([]);
@@ -166,10 +171,10 @@ export function CollaborationProvider({
 
       // Set first org as current if none selected
       if (orgs.length > 0 && !currentOrg) {
-        setCurrentOrg(orgs[0]);
+        setCurrentOrg(orgs[0] ?? null);
       }
     } catch (error) {
-      console.error('[Collaboration] Failed to load organizations:', error);
+      console.error("[Collaboration] Failed to load organizations:", error);
     }
   };
 
@@ -178,7 +183,7 @@ export function CollaborationProvider({
       const org = await organizationService.getOrganization(orgId);
       setCurrentOrg(org);
     } catch (error) {
-      console.error('[Collaboration] Failed to switch organization:', error);
+      console.error("[Collaboration] Failed to switch organization:", error);
       throw error;
     }
   };
@@ -187,33 +192,36 @@ export function CollaborationProvider({
   // Permission Helpers
   // ============================================================================
 
-  const canView = hasPermission('view', projectAccess || 'none');
-  const canComment = hasPermission('comment', projectAccess || 'none');
-  const canEdit = hasPermission('edit', projectAccess || 'none');
-  const canAdmin = hasPermission('admin', projectAccess || 'none');
+  const canView = hasPermission("view", projectAccess || "none");
+  const canComment = hasPermission("comment", projectAccess || "none");
+  const canEdit = hasPermission("edit", projectAccess || "none");
+  const canAdmin = hasPermission("admin", projectAccess || "none");
 
   /**
    * Check if user has a specific permission level
    */
   const checkPermission = (required: PermissionLevel): boolean => {
-    return hasPermission(required, projectAccess || 'none');
+    return hasPermission(required, projectAccess || "none");
   };
 
   // ============================================================================
   // Lock Methods
   // ============================================================================
 
-  const acquireEditLock = async (resourceType: ResourceType, resourceId: string) => {
+  const acquireEditLock = async (
+    resourceType: ResourceType,
+    resourceId: string
+  ) => {
     try {
       const lock = await lockService.acquireLock(
         projectId,
         resourceType,
         resourceId,
-        true // auto-refresh
+        1 // auto-refresh (converted from boolean to number)
       );
       setCurrentLock(lock);
     } catch (error) {
-      console.error('[Collaboration] Failed to acquire lock:', error);
+      console.error("[Collaboration] Failed to acquire lock:", error);
       throw error;
     }
   };
@@ -225,7 +233,7 @@ export function CollaborationProvider({
       await lockService.releaseLock(currentLock.id);
       setCurrentLock(null);
     } catch (error) {
-      console.error('[Collaboration] Failed to release lock:', error);
+      console.error("[Collaboration] Failed to release lock:", error);
       throw error;
     }
   };
@@ -236,10 +244,13 @@ export function CollaborationProvider({
 
   const loadComments = async () => {
     try {
-      const loadedComments = await commentService.getComments(projectId, workflowId);
+      const loadedComments = await commentService.getComments(
+        projectId,
+        workflowId
+      );
       setComments(loadedComments);
     } catch (error) {
-      console.error('[Collaboration] Failed to load comments:', error);
+      console.error("[Collaboration] Failed to load comments:", error);
     }
   };
 
@@ -256,7 +267,7 @@ export function CollaborationProvider({
       );
       setComments((prev) => [...prev, newComment]);
     } catch (error) {
-      console.error('[Collaboration] Failed to add comment:', error);
+      console.error("[Collaboration] Failed to add comment:", error);
       throw error;
     }
   };
@@ -267,12 +278,12 @@ export function CollaborationProvider({
 
   const loadActivityFeed = async () => {
     try {
-      const { activities } = await activityService.getActivities(projectId, {
+      const activities = await activityService.getActivityFeed(projectId, {
         limit: 20,
       });
       setActivityFeed(activities);
     } catch (error) {
-      console.error('[Collaboration] Failed to load activity feed:', error);
+      console.error("[Collaboration] Failed to load activity feed:", error);
     }
   };
 
@@ -294,7 +305,7 @@ export function CollaborationProvider({
         },
         onLockAcquired: (lock) => {
           // Update lock state if it affects current resource
-          console.log('[Collaboration] Lock acquired:', lock);
+          console.log("[Collaboration] Lock acquired:", lock);
         },
         onLockReleased: (lock) => {
           // Update lock state if it affects current resource
@@ -323,7 +334,7 @@ export function CollaborationProvider({
 
       websocketCollaborationService.connect(projectId);
     } catch (error) {
-      console.error('[Collaboration] Failed to connect:', error);
+      console.error("[Collaboration] Failed to connect:", error);
       throw error;
     }
   };
@@ -402,7 +413,9 @@ export function CollaborationProvider({
 export function useCollaboration() {
   const context = useContext(CollaborationContext);
   if (context === undefined) {
-    throw new Error('useCollaboration must be used within a CollaborationProvider');
+    throw new Error(
+      "useCollaboration must be used within a CollaborationProvider"
+    );
   }
   return context;
 }

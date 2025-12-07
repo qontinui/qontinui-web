@@ -1,61 +1,74 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { usePathname } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, X, PlayCircle } from 'lucide-react';
-import { useAuth } from '@/contexts/auth-context';
+import React, { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ChevronLeft, ChevronRight, X, PlayCircle } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
 
 interface TourStep {
   target: string;
   title: string;
   content: string;
-  placement?: 'top' | 'bottom' | 'left' | 'right';
+  placement?: "top" | "bottom" | "left" | "right";
 }
 
 const tourSteps: TourStep[] = [
   {
-    target: '.project-manager',
-    title: 'Welcome to Qontinui!',
-    content: "Let's take a quick tour to help you get started with building visual automation workflows.",
-    placement: 'bottom',
+    target: ".project-manager",
+    title: "Welcome to Qontinui!",
+    content:
+      "Let's take a quick tour to help you get started with building visual automation workflows.",
+    placement: "bottom",
   },
   {
-    target: '.new-project-btn',
-    title: 'Create Your First Project',
-    content: 'Click here to create a new automation project. Each project contains a state machine that defines your workflow.',
-    placement: 'bottom',
+    target: ".new-project-btn",
+    title: "Create Your First Project",
+    content:
+      "Click here to create a new automation project. Each project contains a state machine that defines your workflow.",
+    placement: "bottom",
   },
   {
-    target: '.state-machine-canvas',
-    title: 'Design Your Workflow',
-    content: 'This is your canvas. Right-click to add states, then connect them with transitions to build your automation flow.',
-    placement: 'right',
+    target: ".state-machine-canvas",
+    title: "Design Your Workflow",
+    content:
+      "This is your canvas. Right-click to add states, then connect them with transitions to build your automation flow.",
+    placement: "right",
   },
   {
-    target: '.action-editor',
-    title: 'Configure Actions',
-    content: 'Select a state to add actions like clicking, typing, or waiting. Each state can have multiple actions.',
-    placement: 'left',
+    target: ".action-editor",
+    title: "Configure Actions",
+    content:
+      "Select a state to add actions like clicking, typing, or waiting. Each state can have multiple actions.",
+    placement: "left",
   },
   {
-    target: '.image-selector',
-    title: 'Image-Based Actions',
-    content: 'Upload screenshots for image recognition. The automation will find and interact with these elements on screen.',
-    placement: 'left',
+    target: ".image-selector",
+    title: "Image-Based Actions",
+    content:
+      "Upload screenshots for image recognition. The automation will find and interact with these elements on screen.",
+    placement: "left",
   },
   {
-    target: '.save-project-btn',
-    title: 'Save Your Work',
-    content: "Don't forget to save! Your projects are stored securely and can be accessed anytime.",
-    placement: 'top',
+    target: ".save-project-btn",
+    title: "Save Your Work",
+    content:
+      "Don't forget to save! Your projects are stored securely and can be accessed anytime.",
+    placement: "top",
   },
   {
-    target: '.export-config-btn',
-    title: 'Export Configuration',
-    content: 'Export your automation as JSON to use with the Qontinui automation engine.',
-    placement: 'top',
+    target: ".export-config-btn",
+    title: "Export Configuration",
+    content:
+      "Export your automation as JSON to use with the Qontinui automation engine.",
+    placement: "top",
   },
 ];
 
@@ -69,13 +82,13 @@ export function OnboardingTour() {
   useEffect(() => {
     // Only show tour if user is logged in and hasn't completed it
     // Don't show tour on admin page or for admin users
-    if (user && typeof window !== 'undefined') {
-      const isAdminPage = pathname?.startsWith('/admin');
+    if (user && typeof window !== "undefined") {
+      const isAdminPage = pathname?.startsWith("/admin");
       if (isAdminPage || user.is_superuser) {
         return; // Don't show tour for admin users or on admin page
       }
 
-      const tourCompleted = localStorage.getItem('onboarding-tour-completed');
+      const tourCompleted = localStorage.getItem("onboarding-tour-completed");
       if (!tourCompleted) {
         // Auto-start tour for new users after a short delay
         setTimeout(() => {
@@ -97,32 +110,33 @@ export function OnboardingTour() {
   }, [isActive, currentStep]);
 
   const updatePosition = () => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
     const step = tourSteps[currentStep];
+    if (!step) return;
     const element = document.querySelector(step.target);
 
     if (element) {
       const rect = element.getBoundingClientRect();
-      const placement = step.placement || 'bottom';
+      const placement = step.placement || "bottom";
 
       let top = 0;
       let left = 0;
 
       switch (placement) {
-        case 'top':
+        case "top":
           top = rect.top - 200;
           left = rect.left + rect.width / 2 - 150;
           break;
-        case 'bottom':
+        case "bottom":
           top = rect.bottom + 20;
           left = rect.left + rect.width / 2 - 150;
           break;
-        case 'left':
+        case "left":
           top = rect.top + rect.height / 2 - 100;
           left = rect.left - 320;
           break;
-        case 'right':
+        case "right":
           top = rect.top + rect.height / 2 - 100;
           left = rect.right + 20;
           break;
@@ -137,26 +151,26 @@ export function OnboardingTour() {
   };
 
   const highlightElement = (selector: string) => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
     removeHighlight();
     const element = document.querySelector(selector);
     if (element) {
-      element.classList.add('tour-highlight');
+      element.classList.add("tour-highlight");
       // Add overlay
-      const overlay = document.createElement('div');
-      overlay.className = 'tour-overlay';
+      const overlay = document.createElement("div");
+      overlay.className = "tour-overlay";
       document.body.appendChild(overlay);
     }
   };
 
   const removeHighlight = () => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
-    document.querySelectorAll('.tour-highlight').forEach((el) => {
-      el.classList.remove('tour-highlight');
+    document.querySelectorAll(".tour-highlight").forEach((el) => {
+      el.classList.remove("tour-highlight");
     });
-    document.querySelectorAll('.tour-overlay').forEach((el) => {
+    document.querySelectorAll(".tour-overlay").forEach((el) => {
       el.remove();
     });
   };
@@ -183,8 +197,8 @@ export function OnboardingTour() {
   const handleComplete = () => {
     setIsActive(false);
     removeHighlight();
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('onboarding-tour-completed', 'true');
+    if (typeof window !== "undefined") {
+      localStorage.setItem("onboarding-tour-completed", "true");
     }
   };
 
@@ -199,7 +213,7 @@ export function OnboardingTour() {
   }
 
   // Don't show tour button on admin page or for admin users
-  const isAdminPage = pathname?.startsWith('/admin');
+  const isAdminPage = pathname?.startsWith("/admin");
   if (isAdminPage || user.is_superuser) {
     return null;
   }
@@ -247,9 +261,7 @@ export function OnboardingTour() {
       >
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">
-              {step.title}
-            </CardTitle>
+            <CardTitle className="text-lg">{step?.title}</CardTitle>
             <Button
               variant="ghost"
               size="icon"
@@ -261,9 +273,7 @@ export function OnboardingTour() {
           </div>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
-            {step.content}
-          </p>
+          <p className="text-sm text-muted-foreground">{step?.content}</p>
         </CardContent>
         <CardFooter className="flex items-center justify-between pt-3">
           <div className="flex items-center gap-1">
@@ -271,7 +281,7 @@ export function OnboardingTour() {
               <div
                 key={index}
                 className={`h-1.5 w-1.5 rounded-full transition-colors ${
-                  index === currentStep ? 'bg-primary' : 'bg-muted'
+                  index === currentStep ? "bg-primary" : "bg-muted"
                 }`}
               />
             ))}
@@ -285,11 +295,8 @@ export function OnboardingTour() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button
-              size="sm"
-              onClick={handleNext}
-            >
-              {currentStep === tourSteps.length - 1 ? 'Finish' : 'Next'}
+            <Button size="sm" onClick={handleNext}>
+              {currentStep === tourSteps.length - 1 ? "Finish" : "Next"}
               {currentStep < tourSteps.length - 1 && (
                 <ChevronRight className="h-4 w-4 ml-1" />
               )}

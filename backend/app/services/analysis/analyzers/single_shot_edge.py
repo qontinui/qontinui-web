@@ -7,7 +7,7 @@ Good for finding buttons, inputs, and other rectangular UI elements.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -53,7 +53,7 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "canny_low": 50,  # Canny low threshold
             "canny_high": 150,  # Canny high threshold
@@ -81,7 +81,7 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, (img_gray, img_color) in enumerate(
-            zip(images_gray, images_color)
+            zip(images_gray, images_color, strict=False)
         ):
             elements = await self._analyze_screenshot(
                 img_gray, img_color, screenshot_idx, params
@@ -102,7 +102,7 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -110,7 +110,7 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
@@ -123,8 +123,8 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
         img_gray: np.ndarray,
         img_color: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot"""
         elements = []
 

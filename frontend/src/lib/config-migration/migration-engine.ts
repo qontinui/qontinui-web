@@ -4,8 +4,13 @@
  * Handles version detection, migration path finding, and sequential migration execution
  */
 
-import type { Migration, MigrationContext, MigrationResult, MigrationHistoryEntry } from './migration-types';
-import { compareVersions, isValidVersion } from './version-utils';
+import type {
+  Migration,
+  MigrationContext,
+  MigrationResult,
+  MigrationHistoryEntry,
+} from "./migration-types";
+import { compareVersions, isValidVersion } from "./version-utils";
 
 export class MigrationEngine {
   private migrations: Map<string, Migration> = new Map();
@@ -26,7 +31,9 @@ export class MigrationEngine {
   registerMigration(migration: Migration): void {
     // Validate migration versions
     if (!isValidVersion(migration.fromVersion)) {
-      throw new Error(`Invalid migration fromVersion: ${migration.fromVersion}`);
+      throw new Error(
+        `Invalid migration fromVersion: ${migration.fromVersion}`
+      );
     }
     if (!isValidVersion(migration.toVersion)) {
       throw new Error(`Invalid migration toVersion: ${migration.toVersion}`);
@@ -41,7 +48,7 @@ export class MigrationEngine {
    */
   needsMigration(configVersion: string): boolean {
     if (!isValidVersion(configVersion)) {
-      return false;  // Invalid versions can't be migrated
+      return false; // Invalid versions can't be migrated
     }
     return compareVersions(configVersion, this.currentVersion) < 0;
   }
@@ -78,9 +85,12 @@ export class MigrationEngine {
           fromVersion: configVersion,
           toVersion: this.currentVersion,
           timestamp: new Date(),
-          warnings: configVersion === this.currentVersion
-            ? []
-            : [`Config version ${configVersion} is newer than current version ${this.currentVersion}`],
+          warnings:
+            configVersion === this.currentVersion
+              ? []
+              : [
+                  `Config version ${configVersion} is newer than current version ${this.currentVersion}`,
+                ],
           errors: [],
         },
       };
@@ -93,10 +103,13 @@ export class MigrationEngine {
       if (cached) {
         return {
           ...cached,
-          config: structuredClone(cached.config),  // Return clone to prevent mutations
+          config: structuredClone(cached.config), // Return clone to prevent mutations
           context: {
             ...cached.context,
-            warnings: [...cached.context.warnings, 'Loaded from migration cache'],
+            warnings: [
+              ...cached.context.warnings,
+              "Loaded from migration cache",
+            ],
           },
         };
       }
@@ -122,7 +135,7 @@ export class MigrationEngine {
     }
 
     // Apply migrations sequentially
-    let currentConfig = structuredClone(config);  // Deep clone to avoid mutations
+    let currentConfig = structuredClone(config); // Deep clone to avoid mutations
     const context: MigrationContext = {
       fromVersion: configVersion,
       toVersion: this.currentVersion,
@@ -138,7 +151,7 @@ export class MigrationEngine {
           context.warnings.push(
             `Migration ${migration.fromVersion}→${migration.toVersion} skipped (not applicable)`
           );
-          currentConfig.version = migration.toVersion;  // Update version anyway
+          currentConfig.version = migration.toVersion; // Update version anyway
           continue;
         }
 
@@ -153,17 +166,17 @@ export class MigrationEngine {
 
         // Validate migration result
         if (migration.validate && !migration.validate(currentConfig)) {
-          throw new Error('Migration validation failed');
+          throw new Error("Migration validation failed");
         }
-
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         context.errors.push(
           `Migration ${migration.fromVersion}→${migration.toVersion} failed: ${errorMessage}`
         );
         return {
           success: false,
-          config,  // Return original config
+          config, // Return original config
           context,
         };
       }
@@ -181,7 +194,7 @@ export class MigrationEngine {
     // Cache successful result
     if (this.cacheEnabled && result.success) {
       const cacheKey = this.getCacheKey(config);
-      this.cache.set(cacheKey, structuredClone(result));  // Store clone
+      this.cache.set(cacheKey, structuredClone(result)); // Store clone
     }
 
     return result;
@@ -228,13 +241,17 @@ export class MigrationEngine {
       }
     }
 
-    return null;  // No path found
+    return null; // No path found
   }
 
   /**
    * Add migration history entry to config metadata
    */
-  private addMigrationHistory(config: any, originalVersion: string, path: Migration[]): void {
+  private addMigrationHistory(
+    config: any,
+    originalVersion: string,
+    path: Migration[]
+  ): void {
     // Ensure metadata exists
     if (!config.metadata) {
       config.metadata = {};
@@ -250,7 +267,7 @@ export class MigrationEngine {
       fromVersion: originalVersion,
       toVersion: this.currentVersion,
       date: new Date().toISOString(),
-      path: path.map(m => `${m.fromVersion}→${m.toVersion}`),
+      path: path.map((m) => `${m.fromVersion}→${m.toVersion}`),
     };
 
     config.metadata.migrationHistory.push(historyEntry);
@@ -275,7 +292,7 @@ export class MigrationEngine {
    * Uses version + content hash for uniqueness
    */
   private getCacheKey(config: any): string {
-    const version = config.version || 'unknown';
+    const version = config.version || "unknown";
     // Simple hash using JSON stringify (fast for small configs)
     // For large configs, could use a proper hash function
     const configStr = JSON.stringify(config);
@@ -290,7 +307,7 @@ export class MigrationEngine {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return Math.abs(hash).toString(36);
@@ -361,12 +378,12 @@ export class MigrationEngine {
         currentVersion: configVersion,
         targetVersion: this.currentVersion,
         migrationSteps: [],
-        estimatedChanges: ['Error: No migration path found'],
+        estimatedChanges: ["Error: No migration path found"],
       };
     }
 
     // Build preview information
-    const migrationSteps = path.map(migration => ({
+    const migrationSteps = path.map((migration) => ({
       from: migration.fromVersion,
       to: migration.toVersion,
       description: migration.description,
@@ -374,13 +391,17 @@ export class MigrationEngine {
 
     // Estimate changes by checking isApplicable for each migration
     const estimatedChanges: string[] = [];
-    let previewConfig = structuredClone(config);
+    const previewConfig = structuredClone(config);
 
     for (const migration of path) {
       if (migration.isApplicable && !migration.isApplicable(previewConfig)) {
-        estimatedChanges.push(`${migration.fromVersion}→${migration.toVersion}: No changes (not applicable)`);
+        estimatedChanges.push(
+          `${migration.fromVersion}→${migration.toVersion}: No changes (not applicable)`
+        );
       } else {
-        estimatedChanges.push(`${migration.fromVersion}→${migration.toVersion}: ${migration.description}`);
+        estimatedChanges.push(
+          `${migration.fromVersion}→${migration.toVersion}: ${migration.description}`
+        );
       }
       // Update version for next check
       previewConfig.version = migration.toVersion;

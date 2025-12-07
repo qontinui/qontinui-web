@@ -11,11 +11,11 @@
  * - Cancel on Escape or right-click
  */
 
-'use client';
+"use client";
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { useCanvasStore } from '@/stores/canvas-store';
-import { COLORS, getConnectionColor } from './canvas-config';
+import React, { useCallback, useEffect, useState } from "react";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { COLORS, getConnectionColor } from "./canvas-config";
 
 // ============================================================================
 // Types
@@ -27,7 +27,7 @@ export interface ConnectionDrawingState {
   sourceHandleId: string | null;
   sourcePosition: { x: number; y: number } | null;
   currentPosition: { x: number; y: number } | null;
-  outputType: 'main' | 'error' | 'success' | 'parallel';
+  outputType: "main" | "error" | "success" | "parallel";
   outputIndex: number;
   validTargets: Set<string>;
 }
@@ -55,7 +55,6 @@ export function ConnectionPreviewLine({
 }) {
   // Calculate smooth bezier path
   const dx = end.x - start.x;
-  const dy = end.y - start.y;
 
   const controlPoint1X = start.x + dx * 0.5;
   const controlPoint1Y = start.y;
@@ -80,10 +79,7 @@ export function ConnectionPreviewLine({
           refY="3"
           orient="auto"
         >
-          <polygon
-            points="0 0, 10 3, 0 6"
-            fill={lineColor}
-          />
+          <polygon points="0 0, 10 3, 0 6" fill={lineColor} />
         </marker>
       </defs>
       <path
@@ -91,10 +87,10 @@ export function ConnectionPreviewLine({
         stroke={lineColor}
         strokeWidth="3"
         fill="none"
-        strokeDasharray={valid ? '0' : '8,4'}
+        strokeDasharray={valid ? "0" : "8,4"}
         markerEnd="url(#arrowhead-preview)"
         style={{
-          filter: 'drop-shadow(0 0 6px rgba(0,0,0,0.5))',
+          filter: "drop-shadow(0 0 6px rgba(0,0,0,0.5))",
         }}
       />
     </svg>
@@ -105,7 +101,11 @@ export function ConnectionPreviewLine({
 // Connection Drawing Component
 // ============================================================================
 
-export function ConnectionDrawing({ state, onComplete, onCancel }: ConnectionDrawingProps) {
+export function ConnectionDrawing({
+  state,
+  onComplete: _onComplete,
+  onCancel: _onCancel,
+}: ConnectionDrawingProps) {
   if (!state.active || !state.sourcePosition || !state.currentPosition) {
     return null;
   }
@@ -132,14 +132,14 @@ export function ConnectionDrawing({ state, onComplete, onCancel }: ConnectionDra
       >
         <div className="bg-gray-900 text-white text-xs px-3 py-2 rounded-lg shadow-xl border border-gray-700">
           <div className="font-semibold" style={{ color }}>
-            {state.outputType.charAt(0).toUpperCase() + state.outputType.slice(1)} Connection
+            {state.outputType.charAt(0).toUpperCase() +
+              state.outputType.slice(1)}{" "}
+            Connection
           </div>
           <div className="text-gray-400 mt-1">
-            {isValid ? 'Drag to target handle' : 'No valid targets'}
+            {isValid ? "Drag to target handle" : "No valid targets"}
           </div>
-          <div className="text-gray-500 text-xs mt-1">
-            Press Esc to cancel
-          </div>
+          <div className="text-gray-500 text-xs mt-1">Press Esc to cancel</div>
         </div>
       </div>
     </>
@@ -157,21 +157,33 @@ export function useConnectionDrawing() {
     sourceHandleId: null,
     sourcePosition: null,
     currentPosition: null,
-    outputType: 'main',
+    outputType: "main",
     outputIndex: 0,
     validTargets: new Set(),
   });
 
-  const { startConnecting, cancelConnecting, finishConnecting } = useCanvasStore();
+  const { startConnecting, cancelConnecting, finishConnecting, workflow } =
+    useCanvasStore();
 
   const startConnection = useCallback(
     (
       nodeId: string,
       handleId: string,
       position: { x: number; y: number },
-      outputType: 'main' | 'error' | 'success' | 'parallel' = 'main',
+      outputType: "main" | "error" | "success" | "parallel" = "main",
       outputIndex: number = 0
     ) => {
+      // Calculate valid targets: all actions except the source itself
+      const validTargets = new Set<string>();
+      if (workflow) {
+        workflow.actions.forEach((action) => {
+          // Don't allow connecting to itself
+          if (action.id !== nodeId) {
+            validTargets.add(action.id);
+          }
+        });
+      }
+
       setState({
         active: true,
         sourceNodeId: nodeId,
@@ -180,25 +192,26 @@ export function useConnectionDrawing() {
         currentPosition: position,
         outputType,
         outputIndex,
-        validTargets: new Set(), // TODO: Calculate valid targets
+        validTargets,
       });
 
       startConnecting(nodeId, outputType, outputIndex);
     },
-    [startConnecting]
+    [startConnecting, workflow]
   );
 
   const updateConnection = useCallback((position: { x: number; y: number }) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       currentPosition: position,
     }));
   }, []);
 
   const completeConnection = useCallback(
-    (targetNodeId: string, targetIndex: number = 0) => {
+    (targetNodeId: string, targetHandleId: string) => {
       if (!state.sourceNodeId) return;
 
+      const targetIndex = parseInt(targetHandleId.split("-").pop() || "0");
       finishConnecting(targetNodeId, targetIndex);
 
       setState({
@@ -207,7 +220,7 @@ export function useConnectionDrawing() {
         sourceHandleId: null,
         sourcePosition: null,
         currentPosition: null,
-        outputType: 'main',
+        outputType: "main",
         outputIndex: 0,
         validTargets: new Set(),
       });
@@ -224,7 +237,7 @@ export function useConnectionDrawing() {
       sourceHandleId: null,
       sourcePosition: null,
       currentPosition: null,
-      outputType: 'main',
+      outputType: "main",
       outputIndex: 0,
       validTargets: new Set(),
     });
@@ -239,7 +252,7 @@ export function useConnectionDrawing() {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         cancelConnection();
       }
     };
@@ -252,14 +265,14 @@ export function useConnectionDrawing() {
       }
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("mousedown", handleMouseDown);
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("mousedown", handleMouseDown);
     };
   }, [state.active, updateConnection, cancelConnection]);
 
@@ -277,7 +290,8 @@ export function useConnectionDrawing() {
 // ============================================================================
 
 export function ConnectionDrawingManager() {
-  const { state, completeConnection, cancelConnection } = useConnectionDrawing();
+  const { state, completeConnection, cancelConnection } =
+    useConnectionDrawing();
 
   return (
     <ConnectionDrawing

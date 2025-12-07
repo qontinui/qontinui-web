@@ -25,11 +25,13 @@ async def broadcast_test_message(session_id: str, message_type: str = "test_even
         message_type: Type of message to send
     """
     print(f"\n{'='*60}")
-    print(f"WebSocket Redis Pub/Sub Test")
+    print("WebSocket Redis Pub/Sub Test")
     print(f"{'='*60}\n")
 
     # Connect to Redis
-    redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    redis_url = (
+        f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    )
     print(f"Connecting to Redis: {redis_url}")
 
     try:
@@ -73,23 +75,27 @@ async def broadcast_test_message(session_id: str, message_type: str = "test_even
 
     # Check active subscribers
     try:
-        channels = await redis.pubsub_channels(f"ws:session:*")
+        channels = await redis.pubsub_channels("ws:session:*")
         subscriber_count = await redis.pubsub_numsub(channel)
         print(f"Active channels: {len(channels)}")
-        print(f"Subscribers to {channel}: {subscriber_count[channel] if subscriber_count else 0}\n")
+        print(
+            f"Subscribers to {channel}: {subscriber_count[channel] if subscriber_count else 0}\n"
+        )
     except Exception as e:
         print(f"Warning: Could not check subscribers: {e}\n")
 
     # Publish message
     try:
         published = await redis.publish(channel, json.dumps(message))
-        print(f"✓ Message published successfully!")
+        print("✓ Message published successfully!")
         print(f"  Delivered to {published} subscriber(s)\n")
 
         if published == 0:
             print("ℹ No active subscribers detected.")
             print("  Make sure WebSocket clients are connected to:")
-            print(f"    ws://localhost:8000/api/v1/ws/automation/monitor/{session_id}?token=YOUR_TOKEN")
+            print(
+                f"    ws://localhost:8000/api/v1/ws/automation/monitor/{session_id}?token=YOUR_TOKEN"
+            )
     except Exception as e:
         print(f"✗ Failed to publish message: {e}")
         await redis.close()
@@ -111,17 +117,17 @@ async def continuous_broadcast(session_id: str, interval: int = 5):
         interval: Seconds between messages
     """
     print(f"\n{'='*60}")
-    print(f"Continuous WebSocket Broadcast Test")
+    print("Continuous WebSocket Broadcast Test")
     print(f"{'='*60}\n")
     print(f"Broadcasting to session: {session_id}")
     print(f"Interval: {interval} seconds")
-    print(f"Press Ctrl+C to stop\n")
+    print("Press Ctrl+C to stop\n")
 
     # Connect to Redis
-    redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
-    redis = await aioredis.from_url(
-        redis_url, encoding="utf-8", decode_responses=True
+    redis_url = (
+        f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
     )
+    redis = await aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True)
 
     channel = f"ws:session:{session_id}"
     message_count = 0
@@ -158,10 +164,12 @@ async def continuous_broadcast(session_id: str, interval: int = 5):
 async def check_redis_status():
     """Check Redis connection and active channels."""
     print(f"\n{'='*60}")
-    print(f"Redis Status Check")
+    print("Redis Status Check")
     print(f"{'='*60}\n")
 
-    redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    redis_url = (
+        f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    )
     print(f"Redis URL: {redis_url}\n")
 
     try:
@@ -223,8 +231,12 @@ def print_usage():
     print("  continuous <id>     - Continuously broadcast messages (5s interval)")
     print("\nExamples:")
     print("  python test_websocket_pubsub.py status")
-    print("  python test_websocket_pubsub.py broadcast 550e8400-e29b-41d4-a716-446655440000")
-    print("  python test_websocket_pubsub.py continuous 550e8400-e29b-41d4-a716-446655440000")
+    print(
+        "  python test_websocket_pubsub.py broadcast 550e8400-e29b-41d4-a716-446655440000"
+    )
+    print(
+        "  python test_websocket_pubsub.py continuous 550e8400-e29b-41d4-a716-446655440000"
+    )
     print()
 
 

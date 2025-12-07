@@ -4,15 +4,9 @@ Region Analysis Orchestrator - Manages the region analysis pipeline
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Type
-from uuid import UUID
+from typing import Any
 
-from .base import (
-    BaseRegionAnalyzer,
-    RegionAnalysisInput,
-    RegionAnalysisResult,
-    RegionAnalysisType,
-)
+from .base import BaseRegionAnalyzer, RegionAnalysisInput, RegionAnalysisResult
 from .fusion import FusedRegion, RegionFusion
 
 logger = logging.getLogger(__name__)
@@ -22,11 +16,11 @@ class RegionAnalyzerRegistry:
     """Registry of available region analyzers"""
 
     def __init__(self):
-        self._analyzers: Dict[str, Type[BaseRegionAnalyzer]] = {}
-        self._instances: Dict[str, BaseRegionAnalyzer] = {}
+        self._analyzers: dict[str, type[BaseRegionAnalyzer]] = {}
+        self._instances: dict[str, BaseRegionAnalyzer] = {}
 
     def register(
-        self, analyzer_class: Type[BaseRegionAnalyzer], name: Optional[str] = None
+        self, analyzer_class: type[BaseRegionAnalyzer], name: str | None = None
     ):
         """
         Register a region analyzer class
@@ -43,7 +37,7 @@ class RegionAnalyzerRegistry:
         logger.info(f"Registered region analyzer: {analyzer_name}")
 
     def get_analyzer(
-        self, name: str, config: Optional[Dict[str, Any]] = None
+        self, name: str, config: dict[str, Any] | None = None
     ) -> BaseRegionAnalyzer:
         """
         Get a region analyzer instance
@@ -61,7 +55,7 @@ class RegionAnalyzerRegistry:
         # Create new instance with config
         return self._analyzers[name](config)
 
-    def list_analyzers(self) -> List[Dict[str, Any]]:
+    def list_analyzers(self) -> list[dict[str, Any]]:
         """
         List all registered region analyzers
 
@@ -101,8 +95,8 @@ class RegionOrchestrator:
 
     def __init__(
         self,
-        fusion_system: Optional[RegionFusion] = None,
-        registry: Optional[RegionAnalyzerRegistry] = None,
+        fusion_system: RegionFusion | None = None,
+        registry: RegionAnalyzerRegistry | None = None,
     ):
         """
         Initialize region orchestrator
@@ -117,12 +111,12 @@ class RegionOrchestrator:
     async def analyze(
         self,
         input_data: RegionAnalysisInput,
-        analyzer_names: Optional[List[str]] = None,
-        analyzer_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+        analyzer_names: list[str] | None = None,
+        analyzer_configs: dict[str, dict[str, Any]] | None = None,
         parallel: bool = True,
         fuse_results: bool = True,
         overlap_threshold: float = 0.5,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run region analysis pipeline
 
@@ -201,37 +195,37 @@ class RegionOrchestrator:
 
         return response
 
-    def _count_region_types(self, regions: List[FusedRegion]) -> Dict[str, int]:
+    def _count_region_types(self, regions: list[FusedRegion]) -> dict[str, int]:
         """Count regions by type"""
-        counts = {}
+        counts: dict[str, int] = {}
         for region in regions:
             region_type = region.region_type.value
             counts[region_type] = counts.get(region_type, 0) + 1
         return counts
 
     async def _run_parallel(
-        self, analyzers: List[BaseRegionAnalyzer], input_data: RegionAnalysisInput
-    ) -> List[RegionAnalysisResult]:
+        self, analyzers: list[BaseRegionAnalyzer], input_data: RegionAnalysisInput
+    ) -> list[RegionAnalysisResult]:
         """Run analyzers in parallel"""
         tasks = [analyzer.analyze(input_data) for analyzer in analyzers]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Filter out exceptions
-        valid_results = []
+        valid_results: list[RegionAnalysisResult] = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 logger.error(
                     f"Region analyzer {analyzers[i].name} failed: {result}",
                     exc_info=result,
                 )
-            else:
+            elif isinstance(result, RegionAnalysisResult):
                 valid_results.append(result)
 
         return valid_results
 
     async def _run_sequential(
-        self, analyzers: List[BaseRegionAnalyzer], input_data: RegionAnalysisInput
-    ) -> List[RegionAnalysisResult]:
+        self, analyzers: list[BaseRegionAnalyzer], input_data: RegionAnalysisInput
+    ) -> list[RegionAnalysisResult]:
         """Run analyzers sequentially"""
         results = []
         for analyzer in analyzers:
@@ -243,6 +237,6 @@ class RegionOrchestrator:
 
         return results
 
-    def get_available_analyzers(self) -> List[Dict[str, Any]]:
+    def get_available_analyzers(self) -> list[dict[str, Any]]:
         """Get list of available region analyzers"""
         return self.registry.list_analyzers()

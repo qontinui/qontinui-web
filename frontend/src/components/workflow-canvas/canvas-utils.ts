@@ -5,14 +5,15 @@
  * plus validation and helper functions.
  */
 
-import { Node, Edge, MarkerType } from '@xyflow/react';
+import { MarkerType } from "@xyflow/react";
 import {
   Workflow,
   Action,
   Connection,
   Connections,
   getActionOutputCount,
-} from '@/lib/action-schema/action-types';
+} from "@/lib/action-schema/action-types";
+import type { SwitchActionConfig } from "@/lib/action-schema/configs/control-flow-actions";
 import {
   CanvasNode,
   CanvasEdge,
@@ -21,13 +22,13 @@ import {
   getNodeType,
   ConnectionValidationResult,
   ConnectionAttempt,
-} from './canvas-types';
+} from "./canvas-types";
 import {
   getActionTypeColor,
   getConnectionColor,
   getConnectionStyle,
   hexToRgba,
-} from './canvas-config';
+} from "./canvas-config";
 
 // ============================================================================
 // Workflow to React Flow Conversion
@@ -40,22 +41,25 @@ export function workflowToReactFlow(workflow: Workflow): {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
 } {
-  console.log('[workflowToReactFlow] Converting workflow:', {
+  console.log("[workflowToReactFlow] Converting workflow:", {
     workflowId: workflow.id,
     workflowName: workflow.name,
     actionsCount: workflow.actions.length,
     actions: workflow.actions,
-    connections: workflow.connections
+    connections: workflow.connections,
   });
 
   const nodes = actionsToNodes(workflow.actions);
-  const edges = connectionsToEdges(workflow.connections || {}, workflow.actions);
+  const edges = connectionsToEdges(
+    workflow.connections || {},
+    workflow.actions
+  );
 
-  console.log('[workflowToReactFlow] Result:', {
+  console.log("[workflowToReactFlow] Result:", {
     nodesCount: nodes.length,
     edgesCount: edges.length,
     nodes,
-    edges
+    edges,
   });
 
   return { nodes, edges };
@@ -65,7 +69,7 @@ export function workflowToReactFlow(workflow: Workflow): {
  * Convert actions to React Flow nodes
  */
 function actionsToNodes(actions: Action[]): CanvasNode[] {
-  console.log('[actionsToNodes] Converting actions:', actions);
+  console.log("[actionsToNodes] Converting actions:", actions);
 
   return actions.map((action, index) => {
     const nodeType = getNodeType(action);
@@ -74,15 +78,15 @@ function actionsToNodes(actions: Action[]): CanvasNode[] {
     // Provide default position if not set (new actions in unified builder)
     const position = action.position
       ? { x: action.position[0], y: action.position[1] }
-      : { x: 100 + (index * 250), y: 100 }; // Default horizontal layout
+      : { x: 100 + index * 250, y: 100 }; // Default horizontal layout
 
-    console.log('[actionsToNodes] Action:', {
+    console.log("[actionsToNodes] Action:", {
       id: action.id,
       type: action.type,
       position: action.position,
       defaultedPosition: position,
       nodeType,
-      color
+      color,
     });
 
     const node: CanvasNode = {
@@ -92,7 +96,7 @@ function actionsToNodes(actions: Action[]): CanvasNode[] {
       data: {
         action,
         selected: false,
-        executionState: 'idle',
+        executionState: "idle",
         label: action.name || action.type,
       } as CanvasNodeData,
       style: {
@@ -104,7 +108,7 @@ function actionsToNodes(actions: Action[]): CanvasNode[] {
       },
     };
 
-    console.log('[actionsToNodes] Created node:', node);
+    console.log("[actionsToNodes] Created node:", node);
     return node;
   });
 }
@@ -120,14 +124,14 @@ function connectionsToEdges(
 
   Object.entries(connections).forEach(([sourceActionId, outputs]) => {
     // Process each connection type (main, error, success, parallel)
-    (['main', 'error', 'success', 'parallel'] as const).forEach((connType) => {
-      const connectionArray = outputs[connType];
+    (["main", "error", "success", "parallel"] as const).forEach((connType) => {
+      const connectionArray = outputs[connType as keyof typeof outputs];
       if (!connectionArray) return;
 
       // Process each output index
-      connectionArray.forEach((outputConnections, outputIndex) => {
+      connectionArray.forEach((outputConnections: any, outputIndex: number) => {
         // Process each connection from this output
-        outputConnections.forEach((conn, connIndex) => {
+        outputConnections.forEach((conn: any, connIndex: number) => {
           const edgeId = `${sourceActionId}-${connType}-${outputIndex}-${conn.action}-${connIndex}`;
           const color = getConnectionColor(connType);
           const style = getConnectionStyle(connType);
@@ -145,8 +149,8 @@ function connectionsToEdges(
             source: sourceActionId,
             target: conn.action,
             sourceHandle: `${connType}-${outputIndex}`,
-            targetHandle: 'input-0',
-            type: 'custom',
+            targetHandle: "input-0",
+            type: "custom",
             animated: false,
             data: {
               connection: conn,
@@ -183,7 +187,7 @@ function connectionsToEdges(
 function getEdgeLabel(
   sourceActionId: string,
   outputIndex: number,
-  connType: 'main' | 'error' | 'success' | 'parallel',
+  connType: "main" | "error" | "success" | "parallel",
   actions: Action[]
 ): string | undefined {
   const sourceAction = actions.find((a) => a.id === sourceActionId);
@@ -191,23 +195,25 @@ function getEdgeLabel(
 
   // Special labels for control flow actions
   switch (sourceAction.type) {
-    case 'IF':
-      return outputIndex === 0 ? 'true' : 'false';
-    case 'TRY_CATCH':
-      return connType === 'error' ? 'catch' : 'try';
-    case 'SWITCH':
-      if (sourceAction.config.cases && outputIndex < sourceAction.config.cases.length) {
-        const caseValue = sourceAction.config.cases[outputIndex];
+    case "IF":
+      return outputIndex === 0 ? "true" : "false";
+    case "TRY_CATCH":
+      return connType === "error" ? "catch" : "try";
+    case "SWITCH": {
+      const switchConfig = sourceAction.config as SwitchActionConfig;
+      if (switchConfig.cases && outputIndex < switchConfig.cases.length) {
+        const caseValue = switchConfig.cases[outputIndex];
         return String(caseValue);
       }
-      return 'default';
-    case 'LOOP':
-      return connType === 'main' ? 'loop' : undefined;
+      return "default";
+    }
+    case "LOOP":
+      return connType === "main" ? "loop" : undefined;
     default:
       // Connection type labels for non-control flow
-      if (connType === 'error') return 'error';
-      if (connType === 'success') return 'success';
-      if (connType === 'parallel') return 'parallel';
+      if (connType === "error") return "error";
+      if (connType === "success") return "success";
+      if (connType === "parallel") return "parallel";
       return undefined;
   }
 }
@@ -231,8 +237,8 @@ export function reactFlowToWorkflow(
   return {
     id: workflowId,
     name: workflowName,
-    version: '1.0.0',
-    format: 'graph',
+    version: "1.0.0",
+    format: "graph",
     actions,
     connections,
   };
@@ -263,7 +269,7 @@ function edgesToConnections(edges: CanvasEdge[]): Connections {
 
     // Parse sourceHandle to determine connection type and output index
     // Format: "main-0", "error-0", etc.
-    let connType: 'main' | 'error' | 'success' | 'parallel' = 'main';
+    let connType: "main" | "error" | "success" | "parallel" = "main";
     let outputIndex = 0;
 
     if (edge.data?.connectionType && edge.data?.outputIndex !== undefined) {
@@ -272,16 +278,20 @@ function edgesToConnections(edges: CanvasEdge[]): Connections {
       outputIndex = edge.data.outputIndex;
     } else if (edge.sourceHandle) {
       // Parse sourceHandle for newly created edges
-      const parts = edge.sourceHandle.split('-');
-      if (parts.length >= 2) {
+      const parts = edge.sourceHandle.split("-");
+      if (parts.length >= 2 && parts[1]) {
         const handleType = parts[0];
         const handleIndex = parseInt(parts[1], 10);
 
         // Map handle type to connection type
-        if (handleType === 'error' || handleType === 'success' || handleType === 'parallel') {
+        if (
+          handleType === "error" ||
+          handleType === "success" ||
+          handleType === "parallel"
+        ) {
           connType = handleType;
         } else {
-          connType = 'main';
+          connType = "main";
         }
 
         outputIndex = isNaN(handleIndex) ? 0 : handleIndex;
@@ -294,17 +304,23 @@ function edgesToConnections(edges: CanvasEdge[]): Connections {
     }
 
     // Initialize connection type array if needed
-    if (!connections[sourceId][connType]) {
-      connections[sourceId][connType] = [];
+    const sourceConnections = connections[sourceId];
+    if (!sourceConnections[connType as keyof typeof sourceConnections]) {
+      (sourceConnections[
+        connType as keyof typeof sourceConnections
+      ] as Connection[][]) = [];
     }
 
     // Initialize output index array if needed
-    while (connections[sourceId][connType]!.length <= outputIndex) {
-      connections[sourceId][connType]!.push([]);
+    const connArray = sourceConnections[
+      connType as keyof typeof sourceConnections
+    ] as Connection[][];
+    while (connArray.length <= outputIndex) {
+      connArray.push([]);
     }
 
     // Add connection
-    connections[sourceId][connType]![outputIndex].push({
+    connArray[outputIndex]?.push({
       action: targetId,
       type: connType,
       index: 0, // Always 0 for now (single input per action)
@@ -332,7 +348,7 @@ export function validateConnection(
   if (!sourceNode || !targetNode) {
     return {
       valid: false,
-      message: 'Source or target node not found',
+      message: "Source or target node not found",
     };
   }
 
@@ -340,8 +356,8 @@ export function validateConnection(
   if (attempt.source === attempt.target) {
     return {
       valid: false,
-      message: 'Cannot connect a node to itself',
-      suggestion: 'Choose a different target node',
+      message: "Cannot connect a node to itself",
+      suggestion: "Choose a different target node",
     };
   }
 
@@ -349,16 +365,19 @@ export function validateConnection(
   if (wouldCreateCycle(attempt, edges)) {
     return {
       valid: false,
-      message: 'This connection would create a cycle',
-      suggestion: 'Cycles are not allowed in workflows',
+      message: "This connection would create a cycle",
+      suggestion: "Cycles are not allowed in workflows",
     };
   }
 
   // Validate output count
   const sourceAction = sourceNode.data.action;
-  const outputCount = getActionOutputCount(sourceAction.type, sourceAction.config);
-  const handleParts = attempt.sourceHandle?.split('-');
-  const outputIndex = handleParts ? parseInt(handleParts[1] || '0') : 0;
+  const outputCount = getActionOutputCount(
+    sourceAction.type,
+    sourceAction.config
+  );
+  const handleParts = attempt.sourceHandle?.split("-");
+  const outputIndex = handleParts ? parseInt(handleParts[1] || "0") : 0;
 
   if (outputIndex >= outputCount) {
     return {
@@ -378,7 +397,7 @@ export function validateConnection(
   if (isDuplicate) {
     return {
       valid: false,
-      message: 'This connection already exists',
+      message: "This connection already exists",
     };
   }
 
@@ -550,7 +569,7 @@ function calculateDepths(
   // Find entry points (actions with no incoming connections)
   const hasIncoming = new Set<string>();
   Object.values(connections).forEach((outputs) => {
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const conns = outputs[type as keyof typeof outputs];
       if (conns) {
         conns.forEach((outputConns) => {
@@ -582,7 +601,7 @@ function calculateDepths(
     // Get all outgoing connections
     const outputs = connections[id];
     if (outputs) {
-      ['main', 'error', 'success', 'parallel'].forEach((type) => {
+      ["main", "error", "success", "parallel"].forEach((type) => {
         const conns = outputs[type as keyof typeof outputs];
         if (conns) {
           conns.forEach((outputConns) => {
@@ -619,7 +638,10 @@ export function getSelectedNodes(nodes: CanvasNode[]): CanvasNode[] {
 /**
  * Get node by ID
  */
-export function getNodeById(nodes: CanvasNode[], id: string): CanvasNode | undefined {
+export function getNodeById(
+  nodes: CanvasNode[],
+  id: string
+): CanvasNode | undefined {
   return nodes.find((n) => n.id === id);
 }
 
@@ -666,14 +688,20 @@ export function getConnectedEdges(
 /**
  * Get incoming edges for a node
  */
-export function getIncomingEdges(edges: CanvasEdge[], nodeId: string): CanvasEdge[] {
+export function getIncomingEdges(
+  edges: CanvasEdge[],
+  nodeId: string
+): CanvasEdge[] {
   return edges.filter((e) => e.target === nodeId);
 }
 
 /**
  * Get outgoing edges for a node
  */
-export function getOutgoingEdges(edges: CanvasEdge[], nodeId: string): CanvasEdge[] {
+export function getOutgoingEdges(
+  edges: CanvasEdge[],
+  nodeId: string
+): CanvasEdge[] {
   return edges.filter((e) => e.source === nodeId);
 }
 

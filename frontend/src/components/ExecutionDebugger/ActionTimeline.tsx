@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -8,12 +8,12 @@ import {
   CircleDot,
   GitBranch,
   RotateCw,
-} from 'lucide-react';
-import { useExecutionDebugger } from '../../stores/execution-debugger-store';
-import { Action } from '../../contexts/automation-context/types';
-import { ActionExecutionStatus } from '../../types/debugger/execution-types';
-import { SpecialKeyDisplay } from '../special-keys-selector';
-import { useAutomation } from '../../contexts/automation-context';
+} from "lucide-react";
+import { useExecutionDebugger } from "../../stores/execution-debugger-store";
+import { ActionExecutionStatus } from "../../types/debugger/execution-types";
+import { SpecialKeyDisplay } from "../special-keys-selector";
+import { useAutomation } from "../../contexts/automation-context";
+import type { Action } from "../../lib/action-schema/action-types";
 
 interface ActionTimelineProps {
   actions: Action[];
@@ -30,60 +30,62 @@ const STATUS_CONFIG: Record<
   }
 > = {
   pending: {
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-50',
-    borderColor: 'border-gray-200',
+    color: "text-gray-500",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200",
     icon: CircleDot,
   },
   executing: {
-    color: 'text-yellow-600',
-    bgColor: 'bg-yellow-50',
-    borderColor: 'border-yellow-300',
+    color: "text-yellow-600",
+    bgColor: "bg-yellow-50",
+    borderColor: "border-yellow-300",
     icon: Loader2,
   },
   success: {
-    color: 'text-green-600',
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-300',
+    color: "text-green-600",
+    bgColor: "bg-green-50",
+    borderColor: "border-green-300",
     icon: CheckCircle,
   },
   failed: {
-    color: 'text-red-600',
-    bgColor: 'bg-red-50',
-    borderColor: 'border-red-300',
+    color: "text-red-600",
+    bgColor: "bg-red-50",
+    borderColor: "border-red-300",
     icon: XCircle,
   },
   skipped: {
-    color: 'text-orange-600',
-    bgColor: 'bg-orange-50',
-    borderColor: 'border-orange-300',
+    color: "text-orange-600",
+    bgColor: "bg-orange-50",
+    borderColor: "border-orange-300",
     icon: AlertCircle,
   },
 };
 
 const getActionIcon = (actionType: string) => {
-  if (actionType === 'IF' || actionType === 'SWITCH') return GitBranch;
-  if (actionType === 'LOOP') return RotateCw;
+  if (actionType === "IF" || actionType === "SWITCH") return GitBranch;
+  if (actionType === "LOOP") return RotateCw;
   return null;
 };
 
 // Helper to resolve TYPE action text from StateStrings
 const getTypeActionText = (action: Action, states: any[]): string | null => {
-  if (action.type !== 'TYPE') return null;
+  if (action.type !== "TYPE") return null;
+
+  const typeConfig = action.config as any;
 
   // If using manual text, return it directly
-  if (action.config.textSource !== "stateString" && action.config.text) {
-    return action.config.text;
+  if (!typeConfig.textSource && typeConfig.text) {
+    return typeConfig.text;
   }
 
   // If using StateString, resolve the values
-  if (action.config.textSource === "stateString" && action.config.selectedState) {
-    const state = states.find(s => s.id === action.config.selectedState);
+  if (typeConfig.textSource && typeConfig.textSource.stateId) {
+    const state = states.find((s) => s.id === typeConfig.textSource.stateId);
     if (!state || !state.strings) return null;
 
-    if (action.config.selectedStateStrings?.length > 0) {
+    if (typeConfig.textSource.stringIds?.length > 0) {
       const selectedStrings = state.strings
-        .filter((s: any) => action.config.selectedStateStrings.includes(s.id))
+        .filter((s: any) => typeConfig.textSource.stringIds.includes(s.id))
         .map((s: any) => s.value)
         .filter((v: any) => v);
 
@@ -126,8 +128,8 @@ const ActionItem: React.FC<ActionItemProps> = ({
   useEffect(() => {
     if (isCurrent && itemRef.current) {
       itemRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
+        behavior: "smooth",
+        block: "nearest",
       });
     }
   }, [isCurrent]);
@@ -142,7 +144,7 @@ const ActionItem: React.FC<ActionItemProps> = ({
       className={`relative flex items-center gap-3 p-3 border-l-4 rounded-r transition-all cursor-pointer ${
         config.borderColor
       } ${config.bgColor} ${
-        isCurrent ? 'ring-2 ring-blue-500 ring-opacity-50' : ''
+        isCurrent ? "ring-2 ring-blue-500 ring-opacity-50" : ""
       } hover:shadow-md`}
       onClick={onClick}
     >
@@ -166,7 +168,9 @@ const ActionItem: React.FC<ActionItemProps> = ({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           {ActionIcon && <ActionIcon className={`w-4 h-4 ${config.color}`} />}
-          <span className={`font-semibold text-sm ${config.color}`}>{action.type}</span>
+          <span className={`font-semibold text-sm ${config.color}`}>
+            {action.type}
+          </span>
           {executionCount > 1 && (
             <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
               {executionCount}x
@@ -174,14 +178,15 @@ const ActionItem: React.FC<ActionItemProps> = ({
           )}
         </div>
         {(() => {
-          const typeText = action.type === 'TYPE' ? getTypeActionText(action, states) : null;
-          const displayText = typeText || action.config.description;
+          const typeText =
+            action.type === "TYPE" ? getTypeActionText(action, states) : null;
+          const displayText = typeText || action.name;
 
           if (!displayText) return null;
 
           return (
             <div className="text-xs text-gray-600 truncate">
-              {action.type === 'TYPE' && typeText ? (
+              {action.type === "TYPE" && typeText ? (
                 <SpecialKeyDisplay text={typeText} />
               ) : (
                 displayText
@@ -195,7 +200,7 @@ const ActionItem: React.FC<ActionItemProps> = ({
       <div className="flex flex-col items-end gap-1">
         <StatusIcon
           className={`w-5 h-5 ${config.color} ${
-            status === 'executing' ? 'animate-spin' : ''
+            status === "executing" ? "animate-spin" : ""
           }`}
         />
         {duration !== undefined && (
@@ -213,13 +218,14 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
   actions,
   onActionClick,
 }) => {
-  const { currentActionIndex, actionEvents, toggleBreakpoint } = useExecutionDebugger();
+  const { currentActionIndex, actionEvents, toggleBreakpoint } =
+    useExecutionDebugger();
   const { states } = useAutomation();
 
   const getActionStatus = (index: number): ActionExecutionStatus => {
     const event = actionEvents.find((e) => e.actionIndex === index);
     if (!event) {
-      return index < currentActionIndex ? 'success' : 'pending';
+      return index < currentActionIndex ? "success" : "pending";
     }
     return event.status;
   };
@@ -251,12 +257,15 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold text-sm">Action Timeline</h3>
           <span className="text-xs text-gray-500">
-            {currentActionIndex >= 0 ? currentActionIndex + 1 : 0} / {actions.length}
+            {currentActionIndex >= 0 ? currentActionIndex + 1 : 0} /{" "}
+            {actions.length}
           </span>
         </div>
 
         {actions.length === 0 ? (
-          <div className="text-center text-gray-500 text-sm py-8">No actions to display</div>
+          <div className="text-center text-gray-500 text-sm py-8">
+            No actions to display
+          </div>
         ) : (
           <div className="space-y-2">
             {actions.map((action, index) => (

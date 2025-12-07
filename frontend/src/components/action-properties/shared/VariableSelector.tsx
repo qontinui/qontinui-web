@@ -1,31 +1,31 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 export interface VariableSelectorProps {
   /** Current variable name value */
-  value: string
+  value: string;
 
   /** Called when variable name changes */
-  onChange: (name: string) => void
+  onChange: (name: string) => void;
 
   /** Optional list of existing variables for autocomplete */
-  existingVariables?: string[]
+  existingVariables?: string[];
 
   /** Optional label text */
-  label?: string
+  label?: string;
 
   /** Optional placeholder text */
-  placeholder?: string
+  placeholder?: string;
 
   /** Optional class name */
-  className?: string
+  className?: string;
 
   /** Whether the field is required */
-  required?: boolean
+  required?: boolean;
 }
 
 /**
@@ -45,50 +45,50 @@ export function VariableSelector({
   className,
   required = false,
 }: VariableSelectorProps) {
-  const [showSuggestions, setShowSuggestions] = React.useState(false)
-  const [isInvalid, setIsInvalid] = React.useState(false)
-  const inputRef = React.useRef<HTMLInputElement>(null)
+  const [showSuggestions, setShowSuggestions] = React.useState(false);
+  const [isInvalid, setIsInvalid] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   // Validate variable name (must start with letter or underscore, then alphanumeric or underscore)
   const validateVariableName = (name: string): boolean => {
-    if (!name) return true // Empty is valid (unless required)
-    const variableNamePattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/
-    return variableNamePattern.test(name)
-  }
+    if (!name) return true; // Empty is valid (unless required)
+    const variableNamePattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+    return variableNamePattern.test(name);
+  };
 
   // Filter suggestions based on current input
   const filteredSuggestions = React.useMemo(() => {
-    if (!value || !existingVariables.length) return []
-    const lowerValue = value.toLowerCase()
+    if (!value || !existingVariables.length) return [];
+    const lowerValue = value.toLowerCase();
     return existingVariables
-      .filter(v => v.toLowerCase().includes(lowerValue) && v !== value)
-      .slice(0, 5) // Limit to 5 suggestions
-  }, [value, existingVariables])
+      .filter((v) => v.toLowerCase().includes(lowerValue) && v !== value)
+      .slice(0, 5); // Limit to 5 suggestions
+  }, [value, existingVariables]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value
-    const valid = validateVariableName(newValue)
-    setIsInvalid(!valid)
-    onChange(newValue)
+    const newValue = e.target.value;
+    const valid = validateVariableName(newValue);
+    setIsInvalid(!valid);
+    onChange(newValue);
 
     // Show suggestions if we have matches
     if (newValue && filteredSuggestions.length > 0) {
-      setShowSuggestions(true)
+      setShowSuggestions(true);
     } else {
-      setShowSuggestions(false)
+      setShowSuggestions(false);
     }
-  }
+  };
 
   const handleSuggestionClick = (suggestion: string) => {
-    onChange(suggestion)
-    setShowSuggestions(false)
-    setIsInvalid(false)
-  }
+    onChange(suggestion);
+    setShowSuggestions(false);
+    setIsInvalid(false);
+  };
 
   const handleBlur = () => {
     // Delay hiding suggestions to allow click events to fire
-    setTimeout(() => setShowSuggestions(false), 200)
-  }
+    setTimeout(() => setShowSuggestions(false), 200);
+  };
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -107,21 +107,23 @@ export function VariableSelector({
           onChange={handleChange}
           onFocus={() => {
             if (value && filteredSuggestions.length > 0) {
-              setShowSuggestions(true)
+              setShowSuggestions(true);
             }
           }}
           onBlur={handleBlur}
           placeholder={placeholder}
           className={cn(
             "bg-transparent border-gray-700 font-mono text-sm",
-            isInvalid && "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/50"
+            isInvalid &&
+              "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/50"
           )}
           aria-invalid={isInvalid}
         />
 
         {isInvalid && value && (
           <p className="text-xs text-red-400 mt-1">
-            Variable name must start with a letter or underscore, followed by letters, numbers, or underscores
+            Variable name must start with a letter or underscore, followed by
+            letters, numbers, or underscores
           </p>
         )}
 
@@ -142,5 +144,5 @@ export function VariableSelector({
         )}
       </div>
     </div>
-  )
+  );
 }

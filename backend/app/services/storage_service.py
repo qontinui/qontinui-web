@@ -1,10 +1,12 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from app.models.storage_usage import StorageUsage
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.storage_usage import StorageUsage
 
 
 class StorageQuotaExceeded(HTTPException):
@@ -232,9 +234,9 @@ class StorageService:
 
         if record:
             # Merge metadata (update existing keys, add new ones)
-            current_metadata = record.file_metadata or {}
+            current_metadata: dict[Any, Any] = record.file_metadata or {}  # type: ignore[assignment]
             current_metadata.update(metadata)
-            record.file_metadata = current_metadata
+            record.file_metadata = current_metadata  # type: ignore[assignment]
             await db.commit()
             return True
         return False

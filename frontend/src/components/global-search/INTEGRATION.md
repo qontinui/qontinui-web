@@ -26,10 +26,10 @@ frontend/src/
 Edit your main layout file (e.g., `app/layout.tsx` or similar):
 
 ```tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { GlobalSearch } from '@/components/global-search';
+import { useState } from "react";
+import { GlobalSearch } from "@/components/global-search";
 
 export default function RootLayout({ children }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -53,9 +53,9 @@ Create a hook or component to load data:
 
 ```tsx
 // hooks/useSearchIndex.ts
-import { useEffect } from 'react';
-import { globalSearchService } from '@/services/global-search-service';
-import { projectDB } from '@/lib/project-db';
+import { useEffect } from "react";
+import { globalSearchService } from "@/services/global-search-service";
+import { projectDB } from "@/lib/project-db";
 
 export function useSearchIndex() {
   useEffect(() => {
@@ -75,7 +75,7 @@ export function useSearchIndex() {
           transitions,
         });
       } catch (error) {
-        console.error('Failed to load search index:', error);
+        console.error("Failed to load search index:", error);
       }
     }
 
@@ -98,8 +98,8 @@ function App() {
 
 ```tsx
 // components/Header.tsx
-import { useState } from 'react';
-import { Search } from 'lucide-react';
+import { useState } from "react";
+import { Search } from "lucide-react";
 
 export function Header() {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -131,7 +131,7 @@ Visit the demo page to test with mock data:
 
 ```tsx
 // app/demo/search/page.tsx
-import { GlobalSearchDemo } from '@/components/global-search/GlobalSearch.demo';
+import { GlobalSearchDemo } from "@/components/global-search/GlobalSearch.demo";
 
 export default function SearchDemoPage() {
   return <GlobalSearchDemo />;
@@ -143,17 +143,17 @@ Then visit `/demo/search` in your browser.
 ### Option 2: Quick Test
 
 ```tsx
-import { GlobalSearch } from '@/components/global-search';
-import { globalSearchService } from '@/services/global-search-service';
+import { GlobalSearch } from "@/components/global-search";
+import { globalSearchService } from "@/services/global-search-service";
 
 // Load some test data
 globalSearchService.updateIndex({
   workflows: [
     {
-      id: '1',
-      name: 'Test Workflow',
-      version: '1.0.0',
-      format: 'graph',
+      id: "1",
+      name: "Test Workflow",
+      version: "1.0.0",
+      format: "graph",
       actions: [],
       connections: {},
     },
@@ -161,7 +161,7 @@ globalSearchService.updateIndex({
 });
 
 // Then use the component
-<GlobalSearch open={true} onOpenChange={() => {}} />
+<GlobalSearch open={true} onOpenChange={() => {}} />;
 ```
 
 ## Keep Index Updated
@@ -178,14 +178,14 @@ globalSearchService.updateIndex({
 // When updating a workflow
 const updatedWorkflow = await updateWorkflow(id, data);
 globalSearchService.updateIndex({
-  workflows: existingWorkflows.map(wf =>
+  workflows: existingWorkflows.map((wf) =>
     wf.id === id ? updatedWorkflow : wf
   ),
 });
 
 // When deleting a workflow
 globalSearchService.updateIndex({
-  workflows: existingWorkflows.filter(wf => wf.id !== id),
+  workflows: existingWorkflows.filter((wf) => wf.id !== id),
 });
 ```
 
@@ -195,37 +195,40 @@ If you're using Zustand or another state management solution:
 
 ```tsx
 // stores/workflow-store.ts
-import { create } from 'zustand';
-import { globalSearchService } from '@/services/global-search-service';
+import { create } from "zustand";
+import { globalSearchService } from "@/services/global-search-service";
 
 export const useWorkflowStore = create((set) => ({
   workflows: [],
 
-  addWorkflow: (workflow) => set((state) => {
-    const newWorkflows = [...state.workflows, workflow];
+  addWorkflow: (workflow) =>
+    set((state) => {
+      const newWorkflows = [...state.workflows, workflow];
 
-    // Update search index
-    globalSearchService.updateIndex({ workflows: newWorkflows });
+      // Update search index
+      globalSearchService.updateIndex({ workflows: newWorkflows });
 
-    return { workflows: newWorkflows };
-  }),
+      return { workflows: newWorkflows };
+    }),
 
-  updateWorkflow: (id, updates) => set((state) => {
-    const newWorkflows = state.workflows.map(wf =>
-      wf.id === id ? { ...wf, ...updates } : wf
-    );
+  updateWorkflow: (id, updates) =>
+    set((state) => {
+      const newWorkflows = state.workflows.map((wf) =>
+        wf.id === id ? { ...wf, ...updates } : wf
+      );
 
-    // Update search index
-    globalSearchService.updateIndex({ workflows: newWorkflows });
+      // Update search index
+      globalSearchService.updateIndex({ workflows: newWorkflows });
 
-    return { workflows: newWorkflows };
-  }),
+      return { workflows: newWorkflows };
+    }),
 }));
 ```
 
 ## Customize Navigation
 
 By default, results navigate to:
+
 - Workflows: `/workflows/{id}`
 - States: `/states/{id}`
 - Images: `/images/{id}`
@@ -238,7 +241,7 @@ To customize, edit the `handleResultClick` function in `GlobalSearch.tsx`:
 ```tsx
 const handleResultClick = (result: SearchResultItem) => {
   switch (result.type) {
-    case 'workflow':
+    case "workflow":
       // Your custom navigation
       router.push(`/custom/path/${result.id}`);
       break;
@@ -258,14 +261,15 @@ To disable or change the shortcut, edit the `useEffect` in `GlobalSearch.tsx`:
 useEffect(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
     // Change to your preferred shortcut
-    if ((e.metaKey || e.ctrlKey) && e.key === 'p') { // Cmd/Ctrl + P
+    if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+      // Cmd/Ctrl + P
       e.preventDefault();
       setOpen(true);
     }
   };
 
-  window.addEventListener('keydown', handleKeyDown);
-  return () => window.removeEventListener('keydown', handleKeyDown);
+  window.addEventListener("keydown", handleKeyDown);
+  return () => window.removeEventListener("keydown", handleKeyDown);
 }, [setOpen]);
 ```
 
@@ -291,7 +295,7 @@ useEffect(() => {
 When data changes frequently, debounce index updates:
 
 ```tsx
-import { debounce } from 'lodash'; // or create your own
+import { debounce } from "lodash"; // or create your own
 
 const updateSearchIndex = debounce((workflows) => {
   globalSearchService.updateIndex({ workflows });
@@ -304,7 +308,7 @@ Instead of updating all workflows, update only changed items:
 
 ```tsx
 // Only update specific workflows
-const updatedWorkflows = existingWorkflows.map(wf =>
+const updatedWorkflows = existingWorkflows.map((wf) =>
   changedIds.includes(wf.id) ? updatedWorkflowsMap[wf.id] : wf
 );
 
@@ -316,6 +320,7 @@ globalSearchService.updateIndex({ workflows: updatedWorkflows });
 ### Search Not Working
 
 1. Check if index is loaded:
+
 ```tsx
 console.log(globalSearchService.getAllWorkflows());
 ```
@@ -353,6 +358,7 @@ console.log(globalSearchService.getAllWorkflows());
 ## Future Enhancements
 
 Consider adding:
+
 - [ ] Server-side search for large datasets
 - [ ] Search result previews
 - [ ] Advanced filters (date range, tags)

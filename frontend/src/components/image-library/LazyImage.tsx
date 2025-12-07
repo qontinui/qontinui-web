@@ -1,6 +1,6 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { useIntersectionObserver } from '@/hooks/useIntersectionObserver';
-import { cn } from '@/lib/utils';
+import React, { useRef, useState, useEffect } from "react";
+import { useIntersectionObserver } from "@/hooks/useIntersectionObserver";
+import { cn } from "@/lib/utils";
 
 interface LazyImageProps {
   src: string;
@@ -25,9 +25,9 @@ export function LazyImage({
   onError,
 }: LazyImageProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const isVisible = useIntersectionObserver(ref, {
+  const isVisible = useIntersectionObserver(ref as React.RefObject<Element>, {
     threshold: 0.1,
-    rootMargin: '100px', // Start loading 100px before element enters viewport
+    rootMargin: "100px", // Start loading 100px before element enters viewport
   });
 
   const [isLoaded, setIsLoaded] = useState(false);
@@ -52,12 +52,12 @@ export function LazyImage({
   };
 
   return (
-    <div ref={ref} className={cn('relative', className)}>
+    <div ref={ref} className={cn("relative", className)}>
       {/* Placeholder */}
       {!isLoaded && !hasError && (
         <div
           className={cn(
-            'absolute inset-0 bg-gray-800 animate-pulse',
+            "absolute inset-0 bg-gray-800 animate-pulse",
             placeholderClassName
           )}
         />
@@ -76,8 +76,8 @@ export function LazyImage({
           src={imageSrc}
           alt={alt}
           className={cn(
-            'transition-opacity duration-300',
-            isLoaded ? 'opacity-100' : 'opacity-0',
+            "transition-opacity duration-300",
+            isLoaded ? "opacity-100" : "opacity-0",
             className
           )}
           onLoad={handleLoad}

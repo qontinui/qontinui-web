@@ -8,13 +8,13 @@
  * - Lock expiration handling
  */
 
-import { HttpClient } from '../http-client';
-import { ApiConfig } from '../api-config';
+import { HttpClient } from "../http-client";
+import { ApiConfig } from "../api-config";
 import type {
   Lock,
   LockAcquireRequest,
   ResourceType,
-} from '@/types/collaboration';
+} from "@/types/collaboration";
 
 export class LockService {
   private httpClient: HttpClient;
@@ -50,14 +50,14 @@ export class LockService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/projects/${projectId}/locks`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(data),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to acquire lock');
+      throw new Error(error.message || "Failed to acquire lock");
     }
 
     const lock: Lock = await response.json();
@@ -81,13 +81,13 @@ export class LockService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/locks/${lockId}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to release lock');
+      throw new Error(error.message || "Failed to release lock");
     }
 
     // Remove from local storage
@@ -112,7 +112,7 @@ export class LockService {
     }
 
     if (!response.ok) {
-      throw new Error('Failed to fetch lock status');
+      throw new Error("Failed to fetch lock status");
     }
 
     return response.json();
@@ -127,7 +127,7 @@ export class LockService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch project locks');
+      throw new Error("Failed to fetch project locks");
     }
 
     return response.json();
@@ -140,13 +140,13 @@ export class LockService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/locks/${lockId}/refresh`,
       {
-        method: 'POST',
+        method: "POST",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to refresh lock');
+      throw new Error(error.message || "Failed to refresh lock");
     }
 
     const updatedLock: Lock = await response.json();

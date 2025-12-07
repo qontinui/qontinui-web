@@ -1,8 +1,14 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import type { Organization } from '@/types/collaboration';
-import { organizationService } from '@/services/service-factory';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import type { Organization } from "@/types/collaboration";
+import { organizationService } from "@/services/service-factory";
 
 // ============================================================================
 // Context Types
@@ -14,10 +20,15 @@ interface OrganizationContextValue {
   loading: boolean;
   switchOrganization: (orgId: string) => Promise<void>;
   refreshOrganizations: () => Promise<void>;
-  createOrganization: (name: string, description?: string) => Promise<Organization>;
+  createOrganization: (
+    name: string,
+    description?: string
+  ) => Promise<Organization>;
 }
 
-const OrganizationContext = createContext<OrganizationContextValue | undefined>(undefined);
+const OrganizationContext = createContext<OrganizationContextValue | undefined>(
+  undefined
+);
 
 // ============================================================================
 // Provider Props
@@ -31,14 +42,15 @@ interface OrganizationProviderProps {
 // Local Storage Key
 // ============================================================================
 
-const STORAGE_KEY = 'qontinui_current_organization';
+const STORAGE_KEY = "qontinui_current_organization";
 
 // ============================================================================
 // Provider Component
 // ============================================================================
 
 export function OrganizationProvider({ children }: OrganizationProviderProps) {
-  const [currentOrganization, setCurrentOrganization] = useState<Organization | null>(null);
+  const [currentOrganization, setCurrentOrganization] =
+    useState<Organization | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -66,16 +78,16 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
           setCurrentOrganization(storedOrg);
         } else {
           // Stored org not found, select first org
-          setCurrentOrganization(orgs[0]);
-          localStorage.setItem(STORAGE_KEY, orgs[0].id);
+          setCurrentOrganization(orgs[0] ?? null);
+          localStorage.setItem(STORAGE_KEY, orgs[0]!.id);
         }
       } else if (orgs.length > 0 && !currentOrganization) {
         // No stored org, select first one
-        setCurrentOrganization(orgs[0]);
-        localStorage.setItem(STORAGE_KEY, orgs[0].id);
+        setCurrentOrganization(orgs[0] ?? null);
+        localStorage.setItem(STORAGE_KEY, orgs[0]!.id);
       }
     } catch (error) {
-      console.error('[Organization] Failed to load organizations:', error);
+      console.error("[Organization] Failed to load organizations:", error);
     } finally {
       setLoading(false);
     }
@@ -99,7 +111,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
         await loadOrganizations();
       }
     } catch (error) {
-      console.error('[Organization] Failed to switch organization:', error);
+      console.error("[Organization] Failed to switch organization:", error);
       throw error;
     }
   };
@@ -119,7 +131,10 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     description?: string
   ): Promise<Organization> => {
     try {
-      const newOrg = await organizationService.createOrganization(name, description);
+      const newOrg = await organizationService.createOrganization(
+        name,
+        description
+      );
 
       // Refresh organizations list
       await loadOrganizations();
@@ -129,7 +144,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
 
       return newOrg;
     } catch (error) {
-      console.error('[Organization] Failed to create organization:', error);
+      console.error("[Organization] Failed to create organization:", error);
       throw error;
     }
   };
@@ -161,7 +176,9 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
 export function useOrganization() {
   const context = useContext(OrganizationContext);
   if (context === undefined) {
-    throw new Error('useOrganization must be used within an OrganizationProvider');
+    throw new Error(
+      "useOrganization must be used within an OrganizationProvider"
+    );
   }
   return context;
 }

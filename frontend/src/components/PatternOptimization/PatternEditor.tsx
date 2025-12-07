@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { MaskEditor } from '../mask-editor';
-import { Edit } from 'lucide-react';
-import type { ExtractedPattern } from '@/types/pattern-optimization';
-import { toast } from 'sonner';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { MaskEditor } from "../mask-editor";
+import { Edit } from "lucide-react";
+import type { ExtractedPattern } from "@/types/pattern-optimization";
+import { toast } from "sonner";
 
 interface PatternEditorProps {
   pattern: ExtractedPattern;
@@ -21,7 +21,7 @@ export const PatternEditor: React.FC<PatternEditorProps> = ({
   const handleSaveMask = (maskedImage: string) => {
     onUpdatePattern(pattern.id, maskedImage);
     setShowMaskEditor(false);
-    toast.success('Pattern mask updated');
+    toast.success("Pattern mask updated");
   };
 
   return (

@@ -12,7 +12,7 @@ Characteristics:
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -58,7 +58,7 @@ class InputFieldDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_aspect_ratio": 3.0,  # Width / height ratio
             "max_aspect_ratio": 15.0,
@@ -88,7 +88,7 @@ class InputFieldDetector(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, (img_color, img_gray) in enumerate(
-            zip(images_color, images_gray)
+            zip(images_color, images_gray, strict=False)
         ):
             elements = await self._analyze_screenshot(
                 img_color, img_gray, screenshot_idx, params
@@ -109,7 +109,7 @@ class InputFieldDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
@@ -117,7 +117,7 @@ class InputFieldDetector(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -130,8 +130,8 @@ class InputFieldDetector(BaseAnalyzer):
         img_color: np.ndarray,
         img_gray: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot for input fields"""
         elements = []
 
@@ -213,7 +213,7 @@ class InputFieldDetector(BaseAnalyzer):
         width: int,
         height: int,
         has_light_bg: bool,
-        params: Dict[str, Any],
+        params: dict[str, Any],
     ) -> float:
         """Calculate confidence score based on multiple factors"""
         confidence = 0.5  # Base confidence

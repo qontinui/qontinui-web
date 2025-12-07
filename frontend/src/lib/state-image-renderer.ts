@@ -3,7 +3,11 @@
  * Modular class for rendering StateImages with different display modes
  */
 
-export type RenderMode = 'normal' | 'with-mask' | 'mask-only' | 'no-transparency';
+export type RenderMode =
+  | "normal"
+  | "with-mask"
+  | "mask-only"
+  | "no-transparency";
 
 export interface StateImageData {
   image: string; // Base64 data URL
@@ -23,10 +27,10 @@ export class StateImageRenderer {
   private ctx: CanvasRenderingContext2D;
 
   constructor() {
-    this.canvas = document.createElement('canvas');
-    const ctx = this.canvas.getContext('2d');
+    this.canvas = document.createElement("canvas");
+    const ctx = this.canvas.getContext("2d");
     if (!ctx) {
-      throw new Error('Failed to get 2D context');
+      throw new Error("Failed to get 2D context");
     }
     this.ctx = ctx;
   }
@@ -42,12 +46,12 @@ export class StateImageRenderer {
     if (data.mask) {
       try {
         this.maskElement = await this.loadImage(data.mask);
-        console.log('[StateImageRenderer] Loaded image and mask:', {
+        console.log("[StateImageRenderer] Loaded image and mask:", {
           imageSize: `${this.imageElement.width}x${this.imageElement.height}`,
-          maskSize: `${this.maskElement.width}x${this.maskElement.height}`
+          maskSize: `${this.maskElement.width}x${this.maskElement.height}`,
         });
       } catch (error) {
-        console.warn('[StateImageRenderer] Failed to load mask:', error);
+        console.warn("[StateImageRenderer] Failed to load mask:", error);
         this.maskElement = null;
       }
     }
@@ -56,9 +60,9 @@ export class StateImageRenderer {
   /**
    * Render to canvas with specified mode
    */
-  render(mode: RenderMode = 'normal'): HTMLCanvasElement {
+  render(mode: RenderMode = "normal"): HTMLCanvasElement {
     if (!this.imageElement) {
-      throw new Error('No image loaded. Call load() first.');
+      throw new Error("No image loaded. Call load() first.");
     }
 
     const width = this.imageElement.width;
@@ -71,16 +75,16 @@ export class StateImageRenderer {
     this.ctx.clearRect(0, 0, width, height);
 
     switch (mode) {
-      case 'normal':
+      case "normal":
         this.renderNormal();
         break;
-      case 'with-mask':
+      case "with-mask":
         this.renderWithMask();
         break;
-      case 'mask-only':
+      case "mask-only":
         this.renderMaskOnly();
         break;
-      case 'no-transparency':
+      case "no-transparency":
         this.renderNoTransparency();
         break;
     }
@@ -91,7 +95,7 @@ export class StateImageRenderer {
   /**
    * Get canvas as data URL
    */
-  toDataURL(type: string = 'image/png'): string {
+  toDataURL(type: string = "image/png"): string {
     return this.canvas.toDataURL(type);
   }
 
@@ -102,7 +106,7 @@ export class StateImageRenderer {
     if (!this.imageElement) return null;
     return {
       width: this.imageElement.width,
-      height: this.imageElement.height
+      height: this.imageElement.height,
     };
   }
 
@@ -143,18 +147,23 @@ export class StateImageRenderer {
     const imageData = this.ctx.getImageData(0, 0, width, height);
 
     // Draw mask to temporary canvas to get its pixel data
-    const maskCanvas = document.createElement('canvas');
+    const maskCanvas = document.createElement("canvas");
     maskCanvas.width = this.maskElement.width;
     maskCanvas.height = this.maskElement.height;
-    const maskCtx = maskCanvas.getContext('2d');
+    const maskCtx = maskCanvas.getContext("2d");
 
     if (!maskCtx) {
-      console.warn('[StateImageRenderer] Could not get mask context');
+      console.warn("[StateImageRenderer] Could not get mask context");
       return;
     }
 
     maskCtx.drawImage(this.maskElement, 0, 0);
-    const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    const maskData = maskCtx.getImageData(
+      0,
+      0,
+      maskCanvas.width,
+      maskCanvas.height
+    );
 
     // Apply mask to alpha channel
     // White pixels in mask (255) = keep visible
@@ -162,19 +171,25 @@ export class StateImageRenderer {
     const imagePixels = imageData.data.length / 4;
     const maskPixels = maskData.data.length / 4;
 
-    console.log('[StateImageRenderer] Applying mask:', { imagePixels, maskPixels });
+    console.log("[StateImageRenderer] Applying mask:", {
+      imagePixels,
+      maskPixels,
+    });
 
     // Sample first few mask values for debugging
     const sampleMaskValues = [];
     for (let i = 0; i < Math.min(10, maskPixels); i++) {
       sampleMaskValues.push(maskData.data[i * 4]);
     }
-    console.log('[StateImageRenderer] Sample mask values (should be 0 or 255):', sampleMaskValues);
+    console.log(
+      "[StateImageRenderer] Sample mask values (should be 0 or 255):",
+      sampleMaskValues
+    );
 
     for (let i = 0; i < imageData.data.length; i += 4) {
       // Use red channel of mask as alpha multiplier (grayscale mask)
-      const maskValue = maskData.data[i] / 255; // Normalize to 0-1
-      const currentAlpha = imageData.data[i + 3];
+      const maskValue = (maskData.data[i] ?? 0) / 255; // Normalize to 0-1
+      const currentAlpha = imageData.data[i + 3] ?? 255;
 
       // Multiply current alpha by mask value
       imageData.data[i + 3] = currentAlpha * maskValue;
@@ -182,7 +197,7 @@ export class StateImageRenderer {
 
     // Put processed image data back
     this.ctx.putImageData(imageData, 0, 0);
-    console.log('[StateImageRenderer] Mask applied successfully');
+    console.log("[StateImageRenderer] Mask applied successfully");
   }
 
   /**
@@ -193,7 +208,7 @@ export class StateImageRenderer {
       // No mask, show empty canvas
       const width = this.imageElement?.width || 100;
       const height = this.imageElement?.height || 100;
-      this.ctx.fillStyle = '#000000';
+      this.ctx.fillStyle = "#000000";
       this.ctx.fillRect(0, 0, width, height);
       return;
     }

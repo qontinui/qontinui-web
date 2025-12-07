@@ -6,15 +6,15 @@
  * - CUSTOM_FUNCTION: Pre-registered uploaded Python functions
  */
 
-import React, { useState } from 'react';
-import { NodeProps } from '@xyflow/react';
-import { BaseNode, BaseNodeData } from './BaseNode';
-import { Code, Play, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
-import Editor from '@monaco-editor/react';
+import React, { useState } from "react";
+import { NodeProps, Node as ReactFlowNode } from "@xyflow/react";
+import { BaseNode, BaseNodeData } from "./BaseNode";
+import { Code, Play, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
+import Editor from "@monaco-editor/react";
 import type {
   CodeBlockActionConfig,
   CustomFunctionActionConfig,
-} from '@/lib/action-schema/configs/code-actions';
+} from "@/lib/action-schema/configs/code-actions";
 
 // =============================================================================
 // CODE_BLOCK Node
@@ -29,24 +29,24 @@ import type {
  * - Error display
  * - Collapsible code editor
  */
-export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
+export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const config = props.data.action.config as CodeBlockActionConfig;
   const [showEditor, setShowEditor] = useState(false);
   const [validationStatus, setValidationStatus] = useState<
-    'idle' | 'validating' | 'valid' | 'invalid'
-  >('idle');
+    "idle" | "validating" | "valid" | "invalid"
+  >("idle");
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Get code preview (first line or empty)
   const codePreview = config.code
-    ? config.code.split('\n')[0].substring(0, 40) +
-      (config.code.length > 40 ? '...' : '')
-    : 'Empty code block';
+    ? (config.code.split("\n")[0]?.substring(0, 40) ?? "") +
+      (config.code.length > 40 ? "..." : "")
+    : "Empty code block";
 
   // Output variable display
   const outputDisplay = Array.isArray(config.outputVariable)
-    ? config.outputVariable.join(', ')
-    : config.outputVariable || 'result';
+    ? config.outputVariable.join(", ")
+    : config.outputVariable || "result";
 
   const handleEditorChange = async (value: string | undefined) => {
     if (!value) return;
@@ -55,20 +55,20 @@ export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
     config.code = value;
 
     // Trigger validation (debounced in practice)
-    setValidationStatus('validating');
+    setValidationStatus("validating");
 
     try {
       // Call validation endpoint
-      const response = await fetch('/api/v1/code/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/v1/code/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: value,
           allowed_imports: config.allowedImports || [
-            're',
-            'json',
-            'math',
-            'datetime',
+            "re",
+            "json",
+            "math",
+            "datetime",
           ],
         }),
       });
@@ -76,28 +76,26 @@ export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
       const result = await response.json();
 
       if (result.valid) {
-        setValidationStatus('valid');
+        setValidationStatus("valid");
         setValidationError(null);
       } else {
-        setValidationStatus('invalid');
-        setValidationError(
-          result.errors.map((e: any) => e.message).join('; ')
-        );
+        setValidationStatus("invalid");
+        setValidationError(result.errors.map((e: any) => e.message).join("; "));
       }
     } catch (error) {
-      setValidationStatus('invalid');
-      setValidationError('Validation failed');
+      setValidationStatus("invalid");
+      setValidationError("Validation failed");
     }
   };
 
   // Render validation status icon
   const renderValidationIcon = () => {
     switch (validationStatus) {
-      case 'validating':
+      case "validating":
         return <Loader2 className="w-3 h-3 animate-spin text-gray-500" />;
-      case 'valid':
+      case "valid":
         return <CheckCircle className="w-3 h-3 text-green-500" />;
-      case 'invalid':
+      case "invalid":
         return <AlertCircle className="w-3 h-3 text-red-500" />;
       default:
         return null;
@@ -118,7 +116,7 @@ export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
           className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-900 transition-colors"
         >
           <Code className="w-3 h-3" />
-          {showEditor ? 'Hide Code' : 'Show Code'}
+          {showEditor ? "Hide Code" : "Show Code"}
           {renderValidationIcon()}
         </button>
 
@@ -133,9 +131,9 @@ export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
               options={{
                 minimap: { enabled: false },
                 fontSize: 12,
-                lineNumbers: 'on',
+                lineNumbers: "on",
                 scrollBeyondLastLine: false,
-                wordWrap: 'on',
+                wordWrap: "on",
                 automaticLayout: true,
                 tabSize: 4,
                 insertSpaces: true,
@@ -143,7 +141,7 @@ export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
             />
 
             {/* Validation error display */}
-            {validationStatus === 'invalid' && validationError && (
+            {validationStatus === "invalid" && validationError && (
               <div className="bg-red-50 border-t border-red-200 p-2 text-xs text-red-700">
                 <AlertCircle className="w-3 h-3 inline mr-1" />
                 {validationError}
@@ -154,9 +152,7 @@ export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
             <div className="bg-gray-50 border-t border-gray-200 p-2 text-xs text-gray-600">
               <div className="flex items-center justify-between">
                 <span>Output: {outputDisplay}</span>
-                <span>
-                  Timeout: {config.timeout || 30}s
-                </span>
+                <span>Timeout: {config.timeout || 30}s</span>
               </div>
             </div>
           </div>
@@ -185,7 +181,9 @@ export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
  * - Show input/output parameters
  * - Link to function source
  */
-export function CustomFunctionNode(props: NodeProps<BaseNodeData>) {
+export function CustomFunctionNode(
+  props: NodeProps<ReactFlowNode<BaseNodeData>>
+) {
   const config = props.data.action.config as CustomFunctionActionConfig;
   const [showDetails, setShowDetails] = useState(false);
 
@@ -208,7 +206,7 @@ export function CustomFunctionNode(props: NodeProps<BaseNodeData>) {
           <Play className="w-3 h-3" />
           <span className="font-medium">{config.functionName}</span>
           <span className="ml-auto text-gray-400">
-            {showDetails ? '▼' : '▶'}
+            {showDetails ? "▼" : "▶"}
           </span>
         </button>
 
@@ -223,7 +221,7 @@ export function CustomFunctionNode(props: NodeProps<BaseNodeData>) {
                 <div className="space-y-1">
                   {Object.entries(config.inputs).map(([key, value]) => (
                     <div key={key} className="text-blue-700 font-mono">
-                      {key}:{' '}
+                      {key}:{" "}
                       <span className="text-blue-600">
                         {JSON.stringify(value)}
                       </span>

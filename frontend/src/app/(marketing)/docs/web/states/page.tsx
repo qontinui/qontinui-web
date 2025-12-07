@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { Box, Image, MapPin, FileText, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  Box,
+  Image,
+  MapPin,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 
 export const metadata = {
   title: "Working with States - Qontinui Web Documentation",
@@ -33,9 +40,10 @@ export default function StatesDocPage() {
             What is a State?
           </h2>
           <p className="text-slate-700 mb-4">
-            A <strong>State</strong> represents a distinct screen, dialog, or condition in your application.
-            In model-based automation, states form the nodes of a state machine graph that defines your
-            automation workflow.
+            A <strong>State</strong> represents a distinct screen, dialog, or
+            condition in your application. In model-based automation, states
+            form the nodes of a state machine graph that defines your automation
+            workflow.
           </p>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
@@ -43,9 +51,11 @@ export default function StatesDocPage() {
               Key Concept: Visual Identification
             </h3>
             <p className="text-sm text-blue-900">
-              Unlike traditional automation that relies on hardcoded positions or element IDs, Qontinui
-              identifies states <strong>visually</strong> by looking for identifying images on screen.
-              This makes automation resilient to UI changes and resolution differences.
+              Unlike traditional automation that relies on hardcoded positions
+              or element IDs, Qontinui identifies states{" "}
+              <strong>visually</strong> by looking for identifying images on
+              screen. This makes automation resilient to UI changes and
+              resolution differences.
             </p>
           </div>
 
@@ -57,19 +67,22 @@ export default function StatesDocPage() {
               <li className="flex items-start gap-2">
                 <Box className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                 <span className="text-slate-700">
-                  <strong>Login Screen</strong> - Identified by login form and submit button
+                  <strong>Login Screen</strong> - Identified by login form and
+                  submit button
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <Box className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                 <span className="text-slate-700">
-                  <strong>Dashboard</strong> - Identified by navigation menu and welcome message
+                  <strong>Dashboard</strong> - Identified by navigation menu and
+                  welcome message
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <Box className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                 <span className="text-slate-700">
-                  <strong>Error Dialog</strong> - Identified by error icon and close button
+                  <strong>Error Dialog</strong> - Identified by error icon and
+                  close button
                 </span>
               </li>
             </ul>
@@ -116,38 +129,50 @@ export default function StatesDocPage() {
           </h2>
 
           <p className="text-slate-700 mb-6">
-            Identifying images are visual elements that Qontinui uses to recognize when a state is active.
-            When automation runs, Qontinui checks if all <strong>required</strong> identifying images
-            are visible on screen to determine the current state.
+            Identifying images are visual elements that Qontinui uses to
+            recognize when a state is active. When automation runs, Qontinui
+            checks if all <strong>required</strong> identifying images are
+            visible on screen to determine the current state.
           </p>
 
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-6 mb-6">
-            <h3 className="font-semibold text-slate-900 mb-4">Best Practices</h3>
+            <h3 className="font-semibold text-slate-900 mb-4">
+              Best Practices
+            </h3>
             <ul className="space-y-3">
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-slate-900">Choose Unique Elements</strong>
+                  <strong className="text-slate-900">
+                    Choose Unique Elements
+                  </strong>
                   <p className="text-sm text-slate-600">
-                    Select UI elements that only appear in this state (e.g., specific titles, icons, or buttons)
+                    Select UI elements that only appear in this state (e.g.,
+                    specific titles, icons, or buttons)
                   </p>
                 </div>
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-slate-900">Use Multiple Images</strong>
+                  <strong className="text-slate-900">
+                    Use Multiple Images
+                  </strong>
                   <p className="text-sm text-slate-600">
-                    2-3 identifying images per state increases reliability and reduces false matches
+                    2-3 identifying images per state increases reliability and
+                    reduces false matches
                   </p>
                 </div>
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-slate-900">Capture Clear Screenshots</strong>
+                  <strong className="text-slate-900">
+                    Capture Clear Screenshots
+                  </strong>
                   <p className="text-sm text-slate-600">
-                    Avoid blurry or low-contrast images. Higher quality = better recognition
+                    Avoid blurry or low-contrast images. Higher quality = better
+                    recognition
                   </p>
                 </div>
               </li>
@@ -156,7 +181,8 @@ export default function StatesDocPage() {
                 <div>
                   <strong className="text-slate-900">Keep Images Small</strong>
                   <p className="text-sm text-slate-600">
-                    Crop to just the identifying element (e.g., a button, not the entire screen)
+                    Crop to just the identifying element (e.g., a button, not
+                    the entire screen)
                   </p>
                 </div>
               </li>
@@ -164,7 +190,9 @@ export default function StatesDocPage() {
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-slate-900">Image Properties</h3>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Image Properties
+            </h3>
 
             <PropertyCard
               icon={<Image className="w-5 h-5 text-purple-600" />}
@@ -219,7 +247,8 @@ export default function StatesDocPage() {
           </h2>
 
           <p className="text-slate-700 mb-6">
-            Beyond identifying images, states can contain additional elements for more complex automation:
+            Beyond identifying images, states can contain additional elements
+            for more complex automation:
           </p>
 
           <div className="grid gap-4">
@@ -234,14 +263,22 @@ export default function StatesDocPage() {
               icon={<MapPin className="w-6 h-6 text-green-600" />}
               title="State Locations"
               description="Define specific point coordinates for precise clicking or positioning"
-              examples={["Submit button center", "Logo position", "Drag anchor point"]}
+              examples={[
+                "Submit button center",
+                "Logo position",
+                "Drag anchor point",
+              ]}
             />
 
             <ElementCard
               icon={<FileText className="w-6 h-6 text-purple-600" />}
               title="State Strings"
               description="Define text values for identification, input, or verification"
-              examples={["Username field value", "Welcome message", "Error text pattern"]}
+              examples={[
+                "Username field value",
+                "Welcome message",
+                "Error text pattern",
+              ]}
             />
           </div>
 
@@ -249,8 +286,9 @@ export default function StatesDocPage() {
             <div className="flex items-start gap-2">
               <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-yellow-900">
-                <strong>Note:</strong> Most automations only need identifying images. State regions,
-                locations, and strings are advanced features for complex scenarios.
+                <strong>Note:</strong> Most automations only need identifying
+                images. State regions, locations, and strings are advanced
+                features for complex scenarios.
               </p>
             </div>
           </div>
@@ -268,11 +306,15 @@ export default function StatesDocPage() {
                 Parallel States
               </h3>
               <p className="text-slate-700 mb-3">
-                Multiple states can be active simultaneously. This is useful for:
+                Multiple states can be active simultaneously. This is useful
+                for:
               </p>
               <ul className="list-disc list-inside space-y-1 text-slate-700 ml-4">
                 <li>Dialog boxes that appear over other screens</li>
-                <li>Multi-panel UIs where different sections have independent states</li>
+                <li>
+                  Multi-panel UIs where different sections have independent
+                  states
+                </li>
                 <li>Persistent elements like navigation bars</li>
               </ul>
             </div>
@@ -282,9 +324,10 @@ export default function StatesDocPage() {
                 State Verification
               </h3>
               <p className="text-slate-700">
-                Qontinui verifies states by template matching: it searches the screen for your
-                identifying images and checks if all required images are found. This happens automatically
-                before executing actions and during state transitions.
+                Qontinui verifies states by template matching: it searches the
+                screen for your identifying images and checks if all required
+                images are found. This happens automatically before executing
+                actions and during state transitions.
               </p>
             </div>
           </div>
@@ -292,9 +335,7 @@ export default function StatesDocPage() {
 
         {/* Next Steps */}
         <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
-            Next Steps
-          </h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="Action Types"
@@ -341,7 +382,13 @@ interface PropertyCardProps {
   isBoolean?: boolean;
 }
 
-function PropertyCard({ icon, title, description, defaultValue, isBoolean }: PropertyCardProps) {
+function PropertyCard({
+  icon,
+  title,
+  description,
+  defaultValue,
+  isBoolean,
+}: PropertyCardProps) {
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
       <div className="flex items-start gap-3">
@@ -351,12 +398,18 @@ function PropertyCard({ icon, title, description, defaultValue, isBoolean }: Pro
           <p className="text-sm text-slate-600 mb-2">{description}</p>
           {defaultValue && (
             <p className="text-xs text-slate-500">
-              Default: <span className="font-mono bg-slate-200 px-1 rounded">{defaultValue}</span>
+              Default:{" "}
+              <span className="font-mono bg-slate-200 px-1 rounded">
+                {defaultValue}
+              </span>
             </p>
           )}
           {isBoolean && (
             <p className="text-xs text-slate-500">
-              Type: <span className="font-mono bg-slate-200 px-1 rounded">Boolean (checkbox)</span>
+              Type:{" "}
+              <span className="font-mono bg-slate-200 px-1 rounded">
+                Boolean (checkbox)
+              </span>
             </p>
           )}
         </div>
@@ -381,7 +434,9 @@ function ElementCard({ icon, title, description, examples }: ElementCardProps) {
           <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
           <p className="text-sm text-slate-600 mb-3">{description}</p>
           <div>
-            <p className="text-xs text-slate-500 font-semibold mb-1">Examples:</p>
+            <p className="text-xs text-slate-500 font-semibold mb-1">
+              Examples:
+            </p>
             <ul className="text-xs text-slate-600 space-y-0.5">
               {examples.map((example, idx) => (
                 <li key={idx}>• {example}</li>

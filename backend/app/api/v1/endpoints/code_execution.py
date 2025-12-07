@@ -1,9 +1,11 @@
-"""
-Code execution API endpoints.
+"""Code execution API endpoints for inline Python code and custom functions."""
 
-Provides endpoints for executing inline Python code blocks and custom functions
-within automation workflows.
-"""
+import os
+import re
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.db.session import get_async_db
@@ -13,10 +15,49 @@ from app.services.code_execution_service import (
     CodeExecutionResult,
     CodeExecutionService,
 )
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
+
+
+def _get_safe_project_root(project_id: str | None) -> Path:
+    """Get a safe project root path, validating against path traversal attacks."""
+    # Use test project root if set
+    test_project_root = os.getenv("TEST_PROJECT_ROOT")
+    if test_project_root:
+        return Path(test_project_root)
+
+    # Sanitize project_id to prevent path traversal
+    safe_project_id = project_id or "default"
+
+    # Check for path traversal attempts
+    if ".." in safe_project_id or "/" in safe_project_id or "\\" in safe_project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project_id: contains path traversal characters",
+        )
+
+    # Only allow alphanumeric, underscore, hyphen, and UUID patterns
+    if not re.match(r"^[a-zA-Z0-9_-]+$", safe_project_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project_id: must contain only alphanumeric, "
+            "underscores, and hyphens",
+        )
+
+    base_dir = Path.cwd() / "user_projects"
+    project_root = base_dir / safe_project_id
+
+    # Resolve to absolute path and verify it's under user_projects
+    resolved_root = project_root.resolve()
+    resolved_base = base_dir.resolve()
+
+    if not str(resolved_root).startswith(str(resolved_base)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project_id: path traversal detected",
+        )
+
+    return project_root
 
 
 @router.post("/execute", response_model=CodeExecutionResult)
@@ -127,7 +168,7 @@ async def validate_code(
     """
     from app.services.code_execution_service import CodeValidator
 
-    errors = []
+    errors: list[dict[str, str | int]] = []
 
     try:
         # Validate imports
@@ -145,14 +186,15 @@ async def validate_code(
     try:
         compile(request.code, "<string>", "exec")
     except SyntaxError as e:
-        errors.append(
-            {
-                "type": "syntax_error",
-                "message": str(e),
-                "line": e.lineno,
-                "offset": e.offset,
-            }
-        )
+        error_dict: dict[str, str | int] = {
+            "type": "syntax_error",
+            "message": str(e),
+        }
+        if e.lineno is not None:
+            error_dict["line"] = e.lineno
+        if e.offset is not None:
+            error_dict["offset"] = e.offset
+        errors.append(error_dict)
 
     return {"valid": len(errors) == 0, "errors": errors}
 
@@ -273,6 +315,7 @@ workflow_state['total'] = result""",
 # Phase 2: File-based Code Execution Endpoints
 # ==============================================================================
 
+
 @router.get("/files/list", response_model=dict)
 async def list_python_files(
     *,
@@ -295,16 +338,8 @@ async def list_python_files(
         }
     """
     from app.services.file_loader import PythonFileLoader
-    from pathlib import Path
-    import os
 
-    # TODO: Get project root from project_id when project model is available
-    # For now, use a default project directory
-    # Support TEST_PROJECT_ROOT for testing
-    if os.getenv("TEST_PROJECT_ROOT"):
-        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
-    else:
-        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+    project_root = _get_safe_project_root(project_id)
 
     try:
         loader = PythonFileLoader(project_root=project_root)
@@ -351,15 +386,8 @@ async def validate_file_path(
         }
     """
     from app.services.file_loader import FilePathValidator
-    from pathlib import Path
-    import os
 
-    # TODO: Get project root from project_id
-    # Support TEST_PROJECT_ROOT for testing
-    if os.getenv("TEST_PROJECT_ROOT"):
-        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
-    else:
-        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+    project_root = _get_safe_project_root(project_id)
 
     try:
         validator = FilePathValidator()
@@ -406,15 +434,8 @@ async def load_file_content(
         }
     """
     from app.services.file_loader import PythonFileLoader
-    from pathlib import Path
-    import os
 
-    # TODO: Get project root from project_id
-    # Support TEST_PROJECT_ROOT for testing
-    if os.getenv("TEST_PROJECT_ROOT"):
-        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
-    else:
-        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+    project_root = _get_safe_project_root(project_id)
 
     try:
         loader = PythonFileLoader(project_root=project_root)
@@ -466,15 +487,8 @@ async def execute_file_code(
         CodeExecutionResult with execution status and result
     """
     from app.services.file_loader import PythonFileLoader
-    from pathlib import Path
-    import os
 
-    # TODO: Get project root from project_id
-    # Support TEST_PROJECT_ROOT for testing
-    if os.getenv("TEST_PROJECT_ROOT"):
-        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
-    else:
-        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+    project_root = _get_safe_project_root(project_id)
 
     try:
         # Load file content
@@ -492,12 +506,19 @@ async def execute_file_code(
             code = wrapped_code
 
         # Execute code using existing service with import resolution
+        from app.services.code_execution_service import ExecutionContext
+
+        # Convert dict context to ExecutionContext if provided
+        exec_context = ExecutionContext(**context) if context else ExecutionContext()
+
         request = CodeExecutionRequest(
             code=code,
-            context=context or {},
+            context=exec_context,
             inputs=inputs or {},
             timeout=timeout,
-            project_root=str(project_root),  # Enable import resolution for file-based code
+            project_root=str(
+                project_root
+            ),  # Enable import resolution for file-based code
         )
 
         result = CodeExecutionService.execute_code(request)

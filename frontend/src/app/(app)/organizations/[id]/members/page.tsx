@@ -1,22 +1,28 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { useRouter, useParams } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { useOrganization } from "@/hooks/useOrganization"
-import { organizationService } from "@/services/service-factory"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { useEffect, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { useOrganization } from "@/hooks/useOrganization";
+import { organizationService } from "@/services/service-factory";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +30,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,7 +40,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
   UserPlus,
@@ -45,183 +51,190 @@ import {
   Crown,
   Shield,
   User,
-  Eye
-} from "lucide-react"
-import { toast } from "sonner"
-import type { Organization, TeamMember, MemberRole } from "@/types/collaboration"
+  Eye,
+} from "lucide-react";
+import { toast } from "sonner";
+import type {
+  Organization,
+  TeamMember,
+  MemberRole,
+} from "@/types/collaboration";
 
 export default function MembersPage() {
-  const router = useRouter()
-  const params = useParams()
-  const orgId = params?.id as string
+  const router = useRouter();
+  const params = useParams();
+  const orgId = params?.id as string;
 
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading } = useAuth();
   const {
     switchOrg,
     members,
-    loading: orgLoading,
     getMembers,
     inviteMember,
     updateMemberRole,
-    removeMember
-  } = useOrganization()
+    removeMember,
+  } = useOrganization();
 
-  const [organization, setOrganization] = useState<Organization | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteRole, setInviteRole] = useState<MemberRole>("member")
-  const [inviting, setInviting] = useState(false)
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<MemberRole>("member");
+  const [inviting, setInviting] = useState(false);
 
-  const [editMember, setEditMember] = useState<TeamMember | null>(null)
-  const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [editRole, setEditRole] = useState<MemberRole>("member")
-  const [updating, setUpdating] = useState(false)
+  const [editMember, setEditMember] = useState<TeamMember | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editRole, setEditRole] = useState<MemberRole>("member");
+  const [updating, setUpdating] = useState(false);
 
-  const [removeMemberData, setRemoveMemberData] = useState<TeamMember | null>(null)
-  const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
-  const [removing, setRemoving] = useState(false)
+  const [removeMemberData, setRemoveMemberData] = useState<TeamMember | null>(
+    null
+  );
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
+      router.push("/");
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (!orgId || !user) return
+    if (!orgId || !user) return;
 
     const loadData = async () => {
-      setLoading(true)
+      setLoading(true);
 
       try {
-        await switchOrg(orgId)
-        const org = await organizationService.getOrganization(orgId)
-        setOrganization(org)
-        await getMembers(orgId)
+        await switchOrg(orgId);
+        const org = await organizationService.getOrganization(orgId);
+        setOrganization(org);
+        await getMembers(orgId);
       } catch (err) {
-        console.error('Failed to load organization:', err)
-        toast.error('Failed to load organization')
+        console.error("Failed to load organization:", err);
+        toast.error("Failed to load organization");
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    loadData()
-  }, [orgId, user])
+    loadData();
+  }, [orgId, user]);
 
   const handleInvite = async () => {
-    if (!inviteEmail || !orgId) return
+    if (!inviteEmail || !orgId) return;
 
-    setInviting(true)
+    setInviting(true);
     try {
-      await inviteMember(orgId, inviteEmail, inviteRole)
-      toast.success(`Invitation sent to ${inviteEmail}`)
-      setInviteDialogOpen(false)
-      setInviteEmail("")
-      setInviteRole("member")
-      await getMembers(orgId)
+      await inviteMember(orgId, inviteEmail, inviteRole);
+      toast.success(`Invitation sent to ${inviteEmail}`);
+      setInviteDialogOpen(false);
+      setInviteEmail("");
+      setInviteRole("member");
+      await getMembers(orgId);
     } catch (err: any) {
-      console.error('Failed to invite member:', err)
-      toast.error(err.message || 'Failed to send invitation')
+      console.error("Failed to invite member:", err);
+      toast.error(err.message || "Failed to send invitation");
     } finally {
-      setInviting(false)
+      setInviting(false);
     }
-  }
+  };
 
   const handleEditRole = (member: TeamMember) => {
-    setEditMember(member)
-    setEditRole(member.role)
-    setEditDialogOpen(true)
-  }
+    setEditMember(member);
+    setEditRole(member.role);
+    setEditDialogOpen(true);
+  };
 
   const handleUpdateRole = async () => {
-    if (!editMember || !orgId) return
+    if (!editMember || !orgId) return;
 
-    setUpdating(true)
+    setUpdating(true);
     try {
-      await updateMemberRole(orgId, editMember.user_id, editRole)
-      toast.success('Member role updated successfully')
-      setEditDialogOpen(false)
-      setEditMember(null)
-      await getMembers(orgId)
+      await updateMemberRole(orgId, editMember.user_id, editRole);
+      toast.success("Member role updated successfully");
+      setEditDialogOpen(false);
+      setEditMember(null);
+      await getMembers(orgId);
     } catch (err: any) {
-      console.error('Failed to update role:', err)
-      toast.error(err.message || 'Failed to update member role')
+      console.error("Failed to update role:", err);
+      toast.error(err.message || "Failed to update member role");
     } finally {
-      setUpdating(false)
+      setUpdating(false);
     }
-  }
+  };
 
   const handleRemoveClick = (member: TeamMember) => {
-    setRemoveMemberData(member)
-    setRemoveDialogOpen(true)
-  }
+    setRemoveMemberData(member);
+    setRemoveDialogOpen(true);
+  };
 
   const handleRemove = async () => {
-    if (!removeMemberData || !orgId) return
+    if (!removeMemberData || !orgId) return;
 
-    setRemoving(true)
+    setRemoving(true);
     try {
-      await removeMember(orgId, removeMemberData.user_id)
-      toast.success('Member removed successfully')
-      setRemoveDialogOpen(false)
-      setRemoveMemberData(null)
-      await getMembers(orgId)
+      await removeMember(orgId, removeMemberData.user_id);
+      toast.success("Member removed successfully");
+      setRemoveDialogOpen(false);
+      setRemoveMemberData(null);
+      await getMembers(orgId);
     } catch (err: any) {
-      console.error('Failed to remove member:', err)
-      toast.error(err.message || 'Failed to remove member')
+      console.error("Failed to remove member:", err);
+      toast.error(err.message || "Failed to remove member");
     } finally {
-      setRemoving(false)
+      setRemoving(false);
     }
-  }
+  };
 
   const getRoleIcon = (role: MemberRole) => {
     switch (role) {
-      case 'owner':
-        return <Crown className="w-4 h-4" />
-      case 'admin':
-        return <Shield className="w-4 h-4" />
-      case 'member':
-        return <User className="w-4 h-4" />
-      case 'viewer':
-        return <Eye className="w-4 h-4" />
+      case "owner":
+        return <Crown className="w-4 h-4" />;
+      case "admin":
+        return <Shield className="w-4 h-4" />;
+      case "member":
+        return <User className="w-4 h-4" />;
+      case "viewer":
+        return <Eye className="w-4 h-4" />;
       default:
-        return <User className="w-4 h-4" />
+        return <User className="w-4 h-4" />;
     }
-  }
+  };
 
   const getRoleBadgeColor = (role: MemberRole) => {
     switch (role) {
-      case 'owner':
-        return 'bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30'
-      case 'admin':
-        return 'bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30'
-      case 'member':
-        return 'bg-gray-500/20 text-gray-400 border-gray-500/30'
-      case 'viewer':
-        return 'bg-gray-600/20 text-gray-500 border-gray-600/30'
+      case "owner":
+        return "bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30";
+      case "admin":
+        return "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30";
+      case "member":
+        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+      case "viewer":
+        return "bg-gray-600/20 text-gray-500 border-gray-600/30";
       default:
-        return 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
     }
-  }
+  };
 
-  const isOwner = organization?.owner_id === user?.id
-  const canManageMembers = isOwner // Can be extended to include admins
+  const isOwner = organization?.owner_id === user?.id;
+  const canManageMembers = isOwner; // Can be extended to include admins
 
   const getRelativeTime = (dateString: string | null) => {
-    if (!dateString) return 'Never'
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+    if (!dateString) return "Never";
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+    );
 
-    if (diffInHours < 1) return 'Just now'
-    if (diffInHours < 24) return `${diffInHours} hours ago`
-    const diffInDays = Math.floor(diffInHours / 24)
-    if (diffInDays === 1) return '1 day ago'
-    if (diffInDays < 30) return `${diffInDays} days ago`
-    return new Date(dateString).toLocaleDateString()
-  }
+    if (diffInHours < 1) return "Just now";
+    if (diffInHours < 24) return `${diffInHours} hours ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays === 1) return "1 day ago";
+    if (diffInDays < 30) return `${diffInDays} days ago`;
+    return new Date(dateString).toLocaleDateString();
+  };
 
   if (authLoading || !user) {
     return (
@@ -231,7 +244,7 @@ export default function MembersPage() {
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
-    )
+    );
   }
 
   if (loading) {
@@ -244,7 +257,7 @@ export default function MembersPage() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -314,22 +327,28 @@ export default function MembersPage() {
                         {(member.name || member.email).charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium">{member.name || 'Unknown User'}</p>
-                        <p className="text-sm text-gray-400 truncate">{member.email}</p>
+                        <p className="font-medium">
+                          {member.name || "Unknown User"}
+                        </p>
+                        <p className="text-sm text-gray-400 truncate">
+                          {member.email}
+                        </p>
                         <p className="text-xs text-gray-500 mt-1">
-                          Joined {getRelativeTime(member.joined_at)} •
-                          Last active {getRelativeTime(member.last_active)}
+                          Joined {getRelativeTime(member.joined_at)} • Last
+                          active {getRelativeTime(member.last_active)}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <Badge className={`${getRoleBadgeColor(member.role)} flex items-center gap-1`}>
+                      <Badge
+                        className={`${getRoleBadgeColor(member.role)} flex items-center gap-1`}
+                      >
                         {getRoleIcon(member.role)}
                         {member.role}
                       </Badge>
 
-                      {canManageMembers && member.role !== 'owner' && (
+                      {canManageMembers && member.role !== "owner" && (
                         <div className="flex gap-2">
                           <Button
                             size="sm"
@@ -382,14 +401,23 @@ export default function MembersPage() {
 
               <div>
                 <Label htmlFor="role">Role</Label>
-                <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as MemberRole)}>
+                <Select
+                  value={inviteRole}
+                  onValueChange={(value) => setInviteRole(value as MemberRole)}
+                >
                   <SelectTrigger className="bg-[#0A0A0B] border-gray-800 text-white">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#1A1A1B] border-gray-800 text-white">
-                    <SelectItem value="admin">Admin - Full management access</SelectItem>
-                    <SelectItem value="member">Member - Can edit and collaborate</SelectItem>
-                    <SelectItem value="viewer">Viewer - View-only access</SelectItem>
+                    <SelectItem value="admin">
+                      Admin - Full management access
+                    </SelectItem>
+                    <SelectItem value="member">
+                      Member - Can edit and collaborate
+                    </SelectItem>
+                    <SelectItem value="viewer">
+                      Viewer - View-only access
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -437,14 +465,23 @@ export default function MembersPage() {
 
             <div>
               <Label htmlFor="edit-role">Role</Label>
-              <Select value={editRole} onValueChange={(value) => setEditRole(value as MemberRole)}>
+              <Select
+                value={editRole}
+                onValueChange={(value) => setEditRole(value as MemberRole)}
+              >
                 <SelectTrigger className="bg-[#0A0A0B] border-gray-800 text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-[#1A1A1B] border-gray-800 text-white">
-                  <SelectItem value="admin">Admin - Full management access</SelectItem>
-                  <SelectItem value="member">Member - Can edit and collaborate</SelectItem>
-                  <SelectItem value="viewer">Viewer - View-only access</SelectItem>
+                  <SelectItem value="admin">
+                    Admin - Full management access
+                  </SelectItem>
+                  <SelectItem value="member">
+                    Member - Can edit and collaborate
+                  </SelectItem>
+                  <SelectItem value="viewer">
+                    Viewer - View-only access
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -469,7 +506,7 @@ export default function MembersPage() {
                     Updating...
                   </>
                 ) : (
-                  'Update Role'
+                  "Update Role"
                 )}
               </Button>
             </DialogFooter>
@@ -482,12 +519,17 @@ export default function MembersPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>Remove Team Member</AlertDialogTitle>
               <AlertDialogDescription className="text-gray-400">
-                Are you sure you want to remove {removeMemberData?.name || removeMemberData?.email} from this organization?
-                They will lose access to all organization resources.
+                Are you sure you want to remove{" "}
+                {removeMemberData?.name || removeMemberData?.email} from this
+                organization? They will lose access to all organization
+                resources.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel className="border-gray-700" disabled={removing}>
+              <AlertDialogCancel
+                className="border-gray-700"
+                disabled={removing}
+              >
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction
@@ -501,7 +543,7 @@ export default function MembersPage() {
                     Removing...
                   </>
                 ) : (
-                  'Remove Member'
+                  "Remove Member"
                 )}
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -509,5 +551,5 @@ export default function MembersPage() {
         </AlertDialog>
       </div>
     </div>
-  )
+  );
 }

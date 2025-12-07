@@ -3,9 +3,10 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.usage_metric import UsageMetric
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.usage_metric import UsageMetric
 
 logger = structlog.get_logger(__name__)
 
@@ -145,7 +146,7 @@ class MetricsService:
             query = query.filter(UsageMetric.metric_type == metric_type)
 
         result = await db.execute(query.order_by(UsageMetric.timestamp.desc()))
-        return result.scalars().all()
+        return result.scalars().all()  # type: ignore[return-value]
 
     async def get_api_calls_count(
         self,

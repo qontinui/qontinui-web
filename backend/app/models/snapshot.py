@@ -6,10 +6,13 @@ Models for storing snapshot runs and associated screenshots for integration test
 
 from datetime import datetime
 from typing import TYPE_CHECKING
+from uuid import UUID as PyUUID
+
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -30,8 +33,11 @@ class SnapshotRun(Base):
     run_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Optional project association
-    project_id: Mapped[int | None] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True
+    project_id: Mapped[PyUUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
 
     # Workflow association (workflow_id references processes/workflows)

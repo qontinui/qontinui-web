@@ -11,13 +11,13 @@ This migration adds organization and team management capabilities:
 4. Preserves backward compatibility with existing project ownership
 """
 
-from collections.abc import Sequence
-from datetime import datetime, timedelta
 import secrets
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "z9fc6936875"
@@ -44,7 +44,12 @@ def upgrade() -> None:
     # Create organizations table
     op.create_table(
         "organizations",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("slug", sa.String(), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
@@ -52,8 +57,12 @@ def upgrade() -> None:
         sa.Column("avatar_url", sa.String(), nullable=True),
         sa.Column("settings", sa.JSON(), nullable=False, server_default="{}"),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
-        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")
+        ),
         sa.ForeignKeyConstraint(["owner_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("slug", name="uq_organization_slug"),
@@ -64,15 +73,24 @@ def upgrade() -> None:
     # Create team_members table
     op.create_table(
         "team_members",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
         sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("role", sa.String(), nullable=False, server_default="member"),
         sa.Column("permissions", sa.JSON(), nullable=False, server_default="{}"),
         sa.Column("invited_by", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("joined_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "joined_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")
+        ),
         sa.Column("last_active_at", sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["organizations.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["invited_by"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
@@ -85,7 +103,12 @@ def upgrade() -> None:
     # Create organization_invitations table
     op.create_table(
         "organization_invitations",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
         sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("email", sa.String(), nullable=False),
         sa.Column("role", sa.String(), nullable=False, server_default="member"),
@@ -93,47 +116,70 @@ def upgrade() -> None:
         sa.Column("token", sa.String(), nullable=False),
         sa.Column("expires_at", sa.DateTime(), nullable=False),
         sa.Column("accepted_at", sa.DateTime(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
-        sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="CASCADE"),
+        sa.Column(
+            "created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["organizations.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(["invited_by"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("token", name="uq_invitation_token"),
     )
     op.create_index("idx_invitation_email", "organization_invitations", ["email"])
-    op.create_index("idx_invitation_org", "organization_invitations", ["organization_id"])
+    op.create_index(
+        "idx_invitation_org", "organization_invitations", ["organization_id"]
+    )
     op.create_index("idx_invitation_token", "organization_invitations", ["token"])
 
     # Create project_access_control table
     op.create_table(
         "project_access_control",
-        sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
         sa.Column("project_id", sa.Integer(), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("permission_level", sa.String(), nullable=False, server_default="view"),
+        sa.Column(
+            "permission_level", sa.String(), nullable=False, server_default="view"
+        ),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("expires_at", sa.DateTime(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")
+        ),
         sa.CheckConstraint(
             "(user_id IS NOT NULL AND organization_id IS NULL) OR (user_id IS NULL AND organization_id IS NOT NULL)",
             name="chk_user_or_org",
         ),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["organizations.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("idx_project_access_project", "project_access_control", ["project_id"])
+    op.create_index(
+        "idx_project_access_project", "project_access_control", ["project_id"]
+    )
     op.create_index("idx_project_access_user", "project_access_control", ["user_id"])
-    op.create_index("idx_project_access_org", "project_access_control", ["organization_id"])
+    op.create_index(
+        "idx_project_access_org", "project_access_control", ["organization_id"]
+    )
 
     # Data migration: Create personal organizations for existing users
     connection = op.get_bind()
 
     # Get all existing users
     users = connection.execute(
-        sa.text("SELECT id, username, full_name, created_at FROM users ORDER BY created_at")
+        sa.text(
+            "SELECT id, username, full_name, created_at FROM users ORDER BY created_at"
+        )
     ).fetchall()
 
     for user in users:
@@ -149,7 +195,7 @@ def upgrade() -> None:
         # Ensure slug is unique
         existing_slug = connection.execute(
             sa.text("SELECT id FROM organizations WHERE slug = :slug"),
-            {"slug": org_slug}
+            {"slug": org_slug},
         ).fetchone()
 
         if existing_slug:
@@ -158,11 +204,13 @@ def upgrade() -> None:
 
         # Insert organization
         result = connection.execute(
-            sa.text("""
+            sa.text(
+                """
                 INSERT INTO organizations (name, slug, description, owner_id, is_active, created_at, updated_at)
                 VALUES (:name, :slug, :description, :owner_id, true, :created_at, :updated_at)
                 RETURNING id
-            """),
+            """
+            ),
             {
                 "name": org_name,
                 "slug": org_slug,
@@ -170,21 +218,23 @@ def upgrade() -> None:
                 "owner_id": user_id,
                 "created_at": created_at,
                 "updated_at": created_at,
-            }
+            },
         )
         org_id = result.fetchone()[0]
 
         # Add the user as an owner member of their personal organization
         connection.execute(
-            sa.text("""
+            sa.text(
+                """
                 INSERT INTO team_members (organization_id, user_id, role, joined_at)
                 VALUES (:org_id, :user_id, 'owner', :joined_at)
-            """),
+            """
+            ),
             {
                 "org_id": org_id,
                 "user_id": user_id,
                 "joined_at": created_at,
-            }
+            },
         )
 
     # Migrate existing projects to have access control entries
@@ -199,13 +249,15 @@ def upgrade() -> None:
 
         # Get the user's personal organization
         org = connection.execute(
-            sa.text("""
+            sa.text(
+                """
                 SELECT id FROM organizations
                 WHERE owner_id = :owner_id
                 AND slug LIKE '%-personal%'
                 LIMIT 1
-            """),
-            {"owner_id": owner_id}
+            """
+            ),
+            {"owner_id": owner_id},
         ).fetchone()
 
         if org:
@@ -213,17 +265,19 @@ def upgrade() -> None:
 
             # Create organization-level access control for the project
             connection.execute(
-                sa.text("""
+                sa.text(
+                    """
                     INSERT INTO project_access_control
                     (project_id, organization_id, permission_level, created_by, created_at)
                     VALUES (:project_id, :org_id, 'admin', :owner_id, :created_at)
-                """),
+                """
+                ),
                 {
                     "project_id": project_id,
                     "org_id": org_id,
                     "owner_id": owner_id,
                     "created_at": created_at,
-                }
+                },
             )
 
 

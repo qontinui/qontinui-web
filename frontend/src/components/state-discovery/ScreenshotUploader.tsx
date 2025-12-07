@@ -3,27 +3,37 @@
  * Handles screenshot upload and thumbnail display
  */
 
-import React, { useCallback, useRef, useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import React, { useCallback, useRef, useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
-import { Upload, X, Image as ImageIcon, Save, FolderOpen, AlertCircle, Database, Plus, Lightbulb } from 'lucide-react';
-import { calculateImageHashes, filterDuplicateImages } from '@/utils/imageUtils';
-import { useAvailableStates } from '@/hooks/useAvailableStates';
-import ProjectScreenshotSelector from './ProjectScreenshotSelector';
-import SnapshotScreenshotSelector from './SnapshotScreenshotSelector';
-import { DirectPatternCreation } from './DirectPatternCreation';
-import { AutoPatternExtraction } from './AutoPatternExtraction';
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import {
+  Upload,
+  X,
+  Image as ImageIcon,
+  Save,
+  FolderOpen,
+  AlertCircle,
+  Database,
+  Plus,
+  Lightbulb,
+} from "lucide-react";
+import { calculateImageHashes } from "@/utils/imageUtils";
+import { useAvailableStates } from "@/hooks/useAvailableStates";
+import ProjectScreenshotSelector from "./ProjectScreenshotSelector";
+import SnapshotScreenshotSelector from "./SnapshotScreenshotSelector";
+import { DirectPatternCreation } from "./DirectPatternCreation";
+import { AutoPatternExtraction } from "./AutoPatternExtraction";
 
 interface ScreenshotUploaderProps {
   onUpload: (files: File[]) => void;
@@ -36,18 +46,23 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   onUpload,
   screenshots,
   selectedIndex,
-  onSelectScreenshot
+  onSelectScreenshot,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState('upload');
+  const [activeTab, setActiveTab] = useState("upload");
   const [thumbnails, setThumbnails] = useState<{ [key: string]: string }>({});
-  const [screenshotHashes, setScreenshotHashes] = useState<Map<string, string>>(new Map());
+  const [screenshotHashes, setScreenshotHashes] = useState<Map<string, string>>(
+    new Map()
+  );
   const [projectHashes, setProjectHashes] = useState<string[]>([]);
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [showSnapshotSelector, setShowSnapshotSelector] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
+  const [saveMessage, setSaveMessage] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
   const [stateFilter, setStateFilter] = useState<string[]>([]);
   const { availableStates, loading: statesLoading } = useAvailableStates();
 
@@ -55,8 +70,10 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   useEffect(() => {
     const loadProjectHashes = async () => {
       try {
-        const projectId = 'default';
-        const response = await fetch(`http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`);
+        const projectId = "default";
+        const response = await fetch(
+          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`
+        );
 
         if (response.ok) {
           const data = await response.json();
@@ -64,7 +81,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
           setProjectHashes(hashes);
         }
       } catch (error) {
-        console.error('Failed to load project hashes:', error);
+        console.error("Failed to load project hashes:", error);
       }
     };
 
@@ -77,7 +94,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       const newThumbnails: { [key: string]: string } = {};
 
       for (const file of screenshots) {
-        if (file.type.startsWith('image/')) {
+        if (file.type.startsWith("image/")) {
           try {
             // Create a unique key for this file
             const key = `${file.name}_${file.size}_${file.lastModified}`;
@@ -92,7 +109,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
             const url = URL.createObjectURL(file);
             newThumbnails[key] = url;
           } catch (error) {
-            console.error('Failed to generate thumbnail:', error);
+            console.error("Failed to generate thumbnail:", error);
           }
         }
       }
@@ -114,7 +131,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   useEffect(() => {
     return () => {
       // Revoke all object URLs when component unmounts
-      Object.values(thumbnails).forEach(url => {
+      Object.values(thumbnails).forEach((url) => {
         URL.revokeObjectURL(url);
       });
     };
@@ -124,55 +141,69 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   useEffect(() => {
     const loadProjectScreenshots = async () => {
       try {
-        const projectId = 'default';
-        const response = await fetch(`http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`);
+        const projectId = "default";
+        const response = await fetch(
+          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`
+        );
         if (response.ok) {
           const data = await response.json();
-          console.log('[ScreenshotUploader] Loading saved screenshots:', data.screenshots.length);
+          console.log(
+            "[ScreenshotUploader] Loading saved screenshots:",
+            data.screenshots.length
+          );
           // Just notify the user that saved screenshots are available
           if (screenshots.length === 0 && data.screenshots.length > 0) {
             setSaveMessage({
-              type: 'info',
-              text: `${data.screenshots.length} saved screenshot(s) available. Use "Load from Project" to restore them.`
+              type: "info",
+              text: `${data.screenshots.length} saved screenshot(s) available. Use "Load from Project" to restore them.`,
             });
           }
         }
       } catch (error) {
-        console.error('Failed to check for saved screenshots:', error);
+        console.error("Failed to check for saved screenshots:", error);
       }
     };
     loadProjectScreenshots();
   }, []); // Only on mount
 
   // Handle file selection
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      onUpload(files);
-    }
-  }, [onUpload]);
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length > 0) {
+        onUpload(files);
+      }
+    },
+    [onUpload]
+  );
 
   // Handle drag and drop
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files).filter(
-      file => file.type.startsWith('image/')
-    );
-    if (files.length > 0) {
-      onUpload(files);
-    }
-  }, [onUpload]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer.files).filter((file) =>
+        file.type.startsWith("image/")
+      );
+      if (files.length > 0) {
+        onUpload(files);
+      }
+    },
+    [onUpload]
+  );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
   }, []);
 
   // Remove screenshot
-  const handleRemove = useCallback((index: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newScreenshots = screenshots.filter((_, i) => i !== index);
-    onUpload(newScreenshots);
-  }, [screenshots, onUpload]);
+  const handleRemove = useCallback(
+    (index: number, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const newScreenshots = screenshots.filter((_, i) => i !== index);
+      onUpload(newScreenshots);
+    },
+    [screenshots, onUpload]
+  );
 
   // Calculate hashes when screenshots change
   useEffect(() => {
@@ -206,20 +237,23 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       // Create FormData with screenshots
       const formData = new FormData();
       screenshots.forEach((file) => {
-        formData.append('files', file);
+        formData.append("files", file);
       });
 
       // Use default project ID for now
-      const projectId = 'default';
+      const projectId = "default";
 
       // Call actual API to save screenshots
-      const response = await fetch(`http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`, {
-        method: 'POST',
-        body: formData
-      });
+      const response = await fetch(
+        `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
       if (!response.ok) {
-        throw new Error('Failed to save screenshots');
+        throw new Error("Failed to save screenshots");
       }
 
       const result = await response.json();
@@ -227,17 +261,19 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       // Update message based on result
       if (result.total_saved === 0) {
         setSaveMessage({
-          type: 'error',
-          text: `All ${result.total_duplicates} screenshot(s) already exist in the project.`
+          type: "error",
+          text: `All ${result.total_duplicates} screenshot(s) already exist in the project.`,
         });
       } else {
         setSaveMessage({
-          type: 'success',
-          text: `Saved ${result.total_saved} screenshot(s) to project.${result.total_duplicates > 0 ? ` ${result.total_duplicates} duplicate(s) skipped.` : ''}`
+          type: "success",
+          text: `Saved ${result.total_saved} screenshot(s) to project.${result.total_duplicates > 0 ? ` ${result.total_duplicates} duplicate(s) skipped.` : ""}`,
         });
 
         // Reload project hashes to include newly saved screenshots
-        const hashResponse = await fetch(`http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`);
+        const hashResponse = await fetch(
+          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`
+        );
         if (hashResponse.ok) {
           const hashData = await hashResponse.json();
           const updatedHashes = hashData.screenshots.map((s: any) => s.hash);
@@ -245,10 +281,10 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         }
       }
     } catch (error) {
-      console.error('Failed to save screenshots:', error);
+      console.error("Failed to save screenshots:", error);
       setSaveMessage({
-        type: 'error',
-        text: 'Failed to save screenshots to project.'
+        type: "error",
+        text: "Failed to save screenshots to project.",
       });
     } finally {
       setIsSaving(false);
@@ -261,12 +297,14 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
     // Selected project screenshots
 
     try {
-      const projectId = 'default';
+      const projectId = "default";
       const newFiles: File[] = [];
 
       for (const screenshot of selected) {
         // Fetch the full screenshot data
-        const response = await fetch(`http://localhost:8000/api/state-discovery/project/${projectId}/screenshots/${screenshot.id}`);
+        const response = await fetch(
+          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots/${screenshot.id}`
+        );
 
         if (!response.ok) {
           console.error(`Failed to load screenshot ${screenshot.name}`);
@@ -276,7 +314,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         const data = await response.json();
 
         // Convert base64 to File
-        const base64Data = data.image_data.split(',')[1]; // Remove data:image/png;base64, prefix
+        const base64Data = data.image_data.split(",")[1]; // Remove data:image/png;base64, prefix
         const binaryString = atob(base64Data);
         const bytes = new Uint8Array(binaryString.length);
 
@@ -284,8 +322,8 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
           bytes[i] = binaryString.charCodeAt(i);
         }
 
-        const blob = new Blob([bytes], { type: 'image/png' });
-        const file = new File([blob], screenshot.name, { type: 'image/png' });
+        const blob = new Blob([bytes], { type: "image/png" });
+        const file = new File([blob], screenshot.name, { type: "image/png" });
 
         newFiles.push(file);
       }
@@ -295,12 +333,14 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         onUpload([...screenshots, ...newFiles]);
       }
     } catch (error) {
-      console.error('Failed to load project screenshots:', error);
+      console.error("Failed to load project screenshots:", error);
     }
   };
 
   // Handle selecting snapshot screenshots
-  const handleSelectSnapshotScreenshots = async (selected: Array<{ url: string; name: string; snapshotId: string }>) => {
+  const handleSelectSnapshotScreenshots = async (
+    selected: Array<{ url: string; name: string; snapshotId: string }>
+  ) => {
     try {
       const newFiles: File[] = [];
 
@@ -317,7 +357,9 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         const blob = await response.blob();
 
         // Create a File object
-        const file = new File([blob], screenshot.name, { type: blob.type || 'image/png' });
+        const file = new File([blob], screenshot.name, {
+          type: blob.type || "image/png",
+        });
 
         newFiles.push(file);
       }
@@ -326,15 +368,15 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       if (newFiles.length > 0) {
         onUpload([...screenshots, ...newFiles]);
         setSaveMessage({
-          type: 'success',
-          text: `Added ${newFiles.length} screenshot(s) from snapshot runs`
+          type: "success",
+          text: `Added ${newFiles.length} screenshot(s) from snapshot runs`,
         });
       }
     } catch (error) {
-      console.error('Failed to load snapshot screenshots:', error);
+      console.error("Failed to load snapshot screenshots:", error);
       setSaveMessage({
-        type: 'error',
-        text: 'Failed to load screenshots from snapshots'
+        type: "error",
+        text: "Failed to load screenshots from snapshots",
       });
     }
   };
@@ -352,11 +394,15 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
             <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
             <TabsTrigger value="direct" className="relative">
               Direct
-              <Badge variant="secondary" className="ml-1 text-xs">beta</Badge>
+              <Badge variant="secondary" className="ml-1 text-xs">
+                beta
+              </Badge>
             </TabsTrigger>
             <TabsTrigger value="auto" className="relative">
               Auto
-              <Badge variant="secondary" className="ml-1 text-xs">beta</Badge>
+              <Badge variant="secondary" className="ml-1 text-xs">
+                beta
+              </Badge>
             </TabsTrigger>
           </TabsList>
 
@@ -392,12 +438,16 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
             <div className="state-filter-section">
               <Label className="text-xs">Filter by state (optional):</Label>
               <div className="flex flex-wrap gap-2 mt-1">
-                {stateFilter.map(state => (
+                {stateFilter.map((state) => (
                   <Badge key={state} variant="secondary" className="text-xs">
                     {state}
                     <X
                       className="ml-1 h-3 w-3 cursor-pointer"
-                      onClick={() => setStateFilter(prev => prev.filter(s => s !== state))}
+                      onClick={() =>
+                        setStateFilter((prev) =>
+                          prev.filter((s) => s !== state)
+                        )
+                      }
                     />
                   </Badge>
                 ))}
@@ -416,17 +466,19 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
                     {availableStates
-                      .filter(s => !stateFilter.includes(s))
-                      .map(state => (
+                      .filter((s) => !stateFilter.includes(s))
+                      .map((state) => (
                         <DropdownMenuItem
                           key={state}
-                          onClick={() => setStateFilter(prev => [...prev, state])}
+                          onClick={() =>
+                            setStateFilter((prev) => [...prev, state])
+                          }
                         >
                           {state}
                         </DropdownMenuItem>
-                      ))
-                    }
-                    {availableStates.filter(s => !stateFilter.includes(s)).length === 0 && (
+                      ))}
+                    {availableStates.filter((s) => !stateFilter.includes(s))
+                      .length === 0 && (
                       <DropdownMenuItem disabled>
                         No more states available
                       </DropdownMenuItem>
@@ -492,7 +544,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
             disabled={isSaving || screenshots.length === 0}
           >
             <Save className="mr-2 h-4 w-4" />
-            {isSaving ? 'Saving...' : 'Save to Project'}
+            {isSaving ? "Saving..." : "Save to Project"}
           </Button>
         )}
 
@@ -501,20 +553,23 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
           <Alert className="py-2">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              {duplicateCount} screenshot{duplicateCount !== 1 ? 's' : ''} already in project
+              {duplicateCount} screenshot{duplicateCount !== 1 ? "s" : ""}{" "}
+              already in project
             </AlertDescription>
           </Alert>
         )}
 
         {/* Save Message */}
         {saveMessage && (
-          <Alert className={`py-2 ${
-            saveMessage.type === 'error'
-              ? 'border-red-200 bg-red-50 text-red-700'
-              : saveMessage.type === 'info'
-              ? 'border-blue-200 bg-blue-50 text-blue-700'
-              : 'border-green-200 bg-green-50 text-green-700'
-          }`}>
+          <Alert
+            className={`py-2 ${
+              saveMessage.type === "error"
+                ? "border-red-200 bg-red-50 text-red-700"
+                : saveMessage.type === "info"
+                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                  : "border-green-200 bg-green-50 text-green-700"
+            }`}
+          >
             <AlertDescription className="text-xs">
               {saveMessage.text}
             </AlertDescription>
@@ -539,12 +594,8 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
           onDragOver={handleDragOver}
         >
           <ImageIcon className="mx-auto h-12 w-12 text-gray-400 mb-2" />
-          <p className="text-sm text-gray-600">
-            Drag and drop images here
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            PNG, JPG up to 50MB
-          </p>
+          <p className="text-sm text-gray-600">Drag and drop images here</p>
+          <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 50MB</p>
         </div>
       )}
 
@@ -585,9 +636,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
                 {/* Filename */}
                 <div className="p-2">
-                  <p className="text-xs truncate">
-                    {file.name}
-                  </p>
+                  <p className="text-xs truncate">{file.name}</p>
                   <p className="text-xs text-gray-500">
                     {(file.size / 1024 / 1024).toFixed(2)} MB
                   </p>
@@ -614,7 +663,8 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       {/* Screenshot count */}
       {screenshots.length > 0 && (
         <p className="text-xs text-gray-500 text-center">
-          {screenshots.length} screenshot{screenshots.length !== 1 ? 's' : ''} uploaded
+          {screenshots.length} screenshot{screenshots.length !== 1 ? "s" : ""}{" "}
+          uploaded
         </p>
       )}
 

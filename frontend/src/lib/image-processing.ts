@@ -48,9 +48,9 @@ function getEdgeColor(
   for (let px = x; px < x + width; px++) {
     const idx = (y * imageData.width + px) * 4;
     edgePixels.push({
-      r: imageData.data[idx],
-      g: imageData.data[idx + 1],
-      b: imageData.data[idx + 2],
+      r: imageData.data[idx] ?? 0,
+      g: imageData.data[idx + 1] ?? 0,
+      b: imageData.data[idx + 2] ?? 0,
     });
   }
 
@@ -58,9 +58,9 @@ function getEdgeColor(
   for (let px = x; px < x + width; px++) {
     const idx = ((y + height - 1) * imageData.width + px) * 4;
     edgePixels.push({
-      r: imageData.data[idx],
-      g: imageData.data[idx + 1],
-      b: imageData.data[idx + 2],
+      r: imageData.data[idx] ?? 0,
+      g: imageData.data[idx + 1] ?? 0,
+      b: imageData.data[idx + 2] ?? 0,
     });
   }
 
@@ -68,9 +68,9 @@ function getEdgeColor(
   for (let py = y; py < y + height; py++) {
     const idx = (py * imageData.width + x) * 4;
     edgePixels.push({
-      r: imageData.data[idx],
-      g: imageData.data[idx + 1],
-      b: imageData.data[idx + 2],
+      r: imageData.data[idx] ?? 0,
+      g: imageData.data[idx + 1] ?? 0,
+      b: imageData.data[idx + 2] ?? 0,
     });
   }
 
@@ -78,9 +78,9 @@ function getEdgeColor(
   for (let py = y; py < y + height; py++) {
     const idx = (py * imageData.width + (x + width - 1)) * 4;
     edgePixels.push({
-      r: imageData.data[idx],
-      g: imageData.data[idx + 1],
-      b: imageData.data[idx + 2],
+      r: imageData.data[idx] ?? 0,
+      g: imageData.data[idx + 1] ?? 0,
+      b: imageData.data[idx + 2] ?? 0,
     });
   }
 
@@ -107,13 +107,14 @@ export async function removeBorder(
 ): Promise<ProcessedImageResult> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = img.width;
       canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (!ctx) {
-        reject(new Error('Failed to get canvas context'));
+        reject(new Error("Failed to get canvas context"));
         return;
       }
 
@@ -135,15 +136,33 @@ export async function removeBorder(
       let minY = Math.floor(region.y + region.height);
       let maxY = Math.floor(region.y);
 
-      for (let py = Math.floor(region.y); py < Math.floor(region.y + region.height); py++) {
-        for (let px = Math.floor(region.x); px < Math.floor(region.x + region.width); px++) {
+      for (
+        let py = Math.floor(region.y);
+        py < Math.floor(region.y + region.height);
+        py++
+      ) {
+        for (
+          let px = Math.floor(region.x);
+          px < Math.floor(region.x + region.width);
+          px++
+        ) {
           const idx = (py * imageData.width + px) * 4;
           const r = imageData.data[idx];
           const g = imageData.data[idx + 1];
           const b = imageData.data[idx + 2];
 
           // If pixel doesn't match edge color, include it
-          if (!colorMatches(r, g, b, edgeColor.r, edgeColor.g, edgeColor.b, tolerance)) {
+          if (
+            !colorMatches(
+              r!,
+              g!,
+              b!,
+              edgeColor.r!,
+              edgeColor.g!,
+              edgeColor.b,
+              tolerance
+            )
+          ) {
             minX = Math.min(minX, px);
             maxX = Math.max(maxX, px);
             minY = Math.min(minY, py);
@@ -164,12 +183,12 @@ export async function removeBorder(
       const croppedHeight = maxY - minY + 1;
 
       // Create cropped canvas
-      const croppedCanvas = document.createElement('canvas');
+      const croppedCanvas = document.createElement("canvas");
       croppedCanvas.width = croppedWidth;
       croppedCanvas.height = croppedHeight;
-      const croppedCtx = croppedCanvas.getContext('2d');
+      const croppedCtx = croppedCanvas.getContext("2d");
       if (!croppedCtx) {
-        reject(new Error('Failed to get cropped canvas context'));
+        reject(new Error("Failed to get cropped canvas context"));
         return;
       }
 
@@ -186,7 +205,7 @@ export async function removeBorder(
       );
 
       resolve({
-        croppedImage: croppedCanvas.toDataURL('image/png'),
+        croppedImage: croppedCanvas.toDataURL("image/png"),
         bounds: {
           x: minX,
           y: minY,
@@ -195,7 +214,7 @@ export async function removeBorder(
         },
       });
     };
-    img.onerror = () => reject(new Error('Failed to load image'));
+    img.onerror = () => reject(new Error("Failed to load image"));
     img.src = imageDataUrl;
   });
 }
@@ -210,13 +229,14 @@ export async function removeBackground(
 ): Promise<ProcessedImageResult> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = img.width;
       canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (!ctx) {
-        reject(new Error('Failed to get canvas context'));
+        reject(new Error("Failed to get canvas context"));
         return;
       }
 
@@ -239,15 +259,31 @@ export async function removeBackground(
       let maxY = Math.floor(region.y);
 
       const maskData: boolean[][] = [];
-      for (let py = Math.floor(region.y); py < Math.floor(region.y + region.height); py++) {
+      for (
+        let py = Math.floor(region.y);
+        py < Math.floor(region.y + region.height);
+        py++
+      ) {
         const row: boolean[] = [];
-        for (let px = Math.floor(region.x); px < Math.floor(region.x + region.width); px++) {
+        for (
+          let px = Math.floor(region.x);
+          px < Math.floor(region.x + region.width);
+          px++
+        ) {
           const idx = (py * imageData.width + px) * 4;
           const r = imageData.data[idx];
           const g = imageData.data[idx + 1];
           const b = imageData.data[idx + 2];
 
-          const isBackground = colorMatches(r, g, b, bgColor.r, bgColor.g, bgColor.b, tolerance);
+          const isBackground = colorMatches(
+            r!,
+            g!,
+            b!,
+            bgColor.r!,
+            bgColor.g,
+            bgColor.b,
+            tolerance
+          );
           row.push(isBackground);
 
           if (!isBackground) {
@@ -272,12 +308,12 @@ export async function removeBackground(
       const croppedHeight = maxY - minY + 1;
 
       // Create cropped image canvas
-      const croppedCanvas = document.createElement('canvas');
+      const croppedCanvas = document.createElement("canvas");
       croppedCanvas.width = croppedWidth;
       croppedCanvas.height = croppedHeight;
-      const croppedCtx = croppedCanvas.getContext('2d');
+      const croppedCtx = croppedCanvas.getContext("2d");
       if (!croppedCtx) {
-        reject(new Error('Failed to get cropped canvas context'));
+        reject(new Error("Failed to get cropped canvas context"));
         return;
       }
 
@@ -294,16 +330,19 @@ export async function removeBackground(
       );
 
       // Create mask canvas (cropped to same bounds)
-      const maskCanvas = document.createElement('canvas');
+      const maskCanvas = document.createElement("canvas");
       maskCanvas.width = croppedWidth;
       maskCanvas.height = croppedHeight;
-      const maskCtx = maskCanvas.getContext('2d');
+      const maskCtx = maskCanvas.getContext("2d");
       if (!maskCtx) {
-        reject(new Error('Failed to get mask canvas context'));
+        reject(new Error("Failed to get mask canvas context"));
         return;
       }
 
-      const maskImageData = maskCtx.createImageData(croppedWidth, croppedHeight);
+      const maskImageData = maskCtx.createImageData(
+        croppedWidth,
+        croppedHeight
+      );
       for (let py = 0; py < croppedHeight; py++) {
         for (let px = 0; px < croppedWidth; px++) {
           const srcY = minY - Math.floor(region.y) + py;
@@ -322,8 +361,8 @@ export async function removeBackground(
       maskCtx.putImageData(maskImageData, 0, 0);
 
       resolve({
-        croppedImage: croppedCanvas.toDataURL('image/png'),
-        mask: maskCanvas.toDataURL('image/png'),
+        croppedImage: croppedCanvas.toDataURL("image/png"),
+        mask: maskCanvas.toDataURL("image/png"),
         bounds: {
           x: minX,
           y: minY,
@@ -332,7 +371,7 @@ export async function removeBackground(
         },
       });
     };
-    img.onerror = () => reject(new Error('Failed to load image'));
+    img.onerror = () => reject(new Error("Failed to load image"));
     img.src = imageDataUrl;
   });
 }
@@ -346,13 +385,14 @@ export async function extractRegion(
 ): Promise<ProcessedImageResult> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = Math.floor(region.width);
       canvas.height = Math.floor(region.height);
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (!ctx) {
-        reject(new Error('Failed to get canvas context'));
+        reject(new Error("Failed to get canvas context"));
         return;
       }
 
@@ -369,7 +409,7 @@ export async function extractRegion(
       );
 
       resolve({
-        croppedImage: canvas.toDataURL('image/png'),
+        croppedImage: canvas.toDataURL("image/png"),
         bounds: {
           x: Math.floor(region.x),
           y: Math.floor(region.y),
@@ -378,7 +418,7 @@ export async function extractRegion(
         },
       });
     };
-    img.onerror = () => reject(new Error('Failed to load image'));
+    img.onerror = () => reject(new Error("Failed to load image"));
     img.src = imageDataUrl;
   });
 }

@@ -1,15 +1,14 @@
 // components/integration-testing/SnapshotMultiSelector.tsx
 
-'use client';
+"use client";
 
-import { useSnapshotList } from '@/hooks/useSnapshotList';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { Loader2, Database, X } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import type { SnapshotRun } from '@/types/snapshots';
+import { useSnapshotList } from "@/hooks/useSnapshotList";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { Loader2, Database, X } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import type { SnapshotRun } from "@/types/snapshots";
 
 interface SnapshotMultiSelectorProps {
   selectedSnapshots: SnapshotRun[];
@@ -20,7 +19,7 @@ export function SnapshotMultiSelector({
   selectedSnapshots,
   onChange,
 }: SnapshotMultiSelectorProps) {
-  const { snapshots, loading, error, refresh } = useSnapshotList();
+  const { snapshots, loading, error } = useSnapshotList();
 
   const handleToggle = (snapshot: SnapshotRun) => {
     const isSelected = selectedSnapshots.some((s) => s.id === snapshot.id);
@@ -36,8 +35,14 @@ export function SnapshotMultiSelector({
     onChange([]);
   };
 
-  const totalActions = selectedSnapshots.reduce((sum, s) => sum + s.total_actions, 0);
-  const totalScreenshots = selectedSnapshots.reduce((sum, s) => sum + s.total_screenshots, 0);
+  const totalActions = selectedSnapshots.reduce(
+    (sum, s) => sum + s.total_actions,
+    0
+  );
+  const totalScreenshots = selectedSnapshots.reduce(
+    (sum, s) => sum + s.total_screenshots,
+    0
+  );
 
   return (
     <Card>
@@ -62,7 +67,8 @@ export function SnapshotMultiSelector({
         {selectedSnapshots.length > 0 && (
           <div className="text-xs text-gray-600 mt-2 p-2 bg-blue-50 rounded border border-blue-200">
             <div className="font-medium text-blue-900">
-              {selectedSnapshots.length} snapshot{selectedSnapshots.length > 1 ? 's' : ''} selected
+              {selectedSnapshots.length} snapshot
+              {selectedSnapshots.length > 1 ? "s" : ""} selected
             </div>
             <div className="text-blue-800 mt-0.5">
               Pool: {totalActions} actions, {totalScreenshots} screenshots
@@ -95,16 +101,19 @@ export function SnapshotMultiSelector({
         {!loading && snapshots.length > 0 && (
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {snapshots.map((snapshot) => {
-              const isSelected = selectedSnapshots.some((s) => s.id === snapshot.id);
+              const isSelected = selectedSnapshots.some(
+                (s) => s.id === snapshot.id
+              );
 
               return (
                 <div
                   key={snapshot.id}
                   className={`
                     p-3 border rounded-lg cursor-pointer transition-all
-                    ${isSelected
-                      ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-300'
-                      : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    ${
+                      isSelected
+                        ? "bg-blue-50 border-blue-300 ring-1 ring-blue-300"
+                        : "bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                     }
                   `}
                   onClick={() => handleToggle(snapshot)}
@@ -129,14 +138,18 @@ export function SnapshotMultiSelector({
 
                       <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-600">
                         <span>
-                          {snapshot.total_actions} action{snapshot.total_actions !== 1 ? 's' : ''}
+                          {snapshot.total_actions} action
+                          {snapshot.total_actions !== 1 ? "s" : ""}
                         </span>
                         <span>•</span>
                         <span>
-                          {snapshot.total_screenshots} screenshot{snapshot.total_screenshots !== 1 ? 's' : ''}
+                          {snapshot.total_screenshots} screenshot
+                          {snapshot.total_screenshots !== 1 ? "s" : ""}
                         </span>
                         <span>•</span>
-                        <span className="capitalize">{snapshot.execution_mode}</span>
+                        <span className="capitalize">
+                          {snapshot.execution_mode}
+                        </span>
                       </div>
 
                       {snapshot.duration_seconds !== null && (

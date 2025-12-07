@@ -10,31 +10,22 @@
  * - TRY_CATCH - Error handling (2 outputs: main/error)
  */
 
-import React from 'react';
-import { NodeProps } from '@xyflow/react';
-import { Action } from '@/lib/action-schema/action-types';
-import { BaseNode, BaseNodeData, MultiOutputNode } from './BaseNode';
-import { MultiOutputHandles, getSwitchOutputHandles } from './handles';
+import React from "react";
+import { NodeProps, Node as ReactFlowNode } from "@xyflow/react";
+import { BaseNode, BaseNodeData, MultiOutputNode } from "./BaseNode";
+import { getSwitchOutputHandles } from "./handles";
 import type {
-  IfActionConfig,
-  LoopActionConfig,
   SwitchActionConfig,
-  BreakActionConfig,
-  ContinueActionConfig,
   TryCatchActionConfig,
-} from '@/lib/action-schema/configs/control-flow-actions';
+} from "@/lib/action-schema/configs/control-flow-actions";
 
 /**
  * IF Node - Conditional execution with true/false branches
  */
-export function IfNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as IfActionConfig;
-  const conditionType = config.condition?.type || 'expression';
-  const expression = config.condition?.expression || '';
-
+export function IfNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const outputLabels = [
-    { id: 'main-0', label: 'True', color: 'bg-green-500 text-white' },
-    { id: 'main-1', label: 'False', color: 'bg-red-500 text-white' },
+    { id: "main-0", label: "True", color: "bg-green-500 text-white" },
+    { id: "main-1", label: "False", color: "bg-red-500 text-white" },
   ];
 
   return (
@@ -49,15 +40,10 @@ export function IfNode(props: NodeProps<BaseNodeData>) {
 /**
  * LOOP Node - Iteration with loop/exit branches
  */
-export function LoopNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as LoopActionConfig;
-  const loopType = config.loopType || 'FOR';
-  const iterations = config.iterations;
-  const iteratorVar = config.iteratorVariable || 'i';
-
+export function LoopNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const outputLabels = [
-    { id: 'main-0', label: 'Loop', color: 'bg-blue-500 text-white' },
-    { id: 'main-1', label: 'Exit', color: 'bg-gray-500 text-white' },
+    { id: "main-0", label: "Loop", color: "bg-blue-500 text-white" },
+    { id: "main-1", label: "Exit", color: "bg-gray-500 text-white" },
   ];
 
   return (
@@ -72,10 +58,9 @@ export function LoopNode(props: NodeProps<BaseNodeData>) {
 /**
  * SWITCH Node - Multi-way conditional branching
  */
-export function SwitchNode(props: NodeProps<BaseNodeData>) {
+export function SwitchNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const config = props.data.action.config as SwitchActionConfig;
   const cases = config.cases || [];
-  const expression = config.expression || 'value';
 
   // Generate output handles for each case + default
   const outputConfigs = getSwitchOutputHandles(cases.length);
@@ -83,7 +68,10 @@ export function SwitchNode(props: NodeProps<BaseNodeData>) {
   const outputLabels = outputConfigs.map((output) => ({
     id: output.id,
     label: output.label,
-    color: output.id === 'default' ? 'bg-gray-500 text-white' : 'bg-blue-500 text-white',
+    color:
+      output.id === "default"
+        ? "bg-gray-500 text-white"
+        : "bg-blue-500 text-white",
   }));
 
   return (
@@ -97,7 +85,7 @@ export function SwitchNode(props: NodeProps<BaseNodeData>) {
       {/* Show case values as tooltips/hints */}
       <div className="absolute left-0 bottom-full mb-2 pointer-events-none">
         <div className="text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm border border-gray-200">
-          {cases.length} case{cases.length !== 1 ? 's' : ''}
+          {cases.length} case{cases.length !== 1 ? "s" : ""}
         </div>
       </div>
     </div>
@@ -107,10 +95,7 @@ export function SwitchNode(props: NodeProps<BaseNodeData>) {
 /**
  * BREAK Node - Exit from loop (no outputs)
  */
-export function BreakNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as BreakActionConfig;
-  const hasCondition = !!config.condition;
-
+export function BreakNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -123,10 +108,7 @@ export function BreakNode(props: NodeProps<BaseNodeData>) {
 /**
  * CONTINUE Node - Skip to next iteration (no outputs)
  */
-export function ContinueNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as ContinueActionConfig;
-  const hasCondition = !!config.condition;
-
+export function ContinueNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -139,15 +121,14 @@ export function ContinueNode(props: NodeProps<BaseNodeData>) {
 /**
  * TRY_CATCH Node - Error handling with success/error branches
  */
-export function TryCatchNode(props: NodeProps<BaseNodeData>) {
+export function TryCatchNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const config = props.data.action.config as TryCatchActionConfig;
-  const errorVariable = config.errorVariable;
   const hasCatch = config.catchActions && config.catchActions.length > 0;
   const hasFinally = config.finallyActions && config.finallyActions.length > 0;
 
   const outputLabels = [
-    { id: 'main-0', label: 'Success', color: 'bg-green-500 text-white' },
-    { id: 'error-0', label: 'Error', color: 'bg-red-500 text-white' },
+    { id: "main-0", label: "Success", color: "bg-green-500 text-white" },
+    { id: "error-0", label: "Error", color: "bg-red-500 text-white" },
   ];
 
   return (

@@ -12,7 +12,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -21,7 +21,6 @@ from app.models.collaboration import ConflictLog
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.conflict import (
-    ConflictListFilter,
     ConflictLogCreate,
     ConflictLogResponse,
     ConflictResolveRequest,
@@ -36,7 +35,7 @@ router = APIRouter()
 
 
 async def verify_project_permission(
-    db: AsyncSession, project_id: int, user: User, required_permission: str
+    db: AsyncSession, project_id: UUID, user: User, required_permission: str
 ) -> None:
     """Verify user has required project permission."""
     has_access = await collaboration_service.check_user_has_access(
@@ -50,7 +49,7 @@ async def verify_project_permission(
         )
 
 
-async def get_project_or_404(db: AsyncSession, project_id: int) -> Project:
+async def get_project_or_404(db: AsyncSession, project_id: UUID) -> Project:
     """Get project or raise 404."""
     result = await db.execute(select(Project).filter(Project.id == project_id))
     project = result.scalar_one_or_none()
@@ -74,7 +73,7 @@ async def list_conflicts(
     *,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
-    project_id: int | None = Query(None, description="Filter by project ID"),
+    project_id: UUID | None = Query(None, description="Filter by project ID"),
     resource_type: str | None = Query(None, description="Filter by resource type"),
     resource_id: str | None = Query(None, description="Filter by resource ID"),
     resolved: bool | None = Query(None, description="Filter by resolved status"),
@@ -144,11 +143,13 @@ async def list_conflicts(
     return responses
 
 
-@router.get("/projects/{project_id}/conflicts", response_model=list[ConflictLogResponse])
+@router.get(
+    "/projects/{project_id}/conflicts", response_model=list[ConflictLogResponse]
+)
 async def list_project_conflicts(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
     resource_type: str | None = Query(None),
     resource_id: str | None = Query(None),
@@ -161,7 +162,9 @@ async def list_project_conflicts(
 
     Requires VIEW permission on the project.
     """
-    logger.info("list_project_conflicts_request", project_id=project_id, user_id=current_user.id)
+    logger.info(
+        "list_project_conflicts_request", project_id=project_id, user_id=current_user.id
+    )
 
     # Verify project access
     await get_project_or_404(db, project_id)
@@ -207,7 +210,10 @@ async def list_project_conflicts(
         responses.append(response)
 
     logger.info(
-        "project_conflicts_listed", count=len(responses), project_id=project_id, user_id=current_user.id
+        "project_conflicts_listed",
+        count=len(responses),
+        project_id=project_id,
+        user_id=current_user.id,
     )
 
     return responses
@@ -225,13 +231,17 @@ async def get_conflict(
 
     User must be involved in the conflict (local or remote user).
     """
-    logger.info("get_conflict_request", conflict_id=conflict_id, user_id=current_user.id)
+    logger.info(
+        "get_conflict_request", conflict_id=conflict_id, user_id=current_user.id
+    )
 
     # Get conflict
     result = await db.execute(
         select(ConflictLog)
         .filter(ConflictLog.id == conflict_id)
-        .options(joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user))
+        .options(
+            joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user)
+        )
     )
     conflict = result.unique().scalar_one_or_none()
 
@@ -269,7 +279,11 @@ async def get_conflict(
     return response
 
 
-@router.post("/conflicts", response_model=ConflictLogResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/conflicts",
+    response_model=ConflictLogResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_conflict(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -301,7 +315,7 @@ async def create_conflict(
         base_data=conflict_in.base_data or {},
         local_data=conflict_in.local_data or {},
         remote_data=conflict_in.remote_data or {},
-        metadata=conflict_in.metadata,
+        metadata=conflict_in.metadata or {},
     )
 
     # Reload with relationships
@@ -309,7 +323,9 @@ async def create_conflict(
     result = await db.execute(
         select(ConflictLog)
         .filter(ConflictLog.id == conflict_log.id)
-        .options(joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user))
+        .options(
+            joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user)
+        )
     )
     conflict_log = result.unique().scalar_one()
 
@@ -356,7 +372,9 @@ async def resolve_conflict(
     result = await db.execute(
         select(ConflictLog)
         .filter(ConflictLog.id == conflict_id)
-        .options(joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user))
+        .options(
+            joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user)
+        )
     )
     conflict = result.unique().scalar_one_or_none()
 
@@ -389,7 +407,7 @@ async def resolve_conflict(
             db=db,
             conflict_id=conflict_id,
             resolution_type=resolve_request.resolution_type,
-            merged_data=resolve_request.merged_data,
+            merged_data=resolve_request.merged_data or {},
         )
     except ValueError as e:
         raise HTTPException(
@@ -401,7 +419,9 @@ async def resolve_conflict(
     result = await db.execute(
         select(ConflictLog)
         .filter(ConflictLog.id == conflict_id)
-        .options(joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user))
+        .options(
+            joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user)
+        )
     )
     resolved_conflict = result.unique().scalar_one()
 
@@ -431,7 +451,7 @@ async def resolve_conflict(
 async def get_project_conflict_summary(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """
@@ -439,7 +459,9 @@ async def get_project_conflict_summary(
 
     Requires VIEW permission on the project.
     """
-    logger.info("get_conflict_summary_request", project_id=project_id, user_id=current_user.id)
+    logger.info(
+        "get_conflict_summary_request", project_id=project_id, user_id=current_user.id
+    )
 
     # Verify project access
     await get_project_or_404(db, project_id)
@@ -453,7 +475,7 @@ async def get_project_conflict_summary(
     resolved = [c for c in all_conflicts if c.resolved]
 
     # Count by type
-    conflicts_by_type = {}
+    conflicts_by_type: dict[str, int] = {}
     for conflict in all_conflicts:
         resource_type = conflict.resource_type
         conflicts_by_type[resource_type] = conflicts_by_type.get(resource_type, 0) + 1
@@ -461,7 +483,9 @@ async def get_project_conflict_summary(
     # Get recent conflicts
     recent_result = await db.execute(
         select(ConflictLog)
-        .options(joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user))
+        .options(
+            joinedload(ConflictLog.local_user), joinedload(ConflictLog.remote_user)
+        )
         .order_by(ConflictLog.detected_at.desc())
         .limit(5)
     )
@@ -492,6 +516,8 @@ async def get_project_conflict_summary(
         recent_conflicts=recent_responses,
     )
 
-    logger.info("conflict_summary_retrieved", project_id=project_id, total=len(all_conflicts))
+    logger.info(
+        "conflict_summary_retrieved", project_id=project_id, total=len(all_conflicts)
+    )
 
     return summary

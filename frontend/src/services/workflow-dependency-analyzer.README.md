@@ -9,6 +9,7 @@ The `WorkflowDependencyAnalyzer` provides a complete solution for understanding,
 ## Features
 
 ### 1. Dependency Detection
+
 - **analyzeDependencies(workflow)** - Find all RUN_WORKFLOW actions in a workflow
 - **getDependencies(workflowId)** - Get direct dependencies for a workflow
 - **getDependents(workflowId)** - Get workflows that depend on this one
@@ -16,6 +17,7 @@ The `WorkflowDependencyAnalyzer` provides a complete solution for understanding,
 - **getAllDependents(workflowId, recursive)** - Get all workflows that depend on this one
 
 ### 2. Graph Building
+
 - **buildDependencyGraph(workflows)** - Create complete dependency graph
 - **buildDependencyTree(workflowId)** - Build tree structure for single workflow
 - Calculates in-degree and out-degree for each workflow
@@ -23,6 +25,7 @@ The `WorkflowDependencyAnalyzer` provides a complete solution for understanding,
 - Identifies leaf workflows (no dependents)
 
 ### 3. Analysis
+
 - **findCircularDependencies(workflows)** - Detect circular references using DFS
 - **findUnusedWorkflows(workflows)** - Find workflows never called by others
 - **getImpactAnalysis(workflowId)** - Analyze what breaks if this workflow changes
@@ -30,6 +33,7 @@ The `WorkflowDependencyAnalyzer` provides a complete solution for understanding,
 - **getDependencyStats(workflows)** - Overall project statistics
 
 ### 4. Visualization Data
+
 - **getGraphData(workflows)** - Format data for React Flow or D3
 - **getNodesAndEdges(workflows)** - Generate nodes + edges for graph visualization
 - **getCriticalPath(workflows)** - Find most important dependency chains
@@ -37,52 +41,55 @@ The `WorkflowDependencyAnalyzer` provides a complete solution for understanding,
 - Node positioning based on depth
 
 ### 5. Validation
+
 - **validateDependencies(workflow)** - Check for broken references
 - **findMissingWorkflows(workflow)** - Find referenced workflows that don't exist
 - **validateCircularRefs(workflows)** - Ensure no circular dependencies
 - Detailed error reporting with severity levels
 
 ### 6. Caching
+
 - Automatic caching of dependency graphs (5-minute TTL)
 - **invalidateCache()** - Clear cache when workflows change
 - **isCacheValid()** - Check cache status
 - **getCachedGraph()** - Get cached graph if valid
 
 ### 7. Export
+
 - **exportDependencyReport(workflows)** - Generate comprehensive JSON report
 - **exportGraphML(workflows)** - Export to GraphML format for external tools
 
 ## Installation
 
 ```typescript
-import { workflowDependencyAnalyzer } from '@/services/workflow-dependency-analyzer';
+import { workflowDependencyAnalyzer } from "@/services/workflow-dependency-analyzer";
 ```
 
 ## Quick Start
 
 ```typescript
-import { workflowDependencyAnalyzer } from '@/services/workflow-dependency-analyzer';
+import { workflowDependencyAnalyzer } from "@/services/workflow-dependency-analyzer";
 
 // Get singleton instance
 const analyzer = workflowDependencyAnalyzer;
 
 // Analyze dependencies for a workflow
 const dependencies = analyzer.analyzeDependencies(myWorkflow);
-console.log('Dependencies:', dependencies);
+console.log("Dependencies:", dependencies);
 
 // Build complete dependency graph
 const graph = analyzer.buildDependencyGraph(allWorkflows);
-console.log('Total workflows:', graph.nodes.size);
-console.log('Total dependencies:', graph.edges.length);
+console.log("Total workflows:", graph.nodes.size);
+console.log("Total dependencies:", graph.edges.length);
 
 // Check for circular dependencies
 const cycles = analyzer.findCircularDependencies(allWorkflows);
 if (cycles.length > 0) {
-  console.warn('Circular dependencies detected:', cycles);
+  console.warn("Circular dependencies detected:", cycles);
 }
 
 // Get impact analysis
-const impact = analyzer.getImpactAnalysis('my-workflow-id', allWorkflows);
+const impact = analyzer.getImpactAnalysis("my-workflow-id", allWorkflows);
 console.log(`Impact level: ${impact.impactLevel}`);
 console.log(`Affected workflows: ${impact.affectedCount}`);
 ```
@@ -96,16 +103,16 @@ const workflows = [workflowA, workflowB, workflowC];
 const analyzer = workflowDependencyAnalyzer;
 
 // Find what workflow B depends on
-const deps = analyzer.getDependencies('workflow-b', workflows);
-console.log('Workflow B depends on:', deps);
+const deps = analyzer.getDependencies("workflow-b", workflows);
+console.log("Workflow B depends on:", deps);
 
 // Find what depends on workflow A
-const dependents = analyzer.getDependents('workflow-a', workflows);
-console.log('Workflows that depend on A:', dependents);
+const dependents = analyzer.getDependents("workflow-a", workflows);
+console.log("Workflows that depend on A:", dependents);
 
 // Get full dependency tree
-const allDeps = analyzer.getAllDependencies('workflow-c', workflows);
-console.log('All dependencies of C:', allDeps);
+const allDeps = analyzer.getAllDependencies("workflow-c", workflows);
+console.log("All dependencies of C:", allDeps);
 ```
 
 ### Example 2: Circular Dependency Detection
@@ -115,9 +122,9 @@ const workflows = loadAllWorkflows();
 const cycles = analyzer.findCircularDependencies(workflows);
 
 if (cycles.length > 0) {
-  console.error('⚠️ Circular dependencies detected:');
+  console.error("⚠️ Circular dependencies detected:");
   cycles.forEach((cycle, i) => {
-    console.error(`  Cycle ${i + 1}: ${cycle.join(' -> ')}`);
+    console.error(`  Cycle ${i + 1}: ${cycle.join(" -> ")}`);
   });
 }
 ```
@@ -126,15 +133,15 @@ if (cycles.length > 0) {
 
 ```typescript
 // Before modifying a workflow, check its impact
-const impact = analyzer.getImpactAnalysis('login-workflow', workflows);
+const impact = analyzer.getImpactAnalysis("login-workflow", workflows);
 
 console.log(`Impact Level: ${impact.impactLevel.toUpperCase()}`);
 console.log(`Direct impact: ${impact.directDependents.length} workflows`);
 console.log(`Total impact: ${impact.affectedCount} workflows`);
 
-if (impact.impactLevel === 'critical') {
-  console.warn('⚠️ This workflow has critical dependencies!');
-  console.warn('Affected workflows:', impact.allDependents);
+if (impact.impactLevel === "critical") {
+  console.warn("⚠️ This workflow has critical dependencies!");
+  console.warn("Affected workflows:", impact.allDependents);
 }
 ```
 
@@ -143,15 +150,17 @@ if (impact.impactLevel === 'critical') {
 ```typescript
 const stats = analyzer.getDependencyStats(workflows);
 
-console.log('=== Dependency Statistics ===');
+console.log("=== Dependency Statistics ===");
 console.log(`Total Workflows: ${stats.totalWorkflows}`);
 console.log(`Total Dependencies: ${stats.totalDependencies}`);
 console.log(`Circular Dependencies: ${stats.circularDependencies}`);
 console.log(`Unused Workflows: ${stats.unusedWorkflows}`);
-console.log(`Average Dependencies: ${stats.avgDependenciesPerWorkflow.toFixed(2)}`);
+console.log(
+  `Average Dependencies: ${stats.avgDependenciesPerWorkflow.toFixed(2)}`
+);
 console.log(`Max Depth: ${stats.maxDepth}`);
 
-console.log('\nMost Depended Upon:');
+console.log("\nMost Depended Upon:");
 stats.mostDepended.slice(0, 5).forEach((item, i) => {
   console.log(`  ${i + 1}. ${item.name} (${item.count} dependents)`);
 });
@@ -176,7 +185,7 @@ for (const workflow of workflows) {
 }
 
 if (errors.length > 0) {
-  console.error('❌ Validation failed:');
+  console.error("❌ Validation failed:");
   errors.forEach((error) => {
     console.error(`  [${error.type}] ${error.message}`);
   });
@@ -205,14 +214,14 @@ const vizData = analyzer.getGraphData(workflows);
 const report = analyzer.exportDependencyReport(workflows);
 
 // Save to file or display
-console.log('Report generated:', report.metadata.generated);
-console.log('Statistics:', report.statistics);
+console.log("Report generated:", report.metadata.generated);
+console.log("Statistics:", report.statistics);
 
 // Download as JSON
 const blob = new Blob([JSON.stringify(report, null, 2)], {
-  type: 'application/json',
+  type: "application/json",
 });
-downloadFile(blob, 'dependency-report.json');
+downloadFile(blob, "dependency-report.json");
 ```
 
 ### Example 8: Export GraphML
@@ -222,8 +231,8 @@ downloadFile(blob, 'dependency-report.json');
 const graphML = analyzer.exportGraphML(workflows);
 
 // Save to file
-const blob = new Blob([graphML], { type: 'application/xml' });
-downloadFile(blob, 'workflow-dependencies.graphml');
+const blob = new Blob([graphML], { type: "application/xml" });
+downloadFile(blob, "workflow-dependencies.graphml");
 
 // Can be imported into:
 // - Gephi
@@ -240,7 +249,7 @@ const graph1 = analyzer.buildDependencyGraph(workflows);
 
 // Check cache status
 if (analyzer.isCacheValid()) {
-  console.log('Using cached graph');
+  console.log("Using cached graph");
 }
 
 // Invalidate cache when workflows change
@@ -259,16 +268,16 @@ const freshGraph = analyzer.buildDependencyGraph(workflows, false);
 const unused = analyzer.findUnusedWorkflows(workflows);
 
 if (unused.length > 0) {
-  console.log('📊 Unused workflows found:');
+  console.log("📊 Unused workflows found:");
   unused.forEach((id) => {
     const workflow = workflows.find((w) => w.id === id);
     console.log(`  - ${workflow?.name || id}`);
   });
 
-  console.log('\nConsider:');
-  console.log('  1. Adding them to a main workflow');
-  console.log('  2. Documenting their purpose');
-  console.log('  3. Archiving if no longer needed');
+  console.log("\nConsider:");
+  console.log("  1. Adding them to a main workflow");
+  console.log("  2. Documenting their purpose");
+  console.log("  3. Archiving if no longer needed");
 }
 ```
 
@@ -278,16 +287,16 @@ if (unused.length > 0) {
 
 ```typescript
 interface DependencyNode {
-  id: string;                    // Workflow ID
-  name: string;                  // Workflow name
-  category?: string;             // Workflow category
-  dependencies: string[];        // Direct dependencies
-  dependents: string[];          // Direct dependents
-  inDegree: number;              // How many depend on this
-  outDegree: number;             // How many this depends on
-  depth: number;                 // Depth in dependency tree
-  isCircular: boolean;           // Part of circular dependency
-  tags?: string[];               // Workflow tags
+  id: string; // Workflow ID
+  name: string; // Workflow name
+  category?: string; // Workflow category
+  dependencies: string[]; // Direct dependencies
+  dependents: string[]; // Direct dependents
+  inDegree: number; // How many depend on this
+  outDegree: number; // How many this depends on
+  depth: number; // Depth in dependency tree
+  isCircular: boolean; // Part of circular dependency
+  tags?: string[]; // Workflow tags
 }
 ```
 
@@ -295,12 +304,12 @@ interface DependencyNode {
 
 ```typescript
 interface DependencyGraph {
-  nodes: Map<string, DependencyNode>;  // All workflow nodes
-  edges: DependencyEdge[];             // All dependency edges
-  cycles: string[][];                  // Circular dependency chains
-  roots: string[];                     // Workflows with no dependencies
-  leaves: string[];                    // Workflows with no dependents
-  timestamp: number;                   // When graph was built
+  nodes: Map<string, DependencyNode>; // All workflow nodes
+  edges: DependencyEdge[]; // All dependency edges
+  cycles: string[][]; // Circular dependency chains
+  roots: string[]; // Workflows with no dependencies
+  leaves: string[]; // Workflows with no dependents
+  timestamp: number; // When graph was built
 }
 ```
 
@@ -308,12 +317,12 @@ interface DependencyGraph {
 
 ```typescript
 interface ImpactAnalysis {
-  workflowId: string;                  // Workflow being analyzed
-  directDependents: string[];          // Direct dependents
-  allDependents: string[];             // All dependents (recursive)
-  criticalPaths: string[][];           // Critical paths through workflow
-  impactLevel: 'low' | 'medium' | 'high' | 'critical';
-  affectedCount: number;               // Number of workflows affected
+  workflowId: string; // Workflow being analyzed
+  directDependents: string[]; // Direct dependents
+  allDependents: string[]; // All dependents (recursive)
+  criticalPaths: string[][]; // Critical paths through workflow
+  impactLevel: "low" | "medium" | "high" | "critical";
+  affectedCount: number; // Number of workflows affected
 }
 ```
 
@@ -338,17 +347,20 @@ interface DependencyStats {
 ## Performance
 
 ### Caching
+
 - Dependency graph is cached for 5 minutes
 - Cache invalidation on workflow changes
 - Significant performance improvement for repeated analyses
 
 ### Complexity
-- **buildDependencyGraph**: O(W * A) where W = workflows, A = actions
+
+- **buildDependencyGraph**: O(W \* A) where W = workflows, A = actions
 - **findCircularDependencies**: O(W + D) where D = dependencies
 - **getAllDependencies**: O(W + D) with cycle detection
 - **getImpactAnalysis**: O(W + D)
 
 ### Optimization Tips
+
 1. Use cache for repeated analyses
 2. Invalidate cache only when necessary
 3. Use `useCache=true` parameter
@@ -360,25 +372,30 @@ The service provides detailed error reporting:
 
 ```typescript
 interface DependencyError {
-  type: 'missing_workflow' | 'circular_dependency' | 'invalid_reference' | 'orphaned_workflow';
-  workflowId: string;      // Where error occurs
-  actionId?: string;       // Action causing error
-  referencedId?: string;   // Referenced workflow
-  message: string;         // Error description
-  severity: 'error' | 'warning';
+  type:
+    | "missing_workflow"
+    | "circular_dependency"
+    | "invalid_reference"
+    | "orphaned_workflow";
+  workflowId: string; // Where error occurs
+  actionId?: string; // Action causing error
+  referencedId?: string; // Referenced workflow
+  message: string; // Error description
+  severity: "error" | "warning";
 }
 ```
 
 ## Best Practices
 
 ### 1. Regular Validation
+
 ```typescript
 // Validate before saving
 function saveWorkflow(workflow: Workflow, allWorkflows: Workflow[]) {
   const validation = analyzer.validateDependencies(workflow, allWorkflows);
 
   if (!validation.valid) {
-    throw new Error('Validation failed: ' + validation.errors[0].message);
+    throw new Error("Validation failed: " + validation.errors[0].message);
   }
 
   return saveToDatabase(workflow);
@@ -386,12 +403,13 @@ function saveWorkflow(workflow: Workflow, allWorkflows: Workflow[]) {
 ```
 
 ### 2. Impact Analysis Before Changes
+
 ```typescript
 // Check impact before modifying
 function modifyWorkflow(workflowId: string) {
   const impact = analyzer.getImpactAnalysis(workflowId, allWorkflows);
 
-  if (impact.impactLevel === 'critical') {
+  if (impact.impactLevel === "critical") {
     const confirmed = confirm(
       `This change will affect ${impact.affectedCount} workflows. Continue?`
     );
@@ -403,6 +421,7 @@ function modifyWorkflow(workflowId: string) {
 ```
 
 ### 3. Cache Management
+
 ```typescript
 // Invalidate cache on workflow changes
 function updateWorkflow(workflow: Workflow) {
@@ -418,22 +437,23 @@ function renderDependencyGraph() {
 ```
 
 ### 4. Circular Dependency Prevention
+
 ```typescript
 // Check before adding dependency
 function addWorkflowDependency(workflowId: string, dependencyId: string) {
   const testWorkflows = [...workflows];
-  const workflow = testWorkflows.find(w => w.id === workflowId);
+  const workflow = testWorkflows.find((w) => w.id === workflowId);
 
   // Add test dependency
   workflow.actions.push(
-    createAction('RUN_WORKFLOW', { workflowId: dependencyId }, [0, 0])
+    createAction("RUN_WORKFLOW", { workflowId: dependencyId }, [0, 0])
   );
 
   // Check for cycles
   const cycles = analyzer.findCircularDependencies(testWorkflows);
 
   if (cycles.length > 0) {
-    alert('This would create a circular dependency!');
+    alert("This would create a circular dependency!");
     return false;
   }
 
@@ -509,6 +529,7 @@ function WorkflowDependencyGraph({ workflows }: { workflows: Workflow[] }) {
 See `workflow-dependency-analyzer.test.ts` for comprehensive test suite.
 
 Run tests:
+
 ```bash
 npm test workflow-dependency-analyzer
 ```
@@ -524,6 +545,7 @@ Part of qontinui-web project.
 ## Changelog
 
 ### Version 1.0.0
+
 - Initial release
 - Complete dependency analysis
 - Circular dependency detection

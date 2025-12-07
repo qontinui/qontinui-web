@@ -1,41 +1,41 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
-import { cn } from "@/lib/utils"
-import { VariableSelector } from "./VariableSelector"
-import { ExpressionEditor } from "./ExpressionEditor"
-import { ConditionConfig } from "@/lib/action-schema"
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { VariableSelector } from "./VariableSelector";
+import { ExpressionEditor } from "./ExpressionEditor";
+import { ConditionConfig } from "@/lib/action-schema";
 
 export interface ConditionEditorProps {
   /** Current condition configuration */
-  condition: ConditionConfig | undefined
+  condition: ConditionConfig | undefined;
 
   /** Called when condition changes */
-  onChange: (condition: ConditionConfig | undefined) => void
+  onChange: (condition: ConditionConfig | undefined) => void;
 
   /** Optional label text */
-  label?: string
+  label?: string;
 
   /** Optional class name */
-  className?: string
+  className?: string;
 
   /** List of existing variables for autocomplete */
-  existingVariables?: string[]
+  existingVariables?: string[];
 
   /** Whether to allow undefined/empty condition */
-  allowEmpty?: boolean
+  allowEmpty?: boolean;
 
   /** Available images for image_exists/image_vanished conditions */
-  images?: Array<{ id: string; name: string }>
+  images?: Array<{ id: string; name: string }>;
 }
 
 /**
@@ -58,52 +58,52 @@ export function ConditionEditor({
 }: ConditionEditorProps) {
   const [localCondition, setLocalCondition] = React.useState<ConditionConfig>(
     condition || {
-      type: 'variable',
-      variableName: '',
-      operator: '==',
-      expectedValue: '',
+      type: "variable",
+      variableName: "",
+      operator: "==",
+      expectedValue: "",
     }
-  )
+  );
 
   // Update local state when condition prop changes
   React.useEffect(() => {
     if (condition) {
-      setLocalCondition(condition)
+      setLocalCondition(condition);
     }
-  }, [condition])
+  }, [condition]);
 
   const updateCondition = (updates: Partial<ConditionConfig>) => {
-    const newCondition = { ...localCondition, ...updates }
-    setLocalCondition(newCondition)
-    onChange(newCondition)
-  }
+    const newCondition = { ...localCondition, ...updates };
+    setLocalCondition(newCondition);
+    onChange(newCondition);
+  };
 
-  const handleTypeChange = (type: ConditionConfig['type']) => {
+  const handleTypeChange = (type: ConditionConfig["type"]) => {
     const baseCondition: ConditionConfig = {
       type,
-      operator: '==',
+      operator: "==",
+    };
+
+    if (type === "variable") {
+      baseCondition.variableName = "";
+      baseCondition.expectedValue = "";
+    } else if (type === "expression") {
+      baseCondition.expression = "";
+    } else if (type === "image_exists" || type === "image_vanished") {
+      baseCondition.imageId = "";
+    } else if (type === "text_exists") {
+      baseCondition.text = "";
     }
 
-    if (type === 'variable') {
-      baseCondition.variableName = ''
-      baseCondition.expectedValue = ''
-    } else if (type === 'expression') {
-      baseCondition.expression = ''
-    } else if (type === 'image_exists' || type === 'image_vanished') {
-      baseCondition.imageId = ''
-    } else if (type === 'text_exists') {
-      baseCondition.text = ''
-    }
-
-    setLocalCondition(baseCondition)
-    onChange(baseCondition)
-  }
+    setLocalCondition(baseCondition);
+    onChange(baseCondition);
+  };
 
   const handleClear = () => {
     if (allowEmpty) {
-      onChange(undefined)
+      onChange(undefined);
     }
-  }
+  };
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -125,7 +125,9 @@ export function ConditionEditor({
         <Label className="text-xs text-gray-500">Condition Type</Label>
         <Select
           value={localCondition.type}
-          onValueChange={(value) => handleTypeChange(value as ConditionConfig['type'])}
+          onValueChange={(value) =>
+            handleTypeChange(value as ConditionConfig["type"])
+          }
         >
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
@@ -141,11 +143,11 @@ export function ConditionEditor({
       </div>
 
       {/* Variable Condition Fields */}
-      {localCondition.type === 'variable' && (
+      {localCondition.type === "variable" && (
         <>
           <VariableSelector
             label="Variable Name"
-            value={localCondition.variableName || ''}
+            value={localCondition.variableName || ""}
             onChange={(name) => updateCondition({ variableName: name })}
             existingVariables={existingVariables}
             placeholder="myVariable"
@@ -155,8 +157,12 @@ export function ConditionEditor({
           <div className="space-y-2">
             <Label className="text-xs text-gray-500">Operator</Label>
             <Select
-              value={localCondition.operator || '=='}
-              onValueChange={(value) => updateCondition({ operator: value as ConditionConfig['operator'] })}
+              value={localCondition.operator || "=="}
+              onValueChange={(value) =>
+                updateCondition({
+                  operator: value as ConditionConfig["operator"],
+                })
+              }
             >
               <SelectTrigger className="bg-transparent border-gray-700">
                 <SelectValue />
@@ -178,23 +184,26 @@ export function ConditionEditor({
             <Label className="text-xs text-gray-500">Expected Value</Label>
             <Input
               type="text"
-              value={localCondition.expectedValue?.toString() || ''}
-              onChange={(e) => updateCondition({ expectedValue: e.target.value })}
+              value={localCondition.expectedValue?.toString() || ""}
+              onChange={(e) =>
+                updateCondition({ expectedValue: e.target.value })
+              }
               placeholder="value"
               className="bg-transparent border-gray-700 font-mono text-sm"
             />
             <p className="text-xs text-gray-500">
-              Enter the value to compare against. Numbers and booleans will be automatically converted.
+              Enter the value to compare against. Numbers and booleans will be
+              automatically converted.
             </p>
           </div>
         </>
       )}
 
       {/* Expression Condition Fields */}
-      {localCondition.type === 'expression' && (
+      {localCondition.type === "expression" && (
         <ExpressionEditor
           label="Expression"
-          value={localCondition.expression || ''}
+          value={localCondition.expression || ""}
           onChange={(expr) => updateCondition({ expression: expr })}
           placeholder="e.g., count > 10 && status === 'ready'"
           helperText="Expression should evaluate to true or false"
@@ -203,11 +212,12 @@ export function ConditionEditor({
       )}
 
       {/* Image Exists / Image Vanished Condition Fields */}
-      {(localCondition.type === 'image_exists' || localCondition.type === 'image_vanished') && (
+      {(localCondition.type === "image_exists" ||
+        localCondition.type === "image_vanished") && (
         <div className="space-y-2">
           <Label className="text-xs text-gray-500">Image</Label>
           <Select
-            value={localCondition.imageId || ''}
+            value={localCondition.imageId || ""}
             onValueChange={(value) => updateCondition({ imageId: value })}
           >
             <SelectTrigger className="bg-transparent border-gray-700">
@@ -228,21 +238,21 @@ export function ConditionEditor({
             </SelectContent>
           </Select>
           <p className="text-xs text-gray-500">
-            {localCondition.type === 'image_exists'
-              ? 'Condition is true when the image is found on screen'
-              : 'Condition is true when the image is no longer visible on screen'}
+            {localCondition.type === "image_exists"
+              ? "Condition is true when the image is found on screen"
+              : "Condition is true when the image is no longer visible on screen"}
           </p>
         </div>
       )}
 
       {/* Text Exists Condition Fields */}
-      {localCondition.type === 'text_exists' && (
+      {localCondition.type === "text_exists" && (
         <>
           <div className="space-y-2">
             <Label className="text-xs text-gray-500">Text to Find</Label>
             <Input
               type="text"
-              value={localCondition.text || ''}
+              value={localCondition.text || ""}
               onChange={(e) => updateCondition({ text: e.target.value })}
               placeholder="Enter text to search for"
               className="bg-transparent border-gray-700 font-mono text-sm"
@@ -255,8 +265,12 @@ export function ConditionEditor({
           <div className="space-y-2">
             <Label className="text-xs text-gray-500">Operator (Optional)</Label>
             <Select
-              value={localCondition.operator || 'contains'}
-              onValueChange={(value) => updateCondition({ operator: value as ConditionConfig['operator'] })}
+              value={localCondition.operator || "contains"}
+              onValueChange={(value) =>
+                updateCondition({
+                  operator: value as ConditionConfig["operator"],
+                })
+              }
             >
               <SelectTrigger className="bg-transparent border-gray-700">
                 <SelectValue />
@@ -271,5 +285,5 @@ export function ConditionEditor({
         </>
       )}
     </div>
-  )
+  );
 }

@@ -12,7 +12,7 @@ Aggregates results with confidence weighting based on detection strength.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -59,7 +59,7 @@ class ButtonEnsembleDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Detector enable flags
             "enable_flat_detector": True,
@@ -125,7 +125,7 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -134,8 +134,8 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         return images
 
     async def _analyze_screenshot(
-        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, img: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Analyze single screenshot using ensemble approach"""
 
         all_detections = []
@@ -190,8 +190,8 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         return elements
 
     def _detect_flat_buttons(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float]]:
+        self, img: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float]]:
         """
         Detect flat design buttons (Material Design, Bootstrap style)
 
@@ -233,8 +233,8 @@ class ButtonEnsembleDetector(BaseAnalyzer):
 
             # Check for uniform color
             region_hsv = hsv[y : y + h, x : x + w]
-            hue_std = np.std(region_hsv[:, :, 0])
-            uniformity = max(0, 1 - (hue_std / 180))
+            hue_std = float(np.std(region_hsv[:, :, 0]))
+            uniformity = max(0.0, 1.0 - (hue_std / 180.0))
 
             if uniformity < 0.7:
                 continue
@@ -242,22 +242,24 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             # Flat buttons have clean edges
             edge_region = gray[max(0, y - 2) : y + h + 2, max(0, x - 2) : x + w + 2]
             edges = cv2.Canny(edge_region, 50, 150)
-            edge_density = np.sum(edges > 0) / edges.size
+            edge_density = float(np.sum(edges > 0) / edges.size)
 
             # Moderate edge density (has border but not too complex)
             if edge_density > 0.3:
                 continue
 
             # Confidence based on uniformity and typical characteristics
-            confidence = min(0.9, 0.5 + uniformity * 0.3 + (1 - edge_density) * 0.1)
+            confidence = float(
+                min(0.9, 0.5 + uniformity * 0.3 + (1 - edge_density) * 0.1)
+            )
 
             detections.append((BoundingBox(x=x, y=y, width=w, height=h), confidence))
 
         return detections
 
     def _detect_3d_buttons(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float]]:
+        self, img: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float]]:
         """
         Detect 3D/skeuomorphic buttons with shadows and gradients
 
@@ -328,15 +330,15 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             if shadow_darkness:
                 confidence += 0.15
 
-            confidence = min(0.9, confidence)
+            confidence = float(min(0.9, confidence))
 
             detections.append((BoundingBox(x=x, y=y, width=w, height=h), confidence))
 
         return detections
 
     def _detect_icon_buttons(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float]]:
+        self, img: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float]]:
         """
         Detect icon-only or icon+text buttons
 
@@ -389,7 +391,7 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             if not (0.1 <= edge_density <= 0.5):
                 continue
 
-            confidence = min(0.85, 0.4 + circularity * 0.3 + edge_density * 0.2)
+            confidence = float(min(0.85, 0.4 + circularity * 0.3 + edge_density * 0.2))
 
             # Add padding for button area
             padding = 4
@@ -405,8 +407,8 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         return detections
 
     def _detect_text_link_buttons(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float]]:
+        self, img: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float]]:
         """
         Detect minimal text-link style buttons
 
@@ -421,7 +423,7 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
         # Use MSER for text detection
-        mser = cv2.MSER_create(
+        mser = cv2.MSER_create(  # type: ignore[attr-defined]
             _min_area=100,
             _max_area=5000,
         )
@@ -448,7 +450,7 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             # Check for text-like patterns (horizontal strokes)
             region_img = gray[y : y + h, x : x + w]
             horizontal_profile = np.mean(region_img, axis=1)
-            profile_variance = np.var(horizontal_profile)
+            profile_variance = float(np.var(horizontal_profile))
 
             # Text has varying horizontal profile
             if profile_variance < 10:
@@ -470,8 +472,8 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         return detections
 
     def _apply_nms(
-        self, detections: List[Tuple[BoundingBox, float, str]], params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float, str]]:
+        self, detections: list[tuple[BoundingBox, float, str]], params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float, str]]:
         """
         Apply non-maximum suppression to remove overlapping detections
         Keep detection with highest confidence

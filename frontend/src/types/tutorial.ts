@@ -7,6 +7,142 @@
  */
 
 /**
+ * Tutorial display modes
+ * - overlay: Full-screen modal with sidebar navigation (original mode)
+ * - contextual: Embedded in-page tutorial with tooltips and spotlights
+ * - hybrid: Combination of both modes, switching as needed
+ */
+export type TutorialMode = "overlay" | "contextual" | "hybrid";
+
+/**
+ * Highlight types for contextual tutorials
+ */
+export type HighlightType = "spotlight" | "border" | "pulse" | "arrow";
+
+/**
+ * Tooltip position relative to target element
+ */
+export type TooltipPosition = "top" | "bottom" | "left" | "right" | "center";
+
+/**
+ * Validation types for interactive steps
+ */
+export type ValidationType = "action" | "state" | "input" | "custom";
+
+/**
+ * Target element configuration for contextual tutorials
+ * Defines which UI element to highlight and how to interact with it
+ */
+export interface TargetElement {
+  /** CSS selector or data-tutorial-id attribute to find the element */
+  selector: string;
+
+  /** Type of visual highlighting to apply */
+  highlightType: HighlightType;
+
+  /** Position of the tooltip relative to the target */
+  position: TooltipPosition;
+
+  /** Whether user can interact with the highlighted element */
+  allowInteraction: boolean;
+
+  /** Optional scroll behavior when focusing element */
+  scrollIntoView?: boolean;
+
+  /** Optional delay before highlighting (milliseconds) */
+  delay?: number;
+
+  /** Optional custom offset from element (pixels) */
+  offset?: { x: number; y: number };
+}
+
+/**
+ * Validation configuration for interactive tutorial steps
+ * Ensures users complete required actions before proceeding
+ */
+export interface StepValidation {
+  /** Type of validation to perform */
+  type: ValidationType;
+
+  /** Validation function (stored as string for serialization) */
+  condition: string;
+
+  /** Feedback messages for different outcomes */
+  feedback: {
+    /** Message shown when validation passes */
+    success: string;
+
+    /** Message shown when validation fails */
+    failure: string;
+
+    /** Optional hint to help user succeed */
+    hint?: string;
+  };
+
+  /** Optional timeout for validation (milliseconds) */
+  timeout?: number;
+
+  /** Optional flag to allow skipping validation */
+  optional?: boolean;
+}
+
+/**
+ * Tutorial trigger configuration
+ * Defines when and how tutorials should be automatically started
+ */
+export interface TutorialTriggers {
+  /** Auto-start on first page load */
+  automatic?: boolean;
+
+  /** Can be manually started from help menu */
+  manual?: boolean;
+
+  /** Contextual triggers based on user actions or page state */
+  contextual?: {
+    /** Event that triggers the tutorial */
+    event: string;
+
+    /** Condition function (stored as string) */
+    condition: string;
+  }[];
+}
+
+/**
+ * Workflow integration configuration
+ * Controls how tutorials interact with actual workflow editing
+ */
+export interface WorkflowIntegration {
+  /** Allow real editing during tutorial (vs. read-only demo) */
+  enableRealEditing: boolean;
+
+  /** Pre-populate with sample data */
+  provideSampleData: boolean;
+
+  /** Validate user actions match tutorial expectations */
+  validateUserActions: boolean;
+
+  /** Optional sample data to use */
+  sampleData?: Record<string, any>;
+
+  /** Optional cleanup function after tutorial */
+  cleanup?: boolean;
+}
+
+/**
+ * Step actions for setup and teardown
+ */
+export interface StepActions {
+  /** Function to run before step is shown */
+  before?: string;
+
+  /** Function to run after step is completed */
+  after?: string;
+
+  /** Whether to automatically execute the action (for demos) */
+  autoExecute?: boolean;
+}
+
+/**
  * Annotation types for highlighting and guiding users on screenshots
  *
  * @example
@@ -21,7 +157,7 @@
  * // Pulse animation effect
  * { type: 'pulse', x: 200, y: 300, width: 50, height: 50 }
  */
-export type AnnotationType = 'highlight' | 'arrow' | 'pulse' | 'label';
+export type AnnotationType = "highlight" | "arrow" | "pulse" | "label";
 
 /**
  * Annotation for marking up screenshots with visual guides
@@ -73,14 +209,14 @@ export interface Annotation {
  * { type: 'identify-element', component: 'ElementHighlighter', preloadedData: { gameScreenshot: '...' } }
  */
 export type TryItType =
-  | 'upload-screenshots'
-  | 'identify-element'
-  | 'create-action'
-  | 'configure-automation'
-  | 'test-automation'
-  | 'debug-pattern'
-  | 'optimize-automation'
-  | 'custom';
+  | "upload-screenshots"
+  | "identify-element"
+  | "create-action"
+  | "configure-automation"
+  | "test-automation"
+  | "debug-pattern"
+  | "optimize-automation"
+  | "custom";
 
 /**
  * Configuration for interactive "Try It" moments in tutorials
@@ -120,7 +256,7 @@ export interface TryItConfig {
 /**
  * Difficulty levels for tutorials and steps
  */
-export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
+export type DifficultyLevel = "beginner" | "intermediate" | "advanced";
 
 /**
  * Individual step in a tutorial sequence
@@ -137,6 +273,12 @@ export interface TutorialStep {
 
   /** Main content (supports markdown formatting) */
   content: string;
+
+  /** Optional additional details text */
+  details?: string;
+
+  /** Optional keyboard shortcuts for this step */
+  shortcuts?: string[];
 
   /** Optional path to a screenshot image for this step */
   screenshot?: string;
@@ -166,8 +308,26 @@ export interface TutorialStep {
   resources?: {
     title: string;
     url: string;
-    type?: 'documentation' | 'video' | 'article' | 'api-reference';
+    type?: "documentation" | "video" | "article" | "api-reference";
   }[];
+
+  /** Optional target element for contextual tutorials */
+  targetElement?: TargetElement;
+
+  /** Optional validation for interactive steps */
+  validation?: StepValidation;
+
+  /** Optional setup/teardown actions */
+  actions?: StepActions;
+
+  /** Optional action instruction string to display to user */
+  action?: string;
+
+  /** Optional flag to wait for user action before auto-advancing */
+  waitForUserAction?: boolean;
+
+  /** Optional custom component to render for this step */
+  customComponent?: string;
 }
 
 /**
@@ -189,11 +349,26 @@ export interface Tutorial {
   /** Estimated duration (e.g., "15 minutes", "1 hour") */
   duration: string;
 
+  /** Estimated time in minutes (numeric) */
+  estimatedTime?: number;
+
   /** Overall difficulty level of the tutorial */
   difficulty: DifficultyLevel;
 
   /** Ordered array of tutorial steps */
   steps: TutorialStep[];
+
+  /** Tutorial display mode */
+  mode: TutorialMode;
+
+  /** Optional target page/route for contextual tutorials */
+  targetPage?: string;
+
+  /** Optional trigger configuration */
+  triggers?: TutorialTriggers;
+
+  /** Optional workflow integration settings */
+  workflowIntegration?: WorkflowIntegration;
 
   /** Optional complete automation configuration resulting from following the tutorial */
   finalProject?: Record<string, any>;
@@ -367,7 +542,7 @@ export interface TutorialSystemConfig {
  * Type guard to check if a value is a valid AnnotationType
  */
 export function isAnnotationType(value: any): value is AnnotationType {
-  return ['highlight', 'arrow', 'pulse', 'label'].includes(value);
+  return ["highlight", "arrow", "pulse", "label"].includes(value);
 }
 
 /**
@@ -375,14 +550,14 @@ export function isAnnotationType(value: any): value is AnnotationType {
  */
 export function isTryItType(value: any): value is TryItType {
   return [
-    'upload-screenshots',
-    'identify-element',
-    'create-action',
-    'configure-automation',
-    'test-automation',
-    'debug-pattern',
-    'optimize-automation',
-    'custom',
+    "upload-screenshots",
+    "identify-element",
+    "create-action",
+    "configure-automation",
+    "test-automation",
+    "debug-pattern",
+    "optimize-automation",
+    "custom",
   ].includes(value);
 }
 
@@ -390,5 +565,5 @@ export function isTryItType(value: any): value is TryItType {
  * Type guard to check if a value is a valid DifficultyLevel
  */
 export function isDifficultyLevel(value: any): value is DifficultyLevel {
-  return ['beginner', 'intermediate', 'advanced'].includes(value);
+  return ["beginner", "intermediate", "advanced"].includes(value);
 }

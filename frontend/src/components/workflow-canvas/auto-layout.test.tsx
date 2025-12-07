@@ -10,25 +10,36 @@
  * - History
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { Workflow } from '@/lib/action-schema/action-types';
-import { LayoutStyle } from '@/lib/workflow-layout/auto-layout';
-import { LayoutService, getLayoutService, resetLayoutService } from '@/services/layout-service';
-import { calculateLayoutStatistics, compareLayouts } from '@/services/layout-statistics';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { Workflow } from "@/lib/action-schema/action-types";
+import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
+import {
+  LayoutService,
+  getLayoutService,
+  resetLayoutService,
+} from "@/services/layout-service";
+import {
+  calculateLayoutStatistics,
+  compareLayouts,
+} from "@/services/layout-statistics";
 import {
   getAllPresets,
   getPresetById,
   saveCustomPreset,
   deleteCustomPreset,
   BUILTIN_PRESETS,
-} from '@/services/layout-presets';
+} from "@/services/layout-presets";
 import {
   getLayoutSuggestions,
   autoFixSuggestions,
   hasCriticalIssues,
-} from '@/services/layout-suggestions';
-import { LayoutAnimationController, extractPositions, applyPositions } from '@/components/workflow-canvas/layout-animation';
-import { useLayoutHistory } from '@/stores/layout-history';
+} from "@/services/layout-suggestions";
+import {
+  LayoutAnimationController,
+  extractPositions,
+  applyPositions,
+} from "@/components/workflow-canvas/layout-animation";
+import { useLayoutHistory } from "@/stores/layout-history";
 
 // ============================================================================
 // Test Fixtures
@@ -36,36 +47,36 @@ import { useLayoutHistory } from '@/stores/layout-history';
 
 function createTestWorkflow(): Workflow {
   return {
-    id: 'test-workflow',
-    name: 'Test Workflow',
-    version: '1.0.0',
-    format: 'graph',
+    id: "test-workflow",
+    name: "Test Workflow",
+    version: "1.0.0",
+    format: "graph",
     actions: [
       {
-        id: 'a1',
-        type: 'CLICK',
+        id: "a1",
+        type: "CLICK",
         config: {} as any,
         position: [100, 100],
       },
       {
-        id: 'a2',
-        type: 'TYPE',
+        id: "a2",
+        type: "TYPE",
         config: {} as any,
         position: [100, 200],
       },
       {
-        id: 'a3',
-        type: 'WAIT',
+        id: "a3",
+        type: "WAIT",
         config: {} as any,
         position: [100, 300],
       },
     ],
     connections: {
       a1: {
-        main: [[{ action: 'a2', type: 'main', index: 0 }]],
+        main: [[{ action: "a2", type: "main", index: 0 }]],
       },
       a2: {
-        main: [[{ action: 'a3', type: 'main', index: 0 }]],
+        main: [[{ action: "a3", type: "main", index: 0 }]],
       },
     },
   };
@@ -73,20 +84,20 @@ function createTestWorkflow(): Workflow {
 
 function createOverlappingWorkflow(): Workflow {
   return {
-    id: 'overlapping-workflow',
-    name: 'Overlapping Workflow',
-    version: '1.0.0',
-    format: 'graph',
+    id: "overlapping-workflow",
+    name: "Overlapping Workflow",
+    version: "1.0.0",
+    format: "graph",
     actions: [
       {
-        id: 'a1',
-        type: 'CLICK',
+        id: "a1",
+        type: "CLICK",
         config: {} as any,
         position: [100, 100],
       },
       {
-        id: 'a2',
-        type: 'TYPE',
+        id: "a2",
+        type: "TYPE",
         config: {} as any,
         position: [110, 110], // Overlapping with a1
       },
@@ -97,32 +108,32 @@ function createOverlappingWorkflow(): Workflow {
 
 function createBranchingWorkflow(): Workflow {
   return {
-    id: 'branching-workflow',
-    name: 'Branching Workflow',
-    version: '1.0.0',
-    format: 'graph',
+    id: "branching-workflow",
+    name: "Branching Workflow",
+    version: "1.0.0",
+    format: "graph",
     actions: [
       {
-        id: 'a1',
-        type: 'IF',
+        id: "a1",
+        type: "IF",
         config: {} as any,
         position: [100, 100],
       },
       {
-        id: 'a2',
-        type: 'CLICK',
+        id: "a2",
+        type: "CLICK",
         config: {} as any,
         position: [100, 200],
       },
       {
-        id: 'a3',
-        type: 'TYPE',
+        id: "a3",
+        type: "TYPE",
         config: {} as any,
         position: [300, 200],
       },
       {
-        id: 'a4',
-        type: 'WAIT',
+        id: "a4",
+        type: "WAIT",
         config: {} as any,
         position: [200, 300],
       },
@@ -130,15 +141,15 @@ function createBranchingWorkflow(): Workflow {
     connections: {
       a1: {
         main: [
-          [{ action: 'a2', type: 'main', index: 0 }], // True branch
-          [{ action: 'a3', type: 'main', index: 0 }], // False branch
+          [{ action: "a2", type: "main", index: 0 }], // True branch
+          [{ action: "a3", type: "main", index: 0 }], // False branch
         ],
       },
       a2: {
-        main: [[{ action: 'a4', type: 'main', index: 0 }]],
+        main: [[{ action: "a4", type: "main", index: 0 }]],
       },
       a3: {
-        main: [[{ action: 'a4', type: 'main', index: 0 }]],
+        main: [[{ action: "a4", type: "main", index: 0 }]],
       },
     },
   };
@@ -148,7 +159,7 @@ function createBranchingWorkflow(): Workflow {
 // Layout Service Tests
 // ============================================================================
 
-describe('LayoutService', () => {
+describe("LayoutService", () => {
   let layoutService: LayoutService;
   let workflow: Workflow;
 
@@ -158,43 +169,45 @@ describe('LayoutService', () => {
     workflow = createTestWorkflow();
   });
 
-  it('should apply layout to workflow', () => {
-    const originalPositions = workflow.actions.map(a => a.position);
+  it("should apply layout to workflow", () => {
+    const originalPositions = workflow.actions.map((a) => a.position);
 
     layoutService.applyLayout(workflow, LayoutStyle.HIERARCHICAL);
 
     // Positions should change
-    const newPositions = workflow.actions.map(a => a.position);
+    const newPositions = workflow.actions.map((a) => a.position);
     expect(newPositions).not.toEqual(originalPositions);
   });
 
-  it('should preview layout without mutating workflow', () => {
-    const originalPositions = workflow.actions.map(a => [...a.position]);
+  it("should preview layout without mutating workflow", () => {
+    const originalPositions = workflow.actions.map((a) => [...a.position]);
 
     const preview = layoutService.previewLayout(workflow, LayoutStyle.TREE);
 
     // Original workflow unchanged
-    expect(workflow.actions.map(a => a.position)).toEqual(originalPositions);
+    expect(workflow.actions.map((a) => a.position)).toEqual(originalPositions);
 
     // Preview has different positions
-    expect(preview.workflow.actions.map(a => a.position)).not.toEqual(originalPositions);
+    expect(preview.workflow.actions.map((a) => a.position)).not.toEqual(
+      originalPositions
+    );
   });
 
-  it('should detect overlapping nodes', () => {
+  it("should detect overlapping nodes", () => {
     const overlapping = createOverlappingWorkflow();
 
     expect(layoutService.hasOverlaps(overlapping)).toBe(true);
     expect(layoutService.needsLayout(overlapping)).toBe(true);
   });
 
-  it('should detect unpositioned nodes', () => {
+  it("should detect unpositioned nodes", () => {
     workflow.actions[0].position = [0, 0];
 
     expect(layoutService.hasUnpositioned(workflow)).toBe(true);
     expect(layoutService.needsLayout(workflow)).toBe(true);
   });
 
-  it('should recommend layout style', () => {
+  it("should recommend layout style", () => {
     const recommendation = layoutService.getRecommendedLayout(workflow);
 
     expect(recommendation).toBeDefined();
@@ -205,14 +218,14 @@ describe('LayoutService', () => {
     expect(recommendation.alternatives).toHaveLength(4);
   });
 
-  it('should recommend hierarchical for branching workflows', () => {
+  it("should recommend hierarchical for branching workflows", () => {
     const branching = createBranchingWorkflow();
     const recommendation = layoutService.getRecommendedLayout(branching);
 
     expect(recommendation.style).toBe(LayoutStyle.HIERARCHICAL);
   });
 
-  it('should preserve manual positions when requested', () => {
+  it("should preserve manual positions when requested", () => {
     const preservedId = workflow.actions[0].id;
     const preservedPosition = [...workflow.actions[0].position];
 
@@ -229,8 +242,8 @@ describe('LayoutService', () => {
 // Statistics Tests
 // ============================================================================
 
-describe('LayoutStatistics', () => {
-  it('should calculate basic statistics', () => {
+describe("LayoutStatistics", () => {
+  it("should calculate basic statistics", () => {
     const workflow = createTestWorkflow();
     const stats = calculateLayoutStatistics(workflow);
 
@@ -241,14 +254,14 @@ describe('LayoutStatistics', () => {
     expect(stats.layoutScore).toBeLessThanOrEqual(100);
   });
 
-  it('should detect overlaps', () => {
+  it("should detect overlaps", () => {
     const workflow = createOverlappingWorkflow();
     const stats = calculateLayoutStatistics(workflow);
 
     expect(stats.nodesOverlapping).toBeGreaterThan(0);
   });
 
-  it('should compare layouts', () => {
+  it("should compare layouts", () => {
     const before = createOverlappingWorkflow();
     const after = JSON.parse(JSON.stringify(before));
 
@@ -263,7 +276,7 @@ describe('LayoutStatistics', () => {
     expect(comparison.metrics.overlaps.change).toBeGreaterThan(0);
   });
 
-  it('should calculate edge crossings', () => {
+  it("should calculate edge crossings", () => {
     const workflow = createBranchingWorkflow();
     const stats = calculateLayoutStatistics(workflow);
 
@@ -271,7 +284,7 @@ describe('LayoutStatistics', () => {
     // Edge crossings depend on layout
   });
 
-  it('should calculate compactness', () => {
+  it("should calculate compactness", () => {
     const workflow = createTestWorkflow();
     const stats = calculateLayoutStatistics(workflow);
 
@@ -284,59 +297,59 @@ describe('LayoutStatistics', () => {
 // Presets Tests
 // ============================================================================
 
-describe('LayoutPresets', () => {
+describe("LayoutPresets", () => {
   beforeEach(() => {
     // Clear custom presets
-    const customs = getAllPresets().filter(p => !p.builtIn);
-    customs.forEach(p => deleteCustomPreset(p.id));
+    const customs = getAllPresets().filter((p) => !p.builtIn);
+    customs.forEach((p) => deleteCustomPreset(p.id));
   });
 
-  it('should have built-in presets', () => {
+  it("should have built-in presets", () => {
     expect(BUILTIN_PRESETS).toHaveLength(10);
-    expect(BUILTIN_PRESETS.every(p => p.builtIn)).toBe(true);
+    expect(BUILTIN_PRESETS.every((p) => p.builtIn)).toBe(true);
   });
 
-  it('should get preset by id', () => {
-    const preset = getPresetById('readable-standard');
+  it("should get preset by id", () => {
+    const preset = getPresetById("readable-standard");
 
     expect(preset).toBeDefined();
-    expect(preset?.name).toBe('Readable Standard');
+    expect(preset?.name).toBe("Readable Standard");
     expect(preset?.style).toBe(LayoutStyle.HIERARCHICAL);
   });
 
-  it('should get all presets', () => {
+  it("should get all presets", () => {
     const presets = getAllPresets();
 
     expect(presets.length).toBeGreaterThanOrEqual(10);
   });
 
-  it('should save custom preset', () => {
+  it("should save custom preset", () => {
     const custom = saveCustomPreset({
-      name: 'My Custom Preset',
-      description: 'Test preset',
+      name: "My Custom Preset",
+      description: "Test preset",
       style: LayoutStyle.TREE,
       options: {
         horizontalSpacing: 150,
         verticalSpacing: 100,
       },
-      tags: ['test'],
+      tags: ["test"],
     });
 
     expect(custom.id).toBeDefined();
     expect(custom.builtIn).toBe(false);
-    expect(custom.category).toBe('custom');
+    expect(custom.category).toBe("custom");
     expect(custom.createdAt).toBeDefined();
 
     // Should be retrievable
     const retrieved = getPresetById(custom.id);
     expect(retrieved).toBeDefined();
-    expect(retrieved?.name).toBe('My Custom Preset');
+    expect(retrieved?.name).toBe("My Custom Preset");
   });
 
-  it('should delete custom preset', () => {
+  it("should delete custom preset", () => {
     const custom = saveCustomPreset({
-      name: 'To Delete',
-      description: 'Will be deleted',
+      name: "To Delete",
+      description: "Will be deleted",
       style: LayoutStyle.CIRCULAR,
       options: {},
     });
@@ -348,8 +361,8 @@ describe('LayoutPresets', () => {
     expect(retrieved).toBeUndefined();
   });
 
-  it('should not delete built-in preset', () => {
-    const deleted = deleteCustomPreset('readable-standard');
+  it("should not delete built-in preset", () => {
+    const deleted = deleteCustomPreset("readable-standard");
     expect(deleted).toBe(false);
   });
 });
@@ -358,21 +371,21 @@ describe('LayoutPresets', () => {
 // Suggestions Tests
 // ============================================================================
 
-describe('LayoutSuggestions', () => {
-  it('should detect overlap issues', () => {
+describe("LayoutSuggestions", () => {
+  it("should detect overlap issues", () => {
     const workflow = createOverlappingWorkflow();
     const suggestions = getLayoutSuggestions(workflow);
 
-    const overlapSuggestions = suggestions.filter(s => s.type === 'overlap');
+    const overlapSuggestions = suggestions.filter((s) => s.type === "overlap");
     expect(overlapSuggestions.length).toBeGreaterThan(0);
-    expect(overlapSuggestions[0].severity).toBe('error');
+    expect(overlapSuggestions[0].severity).toBe("error");
   });
 
-  it('should provide quick fixes', () => {
+  it("should provide quick fixes", () => {
     const workflow = createOverlappingWorkflow();
     const suggestions = getLayoutSuggestions(workflow);
 
-    const overlapSuggestion = suggestions.find(s => s.type === 'overlap');
+    const overlapSuggestion = suggestions.find((s) => s.type === "overlap");
     expect(overlapSuggestion).toBeDefined();
 
     const fixed = overlapSuggestion!.quickFix(workflow);
@@ -381,17 +394,17 @@ describe('LayoutSuggestions', () => {
     expect(fixedStats.nodesOverlapping).toBe(0);
   });
 
-  it('should auto-fix all issues', () => {
+  it("should auto-fix all issues", () => {
     const workflow = createOverlappingWorkflow();
 
     const fixed = autoFixSuggestions(workflow);
     const fixedSuggestions = getLayoutSuggestions(fixed);
 
-    const errors = fixedSuggestions.filter(s => s.severity === 'error');
+    const errors = fixedSuggestions.filter((s) => s.severity === "error");
     expect(errors.length).toBe(0);
   });
 
-  it('should detect critical issues', () => {
+  it("should detect critical issues", () => {
     const overlapping = createOverlappingWorkflow();
     expect(hasCriticalIssues(overlapping)).toBe(true);
 
@@ -399,15 +412,17 @@ describe('LayoutSuggestions', () => {
     expect(hasCriticalIssues(normal)).toBe(false);
   });
 
-  it('should group suggestions by severity', () => {
+  it("should group suggestions by severity", () => {
     const workflow = createOverlappingWorkflow();
     const suggestions = getLayoutSuggestions(workflow);
 
-    const errors = suggestions.filter(s => s.severity === 'error');
-    const warnings = suggestions.filter(s => s.severity === 'warning');
-    const info = suggestions.filter(s => s.severity === 'info');
+    const errors = suggestions.filter((s) => s.severity === "error");
+    const warnings = suggestions.filter((s) => s.severity === "warning");
+    const info = suggestions.filter((s) => s.severity === "info");
 
-    expect(errors.length + warnings.length + info.length).toBe(suggestions.length);
+    expect(errors.length + warnings.length + info.length).toBe(
+      suggestions.length
+    );
   });
 });
 
@@ -415,8 +430,8 @@ describe('LayoutSuggestions', () => {
 // Animation Tests
 // ============================================================================
 
-describe('LayoutAnimation', () => {
-  it('should extract positions from workflow', () => {
+describe("LayoutAnimation", () => {
+  it("should extract positions from workflow", () => {
     const workflow = createTestWorkflow();
     const positions = extractPositions(workflow);
 
@@ -426,7 +441,7 @@ describe('LayoutAnimation', () => {
     expect(positions.a3).toEqual([100, 300]);
   });
 
-  it('should apply positions to workflow', () => {
+  it("should apply positions to workflow", () => {
     const workflow = createTestWorkflow();
     const newPositions = {
       a1: [200, 200] as [number, number],
@@ -441,7 +456,7 @@ describe('LayoutAnimation', () => {
     expect(workflow.actions[2].position).toEqual([400, 400]);
   });
 
-  it('should animate positions', async () => {
+  it("should animate positions", async () => {
     const controller = new LayoutAnimationController();
 
     const fromPositions = {
@@ -462,22 +477,19 @@ describe('LayoutAnimation', () => {
         frameCount++;
         updates.push([...positions.a1]);
       },
-      { duration: 100, easing: 'linear' }
+      { duration: 100, easing: "linear" }
     );
 
     expect(frameCount).toBeGreaterThan(1);
     expect(updates[updates.length - 1]).toEqual([100, 100]);
   });
 
-  it('should cancel animation', () => {
+  it("should cancel animation", () => {
     const controller = new LayoutAnimationController();
 
-    controller.animate(
-      { a1: [0, 0] },
-      { a1: [100, 100] },
-      () => {},
-      { duration: 1000 }
-    );
+    controller.animate({ a1: [0, 0] }, { a1: [100, 100] }, () => {}, {
+      duration: 1000,
+    });
 
     expect(controller.isAnimating()).toBe(true);
 
@@ -491,13 +503,13 @@ describe('LayoutAnimation', () => {
 // History Tests
 // ============================================================================
 
-describe('LayoutHistory', () => {
+describe("LayoutHistory", () => {
   beforeEach(() => {
     const history = useLayoutHistory.getState();
     history.clear();
   });
 
-  it('should add layout to history', () => {
+  it("should add layout to history", () => {
     const history = useLayoutHistory.getState();
     const workflow = createTestWorkflow();
 
@@ -508,7 +520,7 @@ describe('LayoutHistory', () => {
     expect(entries[0].style).toBe(LayoutStyle.HIERARCHICAL);
   });
 
-  it('should undo layout', () => {
+  it("should undo layout", () => {
     const history = useLayoutHistory.getState();
     const workflow1 = createTestWorkflow();
     const workflow2 = JSON.parse(JSON.stringify(workflow1));
@@ -524,7 +536,7 @@ describe('LayoutHistory', () => {
     expect(entry?.style).toBe(LayoutStyle.HIERARCHICAL);
   });
 
-  it('should redo layout', () => {
+  it("should redo layout", () => {
     const history = useLayoutHistory.getState();
     const workflow = createTestWorkflow();
 
@@ -539,7 +551,7 @@ describe('LayoutHistory', () => {
     expect(entry?.style).toBe(LayoutStyle.TREE);
   });
 
-  it('should limit history size', () => {
+  it("should limit history size", () => {
     const history = useLayoutHistory.getState();
     history.setMaxHistorySize(3);
 
@@ -553,7 +565,7 @@ describe('LayoutHistory', () => {
     expect(entries.length).toBeLessThanOrEqual(3);
   });
 
-  it('should clear history', () => {
+  it("should clear history", () => {
     const history = useLayoutHistory.getState();
     const workflow = createTestWorkflow();
 
@@ -567,24 +579,24 @@ describe('LayoutHistory', () => {
     expect(history.canRedo()).toBe(false);
   });
 
-  it('should branch history on new changes after undo', () => {
+  it("should branch history on new changes after undo", () => {
     const history = useLayoutHistory.getState();
     const workflow = createTestWorkflow();
 
-    history.addLayout(workflow, LayoutStyle.HIERARCHICAL, {}, 'Layout 1');
-    history.addLayout(workflow, LayoutStyle.TREE, {}, 'Layout 2');
-    history.addLayout(workflow, LayoutStyle.CIRCULAR, {}, 'Layout 3');
+    history.addLayout(workflow, LayoutStyle.HIERARCHICAL, {}, "Layout 1");
+    history.addLayout(workflow, LayoutStyle.TREE, {}, "Layout 2");
+    history.addLayout(workflow, LayoutStyle.CIRCULAR, {}, "Layout 3");
 
     // Undo twice
     history.undo();
     history.undo();
 
     // Add new layout (branches history)
-    history.addLayout(workflow, LayoutStyle.FORCE_DIRECTED, {}, 'Layout 4');
+    history.addLayout(workflow, LayoutStyle.FORCE_DIRECTED, {}, "Layout 4");
 
     const entries = history.getEntries();
     expect(entries).toHaveLength(2); // Layout 1 + Layout 4
-    expect(entries[1].description).toBe('Layout 4');
+    expect(entries[1].description).toBe("Layout 4");
   });
 });
 
@@ -592,14 +604,14 @@ describe('LayoutHistory', () => {
 // Integration Tests
 // ============================================================================
 
-describe('Integration', () => {
-  it('should apply preset and save to history', () => {
+describe("Integration", () => {
+  it("should apply preset and save to history", () => {
     const workflow = createTestWorkflow();
     const layoutService = getLayoutService();
     const history = useLayoutHistory.getState();
     history.clear();
 
-    const preset = getPresetById('readable-standard')!;
+    const preset = getPresetById("readable-standard")!;
 
     // Apply layout
     layoutService.applyLayout(workflow, preset.style, preset.options);
@@ -608,7 +620,13 @@ describe('Integration', () => {
     const stats = calculateLayoutStatistics(workflow);
 
     // Save to history
-    history.addLayout(workflow, preset.style, preset.options, 'Applied preset', stats);
+    history.addLayout(
+      workflow,
+      preset.style,
+      preset.options,
+      "Applied preset",
+      stats
+    );
 
     // Verify
     const entries = history.getEntries();
@@ -617,7 +635,7 @@ describe('Integration', () => {
     expect(entries[0].statistics?.nodeCount).toBe(3);
   });
 
-  it('should detect issues, apply fix, and verify improvement', () => {
+  it("should detect issues, apply fix, and verify improvement", () => {
     const workflow = createOverlappingWorkflow();
 
     // Get suggestions
@@ -640,7 +658,7 @@ describe('Integration', () => {
     expect(comparison.isImprovement).toBe(true);
   });
 
-  it('should preview multiple styles and choose best', () => {
+  it("should preview multiple styles and choose best", () => {
     const workflow = createBranchingWorkflow();
     const layoutService = getLayoutService();
 
@@ -650,14 +668,15 @@ describe('Integration', () => {
       LayoutStyle.HORIZONTAL,
     ];
 
-    const previews = styles.map(style => ({
+    const previews = styles.map((style) => ({
       style,
       preview: layoutService.previewLayout(workflow, style),
     }));
 
     // Find best by score
     const best = previews.reduce((prev, current) =>
-      current.preview.statistics.layoutScore > prev.preview.statistics.layoutScore
+      current.preview.statistics.layoutScore >
+      prev.preview.statistics.layoutScore
         ? current
         : prev
     );

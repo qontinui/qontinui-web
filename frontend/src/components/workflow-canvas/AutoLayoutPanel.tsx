@@ -13,13 +13,17 @@
  * - Save as preset button
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import type { Workflow } from '@/lib/action-schema/action-types';
-import { getLayoutService, LayoutOptions, LayoutPreviewResult } from '@/services/layout-service';
-import { LayoutStyle } from '@/lib/workflow-layout/auto-layout';
-import { LayoutPreview } from './LayoutPreview';
-import { LayoutSuggestions } from './LayoutSuggestions';
-import { formatStatistics } from '@/services/layout-statistics';
+import React, { useState, useEffect, useMemo } from "react";
+import type { Workflow } from "@/lib/action-schema/action-types";
+import {
+  getLayoutService,
+  LayoutOptions,
+  LayoutPreviewResult,
+} from "@/services/layout-service";
+import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
+import { LayoutPreview } from "./LayoutPreview";
+import { LayoutSuggestions } from "./LayoutSuggestions";
+import { formatStatistics } from "@/services/layout-statistics";
 
 // ============================================================================
 // Types
@@ -35,7 +39,7 @@ interface LayoutPreset {
   id: string;
   name: string;
   description: string;
-  category: 'compact' | 'spacious' | 'balanced' | 'custom';
+  category: "compact" | "spacious" | "balanced" | "custom";
   style: LayoutStyle;
   options: LayoutOptions;
 }
@@ -46,10 +50,10 @@ interface LayoutPreset {
 
 const BUILTIN_PRESETS: LayoutPreset[] = [
   {
-    id: 'compact-hierarchical',
-    name: 'Compact Hierarchical',
-    description: 'Dense top-to-bottom layout',
-    category: 'compact',
+    id: "compact-hierarchical",
+    name: "Compact Hierarchical",
+    description: "Dense top-to-bottom layout",
+    category: "compact",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       nodeWidth: 180,
@@ -57,14 +61,14 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 150,
       verticalSpacing: 100,
       branchOffset: 120,
-      minNodeSpacing: 15
-    }
+      minNodeSpacing: 15,
+    },
   },
   {
-    id: 'spacious-hierarchical',
-    name: 'Spacious Hierarchical',
-    description: 'Roomy top-to-bottom layout',
-    category: 'spacious',
+    id: "spacious-hierarchical",
+    name: "Spacious Hierarchical",
+    description: "Roomy top-to-bottom layout",
+    category: "spacious",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       nodeWidth: 180,
@@ -72,14 +76,14 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 250,
       verticalSpacing: 150,
       branchOffset: 180,
-      minNodeSpacing: 30
-    }
+      minNodeSpacing: 30,
+    },
   },
   {
-    id: 'balanced-hierarchical',
-    name: 'Balanced Hierarchical',
-    description: 'Standard top-to-bottom layout',
-    category: 'balanced',
+    id: "balanced-hierarchical",
+    name: "Balanced Hierarchical",
+    description: "Standard top-to-bottom layout",
+    category: "balanced",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       nodeWidth: 180,
@@ -87,14 +91,14 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 200,
       verticalSpacing: 120,
       branchOffset: 150,
-      minNodeSpacing: 20
-    }
+      minNodeSpacing: 20,
+    },
   },
   {
-    id: 'compact-horizontal',
-    name: 'Compact Horizontal',
-    description: 'Dense left-to-right layout',
-    category: 'compact',
+    id: "compact-horizontal",
+    name: "Compact Horizontal",
+    description: "Dense left-to-right layout",
+    category: "compact",
     style: LayoutStyle.HORIZONTAL,
     options: {
       nodeWidth: 180,
@@ -102,14 +106,14 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 150,
       verticalSpacing: 100,
       branchOffset: 120,
-      minNodeSpacing: 15
-    }
+      minNodeSpacing: 15,
+    },
   },
   {
-    id: 'spacious-horizontal',
-    name: 'Spacious Horizontal',
-    description: 'Roomy left-to-right layout',
-    category: 'spacious',
+    id: "spacious-horizontal",
+    name: "Spacious Horizontal",
+    description: "Roomy left-to-right layout",
+    category: "spacious",
     style: LayoutStyle.HORIZONTAL,
     options: {
       nodeWidth: 180,
@@ -117,14 +121,14 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 250,
       verticalSpacing: 150,
       branchOffset: 180,
-      minNodeSpacing: 30
-    }
+      minNodeSpacing: 30,
+    },
   },
   {
-    id: 'balanced-tree',
-    name: 'Balanced Tree',
-    description: 'Standard tree layout',
-    category: 'balanced',
+    id: "balanced-tree",
+    name: "Balanced Tree",
+    description: "Standard tree layout",
+    category: "balanced",
     style: LayoutStyle.TREE,
     options: {
       nodeWidth: 180,
@@ -132,14 +136,14 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 180,
       verticalSpacing: 110,
       branchOffset: 140,
-      minNodeSpacing: 20
-    }
+      minNodeSpacing: 20,
+    },
   },
   {
-    id: 'force-directed-default',
-    name: 'Force-Directed Default',
-    description: 'Physics-based organic layout',
-    category: 'balanced',
+    id: "force-directed-default",
+    name: "Force-Directed Default",
+    description: "Physics-based organic layout",
+    category: "balanced",
     style: LayoutStyle.FORCE_DIRECTED,
     options: {
       nodeWidth: 180,
@@ -147,14 +151,14 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 200,
       verticalSpacing: 120,
       branchOffset: 150,
-      minNodeSpacing: 25
-    }
+      minNodeSpacing: 25,
+    },
   },
   {
-    id: 'circular-default',
-    name: 'Circular Default',
-    description: 'Nodes arranged in a circle',
-    category: 'balanced',
+    id: "circular-default",
+    name: "Circular Default",
+    description: "Nodes arranged in a circle",
+    category: "balanced",
     style: LayoutStyle.CIRCULAR,
     options: {
       nodeWidth: 180,
@@ -162,14 +166,14 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 200,
       verticalSpacing: 120,
       branchOffset: 150,
-      minNodeSpacing: 20
-    }
+      minNodeSpacing: 20,
+    },
   },
   {
-    id: 'presentation-mode',
-    name: 'Presentation Mode',
-    description: 'Extra spacious for presentations',
-    category: 'spacious',
+    id: "presentation-mode",
+    name: "Presentation Mode",
+    description: "Extra spacious for presentations",
+    category: "spacious",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       nodeWidth: 180,
@@ -177,14 +181,14 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 300,
       verticalSpacing: 180,
       branchOffset: 200,
-      minNodeSpacing: 40
-    }
+      minNodeSpacing: 40,
+    },
   },
   {
-    id: 'debug-mode',
-    name: 'Debug Mode',
-    description: 'Ultra compact for debugging',
-    category: 'compact',
+    id: "debug-mode",
+    name: "Debug Mode",
+    description: "Ultra compact for debugging",
+    category: "compact",
     style: LayoutStyle.TREE,
     options: {
       nodeWidth: 180,
@@ -192,9 +196,9 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 120,
       verticalSpacing: 90,
       branchOffset: 100,
-      minNodeSpacing: 10
-    }
-  }
+      minNodeSpacing: 10,
+    },
+  },
 ];
 
 // ============================================================================
@@ -210,64 +214,75 @@ interface LayoutStyleInfo {
 
 const LAYOUT_STYLES: Record<LayoutStyle, LayoutStyleInfo> = {
   [LayoutStyle.HIERARCHICAL]: {
-    name: 'Hierarchical',
-    description: 'Top-to-bottom flow',
-    icon: '⬇️',
-    bestFor: ['Branching workflows', 'Deep hierarchies', 'General purpose']
+    name: "Hierarchical",
+    description: "Top-to-bottom flow",
+    icon: "⬇️",
+    bestFor: ["Branching workflows", "Deep hierarchies", "General purpose"],
   },
   [LayoutStyle.HORIZONTAL]: {
-    name: 'Horizontal',
-    description: 'Left-to-right flow',
-    icon: '➡️',
-    bestFor: ['Linear workflows', 'Sequential processes', 'Timelines']
+    name: "Horizontal",
+    description: "Left-to-right flow",
+    icon: "➡️",
+    bestFor: ["Linear workflows", "Sequential processes", "Timelines"],
   },
   [LayoutStyle.TREE]: {
-    name: 'Tree',
-    description: 'Compact tree structure',
-    icon: '🌳',
-    bestFor: ['Deeply nested workflows', 'Compact layouts', 'Decision trees']
+    name: "Tree",
+    description: "Compact tree structure",
+    icon: "🌳",
+    bestFor: ["Deeply nested workflows", "Compact layouts", "Decision trees"],
   },
   [LayoutStyle.FORCE_DIRECTED]: {
-    name: 'Force-Directed',
-    description: 'Physics-based layout',
-    icon: '🔮',
-    bestFor: ['Complex graphs', 'Interconnected nodes', 'Organic structures']
+    name: "Force-Directed",
+    description: "Physics-based layout",
+    icon: "🔮",
+    bestFor: ["Complex graphs", "Interconnected nodes", "Organic structures"],
   },
   [LayoutStyle.CIRCULAR]: {
-    name: 'Circular',
-    description: 'Circular arrangement',
-    icon: '⭕',
-    bestFor: ['Small workflows', 'Cycles', 'Visualization']
-  }
+    name: "Circular",
+    description: "Circular arrangement",
+    icon: "⭕",
+    bestFor: ["Small workflows", "Cycles", "Visualization"],
+  },
 };
 
 // ============================================================================
 // Auto-Layout Panel Component
 // ============================================================================
 
-export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayoutPanelProps) {
+export function AutoLayoutPanel({
+  workflow,
+  onApplyLayout,
+  onClose,
+}: AutoLayoutPanelProps) {
   const layoutService = useMemo(() => getLayoutService(), []);
 
   // State
-  const [selectedStyle, setSelectedStyle] = useState<LayoutStyle>(LayoutStyle.HIERARCHICAL);
-  const [selectedPreset, setSelectedPreset] = useState<string>('balanced-hierarchical');
-  const [customOptions, setCustomOptions] = useState<LayoutOptions>(BUILTIN_PRESETS[2].options);
+  const [selectedStyle, setSelectedStyle] = useState<LayoutStyle>(
+    LayoutStyle.HIERARCHICAL
+  );
+  const [selectedPreset, setSelectedPreset] = useState<string>(
+    "balanced-hierarchical"
+  );
+  const [customOptions, setCustomOptions] = useState<LayoutOptions>(
+    BUILTIN_PRESETS[2]!.options
+  );
   const [animate, setAnimate] = useState(true);
   const [showPreview, setShowPreview] = useState(true);
   const [showStatistics, setShowStatistics] = useState(true);
   const [showSuggestions, setShowSuggestions] = useState(true);
-  const [previewResult, setPreviewResult] = useState<LayoutPreviewResult | null>(null);
+  const [previewResult, setPreviewResult] =
+    useState<LayoutPreviewResult | null>(null);
   const [customPresets, setCustomPresets] = useState<LayoutPreset[]>([]);
 
   // Load custom presets from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('auto-layout-custom-presets');
+      const saved = localStorage.getItem("auto-layout-custom-presets");
       if (saved) {
         setCustomPresets(JSON.parse(saved));
       }
     } catch (err) {
-      console.error('Failed to load custom presets:', err);
+      console.error("Failed to load custom presets:", err);
     }
   }, []);
 
@@ -282,7 +297,11 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
   }, [selectedStyle, customOptions]);
 
   const updatePreview = () => {
-    const result = layoutService.previewLayout(workflow, selectedStyle, customOptions);
+    const result = layoutService.previewLayout(
+      workflow,
+      selectedStyle,
+      customOptions
+    );
     setPreviewResult(result);
   };
 
@@ -290,16 +309,18 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
     setSelectedStyle(style);
     // Update preset selection if it matches
     const matchingPreset = [...BUILTIN_PRESETS, ...customPresets].find(
-      p => p.style === style && p.id === selectedPreset
+      (p) => p.style === style && p.id === selectedPreset
     );
     if (!matchingPreset) {
-      setSelectedPreset('custom');
+      setSelectedPreset("custom");
     }
   };
 
   const handlePresetChange = (presetId: string) => {
     setSelectedPreset(presetId);
-    const preset = [...BUILTIN_PRESETS, ...customPresets].find(p => p.id === presetId);
+    const preset = [...BUILTIN_PRESETS, ...customPresets].find(
+      (p) => p.id === presetId
+    );
     if (preset) {
       setSelectedStyle(preset.style);
       setCustomOptions(preset.options);
@@ -307,8 +328,8 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
   };
 
   const handleOptionChange = (key: keyof LayoutOptions, value: number) => {
-    setCustomOptions(prev => ({ ...prev, [key]: value }));
-    setSelectedPreset('custom'); // Mark as custom
+    setCustomOptions((prev) => ({ ...prev, [key]: value }));
+    setSelectedPreset("custom"); // Mark as custom
   };
 
   const handleApply = () => {
@@ -318,34 +339,36 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
   };
 
   const handleSavePreset = () => {
-    const name = prompt('Enter preset name:');
+    const name = prompt("Enter preset name:");
     if (!name) return;
 
-    const description = prompt('Enter preset description (optional):') || '';
+    const description = prompt("Enter preset description (optional):") || "";
 
     const newPreset: LayoutPreset = {
       id: `custom-${Date.now()}`,
       name,
       description,
-      category: 'custom',
+      category: "custom",
       style: selectedStyle,
-      options: { ...customOptions }
+      options: { ...customOptions },
     };
 
     const updated = [...customPresets, newPreset];
     setCustomPresets(updated);
 
     try {
-      localStorage.setItem('auto-layout-custom-presets', JSON.stringify(updated));
+      localStorage.setItem(
+        "auto-layout-custom-presets",
+        JSON.stringify(updated)
+      );
     } catch (err) {
-      console.error('Failed to save preset:', err);
+      console.error("Failed to save preset:", err);
     }
 
     setSelectedPreset(newPreset.id);
   };
 
   const allPresets = [...BUILTIN_PRESETS, ...customPresets];
-  const needsLayout = layoutService.needsLayout(workflow);
 
   return (
     <div className="auto-layout-panel">
@@ -365,7 +388,8 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
           <div className="recommendation-banner">
             <div className="recommendation-icon">💡</div>
             <div className="recommendation-text">
-              <strong>Recommended:</strong> {LAYOUT_STYLES[recommendation.style].name}
+              <strong>Recommended:</strong>{" "}
+              {LAYOUT_STYLES[recommendation.style].name}
               <p>{recommendation.reason}</p>
             </div>
             {selectedStyle !== recommendation.style && (
@@ -406,8 +430,8 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
             <option value="custom">Custom Settings</option>
             <optgroup label="Compact">
               {allPresets
-                .filter(p => p.category === 'compact')
-                .map(preset => (
+                .filter((p) => p.category === "compact")
+                .map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name}
                   </option>
@@ -415,8 +439,8 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
             </optgroup>
             <optgroup label="Balanced">
               {allPresets
-                .filter(p => p.category === 'balanced')
-                .map(preset => (
+                .filter((p) => p.category === "balanced")
+                .map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name}
                   </option>
@@ -424,8 +448,8 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
             </optgroup>
             <optgroup label="Spacious">
               {allPresets
-                .filter(p => p.category === 'spacious')
-                .map(preset => (
+                .filter((p) => p.category === "spacious")
+                .map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name}
                   </option>
@@ -433,7 +457,7 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
             </optgroup>
             {customPresets.length > 0 && (
               <optgroup label="Custom">
-                {customPresets.map(preset => (
+                {customPresets.map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name}
                   </option>
@@ -441,9 +465,9 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
               </optgroup>
             )}
           </select>
-          {selectedPreset !== 'custom' && (
+          {selectedPreset !== "custom" && (
             <p className="preset-description">
-              {allPresets.find(p => p.id === selectedPreset)?.description}
+              {allPresets.find((p) => p.id === selectedPreset)?.description}
             </p>
           )}
         </section>
@@ -463,7 +487,12 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
               max="400"
               step="10"
               value={customOptions.horizontalSpacing}
-              onChange={(e) => handleOptionChange('horizontalSpacing', parseInt(e.target.value))}
+              onChange={(e) =>
+                handleOptionChange(
+                  "horizontalSpacing",
+                  parseInt(e.target.value)
+                )
+              }
             />
           </div>
 
@@ -478,7 +507,9 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
               max="300"
               step="10"
               value={customOptions.verticalSpacing}
-              onChange={(e) => handleOptionChange('verticalSpacing', parseInt(e.target.value))}
+              onChange={(e) =>
+                handleOptionChange("verticalSpacing", parseInt(e.target.value))
+              }
             />
           </div>
 
@@ -493,7 +524,9 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
               max="300"
               step="10"
               value={customOptions.branchOffset}
-              onChange={(e) => handleOptionChange('branchOffset', parseInt(e.target.value))}
+              onChange={(e) =>
+                handleOptionChange("branchOffset", parseInt(e.target.value))
+              }
             />
           </div>
 
@@ -508,7 +541,9 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
               max="50"
               step="5"
               value={customOptions.minNodeSpacing}
-              onChange={(e) => handleOptionChange('minNodeSpacing', parseInt(e.target.value))}
+              onChange={(e) =>
+                handleOptionChange("minNodeSpacing", parseInt(e.target.value))
+              }
             />
           </div>
         </section>
@@ -522,7 +557,7 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
                 className="toggle-button"
                 onClick={() => setShowPreview(!showPreview)}
               >
-                {showPreview ? 'Hide' : 'Show'}
+                {showPreview ? "Hide" : "Show"}
               </button>
             </div>
             <LayoutPreview
@@ -543,35 +578,45 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
                 className="toggle-button"
                 onClick={() => setShowStatistics(!showStatistics)}
               >
-                {showStatistics ? 'Hide' : 'Show'}
+                {showStatistics ? "Hide" : "Show"}
               </button>
             </div>
 
             <div className="statistics-comparison">
               <div className="stat-column">
                 <h4>Before</h4>
-                {Object.entries(formatStatistics(previewResult.comparison.metrics.overlaps.before as any)).slice(0, 5).map(([key, value]) => (
-                  <div key={key} className="stat-item">
-                    <span className="stat-label">{key}:</span>
-                    <span className="stat-value">{value}</span>
-                  </div>
-                ))}
+                {Object.entries(
+                  formatStatistics(
+                    previewResult.comparison.metrics.overlaps.before as any
+                  )
+                )
+                  .slice(0, 5)
+                  .map(([key, value]) => (
+                    <div key={key} className="stat-item">
+                      <span className="stat-label">{key}:</span>
+                      <span className="stat-value">{value}</span>
+                    </div>
+                  ))}
               </div>
 
               <div className="stat-column">
                 <h4>After</h4>
-                {Object.entries(formatStatistics(previewResult.statistics)).slice(0, 5).map(([key, value]) => (
-                  <div key={key} className="stat-item">
-                    <span className="stat-label">{key}:</span>
-                    <span className="stat-value">{value}</span>
-                  </div>
-                ))}
+                {Object.entries(formatStatistics(previewResult.statistics))
+                  .slice(0, 5)
+                  .map(([key, value]) => (
+                    <div key={key} className="stat-item">
+                      <span className="stat-label">{key}:</span>
+                      <span className="stat-value">{value}</span>
+                    </div>
+                  ))}
               </div>
             </div>
 
             <div className="improvement-summary">
-              <div className={`improvement-badge ${previewResult.comparison.isImprovement ? 'positive' : 'negative'}`}>
-                {previewResult.comparison.improvementScore > 0 ? '+' : ''}
+              <div
+                className={`improvement-badge ${previewResult.comparison.isImprovement ? "positive" : "negative"}`}
+              >
+                {previewResult.comparison.improvementScore > 0 ? "+" : ""}
                 {Math.round(previewResult.comparison.improvementScore)}
               </div>
               <p>{previewResult.comparison.summary}</p>
@@ -588,7 +633,7 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
                 className="toggle-button"
                 onClick={() => setShowSuggestions(!showSuggestions)}
               >
-                {showSuggestions ? 'Hide' : 'Show'}
+                {showSuggestions ? "Hide" : "Show"}
               </button>
             </div>
             <LayoutSuggestions
@@ -620,7 +665,7 @@ export function AutoLayoutPanel({ workflow, onApplyLayout, onClose }: AutoLayout
           <button
             className="save-preset-button"
             onClick={handleSavePreset}
-            disabled={selectedPreset !== 'custom'}
+            disabled={selectedPreset !== "custom"}
           >
             Save as Preset
           </button>
@@ -648,10 +693,15 @@ interface StyleButtonProps {
   onClick: () => void;
 }
 
-function StyleButton({ style, info, selected, onClick }: StyleButtonProps) {
+function StyleButton({
+  style: _style,
+  info,
+  selected,
+  onClick,
+}: StyleButtonProps) {
   return (
     <button
-      className={`style-button ${selected ? 'selected' : ''}`}
+      className={`style-button ${selected ? "selected" : ""}`}
       onClick={onClick}
     >
       <div className="style-icon">{info.icon}</div>

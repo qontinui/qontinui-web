@@ -17,8 +17,8 @@
  * - +/-: Zoom in/out
  */
 
-import { useEffect, useCallback, useRef } from 'react';
-import { useCanvasStore } from '../stores/canvas-store';
+import { useEffect, useCallback, useRef } from "react";
+import { useCanvasStore } from "../stores/canvas-store";
 
 // ============================================================================
 // Types
@@ -78,7 +78,7 @@ interface ShortcutHandler {
  */
 function matchesShortcut(
   event: KeyboardEvent,
-  shortcut: Omit<ShortcutHandler, 'handler' | 'description'>
+  shortcut: Omit<ShortcutHandler, "handler" | "description">
 ): boolean {
   if (event.key.toLowerCase() !== shortcut.key.toLowerCase()) {
     return false;
@@ -113,9 +113,9 @@ function isInputElement(target: EventTarget | null): boolean {
 
   const tagName = target.tagName.toLowerCase();
   return (
-    tagName === 'input' ||
-    tagName === 'textarea' ||
-    tagName === 'select' ||
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
     target.isContentEditable
   );
 }
@@ -123,8 +123,10 @@ function isInputElement(target: EventTarget | null): boolean {
 /**
  * Get modifier key name based on platform
  */
-function getModifierKey(): 'ctrl' | 'meta' {
-  return typeof navigator !== 'undefined' && navigator.platform.includes('Mac') ? 'meta' : 'ctrl';
+function getModifierKey(): "ctrl" | "meta" {
+  return typeof navigator !== "undefined" && navigator.platform.includes("Mac")
+    ? "meta"
+    : "ctrl";
 }
 
 // ============================================================================
@@ -153,23 +155,23 @@ export function useCanvasKeyboard(config: KeyboardShortcutConfig = {}) {
   const isPanningRef = useRef(false);
 
   // Get store actions
-  const undo = useCanvasStore(state => state.undo);
-  const redo = useCanvasStore(state => state.redo);
-  const copy = useCanvasStore(state => state.copy);
-  const paste = useCanvasStore(state => state.paste);
-  const cut = useCanvasStore(state => state.cut);
-  const duplicate = useCanvasStore(state => state.duplicate);
-  const selectAll = useCanvasStore(state => state.selectAll);
-  const deleteActions = useCanvasStore(state => state.deleteActions);
-  const clearSelection = useCanvasStore(state => state.clearSelection);
-  const zoomIn = useCanvasStore(state => state.zoomIn);
-  const zoomOut = useCanvasStore(state => state.zoomOut);
-  const setPanning = useCanvasStore(state => state.setPanning);
-  const selectedNodes = useCanvasStore(state => state.selectedNodes);
-  const moveActions = useCanvasStore(state => state.moveActions);
-  const getActionById = useCanvasStore(state => state.getActionById);
-  const cancelConnecting = useCanvasStore(state => state.cancelConnecting);
-  const isConnecting = useCanvasStore(state => state.isConnecting);
+  const undo = useCanvasStore((state) => state.undo);
+  const redo = useCanvasStore((state) => state.redo);
+  const copy = useCanvasStore((state) => state.copy);
+  const paste = useCanvasStore((state) => state.paste);
+  const cut = useCanvasStore((state) => state.cut);
+  const duplicate = useCanvasStore((state) => state.duplicate);
+  const selectAll = useCanvasStore((state) => state.selectAll);
+  const deleteActions = useCanvasStore((state) => state.deleteActions);
+  const clearSelection = useCanvasStore((state) => state.clearSelection);
+  const zoomIn = useCanvasStore((state) => state.zoomIn);
+  const zoomOut = useCanvasStore((state) => state.zoomOut);
+  const setPanning = useCanvasStore((state) => state.setPanning);
+  const selectedNodes = useCanvasStore((state) => state.selectedNodes);
+  const moveActions = useCanvasStore((state) => state.moveActions);
+  const getActionById = useCanvasStore((state) => state.getActionById);
+  const cancelConnecting = useCanvasStore((state) => state.cancelConnecting);
+  const isConnecting = useCanvasStore((state) => state.isConnecting);
 
   // Build shortcuts list
   const shortcuts = useRef<ShortcutHandler[]>([]);
@@ -180,70 +182,70 @@ export function useCanvasKeyboard(config: KeyboardShortcutConfig = {}) {
     // Undo/Redo
     if (enableUndo) {
       newShortcuts.push({
-        key: 'z',
+        key: "z",
         [modifierKey]: true,
         handler: () => undo(),
-        description: 'Undo',
+        description: "Undo",
       });
 
       newShortcuts.push({
-        key: 'z',
+        key: "z",
         [modifierKey]: true,
         shift: true,
         handler: () => redo(),
-        description: 'Redo',
+        description: "Redo",
       });
 
       newShortcuts.push({
-        key: 'y',
+        key: "y",
         [modifierKey]: true,
         handler: () => redo(),
-        description: 'Redo',
+        description: "Redo",
       });
     }
 
     // Clipboard
     if (enableClipboard) {
       newShortcuts.push({
-        key: 'c',
+        key: "c",
         [modifierKey]: true,
         handler: () => copy(),
-        description: 'Copy',
+        description: "Copy",
       });
 
       newShortcuts.push({
-        key: 'v',
+        key: "v",
         [modifierKey]: true,
         handler: () => paste(),
-        description: 'Paste',
+        description: "Paste",
       });
 
       newShortcuts.push({
-        key: 'x',
+        key: "x",
         [modifierKey]: true,
         handler: () => cut(),
-        description: 'Cut',
+        description: "Cut",
       });
 
       newShortcuts.push({
-        key: 'd',
+        key: "d",
         [modifierKey]: true,
         handler: () => duplicate(),
-        description: 'Duplicate',
+        description: "Duplicate",
       });
     }
 
     // Selection
     if (enableSelection) {
       newShortcuts.push({
-        key: 'a',
+        key: "a",
         [modifierKey]: true,
         handler: () => selectAll(),
-        description: 'Select all',
+        description: "Select all",
       });
 
       newShortcuts.push({
-        key: 'escape',
+        key: "escape",
         handler: () => {
           if (isConnecting) {
             cancelConnecting();
@@ -251,54 +253,54 @@ export function useCanvasKeyboard(config: KeyboardShortcutConfig = {}) {
             clearSelection();
           }
         },
-        description: 'Clear selection / Cancel',
+        description: "Clear selection / Cancel",
       });
     }
 
     // Deletion
     if (enableDeletion) {
       newShortcuts.push({
-        key: 'delete',
+        key: "delete",
         handler: () => {
           if (selectedNodes.length > 0) {
             deleteActions(selectedNodes);
           }
         },
-        description: 'Delete selected',
+        description: "Delete selected",
       });
 
       newShortcuts.push({
-        key: 'backspace',
+        key: "backspace",
         handler: () => {
           if (selectedNodes.length > 0) {
             deleteActions(selectedNodes);
           }
         },
-        description: 'Delete selected',
+        description: "Delete selected",
       });
     }
 
     // Zoom
     if (enableZoom) {
       newShortcuts.push({
-        key: '=',
+        key: "=",
         [modifierKey]: true,
         handler: () => zoomIn(),
-        description: 'Zoom in',
+        description: "Zoom in",
       });
 
       newShortcuts.push({
-        key: '+',
+        key: "+",
         [modifierKey]: true,
         handler: () => zoomIn(),
-        description: 'Zoom in',
+        description: "Zoom in",
       });
 
       newShortcuts.push({
-        key: '-',
+        key: "-",
         [modifierKey]: true,
         handler: () => zoomOut(),
-        description: 'Zoom out',
+        description: "Zoom out",
       });
     }
 
@@ -307,87 +309,107 @@ export function useCanvasKeyboard(config: KeyboardShortcutConfig = {}) {
       const moveDistance = 10;
 
       newShortcuts.push({
-        key: 'arrowup',
+        key: "arrowup",
         handler: () => {
           if (selectedNodes.length > 0) {
-            const updates = selectedNodes.map(nodeId => {
-              const action = getActionById(nodeId);
-              if (!action) return null;
-              return {
-                actionId: nodeId,
-                position: [action.position[0], action.position[1] - moveDistance] as [
-                  number,
-                  number
-                ],
-              };
-            }).filter(Boolean) as Array<{ actionId: string; position: [number, number] }>;
+            const updates = selectedNodes
+              .map((nodeId) => {
+                const action = getActionById(nodeId);
+                if (!action) return null;
+                return {
+                  actionId: nodeId,
+                  position: [
+                    action.position[0],
+                    action.position[1] - moveDistance,
+                  ] as [number, number],
+                };
+              })
+              .filter(Boolean) as Array<{
+              actionId: string;
+              position: [number, number];
+            }>;
             moveActions(updates);
           }
         },
-        description: 'Move up',
+        description: "Move up",
       });
 
       newShortcuts.push({
-        key: 'arrowdown',
+        key: "arrowdown",
         handler: () => {
           if (selectedNodes.length > 0) {
-            const updates = selectedNodes.map(nodeId => {
-              const action = getActionById(nodeId);
-              if (!action) return null;
-              return {
-                actionId: nodeId,
-                position: [action.position[0], action.position[1] + moveDistance] as [
-                  number,
-                  number
-                ],
-              };
-            }).filter(Boolean) as Array<{ actionId: string; position: [number, number] }>;
+            const updates = selectedNodes
+              .map((nodeId) => {
+                const action = getActionById(nodeId);
+                if (!action) return null;
+                return {
+                  actionId: nodeId,
+                  position: [
+                    action.position[0],
+                    action.position[1] + moveDistance,
+                  ] as [number, number],
+                };
+              })
+              .filter(Boolean) as Array<{
+              actionId: string;
+              position: [number, number];
+            }>;
             moveActions(updates);
           }
         },
-        description: 'Move down',
+        description: "Move down",
       });
 
       newShortcuts.push({
-        key: 'arrowleft',
+        key: "arrowleft",
         handler: () => {
           if (selectedNodes.length > 0) {
-            const updates = selectedNodes.map(nodeId => {
-              const action = getActionById(nodeId);
-              if (!action) return null;
-              return {
-                actionId: nodeId,
-                position: [action.position[0] - moveDistance, action.position[1]] as [
-                  number,
-                  number
-                ],
-              };
-            }).filter(Boolean) as Array<{ actionId: string; position: [number, number] }>;
+            const updates = selectedNodes
+              .map((nodeId) => {
+                const action = getActionById(nodeId);
+                if (!action) return null;
+                return {
+                  actionId: nodeId,
+                  position: [
+                    action.position[0] - moveDistance,
+                    action.position[1],
+                  ] as [number, number],
+                };
+              })
+              .filter(Boolean) as Array<{
+              actionId: string;
+              position: [number, number];
+            }>;
             moveActions(updates);
           }
         },
-        description: 'Move left',
+        description: "Move left",
       });
 
       newShortcuts.push({
-        key: 'arrowright',
+        key: "arrowright",
         handler: () => {
           if (selectedNodes.length > 0) {
-            const updates = selectedNodes.map(nodeId => {
-              const action = getActionById(nodeId);
-              if (!action) return null;
-              return {
-                actionId: nodeId,
-                position: [action.position[0] + moveDistance, action.position[1]] as [
-                  number,
-                  number
-                ],
-              };
-            }).filter(Boolean) as Array<{ actionId: string; position: [number, number] }>;
+            const updates = selectedNodes
+              .map((nodeId) => {
+                const action = getActionById(nodeId);
+                if (!action) return null;
+                return {
+                  actionId: nodeId,
+                  position: [
+                    action.position[0] + moveDistance,
+                    action.position[1],
+                  ] as [number, number],
+                };
+              })
+              .filter(Boolean) as Array<{
+              actionId: string;
+              position: [number, number];
+            }>;
             moveActions(updates);
           }
         },
-        description: 'Move right',
+        description: "Move right",
       });
     }
 
@@ -456,7 +478,7 @@ export function useCanvasKeyboard(config: KeyboardShortcutConfig = {}) {
       if (!enabled || !enablePan) return;
       if (isInputElement(event.target)) return;
 
-      if (event.key === ' ' && !isPanningRef.current) {
+      if (event.key === " " && !isPanningRef.current) {
         isPanningRef.current = true;
         setPanning(true);
         if (preventDefault) event.preventDefault();
@@ -469,7 +491,7 @@ export function useCanvasKeyboard(config: KeyboardShortcutConfig = {}) {
     (event: KeyboardEvent) => {
       if (!enabled || !enablePan) return;
 
-      if (event.key === ' ' && isPanningRef.current) {
+      if (event.key === " " && isPanningRef.current) {
         isPanningRef.current = false;
         setPanning(false);
       }
@@ -481,20 +503,20 @@ export function useCanvasKeyboard(config: KeyboardShortcutConfig = {}) {
   useEffect(() => {
     if (!enabled) return;
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keydown', handlePanKeyDown);
-    window.addEventListener('keyup', handlePanKeyUp);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handlePanKeyDown);
+    window.addEventListener("keyup", handlePanKeyUp);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keydown', handlePanKeyDown);
-      window.removeEventListener('keyup', handlePanKeyUp);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handlePanKeyDown);
+      window.removeEventListener("keyup", handlePanKeyUp);
     };
   }, [enabled, handleKeyDown, handlePanKeyDown, handlePanKeyUp]);
 
   // Get list of active shortcuts for documentation
   const getShortcuts = useCallback(() => {
-    return shortcuts.current.map(s => ({
+    return shortcuts.current.map((s) => ({
       key: s.key,
       ctrl: s.ctrl,
       shift: s.shift,
@@ -543,10 +565,10 @@ export function useKeyboardShortcut(
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [key, handler, enabled, preventDefault, modifiers]);
 }

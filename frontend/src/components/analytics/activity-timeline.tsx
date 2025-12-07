@@ -1,12 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Plus,
-  Edit,
-  Trash2,
-  FileDown,
-  Play,
-  Clock,
-} from "lucide-react";
+import { Plus, Edit, Trash2, FileDown, Play, Clock } from "lucide-react";
 
 interface ActivityTimelineProps {
   activities: Array<{
@@ -75,7 +68,9 @@ export function ActivityTimeline({ activities }: ActivityTimelineProps) {
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
       <CardHeader>
         <CardTitle className="text-lg">Recent Activity</CardTitle>
-        <p className="text-sm text-gray-400">Latest actions in your workspace</p>
+        <p className="text-sm text-gray-400">
+          Latest actions in your workspace
+        </p>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">

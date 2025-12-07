@@ -9,9 +9,7 @@ from app.schemas.version import EditCommandCreate, ProjectVersionCreate
 
 
 # ProjectVersion CRUD operations
-async def get_version(
-    db: AsyncSession, version_id: UUID
-) -> ProjectVersion | None:
+async def get_version(db: AsyncSession, version_id: UUID) -> ProjectVersion | None:
     """Get a specific version by ID"""
     result = await db.execute(
         select(ProjectVersion).filter(ProjectVersion.id == version_id)
@@ -20,7 +18,7 @@ async def get_version(
 
 
 async def get_version_by_number(
-    db: AsyncSession, project_id: int, version_number: int
+    db: AsyncSession, project_id: UUID, version_number: int
 ) -> ProjectVersion | None:
     """Get a specific version by project ID and version number"""
     result = await db.execute(
@@ -33,7 +31,7 @@ async def get_version_by_number(
 
 
 async def get_versions_by_project(
-    db: AsyncSession, project_id: int, skip: int = 0, limit: int = 100
+    db: AsyncSession, project_id: UUID, skip: int = 0, limit: int = 100
 ) -> list[ProjectVersion]:
     """Get all versions for a project (ordered by version number descending)"""
     result = await db.execute(
@@ -47,7 +45,7 @@ async def get_versions_by_project(
 
 
 async def get_latest_version(
-    db: AsyncSession, project_id: int
+    db: AsyncSession, project_id: UUID
 ) -> ProjectVersion | None:
     """Get the most recent version for a project"""
     result = await db.execute(
@@ -59,7 +57,7 @@ async def get_latest_version(
     return result.scalar_one_or_none()
 
 
-async def get_version_count(db: AsyncSession, project_id: int) -> int:
+async def get_version_count(db: AsyncSession, project_id: UUID) -> int:
     """Count total versions for a project"""
     result = await db.execute(
         select(func.count(ProjectVersion.id)).filter(
@@ -87,7 +85,7 @@ async def create_version(
 
 
 async def delete_old_versions(
-    db: AsyncSession, project_id: int, keep_count: int = 10
+    db: AsyncSession, project_id: UUID, keep_count: int = 10
 ) -> int:
     """Delete old versions, keeping only the most recent N versions"""
     # Get versions to delete (all except the most recent keep_count)
@@ -125,7 +123,7 @@ async def get_command(db: AsyncSession, command_id: UUID) -> EditCommand | None:
 
 
 async def get_commands_by_project(
-    db: AsyncSession, project_id: int, skip: int = 0, limit: int = 100
+    db: AsyncSession, project_id: UUID, skip: int = 0, limit: int = 100
 ) -> list[EditCommand]:
     """Get command history for a project (ordered by sequence number)"""
     result = await db.execute(
@@ -138,17 +136,15 @@ async def get_commands_by_project(
     return list(result.scalars().all())
 
 
-async def get_command_count(db: AsyncSession, project_id: int) -> int:
+async def get_command_count(db: AsyncSession, project_id: UUID) -> int:
     """Count total commands for a project"""
     result = await db.execute(
-        select(func.count(EditCommand.id)).filter(
-            EditCommand.project_id == project_id
-        )
+        select(func.count(EditCommand.id)).filter(EditCommand.project_id == project_id)
     )
     return result.scalar() or 0
 
 
-async def get_next_sequence_number(db: AsyncSession, project_id: int) -> int:
+async def get_next_sequence_number(db: AsyncSession, project_id: UUID) -> int:
     """Get the next sequence number for a project"""
     result = await db.execute(
         select(func.max(EditCommand.sequence_number)).filter(

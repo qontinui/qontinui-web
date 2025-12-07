@@ -31,15 +31,21 @@ def upgrade() -> None:
     """
     # Step 1: Add max_duration_seconds column to automation_sessions
     # Default to 28800 seconds (8 hours) for session timeout
-    op.add_column(
-        'automation_sessions',
-        sa.Column(
-            'max_duration_seconds',
-            sa.Integer(),
-            nullable=False,
-            server_default='28800'
+    # Check if column already exists (may have been added in earlier migration)
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    columns = [col["name"] for col in inspector.get_columns("automation_sessions")]
+
+    if "max_duration_seconds" not in columns:
+        op.add_column(
+            'automation_sessions',
+            sa.Column(
+                'max_duration_seconds',
+                sa.Integer(),
+                nullable=False,
+                server_default='28800'
+            )
         )
-    )
 
     # Step 2: Create the input_event_type_enum PostgreSQL enum type
     # Values map to the InputEventType enum NAMES in app/models/automation.py

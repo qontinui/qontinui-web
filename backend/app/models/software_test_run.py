@@ -10,11 +10,12 @@ from decimal import Decimal
 from enum import Enum as PyEnum
 from uuid import UUID, uuid4
 
-from app.db.base import Base
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class TestRunStatus(str, PyEnum):
@@ -42,12 +43,12 @@ class SoftwareTestRun(Base):
         PGUUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
-        server_default="gen_random_uuid()",
+        server_default=text("gen_random_uuid()"),
     )
 
     # Foreign keys
-    project_id: Mapped[int] = mapped_column(
-        Integer,
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

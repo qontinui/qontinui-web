@@ -5,10 +5,11 @@ CRUD operations for SessionActivity model.
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from app.core.config import settings
-from app.models.session_activity import SessionActivity
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.models.session_activity import SessionActivity
 
 
 async def create_session_activity(

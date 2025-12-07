@@ -10,7 +10,7 @@ Accuracy: 80-90% for text with consistent stroke width
 """
 
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -39,14 +39,14 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
         return "stroke_width_text_detector"
 
     @property
-    def supported_region_types(self) -> List[RegionType]:
+    def supported_region_types(self) -> list[RegionType]:
         return [RegionType.TEXT_AREA]
 
     @property
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize SWT text detector.
 
@@ -71,7 +71,7 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
         self.stroke_width_variance_threshold = params["stroke_width_variance_threshold"]
         self.min_letters_in_chain = params["min_letters_in_chain"]
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "dark_on_light": True,
             "max_stroke_width": 50,
@@ -124,7 +124,7 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
 
     def _detect_text_regions(
         self, gray: np.ndarray, screenshot_index: int
-    ) -> List[DetectedRegion]:
+    ) -> list[DetectedRegion]:
         """Detect text regions using SWT."""
         # Compute SWT image
         swt_image = self._compute_swt(gray)
@@ -196,7 +196,7 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
             curr_x, curr_y = float(x), float(y)
             max_steps = self.max_stroke_width
 
-            for step in range(max_steps):
+            for _step in range(max_steps):
                 curr_x += step_x
                 curr_y += step_y
 
@@ -233,7 +233,7 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
 
         return swt
 
-    def _find_letter_candidates(self, swt: np.ndarray) -> List[Dict[str, Any]]:
+    def _find_letter_candidates(self, swt: np.ndarray) -> list[dict[str, Any]]:
         """Find connected components that could be letters."""
         # Threshold SWT to get binary image
         swt_binary = ((swt > 0) & (swt < self.max_stroke_width)).astype(np.uint8) * 255
@@ -293,7 +293,7 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
 
         return letter_candidates
 
-    def _chain_letters_to_words(self, letters: List[Dict[str, Any]]) -> List[Tuple]:
+    def _chain_letters_to_words(self, letters: list[dict[str, Any]]) -> list[tuple]:
         """Chain letter candidates into word regions."""
         if len(letters) < self.min_letters_in_chain:
             return []

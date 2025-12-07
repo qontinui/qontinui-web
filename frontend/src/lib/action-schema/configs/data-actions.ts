@@ -2,7 +2,7 @@
  * Data manipulation action configurations - NEW action types for data operations
  */
 
-import { TargetConfig } from '../shared/target-config';
+import { TargetConfig } from "../shared/target-config";
 
 /**
  * SET_VARIABLE - Set a variable value
@@ -16,16 +16,16 @@ export interface SetVariableActionConfig {
 
   /** Get value from another source */
   valueSource?: {
-    type: 'target' | 'expression' | 'ocr' | 'clipboard';
+    type: "target" | "expression" | "ocr" | "clipboard";
     target?: TargetConfig; // Extract value from screen
     expression?: string; // JavaScript expression
   };
 
   /** Variable type hint */
-  type?: 'string' | 'number' | 'boolean' | 'array' | 'object';
+  type?: "string" | "number" | "boolean" | "array" | "object";
 
   /** Variable scope */
-  scope?: 'local' | 'global' | 'process';
+  scope?: "local" | "global" | "process";
 }
 
 /**
@@ -47,7 +47,7 @@ export interface GetVariableActionConfig {
  */
 export interface SortActionConfig {
   /** Target collection type */
-  target: 'variable' | 'matches' | 'list';
+  target: "variable" | "matches" | "list";
 
   /** Variable name containing array to sort */
   variableName?: string;
@@ -59,10 +59,10 @@ export interface SortActionConfig {
   sortBy?: string | string[];
 
   /** Sort order */
-  order: 'ASC' | 'DESC';
+  order: "ASC" | "DESC";
 
   /** Comparator type */
-  comparator?: 'NUMERIC' | 'ALPHABETIC' | 'DATE' | 'CUSTOM';
+  comparator?: "NUMERIC" | "ALPHABETIC" | "DATE" | "CUSTOM";
 
   /** Custom comparator function (JavaScript) */
   customComparator?: string;
@@ -80,10 +80,10 @@ export interface FilterActionConfig {
 
   /** Filter condition */
   condition: {
-    type: 'expression' | 'property' | 'custom';
+    type: "expression" | "property" | "custom";
     expression?: string; // JavaScript expression
     property?: string; // Property name
-    operator?: '==' | '!=' | '>' | '<' | '>=' | '<=' | 'contains' | 'matches';
+    operator?: "==" | "!=" | ">" | "<" | ">=" | "<=" | "contains" | "matches";
     value?: any; // Expected value
     customFunction?: string; // JavaScript function
   };
@@ -101,7 +101,7 @@ export interface MapActionConfig {
 
   /** Transformation to apply */
   transform: {
-    type: 'expression' | 'property' | 'custom';
+    type: "expression" | "property" | "custom";
     expression?: string; // JavaScript expression (can use 'item' variable)
     property?: string; // Extract this property from each item
     customFunction?: string; // JavaScript function
@@ -119,7 +119,7 @@ export interface ReduceActionConfig {
   variableName: string;
 
   /** Reduction operation */
-  operation: 'sum' | 'average' | 'min' | 'max' | 'count' | 'custom';
+  operation: "sum" | "average" | "min" | "max" | "count" | "custom";
 
   /** Initial value for accumulator */
   initialValue?: any;
@@ -140,15 +140,15 @@ export interface StringOperationActionConfig {
 
   /** Operation to perform */
   operation:
-    | 'CONCAT'
-    | 'SUBSTRING'
-    | 'REPLACE'
-    | 'SPLIT'
-    | 'TRIM'
-    | 'UPPERCASE'
-    | 'LOWERCASE'
-    | 'MATCH'
-    | 'PARSE_JSON';
+    | "CONCAT"
+    | "SUBSTRING"
+    | "REPLACE"
+    | "SPLIT"
+    | "TRIM"
+    | "UPPERCASE"
+    | "LOWERCASE"
+    | "MATCH"
+    | "PARSE_JSON";
 
   /** Operation-specific parameters */
   parameters?: {
@@ -175,7 +175,17 @@ export interface StringOperationActionConfig {
  */
 export interface MathOperationActionConfig {
   /** Operation to perform */
-  operation: 'ADD' | 'SUBTRACT' | 'MULTIPLY' | 'DIVIDE' | 'MODULO' | 'POWER' | 'SQRT' | 'ABS' | 'ROUND' | 'CUSTOM';
+  operation:
+    | "ADD"
+    | "SUBTRACT"
+    | "MULTIPLY"
+    | "DIVIDE"
+    | "MODULO"
+    | "POWER"
+    | "SQRT"
+    | "ABS"
+    | "ROUND"
+    | "CUSTOM";
 
   /** Operands (can be numbers or variable names) */
   operands: (number | { variableName: string })[];

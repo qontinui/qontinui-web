@@ -8,7 +8,6 @@ discover, and install reusable Python code packages for automation workflows.
 from datetime import datetime
 from enum import Enum
 
-from app.db.base import Base
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -25,6 +24,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class SecurityScanStatus(str, Enum):
@@ -227,7 +228,9 @@ class PackageInstallation(Base):
         index=True,
     )
     project_id = Column(
-        Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
     )
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False

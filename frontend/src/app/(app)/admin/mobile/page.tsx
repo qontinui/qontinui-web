@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { useQuery } from "@tanstack/react-query"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   AlertCircle,
   RefreshCw,
@@ -16,23 +16,21 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
-  ArrowLeft
-} from "lucide-react"
-import { toast } from "sonner"
-import { authService } from "@/services/service-factory"
-import { healthService } from "@/services/admin/health-service"
-import type { HealthOverview, SecurityWarning } from "@/services/admin/health-service"
+  ArrowLeft,
+} from "lucide-react";
+import { toast } from "sonner";
+import { healthService } from "@/services/admin/health-service";
 
 interface AnalyticsData {
-  dau: number
-  new_users_today: number
-  new_users_week: number
-  total_sessions_today: number
+  dau: number;
+  new_users_today: number;
+  new_users_week: number;
+  total_sessions_today: number;
 }
 
 export default function MobileAdminDashboard() {
-  const { user, loading: authLoading } = useAuth()
-  const router = useRouter()
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
 
   // Fetch health overview
   const {
@@ -40,10 +38,10 @@ export default function MobileAdminDashboard() {
     isLoading: healthLoading,
     refetch: refetchHealth,
   } = useQuery({
-    queryKey: ['admin', 'health', 'overview'],
+    queryKey: ["admin", "health", "overview"],
     queryFn: () => healthService.getHealthOverview(),
     refetchInterval: 60000, // Refresh every minute
-  })
+  });
 
   // Fetch security warnings
   const {
@@ -51,10 +49,10 @@ export default function MobileAdminDashboard() {
     isLoading: warningsLoading,
     refetch: refetchWarnings,
   } = useQuery({
-    queryKey: ['admin', 'health', 'security-warnings'],
+    queryKey: ["admin", "health", "security-warnings"],
     queryFn: () => healthService.getSecurityWarnings(10),
     refetchInterval: 60000,
-  })
+  });
 
   // Fetch analytics for activity data
   const {
@@ -62,78 +60,75 @@ export default function MobileAdminDashboard() {
     isLoading: analyticsLoading,
     refetch: refetchAnalytics,
   } = useQuery({
-    queryKey: ['admin', 'mobile', 'analytics'],
+    queryKey: ["admin", "mobile", "analytics"],
     queryFn: async () => {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const accessToken = authService.tokenManager.getAccessToken()
-
-      if (!accessToken) {
-        throw new Error('Not authenticated')
-      }
-
-      const response = await fetch(`${apiUrl}/api/v1/admin/analytics`, {
+      // Use relative URL through Next.js proxy with credentials for cookie auth
+      const response = await fetch("/api/v1/admin/analytics", {
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-      })
+        credentials: "include",
+      });
 
       if (!response.ok) {
-        throw new Error('Failed to load analytics')
+        throw new Error("Failed to load analytics");
       }
 
-      return response.json() as Promise<AnalyticsData>
+      return response.json() as Promise<AnalyticsData>;
     },
     refetchInterval: 60000,
-  })
+  });
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
-      return
+      router.push("/");
+      return;
     }
 
     if (!authLoading && user && !user.is_superuser) {
-      toast.error('Access denied - Admin privileges required')
-      router.push('/dashboard')
-      return
+      toast.error("Access denied - Admin privileges required");
+      router.push("/dashboard");
+      return;
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   const handleRefresh = async () => {
-    const promises = [refetchHealth(), refetchWarnings(), refetchAnalytics()]
+    const promises = [refetchHealth(), refetchWarnings(), refetchAnalytics()];
 
     toast.promise(Promise.all(promises), {
-      loading: 'Refreshing...',
-      success: 'Data refreshed',
-      error: 'Failed to refresh some data',
-    })
-  }
+      loading: "Refreshing...",
+      success: "Data refreshed",
+      error: "Failed to refresh some data",
+    });
+  };
 
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="text-gray-400">Loading...</div>
       </div>
-    )
+    );
   }
 
   if (!user?.is_superuser) {
-    return null
+    return null;
   }
 
-  const isLoading = healthLoading || warningsLoading || analyticsLoading
+  const isLoading = healthLoading || warningsLoading || analyticsLoading;
 
   // Determine if there are health problems
   const hasHealthProblems =
-    healthOverview?.critical_alerts && healthOverview.critical_alerts > 0 ||
-    healthOverview?.overall_status === 'degraded' ||
-    healthOverview?.overall_status === 'down' ||
-    securityWarnings?.some(w => w.severity === 'high' || w.severity === 'critical')
+    (healthOverview?.critical_alerts && healthOverview.critical_alerts > 0) ||
+    healthOverview?.overall_status === "degraded" ||
+    healthOverview?.overall_status === "down" ||
+    securityWarnings?.some(
+      (w) => w.severity === "high" || w.severity === "critical"
+    );
 
-  const criticalWarnings = securityWarnings?.filter(
-    w => w.severity === 'critical' || w.severity === 'high'
-  ) || []
+  const criticalWarnings =
+    securityWarnings?.filter(
+      (w) => w.severity === "critical" || w.severity === "high"
+    ) || [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -144,7 +139,7 @@ export default function MobileAdminDashboard() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push('/admin')}
+              onClick={() => router.push("/admin")}
               className="p-2"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -158,7 +153,9 @@ export default function MobileAdminDashboard() {
             disabled={isLoading}
             className="flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
           </Button>
         </div>
       </div>
@@ -175,32 +172,43 @@ export default function MobileAdminDashboard() {
             </CardHeader>
             <CardContent className="space-y-3">
               {/* System Status */}
-              {healthOverview && healthOverview.overall_status !== 'healthy' && (
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-background">
-                  <XCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">System Status: {healthOverview.overall_status.toUpperCase()}</div>
-                    {healthOverview.critical_alerts > 0 && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {healthOverview.critical_alerts} critical alert{healthOverview.critical_alerts !== 1 ? 's' : ''}
+              {healthOverview &&
+                healthOverview.overall_status !== "healthy" && (
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-background">
+                    <XCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">
+                        System Status:{" "}
+                        {healthOverview.overall_status.toUpperCase()}
                       </div>
-                    )}
+                      {healthOverview.critical_alerts > 0 && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {healthOverview.critical_alerts} critical alert
+                          {healthOverview.critical_alerts !== 1 ? "s" : ""}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* Critical Security Warnings */}
               {criticalWarnings.slice(0, 3).map((warning) => (
-                <div key={warning.id} className="flex items-start gap-3 p-3 rounded-lg bg-background">
+                <div
+                  key={warning.id}
+                  className="flex items-start gap-3 p-3 rounded-lg bg-background"
+                >
                   <AlertTriangle
                     className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
-                      warning.severity === 'critical' ? 'text-red-500' : 'text-orange-500'
+                      warning.severity === "critical"
+                        ? "text-red-500"
+                        : "text-orange-500"
                     }`}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm">{warning.message}</div>
                     <div className="text-xs text-muted-foreground mt-1 capitalize">
-                      {warning.severity} • {new Date(warning.timestamp).toLocaleTimeString()}
+                      {warning.severity} •{" "}
+                      {new Date(warning.timestamp).toLocaleTimeString()}
                     </div>
                   </div>
                 </div>
@@ -208,7 +216,8 @@ export default function MobileAdminDashboard() {
 
               {criticalWarnings.length > 3 && (
                 <div className="text-xs text-center text-muted-foreground pt-2">
-                  +{criticalWarnings.length - 3} more warning{criticalWarnings.length - 3 !== 1 ? 's' : ''}
+                  +{criticalWarnings.length - 3} more warning
+                  {criticalWarnings.length - 3 !== 1 ? "s" : ""}
                 </div>
               )}
             </CardContent>
@@ -223,7 +232,9 @@ export default function MobileAdminDashboard() {
                 <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
                 <div>
                   <div className="font-medium">All Systems Healthy</div>
-                  <div className="text-sm text-muted-foreground">No issues detected</div>
+                  <div className="text-sm text-muted-foreground">
+                    No issues detected
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -244,9 +255,11 @@ export default function MobileAdminDashboard() {
                   </div>
                   <div>
                     <div className="text-2xl font-bold">
-                      {analytics?.new_users_today ?? '–'}
+                      {analytics?.new_users_today ?? "–"}
                     </div>
-                    <div className="text-sm text-muted-foreground">New Users Today</div>
+                    <div className="text-sm text-muted-foreground">
+                      New Users Today
+                    </div>
                   </div>
                 </div>
               </div>
@@ -263,9 +276,11 @@ export default function MobileAdminDashboard() {
                   </div>
                   <div>
                     <div className="text-2xl font-bold">
-                      {analytics?.new_users_week ?? '–'}
+                      {analytics?.new_users_week ?? "–"}
                     </div>
-                    <div className="text-sm text-muted-foreground">New Users This Week</div>
+                    <div className="text-sm text-muted-foreground">
+                      New Users This Week
+                    </div>
                   </div>
                 </div>
               </div>
@@ -282,9 +297,11 @@ export default function MobileAdminDashboard() {
                   </div>
                   <div>
                     <div className="text-2xl font-bold">
-                      {analytics?.dau ?? '–'}
+                      {analytics?.dau ?? "–"}
                     </div>
-                    <div className="text-sm text-muted-foreground">Active Users (24h)</div>
+                    <div className="text-sm text-muted-foreground">
+                      Active Users (24h)
+                    </div>
                   </div>
                 </div>
               </div>
@@ -301,9 +318,11 @@ export default function MobileAdminDashboard() {
                   </div>
                   <div>
                     <div className="text-2xl font-bold">
-                      {analytics?.total_sessions_today ?? '–'}
+                      {analytics?.total_sessions_today ?? "–"}
                     </div>
-                    <div className="text-sm text-muted-foreground">Sessions Today</div>
+                    <div className="text-sm text-muted-foreground">
+                      Sessions Today
+                    </div>
                   </div>
                 </div>
               </div>
@@ -336,5 +355,5 @@ export default function MobileAdminDashboard() {
         </div>
       </div>
     </div>
-  )
+  );
 }

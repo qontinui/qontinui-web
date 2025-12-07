@@ -3,50 +3,85 @@
  * Main container for the State Discovery feature
  */
 
-import React, { useState, useCallback, useRef } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Progress } from '@/components/ui/progress';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Upload, Play, Save, Download, AlertCircle, Filter, CropIcon } from 'lucide-react';
-import { Slider } from '@/components/ui/slider';
-import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
+import React, { useState, useCallback } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Upload,
+  Play,
+  Save,
+  Download,
+  AlertCircle,
+  Filter,
+  CropIcon,
+} from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
-import ScreenshotUploader from './ScreenshotUploader';
-import VisualizationCanvas from './VisualizationCanvas';
-import StateImageDetails from './StateImageDetails';
-import StateDetails from './StateDetails';
-import AnalysisProgress from './AnalysisProgress';
-import RegionSelector from './RegionSelector';
-import { useStateDiscovery } from '@/hooks/useStateDiscovery';
-import { StateImage, DiscoveredState, AnalysisConfig } from '@/types/stateDiscovery';
-import { useAutomation } from '@/contexts/automation-context';
-import { createImageAsset, imageExistsInLibrary } from '@/lib/image-library-utils';
-import { toast } from 'sonner';
+import ScreenshotUploader from "./ScreenshotUploader";
+import VisualizationCanvas from "./VisualizationCanvas";
+import StateImageDetails from "./StateImageDetails";
+import StateDetails from "./StateDetails";
+import AnalysisProgress from "./AnalysisProgress";
+import RegionSelector from "./RegionSelector";
+import { useStateDiscovery } from "@/hooks/useStateDiscovery";
+import {
+  StateImage,
+  DiscoveredState,
+  AnalysisConfig,
+} from "@/types/stateDiscovery";
+import { useAutomation } from "@/contexts/automation-context";
+import {
+  createImageAsset,
+  imageExistsInLibrary,
+} from "@/lib/image-library-utils";
+import { toast } from "sonner";
 
 const StateDiscoveryTab: React.FC = () => {
   // State management
   const [screenshots, setScreenshots] = useState<File[]>([]);
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState(0);
-  const [selectedStateImage, setSelectedStateImage] = useState<StateImage | null>(null);
-  const [selectedState, setSelectedState] = useState<DiscoveredState | null>(null);
-  const [selectedStateImages, setSelectedStateImages] = useState<Set<string>>(new Set());
-  const [highlightedStateImages, setHighlightedStateImages] = useState<string[]>([]);
+  const [selectedStateImage, setSelectedStateImage] =
+    useState<StateImage | null>(null);
+  const [selectedState, setSelectedState] = useState<DiscoveredState | null>(
+    null
+  );
+  const [selectedStateImages, setSelectedStateImages] = useState<Set<string>>(
+    new Set()
+  );
+  const [highlightedStateImages, setHighlightedStateImages] = useState<
+    string[]
+  >([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [viewMode, setViewMode] = useState<'all' | 'selected' | 'state'>('all');
-  const [rightPanelTab, setRightPanelTab] = useState<'stateimage' | 'state'>('stateimage');
+  const [viewMode, setViewMode] = useState<"all" | "selected" | "state">("all");
+  const [rightPanelTab, setRightPanelTab] = useState<"stateimage" | "state">(
+    "stateimage"
+  );
   const [maxDarkPixelPercentage, setMaxDarkPixelPercentage] = useState(85);
   const [maxLightPixelPercentage, setMaxLightPixelPercentage] = useState(85);
   const [canvasScale, setCanvasScale] = useState(1);
   const [similarityThreshold, setSimilarityThreshold] = useState(0.95);
-  const [canvasImageSize, setCanvasImageSize] = useState({ width: 0, height: 0 });
-  const [selectedRegion, setSelectedRegion] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [canvasImageSize, setCanvasImageSize] = useState({
+    width: 0,
+    height: 0,
+  });
+  const [selectedRegion, setSelectedRegion] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [showRegionSelector, setShowRegionSelector] = useState(false);
-  const [screenshotDimensions, setScreenshotDimensions] = useState({ width: 800, height: 600 });
+  const [screenshotDimensions, setScreenshotDimensions] = useState({
+    width: 800,
+    height: 600,
+  });
 
   // Custom hook for State Discovery operations
   const {
@@ -54,13 +89,13 @@ const StateDiscoveryTab: React.FC = () => {
     startAnalysis,
     deleteStateImage,
     bulkDeleteStateImages,
-    mergeStateImages,
+
     saveStructure,
     stateImages,
     states,
     analysisResult,
     uploadId,
-    error
+    error,
   } = useStateDiscovery();
 
   // Automation context for Image Library
@@ -71,11 +106,16 @@ const StateDiscoveryTab: React.FC = () => {
     if (!stateImages || stateImages.length === 0) return [];
 
     // Filter based on backend data if available
-    return stateImages.filter(si => {
+    return stateImages.filter((si) => {
       // If backend provides pixel percentages, use those
-      if (si.darkPixelPercentage !== undefined && si.lightPixelPercentage !== undefined) {
-        const passedDarkFilter = si.darkPixelPercentage <= maxDarkPixelPercentage;
-        const passedLightFilter = si.lightPixelPercentage <= maxLightPixelPercentage;
+      if (
+        si.darkPixelPercentage !== undefined &&
+        si.lightPixelPercentage !== undefined
+      ) {
+        const passedDarkFilter =
+          si.darkPixelPercentage <= maxDarkPixelPercentage;
+        const passedLightFilter =
+          si.lightPixelPercentage <= maxLightPixelPercentage;
         return passedDarkFilter && passedLightFilter;
       }
       // If no backend data and filters are active, assume it won't pass
@@ -93,16 +133,20 @@ const StateDiscoveryTab: React.FC = () => {
     if (!states || states.length === 0) return [];
 
     const filteredStateImages = getFilteredStateImages();
-    const filteredStateImageIds = new Set(filteredStateImages.map(si => si.id));
+    const filteredStateImageIds = new Set(
+      filteredStateImages.map((si) => si.id)
+    );
 
     // Filter states to only include those with at least one visible state image
     return states
-      .map(state => ({
+      .map((state) => ({
         ...state,
         // Update the stateImageIds to only include visible ones
-        stateImageIds: state.stateImageIds?.filter(id => filteredStateImageIds.has(id)) || []
+        stateImageIds:
+          state.stateImageIds?.filter((id) => filteredStateImageIds.has(id)) ||
+          [],
       }))
-      .filter(state => state.stateImageIds.length > 0);
+      .filter((state) => state.stateImageIds.length > 0);
   }, [states, getFilteredStateImages]);
 
   // Use filtered versions
@@ -111,10 +155,16 @@ const StateDiscoveryTab: React.FC = () => {
 
   // Create memoized image URL for selected screenshot
   const selectedScreenshotUrl = React.useMemo(() => {
-    if (screenshots.length > 0 && selectedScreenshotIndex < screenshots.length) {
-      return URL.createObjectURL(screenshots[selectedScreenshotIndex]);
+    if (
+      screenshots.length > 0 &&
+      selectedScreenshotIndex < screenshots.length
+    ) {
+      const screenshot = screenshots[selectedScreenshotIndex];
+      if (screenshot) {
+        return URL.createObjectURL(screenshot);
+      }
     }
-    return '';
+    return "";
   }, [screenshots, selectedScreenshotIndex]);
 
   // Load screenshot dimensions when selected screenshot changes
@@ -130,14 +180,17 @@ const StateDiscoveryTab: React.FC = () => {
 
   // Reset selected state if it's been filtered out
   React.useEffect(() => {
-    if (selectedState && !filteredStates.find(s => s.id === selectedState.id)) {
+    if (
+      selectedState &&
+      !filteredStates.find((s) => s.id === selectedState.id)
+    ) {
       setSelectedState(null);
     }
   }, [filteredStates, selectedState]);
 
   // Auto-highlight state images when a state is selected
   React.useEffect(() => {
-    if (selectedState && rightPanelTab === 'state') {
+    if (selectedState && rightPanelTab === "state") {
       // Get all state image IDs for the selected state
       const stateImageIds = selectedState.stateImageIds || [];
       setHighlightedStateImages(stateImageIds);
@@ -148,48 +201,62 @@ const StateDiscoveryTab: React.FC = () => {
 
   // Reset selected state image if it's been filtered out
   React.useEffect(() => {
-    if (selectedStateImage && !filteredStateImages.find(si => si.id === selectedStateImage.id)) {
+    if (
+      selectedStateImage &&
+      !filteredStateImages.find((si) => si.id === selectedStateImage.id)
+    ) {
       setSelectedStateImage(null);
     }
   }, [filteredStateImages, selectedStateImage]);
 
   // Handle screenshot upload
-  const handleScreenshotUpload = useCallback(async (files: File[]) => {
-    // Validate file types
-    const validExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp'];
-    const validFiles = files.filter(file => {
-      const ext = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
-      return validExtensions.includes(ext);
-    });
+  const handleScreenshotUpload = useCallback(
+    async (files: File[]) => {
+      // Validate file types
+      const validExtensions = [".png", ".jpg", ".jpeg", ".gif", ".bmp"];
+      const validFiles = files.filter((file) => {
+        const ext = file.name
+          .toLowerCase()
+          .substring(file.name.lastIndexOf("."));
+        return validExtensions.includes(ext);
+      });
 
-    if (validFiles.length === 0) {
-      alert('Please upload valid image files (PNG, JPG, JPEG, GIF, or BMP)');
-      return;
-    }
+      if (validFiles.length === 0) {
+        alert("Please upload valid image files (PNG, JPG, JPEG, GIF, or BMP)");
+        return;
+      }
 
-    if (validFiles.length < files.length) {
-      alert(`${files.length - validFiles.length} non-image files were skipped`);
-    }
+      if (validFiles.length < files.length) {
+        alert(
+          `${files.length - validFiles.length} non-image files were skipped`
+        );
+      }
 
-    setScreenshots(validFiles);
-    try {
-      await uploadScreenshots(validFiles);
-    } catch (err) {
-      console.error('Failed to upload screenshots:', err);
-      alert(`Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  }, [uploadScreenshots]);
+      setScreenshots(validFiles);
+      try {
+        await uploadScreenshots(validFiles);
+      } catch (err) {
+        console.error("Failed to upload screenshots:", err);
+        alert(
+          `Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`
+        );
+      }
+    },
+    [uploadScreenshots]
+  );
 
   // Handle analysis start
   const handleStartAnalysis = useCallback(async () => {
     if (screenshots.length < 2) {
-      alert('Please upload at least 2 screenshots');
+      alert("Please upload at least 2 screenshots");
       return;
     }
 
     // Check if upload was successful
     if (!uploadId) {
-      alert('Screenshots need to be uploaded first. Please wait for upload to complete or try uploading again.');
+      alert(
+        "Screenshots need to be uploaded first. Please wait for upload to complete or try uploading again."
+      );
 
       // Try to upload screenshots if they exist but weren't uploaded
       if (screenshots.length > 0) {
@@ -197,8 +264,10 @@ const StateDiscoveryTab: React.FC = () => {
           // Attempting to upload screenshots
           await uploadScreenshots(screenshots);
         } catch (err) {
-          console.error('Failed to upload screenshots:', err);
-          alert(`Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          console.error("Failed to upload screenshots:", err);
+          alert(
+            `Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`
+          );
           return;
         }
       } else {
@@ -212,20 +281,22 @@ const StateDiscoveryTab: React.FC = () => {
     // Convert similarity threshold (0-1) to color tolerance (0-255)
     // Higher similarity = lower tolerance (more strict)
     // 0.95 similarity = 12.75 tolerance, 0.8 similarity = 51 tolerance
-    const colorToleranceFromSimilarity = Math.round((1 - similarityThreshold) * 255);
+    const colorToleranceFromSimilarity = Math.round(
+      (1 - similarityThreshold) * 255
+    );
 
     const config: AnalysisConfig = {
       minRegionSize: [20, 20],
       maxRegionSize: [500, 500],
-      colorTolerance: colorToleranceFromSimilarity,  // Derived from similarity threshold
+      colorTolerance: colorToleranceFromSimilarity, // Derived from similarity threshold
       stabilityThreshold: 0.98,
       varianceThreshold: 10,
-      minScreenshotsPresent: 1,  // Find UI elements even if they appear once
-      processingMode: 'full',
+      minScreenshotsPresent: 1, // Find UI elements even if they appear once
+      processingMode: "full",
       enableRectangleDecomposition: true,
       enableCooccurrenceAnalysis: true,
       similarityThreshold: similarityThreshold,
-      region: selectedRegion || undefined
+      region: selectedRegion || undefined,
     };
 
     try {
@@ -242,8 +313,10 @@ const StateDiscoveryTab: React.FC = () => {
       );
       // Don't show alert - the progress indicator shows the status
     } catch (err) {
-      console.error('Analysis failed:', err);
-      alert(`Analysis failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      console.error("Analysis failed:", err);
+      alert(
+        `Analysis failed: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
       setIsAnalyzing(false);
     }
   }, [screenshots, uploadId, uploadScreenshots, startAnalysis]);
@@ -254,19 +327,22 @@ const StateDiscoveryTab: React.FC = () => {
   }, []);
 
   // Handle multi-select
-  const handleStateImageMultiSelect = useCallback((stateImageId: string, ctrlKey: boolean) => {
-    if (ctrlKey) {
-      const newSelection = new Set(selectedStateImages);
-      if (newSelection.has(stateImageId)) {
-        newSelection.delete(stateImageId);
+  const handleStateImageMultiSelect = useCallback(
+    (stateImageId: string, ctrlKey: boolean) => {
+      if (ctrlKey) {
+        const newSelection = new Set(selectedStateImages);
+        if (newSelection.has(stateImageId)) {
+          newSelection.delete(stateImageId);
+        } else {
+          newSelection.add(stateImageId);
+        }
+        setSelectedStateImages(newSelection);
       } else {
-        newSelection.add(stateImageId);
+        setSelectedStateImages(new Set([stateImageId]));
       }
-      setSelectedStateImages(newSelection);
-    } else {
-      setSelectedStateImages(new Set([stateImageId]));
-    }
-  }, [selectedStateImages]);
+    },
+    [selectedStateImages]
+  );
 
   // Handle StateImage deletion
   const handleDeleteStateImage = useCallback(async () => {
@@ -281,7 +357,7 @@ const StateDiscoveryTab: React.FC = () => {
         await deleteStateImage(selectedStateImage.id, { cascade: true });
         setSelectedStateImage(null);
       } catch (err) {
-        console.error('Failed to delete StateImage:', err);
+        console.error("Failed to delete StateImage:", err);
       }
     }
   }, [selectedStateImage, deleteStateImage]);
@@ -298,26 +374,26 @@ const StateDiscoveryTab: React.FC = () => {
       try {
         await bulkDeleteStateImages(Array.from(selectedStateImages), {
           cascade: true,
-          skipCritical: true
+          skipCritical: true,
         });
         setSelectedStateImages(new Set());
         setSelectedStateImage(null);
       } catch (err) {
-        console.error('Failed to delete StateImages:', err);
+        console.error("Failed to delete StateImages:", err);
       }
     }
   }, [selectedStateImages, bulkDeleteStateImages]);
 
   // Handle save structure
   const handleSaveStructure = useCallback(async () => {
-    const name = prompt('Enter a name for this state structure:');
+    const name = prompt("Enter a name for this state structure:");
     if (!name) return;
 
     // If filters are active, confirm with user
     if (maxDarkPixelPercentage < 100 || maxLightPixelPercentage < 100) {
       const confirmed = window.confirm(
         `Filters are active. This will save only the ${filteredStates.length} filtered states ` +
-        `and ${filteredStateImages.length} filtered state images. Continue?`
+          `and ${filteredStateImages.length} filtered state images. Continue?`
       );
       if (!confirmed) return;
     }
@@ -336,7 +412,7 @@ const StateDiscoveryTab: React.FC = () => {
             const imageAsset = createImageAsset(
               stateImage.image_data,
               stateImage.name || `StateImage_${stateImage.id}`,
-              'state_discovery'
+              "state_discovery"
             );
             addImage(imageAsset);
             addedCount++;
@@ -348,10 +424,18 @@ const StateDiscoveryTab: React.FC = () => {
         `State structure saved successfully! Added ${addedCount} images to Image Library.`
       );
     } catch (err) {
-      console.error('Failed to save structure:', err);
-      toast.error('Failed to save state structure');
+      console.error("Failed to save structure:", err);
+      toast.error("Failed to save state structure");
     }
-  }, [saveStructure, filteredStates, filteredStateImages, maxDarkPixelPercentage, maxLightPixelPercentage, images, addImage]);
+  }, [
+    saveStructure,
+    filteredStates,
+    filteredStateImages,
+    maxDarkPixelPercentage,
+    maxLightPixelPercentage,
+    images,
+    addImage,
+  ]);
 
   return (
     <div className="flex flex-col h-full">
@@ -362,12 +446,19 @@ const StateDiscoveryTab: React.FC = () => {
           <Button
             onClick={handleSaveStructure}
             disabled={!analysisResult || filteredStateImages.length === 0}
-            variant={(maxDarkPixelPercentage < 100 || maxLightPixelPercentage < 100) ? "secondary" : "default"}
+            variant={
+              maxDarkPixelPercentage < 100 || maxLightPixelPercentage < 100
+                ? "secondary"
+                : "default"
+            }
           >
             <Save className="mr-2 h-4 w-4" />
             Save Structure
-            {(maxDarkPixelPercentage < 100 || maxLightPixelPercentage < 100) && (
-              <Badge variant="outline" className="ml-1 text-xs">Filtered</Badge>
+            {(maxDarkPixelPercentage < 100 ||
+              maxLightPixelPercentage < 100) && (
+              <Badge variant="outline" className="ml-1 text-xs">
+                Filtered
+              </Badge>
             )}
           </Button>
           <Button variant="outline">
@@ -391,12 +482,16 @@ const StateDiscoveryTab: React.FC = () => {
           {/* Similarity Threshold Slider */}
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Similarity Threshold</Label>
-              <span className="text-sm text-gray-400">{similarityThreshold.toFixed(2)}</span>
+              <Label className="text-sm font-medium">
+                Similarity Threshold
+              </Label>
+              <span className="text-sm text-gray-400">
+                {similarityThreshold.toFixed(2)}
+              </span>
             </div>
             <Slider
               value={[similarityThreshold]}
-              onValueChange={([value]) => setSimilarityThreshold(value)}
+              onValueChange={([value]) => setSimilarityThreshold(value ?? 0.85)}
               min={0}
               max={1}
               step={0.01}
@@ -407,7 +502,8 @@ const StateDiscoveryTab: React.FC = () => {
               <span>Strict (1.00)</span>
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Lower values find more variations, higher values require exact matches
+              Lower values find more variations, higher values require exact
+              matches
             </p>
           </div>
 
@@ -420,7 +516,7 @@ const StateDiscoveryTab: React.FC = () => {
                 onClick={() => setShowRegionSelector(!showRegionSelector)}
               >
                 <CropIcon className="mr-2 h-4 w-4" />
-                {showRegionSelector ? 'Hide' : 'Select'} Analysis Region
+                {showRegionSelector ? "Hide" : "Select"} Analysis Region
               </Button>
 
               {selectedRegion && (
@@ -452,7 +548,7 @@ const StateDiscoveryTab: React.FC = () => {
             title={!uploadId ? "Upload screenshots first" : "Start analysis"}
           >
             <Play className="mr-2 h-4 w-4" />
-            Run Analysis {selectedRegion ? '(Region)' : ''}
+            Run Analysis {selectedRegion ? "(Region)" : ""}
           </Button>
 
           {/* Upload status indicator */}
@@ -486,20 +582,28 @@ const StateDiscoveryTab: React.FC = () => {
                 <div>
                   States: {filteredStates.length}
                   {filteredStates.length !== states?.length && (
-                    <span className="text-gray-500"> (of {states?.length})</span>
+                    <span className="text-gray-500">
+                      {" "}
+                      (of {states?.length})
+                    </span>
                   )}
                 </div>
                 <div>
                   StateImages: {filteredStateImages.length}
                   {filteredStateImages.length !== stateImages?.length && (
-                    <span className="text-gray-500"> (of {stateImages?.length})</span>
+                    <span className="text-gray-500">
+                      {" "}
+                      (of {stateImages?.length})
+                    </span>
                   )}
                 </div>
                 <div>
-                  Stability Score:{' '}
+                  Stability Score:{" "}
                   {analysisResult.statistics?.pixel_stability_score
-                    ? (analysisResult.statistics.pixel_stability_score * 100).toFixed(1) + '%'
-                    : 'N/A'}
+                    ? (
+                        analysisResult.statistics.pixel_stability_score * 100
+                      ).toFixed(1) + "%"
+                    : "N/A"}
                 </div>
               </CardContent>
             </Card>
@@ -530,11 +634,13 @@ const StateDiscoveryTab: React.FC = () => {
                         // Selecting state
                         // Set the filtered state (which has updated stateImageIds)
                         setSelectedState(state);
-                        setRightPanelTab('state');
+                        setRightPanelTab("state");
                       }}
                     >
                       <div className="flex justify-between items-center">
-                        <span className="truncate">{state?.name || 'Unnamed'}</span>
+                        <span className="truncate">
+                          {state?.name || "Unnamed"}
+                        </span>
                         <span className="text-xs text-gray-500">
                           {state?.stateImageIds?.length || 0}
                         </span>
@@ -559,8 +665,11 @@ const StateDiscoveryTab: React.FC = () => {
                     <Filter className="h-4 w-4 mr-2" />
                     Pixel Filters
                   </span>
-                  {(maxDarkPixelPercentage < 100 || maxLightPixelPercentage < 100) && (
-                    <Badge variant="secondary" className="text-xs">Active</Badge>
+                  {(maxDarkPixelPercentage < 100 ||
+                    maxLightPixelPercentage < 100) && (
+                    <Badge variant="secondary" className="text-xs">
+                      Active
+                    </Badge>
                   )}
                 </CardTitle>
               </CardHeader>
@@ -569,18 +678,23 @@ const StateDiscoveryTab: React.FC = () => {
                 <div className="space-y-2">
                   <Label className="text-xs flex justify-between">
                     <span>Max Dark Pixels</span>
-                    <span className="text-gray-500">{maxDarkPixelPercentage}%</span>
+                    <span className="text-gray-500">
+                      {maxDarkPixelPercentage}%
+                    </span>
                   </Label>
                   <Slider
                     value={[maxDarkPixelPercentage]}
-                    onValueChange={([value]) => setMaxDarkPixelPercentage(value)}
+                    onValueChange={([value]) =>
+                      setMaxDarkPixelPercentage(value ?? 50)
+                    }
                     min={0}
                     max={100}
                     step={5}
                     className="w-full"
                   />
                   <p className="text-xs text-gray-500">
-                    Hide regions with more than {maxDarkPixelPercentage}% dark pixels
+                    Hide regions with more than {maxDarkPixelPercentage}% dark
+                    pixels
                   </p>
                 </div>
 
@@ -588,18 +702,23 @@ const StateDiscoveryTab: React.FC = () => {
                 <div className="space-y-2">
                   <Label className="text-xs flex justify-between">
                     <span>Max Light Pixels</span>
-                    <span className="text-gray-500">{maxLightPixelPercentage}%</span>
+                    <span className="text-gray-500">
+                      {maxLightPixelPercentage}%
+                    </span>
                   </Label>
                   <Slider
                     value={[maxLightPixelPercentage]}
-                    onValueChange={([value]) => setMaxLightPixelPercentage(value)}
+                    onValueChange={([value]) =>
+                      setMaxLightPixelPercentage(value ?? 50)
+                    }
                     min={0}
                     max={100}
                     step={5}
                     className="w-full"
                   />
                   <p className="text-xs text-gray-500">
-                    Hide regions with more than {maxLightPixelPercentage}% light pixels
+                    Hide regions with more than {maxLightPixelPercentage}% light
+                    pixels
                   </p>
                 </div>
 
@@ -625,7 +744,10 @@ const StateDiscoveryTab: React.FC = () => {
           <div className="h-full flex flex-col">
             {/* View Controls */}
             <div className="flex items-center gap-4 mb-4">
-              <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
+              <Tabs
+                value={viewMode}
+                onValueChange={(v) => setViewMode(v as any)}
+              >
                 <TabsList>
                   <TabsTrigger value="all">All StateImages</TabsTrigger>
                   <TabsTrigger value="selected">Selected Only</TabsTrigger>
@@ -639,7 +761,7 @@ const StateDiscoveryTab: React.FC = () => {
                   size="sm"
                   variant="ghost"
                   className="h-7 px-2 hover:bg-gray-700 text-gray-300"
-                  onClick={() => setCanvasScale(s => Math.max(s * 0.8, 0.1))}
+                  onClick={() => setCanvasScale((s) => Math.max(s * 0.8, 0.1))}
                 >
                   <span className="text-lg">−</span>
                 </Button>
@@ -650,7 +772,7 @@ const StateDiscoveryTab: React.FC = () => {
                   size="sm"
                   variant="ghost"
                   className="h-7 px-2 hover:bg-gray-700 text-gray-300"
-                  onClick={() => setCanvasScale(s => Math.min(s * 1.2, 3))}
+                  onClick={() => setCanvasScale((s) => Math.min(s * 1.2, 3))}
                 >
                   <span className="text-lg">+</span>
                 </Button>
@@ -694,23 +816,27 @@ const StateDiscoveryTab: React.FC = () => {
                   imageUrl={selectedScreenshotUrl}
                   imageWidth={screenshotDimensions.width}
                   imageHeight={screenshotDimensions.height}
-                  onRegionSelect={setSelectedRegion}
-                  initialRegion={selectedRegion}
+                  onRegionSelect={(region) => setSelectedRegion(region ?? null)}
+                  initialRegion={selectedRegion ?? undefined}
                 />
               </div>
             ) : (
               <div
                 className="border border-gray-800 rounded-lg overflow-auto bg-[#0A0A0B]"
                 style={{
-                  flex: canvasScale < 0.8 ? '0 0 auto' : '1',
-                  width: canvasScale < 0.8 ? `${canvasImageSize.width * canvasScale + 40}px` : undefined,
-                  minWidth: '300px'
+                  flex: canvasScale < 0.8 ? "0 0 auto" : "1",
+                  width:
+                    canvasScale < 0.8
+                      ? `${canvasImageSize.width * canvasScale + 40}px`
+                      : undefined,
+                  minWidth: "300px",
                 }}
               >
-                {screenshots.length > 0 ? (
+                {screenshots.length > 0 &&
+                screenshots[selectedScreenshotIndex] ? (
                   <VisualizationCanvas
-                    screenshot={screenshots[selectedScreenshotIndex]}
-                    stateImages={stateImages}  // Pass all state images for pixel analysis
+                    screenshot={screenshots[selectedScreenshotIndex]!}
+                    stateImages={stateImages} // Pass all state images for pixel analysis
                     selectedStateImage={selectedStateImage}
                     selectedStateImages={selectedStateImages}
                     highlightedStateImages={highlightedStateImages}
@@ -739,7 +865,11 @@ const StateDiscoveryTab: React.FC = () => {
 
         {/* Right Panel - Details */}
         <div className="w-80 border-l overflow-hidden flex flex-col">
-          <Tabs value={rightPanelTab} onValueChange={(v) => setRightPanelTab(v as 'stateimage' | 'state')} className="flex flex-col h-full">
+          <Tabs
+            value={rightPanelTab}
+            onValueChange={(v) => setRightPanelTab(v as "stateimage" | "state")}
+            className="flex flex-col h-full"
+          >
             <div className="border-b px-4 pt-4">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="stateimage">StateImages</TabsTrigger>
@@ -747,13 +877,16 @@ const StateDiscoveryTab: React.FC = () => {
               </TabsList>
             </div>
 
-            <TabsContent value="stateimage" className="flex-1 overflow-y-auto px-4 pb-4 mt-0">
+            <TabsContent
+              value="stateimage"
+              className="flex-1 overflow-y-auto px-4 pb-4 mt-0"
+            >
               {selectedStateImage ? (
                 <StateImageDetails
                   stateImage={selectedStateImage}
                   screenshots={screenshots}
-                  states={filteredStates}  // Use filtered states
-                  onUpdate={(updates) => {
+                  states={filteredStates} // Use filtered states
+                  onUpdate={() => {
                     // Handle StateImage updates
                     // Update StateImage
                   }}
@@ -770,24 +903,31 @@ const StateDiscoveryTab: React.FC = () => {
               )}
             </TabsContent>
 
-            <TabsContent value="state" className="flex-1 overflow-y-auto px-4 pb-4 mt-0">
-              {selectedState ? (() => {
-                // Find the filtered version of the selected state
-                const filteredSelectedState = filteredStates.find(s => s.id === selectedState.id) || selectedState;
-                return (
-                  <StateDetails
-                    state={filteredSelectedState}
-                    stateImages={filteredStateImages}  // Use filtered state images
-                    screenshots={screenshots}
-                    currentScreenshotIndex={selectedScreenshotIndex}
-                    onSelectScreenshot={(index) => {
-                      setSelectedScreenshotIndex(index);
-                      // Don't highlight all state images, let StateDetails handle filtering
-                    }}
-                    onHighlightStateImages={setHighlightedStateImages}
-                  />
-                );
-              })() : (
+            <TabsContent
+              value="state"
+              className="flex-1 overflow-y-auto px-4 pb-4 mt-0"
+            >
+              {selectedState ? (
+                (() => {
+                  // Find the filtered version of the selected state
+                  const filteredSelectedState =
+                    filteredStates.find((s) => s.id === selectedState.id) ||
+                    selectedState;
+                  return (
+                    <StateDetails
+                      state={filteredSelectedState}
+                      stateImages={filteredStateImages} // Use filtered state images
+                      screenshots={screenshots}
+                      currentScreenshotIndex={selectedScreenshotIndex}
+                      onSelectScreenshot={(index) => {
+                        setSelectedScreenshotIndex(index);
+                        // Don't highlight all state images, let StateDetails handle filtering
+                      }}
+                      onHighlightStateImages={setHighlightedStateImages}
+                    />
+                  );
+                })()
+              ) : (
                 <div className="text-center text-gray-400 mt-8">
                   <p>Select a State to view details</p>
                 </div>

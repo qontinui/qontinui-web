@@ -3,10 +3,11 @@ Tests for organization service, specifically personal organization creation.
 """
 
 import pytest
+from sqlalchemy import select
+
 from app.models.organization import Organization, TeamMember, TeamRole
 from app.models.user import User
 from app.services.organization_service import organization_service
-from sqlalchemy import select
 
 
 @pytest.mark.asyncio

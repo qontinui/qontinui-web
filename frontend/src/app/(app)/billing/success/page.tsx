@@ -1,12 +1,18 @@
-'use client';
+"use client";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { CheckCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export default function BillingSuccessPage() {
   const router = useRouter();
@@ -18,7 +24,7 @@ export default function BillingSuccessPage() {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          router.push('/dashboard');
+          router.push("/dashboard");
           return 0;
         }
         return prev - 1;
@@ -28,7 +34,7 @@ export default function BillingSuccessPage() {
     return () => clearInterval(timer);
   }, [router]);
 
-  const sessionId = searchParams.get('session_id');
+  const sessionId = searchParams.get("session_id");
 
   return (
     <div className="container mx-auto px-4 py-16 flex items-center justify-center min-h-screen">
@@ -45,7 +51,8 @@ export default function BillingSuccessPage() {
         <CardContent className="space-y-4">
           <div className="text-center space-y-2">
             <p className="text-sm text-muted-foreground">
-              Thank you for upgrading to a paid plan. Your account now has access to all premium features.
+              Thank you for upgrading to a paid plan. Your account now has
+              access to all premium features.
             </p>
             {sessionId && (
               <p className="text-xs text-muted-foreground font-mono">
@@ -59,7 +66,7 @@ export default function BillingSuccessPage() {
               Redirecting to dashboard in {countdown} seconds...
             </p>
             <Button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push("/dashboard")}
               className="w-full"
             >
               Go to Dashboard Now

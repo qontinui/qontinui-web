@@ -32,6 +32,7 @@ frontend/src/
 ## Features
 
 ### 1. Test Runs Dashboard
+
 - **Paginated List**: View all test runs with filtering and sorting
 - **Status Indicators**: Visual indicators for completed, failed, and running tests
 - **Coverage Metrics**: See coverage percentage and states covered
@@ -40,6 +41,7 @@ frontend/src/
 - **Export Functionality**: Export test runs as JSON, CSV, or PDF
 
 ### 2. Test Run Details
+
 - **Comprehensive Overview**: Duration, coverage, success rate, deficiencies
 - **Transition Results**: Detailed list of all transitions with status and timing
 - **State Coverage**: Per-state visit counts and success rates
@@ -48,12 +50,14 @@ frontend/src/
 - **Error Messages**: Detailed error information
 
 ### 3. Coverage Trends
+
 - **Line Chart**: Interactive chart showing coverage over time
 - **Multiple Metrics**: Coverage %, states covered, test run count
 - **Date Range Filtering**: View trends for specific periods
 - **Summary Statistics**: Average coverage, total runs, latest coverage
 
 ### 4. Reliability Statistics
+
 - **Overall Success Rate**: Aggregate success metrics
 - **Most Reliable Transitions**: Top performing transitions
 - **Least Reliable Transitions**: Problematic transitions needing attention
@@ -61,6 +65,7 @@ frontend/src/
 - **Average Transition Time**: Performance metrics
 
 ### 5. State Graph Visualization
+
 - **Interactive Graph**: Visual representation of state transitions
 - **Color-Coded Nodes**: Success rates indicated by color
 - **Edge Labels**: Success rates and action types on transitions
@@ -69,6 +74,7 @@ frontend/src/
 - **Statistics**: Total states, transitions, and average success rate
 
 ### 6. Deficiency Management
+
 - **Filterable List**: Filter by severity, status, and search
 - **Status Updates**: Update deficiency status (open, in progress, resolved, won't fix)
 - **Detailed Cards**: Expandable cards with full information
@@ -80,11 +86,14 @@ frontend/src/
 ## Components
 
 ### TestRunsList
+
 **Props:**
+
 - `projectId?: string` - Filter by project
 - `workflowId?: string` - Filter by workflow
 
 **Features:**
+
 - Pagination (10 items per page)
 - Status filtering (all, completed, failed, running)
 - Date range filtering
@@ -93,10 +102,13 @@ frontend/src/
 - Click to view details
 
 ### TestRunDetails
+
 **Props:**
+
 - `runId: string` - Test run ID
 
 **Features:**
+
 - Overview metrics card
 - Tabbed interface (Transitions, Coverage, Deficiencies)
 - Transition timeline with screenshots
@@ -104,11 +116,14 @@ frontend/src/
 - Deficiency list
 
 ### DeficiencyList
+
 **Props:**
+
 - `projectId?: string` - Filter by project
 - `testRunId?: string` - Filter by test run
 
 **Features:**
+
 - Search functionality
 - Severity filtering (critical, high, medium, low)
 - Status filtering (open, in progress, resolved, won't fix)
@@ -116,10 +131,13 @@ frontend/src/
 - Export all deficiencies
 
 ### DeficiencyCard
+
 **Props:**
+
 - `deficiency: Deficiency` - Deficiency object
 
 **Features:**
+
 - Expandable/collapsible
 - Status update dropdown
 - Expected vs actual behavior
@@ -128,23 +146,29 @@ frontend/src/
 - Screenshots with zoom
 
 ### CoverageTrendChart
+
 **Props:**
+
 - `projectId: string` - Project to show trends for
 - `startDate?: string` - Start date filter
 - `endDate?: string` - End date filter
 
 **Features:**
+
 - Multi-line chart (coverage, states, runs)
 - Interactive tooltips
 - Date range filtering
 - Summary statistics
 
 ### ReliabilityStats
+
 **Props:**
+
 - `projectId: string` - Project to show stats for
 - `workflowId?: string` - Optional workflow filter
 
 **Features:**
+
 - Overall success rate
 - Top 5 most reliable transitions
 - Top 5 least reliable transitions
@@ -152,11 +176,14 @@ frontend/src/
 - Average transition times
 
 ### StateGraphVisualization
+
 **Props:**
+
 - `projectId: string` - Project ID
 - `workflowId: string` - Workflow ID
 
 **Features:**
+
 - Interactive graph using @xyflow/react
 - Dagre automatic layout
 - Color-coded nodes by success rate
@@ -170,30 +197,39 @@ frontend/src/
 All hooks use `@tanstack/react-query` for caching and state management:
 
 ### useTestRuns(filters?: TestRunFilters)
+
 Fetch paginated list of test runs with optional filters.
 
 ### useTestRun(id: string, enabled?: boolean)
+
 Fetch a single test run with full details.
 
 ### useDeficiencies(filters?: DeficiencyFilters)
+
 Fetch paginated list of deficiencies with optional filters.
 
 ### useUpdateDeficiency()
+
 Mutation hook to update deficiency status and details.
 
 ### useCoverageTrends(projectId, startDate?, endDate?, enabled?)
+
 Fetch coverage trends over time for a project.
 
 ### useReliabilityStats(projectId, workflowId?, enabled?)
+
 Fetch reliability statistics for a project/workflow.
 
 ### useStateGraph(projectId, workflowId, enabled?)
+
 Fetch state graph data for visualization.
 
 ### useExportTestRun()
+
 Mutation hook to export test run data (JSON, CSV, PDF).
 
 ### useExportDeficiencies()
+
 Mutation hook to export deficiencies (JSON, CSV).
 
 ## API Endpoints
@@ -201,16 +237,19 @@ Mutation hook to export deficiencies (JSON, CSV).
 The testing service expects these endpoints on the backend:
 
 ### Test Runs
+
 - `GET /api/v1/testing/runs` - List test runs (with filters)
 - `GET /api/v1/testing/runs/:id` - Get test run details
 - `GET /api/v1/testing/runs/:id/export` - Export test run
 
 ### Deficiencies
+
 - `GET /api/v1/testing/deficiencies` - List deficiencies (with filters)
 - `PATCH /api/v1/testing/deficiencies/:id` - Update deficiency
 - `GET /api/v1/testing/deficiencies/export` - Export deficiencies
 
 ### Analytics
+
 - `GET /api/v1/testing/coverage-trends` - Get coverage trends
 - `GET /api/v1/testing/reliability-stats` - Get reliability statistics
 - `GET /api/v1/testing/state-graph` - Get state graph data
@@ -218,6 +257,7 @@ The testing service expects these endpoints on the backend:
 ## Styling
 
 All components use:
+
 - **Tailwind CSS** for styling
 - **Dark theme** with gradient backgrounds
 - **Color scheme**:
@@ -239,6 +279,7 @@ All components use:
 ```
 
 Query parameters:
+
 - `?project=:id` - Filter by project
 - `?run=:id` - Filter by test run
 - `?workflow=:id` - Filter by workflow
@@ -256,10 +297,14 @@ Query parameters:
 ## Usage Example
 
 ```tsx
-import { TestRunsList, CoverageTrendChart, ReliabilityStats } from '@/components/testing';
+import {
+  TestRunsList,
+  CoverageTrendChart,
+  ReliabilityStats,
+} from "@/components/testing";
 
 function MyTestingPage() {
-  const projectId = 'project-123';
+  const projectId = "project-123";
 
   return (
     <div>

@@ -1,30 +1,43 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState, useRef, useCallback } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { MaskEditor } from "@/components/mask-editor"
-import { Upload, ImageIcon, Trash2, Search, X, Edit } from "lucide-react"
-import { toast } from "sonner"
-import { useAutomation } from "@/contexts/automation-context"
-import { ImageDeletionDialog, type ImageUsageInfo } from "@/components/image-deletion-dialog"
-import { apiClient } from "@/lib/api-client"
-import { uploadScreenshotOffline } from "@/lib/offline-screenshot-upload"
-import { ImageUploadProgress, type UploadingImage } from "@/components/ImageUploadProgress"
+import { useState, useRef, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { MaskEditor } from "@/components/mask-editor";
+import { Upload, ImageIcon, Trash2, Search, X, Edit } from "lucide-react";
+import { toast } from "sonner";
+import { useAutomation } from "@/contexts/automation-context";
+import {
+  ImageDeletionDialog,
+  type ImageUsageInfo,
+} from "@/components/image-deletion-dialog";
+import { uploadScreenshotOffline } from "@/lib/offline-screenshot-upload";
+import {
+  ImageUploadProgress,
+  type UploadingImage,
+} from "@/components/ImageUploadProgress";
 
 interface ImageAsset {
-  id: string
-  name: string
-  url: string
-  size: number
-  createdAt: Date
-  usageCount: number
-  usedIn: Array<{ type: "process" | "state"; id: string; name: string }>
-  source: 'uploaded' | 'pattern_optimization' | 'image_extraction' | 'state_discovery'
+  id: string;
+  name: string;
+  url: string;
+  mask?: string;
+  size: number;
+  createdAt: Date;
+  usageCount: number;
+  usedIn: Array<{ type: "process" | "state"; id: string; name: string }>;
+  source:
+    | "uploaded"
+    | "pattern_optimization"
+    | "image_extraction"
+    | "state_discovery";
+  projectName?: string;
+  s3_key?: string;
+  url_expires_at?: Date;
 }
 
 export function ImagesManager() {
@@ -37,125 +50,141 @@ export function ImagesManager() {
     removeImageFromStates,
     markImageAsRemovedInProcesses,
     projectName,
-    projectId
-  } = useAutomation()
-  const [searchQuery, setSearchQuery] = useState("")
-  const [dragActive, setDragActive] = useState(false)
-  const [activeFilter, setActiveFilter] = useState<string | null>(null)
-  const [showMaskEditor, setShowMaskEditor] = useState(false)
-  const [editingImage, setEditingImage] = useState<ImageAsset | null>(null)
-  const [showDeletionDialog, setShowDeletionDialog] = useState(false)
-  const [imageToDelete, setImageToDelete] = useState<ImageAsset | null>(null)
-  const [deletionUsageInfo, setDeletionUsageInfo] = useState<ImageUsageInfo>({ states: [], processes: [] })
-  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
-  const [uploadingFiles, setUploadingFiles] = useState<UploadingImage[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
+    projectId,
+  } = useAutomation();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dragActive, setDragActive] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [showMaskEditor, setShowMaskEditor] = useState(false);
+  const [editingImage, setEditingImage] = useState<ImageAsset | null>(null);
+  const [showDeletionDialog, setShowDeletionDialog] = useState(false);
+  const [imageToDelete, setImageToDelete] = useState<ImageAsset | null>(null);
+  const [deletionUsageInfo, setDeletionUsageInfo] = useState<ImageUsageInfo>({
+    states: [],
+    processes: [],
+  });
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingImage[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Count images by source
   const imageCounts = {
     all: images.length,
-    uploaded: images.filter(img => img.source === 'uploaded').length,
-    pattern_optimization: images.filter(img => img.source === 'pattern_optimization').length,
-    image_extraction: images.filter(img => img.source === 'image_extraction').length,
-    state_discovery: images.filter(img => img.source === 'state_discovery').length,
-  }
+    uploaded: images.filter((img) => img.source === "uploaded").length,
+    pattern_optimization: images.filter(
+      (img) => img.source === "pattern_optimization"
+    ).length,
+    image_extraction: images.filter((img) => img.source === "image_extraction")
+      .length,
+    state_discovery: images.filter((img) => img.source === "state_discovery")
+      .length,
+  };
 
   // Filter images by search query and source
   const filteredImages = images.filter((image) => {
-    const matchesSearch = image.name.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesSource = !activeFilter || image.source === activeFilter
-    return matchesSearch && matchesSource
-  })
+    const matchesSearch = image.name
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+    const matchesSource = !activeFilter || image.source === activeFilter;
+    return matchesSearch && matchesSource;
+  });
 
   const handleFiles = useCallback(
     async (files: FileList) => {
       // Validate projectId is available
       if (!projectId) {
-        toast.error('No project selected', {
-          description: 'Please open a project before uploading images.',
+        toast.error("No project selected", {
+          description: "Please open a project before uploading images.",
         });
         return;
       }
 
-      const fileArray = Array.from(files)
+      const fileArray = Array.from(files);
 
       // Validate file types before upload
-      const invalidFiles = fileArray.filter(file => !file.type.startsWith("image/"))
+      const invalidFiles = fileArray.filter(
+        (file) => !file.type.startsWith("image/")
+      );
       if (invalidFiles.length > 0) {
         toast.error("Invalid file type", {
-          description: `${invalidFiles[0].name} is not an image file.`,
-        })
-        return
+          description: `${invalidFiles[0]?.name ?? "Unknown file"} is not an image file.`,
+        });
+        return;
       }
 
       // Initialize upload progress for all files
-      const initialProgress: Record<string, number> = {}
-      const initialUploading: UploadingImage[] = []
-      fileArray.forEach(file => {
-        initialProgress[file.name] = 0
-        initialUploading.push({ name: file.name, progress: 0 })
-      })
-      setUploadProgress(initialProgress)
-      setUploadingFiles(initialUploading)
+      const initialUploading: UploadingImage[] = [];
+      fileArray.forEach((file) => {
+        initialUploading.push({ name: file.name, progress: 0 });
+      });
+      setUploadingFiles(initialUploading);
 
       // Upload all files concurrently (with progress tracking)
       const uploadPromises = fileArray.map(async (file) => {
         try {
           // Validate image before uploading
           await new Promise<void>((resolve, reject) => {
-            const img = new Image()
-            const reader = new FileReader()
+            const img = new Image();
+            const reader = new FileReader();
 
             reader.onload = (e) => {
               img.onload = () => {
                 if (img.width < 10 || img.height < 10) {
-                  reject(new Error(`Image too small: ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`))
+                  reject(
+                    new Error(
+                      `Image too small: ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`
+                    )
+                  );
                 } else {
-                  resolve()
+                  resolve();
                 }
-              }
-              img.onerror = () => reject(new Error('Failed to load image'))
-              img.src = e.target?.result as string
-            }
-            reader.onerror = () => reject(new Error('Failed to read file'))
-            reader.readAsDataURL(file)
-          })
+              };
+              img.onerror = () => reject(new Error("Failed to load image"));
+              img.src = e.target?.result as string;
+            };
+            reader.onerror = () => reject(new Error("Failed to read file"));
+            reader.readAsDataURL(file);
+          });
 
           // Upload with offline-first support
-          const result = await uploadScreenshotOffline(file, projectId, {
-            name: file.name,
-            onProgress: (progress, status) => {
-              setUploadProgress(prev => ({ ...prev, [file.name]: progress }))
-              setUploadingFiles(prev =>
-                prev.map(f => f.name === file.name ? { ...f, progress } : f)
-              )
+          const result = await uploadScreenshotOffline(
+            file,
+            Number(projectId),
+            {
+              name: file.name,
+              onProgress: (progress, _status) => {
+                setUploadingFiles((prev) =>
+                  prev.map((f) =>
+                    f.name === file.name ? { ...f, progress } : f
+                  )
+                );
+              },
             }
-          })
+          );
 
           // Create ImageAsset with local data (available immediately)
-          const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, '')
+          const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
           const imageAsset: ImageAsset = {
             id: result.screenshot.id,
             name: nameWithoutExtension,
             url: result.screenshot.url,
             size: file.size,
-            createdAt: new Date(result.screenshot.createdAt),
+            createdAt: new Date(result.screenshot.uploadedAt),
             usageCount: 0,
             usedIn: [],
-            source: 'uploaded',
+            source: "uploaded",
             projectName: projectName,
             // S3 fields (matching ImageAsset type in context)
             s3_key: result.screenshot.s3Key,
             url_expires_at: result.screenshot.urlExpiresAt,
-          }
+          };
 
           // Add to context immediately
-          addImage(imageAsset)
+          addImage(imageAsset);
 
-          toast.success(`${file.name} uploaded`)
+          toast.success(`${file.name} uploaded`);
 
           // Remove from uploading list
-          setUploadingFiles(prev => prev.filter(f => f.name !== file.name))
+          setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
 
           // Wait for server sync in background
           result.whenSynced
@@ -166,190 +195,216 @@ export function ImagesManager() {
                 id: serverData.imageId,
                 url: serverData.url,
                 s3_key: serverData.s3Key,
-              }
-              addImage(updatedAsset)
+              };
+              addImage(updatedAsset);
             })
             .catch((error) => {
-              console.error('Sync failed for', file.name, error)
-              toast.warning(`${file.name} saved locally, will sync when online`)
-            })
+              console.error("Sync failed for", file.name, error);
+              toast.warning(
+                `${file.name} saved locally, will sync when online`
+              );
+            });
 
-          return { success: true, fileName: file.name }
+          return { success: true, fileName: file.name };
         } catch (error: any) {
-          console.error(`Upload failed for ${file.name}:`, error)
+          console.error(`Upload failed for ${file.name}:`, error);
 
           // Show user-friendly error message
-          const errorMsg = error.message || 'Unknown error occurred'
-          if (errorMsg.includes('quota') || errorMsg.includes('Quota')) {
-            toast.error('Storage quota exceeded', {
-              description: 'Please upgrade your plan or delete unused images.',
-            })
-          } else if (errorMsg.includes('too small')) {
-            toast.error('Image too small', {
+          const errorMsg = error.message || "Unknown error occurred";
+          if (errorMsg.includes("quota") || errorMsg.includes("Quota")) {
+            toast.error("Storage quota exceeded", {
+              description: "Please upgrade your plan or delete unused images.",
+            });
+          } else if (errorMsg.includes("too small")) {
+            toast.error("Image too small", {
               description: errorMsg,
-            })
-          } else if (errorMsg.includes('Network error') || errorMsg.includes('timeout')) {
-            toast.error('Network error', {
-              description: 'Please check your internet connection and try again.',
-            })
+            });
+          } else if (
+            errorMsg.includes("Network error") ||
+            errorMsg.includes("timeout")
+          ) {
+            toast.error("Network error", {
+              description:
+                "Please check your internet connection and try again.",
+            });
           } else {
             toast.error(`Failed to upload ${file.name}`, {
               description: errorMsg,
-            })
+            });
           }
 
           // Remove from uploading list
-          setUploadingFiles(prev => prev.filter(f => f.name !== file.name))
+          setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
 
-          return { success: false, fileName: file.name, error: errorMsg }
+          return { success: false, fileName: file.name, error: errorMsg };
         }
-      })
+      });
 
       // Wait for all uploads to complete
-      const results = await Promise.all(uploadPromises)
-      const successCount = results.filter(r => r.success).length
+      const results = await Promise.all(uploadPromises);
+      const successCount = results.filter((r) => r.success).length;
 
       if (successCount > 0) {
         toast.success("Upload complete", {
           description: `${successCount} image(s) added to your library.`,
-        })
+        });
       }
     },
-    [addImage, projectName, projectId],
-  )
+    [addImage, projectName, projectId]
+  );
 
   const handleDeleteImage = (imageId: string) => {
-    const image = images.find(img => img.id === imageId)
+    const image = images.find((img) => img.id === imageId);
     if (!image) {
-      toast.error("Image not found")
-      return
+      toast.error("Image not found");
+      return;
     }
 
     // Get usage information
-    const usageInfo = getImageUsage(imageId)
-    setImageToDelete(image)
-    setDeletionUsageInfo(usageInfo)
-    setShowDeletionDialog(true)
-  }
+    const usageInfo = getImageUsage(imageId);
+    setImageToDelete(image as any);
+    setDeletionUsageInfo(usageInfo);
+    setShowDeletionDialog(true);
+  };
 
   const confirmDelete = async () => {
-    if (!imageToDelete) return
+    if (!imageToDelete) return;
 
     try {
       // Perform cascade deletion
-      const statesAffected = await removeImageFromStates(imageToDelete.url)
-      const processesAffected = await markImageAsRemovedInProcesses(imageToDelete.id, imageToDelete.name)
+      const statesAffected = await removeImageFromStates(imageToDelete.url);
+      const processesAffected = await markImageAsRemovedInProcesses(
+        imageToDelete.id,
+        imageToDelete.name
+      );
 
       // Delete the image from the library
-      deleteImage(imageToDelete.id)
+      deleteImage(imageToDelete.id);
 
       // Show success message
-      const details = []
+      const details = [];
       if (statesAffected > 0) {
-        details.push(`Removed from ${statesAffected} state${statesAffected > 1 ? 's' : ''}`)
+        details.push(
+          `Removed from ${statesAffected} state${statesAffected > 1 ? "s" : ""}`
+        );
       }
       if (processesAffected > 0) {
-        details.push(`Marked as removed in ${processesAffected} workflow${processesAffected > 1 ? 's' : ''}`)
+        details.push(
+          `Marked as removed in ${processesAffected} workflow${processesAffected > 1 ? "s" : ""}`
+        );
       }
 
       toast.success("Image deleted", {
-        description: details.length > 0
-          ? details.join(' and ')
-          : "The image has been removed from your library.",
-      })
+        description:
+          details.length > 0
+            ? details.join(" and ")
+            : "The image has been removed from your library.",
+      });
 
       // Reset state
-      setImageToDelete(null)
-      setDeletionUsageInfo({ states: [], processes: [] })
+      setImageToDelete(null);
+      setDeletionUsageInfo({ states: [], processes: [] });
     } catch (error) {
       toast.error("Failed to delete image", {
         description: "An error occurred while deleting the image.",
-      })
-      console.error('Delete image error:', error)
+      });
+      console.error("Delete image error:", error);
     }
-  }
+  };
 
   const handleEditMask = (image: ImageAsset) => {
-    setEditingImage(image)
-    setShowMaskEditor(true)
-  }
+    setEditingImage(image);
+    setShowMaskEditor(true);
+  };
 
   const handleSaveMask = (maskedImage: string, mask: string) => {
-    if (!editingImage) return
+    if (!editingImage) return;
 
     const updatedImage: ImageAsset = {
       ...editingImage,
       url: maskedImage,
       mask: mask, // Store the separate mask image
-    }
+    };
 
-    updateImage(updatedImage)
-    setShowMaskEditor(false)
-    setEditingImage(null)
+    updateImage(updatedImage);
+    setShowMaskEditor(false);
+    setEditingImage(null);
     toast.success("Mask applied to image", {
       description: "The image has been updated with the new mask.",
-    })
-  }
+    });
+  };
 
   const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+    e.preventDefault();
+    e.stopPropagation();
     if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true)
+      setDragActive(true);
     } else if (e.type === "dragleave") {
-      setDragActive(false)
+      setDragActive(false);
     }
-  }, [])
+  }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      setDragActive(false)
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
 
       if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        handleFiles(e.dataTransfer.files)
+        handleFiles(e.dataTransfer.files);
       }
     },
-    [handleFiles],
-  )
+    [handleFiles]
+  );
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
-        handleFiles(e.target.files)
+        handleFiles(e.target.files);
       }
     },
-    [handleFiles],
-  )
+    [handleFiles]
+  );
 
   const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes"
-    const k = 1024
-    const sizes = ["Bytes", "KB", "MB", "GB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
-  }
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return (
+      Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+    );
+  };
 
   const getSourceLabel = (source: string) => {
-    switch(source) {
-      case 'uploaded': return 'Uploaded'
-      case 'pattern_optimization': return 'Pattern Opt'
-      case 'image_extraction': return 'Extraction'
-      case 'state_discovery': return 'Discovery'
-      default: return 'Unknown'
+    switch (source) {
+      case "uploaded":
+        return "Uploaded";
+      case "pattern_optimization":
+        return "Pattern Opt";
+      case "image_extraction":
+        return "Extraction";
+      case "state_discovery":
+        return "Discovery";
+      default:
+        return "Unknown";
     }
-  }
+  };
 
   const getSourceColor = (source: string) => {
-    switch(source) {
-      case 'uploaded': return '#00FF88'
-      case 'pattern_optimization': return '#00D9FF'
-      case 'image_extraction': return '#BD00FF'
-      case 'state_discovery': return '#FFB800'
-      default: return '#6B7280'
+    switch (source) {
+      case "uploaded":
+        return "#00FF88";
+      case "pattern_optimization":
+        return "#00D9FF";
+      case "image_extraction":
+        return "#BD00FF";
+      case "state_discovery":
+        return "#FFB800";
+      default:
+        return "#6B7280";
     }
-  }
+  };
 
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
@@ -365,7 +420,9 @@ export function ImagesManager() {
             <div className="flex gap-3">
               <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
                 <span className="text-xs text-gray-400">Total Images:</span>
-                <span className="text-sm font-bold text-[#00FF88]">{images.length}</span>
+                <span className="text-sm font-bold text-[#00FF88]">
+                  {images.length}
+                </span>
               </div>
               <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
                 <span className="text-xs text-gray-400">Total Usage:</span>
@@ -376,7 +433,9 @@ export function ImagesManager() {
               <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
                 <span className="text-xs text-gray-400">Total Size:</span>
                 <span className="text-sm font-bold text-[#BD00FF]">
-                  {formatFileSize(images.reduce((acc, img) => acc + img.size, 0))}
+                  {formatFileSize(
+                    images.reduce((acc, img) => acc + img.size, 0)
+                  )}
                 </span>
               </div>
             </div>
@@ -428,46 +487,50 @@ export function ImagesManager() {
             All ({imageCounts.all})
           </Badge>
           <Badge
-            variant={activeFilter === 'uploaded' ? "default" : "outline"}
+            variant={activeFilter === "uploaded" ? "default" : "outline"}
             className={`cursor-pointer transition-all ${
-              activeFilter === 'uploaded'
+              activeFilter === "uploaded"
                 ? "bg-[#00FF88] text-black border-[#00FF88]"
                 : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
             }`}
-            onClick={() => setActiveFilter('uploaded')}
+            onClick={() => setActiveFilter("uploaded")}
           >
             Uploaded ({imageCounts.uploaded})
           </Badge>
           <Badge
-            variant={activeFilter === 'pattern_optimization' ? "default" : "outline"}
+            variant={
+              activeFilter === "pattern_optimization" ? "default" : "outline"
+            }
             className={`cursor-pointer transition-all ${
-              activeFilter === 'pattern_optimization'
+              activeFilter === "pattern_optimization"
                 ? "bg-[#00D9FF] text-black border-[#00D9FF]"
                 : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
             }`}
-            onClick={() => setActiveFilter('pattern_optimization')}
+            onClick={() => setActiveFilter("pattern_optimization")}
           >
             Pattern Opt ({imageCounts.pattern_optimization})
           </Badge>
           <Badge
-            variant={activeFilter === 'image_extraction' ? "default" : "outline"}
+            variant={
+              activeFilter === "image_extraction" ? "default" : "outline"
+            }
             className={`cursor-pointer transition-all ${
-              activeFilter === 'image_extraction'
+              activeFilter === "image_extraction"
                 ? "bg-[#BD00FF] text-black border-[#BD00FF]"
                 : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
             }`}
-            onClick={() => setActiveFilter('image_extraction')}
+            onClick={() => setActiveFilter("image_extraction")}
           >
             Extraction ({imageCounts.image_extraction})
           </Badge>
           <Badge
-            variant={activeFilter === 'state_discovery' ? "default" : "outline"}
+            variant={activeFilter === "state_discovery" ? "default" : "outline"}
             className={`cursor-pointer transition-all ${
-              activeFilter === 'state_discovery'
+              activeFilter === "state_discovery"
                 ? "bg-[#FFB800] text-black border-[#FFB800]"
                 : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
             }`}
-            onClick={() => setActiveFilter('state_discovery')}
+            onClick={() => setActiveFilter("state_discovery")}
           >
             Discovery ({imageCounts.state_discovery})
           </Badge>
@@ -477,7 +540,9 @@ export function ImagesManager() {
       {/* Upload Area */}
       <Card
         className={`border-2 border-dashed transition-colors ${
-          dragActive ? "border-[#00FF88] bg-[#00FF88]/10" : "border-gray-700 bg-[#27272A]/50 hover:border-gray-600"
+          dragActive
+            ? "border-[#00FF88] bg-[#00FF88]/10"
+            : "border-gray-700 bg-[#27272A]/50 hover:border-gray-600"
         }`}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
@@ -486,9 +551,13 @@ export function ImagesManager() {
       >
         <CardContent className="p-12">
           <div className="text-center">
-            <Upload className={`w-12 h-12 mx-auto mb-4 ${dragActive ? "text-[#00FF88]" : "text-gray-500"}`} />
+            <Upload
+              className={`w-12 h-12 mx-auto mb-4 ${dragActive ? "text-[#00FF88]" : "text-gray-500"}`}
+            />
             <p className="text-lg mb-2">Drag & drop images here</p>
-            <p className="text-sm text-gray-400 mb-4">or click to browse files</p>
+            <p className="text-sm text-gray-400 mb-4">
+              or click to browse files
+            </p>
             <Button
               variant="outline"
               className="border-gray-600 bg-transparent hover:border-[#00FF88] hover:text-[#00FF88]"
@@ -500,7 +569,14 @@ export function ImagesManager() {
         </CardContent>
       </Card>
 
-      <input ref={fileInputRef} type="file" multiple accept="image/*" onChange={handleFileInput} className="hidden" />
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*"
+        onChange={handleFileInput}
+        className="hidden"
+      />
 
       {/* Image Gallery */}
       {filteredImages.length === 0 ? (
@@ -515,14 +591,19 @@ export function ImagesManager() {
             <>
               <ImageIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p className="text-lg">No images uploaded</p>
-              <p className="text-sm">Upload images to use in your automation workflows</p>
+              <p className="text-sm">
+                Upload images to use in your automation workflows
+              </p>
             </>
           )}
         </div>
       ) : (
         <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-12 xl:grid-cols-16 gap-2">
           {filteredImages.map((image) => (
-            <Card key={image.id} className="border-gray-700 bg-[#27272A] hover:border-gray-600 transition-colors group">
+            <Card
+              key={image.id}
+              className="border-gray-700 bg-[#27272A] hover:border-gray-600 transition-colors group"
+            >
               <CardContent className="p-1">
                 <div className="space-y-1">
                   {/* Image Preview - reduced by 50% */}
@@ -537,7 +618,7 @@ export function ImagesManager() {
                         variant="ghost"
                         size="sm"
                         className="text-purple-400 hover:text-purple-300 hover:bg-purple-400/20 h-6 w-6 p-0"
-                        onClick={() => handleEditMask(image)}
+                        onClick={() => handleEditMask(image as any)}
                         title="Edit Mask"
                       >
                         <Edit className="w-3 h-3" />
@@ -556,7 +637,10 @@ export function ImagesManager() {
 
                   {/* Image Info - adjusted for smaller size */}
                   <div className="space-y-0.5">
-                    <h4 className="font-medium text-[10px] truncate" title={image.name}>
+                    <h4
+                      className="font-medium text-[10px] truncate"
+                      title={image.name}
+                    >
                       {image.name}
                     </h4>
 
@@ -568,7 +652,9 @@ export function ImagesManager() {
                       <Badge
                         variant={image.usageCount > 0 ? "default" : "secondary"}
                         className={`text-[8px] px-0.5 py-0 h-3 ${
-                          image.usageCount > 0 ? "bg-[#00FF88] text-black" : "bg-gray-700 text-gray-300"
+                          image.usageCount > 0
+                            ? "bg-[#00FF88] text-black"
+                            : "bg-gray-700 text-gray-300"
                         }`}
                       >
                         {image.usageCount}x
@@ -577,13 +663,12 @@ export function ImagesManager() {
                         className="text-[8px] px-0.5 py-0 h-3"
                         style={{
                           backgroundColor: getSourceColor(image.source),
-                          color: 'black'
+                          color: "black",
                         }}
                       >
                         {getSourceLabel(image.source)}
                       </Badge>
                     </div>
-
                   </div>
                 </div>
               </CardContent>
@@ -597,11 +682,11 @@ export function ImagesManager() {
         <MaskEditor
           imageUrl={editingImage.url}
           imageName={editingImage.name}
-          initialMask={editingImage.mask}
+          initialMask={editingImage.mask || undefined}
           onSave={handleSaveMask}
           onCancel={() => {
-            setShowMaskEditor(false)
-            setEditingImage(null)
+            setShowMaskEditor(false);
+            setEditingImage(null);
           }}
           open={showMaskEditor}
         />
@@ -616,5 +701,5 @@ export function ImagesManager() {
         onConfirmDelete={confirmDelete}
       />
     </div>
-  )
+  );
 }

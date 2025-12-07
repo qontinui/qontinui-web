@@ -5,19 +5,19 @@
  * Features categories, search, favorites, recent nodes, drag-and-drop.
  */
 
-import React, { useState, useMemo } from 'react';
-import { ActionType } from '@/lib/action-schema/action-types';
+import React, { useState, useMemo } from "react";
+import { ActionType } from "@/lib/action-schema/action-types";
 import {
   getCategoriesOrdered,
   getNodesByCategory,
   NODE_METADATA,
   NodeCategory,
-} from './palette-config';
-import { PaletteItem } from './PaletteItem';
-import { NodeSearch } from './NodeSearch';
-import { usePaletteDrag, useClickToAdd } from './palette-drag';
-import { useFavoriteNodeTypes } from '@/stores/favorite-nodes';
-import { useRecentNodeTypes } from '@/stores/recent-nodes';
+} from "./palette-config";
+import { PaletteItem } from "./PaletteItem";
+import { NodeSearch } from "./NodeSearch";
+import { usePaletteDrag, useClickToAdd } from "./palette-drag";
+import { useFavoriteNodeTypes } from "@/stores/favorite-nodes";
+import { useRecentNodeTypes } from "@/stores/recent-nodes";
 import {
   ChevronDown,
   ChevronRight,
@@ -26,24 +26,23 @@ import {
   Clock,
   Minimize2,
   Maximize2,
-  X,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import './NodePalette.css';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import "./NodePalette.css";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface NodePaletteProps {
-  position?: 'left' | 'right' | 'floating';
+  position?: "left" | "right" | "floating";
   collapsible?: boolean;
   showSearch?: boolean;
   showRecent?: boolean;
   showFavorites?: boolean;
   defaultCollapsed?: boolean;
   onNodeAdd?: (nodeType: ActionType) => void;
-  canvasRef?: React.RefObject<HTMLElement>;
+  canvasRef?: React.RefObject<HTMLElement | null>;
   className?: string;
 }
 
@@ -56,7 +55,7 @@ interface CategoryState {
 // ============================================================================
 
 export const NodePalette: React.FC<NodePaletteProps> = ({
-  position = 'left',
+  position = "left",
   collapsible = true,
   showSearch = true,
   showRecent = true,
@@ -83,7 +82,9 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
   const recentTypes = useRecentNodeTypes(5);
 
   const { addNodeAtCenter } = useClickToAdd();
-  const dragHandlers = usePaletteDrag(canvasRef || { current: null });
+  const dragHandlers = usePaletteDrag(
+    canvasRef as React.RefObject<HTMLElement>
+  );
 
   // Get favorite and recent metadata
   const favoriteNodes = useMemo(
@@ -112,16 +113,16 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
   };
 
   const handleNodeAdd = (nodeType: ActionType) => {
-    console.log('[NodePalette] handleNodeAdd called with:', nodeType);
-    console.log('[NodePalette] onNodeAdd callback exists:', !!onNodeAdd);
+    console.log("[NodePalette] handleNodeAdd called with:", nodeType);
+    console.log("[NodePalette] onNodeAdd callback exists:", !!onNodeAdd);
 
     // If onNodeAdd is provided, use it (parent handles the addition)
     // Otherwise use addNodeAtCenter (adds to canvas store)
     if (onNodeAdd) {
-      console.log('[NodePalette] Using parent onNodeAdd callback');
+      console.log("[NodePalette] Using parent onNodeAdd callback");
       onNodeAdd(nodeType);
     } else {
-      console.log('[NodePalette] Using addNodeAtCenter');
+      console.log("[NodePalette] Using addNodeAtCenter");
       addNodeAtCenter(nodeType);
     }
   };
@@ -135,8 +136,8 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
     return (
       <div
         className={cn(
-          'node-palette',
-          'node-palette--collapsed',
+          "node-palette",
+          "node-palette--collapsed",
           `node-palette--${position}`,
           className
         )}
@@ -155,9 +156,9 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
   return (
     <div
       className={cn(
-        'node-palette',
+        "node-palette",
         `node-palette--${position}`,
-        dragHandlers.isDragging && 'node-palette--dragging',
+        dragHandlers.isDragging && "node-palette--dragging",
         className
       )}
     >
@@ -178,8 +179,8 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
           {showSearch && (
             <button
               className={cn(
-                'node-palette__header-btn',
-                showSearchPanel && 'node-palette__header-btn--active'
+                "node-palette__header-btn",
+                showSearchPanel && "node-palette__header-btn--active"
               )}
               onClick={() => setShowSearchPanel(!showSearchPanel)}
               title="Search nodes (Ctrl+K)"
@@ -220,7 +221,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
           <div className="node-palette__section">
             <button
               className="node-palette__section-header"
-              onClick={() => toggleCategory('favorites' as NodeCategory)}
+              onClick={() => toggleCategory("favorites" as NodeCategory)}
             >
               <Star className="h-4 w-4 text-yellow-500" />
               <span className="node-palette__section-title">Favorites</span>
@@ -229,8 +230,8 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
               </span>
               <ChevronDown
                 className={cn(
-                  'h-4 w-4 transition-transform',
-                  !categoryStates.favorites && '-rotate-90'
+                  "h-4 w-4 transition-transform",
+                  !categoryStates.favorites && "-rotate-90"
                 )}
               />
             </button>
@@ -254,7 +255,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
           <div className="node-palette__section">
             <button
               className="node-palette__section-header"
-              onClick={() => toggleCategory('recent' as NodeCategory)}
+              onClick={() => toggleCategory("recent" as NodeCategory)}
             >
               <Clock className="h-4 w-4 text-blue-500" />
               <span className="node-palette__section-title">Recent</span>
@@ -263,8 +264,8 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
               </span>
               <ChevronDown
                 className={cn(
-                  'h-4 w-4 transition-transform',
-                  !categoryStates.recent && '-rotate-90'
+                  "h-4 w-4 transition-transform",
+                  !categoryStates.recent && "-rotate-90"
                 )}
               />
             </button>
@@ -373,7 +374,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
 // Floating Palette Variant
 // ============================================================================
 
-interface FloatingPaletteProps extends Omit<NodePaletteProps, 'position'> {
+interface FloatingPaletteProps extends Omit<NodePaletteProps, "position"> {
   defaultPosition?: { x: number; y: number };
   onPositionChange?: (position: { x: number; y: number }) => void;
 }
@@ -388,7 +389,7 @@ export const FloatingPalette: React.FC<FloatingPaletteProps> = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.node-palette__header')) {
+    if ((e.target as HTMLElement).closest(".node-palette__header")) {
       setIsDragging(true);
       setDragStart({
         x: e.clientX - position.x,
@@ -416,23 +417,24 @@ export const FloatingPalette: React.FC<FloatingPaletteProps> = ({
 
   React.useEffect(() => {
     if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
       return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
       };
     }
+    return undefined;
   }, [isDragging, dragStart]);
 
   return (
     <div
       className={cn(
-        'node-palette--floating',
-        isDragging && 'node-palette--dragging-window'
+        "node-palette--floating",
+        isDragging && "node-palette--dragging-window"
       )}
       style={{
-        position: 'fixed',
+        position: "fixed",
         left: position.x,
         top: position.y,
         zIndex: 1000,

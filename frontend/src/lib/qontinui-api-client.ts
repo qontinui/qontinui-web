@@ -7,11 +7,16 @@
  * these custom types provide better developer experience for the pattern matching use case.
  */
 
-import { Screenshot, ScreenshotRegion, ScreenshotLocation } from '../types/Screenshot';
-import { State } from '../contexts/automation-context/types';
+import {
+  Screenshot,
+  ScreenshotRegion,
+  ScreenshotLocation,
+} from "../types/Screenshot";
+import { State } from "../contexts/automation-context/types";
 
 // API Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_QONTINUI_API_URL || 'http://localhost:8000';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8000";
 
 // Types for API requests/responses
 // Note: These could potentially be replaced with generated types from OpenAPI schema
@@ -140,7 +145,7 @@ export class QontinuiAPIClient {
    */
   private async request<T>(
     endpoint: string,
-    method: string = 'GET',
+    method: string = "GET",
     body?: any
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
@@ -150,14 +155,14 @@ export class QontinuiAPIClient {
 
     // Only add Content-Type for requests with body to avoid CORS preflight
     if (body) {
-      headers['Content-Type'] = 'application/json';
+      headers["Content-Type"] = "application/json";
     }
 
     const options: RequestInit = {
       method,
       headers,
-      mode: 'cors', // Explicitly enable CORS
-      credentials: 'include', // Match server's allow_credentials=True
+      mode: "cors", // Explicitly enable CORS
+      credentials: "include", // Match server's allow_credentials=True
     };
 
     if (body) {
@@ -165,18 +170,18 @@ export class QontinuiAPIClient {
     }
 
     try {
-      console.log('[QontinuiAPI] Initiating fetch...');
+      console.log("[QontinuiAPI] Initiating fetch...");
 
       // Add timeout to prevent hanging
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.error('[QontinuiAPI] Request timeout after 5 seconds');
+        console.error("[QontinuiAPI] Request timeout after 5 seconds");
         controller.abort();
       }, 5000);
 
       const response = await fetch(url, {
         ...options,
-        signal: controller.signal
+        signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
@@ -192,8 +197,14 @@ export class QontinuiAPIClient {
       return data;
     } catch (error) {
       console.error(`[QontinuiAPI] Request failed:`, error);
-      console.error(`[QontinuiAPI] Error type:`, error instanceof Error ? error.name : typeof error);
-      console.error(`[QontinuiAPI] Error message:`, error instanceof Error ? error.message : String(error));
+      console.error(
+        `[QontinuiAPI] Error type:`,
+        error instanceof Error ? error.name : typeof error
+      );
+      console.error(
+        `[QontinuiAPI] Error message:`,
+        error instanceof Error ? error.message : String(error)
+      );
       console.error(`[QontinuiAPI] URL was: ${url}`);
       console.error(`[QontinuiAPI] Base URL: ${this.baseUrl}`);
       throw error;
@@ -225,7 +236,7 @@ export class QontinuiAPIClient {
       };
     }
 
-    return this.request<MatchResponse>('/find', 'POST', request);
+    return this.request<MatchResponse>("/find", "POST", request);
   }
 
   /**
@@ -253,7 +264,7 @@ export class QontinuiAPIClient {
       };
     }
 
-    return this.request<MatchesResponse>('/find_all', 'POST', request);
+    return this.request<MatchesResponse>("/find_all", "POST", request);
   }
 
   /**
@@ -271,7 +282,11 @@ export class QontinuiAPIClient {
       similarity,
     };
 
-    return this.request<StateDetectionResponse>('/detect_states', 'POST', request);
+    return this.request<StateDetectionResponse>(
+      "/detect_states",
+      "POST",
+      request
+    );
   }
 
   /**
@@ -289,7 +304,11 @@ export class QontinuiAPIClient {
       reference_image: referenceImage,
     };
 
-    return this.request<LocationValidationResponse>('/validate_location', 'POST', request);
+    return this.request<LocationValidationResponse>(
+      "/validate_location",
+      "POST",
+      request
+    );
   }
 
   /**
@@ -299,7 +318,7 @@ export class QontinuiAPIClient {
     registered: string[];
     total: number;
   }> {
-    return this.request('/states/register', 'POST', states);
+    return this.request("/states/register", "POST", states);
   }
 
   /**
@@ -309,7 +328,7 @@ export class QontinuiAPIClient {
     active_states: string[];
     count: number;
   }> {
-    return this.request('/states/active');
+    return this.request("/states/active");
   }
 
   /**
@@ -320,18 +339,24 @@ export class QontinuiAPIClient {
     active_states: string[];
     count: number;
   }> {
-    return this.request('/states/active', 'POST', { state_ids: stateIds });
+    return this.request("/states/active", "POST", { state_ids: stateIds });
   }
 
   /**
    * Activate a single state with evidence
    */
-  async activateState(stateId: string, evidenceScore: number = 1.0): Promise<{
+  async activateState(
+    stateId: string,
+    evidenceScore: number = 1.0
+  ): Promise<{
     state_id: string;
     activated: boolean;
     evidence_score: number;
   }> {
-    return this.request(`/states/activate/${stateId}?evidence_score=${evidenceScore}`, 'POST');
+    return this.request(
+      `/states/activate/${stateId}?evidence_score=${evidenceScore}`,
+      "POST"
+    );
   }
 
   /**
@@ -341,14 +366,14 @@ export class QontinuiAPIClient {
     state_id: string;
     deactivated: boolean;
   }> {
-    return this.request(`/states/deactivate/${stateId}`, 'POST');
+    return this.request(`/states/deactivate/${stateId}`, "POST");
   }
 
   /**
    * Get possible transitions from current states
    */
   async getPossibleTransitions(): Promise<TransitionResponse> {
-    return this.request('/states/transitions');
+    return this.request("/states/transitions");
   }
 
   /**
@@ -365,7 +390,7 @@ export class QontinuiAPIClient {
     current_states: string[];
     error?: string;
   }> {
-    return this.request('/states/transition', 'POST', {
+    return this.request("/states/transition", "POST", {
       from_state: fromState,
       to_state: toState,
       action_type: actionType,
@@ -376,7 +401,7 @@ export class QontinuiAPIClient {
    * Get state graph visualization
    */
   async getStateGraph(): Promise<StateGraphResponse> {
-    return this.request('/states/graph');
+    return this.request("/states/graph");
   }
 
   /**
@@ -386,7 +411,7 @@ export class QontinuiAPIClient {
     success: boolean;
     active_states: string[];
   }> {
-    return this.request('/states/reset', 'POST');
+    return this.request("/states/reset", "POST");
   }
 
   /**
@@ -397,7 +422,7 @@ export class QontinuiAPIClient {
     screenshots: string[],
     states: any[],
     categories: any[] = [],
-    mode: 'hybrid' | 'full_mock' = 'hybrid',
+    mode: "hybrid" | "full_mock" = "hybrid",
     similarity: number = 0.8
   ): Promise<{
     session_id: string;
@@ -409,13 +434,13 @@ export class QontinuiAPIClient {
     total_actions: number;
     results: any[];
   }> {
-    return this.request('/process/execute', 'POST', {
+    return this.request("/process/execute", "POST", {
       process,
       screenshots,
       states,
       categories,
       mode,
-      similarity
+      similarity,
     });
   }
 
@@ -433,7 +458,7 @@ export class QontinuiAPIClient {
     duration: number;
     timestamp: string;
   }> {
-    return this.request(`/process/execute_step/${sessionId}`, 'POST', action);
+    return this.request(`/process/execute_step/${sessionId}`, "POST", action);
   }
 
   /**
@@ -462,7 +487,7 @@ export class QontinuiAPIClient {
     success_rate: number;
     execution_history: any[];
   }> {
-    return this.request(`/process/complete/${sessionId}`, 'POST');
+    return this.request(`/process/complete/${sessionId}`, "POST");
   }
 
   /**
@@ -478,7 +503,7 @@ export class QontinuiAPIClient {
       registered_states: number;
     };
   }> {
-    return this.request('/health');
+    return this.request("/health");
   }
 
   /**
@@ -486,20 +511,23 @@ export class QontinuiAPIClient {
    */
   async testConnection(): Promise<boolean> {
     try {
-      console.log('[QontinuiAPI] Testing connection...');
+      console.log("[QontinuiAPI] Testing connection...");
       const health = await this.healthCheck();
-      console.log('[QontinuiAPI] Health check response:', health);
-      const isHealthy = health.status === 'healthy' && health.qontinui_available;
-      console.log(`[QontinuiAPI] Connection test result: ${isHealthy ? 'SUCCESS' : 'FAILED'}`);
+      console.log("[QontinuiAPI] Health check response:", health);
+      const isHealthy =
+        health.status === "healthy" && health.qontinui_available;
+      console.log(
+        `[QontinuiAPI] Connection test result: ${isHealthy ? "SUCCESS" : "FAILED"}`
+      );
       if (!isHealthy) {
-        console.warn('[QontinuiAPI] Health check failed:', {
+        console.warn("[QontinuiAPI] Health check failed:", {
           status: health.status,
           qontinui_available: health.qontinui_available,
         });
       }
       return isHealthy;
     } catch (error) {
-      console.error('[QontinuiAPI] Failed to connect to Qontinui API:', error);
+      console.error("[QontinuiAPI] Failed to connect to Qontinui API:", error);
       return false;
     }
   }
@@ -520,13 +548,13 @@ export function extractImageRegion(
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = region.bounds.width;
       canvas.height = region.bounds.height;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
 
       if (!ctx) {
-        reject(new Error('Failed to get canvas context'));
+        reject(new Error("Failed to get canvas context"));
         return;
       }
 
@@ -542,9 +570,9 @@ export function extractImageRegion(
         region.bounds.height
       );
 
-      resolve(canvas.toDataURL('image/png'));
+      resolve(canvas.toDataURL("image/png"));
     };
-    img.onerror = () => reject(new Error('Failed to load image'));
+    img.onerror = () => reject(new Error("Failed to load image"));
     img.src = screenshot;
   });
 }
@@ -574,7 +602,7 @@ export async function testStateImage(
       confidence: result.best_match?.score || 0,
     };
   } catch (error) {
-    console.error('Failed to test state image:', error);
+    console.error("Failed to test state image:", error);
     return {
       found: false,
       matches: [],
@@ -604,7 +632,7 @@ export async function runStateDetection(
 
     return result.detected_states;
   } catch (error) {
-    console.error('Failed to detect states:', error);
+    console.error("Failed to detect states:", error);
     return [];
   }
 }
@@ -617,7 +645,7 @@ export async function getCurrentActiveStates(): Promise<string[]> {
     const result = await qontinuiAPI.getActiveStates();
     return result.active_states;
   } catch (error) {
-    console.error('Failed to get active states:', error);
+    console.error("Failed to get active states:", error);
     return [];
   }
 }
@@ -633,7 +661,7 @@ export async function executeStateTransition(
     const result = await qontinuiAPI.executeTransition(fromState, toState);
     return result.success;
   } catch (error) {
-    console.error('Failed to execute transition:', error);
+    console.error("Failed to execute transition:", error);
     return false;
   }
 }
@@ -706,15 +734,15 @@ export async function testPatternMatching(
 }> {
   try {
     const response = await fetch(`${API_BASE_URL}/pattern_matching/test`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         template,
         screenshot,
         similarity,
-        find_all: findAll
+        find_all: findAll,
       }),
     });
 
@@ -725,12 +753,12 @@ export async function testPatternMatching(
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Pattern matching test failed:', error);
+    console.error("Pattern matching test failed:", error);
     // Return empty results on error
     return {
       success: false,
       matches: [],
-      totalMatches: 0
+      totalMatches: 0,
     };
   }
 }

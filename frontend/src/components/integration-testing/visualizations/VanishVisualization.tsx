@@ -9,15 +9,19 @@ interface VanishVisualizationProps {
 export function VanishVisualization({
   location,
   actionRegion,
-  stateName = 'State',
+  stateName = "State",
 }: VanishVisualizationProps) {
   // Determine region - prefer actionRegion, fall back to location-based region
-  const region = actionRegion || (location ? {
-    x: location[0] - 75,
-    y: location[1] - 75,
-    w: 150,
-    h: 150,
-  } : null);
+  const region =
+    actionRegion ||
+    (location
+      ? {
+          x: location[0] - 75,
+          y: location[1] - 75,
+          w: 150,
+          h: 150,
+        }
+      : null);
 
   if (!region) return null;
 
@@ -194,7 +198,10 @@ export function VanishVisualization({
       </g>
 
       {/* State name being removed */}
-      <g transform={`translate(${centerX}, ${y + h + 35})`} className="vanish-fade">
+      <g
+        transform={`translate(${centerX}, ${y + h + 35})`}
+        className="vanish-fade"
+      >
         <rect
           x="-80"
           y="-12"
@@ -222,7 +229,9 @@ export function VanishVisualization({
           fontSize="13"
           fontWeight="600"
         >
-          {stateName.length > 20 ? stateName.substring(0, 20) + '...' : stateName}
+          {stateName.length > 20
+            ? stateName.substring(0, 20) + "..."
+            : stateName}
         </text>
       </g>
 
@@ -246,7 +255,7 @@ export function VanishVisualization({
         strokeWidth="1.5"
         opacity="0.3"
         className="animate-ping"
-        style={{ animationDelay: '0.3s' }}
+        style={{ animationDelay: "0.3s" }}
       />
     </svg>
   );

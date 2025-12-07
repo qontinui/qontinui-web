@@ -19,31 +19,35 @@ export interface QontinuiInputProps extends React.ComponentProps<typeof Input> {
   error?: string;
 }
 
-export const QontinuiInput = React.forwardRef<HTMLInputElement, QontinuiInputProps>(
-  ({ className, label, error, ...props }, ref) => {
-    const inputId = React.useId();
+export const QontinuiInput = React.forwardRef<
+  HTMLInputElement,
+  QontinuiInputProps
+>(({ className, label, error, ...props }, ref) => {
+  const inputId = React.useId();
 
-    return (
-      <div className="flex flex-col gap-1.5">
-        {label && (
-          <label htmlFor={inputId} className={cn(styles.text.primary, "text-sm font-medium")}>
-            {label}
-          </label>
-        )}
-        <Input
-          ref={ref}
-          id={inputId}
-          className={cn(styles.input, error && "border-red-500", className)}
-          aria-invalid={!!error}
-          {...props}
-        />
-        {error && (
-          <span className="text-red-500 text-xs font-medium">{error}</span>
-        )}
-      </div>
-    );
-  }
-);
+  return (
+    <div className="flex flex-col gap-1.5">
+      {label && (
+        <label
+          htmlFor={inputId}
+          className={cn(styles.text.primary, "text-sm font-medium")}
+        >
+          {label}
+        </label>
+      )}
+      <Input
+        ref={ref}
+        id={inputId}
+        className={cn(styles.input, error && "border-red-500", className)}
+        aria-invalid={!!error}
+        {...props}
+      />
+      {error && (
+        <span className="text-red-500 text-xs font-medium">{error}</span>
+      )}
+    </div>
+  );
+});
 
 QontinuiInput.displayName = "QontinuiInput";
 

@@ -8,11 +8,12 @@ and detects anomalous or unexpected paths.
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from app.db.base import Base
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class PathDiscovery(Base):
@@ -30,7 +31,7 @@ class PathDiscovery(Base):
         PGUUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
-        server_default="gen_random_uuid()",
+        server_default=text("gen_random_uuid()"),
     )
 
     # Foreign key

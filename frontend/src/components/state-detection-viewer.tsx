@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * State Detection Viewer Component
@@ -8,14 +8,21 @@
  * and export capabilities.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+import React, { useState, useCallback } from "react";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Search,
   Download,
@@ -30,10 +37,10 @@ import {
   MousePointerClick,
   ArrowRight,
   Loader2,
-} from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
-import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import { apiClient } from "@/lib/api-client";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 // TypeScript Interfaces
 interface DiscoveredState {
@@ -82,15 +89,17 @@ export function StateDetectionViewer({
   className,
 }: StateDetectionViewerProps) {
   // State Management
-  const [sessionId, setSessionId] = useState<string>(initialSessionId || '');
+  const [sessionId, setSessionId] = useState<string>(initialSessionId || "");
   const [states, setStates] = useState<DiscoveredState[]>([]);
-  const [selectedState, setSelectedState] = useState<DiscoveredState | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedState, setSelectedState] = useState<DiscoveredState | null>(
+    null
+  );
+  const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingStateId, setEditingStateId] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-  const [algorithm, setAlgorithm] = useState('timestamp_clustering');
+  const [editValue, setEditValue] = useState("");
+  const [algorithm, setAlgorithm] = useState("timestamp_clustering");
   const [stateThreshold, setStateThreshold] = useState(2.0);
   const [maxInputDistance, setMaxInputDistance] = useState(5.0);
   const [metadata, setMetadata] = useState<StateDetectionResponse | null>(null);
@@ -98,7 +107,7 @@ export function StateDetectionViewer({
   // Load states from API
   const loadStates = useCallback(async () => {
     if (!sessionId) {
-      setError('Please enter a session ID');
+      setError("Please enter a session ID");
       return;
     }
 
@@ -106,13 +115,15 @@ export function StateDetectionViewer({
     setError(null);
 
     try {
-      const response = await apiClient['fetchWithAuth'](
+      const response = await apiClient["fetchWithAuth"](
         `/state-discovery/sessions/${sessionId}/discovered-states?algorithm=${algorithm}&state_threshold_seconds=${stateThreshold}&max_input_distance_seconds=${maxInputDistance}`,
-        { method: 'GET' }
+        { method: "GET" }
       );
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Failed to load states' }));
+        const errorData = await response
+          .json()
+          .catch(() => ({ detail: "Failed to load states" }));
         throw new Error(errorData.detail || `HTTP ${response.status}`);
       }
 
@@ -120,9 +131,12 @@ export function StateDetectionViewer({
       setStates(data.states);
       setMetadata(data);
       setSelectedState(data.states[0] || null);
-      toast.success(`Loaded ${data.total_states} states in ${data.processing_time_ms.toFixed(1)}ms`);
+      toast.success(
+        `Loaded ${data.total_states} states in ${data.processing_time_ms.toFixed(1)}ms`
+      );
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load states';
+      const message =
+        err instanceof Error ? err.message : "Failed to load states";
       setError(message);
       toast.error(message);
     } finally {
@@ -131,47 +145,55 @@ export function StateDetectionViewer({
   }, [sessionId, algorithm, stateThreshold, maxInputDistance]);
 
   // Rename state
-  const handleRenameState = useCallback(async (stateId: string, newName: string) => {
-    if (!newName.trim()) {
-      toast.error('State name cannot be empty');
-      return;
-    }
+  const handleRenameState = useCallback(
+    async (stateId: string, newName: string) => {
+      if (!newName.trim()) {
+        toast.error("State name cannot be empty");
+        return;
+      }
 
-    try {
-      const response = await apiClient['fetchWithAuth'](
-        `/state-detection/states/${stateId}`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ name: newName }),
+      try {
+        const response = await apiClient["fetchWithAuth"](
+          `/state-detection/states/${stateId}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ name: newName }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to rename state");
         }
-      );
 
-      if (!response.ok) {
-        throw new Error('Failed to rename state');
+        // Update local state
+        setStates((prev) =>
+          prev.map((s) =>
+            s.state_id === stateId ? { ...s, state_id: newName } : s
+          )
+        );
+
+        if (selectedState?.state_id === stateId) {
+          setSelectedState((prev) =>
+            prev ? { ...prev, state_id: newName } : null
+          );
+        }
+
+        setEditingStateId(null);
+        setEditValue("");
+        toast.success("State renamed successfully");
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to rename state";
+        toast.error(message);
       }
-
-      // Update local state
-      setStates((prev) =>
-        prev.map((s) => (s.state_id === stateId ? { ...s, state_id: newName } : s))
-      );
-
-      if (selectedState?.state_id === stateId) {
-        setSelectedState((prev) => (prev ? { ...prev, state_id: newName } : null));
-      }
-
-      setEditingStateId(null);
-      setEditValue('');
-      toast.success('State renamed successfully');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to rename state';
-      toast.error(message);
-    }
-  }, [selectedState]);
+    },
+    [selectedState]
+  );
 
   // Export states to automation project
   const handleExport = useCallback(async () => {
     if (states.length === 0) {
-      toast.error('No states to export');
+      toast.error("No states to export");
       return;
     }
 
@@ -181,22 +203,25 @@ export function StateDetectionViewer({
     }
 
     try {
-      const response = await apiClient['fetchWithAuth'](
-        '/automation/import-state',
+      const response = await apiClient["fetchWithAuth"](
+        "/automation/import-state",
         {
-          method: 'POST',
+          method: "POST",
           body: JSON.stringify({ states, session_id: sessionId }),
         }
       );
 
       if (!response.ok) {
-        throw new Error('Failed to export states');
+        throw new Error("Failed to export states");
       }
 
       const result = await response.json();
-      toast.success(`Exported ${result.imported_count} states to automation project`);
+      toast.success(
+        `Exported ${result.imported_count} states to automation project`
+      );
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to export states';
+      const message =
+        err instanceof Error ? err.message : "Failed to export states";
       toast.error(message);
     }
   }, [states, sessionId, onExport]);
@@ -220,7 +245,7 @@ export function StateDetectionViewer({
   };
 
   return (
-    <div className={cn('flex flex-col h-full gap-4 p-4', className)}>
+    <div className={cn("flex flex-col h-full gap-4 p-4", className)}>
       {/* Header */}
       <Card>
         <CardHeader>
@@ -277,12 +302,16 @@ export function StateDetectionViewer({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Max Input Distance (s)</label>
+              <label className="text-xs font-medium">
+                Max Input Distance (s)
+              </label>
               <Input
                 type="number"
                 step="0.1"
                 value={maxInputDistance}
-                onChange={(e) => setMaxInputDistance(parseFloat(e.target.value))}
+                onChange={(e) =>
+                  setMaxInputDistance(parseFloat(e.target.value))
+                }
                 disabled={isLoading}
                 className="text-xs"
               />
@@ -294,7 +323,9 @@ export function StateDetectionViewer({
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <span>Total States: {metadata.total_states}</span>
               <span>Transitions: {metadata.total_transitions}</span>
-              <span>Processing: {metadata.processing_time_ms.toFixed(1)}ms</span>
+              <span>
+                Processing: {metadata.processing_time_ms.toFixed(1)}ms
+              </span>
             </div>
           )}
 
@@ -336,10 +367,10 @@ export function StateDetectionViewer({
                     key={state.state_id}
                     onClick={() => setSelectedState(state)}
                     className={cn(
-                      'p-3 rounded-lg cursor-pointer transition-colors border',
+                      "p-3 rounded-lg cursor-pointer transition-colors border",
                       selectedState?.state_id === state.state_id
-                        ? 'bg-primary/10 border-primary'
-                        : 'hover:bg-accent border-transparent'
+                        ? "bg-primary/10 border-primary"
+                        : "hover:bg-accent border-transparent"
                     )}
                   >
                     {editingStateId === state.state_id ? (
@@ -348,11 +379,11 @@ export function StateDetectionViewer({
                           value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
+                            if (e.key === "Enter") {
                               handleRenameState(state.state_id, editValue);
-                            } else if (e.key === 'Escape') {
+                            } else if (e.key === "Escape") {
                               setEditingStateId(null);
-                              setEditValue('');
+                              setEditValue("");
                             }
                           }}
                           className="h-7 text-xs"
@@ -362,7 +393,9 @@ export function StateDetectionViewer({
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7"
-                          onClick={() => handleRenameState(state.state_id, editValue)}
+                          onClick={() =>
+                            handleRenameState(state.state_id, editValue)
+                          }
                         >
                           <Check className="h-3 w-3" />
                         </Button>
@@ -372,7 +405,7 @@ export function StateDetectionViewer({
                           className="h-7 w-7"
                           onClick={() => {
                             setEditingStateId(null);
-                            setEditValue('');
+                            setEditValue("");
                           }}
                         >
                           <X className="h-3 w-3" />
@@ -381,7 +414,9 @@ export function StateDetectionViewer({
                     ) : (
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm">{state.state_id}</span>
+                          <span className="font-medium text-sm">
+                            {state.state_id}
+                          </span>
                           <Button
                             size="icon"
                             variant="ghost"
@@ -402,7 +437,9 @@ export function StateDetectionViewer({
                           </div>
                           <div className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
-                            <span>{formatDuration(state.metadata.duration_seconds)}</span>
+                            <span>
+                              {formatDuration(state.metadata.duration_seconds)}
+                            </span>
                           </div>
                           <div className="flex items-center gap-1">
                             <MousePointerClick className="h-3 w-3" />
@@ -427,14 +464,20 @@ export function StateDetectionViewer({
 
                 {filteredStates.length === 0 && !isLoading && (
                   <div className="text-center text-muted-foreground py-8">
-                    {states.length === 0 ? 'No states loaded' : 'No states match search'}
+                    {states.length === 0
+                      ? "No states loaded"
+                      : "No states match search"}
                   </div>
                 )}
               </div>
             </ScrollArea>
           </CardContent>
           <CardFooter className="pt-3 pb-3">
-            <Button onClick={handleExport} disabled={states.length === 0} className="w-full">
+            <Button
+              onClick={handleExport}
+              disabled={states.length === 0}
+              className="w-full"
+            >
               <Upload className="w-4 h-4 mr-2" />
               Export to Automation
             </Button>
@@ -458,26 +501,34 @@ export function StateDetectionViewer({
                         <label className="text-xs font-medium text-muted-foreground">
                           State ID
                         </label>
-                        <p className="text-sm font-mono">{selectedState.state_id}</p>
+                        <p className="text-sm font-mono">
+                          {selectedState.state_id}
+                        </p>
                       </div>
                       <div>
                         <label className="text-xs font-medium text-muted-foreground">
                           First Seen
                         </label>
-                        <p className="text-sm">{formatTimestamp(selectedState.timestamp_first_seen)}</p>
+                        <p className="text-sm">
+                          {formatTimestamp(selectedState.timestamp_first_seen)}
+                        </p>
                       </div>
                       <div>
                         <label className="text-xs font-medium text-muted-foreground">
                           Last Seen
                         </label>
-                        <p className="text-sm">{formatTimestamp(selectedState.timestamp_last_seen)}</p>
+                        <p className="text-sm">
+                          {formatTimestamp(selectedState.timestamp_last_seen)}
+                        </p>
                       </div>
                       <div>
                         <label className="text-xs font-medium text-muted-foreground">
                           Duration
                         </label>
                         <p className="text-sm">
-                          {formatDuration(selectedState.metadata.duration_seconds)}
+                          {formatDuration(
+                            selectedState.metadata.duration_seconds
+                          )}
                         </p>
                       </div>
                     </div>
@@ -491,13 +542,18 @@ export function StateDetectionViewer({
                       </label>
                       <div className="flex flex-wrap gap-1">
                         {selectedState.screenshot_ids.map((id) => (
-                          <Badge key={id} variant="secondary" className="text-xs">
+                          <Badge
+                            key={id}
+                            variant="secondary"
+                            className="text-xs"
+                          >
                             #{id}
                           </Badge>
                         ))}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Representative: #{selectedState.representative_screenshot_id}
+                        Representative: #
+                        {selectedState.representative_screenshot_id}
                       </p>
                     </div>
 
@@ -522,30 +578,39 @@ export function StateDetectionViewer({
                     {/* Transitions */}
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-muted-foreground">
-                        Outgoing Transitions ({selectedState.outgoing_transitions.length})
+                        Outgoing Transitions (
+                        {selectedState.outgoing_transitions.length})
                       </label>
                       <div className="space-y-2">
-                        {selectedState.outgoing_transitions.map((transition, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2 rounded-md border bg-accent/50 space-y-1"
-                          >
-                            <div className="flex items-center gap-2 text-sm">
-                              <span className="font-medium">{transition.from_state_id}</span>
-                              <ArrowRight className="h-3 w-3" />
-                              <span className="font-medium">{transition.to_state_id}</span>
+                        {selectedState.outgoing_transitions.map(
+                          (transition, idx) => (
+                            <div
+                              key={idx}
+                              className="p-2 rounded-md border bg-accent/50 space-y-1"
+                            >
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="font-medium">
+                                  {transition.from_state_id}
+                                </span>
+                                <ArrowRight className="h-3 w-3" />
+                                <span className="font-medium">
+                                  {transition.to_state_id}
+                                </span>
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Event: {transition.event_type} (#
+                                {transition.trigger_event_id})
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Confidence:{" "}
+                                {(transition.confidence * 100).toFixed(0)}%
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatTimestamp(transition.timestamp)}
+                              </div>
                             </div>
-                            <div className="text-xs text-muted-foreground">
-                              Event: {transition.event_type} (#{transition.trigger_event_id})
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              Confidence: {(transition.confidence * 100).toFixed(0)}%
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {formatTimestamp(transition.timestamp)}
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        )}
                       </div>
                     </div>
                   </div>
@@ -565,7 +630,7 @@ export function StateDetectionViewer({
               <CardDescription className="text-xs">
                 {selectedState
                   ? `Showing representative screenshot #${selectedState.representative_screenshot_id}`
-                  : 'Select a state to view screenshots'}
+                  : "Select a state to view screenshots"}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -601,11 +666,21 @@ export function StateDetectionViewer({
 
                   {/* Download Actions */}
                   <div className="space-y-2">
-                    <Button variant="outline" size="sm" className="w-full" disabled>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      disabled
+                    >
                       <Download className="w-4 h-4 mr-2" />
                       Download Screenshot
                     </Button>
-                    <Button variant="outline" size="sm" className="w-full" disabled>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      disabled
+                    >
                       <Download className="w-4 h-4 mr-2" />
                       Download All Screenshots
                     </Button>

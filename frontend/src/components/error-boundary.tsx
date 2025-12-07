@@ -1,9 +1,16 @@
-'use client';
+"use client";
 
-import React, { Component, ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, RefreshCw, Home } from 'lucide-react';
+import React, { Component, ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { AlertCircle, RefreshCw, Home } from "lucide-react";
 
 interface Props {
   children: ReactNode;
@@ -34,11 +41,30 @@ export class ErrorBoundary extends Component<Props, State> {
     };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  override componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
+
+    // Log to dev-debug-logger in development
+    if (
+      typeof window !== "undefined" &&
+      process.env.NODE_ENV === "development"
+    ) {
+      import("@/lib/dev-debug-logger")
+        .then(({ devDebugLogger }) => {
+          devDebugLogger.logReactError(error, {
+            componentStack: errorInfo.componentStack || undefined,
+          });
+        })
+        .catch(() => {
+          // Ignore import errors
+        });
+    }
 
     // Log to error reporting service (e.g., Sentry)
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production') {
+    if (
+      typeof window !== "undefined" &&
+      process.env.NODE_ENV === "production"
+    ) {
       // Example: window.Sentry?.captureException(error, { extra: errorInfo });
     }
 
@@ -61,16 +87,16 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   handleGoHome = () => {
-    window.location.href = '/';
+    window.location.href = "/";
   };
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
         return <>{this.props.fallback}</>;
       }
 
-      const isDevelopment = process.env.NODE_ENV === 'development';
+      const isDevelopment = process.env.NODE_ENV === "development";
 
       return (
         <div className="min-h-screen flex items-center justify-center p-4 bg-background">
@@ -81,7 +107,8 @@ export class ErrorBoundary extends Component<Props, State> {
                 <CardTitle>Something went wrong</CardTitle>
               </div>
               <CardDescription>
-                An unexpected error occurred. We apologize for the inconvenience.
+                An unexpected error occurred. We apologize for the
+                inconvenience.
               </CardDescription>
             </CardHeader>
 
@@ -95,7 +122,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
                 {this.state.errorInfo && (
                   <details className="cursor-pointer">
-                    <summary className="text-sm font-medium">Stack Trace</summary>
+                    <summary className="text-sm font-medium">
+                      Stack Trace
+                    </summary>
                     <pre className="mt-2 text-xs overflow-auto rounded-lg bg-muted p-4">
                       {this.state.errorInfo.componentStack}
                     </pre>

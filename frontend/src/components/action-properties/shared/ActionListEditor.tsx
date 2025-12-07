@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Button } from "@/components/ui/button"
-import { Plus, X, GripVertical } from "lucide-react"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Plus, X, GripVertical } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   DndContext,
   closestCenter,
@@ -16,48 +16,48 @@ import {
   DragEndEvent,
   DragStartEvent,
   DragOverlay,
-} from "@dnd-kit/core"
+} from "@dnd-kit/core";
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 export interface ActionListEditorProps {
   /** Current list of action IDs */
-  actionIds: string[]
+  actionIds: string[];
 
   /** Called when the action list changes */
-  onChange: (actionIds: string[]) => void
+  onChange: (actionIds: string[]) => void;
 
   /** Optional label text */
-  label?: string
+  label?: string;
 
   /** Optional placeholder for empty list */
-  emptyText?: string
+  emptyText?: string;
 
   /** Optional class name */
-  className?: string
+  className?: string;
 
   /** Whether the list is required */
-  required?: boolean
+  required?: boolean;
 
   /** Minimum number of actions allowed */
-  minActions?: number
+  minActions?: number;
 
   /** Maximum number of actions allowed */
-  maxActions?: number
+  maxActions?: number;
 }
 
 interface SortableActionItemProps {
-  actionId: string
-  index: number
-  canRemove: boolean
-  onUpdate: (value: string) => void
-  onRemove: () => void
+  actionId: string;
+  index: number;
+  canRemove: boolean;
+  onUpdate: (value: string) => void;
+  onRemove: () => void;
 }
 
 /**
@@ -77,12 +77,12 @@ function SortableActionItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: `action-${index}` })
+  } = useSortable({ id: `action-${index}` });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-  }
+  };
 
   return (
     <div
@@ -125,7 +125,7 @@ function SortableActionItem({
         </Button>
       )}
     </div>
-  )
+  );
 }
 
 /**
@@ -148,8 +148,8 @@ export function ActionListEditor({
   minActions,
   maxActions,
 }: ActionListEditorProps) {
-  const [newActionId, setNewActionId] = React.useState("")
-  const [activeId, setActiveId] = React.useState<string | null>(null)
+  const [newActionId, setNewActionId] = React.useState("");
+  const [activeId, setActiveId] = React.useState<string | null>(null);
 
   // Configure sensors for drag-and-drop
   const sensors = useSensors(
@@ -161,60 +161,60 @@ export function ActionListEditor({
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
-  )
+  );
 
   const handleAdd = () => {
-    if (!newActionId.trim()) return
-    onChange([...actionIds, newActionId.trim()])
-    setNewActionId("")
-  }
+    if (!newActionId.trim()) return;
+    onChange([...actionIds, newActionId.trim()]);
+    setNewActionId("");
+  };
 
   const handleRemove = (index: number) => {
-    const updated = actionIds.filter((_, i) => i !== index)
-    onChange(updated)
-  }
+    const updated = actionIds.filter((_, i) => i !== index);
+    onChange(updated);
+  };
 
   const handleUpdate = (index: number, value: string) => {
-    const updated = [...actionIds]
-    updated[index] = value
-    onChange(updated)
-  }
+    const updated = [...actionIds];
+    updated[index] = value;
+    onChange(updated);
+  };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      handleAdd()
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAdd();
     }
-  }
+  };
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string)
-  }
+    setActiveId(event.active.id as string);
+  };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
+    const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      const oldIndex = parseInt(active.id.toString().replace("action-", ""))
-      const newIndex = parseInt(over.id.toString().replace("action-", ""))
+      const oldIndex = parseInt(active.id.toString().replace("action-", ""));
+      const newIndex = parseInt(over.id.toString().replace("action-", ""));
 
-      const reordered = arrayMove(actionIds, oldIndex, newIndex)
-      onChange(reordered)
+      const reordered = arrayMove(actionIds, oldIndex, newIndex);
+      onChange(reordered);
     }
 
-    setActiveId(null)
-  }
+    setActiveId(null);
+  };
 
   const handleDragCancel = () => {
-    setActiveId(null)
-  }
+    setActiveId(null);
+  };
 
-  const canAdd = !maxActions || actionIds.length < maxActions
-  const canRemove = !minActions || actionIds.length > minActions
+  const canAdd = !maxActions || actionIds.length < maxActions;
+  const canRemove = !minActions || actionIds.length > minActions;
 
   // Get the active item for the drag overlay
-  const activeIndex = activeId ? parseInt(activeId.replace("action-", "")) : -1
-  const activeItem = activeIndex >= 0 ? actionIds[activeIndex] : null
+  const activeIndex = activeId ? parseInt(activeId.replace("action-", "")) : -1;
+  const activeItem = activeIndex >= 0 ? actionIds[activeIndex] : null;
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -299,14 +299,14 @@ export function ActionListEditor({
       {/* Validation Messages */}
       {minActions && actionIds.length < minActions && (
         <p className="text-xs text-yellow-400">
-          Minimum {minActions} action{minActions > 1 ? 's' : ''} required
+          Minimum {minActions} action{minActions > 1 ? "s" : ""} required
         </p>
       )}
       {maxActions && actionIds.length >= maxActions && (
         <p className="text-xs text-gray-500">
-          Maximum {maxActions} action{maxActions > 1 ? 's' : ''} reached
+          Maximum {maxActions} action{maxActions > 1 ? "s" : ""} reached
         </p>
       )}
     </div>
-  )
+  );
 }

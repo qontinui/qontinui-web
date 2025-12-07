@@ -5,14 +5,14 @@
  * Preferences are persisted to localStorage and can be set globally or per-workflow.
  */
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type ViewFormat = 'list' | 'graph';
+export type ViewFormat = "list" | "graph";
 
 export interface FormatPreference {
   /** Preferred view format for a specific workflow */
@@ -90,14 +90,15 @@ export interface FormatPreferenceActions {
   resetToDefaults: () => void;
 }
 
-export type FormatPreferenceStore = FormatPreferenceState & FormatPreferenceActions;
+export type FormatPreferenceStore = FormatPreferenceState &
+  FormatPreferenceActions;
 
 // ============================================================================
 // Default State
 // ============================================================================
 
 const defaultState: FormatPreferenceState = {
-  defaultView: 'graph',
+  defaultView: "graph",
   autoConvert: false,
   confirmBeforeConvert: true,
   rememberPerWorkflow: true,
@@ -181,7 +182,9 @@ export const useFormatPreferenceStore = create<FormatPreferenceStore>()(
       },
 
       toggleShowConversionWarnings: () => {
-        set((state) => ({ showConversionWarnings: !state.showConversionWarnings }));
+        set((state) => ({
+          showConversionWarnings: !state.showConversionWarnings,
+        }));
       },
 
       toggleShowConversionStats: () => {
@@ -202,10 +205,12 @@ export const useFormatPreferenceStore = create<FormatPreferenceStore>()(
 
         // Sort by lastUpdated descending
         const sorted = preferences.sort(
-          (a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()
+          (a, b) =>
+            new Date(b.lastUpdated).getTime() -
+            new Date(a.lastUpdated).getTime()
         );
 
-        return sorted[0].format;
+        return sorted[0]?.format ?? state.defaultView;
       },
 
       getPreferenceStats: () => {
@@ -213,10 +218,13 @@ export const useFormatPreferenceStore = create<FormatPreferenceStore>()(
         const preferences = Object.values(state.workflowPreferences);
 
         const totalPreferences = preferences.length;
-        const listCount = preferences.filter((p) => p.format === 'list').length;
-        const graphCount = preferences.filter((p) => p.format === 'graph').length;
+        const listCount = preferences.filter((p) => p.format === "list").length;
+        const graphCount = preferences.filter(
+          (p) => p.format === "graph"
+        ).length;
 
-        const mostUsedFormat: ViewFormat = graphCount >= listCount ? 'graph' : 'list';
+        const mostUsedFormat: ViewFormat =
+          graphCount >= listCount ? "graph" : "list";
 
         return {
           totalPreferences,
@@ -231,7 +239,7 @@ export const useFormatPreferenceStore = create<FormatPreferenceStore>()(
       },
     }),
     {
-      name: 'format-preference-storage',
+      name: "format-preference-storage",
       version: 1,
       // Only persist user preferences, not derived state
       partialize: (state) => ({
@@ -255,24 +263,24 @@ export const useFormatPreferenceStore = create<FormatPreferenceStore>()(
  * Get the opposite view format
  */
 export function getOppositeFormat(format: ViewFormat): ViewFormat {
-  return format === 'list' ? 'graph' : 'list';
+  return format === "list" ? "graph" : "list";
 }
 
 /**
  * Get human-readable format name
  */
 export function getFormatDisplayName(format: ViewFormat): string {
-  return format === 'list' ? 'List View' : 'Graph View';
+  return format === "list" ? "List View" : "Graph View";
 }
 
 /**
  * Get format description
  */
 export function getFormatDescription(format: ViewFormat): string {
-  if (format === 'list') {
-    return 'Sequential list with nested control flow. Best for simple linear workflows.';
+  if (format === "list") {
+    return "Sequential list with nested control flow. Best for simple linear workflows.";
   } else {
-    return 'Visual graph with node connections. Best for complex branching workflows.';
+    return "Visual graph with node connections. Best for complex branching workflows.";
   }
 }
 
@@ -280,12 +288,12 @@ export function getFormatDescription(format: ViewFormat): string {
  * Get format icon name (for UI components)
  */
 export function getFormatIcon(format: ViewFormat): string {
-  return format === 'list' ? 'list' : 'graph';
+  return format === "list" ? "list" : "graph";
 }
 
 /**
  * Check if format is valid
  */
 export function isValidFormat(format: string): format is ViewFormat {
-  return format === 'list' || format === 'graph';
+  return format === "list" || format === "graph";
 }

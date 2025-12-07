@@ -10,7 +10,10 @@ import {
   Eye,
   X,
 } from "lucide-react";
-import { SubflowComponent, ComponentParameter } from "@/lib/workflow-organization/types";
+import {
+  SubflowComponent,
+  ComponentParameter,
+} from "@/lib/workflow-organization/types";
 import {
   Dialog,
   DialogContent,
@@ -35,7 +38,13 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -73,9 +82,15 @@ export function ComponentInsertDialog({
   onInsert,
   className,
 }: ComponentInsertDialogProps) {
-  const [parameterValues, setParameterValues] = React.useState<Record<string, ParameterValue>>({});
-  const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
-  const [activeTab, setActiveTab] = React.useState<"parameters" | "preview">("parameters");
+  const [parameterValues, setParameterValues] = React.useState<
+    Record<string, ParameterValue>
+  >({});
+  const [validationErrors, setValidationErrors] = React.useState<
+    ValidationError[]
+  >([]);
+  const [activeTab, setActiveTab] = React.useState<"parameters" | "preview">(
+    "parameters"
+  );
 
   // Initialize parameter values
   React.useEffect(() => {
@@ -101,7 +116,10 @@ export function ComponentInsertDialog({
       const paramValue = parameterValues[param.name];
 
       // Check required
-      if (param.required && (paramValue?.value === "" || paramValue?.value === undefined)) {
+      if (
+        param.required &&
+        (paramValue?.value === "" || paramValue?.value === undefined)
+      ) {
         errors.push({
           parameter: param.name,
           message: `${param.name} is required`,
@@ -124,7 +142,10 @@ export function ComponentInsertDialog({
             }
             break;
           case "boolean":
-            isValidType = value === "true" || value === "false" || typeof value === "boolean";
+            isValidType =
+              value === "true" ||
+              value === "false" ||
+              typeof value === "boolean";
             if (!isValidType) {
               errors.push({
                 parameter: param.name,
@@ -160,34 +181,44 @@ export function ComponentInsertDialog({
       }
 
       // Validation rules
-      if (param.validation && paramValue?.value !== "" && paramValue?.value !== undefined) {
+      if (
+        param.validation &&
+        paramValue?.value !== "" &&
+        paramValue?.value !== undefined
+      ) {
         const value = paramValue.value;
 
-        if (param.validation.min !== undefined && Number(value) < param.validation.min) {
+        if (
+          param.validation.min !== undefined &&
+          Number(value) < param.validation.min
+        ) {
           errors.push({
             parameter: param.name,
             message: `${param.name} must be at least ${param.validation.min}`,
           });
         }
 
-        if (param.validation.max !== undefined && Number(value) > param.validation.max) {
+        if (
+          param.validation.max !== undefined &&
+          Number(value) > param.validation.max
+        ) {
           errors.push({
             parameter: param.name,
             message: `${param.name} must be at most ${param.validation.max}`,
           });
         }
 
-        if (param.validation.pattern && !new RegExp(param.validation.pattern).test(String(value))) {
+        if (
+          param.validation.pattern &&
+          !new RegExp(param.validation.pattern).test(String(value))
+        ) {
           errors.push({
             parameter: param.name,
             message: `${param.name} format is invalid`,
           });
         }
 
-        if (
-          param.validation.enum &&
-          !param.validation.enum.includes(value)
-        ) {
+        if (param.validation.enum && !param.validation.enum.includes(value)) {
           errors.push({
             parameter: param.name,
             message: `${param.name} must be one of: ${param.validation.enum.join(", ")}`,
@@ -260,7 +291,9 @@ export function ComponentInsertDialog({
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className={cn("max-w-2xl max-h-[90vh] flex flex-col", className)}>
+      <DialogContent
+        className={cn("max-w-2xl max-h-[90vh] flex flex-col", className)}
+      >
         <DialogHeader>
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center size-10 rounded-lg bg-primary/10 text-primary">
@@ -268,12 +301,18 @@ export function ComponentInsertDialog({
             </div>
             <div className="flex-1 min-w-0">
               <DialogTitle className="text-xl">Insert Component</DialogTitle>
-              <DialogDescription className="truncate">{component.name}</DialogDescription>
+              <DialogDescription className="truncate">
+                {component.name}
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col min-h-0">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as any)}
+          className="flex-1 flex flex-col min-h-0"
+        >
           <TabsList>
             <TabsTrigger value="parameters" className="flex items-center gap-2">
               Parameters
@@ -305,7 +344,9 @@ export function ComponentInsertDialog({
                 <Alert variant="destructive">
                   <AlertCircle className="size-4" />
                   <AlertDescription>
-                    <div className="font-medium mb-1">Please fix the following errors:</div>
+                    <div className="font-medium mb-1">
+                      Please fix the following errors:
+                    </div>
                     <ul className="list-disc list-inside text-sm space-y-0.5">
                       {validationErrors.map((error, i) => (
                         <li key={i}>{error.message}</li>
@@ -319,7 +360,9 @@ export function ComponentInsertDialog({
               {requiredParams.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Required Parameters</CardTitle>
+                    <CardTitle className="text-base">
+                      Required Parameters
+                    </CardTitle>
                     <CardDescription>
                       These parameters must be provided
                     </CardDescription>
@@ -331,7 +374,9 @@ export function ComponentInsertDialog({
                         parameter={param}
                         value={parameterValues[param.name]?.value}
                         error={getErrorForParameter(param.name)}
-                        onChange={(value) => handleParameterChange(param.name, value)}
+                        onChange={(value) =>
+                          handleParameterChange(param.name, value)
+                        }
                       />
                     ))}
                   </CardContent>
@@ -342,7 +387,9 @@ export function ComponentInsertDialog({
               {optionalParams.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Optional Parameters</CardTitle>
+                    <CardTitle className="text-base">
+                      Optional Parameters
+                    </CardTitle>
                     <CardDescription>
                       These parameters have default values
                     </CardDescription>
@@ -354,7 +401,9 @@ export function ComponentInsertDialog({
                         parameter={param}
                         value={parameterValues[param.name]?.value}
                         error={getErrorForParameter(param.name)}
-                        onChange={(value) => handleParameterChange(param.name, value)}
+                        onChange={(value) =>
+                          handleParameterChange(param.name, value)
+                        }
                       />
                     ))}
                   </CardContent>
@@ -365,7 +414,9 @@ export function ComponentInsertDialog({
                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                   <CheckCircle className="size-12 mb-4" />
                   <p className="font-medium">No parameters required</p>
-                  <p className="text-sm">This component can be inserted directly</p>
+                  <p className="text-sm">
+                    This component can be inserted directly
+                  </p>
                 </div>
               )}
             </TabsContent>
@@ -384,7 +435,9 @@ export function ComponentInsertDialog({
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">Name:</span>
-                      <span className="text-sm text-muted-foreground">{component.name}</span>
+                      <span className="text-sm text-muted-foreground">
+                        {component.name}
+                      </span>
                     </div>
                     {component.category && (
                       <div className="flex items-center gap-2">
@@ -397,7 +450,11 @@ export function ComponentInsertDialog({
                         <span className="text-sm font-medium">Tags:</span>
                         <div className="flex flex-wrap gap-1">
                           {component.tags.map((tag) => (
-                            <Badge key={tag} variant="outline" className="text-xs">
+                            <Badge
+                              key={tag}
+                              variant="outline"
+                              className="text-xs"
+                            >
                               {tag}
                             </Badge>
                           ))}
@@ -411,15 +468,25 @@ export function ComponentInsertDialog({
                   {/* Stats */}
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <div className="text-2xl font-bold">{component.actions.length}</div>
-                      <div className="text-xs text-muted-foreground">Actions</div>
+                      <div className="text-2xl font-bold">
+                        {component.actions.length}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Actions
+                      </div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold">{component.parameters.length}</div>
-                      <div className="text-xs text-muted-foreground">Parameters</div>
+                      <div className="text-2xl font-bold">
+                        {component.parameters.length}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Parameters
+                      </div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold">{component.usageCount || 0}</div>
+                      <div className="text-2xl font-bold">
+                        {component.usageCount || 0}
+                      </div>
                       <div className="text-xs text-muted-foreground">Uses</div>
                     </div>
                   </div>
@@ -437,8 +504,8 @@ export function ComponentInsertDialog({
                             value !== undefined && value !== ""
                               ? String(value)
                               : param.defaultValue !== undefined
-                              ? `${param.defaultValue} (default)`
-                              : "-";
+                                ? `${param.defaultValue} (default)`
+                                : "-";
 
                           return (
                             <div
@@ -447,12 +514,17 @@ export function ComponentInsertDialog({
                             >
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium">{param.name}</span>
+                                  <span className="text-sm font-medium">
+                                    {param.name}
+                                  </span>
                                   <Badge variant="outline" className="text-xs">
                                     {param.type}
                                   </Badge>
                                   {param.required && (
-                                    <Badge variant="secondary" className="text-xs">
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-xs"
+                                    >
                                       Required
                                     </Badge>
                                   )}
@@ -471,7 +543,9 @@ export function ComponentInsertDialog({
                         })}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No parameters</p>
+                      <p className="text-sm text-muted-foreground">
+                        No parameters
+                      </p>
                     )}
                   </div>
                 </CardContent>
@@ -506,7 +580,12 @@ interface ParameterInputProps {
   onChange: (value: any) => void;
 }
 
-function ParameterInput({ parameter, value, error, onChange }: ParameterInputProps) {
+function ParameterInput({
+  parameter,
+  value,
+  error,
+  onChange,
+}: ParameterInputProps) {
   const inputId = `param-${parameter.name}`;
 
   // Render input based on type
@@ -531,7 +610,9 @@ function ParameterInput({ parameter, value, error, onChange }: ParameterInputPro
           <Input
             id={inputId}
             type="number"
-            placeholder={parameter.defaultValue?.toString() || "Enter a number..."}
+            placeholder={
+              parameter.defaultValue?.toString() || "Enter a number..."
+            }
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             aria-invalid={!!error}
@@ -546,7 +627,9 @@ function ParameterInput({ parameter, value, error, onChange }: ParameterInputPro
           <Textarea
             id={inputId}
             placeholder={`Enter JSON ${parameter.type}...`}
-            value={typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+            value={
+              typeof value === "string" ? value : JSON.stringify(value, null, 2)
+            }
             onChange={(e) => onChange(e.target.value)}
             aria-invalid={!!error}
             rows={4}
@@ -576,7 +659,9 @@ function ParameterInput({ parameter, value, error, onChange }: ParameterInputPro
         return (
           <Input
             id={inputId}
-            placeholder={parameter.defaultValue?.toString() || "Enter a value..."}
+            placeholder={
+              parameter.defaultValue?.toString() || "Enter a value..."
+            }
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             aria-invalid={!!error}

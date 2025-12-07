@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
 
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.user import User
 from app.services.analytics_service import analytics_service
 from app.services.metrics_service import metrics_service
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -21,10 +22,10 @@ async def track_download(request: Request, db: AsyncSession = Depends(get_async_
         data = await request.json()
 
         # Record download event using metrics service
-        metrics_service.record_metric(
+        await metrics_service.track_event(
             db=db,
-            user_id=None,  # Public event, no user
-            metric_type="runner_download",
+            user_id=None,  # type: ignore[arg-type]  # Public event, no user
+            event_type="runner_download",
             value=1.0,
             metadata={
                 "platform": data.get("platform"),

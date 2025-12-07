@@ -57,7 +57,6 @@ import type {
   // Constants
   COMPLEXITY_THRESHOLDS,
   DEFAULT_TEST_TIMEOUT,
-} from './types';
+} from "./types";
 
 // Type compilation verification
-const _typeCheck = true;

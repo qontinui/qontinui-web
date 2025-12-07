@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mouse, Keyboard, Eye, Navigation, Clock, Camera } from "lucide-react";
+import { Mouse, Keyboard, Eye, Navigation, Clock } from "lucide-react";
 
 export const metadata = {
   title: "Action Types - Qontinui Web Documentation",
@@ -33,15 +33,14 @@ export default function ActionsDocPage() {
             What are Actions?
           </h2>
           <p className="text-slate-700 mb-4">
-            Actions are the atomic operations performed during automation. They represent specific
-            tasks like clicking a button, typing text, or finding an image on screen. Actions are
-            organized into processes and executed during state transitions.
+            Actions are the atomic operations performed during automation. They
+            represent specific tasks like clicking a button, typing text, or
+            finding an image on screen. Actions are organized into processes and
+            executed during state transitions.
           </p>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-            <h3 className="font-semibold text-blue-900 mb-3">
-              Key Concepts
-            </h3>
+            <h3 className="font-semibold text-blue-900 mb-3">Key Concepts</h3>
             <ul className="space-y-2 text-sm text-blue-900">
               <li className="flex items-start gap-2">
                 <span className="font-bold">•</span>
@@ -53,7 +52,10 @@ export default function ActionsDocPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold">•</span>
-                <span>Actions can target images, coordinates, or the last found image</span>
+                <span>
+                  Actions can target images, coordinates, or the last found
+                  image
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold">•</span>
@@ -80,7 +82,10 @@ export default function ActionsDocPage() {
                 name="CLICK"
                 description="Left-click at the target location"
                 params={[
-                  { name: "target", desc: "Image, coordinates, or 'Last Find Result'" },
+                  {
+                    name: "target",
+                    desc: "Image, coordinates, or 'Last Find Result'",
+                  },
                   { name: "offset", desc: "Optional x/y offset from target" },
                 ]}
                 example="Click the login button found via image recognition"
@@ -89,7 +94,10 @@ export default function ActionsDocPage() {
                 name="DOUBLE_CLICK"
                 description="Double-click at the target location"
                 params={[
-                  { name: "target", desc: "Image, coordinates, or 'Last Find Result'" },
+                  {
+                    name: "target",
+                    desc: "Image, coordinates, or 'Last Find Result'",
+                  },
                 ]}
                 example="Double-click to open a file"
               />
@@ -97,7 +105,10 @@ export default function ActionsDocPage() {
                 name="RIGHT_CLICK"
                 description="Right-click to open context menu"
                 params={[
-                  { name: "target", desc: "Image, coordinates, or 'Last Find Result'" },
+                  {
+                    name: "target",
+                    desc: "Image, coordinates, or 'Last Find Result'",
+                  },
                 ]}
                 example="Right-click to show context menu"
               />
@@ -130,8 +141,14 @@ export default function ActionsDocPage() {
                 name="SCROLL / MOUSE_SCROLL"
                 description="Scroll mouse wheel"
                 params={[
-                  { name: "amount", desc: "Scroll amount (positive = down, negative = up)" },
-                  { name: "direction", desc: "Optional: vertical or horizontal" },
+                  {
+                    name: "amount",
+                    desc: "Scroll amount (positive = down, negative = up)",
+                  },
+                  {
+                    name: "direction",
+                    desc: "Optional: vertical or horizontal",
+                  },
                 ]}
                 example="Scroll down to load more content"
               />
@@ -148,7 +165,10 @@ export default function ActionsDocPage() {
                 description="Type a text string"
                 params={[
                   { name: "text", desc: "Text to type" },
-                  { name: "interval", desc: "Optional delay between keystrokes (ms)" },
+                  {
+                    name: "interval",
+                    desc: "Optional delay between keystrokes (ms)",
+                  },
                 ]}
                 example="Type username into login field"
               />
@@ -156,16 +176,17 @@ export default function ActionsDocPage() {
                 name="KEY_PRESS"
                 description="Press and release a key"
                 params={[
-                  { name: "key", desc: "Key name (e.g., 'enter', 'tab', 'ctrl+c')" },
+                  {
+                    name: "key",
+                    desc: "Key name (e.g., 'enter', 'tab', 'ctrl+c')",
+                  },
                 ]}
                 example="Press Enter to submit form"
               />
               <ActionCard
                 name="KEY_DOWN / KEY_UP"
                 description="Press or release a specific key"
-                params={[
-                  { name: "key", desc: "Key name to press or release" },
-                ]}
+                params={[{ name: "key", desc: "Key name to press or release" }]}
                 example="Hold Shift while clicking for multi-select"
               />
             </CategorySection>
@@ -215,9 +236,7 @@ export default function ActionsDocPage() {
               <ActionCard
                 name="GO_TO_STATE"
                 description="Navigate to a target state using pathfinding"
-                params={[
-                  { name: "stateId", desc: "ID of target state" },
-                ]}
+                params={[{ name: "stateId", desc: "ID of target state" }]}
                 example="Navigate to the settings page from anywhere"
                 important="Uses automatic pathfinding through the state graph"
               />
@@ -249,7 +268,10 @@ export default function ActionsDocPage() {
                 name="SCREENSHOT"
                 description="Capture the current screen"
                 params={[
-                  { name: "filename", desc: "Optional filename for screenshot" },
+                  {
+                    name: "filename",
+                    desc: "Optional filename for screenshot",
+                  },
                 ]}
                 example="Take screenshot for debugging or verification"
               />
@@ -269,9 +291,18 @@ export default function ActionsDocPage() {
               type="Object or String"
               description="Specifies where the action should be performed"
               options={[
-                { value: '{"type": "image", "imageId": "..."}', desc: "Find and target an image" },
-                { value: '{"type": "coordinates", "x": 100, "y": 200}', desc: "Use fixed coordinates" },
-                { value: '"Last Find Result"', desc: "Use location from last FIND action" },
+                {
+                  value: '{"type": "image", "imageId": "..."}',
+                  desc: "Find and target an image",
+                },
+                {
+                  value: '{"type": "coordinates", "x": 100, "y": 200}',
+                  desc: "Use fixed coordinates",
+                },
+                {
+                  value: '"Last Find Result"',
+                  desc: "Use location from last FIND action",
+                },
               ]}
             />
 
@@ -281,7 +312,10 @@ export default function ActionsDocPage() {
               description="Image matching threshold for visual actions"
               options={[
                 { value: "0.7 - 0.8", desc: "Fuzzy matching (more tolerant)" },
-                { value: "0.85 - 0.9", desc: "Standard matching (recommended)" },
+                {
+                  value: "0.85 - 0.9",
+                  desc: "Standard matching (recommended)",
+                },
                 { value: "0.95+", desc: "Exact matching (strict)" },
               ]}
             />
@@ -361,9 +395,7 @@ export default function ActionsDocPage() {
 
         {/* Next Steps */}
         <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
-            Next Steps
-          </h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="State Transitions"
@@ -389,7 +421,12 @@ interface CategorySectionProps {
   children: React.ReactNode;
 }
 
-function CategorySection({ icon, title, description, children }: CategorySectionProps) {
+function CategorySection({
+  icon,
+  title,
+  description,
+  children,
+}: CategorySectionProps) {
   return (
     <div className="border border-slate-200 rounded-lg p-6">
       <div className="flex items-center gap-3 mb-4">
@@ -399,9 +436,7 @@ function CategorySection({ icon, title, description, children }: CategorySection
           <p className="text-sm text-slate-600">{description}</p>
         </div>
       </div>
-      <div className="space-y-4">
-        {children}
-      </div>
+      <div className="space-y-4">{children}</div>
     </div>
   );
 }
@@ -414,7 +449,13 @@ interface ActionCardProps {
   important?: string;
 }
 
-function ActionCard({ name, description, params, example, important }: ActionCardProps) {
+function ActionCard({
+  name,
+  description,
+  params,
+  example,
+  important,
+}: ActionCardProps) {
   return (
     <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
       <h4 className="font-mono font-bold text-slate-900 mb-2">{name}</h4>
@@ -432,9 +473,7 @@ function ActionCard({ name, description, params, example, important }: ActionCar
       </div>
 
       {example && (
-        <div className="text-xs text-slate-600 italic">
-          Example: {example}
-        </div>
+        <div className="text-xs text-slate-600 italic">Example: {example}</div>
       )}
 
       {important && (

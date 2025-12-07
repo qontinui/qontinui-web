@@ -8,13 +8,13 @@
  * - Current view tracking
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import type {
   UserPresence,
   PresenceStatus,
   CursorPosition,
-} from '@/types/collaboration';
-import { websocketCollaborationService } from '@/services/websocket-collaboration-service';
+} from "@/types/collaboration";
+import { websocketCollaborationService } from "@/services/websocket-collaboration-service";
 
 // ============================================================================
 // Hook Return Type
@@ -37,14 +37,14 @@ interface UsePresenceReturn {
 // ============================================================================
 
 const USER_COLORS = [
-  '#3B82F6', // blue
-  '#10B981', // green
-  '#F59E0B', // amber
-  '#EF4444', // red
-  '#8B5CF6', // purple
-  '#EC4899', // pink
-  '#06B6D4', // cyan
-  '#F97316', // orange
+  "#3B82F6", // blue
+  "#10B981", // green
+  "#F59E0B", // amber
+  "#EF4444", // red
+  "#8B5CF6", // purple
+  "#EC4899", // pink
+  "#06B6D4", // cyan
+  "#F97316", // orange
 ];
 
 const userColorMap = new Map<string, string>();
@@ -52,7 +52,7 @@ let nextColorIndex = 0;
 
 function assignUserColor(userId: string): string {
   if (!userColorMap.has(userId)) {
-    userColorMap.set(userId, USER_COLORS[nextColorIndex % USER_COLORS.length]);
+    userColorMap.set(userId, USER_COLORS[nextColorIndex % USER_COLORS.length]!);
     nextColorIndex++;
   }
   return userColorMap.get(userId)!;
@@ -65,7 +65,7 @@ function assignUserColor(userId: string): string {
 export function usePresence(projectId: string): UsePresenceReturn {
   const [activeUsers, setActiveUsers] = useState<UserPresence[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [myStatus, setMyStatus] = useState<PresenceStatus>('active');
+  const [myStatus, setMyStatus] = useState<PresenceStatus>("active");
 
   /**
    * Setup WebSocket connection and handlers
@@ -78,7 +78,7 @@ export function usePresence(projectId: string): UsePresenceReturn {
       onConnect: () => {
         setIsConnected(true);
         // Send initial presence
-        websocketCollaborationService.sendPresenceUpdate('active');
+        websocketCollaborationService.sendPresenceUpdate("active");
       },
       onDisconnect: () => {
         setIsConnected(false);
@@ -104,16 +104,16 @@ export function usePresence(projectId: string): UsePresenceReturn {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        updateMyPresence('away');
+        updateMyPresence("away");
       } else {
-        updateMyPresence('active');
+        updateMyPresence("active");
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -127,17 +127,26 @@ export function usePresence(projectId: string): UsePresenceReturn {
       clearTimeout(idleTimeout);
 
       // Only update to active if not away
-      if (!document.hidden && myStatus !== 'active') {
-        updateMyPresence('active');
+      if (!document.hidden && myStatus !== "active") {
+        updateMyPresence("active");
       }
 
-      idleTimeout = setTimeout(() => {
-        updateMyPresence('idle');
-      }, 5 * 60 * 1000); // 5 minutes
+      idleTimeout = setTimeout(
+        () => {
+          updateMyPresence("idle");
+        },
+        5 * 60 * 1000
+      ); // 5 minutes
     };
 
     // Listen for user activity
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    const events = [
+      "mousedown",
+      "mousemove",
+      "keypress",
+      "scroll",
+      "touchstart",
+    ];
     events.forEach((event) => {
       document.addEventListener(event, resetIdleTimer, true);
     });

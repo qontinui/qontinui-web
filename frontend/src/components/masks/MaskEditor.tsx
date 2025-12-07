@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { StateImage } from '../../types/stateDiscovery';
-import { Button } from '../ui/button';
-import { Slider } from '../ui/slider';
-import { toast } from 'sonner';
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { StateImage } from "../../types/stateDiscovery";
+import { Button } from "../ui/button";
+import { Slider } from "../ui/slider";
+import { toast } from "sonner";
 import {
   Eraser,
   Brush,
@@ -11,13 +11,12 @@ import {
   Undo,
   Redo,
   Download,
-  Upload,
   RotateCcw,
   Save,
   Maximize,
   ZoomIn,
-  ZoomOut
-} from 'lucide-react';
+  ZoomOut,
+} from "lucide-react";
 
 interface MaskEditorProps {
   stateImage: StateImage;
@@ -26,9 +25,9 @@ interface MaskEditorProps {
   onCancel?: () => void;
 }
 
-type Tool = 'brush' | 'eraser' | 'rectangle' | 'circle';
+type Tool = "brush" | "eraser" | "rectangle" | "circle";
 type EditAction = {
-  type: 'draw' | 'erase';
+  type: "draw" | "erase";
   points: { x: number; y: number }[];
   tool: Tool;
   size: number;
@@ -38,11 +37,11 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
   stateImage,
   initialMask,
   onSave,
-  onCancel
+  onCancel,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [tool, setTool] = useState<Tool>('brush');
+  const [tool, setTool] = useState<Tool>("brush");
   const [brushSize, setBrushSize] = useState(10);
   const [opacity, setOpacity] = useState(0.5);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -60,8 +59,8 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
 
     const canvas = canvasRef.current;
     const maskCanvas = maskCanvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const maskCtx = maskCanvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
+    const maskCtx = maskCanvas.getContext("2d");
 
     if (!ctx || !maskCtx) return;
 
@@ -80,17 +79,17 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
       img.src = initialMask;
     } else {
       // Start with full mask
-      maskCtx.fillStyle = 'white';
+      maskCtx.fillStyle = "white";
       maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
     }
 
     // Draw state image placeholder
-    ctx.fillStyle = '#e0e0e0';
+    ctx.fillStyle = "#e0e0e0";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#999';
+    ctx.strokeStyle = "#999";
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#666';
-    ctx.font = '14px sans-serif';
+    ctx.fillStyle = "#666";
+    ctx.font = "14px sans-serif";
     ctx.fillText(stateImage.name, 10, 25);
 
     redrawComposite();
@@ -102,7 +101,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
 
     const canvas = canvasRef.current;
     const maskCanvas = maskCanvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
 
     if (!ctx) return;
 
@@ -110,12 +109,12 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Draw base image/placeholder
-    ctx.fillStyle = '#e0e0e0';
+    ctx.fillStyle = "#e0e0e0";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#999';
+    ctx.strokeStyle = "#999";
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#666';
-    ctx.font = '14px sans-serif';
+    ctx.fillStyle = "#666";
+    ctx.font = "14px sans-serif";
     ctx.fillText(stateImage.name, 10, 25);
 
     // Overlay mask with transparency
@@ -123,17 +122,25 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     ctx.globalAlpha = opacity;
 
     // Use mask as alpha channel for purple overlay
-    const maskCtx = maskCanvas.getContext('2d');
+    const maskCtx = maskCanvas.getContext("2d");
     if (maskCtx) {
-      const imageData = ctx.createImageData(maskCanvas.width, maskCanvas.height);
-      const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+      const imageData = ctx.createImageData(
+        maskCanvas.width,
+        maskCanvas.height
+      );
+      const maskData = maskCtx.getImageData(
+        0,
+        0,
+        maskCanvas.width,
+        maskCanvas.height
+      );
 
       // Create purple overlay where mask is active
       for (let i = 0; i < maskData.data.length; i += 4) {
-        imageData.data[i] = 147;     // R
-        imageData.data[i + 1] = 51;  // G
+        imageData.data[i] = 147; // R
+        imageData.data[i + 1] = 51; // G
         imageData.data[i + 2] = 234; // B
-        imageData.data[i + 3] = maskData.data[i]; // Use mask as alpha
+        imageData.data[i + 3] = maskData.data[i] ?? 0; // Use mask as alpha
       }
 
       ctx.putImageData(imageData, 0, 0);
@@ -147,23 +154,23 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     const rect = canvasRef.current.getBoundingClientRect();
     return {
       x: (e.clientX - rect.left - panOffset.x) / zoom,
-      y: (e.clientY - rect.top - panOffset.y) / zoom
+      y: (e.clientY - rect.top - panOffset.y) / zoom,
     };
   };
 
   // Draw on mask
   const drawOnMask = (x: number, y: number) => {
     if (!maskCanvasRef.current) return;
-    const ctx = maskCanvasRef.current.getContext('2d');
+    const ctx = maskCanvasRef.current.getContext("2d");
     if (!ctx) return;
 
-    const fillColor = tool === 'eraser' ? 'white' : 'black';
-    console.log('Tool:', tool, 'Color:', fillColor);
+    const fillColor = tool === "eraser" ? "white" : "black";
+    console.log("Tool:", tool, "Color:", fillColor);
 
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = fillColor;
 
-    if (tool === 'brush' || tool === 'eraser') {
+    if (tool === "brush" || tool === "eraser") {
       ctx.beginPath();
       ctx.arc(x, y, brushSize / 2, 0, 2 * Math.PI);
       ctx.fill();
@@ -183,10 +190,10 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
       setIsDrawing(true);
       const pos = getMousePos(e);
       setCurrentAction({
-        type: tool === 'eraser' ? 'erase' : 'draw',
+        type: tool === "eraser" ? "erase" : "draw",
         points: [pos],
         tool,
-        size: brushSize
+        size: brushSize,
       });
       drawOnMask(pos.x, pos.y);
     }
@@ -196,7 +203,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     if (isPanning) {
       const dx = e.clientX - lastMousePos.x;
       const dy = e.clientY - lastMousePos.y;
-      setPanOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      setPanOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
       setLastMousePos({ x: e.clientX, y: e.clientY });
     } else if (isDrawing) {
       const pos = getMousePos(e);
@@ -237,19 +244,30 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
 
   const replayHistory = (toIndex: number) => {
     if (!maskCanvasRef.current) return;
-    const ctx = maskCanvasRef.current.getContext('2d');
+    const ctx = maskCanvasRef.current.getContext("2d");
     if (!ctx) return;
 
     // Clear mask
-    ctx.clearRect(0, 0, maskCanvasRef.current.width, maskCanvasRef.current.height);
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, maskCanvasRef.current.width, maskCanvasRef.current.height);
+    ctx.clearRect(
+      0,
+      0,
+      maskCanvasRef.current.width,
+      maskCanvasRef.current.height
+    );
+    ctx.fillStyle = "white";
+    ctx.fillRect(
+      0,
+      0,
+      maskCanvasRef.current.width,
+      maskCanvasRef.current.height
+    );
 
     // Replay actions up to index
     for (let i = 0; i <= toIndex; i++) {
       const action = history[i];
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = action.type === 'erase' ? 'white' : 'black';
+      if (!action) continue;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = action.type === "erase" ? "white" : "black";
 
       for (const point of action.points) {
         ctx.beginPath();
@@ -264,15 +282,20 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
   // Reset mask
   const resetMask = () => {
     if (!maskCanvasRef.current) return;
-    const ctx = maskCanvasRef.current.getContext('2d');
+    const ctx = maskCanvasRef.current.getContext("2d");
     if (!ctx) return;
 
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, maskCanvasRef.current.width, maskCanvasRef.current.height);
+    ctx.fillStyle = "white";
+    ctx.fillRect(
+      0,
+      0,
+      maskCanvasRef.current.width,
+      maskCanvasRef.current.height
+    );
     setHistory([]);
     setHistoryIndex(-1);
     redrawComposite();
-    toast.info('Mask reset to full');
+    toast.info("Mask reset to full");
   };
 
   // Save mask
@@ -280,11 +303,11 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     if (!maskCanvasRef.current) return;
 
     // Convert mask canvas to base64
-    const maskData = maskCanvasRef.current.toDataURL('image/png');
+    const maskData = maskCanvasRef.current.toDataURL("image/png");
 
     if (onSave) {
       onSave(maskData);
-      toast.success('Mask saved');
+      toast.success("Mask saved");
     }
   };
 
@@ -292,16 +315,16 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
   const exportMask = () => {
     if (!maskCanvasRef.current) return;
 
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.download = `mask_${stateImage.id}.png`;
     link.href = maskCanvasRef.current.toDataURL();
     link.click();
-    toast.success('Mask exported');
+    toast.success("Mask exported");
   };
 
   // Zoom controls
-  const zoomIn = () => setZoom(prev => Math.min(prev * 1.2, 5));
-  const zoomOut = () => setZoom(prev => Math.max(prev / 1.2, 0.5));
+  const zoomIn = () => setZoom((prev) => Math.min(prev * 1.2, 5));
+  const zoomOut = () => setZoom((prev) => Math.max(prev / 1.2, 0.5));
   const resetZoom = () => {
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
@@ -328,36 +351,36 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
         {/* Toolbar */}
         <div className="w-16 bg-gray-800 rounded p-2 space-y-2">
           <button
-            onClick={() => setTool('brush')}
+            onClick={() => setTool("brush")}
             className={`w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 ${
-              tool === 'brush' ? 'bg-purple-600' : ''
+              tool === "brush" ? "bg-purple-600" : ""
             }`}
             title="Brush"
           >
             <Brush className="w-5 h-5" />
           </button>
           <button
-            onClick={() => setTool('eraser')}
+            onClick={() => setTool("eraser")}
             className={`w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 ${
-              tool === 'eraser' ? 'bg-purple-600' : ''
+              tool === "eraser" ? "bg-purple-600" : ""
             }`}
             title="Eraser"
           >
             <Eraser className="w-5 h-5" />
           </button>
           <button
-            onClick={() => setTool('rectangle')}
+            onClick={() => setTool("rectangle")}
             className={`w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 ${
-              tool === 'rectangle' ? 'bg-purple-600' : ''
+              tool === "rectangle" ? "bg-purple-600" : ""
             }`}
             title="Rectangle"
           >
             <Square className="w-5 h-5" />
           </button>
           <button
-            onClick={() => setTool('circle')}
+            onClick={() => setTool("circle")}
             className={`w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 ${
-              tool === 'circle' ? 'bg-purple-600' : ''
+              tool === "circle" ? "bg-purple-600" : ""
             }`}
             title="Circle"
           >
@@ -402,10 +425,12 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
           <div className="bg-gray-800 rounded p-4 mb-4">
             <div className="flex items-center gap-4 mb-4">
               <div className="flex-1">
-                <label className="text-sm text-gray-400">Brush Size: {brushSize}px</label>
+                <label className="text-sm text-gray-400">
+                  Brush Size: {brushSize}px
+                </label>
                 <Slider
                   value={[brushSize]}
-                  onValueChange={(v) => setBrushSize(v[0])}
+                  onValueChange={(v) => setBrushSize(v[0] ?? 5)}
                   min={1}
                   max={50}
                   step={1}
@@ -413,10 +438,12 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                 />
               </div>
               <div className="flex-1">
-                <label className="text-sm text-gray-400">Opacity: {Math.round(opacity * 100)}%</label>
+                <label className="text-sm text-gray-400">
+                  Opacity: {Math.round(opacity * 100)}%
+                </label>
                 <Slider
                   value={[opacity * 100]}
-                  onValueChange={(v) => setOpacity(v[0] / 100)}
+                  onValueChange={(v) => setOpacity(v[0]! / 100)}
                   min={0}
                   max={100}
                   step={5}
@@ -454,15 +481,20 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
             <div
               className="relative overflow-hidden bg-gray-900 rounded"
               style={{
-                width: '100%',
-                height: '500px',
-                cursor: tool === 'brush' ? 'crosshair' : tool === 'eraser' ? 'grab' : 'default'
+                width: "100%",
+                height: "500px",
+                cursor:
+                  tool === "brush"
+                    ? "crosshair"
+                    : tool === "eraser"
+                      ? "grab"
+                      : "default",
               }}
             >
               <div
                 style={{
                   transform: `scale(${zoom}) translate(${panOffset.x / zoom}px, ${panOffset.y / zoom}px)`,
-                  transformOrigin: 'top left'
+                  transformOrigin: "top left",
                 }}
               >
                 <canvas
@@ -473,10 +505,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                   onMouseLeave={handleMouseUp}
                   className="border border-gray-600"
                 />
-                <canvas
-                  ref={maskCanvasRef}
-                  className="hidden"
-                />
+                <canvas ref={maskCanvasRef} className="hidden" />
               </div>
             </div>
           </div>

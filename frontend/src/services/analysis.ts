@@ -2,9 +2,9 @@
  * Analysis API service
  */
 
-import axios from 'axios';
+import axios from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export interface BoundingBox {
   x: number;
@@ -179,12 +179,9 @@ export async function getAnalysisJob(
   jobId: string,
   token: string
 ): Promise<AnalysisJobDetail> {
-  const response = await axios.get(
-    `${API_URL}/api/v1/analysis/jobs/${jobId}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    }
-  );
+  const response = await axios.get(`${API_URL}/api/v1/analysis/jobs/${jobId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return response.data;
 }
 

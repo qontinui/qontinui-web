@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 
 interface StateImageDisplayProps {
   image: string; // Base64 data URL
@@ -15,12 +15,15 @@ interface StateImageDisplayProps {
 export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
   image,
   mask,
-  alt = 'State Image',
-  className = '',
-  style = {}
+  alt = "State Image",
+  className = "",
+  style = {},
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [dimensions, setDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -41,37 +44,53 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
           img.src = image;
         });
 
-        console.log('[StateImageDisplay] Image loaded:', { width: img.width, height: img.height, hasMask: !!mask });
+        console.log("[StateImageDisplay] Image loaded:", {
+          width: img.width,
+          height: img.height,
+          hasMask: !!mask,
+        });
         setDimensions({ width: img.width, height: img.height });
 
         // If no mask, just display the image normally
         if (!mask) {
-          console.log('[StateImageDisplay] No mask, displaying image directly');
+          console.log("[StateImageDisplay] No mask, displaying image directly");
           setIsLoading(false);
           return;
         }
 
-        console.log('[StateImageDisplay] Loading mask...');
+        console.log("[StateImageDisplay] Loading mask...");
 
         // Load the mask
         const maskImg = new Image();
         let maskLoadedSuccessfully = false;
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>((resolve) => {
           maskImg.onload = () => {
-            console.log('[StateImageDisplay] Mask loaded:', { width: maskImg.width, height: maskImg.height });
+            console.log("[StateImageDisplay] Mask loaded:", {
+              width: maskImg.width,
+              height: maskImg.height,
+            });
             maskLoadedSuccessfully = true;
             resolve();
           };
           maskImg.onerror = (e) => {
-            console.warn('[StateImageDisplay] Failed to load mask, displaying image without mask', e);
+            console.warn(
+              "[StateImageDisplay] Failed to load mask, displaying image without mask",
+              e
+            );
             resolve(); // Continue without mask
           };
           maskImg.src = mask;
         });
 
         // If mask didn't load, just show image without mask
-        if (!maskLoadedSuccessfully || maskImg.width === 0 || maskImg.height === 0) {
-          console.log('[StateImageDisplay] Mask invalid, showing image without mask processing');
+        if (
+          !maskLoadedSuccessfully ||
+          maskImg.width === 0 ||
+          maskImg.height === 0
+        ) {
+          console.log(
+            "[StateImageDisplay] Mask invalid, showing image without mask processing"
+          );
           setIsLoading(false);
           return;
         }
@@ -79,7 +98,7 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
         // Composite image with mask on canvas
         const canvas = canvasRef.current;
         if (!canvas) {
-          console.warn('[StateImageDisplay] Canvas ref not available');
+          console.warn("[StateImageDisplay] Canvas ref not available");
           setIsLoading(false);
           return;
         }
@@ -87,9 +106,9 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
         canvas.width = img.width;
         canvas.height = img.height;
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext("2d");
         if (!ctx) {
-          console.warn('[StateImageDisplay] Could not get 2d context');
+          console.warn("[StateImageDisplay] Could not get 2d context");
           setIsLoading(false);
           return;
         }
@@ -99,23 +118,33 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
 
         // Apply mask as alpha channel
         const imageData = ctx.getImageData(0, 0, img.width, img.height);
-        const maskCanvas = document.createElement('canvas');
+        const maskCanvas = document.createElement("canvas");
         maskCanvas.width = maskImg.width;
         maskCanvas.height = maskImg.height;
-        const maskCtx = maskCanvas.getContext('2d');
+        const maskCtx = maskCanvas.getContext("2d");
 
         if (maskCtx) {
           maskCtx.drawImage(maskImg, 0, 0);
-          const maskData = maskCtx.getImageData(0, 0, maskImg.width, maskImg.height);
+          const maskData = maskCtx.getImageData(
+            0,
+            0,
+            maskImg.width,
+            maskImg.height
+          );
 
-          console.log('[StateImageDisplay] Applying mask. Image pixels:', imageData.data.length / 4, 'Mask pixels:', maskData.data.length / 4);
+          console.log(
+            "[StateImageDisplay] Applying mask. Image pixels:",
+            imageData.data.length / 4,
+            "Mask pixels:",
+            maskData.data.length / 4
+          );
 
           // Sample first few pixels to debug
-          console.log('[StateImageDisplay] Sample mask values:', [
+          console.log("[StateImageDisplay] Sample mask values:", [
             maskData.data[0],
             maskData.data[4],
             maskData.data[8],
-            maskData.data[12]
+            maskData.data[12],
           ]);
 
           // Apply mask to alpha channel (white = opaque, black = transparent)
@@ -123,21 +152,23 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
           for (let i = 0; i < imageData.data.length; i += 4) {
             const maskIndex = i;
             // Use red channel of mask as alpha multiplier (grayscale mask)
-            const maskValue = maskData.data[maskIndex] / 255; // Normalize to 0-1
+            const maskValue = (maskData.data[maskIndex] ?? 0) / 255; // Normalize to 0-1
             const currentAlpha = imageData.data[i + 3];
             // Multiply current alpha by mask value
-            imageData.data[i + 3] = currentAlpha * maskValue;
+            imageData.data[i + 3] = (currentAlpha ?? 1) * maskValue;
           }
 
-          console.log('[StateImageDisplay] Mask applied successfully');
+          console.log("[StateImageDisplay] Mask applied successfully");
           ctx.putImageData(imageData, 0, 0);
         } else {
-          console.warn('[StateImageDisplay] Mask context or dimensions invalid');
+          console.warn(
+            "[StateImageDisplay] Mask context or dimensions invalid"
+          );
         }
 
         setIsLoading(false);
       } catch (error) {
-        console.error('Error loading StateImage:', error);
+        console.error("Error loading StateImage:", error);
         setIsLoading(false);
       }
     };
@@ -147,7 +178,10 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
 
   if (!image) {
     return (
-      <div className={`${className} bg-gray-800 flex items-center justify-center`} style={style}>
+      <div
+        className={`${className} bg-gray-800 flex items-center justify-center`}
+        style={style}
+      >
         <span className="text-gray-500 text-xs">No image</span>
       </div>
     );
@@ -155,7 +189,10 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
 
   if (isLoading) {
     return (
-      <div className={`${className} bg-gray-800 flex items-center justify-center`} style={style}>
+      <div
+        className={`${className} bg-gray-800 flex items-center justify-center`}
+        style={style}
+      >
         <span className="text-gray-500 text-xs">Loading...</span>
       </div>
     );
@@ -164,14 +201,24 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
   // If there's a mask, show the canvas
   if (mask && dimensions) {
     return (
-      <div className={className} style={{ ...style, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div
+        className={className}
+        style={{
+          ...style,
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <canvas
           ref={canvasRef}
           style={{
-            maxWidth: '100%',
-            maxHeight: '100%',
-            objectFit: 'contain',
-            imageRendering: 'auto'
+            maxWidth: "100%",
+            maxHeight: "100%",
+            objectFit: "contain",
+            imageRendering: "auto",
           }}
         />
       </div>
@@ -186,9 +233,9 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
       className={className}
       style={{
         ...style,
-        width: '100%',
-        height: '100%',
-        objectFit: 'contain'
+        width: "100%",
+        height: "100%",
+        objectFit: "contain",
       }}
     />
   );

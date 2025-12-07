@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 /**
  * VariableHistory - Timeline view of variable changes
@@ -14,19 +14,19 @@
  * - Change type badges (created/updated/deleted)
  */
 
-import { useState, useMemo } from "react"
-import { useVariableHistory } from "@/hooks/useWorkflowVariables"
-import type { VariableChange, VariableScope } from "@/types/workflow-variables"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Button } from "@/components/ui/button"
+import { useState, useMemo } from "react";
+import { useVariableHistory } from "@/hooks/useWorkflowVariables";
+import type { VariableChange, VariableScope } from "@/types/workflow-variables";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip"
+} from "@/components/ui/tooltip";
 import {
   Search,
   Clock,
@@ -41,7 +41,7 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
-} from "lucide-react"
+} from "lucide-react";
 
 interface VariableHistoryProps {
   /** Workflow run ID */
@@ -56,11 +56,11 @@ interface VariableHistoryProps {
  */
 function getScopeIcon(scope: VariableScope) {
   switch (scope) {
-    case 'execution':
+    case "execution":
       return <Activity className="w-3 h-3" />;
-    case 'workflow':
+    case "workflow":
       return <Database className="w-3 h-3" />;
-    case 'global':
+    case "global":
       return <Globe className="w-3 h-3" />;
   }
 }
@@ -74,29 +74,29 @@ function getChangeTypeInfo(changeType: string): {
   label: string;
 } {
   switch (changeType) {
-    case 'created':
+    case "created":
       return {
         icon: <Plus className="w-3 h-3" />,
-        color: 'text-green-500',
-        label: 'Created',
+        color: "text-green-500",
+        label: "Created",
       };
-    case 'updated':
+    case "updated":
       return {
         icon: <Edit className="w-3 h-3" />,
-        color: 'text-[#00D9FF]',
-        label: 'Updated',
+        color: "text-[#00D9FF]",
+        label: "Updated",
       };
-    case 'deleted':
+    case "deleted":
       return {
         icon: <Trash2 className="w-3 h-3" />,
-        color: 'text-red-500',
-        label: 'Deleted',
+        color: "text-red-500",
+        label: "Deleted",
       };
     default:
       return {
         icon: <Edit className="w-3 h-3" />,
-        color: 'text-gray-500',
-        label: 'Changed',
+        color: "text-gray-500",
+        label: "Changed",
       };
   }
 }
@@ -110,7 +110,7 @@ function formatRelativeTime(isoString: string): string {
   const diffMs = now.getTime() - date.getTime();
   const diffSec = Math.floor(diffMs / 1000);
 
-  if (diffSec < 1) return 'just now';
+  if (diffSec < 1) return "just now";
   if (diffSec < 60) return `${diffSec}s ago`;
 
   const diffMin = Math.floor(diffSec / 60);
@@ -127,10 +127,10 @@ function formatRelativeTime(isoString: string): string {
  * Format value for display
  */
 function formatValue(value: any): string {
-  if (value === null) return 'null';
-  if (value === undefined) return 'undefined';
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
 
-  if (typeof value === 'object') {
+  if (typeof value === "object") {
     return JSON.stringify(value, null, 2);
   }
 
@@ -141,7 +141,7 @@ function formatValue(value: any): string {
  * Detect if value is complex (object or array)
  */
 function isComplexValue(value: any): boolean {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 /**
@@ -150,7 +150,8 @@ function isComplexValue(value: any): boolean {
 function ChangeItem({ change }: { change: VariableChange }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const changeInfo = getChangeTypeInfo(change.change_type);
-  const hasComplexValue = isComplexValue(change.old_value) || isComplexValue(change.new_value);
+  const hasComplexValue =
+    isComplexValue(change.old_value) || isComplexValue(change.new_value);
 
   return (
     <div className="relative pb-8 last:pb-0">
@@ -160,7 +161,9 @@ function ChangeItem({ change }: { change: VariableChange }) {
       {/* Change card */}
       <div className="flex gap-4">
         {/* Timeline dot */}
-        <div className={`relative flex-shrink-0 w-8 h-8 rounded-full bg-gray-800 border-2 ${changeInfo.color.replace('text-', 'border-')} flex items-center justify-center`}>
+        <div
+          className={`relative flex-shrink-0 w-8 h-8 rounded-full bg-gray-800 border-2 ${changeInfo.color.replace("text-", "border-")} flex items-center justify-center`}
+        >
           {changeInfo.icon}
         </div>
 
@@ -170,7 +173,10 @@ function ChangeItem({ change }: { change: VariableChange }) {
           <div className="flex items-start justify-between mb-3">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <Badge variant="outline" className={`${changeInfo.color} gap-1`}>
+                <Badge
+                  variant="outline"
+                  className={`${changeInfo.color} gap-1`}
+                >
                   {changeInfo.icon}
                   {changeInfo.label}
                 </Badge>
@@ -184,7 +190,8 @@ function ChangeItem({ change }: { change: VariableChange }) {
               </h4>
               {change.action_name && (
                 <p className="text-sm text-gray-400 mt-1">
-                  by action: <span className="text-gray-300">{change.action_name}</span>
+                  by action:{" "}
+                  <span className="text-gray-300">{change.action_name}</span>
                 </p>
               )}
             </div>
@@ -222,42 +229,54 @@ function ChangeItem({ change }: { change: VariableChange }) {
           </div>
 
           {/* Value change */}
-          {change.change_type === 'created' && (
+          {change.change_type === "created" && (
             <div className="mt-3 p-3 bg-green-500/10 border border-green-500/30 rounded">
               <div className="text-xs text-green-400 mb-1">New value:</div>
               <div className="font-mono text-sm text-white">
                 {isExpanded || !hasComplexValue ? (
-                  <pre className="overflow-x-auto">{formatValue(change.new_value)}</pre>
+                  <pre className="overflow-x-auto">
+                    {formatValue(change.new_value)}
+                  </pre>
                 ) : (
-                  <div className="truncate">{formatValue(change.new_value)}</div>
+                  <div className="truncate">
+                    {formatValue(change.new_value)}
+                  </div>
                 )}
               </div>
             </div>
           )}
 
-          {change.change_type === 'deleted' && (
+          {change.change_type === "deleted" && (
             <div className="mt-3 p-3 bg-red-500/10 border border-red-500/30 rounded">
               <div className="text-xs text-red-400 mb-1">Previous value:</div>
               <div className="font-mono text-sm text-white line-through opacity-50">
                 {isExpanded || !hasComplexValue ? (
-                  <pre className="overflow-x-auto">{formatValue(change.old_value)}</pre>
+                  <pre className="overflow-x-auto">
+                    {formatValue(change.old_value)}
+                  </pre>
                 ) : (
-                  <div className="truncate">{formatValue(change.old_value)}</div>
+                  <div className="truncate">
+                    {formatValue(change.old_value)}
+                  </div>
                 )}
               </div>
             </div>
           )}
 
-          {change.change_type === 'updated' && (
+          {change.change_type === "updated" && (
             <div className="mt-3 space-y-2">
               {/* Old value */}
               <div className="p-3 bg-red-500/10 border border-red-500/30 rounded">
                 <div className="text-xs text-red-400 mb-1">Previous value:</div>
                 <div className="font-mono text-sm text-gray-300">
                   {isExpanded || !hasComplexValue ? (
-                    <pre className="overflow-x-auto">{formatValue(change.old_value)}</pre>
+                    <pre className="overflow-x-auto">
+                      {formatValue(change.old_value)}
+                    </pre>
                   ) : (
-                    <div className="truncate">{formatValue(change.old_value)}</div>
+                    <div className="truncate">
+                      {formatValue(change.old_value)}
+                    </div>
                   )}
                 </div>
               </div>
@@ -272,9 +291,13 @@ function ChangeItem({ change }: { change: VariableChange }) {
                 <div className="text-xs text-green-400 mb-1">New value:</div>
                 <div className="font-mono text-sm text-white">
                   {isExpanded || !hasComplexValue ? (
-                    <pre className="overflow-x-auto">{formatValue(change.new_value)}</pre>
+                    <pre className="overflow-x-auto">
+                      {formatValue(change.new_value)}
+                    </pre>
                   ) : (
-                    <div className="truncate">{formatValue(change.new_value)}</div>
+                    <div className="truncate">
+                      {formatValue(change.new_value)}
+                    </div>
                   )}
                 </div>
               </div>
@@ -293,7 +316,10 @@ function ChangeItem({ change }: { change: VariableChange }) {
   );
 }
 
-export function VariableHistory({ runId, refreshInterval = 1000 }: VariableHistoryProps) {
+export function VariableHistory({
+  runId,
+  refreshInterval = 1000,
+}: VariableHistoryProps) {
   const [searchTerm, setSearchTerm] = useState("");
 
   const { data, isLoading, error } = useVariableHistory(runId, refreshInterval);
@@ -303,7 +329,10 @@ export function VariableHistory({ runId, refreshInterval = 1000 }: VariableHisto
     if (!data?.history?.changes) return [];
 
     return data.history.changes.filter((change) => {
-      if (searchTerm && !change.variable_name.toLowerCase().includes(searchTerm.toLowerCase())) {
+      if (
+        searchTerm &&
+        !change.variable_name.toLowerCase().includes(searchTerm.toLowerCase())
+      ) {
         return false;
       }
       return true;
@@ -324,8 +353,12 @@ export function VariableHistory({ runId, refreshInterval = 1000 }: VariableHisto
       <div className="flex items-center justify-center py-12 text-center">
         <AlertCircle className="w-8 h-8 text-red-500 mr-3" />
         <div>
-          <p className="text-red-500 font-medium">Failed to load change history</p>
-          <p className="text-sm text-gray-400 mt-2">{(error as Error).message}</p>
+          <p className="text-red-500 font-medium">
+            Failed to load change history
+          </p>
+          <p className="text-sm text-gray-400 mt-2">
+            {(error as Error).message}
+          </p>
         </div>
       </div>
     );
@@ -352,12 +385,12 @@ export function VariableHistory({ runId, refreshInterval = 1000 }: VariableHisto
           <div className="text-center py-12">
             <Clock className="w-16 h-16 mx-auto text-gray-600 mb-4" />
             <h3 className="text-xl font-semibold text-gray-300 mb-2">
-              {searchTerm ? 'No matching changes' : 'No changes yet'}
+              {searchTerm ? "No matching changes" : "No changes yet"}
             </h3>
             <p className="text-gray-400">
               {searchTerm
-                ? 'Try a different search term'
-                : 'Variable changes will appear here during workflow execution'}
+                ? "Try a different search term"
+                : "Variable changes will appear here during workflow execution"}
             </p>
           </div>
         ) : (
@@ -372,7 +405,8 @@ export function VariableHistory({ runId, refreshInterval = 1000 }: VariableHisto
       {/* Stats footer */}
       {filteredChanges.length > 0 && (
         <div className="mt-4 pt-4 border-t border-gray-800 text-sm text-gray-400">
-          Showing {filteredChanges.length} of {data?.history?.total || 0} changes
+          Showing {filteredChanges.length} of {data?.history?.total || 0}{" "}
+          changes
         </div>
       )}
     </div>

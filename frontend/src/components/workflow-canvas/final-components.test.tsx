@@ -4,52 +4,54 @@
  * Tests for all final React UI components.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { FormatSwitcherDialog } from './FormatSwitcherDialog';
-import { AutoLayoutPanel } from './AutoLayoutPanel';
-import { TemplateBrowser } from './TemplateBrowser';
-import { LayoutPreview } from './LayoutPreview';
-import { ConversionPreview } from './ConversionPreview';
-import { LayoutSuggestions } from './LayoutSuggestions';
-import { SequentialListView } from '../workflow-editor/SequentialListView';
-import { PresetManagerDialog } from './PresetManagerDialog';
-import { ConversionWizard } from './ConversionWizard';
-import type { Workflow } from '@/lib/action-schema/action-types';
-import { createAction } from '@/lib/action-schema/action-types';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { FormatSwitcherDialog } from "./FormatSwitcherDialog";
+import { AutoLayoutPanel } from "./AutoLayoutPanel";
+import { TemplateBrowser } from "./TemplateBrowser";
+import { LayoutPreview } from "./LayoutPreview";
+import { ConversionPreview } from "./ConversionPreview";
+import { LayoutSuggestions } from "./LayoutSuggestions";
+import { SequentialListView } from "../workflow-editor/SequentialListView";
+import { PresetManagerDialog } from "./PresetManagerDialog";
+import { ConversionWizard } from "./ConversionWizard";
+import type { Workflow } from "@/lib/action-schema/action-types";
+import { createAction } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Mock Data
 // ============================================================================
 
 const mockWorkflow: Workflow = {
-  id: 'test-workflow',
-  name: 'Test Workflow',
-  version: '1.0.0',
-  format: 'graph',
+  id: "test-workflow",
+  name: "Test Workflow",
+  version: "1.0.0",
+  format: "graph",
   actions: [
-    createAction('CLICK', { target: { image: 'button.png' } }, [100, 100], { id: 'action-1' }),
-    createAction('TYPE', { text: 'test' }, [100, 250], { id: 'action-2' }),
-    createAction('WAIT', { duration: 1000 }, [100, 400], { id: 'action-3' })
+    createAction("CLICK", { target: { image: "button.png" } }, [100, 100], {
+      id: "action-1",
+    }),
+    createAction("TYPE", { text: "test" }, [100, 250], { id: "action-2" }),
+    createAction("WAIT", { duration: 1000 }, [100, 400], { id: "action-3" }),
   ],
   connections: {
-    'action-1': {
-      main: [[{ action: 'action-2', type: 'main', index: 0 }]]
+    "action-1": {
+      main: [[{ action: "action-2", type: "main", index: 0 }]],
     },
-    'action-2': {
-      main: [[{ action: 'action-3', type: 'main', index: 0 }]]
-    }
+    "action-2": {
+      main: [[{ action: "action-3", type: "main", index: 0 }]],
+    },
   },
   metadata: {
-    created: '2024-01-01T00:00:00Z'
-  }
+    created: "2024-01-01T00:00:00Z",
+  },
 };
 
 // ============================================================================
 // Format Switcher Dialog Tests
 // ============================================================================
 
-describe('FormatSwitcherDialog', () => {
+describe("FormatSwitcherDialog", () => {
   const mockOnSwitch = vi.fn();
   const mockOnClose = vi.fn();
 
@@ -57,7 +59,7 @@ describe('FormatSwitcherDialog', () => {
     vi.clearAllMocks();
   });
 
-  it('renders when open', () => {
+  it("renders when open", () => {
     render(
       <FormatSwitcherDialog
         open={true}
@@ -68,10 +70,10 @@ describe('FormatSwitcherDialog', () => {
       />
     );
 
-    expect(screen.getByText('Switch Workflow Format')).toBeDefined();
+    expect(screen.getByText("Switch Workflow Format")).toBeDefined();
   });
 
-  it('does not render when closed', () => {
+  it("does not render when closed", () => {
     const { container } = render(
       <FormatSwitcherDialog
         open={false}
@@ -85,7 +87,7 @@ describe('FormatSwitcherDialog', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('calls onClose when cancel button is clicked', () => {
+  it("calls onClose when cancel button is clicked", () => {
     render(
       <FormatSwitcherDialog
         open={true}
@@ -96,7 +98,7 @@ describe('FormatSwitcherDialog', () => {
       />
     );
 
-    const cancelButton = screen.getByText('Cancel');
+    const cancelButton = screen.getByText("Cancel");
     fireEvent.click(cancelButton);
 
     expect(mockOnClose).toHaveBeenCalled();
@@ -107,14 +109,14 @@ describe('FormatSwitcherDialog', () => {
 // Auto-Layout Panel Tests
 // ============================================================================
 
-describe('AutoLayoutPanel', () => {
+describe("AutoLayoutPanel", () => {
   const mockOnApplyLayout = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders layout style options', () => {
+  it("renders layout style options", () => {
     render(
       <AutoLayoutPanel
         workflow={mockWorkflow}
@@ -122,10 +124,10 @@ describe('AutoLayoutPanel', () => {
       />
     );
 
-    expect(screen.getByText('Layout Style')).toBeDefined();
+    expect(screen.getByText("Layout Style")).toBeDefined();
   });
 
-  it('shows spacing controls', () => {
+  it("shows spacing controls", () => {
     render(
       <AutoLayoutPanel
         workflow={mockWorkflow}
@@ -133,12 +135,12 @@ describe('AutoLayoutPanel', () => {
       />
     );
 
-    expect(screen.getByText('Spacing')).toBeDefined();
+    expect(screen.getByText("Spacing")).toBeDefined();
     expect(screen.getByText(/Horizontal Spacing:/)).toBeDefined();
     expect(screen.getByText(/Vertical Spacing:/)).toBeDefined();
   });
 
-  it('calls onApplyLayout when apply button is clicked', async () => {
+  it("calls onApplyLayout when apply button is clicked", async () => {
     render(
       <AutoLayoutPanel
         workflow={mockWorkflow}
@@ -146,7 +148,7 @@ describe('AutoLayoutPanel', () => {
       />
     );
 
-    const applyButton = screen.getByText('Apply Layout');
+    const applyButton = screen.getByText("Apply Layout");
     fireEvent.click(applyButton);
 
     await waitFor(() => {
@@ -159,7 +161,7 @@ describe('AutoLayoutPanel', () => {
 // Template Browser Tests
 // ============================================================================
 
-describe('TemplateBrowser', () => {
+describe("TemplateBrowser", () => {
   const mockOnSelectTemplate = vi.fn();
   const mockOnClose = vi.fn();
 
@@ -167,7 +169,7 @@ describe('TemplateBrowser', () => {
     vi.clearAllMocks();
   });
 
-  it('renders template categories', () => {
+  it("renders template categories", () => {
     render(
       <TemplateBrowser
         onSelectTemplate={mockOnSelectTemplate}
@@ -180,7 +182,7 @@ describe('TemplateBrowser', () => {
     expect(screen.getByText(/Automation/)).toBeDefined();
   });
 
-  it('filters templates by category', () => {
+  it("filters templates by category", () => {
     render(
       <TemplateBrowser
         onSelectTemplate={mockOnSelectTemplate}
@@ -192,10 +194,10 @@ describe('TemplateBrowser', () => {
     fireEvent.click(basicTab);
 
     // Should show basic templates only
-    expect(screen.queryByText('Linear Workflow')).toBeDefined();
+    expect(screen.queryByText("Linear Workflow")).toBeDefined();
   });
 
-  it('searches templates', () => {
+  it("searches templates", () => {
     render(
       <TemplateBrowser
         onSelectTemplate={mockOnSelectTemplate}
@@ -203,11 +205,11 @@ describe('TemplateBrowser', () => {
       />
     );
 
-    const searchInput = screen.getByPlaceholderText('Search templates...');
-    fireEvent.change(searchInput, { target: { value: 'loop' } });
+    const searchInput = screen.getByPlaceholderText("Search templates...");
+    fireEvent.change(searchInput, { target: { value: "loop" } });
 
     // Should filter results
-    expect(screen.queryByText('Loop Workflow')).toBeDefined();
+    expect(screen.queryByText("Loop Workflow")).toBeDefined();
   });
 });
 
@@ -215,7 +217,7 @@ describe('TemplateBrowser', () => {
 // Sequential List View Tests
 // ============================================================================
 
-describe('SequentialListView', () => {
+describe("SequentialListView", () => {
   const mockOnActionClick = vi.fn();
   const mockOnActionEdit = vi.fn();
   const mockOnActionDelete = vi.fn();
@@ -224,7 +226,7 @@ describe('SequentialListView', () => {
     vi.clearAllMocks();
   });
 
-  it('renders list of actions', () => {
+  it("renders list of actions", () => {
     render(
       <SequentialListView
         workflow={mockWorkflow}
@@ -237,7 +239,7 @@ describe('SequentialListView', () => {
     expect(screen.getByText(/Actions \(3\)/)).toBeDefined();
   });
 
-  it('displays action summaries', () => {
+  it("displays action summaries", () => {
     render(
       <SequentialListView
         workflow={mockWorkflow}
@@ -247,12 +249,12 @@ describe('SequentialListView', () => {
       />
     );
 
-    expect(screen.getByText('CLICK')).toBeDefined();
-    expect(screen.getByText('TYPE')).toBeDefined();
-    expect(screen.getByText('WAIT')).toBeDefined();
+    expect(screen.getByText("CLICK")).toBeDefined();
+    expect(screen.getByText("TYPE")).toBeDefined();
+    expect(screen.getByText("WAIT")).toBeDefined();
   });
 
-  it('calls onActionClick when action is clicked', () => {
+  it("calls onActionClick when action is clicked", () => {
     render(
       <SequentialListView
         workflow={mockWorkflow}
@@ -262,7 +264,7 @@ describe('SequentialListView', () => {
       />
     );
 
-    const actionItems = screen.getAllByText('CLICK')[0].closest('.action-item');
+    const actionItems = screen.getAllByText("CLICK")[0].closest(".action-item");
     if (actionItems) {
       fireEvent.click(actionItems);
       expect(mockOnActionClick).toHaveBeenCalled();
@@ -274,22 +276,22 @@ describe('SequentialListView', () => {
 // Layout Preview Tests
 // ============================================================================
 
-describe('LayoutPreview', () => {
+describe("LayoutPreview", () => {
   const mockComparison = {
     improvementScore: 50,
     isImprovement: true,
-    summary: 'Good improvement',
+    summary: "Good improvement",
     metrics: {
       overlaps: { before: 2, after: 0, change: 2 },
       edgeCrossings: { before: 5, after: 2, change: 3 },
       edgeLength: { before: 200, after: 180, change: 20 },
       compactness: { before: 0.5, after: 0.7, change: 0.2 },
-      readability: { before: 0.6, after: 0.8, change: 0.2 }
+      readability: { before: 0.6, after: 0.8, change: 0.2 },
     },
-    recommendations: []
+    recommendations: [],
   };
 
-  it('renders preview canvas', () => {
+  it("renders preview canvas", () => {
     render(
       <LayoutPreview
         beforeWorkflow={mockWorkflow}
@@ -298,10 +300,10 @@ describe('LayoutPreview', () => {
       />
     );
 
-    expect(screen.getByText('Side by Side')).toBeDefined();
+    expect(screen.getByText("Side by Side")).toBeDefined();
   });
 
-  it('switches between view modes', () => {
+  it("switches between view modes", () => {
     render(
       <LayoutPreview
         beforeWorkflow={mockWorkflow}
@@ -310,11 +312,11 @@ describe('LayoutPreview', () => {
       />
     );
 
-    const overlayButton = screen.getByText('Overlay');
+    const overlayButton = screen.getByText("Overlay");
     fireEvent.click(overlayButton);
 
     // Should switch to overlay mode
-    expect(overlayButton.classList.contains('active')).toBe(true);
+    expect(overlayButton.classList.contains("active")).toBe(true);
   });
 });
 
@@ -322,23 +324,23 @@ describe('LayoutPreview', () => {
 // Conversion Preview Tests
 // ============================================================================
 
-describe('ConversionPreview', () => {
+describe("ConversionPreview", () => {
   const mockConversionPreview = {
     canConvert: true,
-    fromFormat: 'graph' as const,
-    toFormat: 'sequential' as const,
+    fromFormat: "graph" as const,
+    toFormat: "sequential" as const,
     changes: {
       actionsAdded: 0,
       actionsRemoved: 0,
       actionsModified: 0,
-      connectionsChanged: 2
+      connectionsChanged: 2,
     },
     warnings: [],
-    impact: 'low' as const,
-    recommendation: 'safe' as const
+    impact: "low" as const,
+    recommendation: "safe" as const,
   };
 
-  it('renders conversion statistics', () => {
+  it("renders conversion statistics", () => {
     render(
       <ConversionPreview
         beforeWorkflow={mockWorkflow}
@@ -347,15 +349,13 @@ describe('ConversionPreview', () => {
       />
     );
 
-    expect(screen.getByText('Conversion Statistics')).toBeDefined();
+    expect(screen.getByText("Conversion Statistics")).toBeDefined();
   });
 
-  it('shows warnings when present', () => {
+  it("shows warnings when present", () => {
     const previewWithWarnings = {
       ...mockConversionPreview,
-      warnings: [
-        { code: 'TEST_WARNING', message: 'Test warning message' }
-      ]
+      warnings: [{ code: "TEST_WARNING", message: "Test warning message" }],
     };
 
     render(
@@ -374,7 +374,7 @@ describe('ConversionPreview', () => {
 // Layout Suggestions Tests
 // ============================================================================
 
-describe('LayoutSuggestions', () => {
+describe("LayoutSuggestions", () => {
   const mockOnApplySuggestion = vi.fn();
 
   const mockLayoutResult = {
@@ -398,25 +398,25 @@ describe('LayoutSuggestions', () => {
       symmetry: 0.8,
       alignment: 0.9,
       readability: 0.85,
-      averageNodeDensity: 0
+      averageNodeDensity: 0,
     },
     comparison: {
       improvementScore: 50,
       isImprovement: true,
-      summary: 'Good improvement',
+      summary: "Good improvement",
       metrics: {
         overlaps: { before: 2, after: 0, change: 2 },
         edgeCrossings: { before: 5, after: 2, change: 3 },
         edgeLength: { before: 200, after: 180, change: 20 },
         compactness: { before: 0.5, after: 0.7, change: 0.2 },
-        readability: { before: 0.6, after: 0.8, change: 0.2 }
+        readability: { before: 0.6, after: 0.8, change: 0.2 },
       },
-      recommendations: []
+      recommendations: [],
     },
-    changes: []
+    changes: [],
   };
 
-  it('shows success message when no issues', () => {
+  it("shows success message when no issues", () => {
     render(
       <LayoutSuggestions
         workflow={mockWorkflow}
@@ -425,7 +425,7 @@ describe('LayoutSuggestions', () => {
       />
     );
 
-    expect(screen.getByText('No layout issues detected')).toBeDefined();
+    expect(screen.getByText("No layout issues detected")).toBeDefined();
   });
 });
 
@@ -433,7 +433,7 @@ describe('LayoutSuggestions', () => {
 // Conversion Wizard Tests
 // ============================================================================
 
-describe('ConversionWizard', () => {
+describe("ConversionWizard", () => {
   const mockOnComplete = vi.fn();
   const mockOnCancel = vi.fn();
 
@@ -441,7 +441,7 @@ describe('ConversionWizard', () => {
     vi.clearAllMocks();
   });
 
-  it('renders when open', () => {
+  it("renders when open", () => {
     render(
       <ConversionWizard
         open={true}
@@ -452,10 +452,10 @@ describe('ConversionWizard', () => {
       />
     );
 
-    expect(screen.getByText('Convert Workflow Format')).toBeDefined();
+    expect(screen.getByText("Convert Workflow Format")).toBeDefined();
   });
 
-  it('shows progress steps', () => {
+  it("shows progress steps", () => {
     render(
       <ConversionWizard
         open={true}
@@ -466,10 +466,10 @@ describe('ConversionWizard', () => {
       />
     );
 
-    expect(screen.getByText('Format')).toBeDefined();
+    expect(screen.getByText("Format")).toBeDefined();
   });
 
-  it('calls onCancel when close button is clicked', () => {
+  it("calls onCancel when close button is clicked", () => {
     render(
       <ConversionWizard
         open={true}
@@ -480,7 +480,7 @@ describe('ConversionWizard', () => {
       />
     );
 
-    const closeButton = screen.getByLabelText('Close');
+    const closeButton = screen.getByLabelText("Close");
     fireEvent.click(closeButton);
 
     expect(mockOnCancel).toHaveBeenCalled();

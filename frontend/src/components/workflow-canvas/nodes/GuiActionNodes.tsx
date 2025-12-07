@@ -8,29 +8,9 @@
  * - Screenshot actions: SCREENSHOT
  */
 
-import React from 'react';
-import { NodeProps } from '@xyflow/react';
-import { BaseNode, BaseNodeData, CompactNode } from './BaseNode';
-import type {
-  ClickActionConfig,
-  DoubleClickActionConfig,
-  RightClickActionConfig,
-  DragActionConfig,
-  ScrollActionConfig,
-  MouseMoveActionConfig,
-} from '@/lib/action-schema/configs/mouse-actions';
-import type {
-  TypeActionConfig,
-  KeyPressActionConfig,
-  HotkeyActionConfig,
-} from '@/lib/action-schema/configs/keyboard-actions';
-import type {
-  FindActionConfig,
-  VanishActionConfig,
-  ExistsActionConfig,
-  WaitActionConfig,
-} from '@/lib/action-schema/configs/find-actions';
-import type { ScreenshotActionConfig } from '@/lib/action-schema/configs/state-actions';
+import React from "react";
+import { NodeProps, Node as ReactFlowNode } from "@xyflow/react";
+import { BaseNode, BaseNodeData, CompactNode } from "./BaseNode";
 
 // =============================================================================
 // Mouse Action Nodes
@@ -39,7 +19,7 @@ import type { ScreenshotActionConfig } from '@/lib/action-schema/configs/state-a
 /**
  * CLICK Node
  */
-export function ClickNode(props: NodeProps<BaseNodeData>) {
+export function ClickNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -51,7 +31,7 @@ export function ClickNode(props: NodeProps<BaseNodeData>) {
 /**
  * DOUBLE_CLICK Node
  */
-export function DoubleClickNode(props: NodeProps<BaseNodeData>) {
+export function DoubleClickNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -63,7 +43,7 @@ export function DoubleClickNode(props: NodeProps<BaseNodeData>) {
 /**
  * RIGHT_CLICK Node
  */
-export function RightClickNode(props: NodeProps<BaseNodeData>) {
+export function RightClickNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -75,7 +55,7 @@ export function RightClickNode(props: NodeProps<BaseNodeData>) {
 /**
  * MOUSE_MOVE Node
  */
-export function MouseMoveNode(props: NodeProps<BaseNodeData>) {
+export function MouseMoveNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -87,7 +67,7 @@ export function MouseMoveNode(props: NodeProps<BaseNodeData>) {
 /**
  * MOUSE_DOWN Node
  */
-export function MouseDownNode(props: NodeProps<BaseNodeData>) {
+export function MouseDownNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -99,7 +79,7 @@ export function MouseDownNode(props: NodeProps<BaseNodeData>) {
 /**
  * MOUSE_UP Node
  */
-export function MouseUpNode(props: NodeProps<BaseNodeData>) {
+export function MouseUpNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -111,9 +91,7 @@ export function MouseUpNode(props: NodeProps<BaseNodeData>) {
 /**
  * DRAG Node
  */
-export function DragNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as DragActionConfig;
-
+export function DragNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -125,9 +103,7 @@ export function DragNode(props: NodeProps<BaseNodeData>) {
 /**
  * SCROLL Node
  */
-export function ScrollNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as ScrollActionConfig;
-
+export function ScrollNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -143,11 +119,7 @@ export function ScrollNode(props: NodeProps<BaseNodeData>) {
 /**
  * TYPE Node
  */
-export function TypeNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as TypeActionConfig;
-  const text = config.text || '';
-  const preview = text.length > 20 ? `${text.substring(0, 20)}...` : text;
-
+export function TypeNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -159,9 +131,7 @@ export function TypeNode(props: NodeProps<BaseNodeData>) {
 /**
  * KEY_PRESS Node
  */
-export function KeyPressNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as KeyPressActionConfig;
-
+export function KeyPressNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -173,7 +143,7 @@ export function KeyPressNode(props: NodeProps<BaseNodeData>) {
 /**
  * KEY_DOWN Node
  */
-export function KeyDownNode(props: NodeProps<BaseNodeData>) {
+export function KeyDownNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -185,7 +155,7 @@ export function KeyDownNode(props: NodeProps<BaseNodeData>) {
 /**
  * KEY_UP Node
  */
-export function KeyUpNode(props: NodeProps<BaseNodeData>) {
+export function KeyUpNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -197,9 +167,7 @@ export function KeyUpNode(props: NodeProps<BaseNodeData>) {
 /**
  * HOTKEY Node
  */
-export function HotkeyNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as HotkeyActionConfig;
-
+export function HotkeyNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -215,9 +183,7 @@ export function HotkeyNode(props: NodeProps<BaseNodeData>) {
 /**
  * FIND Node
  */
-export function FindNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as FindActionConfig;
-
+export function FindNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -227,23 +193,9 @@ export function FindNode(props: NodeProps<BaseNodeData>) {
 }
 
 /**
- * FIND_STATE_IMAGE Node
- */
-export function FindStateImageNode(props: NodeProps<BaseNodeData>) {
-  return (
-    <BaseNode
-      {...props}
-      className="gui-action-node find-node find-state-image-node border-amber-400"
-    />
-  );
-}
-
-/**
  * VANISH Node
  */
-export function VanishNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as VanishActionConfig;
-
+export function VanishNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -255,9 +207,7 @@ export function VanishNode(props: NodeProps<BaseNodeData>) {
 /**
  * EXISTS Node
  */
-export function ExistsNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as ExistsActionConfig;
-
+export function ExistsNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -269,10 +219,7 @@ export function ExistsNode(props: NodeProps<BaseNodeData>) {
 /**
  * WAIT Node
  */
-export function WaitNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as WaitActionConfig;
-  const duration = config.duration || 1000;
-
+export function WaitNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -288,9 +235,7 @@ export function WaitNode(props: NodeProps<BaseNodeData>) {
 /**
  * SCREENSHOT Node
  */
-export function ScreenshotNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as ScreenshotActionConfig;
-
+export function ScreenshotNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -322,7 +267,6 @@ export const GuiActionNodes = {
 
   // Find actions
   FIND: FindNode,
-  FIND_STATE_IMAGE: FindStateImageNode,
   VANISH: VanishNode,
   EXISTS: ExistsNode,
   WAIT: WaitNode,

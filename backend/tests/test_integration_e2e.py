@@ -12,21 +12,19 @@ Tests the complete integration testing workflow:
 - Export video
 """
 
-import json
 import uuid
 from datetime import datetime
 from typing import Any
 
 import pytest
-from app.main import app
 from fastapi.testclient import TestClient
+
+from app.main import app
 from tests.utils.integration_test_helpers import (
     cleanup_test_data,
     create_test_actions,
     create_test_snapshot,
-    execute_test_process,
     generate_mock_execution_result,
-    import_test_snapshot,
     verify_execution_result,
 )
 
@@ -271,7 +269,7 @@ class TestDuplicateDetection:
 
         # Verify patterns are organized by state
         assert len(patterns_by_state) > 0
-        for state, patterns in patterns_by_state.items():
+        for _state, patterns in patterns_by_state.items():
             assert len(patterns) > 0
 
 

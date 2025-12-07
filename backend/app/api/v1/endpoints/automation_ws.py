@@ -7,14 +7,22 @@ Provides real-time automation monitoring, log streaming, and session management.
 import asyncio
 import base64
 import io
+import json
 import time
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 import structlog
+from dateutil.relativedelta import relativedelta  # type: ignore
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from PIL import Image
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import authenticate_runner, get_async_db
 from app.api.v1.endpoints.images import (
     validate_image_magic_bytes,
@@ -25,29 +33,24 @@ from app.crud import runner as runner_crud
 from app.models.automation import AutomationInputEvent, InputEventType
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
-from app.models.runner_connection import RunnerConnection
-from app.models.runner_token import RunnerToken
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.user import User
 from app.services.object_storage import object_storage
+from app.services.runner_connection_manager import get_runner_connection_manager
 from app.services.websocket_manager import get_websocket_manager
-from dateutil.relativedelta import relativedelta
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
-from PIL import Image
-from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
 # Rate limiting state (in-memory for WebSocket connections)
 # For production, consider using Redis for distributed rate limiting
-_connection_attempts: Dict[str, list[float]] = defaultdict(list)
-_message_counts: Dict[str, list[float]] = defaultdict(list)
+_connection_attempts: dict[str, list[float]] = defaultdict(list)
+_message_counts: dict[str, list[float]] = defaultdict(list)
 
 
-def check_connection_rate_limit(ip_address: str, limit: int = 5, window: int = 60) -> bool:
+def check_connection_rate_limit(
+    ip_address: str, limit: int = 5, window: int = 60
+) -> bool:
     """
     Check if an IP address has exceeded the connection rate limit.
 
@@ -76,7 +79,9 @@ def check_connection_rate_limit(ip_address: str, limit: int = 5, window: int = 6
     return True
 
 
-def check_message_rate_limit(session_key: str, limit: int = 60, window: int = 60) -> bool:
+def check_message_rate_limit(
+    session_key: str, limit: int = 60, window: int = 60
+) -> bool:
     """
     Check if a session has exceeded the message rate limit.
 
@@ -186,18 +191,18 @@ async def link_screenshots_to_input(
 
         # Also update direct references if appropriate
         if association_type == "before" and not input_event.screenshot_before_id:
-            input_event.screenshot_before_id = screenshot.id
+            input_event.screenshot_before_id = screenshot.id  # type: ignore
         elif association_type == "after" and not input_event.screenshot_after_id:
-            input_event.screenshot_after_id = screenshot.id
+            input_event.screenshot_after_id = screenshot.id  # type: ignore
 
     await db.commit()
 
 
 async def handle_input_event(
-    message: Dict[str, Any],
+    message: dict[str, Any],
     db: AsyncSession,
-    session_id: Optional[UUID] = None,
-) -> Dict[str, Any]:
+    session_id: UUID | None = None,
+) -> dict[str, Any]:
     """
     Handle input event message.
 
@@ -255,26 +260,29 @@ async def handle_input_event(
         )
 
         # Handle mouse events
-        if event_type_enum in [InputEventType.MOUSE_CLICKED, InputEventType.MOUSE_MOVED]:
-            input_event.mouse_x = message.get("x")
-            input_event.mouse_y = message.get("y")
-            input_event.mouse_button = message.get("button")
+        if event_type_enum in [
+            InputEventType.MOUSE_CLICKED,
+            InputEventType.MOUSE_MOVED,
+        ]:
+            input_event.mouse_x = message.get("x")  # type: ignore
+            input_event.mouse_y = message.get("y")  # type: ignore
+            input_event.mouse_button = message.get("button")  # type: ignore
 
         # Handle drag events
         elif event_type_enum == InputEventType.MOUSE_DRAGGED:
-            input_event.drag_from_x = message.get("from_x")
-            input_event.drag_from_y = message.get("from_y")
-            input_event.drag_to_x = message.get("to_x")
-            input_event.drag_to_y = message.get("to_y")
-            input_event.drag_duration = message.get("duration")
-            input_event.drag_path_points = message.get("path_points")
-            input_event.drag_avg_speed = message.get("avg_speed")
-            input_event.drag_max_speed = message.get("max_speed")
+            input_event.drag_from_x = message.get("from_x")  # type: ignore
+            input_event.drag_from_y = message.get("from_y")  # type: ignore
+            input_event.drag_to_x = message.get("to_x")  # type: ignore
+            input_event.drag_to_y = message.get("to_y")  # type: ignore
+            input_event.drag_duration = message.get("duration")  # type: ignore
+            input_event.drag_path_points = message.get("path_points")  # type: ignore
+            input_event.drag_avg_speed = message.get("avg_speed")  # type: ignore
+            input_event.drag_max_speed = message.get("max_speed")  # type: ignore
 
         # Handle keyboard events
         elif event_type_enum == InputEventType.KEYBOARD_TEXT_TYPED:
-            input_event.text_typed = message.get("text")
-            input_event.character_count = len(message.get("text", ""))
+            input_event.text_typed = message.get("text")  # type: ignore
+            input_event.character_count = len(message.get("text", ""))  # type: ignore
 
         # Save to database
         db.add(input_event)
@@ -314,11 +322,11 @@ async def handle_input_event(
 
 
 async def handle_screenshot(
-    message: Dict[str, Any],
+    message: dict[str, Any],
     db: AsyncSession,
     user_id: UUID,
-    session_id: Optional[UUID] = None,
-) -> Dict[str, Any]:
+    session_id: UUID | None = None,
+) -> dict[str, Any]:
     """
     Handle screenshot message with full S3 upload and database storage.
 
@@ -397,7 +405,7 @@ async def handle_screenshot(
             )
             return {
                 "type": "error",
-                "message": f"Screenshot too large. Maximum size: 10.0MB",
+                "message": "Screenshot too large. Maximum size: 10.0MB",
             }
 
         # Step 4: Validate magic bytes
@@ -541,13 +549,13 @@ async def handle_screenshot(
 @router.websocket("/ws/automation/runner")
 async def websocket_runner_endpoint(
     websocket: WebSocket,
-    token: str,
+    token: str | None = None,
 ):
     """
     WebSocket endpoint for automation runner streaming.
 
     Connection URL:
-        ws://localhost:8000/api/v1/ws/automation/runner?token=<jwt_token>
+        ws://localhost:8000/api/v1/automation/ws/automation/runner?token=<jwt_token>
 
     Query Parameters:
         token: JWT access token for authentication
@@ -586,8 +594,16 @@ async def websocket_runner_endpoint(
         - Graceful disconnect handling
         - Rate limiting: 5 connections per minute per IP, 60 messages per minute per session
     """
-    # Check connection rate limit (5 per minute per IP)
+    # DEBUG: Log ALL incoming WebSocket requests immediately
     client_ip = websocket.client.host if websocket.client else "unknown"
+    logger.info(
+        "automation_ws_runner_incoming_request",
+        client_ip=client_ip,
+        query_params=dict(websocket.query_params),
+        path=str(websocket.url.path),
+    )
+
+    # Check connection rate limit (5 per minute per IP)
     if not check_connection_rate_limit(client_ip, limit=5, window=60):
         await websocket.close(
             code=status.WS_1008_POLICY_VIOLATION,
@@ -609,14 +625,37 @@ async def websocket_runner_endpoint(
     user = None
     runner_token = None
     connection_record = None
+    runner_manager = None
     session_started = False
     current_session_id = None
     session_key = f"ws_runner_{id(websocket)}"  # Unique session key for rate limiting
 
     try:
-        # Authenticate user (supports both JWT and runner tokens)
+        # Authenticate user (supports JWT token, runner tokens, and cookies)
+        # Try to get token from query param, then from cookies
+        auth_token: str | None = token
+        if not auth_token:
+            # Try to read from cookies (for HttpOnly cookie auth)
+            auth_token = websocket.cookies.get("access_token")
+
+        if auth_token:
+            logger.info("automation_ws_using_cookie_auth")
+
+        if not auth_token:
+            logger.error(
+                "automation_ws_no_token", error="No token in query param or cookies"
+            )
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": "Authentication required. Provide token query param or access_token cookie.",
+                }
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
         try:
-            user, runner_token = await authenticate_runner(token)
+            user, runner_token = await authenticate_runner(auth_token)
         except Exception as e:
             logger.error("automation_ws_auth_failed", error=str(e))
             await websocket.send_json(
@@ -644,8 +683,21 @@ async def websocket_runner_endpoint(
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
             return
 
-        # Refresh user to get latest settings
-        await db.refresh(user)
+        # Re-fetch user in this session (the user object from authenticate_runner
+        # was in a different session that's now closed)
+        user_result = await db.execute(select(User).filter(User.id == user.id))  # type: ignore
+        user = user_result.scalar_one_or_none()
+
+        if not user:
+            logger.error("automation_ws_user_not_found")
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": "User not found",
+                }
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
         # Check if streaming is enabled for this user
         if not user.automation_streaming_enabled:
@@ -660,11 +712,11 @@ async def websocket_runner_endpoint(
             # Check if we need to reset monthly limit
             if (
                 user.automation_sessions_reset_at
-                and datetime.utcnow() > user.automation_sessions_reset_at
+                and datetime.now(UTC) > user.automation_sessions_reset_at
             ):
                 # Reset for new month
                 user.automation_sessions_used = 0
-                user.automation_sessions_reset_at = datetime.utcnow() + relativedelta(
+                user.automation_sessions_reset_at = datetime.now(UTC) + relativedelta(
                     months=1
                 )
                 await db.commit()
@@ -678,30 +730,66 @@ async def websocket_runner_endpoint(
                 )
                 return
 
-        # Log connection if using runner token
-        if runner_token:
-            try:
-                # Extract IP and user agent from WebSocket
-                client_host = websocket.client.host if websocket.client else None
-                # Note: WebSocket doesn't easily expose user agent, would need custom header
-                connection_record = await runner_crud.create_connection_record(
-                    db=db,
-                    token_id=runner_token.id,
-                    user_id=user.id,
-                    ip_address=client_host,
-                )
+        # Log connection for all auth methods (runner token or JWT)
+        try:
+            # Extract IP and user agent from WebSocket
+            client_host = websocket.client.host if websocket.client else None
+            # Note: WebSocket doesn't easily expose user agent, would need custom header
+            connection_record = await runner_crud.create_connection_record(
+                db=db,
+                user_id=user.id,
+                token_id=runner_token.id if runner_token else None,
+                ip_address=client_host,
+            )
+
+            # Clean up any orphaned connections (from previous disconnects that weren't properly closed)
+            # Pass runner_token_id to only close connections from the same runner device
+            closed_connection_ids = await runner_crud.close_orphaned_connections(
+                db=db,
+                user_id=user.id,
+                exclude_connection_id=connection_record.id,
+                runner_token_id=runner_token.id if runner_token else None,
+            )
+            if closed_connection_ids:
                 logger.info(
-                    "runner_connection_logged",
-                    connection_id=connection_record.id,
-                    token_id=str(runner_token.id),
-                    token_name=runner_token.name,
+                    "orphaned_connections_closed",
+                    count=len(closed_connection_ids),
+                    connection_ids=closed_connection_ids,
+                    user_id=str(user.id),
                 )
-            except Exception as e:
-                logger.error(
-                    "runner_connection_log_failed",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
+                # Send disconnect notifications for orphaned connections so frontend removes them
+                redis_client = await get_redis()
+                runner_manager = await get_runner_connection_manager(redis_client)
+                for closed_id in closed_connection_ids:
+                    await runner_manager.unregister_runner(closed_id, user.id)
+
+            logger.info(
+                "runner_connection_logged",
+                connection_id=connection_record.id,
+                token_id=str(runner_token.id) if runner_token else None,
+                token_name=runner_token.name if runner_token else None,
+                auth_method="runner_token" if runner_token else "jwt",
+            )
+
+            # Register runner with connection manager for frontend command relay
+            redis_client = await get_redis()
+            runner_manager = await get_runner_connection_manager(redis_client)
+            await runner_manager.register_runner(
+                connection_id=connection_record.id,
+                websocket=websocket,
+                user_id=user.id,
+                runner_name=connection_record.runner_name,
+                ip_address=client_host,
+                runner_token_id=runner_token.id if runner_token else None,
+                connected_at=connection_record.connected_at,
+                project_id=connection_record.project_id,
+            )
+        except Exception as e:
+            logger.error(
+                "runner_connection_log_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
         logger.info(
             "automation_ws_connected",
@@ -769,10 +857,66 @@ async def websocket_runner_endpoint(
                 message_type = message.type
 
                 if message_type == "heartbeat":
+                    # Refresh Redis TTL on heartbeat
+                    if connection_record and runner_manager:
+                        await runner_manager.refresh_connection_ttl(
+                            connection_record.id
+                        )
+
                     # Acknowledge heartbeat
                     await websocket.send_json(
                         {
                             "type": "heartbeat_ack",
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                    )
+
+                elif message_type == "runner_info":
+                    # Update connection record with runner info (sent immediately after connection)
+                    runner_name = message.data.get("runner_name")
+                    if runner_name and connection_record:
+                        try:
+                            await runner_crud.update_connection_runner_name(
+                                db=db,
+                                connection_id=connection_record.id,
+                                runner_name=runner_name,
+                            )
+                            # Also update Redis metadata with runner_name for real-time frontend updates
+                            if runner_manager:
+                                metadata = await runner_manager.get_connection_metadata(
+                                    connection_record.id
+                                )
+                                if metadata:
+                                    metadata["runner_name"] = runner_name
+                                    metadata_key = f"runner:connection:{connection_record.id}:metadata"
+                                    await redis_client.set(
+                                        metadata_key, json.dumps(metadata), ex=300
+                                    )  # 5 minute TTL
+                                # Publish runner_name_updated event to frontend
+                                # (moved outside `if metadata:` block to ensure event is always sent)
+                                await runner_manager.publish_runner_name_update(
+                                    connection_id=connection_record.id,
+                                    runner_name=runner_name,
+                                    user_id=user.id,
+                                )
+                            logger.info(
+                                "runner_info_received",
+                                connection_id=connection_record.id,
+                                runner_name=runner_name,
+                                runner_hostname=message.data.get("runner_hostname"),
+                                runner_os=message.data.get("runner_os"),
+                                runner_version=message.data.get("runner_version"),
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "runner_info_update_failed",
+                                connection_id=connection_record.id,
+                                error=str(e),
+                            )
+
+                    await websocket.send_json(
+                        {
+                            "type": "runner_info_ack",
                             "timestamp": datetime.utcnow().isoformat() + "Z",
                         }
                     )
@@ -803,10 +947,43 @@ async def websocket_runner_endpoint(
 
                     workflow_name = message.data.get("workflow_name", "Unknown")
 
+                    # Extract runner_name from session_start message and update connection record
+                    runner_name = message.data.get("runner_name")
+                    if runner_name and connection_record:
+                        try:
+                            await runner_crud.update_connection_runner_name(
+                                db=db,
+                                connection_id=connection_record.id,
+                                runner_name=runner_name,
+                            )
+                            # Also update Redis metadata with runner_name
+                            if runner_manager:
+                                metadata = await runner_manager.get_connection_metadata(
+                                    connection_record.id
+                                )
+                                if metadata:
+                                    metadata["runner_name"] = runner_name
+                                    metadata_key = f"runner:connection:{connection_record.id}:metadata"
+                                    await redis_client.set(
+                                        metadata_key, json.dumps(metadata), ex=300
+                                    )  # 5 minute TTL
+                            logger.info(
+                                "runner_name_updated",
+                                connection_id=connection_record.id,
+                                runner_name=runner_name,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "runner_name_update_failed",
+                                connection_id=connection_record.id,
+                                error=str(e),
+                            )
+
                     logger.info(
                         "automation_session_started",
                         user_id=str(user.id),
                         workflow_name=workflow_name,
+                        runner_name=runner_name,
                         sessions_used=user.automation_sessions_used,
                     )
 
@@ -922,16 +1099,114 @@ async def websocket_runner_endpoint(
                     )
                     await websocket.send_json(response)
 
-                else:
-                    # Unknown message type
+                elif message_type == "command_response":
+                    # Relay command response from runner to frontend(s)
+                    # This is the response to a command sent from the frontend
+                    if connection_record and runner_manager:
+                        await runner_manager.send_response_to_frontends(
+                            connection_record.id,
+                            {
+                                "type": "command_response",
+                                "data": message.data,
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                            },
+                        )
+                        logger.info(
+                            "command_response_relayed_to_frontends",
+                            connection_id=connection_record.id,
+                            response_type=message.data.get("response_type"),
+                        )
                     await websocket.send_json(
                         {
-                            "type": "error",
-                            "message": f"Unknown message type: {message_type}",
+                            "type": "command_response_ack",
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
                         }
                     )
 
-            except asyncio.TimeoutError:
+                elif message_type.startswith("extraction_"):
+                    # Relay web extraction events from runner to frontend(s)
+                    # These include: extraction_started, extraction_progress,
+                    # extraction_state_detected, extraction_element_detected,
+                    # extraction_complete, extraction_error
+                    if connection_record and runner_manager:
+                        await runner_manager.send_response_to_frontends(
+                            connection_record.id,
+                            {
+                                "type": message_type,
+                                **message.data,
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                            },
+                        )
+                        logger.info(
+                            "extraction_event_relayed_to_frontends",
+                            connection_id=connection_record.id,
+                            event_type=message_type,
+                        )
+                    await websocket.send_json(
+                        {
+                            "type": f"{message_type}_ack",
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                    )
+
+                elif message_type in (
+                    "tree_event",
+                    "image_recognition",
+                    "action_execution",
+                    "execution_started",
+                    "execution_completed",
+                    "state_changed",
+                    "progress",
+                    "error",
+                ):
+                    # Relay execution events from runner to frontend(s)
+                    # These are real-time events during automation execution
+                    if connection_record and runner_manager:
+                        await runner_manager.send_response_to_frontends(
+                            connection_record.id,
+                            {
+                                "type": message_type,
+                                **message.data,
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                            },
+                        )
+                        logger.debug(
+                            "execution_event_relayed_to_frontends",
+                            connection_id=connection_record.id,
+                            event_type=message_type,
+                        )
+                    # Acknowledge receipt
+                    await websocket.send_json(
+                        {
+                            "type": f"{message_type}_ack",
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                    )
+
+                else:
+                    # Unknown message type - still relay to frontend in case they can handle it
+                    if connection_record and runner_manager:
+                        await runner_manager.send_response_to_frontends(
+                            connection_record.id,
+                            {
+                                "type": message_type,
+                                **message.data,
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                            },
+                        )
+                        logger.warning(
+                            "unknown_message_type_relayed",
+                            connection_id=connection_record.id,
+                            message_type=message_type,
+                        )
+                    await websocket.send_json(
+                        {
+                            "type": "warning",
+                            "message": f"Unknown message type '{message_type}' - relayed to frontends anyway",
+                        }
+                    )
+
+            except TimeoutError:
                 # Send ping to keep connection alive
                 try:
                     await websocket.send_json(
@@ -978,7 +1253,23 @@ async def websocket_runner_endpoint(
         # Clean up rate limiting state
         cleanup_rate_limit_session(session_key)
 
-        # Close connection record if using runner token
+        # Unregister runner from connection manager
+        if connection_record:
+            try:
+                redis_client = await get_redis()
+                runner_manager = await get_runner_connection_manager(redis_client)
+                # Pass user_id to ensure disconnect event is published to frontend
+                await runner_manager.unregister_runner(
+                    connection_record.id, user.id if user else None
+                )
+            except Exception as e:
+                logger.error(
+                    "runner_unregister_failed",
+                    connection_id=connection_record.id if connection_record else None,
+                    error=str(e),
+                )
+
+        # Close connection record (for both runner token and JWT auth)
         if connection_record and db:
             try:
                 await runner_crud.close_connection_record(
@@ -1021,7 +1312,7 @@ async def websocket_runner_endpoint(
 async def websocket_monitor_endpoint(
     websocket: WebSocket,
     session_id: str,
-    token: str,
+    token: str | None = None,
 ):
     """
     WebSocket endpoint for monitoring automation sessions in real-time.
@@ -1092,9 +1383,32 @@ async def websocket_monitor_endpoint(
     session_key = f"ws_monitor_{id(websocket)}"  # Unique session key for rate limiting
 
     try:
-        # Authenticate user
+        # Authenticate user (supports JWT token, runner tokens, and cookies)
+        # Try to get token from query param, then from cookies
+        auth_token: str | None = token
+        if not auth_token:
+            # Try to read from cookies (for HttpOnly cookie auth)
+            auth_token = websocket.cookies.get("access_token")
+
+        if auth_token:
+            logger.info("automation_monitor_ws_using_cookie_auth")
+
+        if not auth_token:
+            logger.error(
+                "automation_monitor_ws_no_token",
+                error="No token in query param or cookies",
+            )
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": "Authentication required. Provide token query param or access_token cookie.",
+                }
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
         try:
-            user, _ = await authenticate_runner(token)
+            user, _ = await authenticate_runner(auth_token)
         except Exception as e:
             logger.error("automation_monitor_ws_auth_failed", error=str(e))
             await websocket.send_json(
@@ -1235,7 +1549,7 @@ async def websocket_monitor_endpoint(
                         }
                     )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Send ping to keep connection alive
                 try:
                     await websocket.send_json(

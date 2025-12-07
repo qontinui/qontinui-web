@@ -1,39 +1,37 @@
-"""
-Background Removal Service
-
-Wraps the qontinui background removal functionality for use in the API.
-"""
+"""Background Removal Service wraps qontinui background removal for the API."""
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
+if TYPE_CHECKING:
+    from qontinui.discovery.background_removal import BackgroundRemovalConfig
+
 logger = structlog.get_logger(__name__)
 
-# Add qontinui directory to Python path
-QONTINUI_PATH = Path(__file__).parent.parent.parent.parent.parent / "qontinui"
-if QONTINUI_PATH.exists():
-    sys.path.insert(0, str(QONTINUI_PATH))
-    logger.info(f"Added qontinui path: {QONTINUI_PATH}")
+# Add qontinui src directory to Python path for package imports
+QONTINUI_SRC_PATH = (
+    Path(__file__).parent.parent.parent.parent.parent / "qontinui" / "src"
+)
+if QONTINUI_SRC_PATH.exists():
+    sys.path.insert(0, str(QONTINUI_SRC_PATH))
+    logger.info(f"Added qontinui src path: {QONTINUI_SRC_PATH}")
 else:
-    logger.warning(f"Qontinui path not found: {QONTINUI_PATH}")
+    logger.warning(f"Qontinui src path not found: {QONTINUI_SRC_PATH}")
 
 
 class BackgroundRemovalService:
     """Service for removing backgrounds from screenshots using base64 strings."""
 
-    def __init__(self, config_dict: dict[str, Any] | None = None):
-        """
-        Initialize the background removal service.
+    config: "BackgroundRemovalConfig | None"
 
-        Args:
-            config_dict: Configuration dictionary with parameters
-        """
+    def __init__(self, config_dict: dict[str, Any] | None = None):
+        """Initialize the background removal service."""
         try:
             # Import qontinui background removal module
-            from discovery.background_removal import (
+            from qontinui.discovery.background_removal import (
                 BackgroundRemovalConfig,
                 remove_backgrounds_from_base64,
             )
@@ -93,16 +91,7 @@ class BackgroundRemovalService:
     def remove_backgrounds_base64(
         self, base64_screenshots: list[str], debug: bool = False
     ) -> tuple[list[str], dict[str, Any]]:
-        """
-        Remove backgrounds from base64-encoded screenshots.
-
-        Args:
-            base64_screenshots: List of base64 encoded screenshot strings
-            debug: If True, include debug information
-
-        Returns:
-            Tuple of (base64_masked_screenshots, statistics)
-        """
+        """Remove backgrounds from base64-encoded screenshots."""
         try:
             masked_screenshots, stats = self._remove_backgrounds_from_base64(
                 base64_screenshots, config=self.config, debug=debug

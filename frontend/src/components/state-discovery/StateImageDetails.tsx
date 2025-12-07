@@ -3,20 +3,26 @@
  * Shows details and actions for selected StateImage
  */
 
-import React, { useState, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Separator } from '@/components/ui/separator';
+import React, { useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// Removed unused Tabs components - not used in current implementation
+import { Separator } from "@/components/ui/separator";
 import {
-  Edit2, Trash2, GitMerge, Scissors, Save, X,
-  CheckCircle, XCircle, AlertTriangle
-} from 'lucide-react';
-import { StateImage, DiscoveredState } from '@/types/stateDiscovery';
-import DeleteConfirmationDialog from './DeleteConfirmationDialog';
+  Edit2,
+  Trash2,
+  GitMerge,
+  Scissors,
+  Save,
+  X,
+  CheckCircle,
+  XCircle,
+} from "lucide-react";
+import { StateImage, DiscoveredState } from "@/types/stateDiscovery";
+import DeleteConfirmationDialog from "./DeleteConfirmationDialog";
 
 interface StateImageDetailsProps {
   stateImage: StateImage;
@@ -33,7 +39,7 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
   states,
   onUpdate,
   onDelete,
-  onMerge
+  onMerge,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedValues, setEditedValues] = useState({
@@ -41,7 +47,7 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
     x: stateImage.x,
     y: stateImage.y,
     x2: stateImage.x2,
-    y2: stateImage.y2
+    y2: stateImage.y2,
   });
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
@@ -53,7 +59,7 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
       x: stateImage.x,
       y: stateImage.y,
       x2: stateImage.x2,
-      y2: stateImage.y2
+      y2: stateImage.y2,
     });
   }, [stateImage]);
 
@@ -64,7 +70,7 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
       x: stateImage.x,
       y: stateImage.y,
       x2: stateImage.x2,
-      y2: stateImage.y2
+      y2: stateImage.y2,
     });
   }, [stateImage]);
 
@@ -75,16 +81,16 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
 
   // Handle value changes
   const handleValueChange = useCallback((field: string, value: string) => {
-    setEditedValues(prev => ({
+    setEditedValues((prev) => ({
       ...prev,
-      [field]: field === 'name' ? value : parseInt(value) || 0
+      [field]: field === "name" ? value : parseInt(value) || 0,
     }));
   }, []);
 
   // Find which states contain this state image
-  const belongsToStates = states?.filter(state =>
-    state.stateImageIds?.includes(stateImage.id)
-  ) || [];
+  const belongsToStates =
+    states?.filter((state) => state.stateImageIds?.includes(stateImage.id)) ||
+    [];
 
   return (
     <>
@@ -118,12 +124,14 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
           <CardContent className="space-y-3">
             {/* Name */}
             <div>
-              <Label htmlFor="name" className="text-xs">Name</Label>
+              <Label htmlFor="name" className="text-xs">
+                Name
+              </Label>
               {isEditing ? (
                 <Input
                   id="name"
                   value={editedValues.name}
-                  onChange={(e) => handleValueChange('name', e.target.value)}
+                  onChange={(e) => handleValueChange("name", e.target.value)}
                   className="h-8"
                 />
               ) : (
@@ -140,20 +148,22 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
                     <Input
                       type="number"
                       value={editedValues.x}
-                      onChange={(e) => handleValueChange('x', e.target.value)}
+                      onChange={(e) => handleValueChange("x", e.target.value)}
                       className="h-8"
                       placeholder="X"
                     />
                     <Input
                       type="number"
                       value={editedValues.y}
-                      onChange={(e) => handleValueChange('y', e.target.value)}
+                      onChange={(e) => handleValueChange("y", e.target.value)}
                       className="h-8"
                       placeholder="Y"
                     />
                   </div>
                 ) : (
-                  <p className="text-sm">({stateImage.x}, {stateImage.y})</p>
+                  <p className="text-sm">
+                    ({stateImage.x}, {stateImage.y})
+                  </p>
                 )}
               </div>
               <div>
@@ -163,20 +173,22 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
                     <Input
                       type="number"
                       value={editedValues.x2}
-                      onChange={(e) => handleValueChange('x2', e.target.value)}
+                      onChange={(e) => handleValueChange("x2", e.target.value)}
                       className="h-8"
                       placeholder="X2"
                     />
                     <Input
                       type="number"
                       value={editedValues.y2}
-                      onChange={(e) => handleValueChange('y2', e.target.value)}
+                      onChange={(e) => handleValueChange("y2", e.target.value)}
                       className="h-8"
                       placeholder="Y2"
                     />
                   </div>
                 ) : (
-                  <p className="text-sm">({stateImage.x2}, {stateImage.y2})</p>
+                  <p className="text-sm">
+                    ({stateImage.x2}, {stateImage.y2})
+                  </p>
                 )}
               </div>
             </div>
@@ -200,10 +212,12 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
                 <div className="flex-1 bg-gray-200 rounded-full h-2">
                   <div
                     className="bg-green-500 h-2 rounded-full"
-                    style={{ width: `${stateImage.frequency * 100}%` }}
+                    style={{ width: `${(stateImage.frequency ?? 0) * 100}%` }}
                   />
                 </div>
-                <span className="text-sm">{(stateImage.frequency * 100).toFixed(1)}%</span>
+                <span className="text-sm">
+                  {((stateImage.frequency ?? 0) * 100).toFixed(1)}%
+                </span>
               </div>
             </div>
           </CardContent>
@@ -218,14 +232,21 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
             {belongsToStates.length > 0 ? (
               <div className="space-y-2">
                 {belongsToStates.map((state) => (
-                  <div key={state.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                  <div
+                    key={state.id}
+                    className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                  >
                     <div>
                       <p className="text-sm font-medium">{state.name}</p>
                       <p className="text-xs text-gray-600">ID: {state.id}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-gray-500 mb-1">Confidence</p>
-                      <Badge variant={state.confidence > 0.8 ? "default" : "secondary"}>
+                      <Badge
+                        variant={
+                          state.confidence > 0.8 ? "default" : "secondary"
+                        }
+                      >
                         {(state.confidence * 100).toFixed(1)}%
                       </Badge>
                     </div>
@@ -246,7 +267,7 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
           <CardContent>
             <div className="space-y-2">
               {screenshots.map((screenshot, index) => {
-                const screenshotId = `screenshot_${index.toString().padStart(3, '0')}`;
+                const screenshotId = `screenshot_${index.toString().padStart(3, "0")}`;
                 const isPresent = stateImage.screenshots.includes(screenshotId);
 
                 return (
@@ -299,7 +320,9 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
           <Button
             className="w-full justify-start"
             variant="outline"
-            onClick={() => {/* Split StateImage */}}
+            onClick={() => {
+              /* Split StateImage */
+            }}
           >
             <Scissors className="mr-2 h-4 w-4" />
             Split StateImage
@@ -324,21 +347,35 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
             <div className="flex justify-between">
               <span>ID:</span>
               <span className="font-mono">
-                {stateImage.id ? stateImage.id.substring(0, Math.min(12, stateImage.id.length)) : 'N/A'}
-                {stateImage.id && stateImage.id.length > 12 && '...'}
+                {stateImage.id
+                  ? stateImage.id.substring(
+                      0,
+                      Math.min(12, stateImage.id.length)
+                    )
+                  : "N/A"}
+                {stateImage.id && stateImage.id.length > 12 && "..."}
               </span>
             </div>
             <div className="flex justify-between">
               <span>Pixel Hash:</span>
               <span className="font-mono">
-                {stateImage.pixelHash ? stateImage.pixelHash.substring(0, Math.min(8, stateImage.pixelHash.length)) : 'N/A'}
-                {stateImage.pixelHash && stateImage.pixelHash.length > 8 && '...'}
+                {stateImage.pixelHash
+                  ? stateImage.pixelHash.substring(
+                      0,
+                      Math.min(8, stateImage.pixelHash.length)
+                    )
+                  : "N/A"}
+                {stateImage.pixelHash &&
+                  stateImage.pixelHash.length > 8 &&
+                  "..."}
               </span>
             </div>
             <div className="flex justify-between">
               <span>Created:</span>
               <span>
-                {stateImage.createdAt ? new Date(stateImage.createdAt).toLocaleDateString() : 'Unknown'}
+                {stateImage.createdAt
+                  ? new Date(stateImage.createdAt).toLocaleDateString()
+                  : "Unknown"}
               </span>
             </div>
           </CardContent>

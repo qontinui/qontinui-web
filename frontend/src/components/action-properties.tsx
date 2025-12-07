@@ -4,5 +4,5 @@
  * This file now delegates to the refactored action-properties module.
  */
 
-export { ActionProperties } from "./action-properties/ActionProperties"
-export type { Action } from "./action-properties/types"
+export { ActionProperties } from "./action-properties/ActionProperties";
+export type { Action } from "./action-properties/types";

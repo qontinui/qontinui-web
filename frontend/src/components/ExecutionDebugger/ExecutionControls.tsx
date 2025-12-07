@@ -1,13 +1,7 @@
-import React from 'react';
-import {
-  Play,
-  Pause,
-  Square,
-  SkipForward,
-  Gauge,
-} from 'lucide-react';
-import { useExecutionDebugger } from '../../stores/execution-debugger-store';
-import { ExecutionSpeed } from '../../types/debugger/execution-types';
+import React from "react";
+import { Play, Pause, Square, SkipForward, Gauge } from "lucide-react";
+import { useExecutionDebugger } from "../../stores/execution-debugger-store";
+import { ExecutionSpeed } from "../../types/debugger/execution-types";
 
 interface ExecutionControlsProps {
   onExecute?: () => void;
@@ -20,20 +14,12 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
   onStop,
   onStep,
 }) => {
-  const {
-    state,
-    speed,
-    stepMode,
-    play,
-    pause,
-    stop,
-    step,
-    setSpeed,
-  } = useExecutionDebugger();
+  const { state, speed, stepMode, play, pause, stop, step, setSpeed } =
+    useExecutionDebugger();
 
-  const isRunning = state === 'running' || state === 'stepping';
-  const isPaused = state === 'paused';
-  const isIdle = state === 'idle';
+  const isRunning = state === "running" || state === "stepping";
+  const isPaused = state === "paused";
+  const isIdle = state === "idle";
 
   const handlePlay = () => {
     if (isIdle && onExecute) {
@@ -66,10 +52,14 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
     setSpeed(newSpeed);
   };
 
-  const speedOptions: { value: ExecutionSpeed; label: string; delay: string }[] = [
-    { value: 'slow', label: 'Slow', delay: '2x delay' },
-    { value: 'normal', label: 'Normal', delay: '1x' },
-    { value: 'fast', label: 'Fast', delay: '0.5x delay' },
+  const speedOptions: {
+    value: ExecutionSpeed;
+    label: string;
+    delay: string;
+  }[] = [
+    { value: "slow", label: "Slow", delay: "2x delay" },
+    { value: "normal", label: "Normal", delay: "1x" },
+    { value: "fast", label: "Fast", delay: "0.5x delay" },
   ];
 
   return (
@@ -78,11 +68,11 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
       {!isRunning ? (
         <button
           onClick={handlePlay}
-          disabled={state === 'completed' || state === 'error'}
+          disabled={state === "completed" || state === "error"}
           className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
-            state === 'completed' || state === 'error'
-              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              : 'bg-green-600 text-white hover:bg-green-700'
+            state === "completed" || state === "error"
+              ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+              : "bg-green-600 text-white hover:bg-green-700"
           }`}
           title="Play"
         >
@@ -106,8 +96,8 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
         disabled={isIdle}
         className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
           isIdle
-            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            : 'bg-red-600 text-white hover:bg-red-700'
+            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+            : "bg-red-600 text-white hover:bg-red-700"
         }`}
         title="Stop"
       >
@@ -121,8 +111,8 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
         disabled={isRunning && !isPaused}
         className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
           isRunning && !isPaused
-            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
+            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+            : "bg-blue-600 text-white hover:bg-blue-700"
         }`}
         title="Step forward one action"
       >
@@ -144,8 +134,8 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
               onClick={() => handleSpeedChange(option.value)}
               className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                 speed === option.value
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 hover:bg-gray-100'
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-700 hover:bg-gray-100"
               }`}
               title={option.delay}
             >
@@ -166,18 +156,20 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
       <div className="ml-auto flex items-center gap-2">
         <div
           className={`w-2 h-2 rounded-full ${
-            state === 'running'
-              ? 'bg-green-500 animate-pulse'
-              : state === 'paused'
-              ? 'bg-yellow-500'
-              : state === 'error'
-              ? 'bg-red-500'
-              : state === 'completed'
-              ? 'bg-blue-500'
-              : 'bg-gray-400'
+            state === "running"
+              ? "bg-green-500 animate-pulse"
+              : state === "paused"
+                ? "bg-yellow-500"
+                : state === "error"
+                  ? "bg-red-500"
+                  : state === "completed"
+                    ? "bg-blue-500"
+                    : "bg-gray-400"
           }`}
         />
-        <span className="text-sm text-gray-600 font-medium capitalize">{state}</span>
+        <span className="text-sm text-gray-600 font-medium capitalize">
+          {state}
+        </span>
       </div>
     </div>
   );

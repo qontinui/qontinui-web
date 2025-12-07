@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   ChevronLeft,
   ChevronRight,
@@ -18,9 +18,9 @@ import {
   Image as ImageIcon,
   ZoomIn,
   ZoomOut,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import Image from 'next/image';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import Image from "next/image";
 
 interface ScreenshotGalleryProps {
   screenshots: string[];
@@ -85,7 +85,7 @@ export function ScreenshotGallery({
       const response = await fetch(url);
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = blobUrl;
       link.download = `screenshot-${index + 1}.png`;
       document.body.appendChild(link);
@@ -93,7 +93,7 @@ export function ScreenshotGallery({
       document.body.removeChild(link);
       URL.revokeObjectURL(blobUrl);
     } catch (error) {
-      console.error('Download failed:', error);
+      console.error("Download failed:", error);
     }
   };
 
@@ -102,32 +102,33 @@ export function ScreenshotGallery({
     if (selectedIndex === null) return;
 
     switch (e.key) {
-      case 'ArrowLeft':
+      case "ArrowLeft":
         handlePrevious();
         break;
-      case 'ArrowRight':
+      case "ArrowRight":
         handleNext();
         break;
-      case 'Escape':
+      case "Escape":
         handleClose();
         break;
-      case '+':
-      case '=':
+      case "+":
+      case "=":
         handleZoomIn();
         break;
-      case '-':
+      case "-":
         handleZoomOut();
         break;
     }
   };
 
   // Add keyboard listener
-  useState(() => {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('keydown', handleKeyDown as any);
-      return () => window.removeEventListener('keydown', handleKeyDown as any);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.addEventListener("keydown", handleKeyDown as any);
+      return () => window.removeEventListener("keydown", handleKeyDown as any);
     }
-  });
+    return undefined;
+  }, [handleKeyDown]);
 
   if (screenshots.length === 0) {
     return (
@@ -141,7 +142,12 @@ export function ScreenshotGallery({
   return (
     <>
       {/* Thumbnail Grid */}
-      <div className={cn('grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4', className)}>
+      <div
+        className={cn(
+          "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4",
+          className
+        )}
+      >
         {screenshots.map((url, index) => (
           <div
             key={index}
@@ -211,7 +217,10 @@ export function ScreenshotGallery({
                     variant="outline"
                     size="sm"
                     onClick={() =>
-                      handleDownload(screenshots[selectedIndex], selectedIndex)
+                      handleDownload(
+                        screenshots[selectedIndex] || "",
+                        selectedIndex
+                      )
                     }
                   >
                     <Download className="h-4 w-4" />
@@ -236,11 +245,11 @@ export function ScreenshotGallery({
                 className="relative transition-transform duration-200"
                 style={{
                   transform: `scale(${zoom})`,
-                  transformOrigin: 'center',
+                  transformOrigin: "center",
                 }}
               >
                 <Image
-                  src={screenshots[selectedIndex]}
+                  src={screenshots[selectedIndex] || ""}
                   alt={`Screenshot ${selectedIndex + 1}`}
                   width={1200}
                   height={800}

@@ -35,16 +35,14 @@ class RunnerToken(Base):
 
     # Foreign key to user
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Token identification
     name: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        comment="User-friendly name like 'My Laptop', 'Work Desktop'"
+        comment="User-friendly name like 'My Laptop', 'Work Desktop'",
     )
 
     # Token hash (never store plain text)
@@ -53,27 +51,23 @@ class RunnerToken(Base):
         nullable=False,
         unique=True,
         index=True,
-        comment="SHA-256 hash of the token"
+        comment="SHA-256 hash of the token",
     )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
-        nullable=False
+        DateTime, default=datetime.utcnow, nullable=False
     )
 
     expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime,
-        nullable=True,
-        comment="Token expiration time. None = never expires"
+        DateTime, nullable=True, comment="Token expiration time. None = never expires"
     )
 
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,
         index=True,
-        comment="Last time this token was used for authentication"
+        comment="Last time this token was used for authentication",
     )
 
     # Revocation
@@ -82,34 +76,28 @@ class RunnerToken(Base):
         default=False,
         nullable=False,
         index=True,
-        comment="Soft delete flag for audit trail"
+        comment="Soft delete flag for audit trail",
     )
 
     revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime,
-        nullable=True,
-        comment="When the token was revoked"
+        DateTime, nullable=True, comment="When the token was revoked"
     )
 
     # Connection tracking metadata
     last_ip_address: Mapped[str | None] = mapped_column(
         String(45),  # IPv6 max length
         nullable=True,
-        comment="Last IP address that used this token"
+        comment="Last IP address that used this token",
     )
 
     last_user_agent: Mapped[str | None] = mapped_column(
-        String(500),
-        nullable=True,
-        comment="Last user agent that used this token"
+        String(500), nullable=True, comment="Last user agent that used this token"
     )
 
     # Relationships
     user = relationship("User", back_populates="runner_tokens")
     connections = relationship(
-        "RunnerConnection",
-        back_populates="runner_token",
-        cascade="all, delete-orphan"
+        "RunnerConnection", back_populates="runner_token", cascade="all, delete-orphan"
     )
 
     def is_valid(self) -> bool:

@@ -7,13 +7,12 @@ identifying grid structures with uniform spacing.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
 from PIL import Image
-from scipy import signal
-from scipy.ndimage import maximum_filter
+from scipy.ndimage import maximum_filter  # type: ignore[import-untyped]
 
 from ..base import (
     BaseRegionAnalyzer,
@@ -50,10 +49,10 @@ class GridPatternDetector(BaseRegionAnalyzer):
         return "grid_pattern_detector"
 
     @property
-    def supported_region_types(self) -> List[RegionType]:
+    def supported_region_types(self) -> list[RegionType]:
         return [RegionType.INVENTORY_GRID]
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_cell_size": 32,
             "max_cell_size": 128,
@@ -93,8 +92,8 @@ class GridPatternDetector(BaseRegionAnalyzer):
         )
 
     def _analyze_image(
-        self, image: np.ndarray, screenshot_index: int, params: Dict[str, Any]
-    ) -> List[DetectedRegion]:
+        self, image: np.ndarray, screenshot_index: int, params: dict[str, Any]
+    ) -> list[DetectedRegion]:
         """Detect inventory grids using autocorrelation"""
         params = {**self.get_default_parameters(), **params}
 
@@ -125,8 +124,8 @@ class GridPatternDetector(BaseRegionAnalyzer):
         return regions
 
     def _find_grid_spacing(
-        self, image: np.ndarray, params: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        self, image: np.ndarray, params: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """
         Use autocorrelation to find grid spacing
 
@@ -188,7 +187,7 @@ class GridPatternDetector(BaseRegionAnalyzer):
 
         # Extract horizontal and vertical spacing
         spacing_x = spacing_y = None
-        for dx, dy, strength in distances:
+        for dx, dy, _strength in distances:
             if spacing_x is None and dx > params["min_cell_size"]:
                 spacing_x = dx
             if spacing_y is None and dy > params["min_cell_size"]:
@@ -210,10 +209,10 @@ class GridPatternDetector(BaseRegionAnalyzer):
         self,
         edge_img: np.ndarray,
         gray_img: np.ndarray,
-        grid_info: Dict[str, Any],
-        params: Dict[str, Any],
+        grid_info: dict[str, Any],
+        params: dict[str, Any],
         screenshot_index: int,
-    ) -> List[DetectedRegion]:
+    ) -> list[DetectedRegion]:
         """Locate actual grid regions in the image"""
         regions = []
 
@@ -236,7 +235,7 @@ class GridPatternDetector(BaseRegionAnalyzer):
                 return []
 
             # Cluster locations into grid
-            points = list(zip(locations[1], locations[0]))  # (x, y)
+            points = list(zip(locations[1], locations[0], strict=False))  # (x, y)
 
             if len(points) >= params["min_grid_rows"] * params["min_grid_cols"]:
                 # Find grid bounds and structure
@@ -256,25 +255,25 @@ class GridPatternDetector(BaseRegionAnalyzer):
 
     def _extract_grid_structure(
         self,
-        points: List[Tuple[int, int]],
+        points: list[tuple[int, int]],
         spacing_x: int,
         spacing_y: int,
-        img_shape: Tuple[int, int],
-        params: Dict[str, Any],
+        img_shape: tuple[int, int],
+        params: dict[str, Any],
         screenshot_index: int,
-    ) -> Optional[DetectedRegion]:
+    ) -> DetectedRegion | None:
         """Extract grid structure from detected points"""
         if not points:
             return None
 
-        points = np.array(points)
+        points_array: np.ndarray = np.array(points)
 
         # Cluster points into grid positions
         # Round to nearest grid position
         grid_positions = set()
-        x_min, y_min = points.min(axis=0)
+        x_min, y_min = points_array.min(axis=0)
 
-        for x, y in points:
+        for x, y in points_array:
             grid_x = round((x - x_min) / spacing_x)
             grid_y = round((y - y_min) / spacing_y)
             grid_positions.add((grid_x, grid_y))

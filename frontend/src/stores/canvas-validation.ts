@@ -11,14 +11,8 @@
  * - Real-time validation as user edits
  */
 
-import type {
-  Workflow,
-  Action,
-  Connections,
-  Connection,
-  ActionType,
-} from '../lib/action-schema/action-types';
-import { getActionOutputCount } from '../lib/action-schema/action-types';
+import type { Workflow } from "../lib/action-schema/action-types";
+import { getActionOutputCount } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -28,14 +22,14 @@ export interface ValidationError {
   id: string;
   actionId?: string;
   type:
-    | 'connection'
-    | 'cycle'
-    | 'orphaned'
-    | 'missing_connection'
-    | 'invalid_config'
-    | 'variable'
-    | 'unreachable';
-  severity: 'error' | 'warning' | 'info';
+    | "connection"
+    | "cycle"
+    | "orphaned"
+    | "missing_connection"
+    | "invalid_config"
+    | "variable"
+    | "unreachable";
+  severity: "error" | "warning" | "info";
   message: string;
   details?: any;
 }
@@ -98,18 +92,18 @@ export function validateWorkflow(
   // Check for empty workflow
   if (workflow.actions.length === 0) {
     infos.push({
-      id: 'empty-workflow',
-      type: 'invalid_config',
-      severity: 'info',
-      message: 'Workflow is empty',
+      id: "empty-workflow",
+      type: "invalid_config",
+      severity: "info",
+      message: "Workflow is empty",
     });
   }
 
   // Check for invalid connections
   if (checkInvalidConnections) {
     const connectionErrors = validateConnections(workflow);
-    errors.push(...connectionErrors.filter(e => e.severity === 'error'));
-    warnings.push(...connectionErrors.filter(e => e.severity === 'warning'));
+    errors.push(...connectionErrors.filter((e) => e.severity === "error"));
+    warnings.push(...connectionErrors.filter((e) => e.severity === "warning"));
   }
 
   // Check for cycles
@@ -127,8 +121,8 @@ export function validateWorkflow(
   // Check for missing connections
   if (checkMissingConnections) {
     const missingErrors = detectMissingConnections(workflow);
-    errors.push(...missingErrors.filter(e => e.severity === 'error'));
-    warnings.push(...missingErrors.filter(e => e.severity === 'warning'));
+    errors.push(...missingErrors.filter((e) => e.severity === "error"));
+    warnings.push(...missingErrors.filter((e) => e.severity === "warning"));
   }
 
   // Check for unreachable actions
@@ -146,8 +140,8 @@ export function validateWorkflow(
   // Check action configurations
   if (checkConfigs) {
     const configErrors = validateActionConfigs(workflow);
-    errors.push(...configErrors.filter(e => e.severity === 'error'));
-    warnings.push(...configErrors.filter(e => e.severity === 'warning'));
+    errors.push(...configErrors.filter((e) => e.severity === "error"));
+    warnings.push(...configErrors.filter((e) => e.severity === "warning"));
   }
 
   return {
@@ -163,17 +157,19 @@ export function validateWorkflow(
  */
 function validateConnections(workflow: Workflow): ValidationError[] {
   const errors: ValidationError[] = [];
-  const actionMap = new Map(workflow.actions.map(a => [a.id, a]));
+  const actionMap = new Map(workflow.actions.map((a) => [a.id, a]));
 
-  for (const [sourceId, sourceConnections] of Object.entries(workflow.connections)) {
+  for (const [sourceId, sourceConnections] of Object.entries(
+    workflow.connections
+  )) {
     const sourceAction = actionMap.get(sourceId);
 
     if (!sourceAction) {
       errors.push({
         id: `invalid-source-${sourceId}`,
         actionId: sourceId,
-        type: 'connection',
-        severity: 'error',
+        type: "connection",
+        severity: "error",
         message: `Source action ${sourceId} does not exist`,
       });
       continue;
@@ -184,6 +180,7 @@ function validateConnections(workflow: Workflow): ValidationError[] {
 
       for (let outputIndex = 0; outputIndex < outputs.length; outputIndex++) {
         const connections = outputs[outputIndex];
+        if (!connections) continue;
 
         for (const conn of connections) {
           const targetAction = actionMap.get(conn.action);
@@ -192,10 +189,15 @@ function validateConnections(workflow: Workflow): ValidationError[] {
             errors.push({
               id: `invalid-target-${sourceId}-${conn.action}`,
               actionId: sourceId,
-              type: 'connection',
-              severity: 'error',
+              type: "connection",
+              severity: "error",
               message: `Target action ${conn.action} does not exist`,
-              details: { sourceId, targetId: conn.action, outputType, outputIndex },
+              details: {
+                sourceId,
+                targetId: conn.action,
+                outputType,
+                outputIndex,
+              },
             });
             continue;
           }
@@ -205,21 +207,24 @@ function validateConnections(workflow: Workflow): ValidationError[] {
             errors.push({
               id: `self-connection-${sourceId}`,
               actionId: sourceId,
-              type: 'connection',
-              severity: 'warning',
+              type: "connection",
+              severity: "warning",
               message: `Action ${sourceAction.name || sourceId} connects to itself`,
               details: { actionId: sourceId },
             });
           }
 
           // Validate output index
-          const expectedOutputs = getActionOutputCount(sourceAction.type, sourceAction.config);
+          const expectedOutputs = getActionOutputCount(
+            sourceAction.type,
+            sourceAction.config
+          );
           if (outputIndex >= expectedOutputs) {
             errors.push({
               id: `invalid-output-${sourceId}-${outputIndex}`,
               actionId: sourceId,
-              type: 'connection',
-              severity: 'error',
+              type: "connection",
+              severity: "error",
               message: `Invalid output index ${outputIndex} for action ${sourceAction.name || sourceId}`,
               details: { sourceId, outputIndex, expectedOutputs },
             });
@@ -237,7 +242,7 @@ function validateConnections(workflow: Workflow): ValidationError[] {
  */
 function detectCycles(workflow: Workflow): ValidationError[] {
   const errors: ValidationError[] = [];
-  const actionMap = new Map(workflow.actions.map(a => [a.id, a]));
+  const actionMap = new Map(workflow.actions.map((a) => [a.id, a]));
 
   // Build adjacency list
   const graph = new Map<string, string[]>();
@@ -245,7 +250,9 @@ function detectCycles(workflow: Workflow): ValidationError[] {
     graph.set(action.id, []);
   }
 
-  for (const [sourceId, sourceConnections] of Object.entries(workflow.connections)) {
+  for (const [sourceId, sourceConnections] of Object.entries(
+    workflow.connections
+  )) {
     const neighbors: string[] = [];
 
     for (const outputs of Object.values(sourceConnections)) {
@@ -296,12 +303,14 @@ function detectCycles(workflow: Workflow): ValidationError[] {
       const cycle = dfs(action.id);
 
       if (cycle) {
-        const cycleNames = cycle.map(id => actionMap.get(id)?.name || id).join(' → ');
+        const cycleNames = cycle
+          .map((id) => actionMap.get(id)?.name || id)
+          .join(" → ");
 
         errors.push({
-          id: `cycle-${cycle.join('-')}`,
-          type: 'cycle',
-          severity: 'error',
+          id: `cycle-${cycle.join("-")}`,
+          type: "cycle",
+          severity: "error",
           message: `Circular dependency detected: ${cycleNames}`,
           details: { cycle },
         });
@@ -321,7 +330,9 @@ function detectOrphanedActions(workflow: Workflow): ValidationError[] {
   const connected = new Set<string>();
 
   // Mark all connected actions
-  for (const [sourceId, sourceConnections] of Object.entries(workflow.connections)) {
+  for (const [sourceId, sourceConnections] of Object.entries(
+    workflow.connections
+  )) {
     connected.add(sourceId);
 
     for (const outputs of Object.values(sourceConnections)) {
@@ -341,8 +352,8 @@ function detectOrphanedActions(workflow: Workflow): ValidationError[] {
       warnings.push({
         id: `orphaned-${action.id}`,
         actionId: action.id,
-        type: 'orphaned',
-        severity: 'warning',
+        type: "orphaned",
+        severity: "warning",
         message: `Action "${action.name || action.type}" is not connected`,
         details: { actionId: action.id },
       });
@@ -360,26 +371,34 @@ function detectMissingConnections(workflow: Workflow): ValidationError[] {
 
   for (const action of workflow.actions) {
     const connections = workflow.connections[action.id];
-    const expectedOutputs = getActionOutputCount(action.type, action.config);
+    getActionOutputCount(action.type, action.config);
 
     // Check for actions that should have connections
-    if (action.type === 'IF') {
+    if (action.type === "IF") {
       // IF must have both true and false branches
       const mainOutputs = connections?.main || [];
 
-      if (mainOutputs.length < 2 || !mainOutputs[0]?.length || !mainOutputs[1]?.length) {
+      if (
+        mainOutputs.length < 2 ||
+        !mainOutputs[0]?.length ||
+        !mainOutputs[1]?.length
+      ) {
         errors.push({
           id: `missing-if-branch-${action.id}`,
           actionId: action.id,
-          type: 'missing_connection',
-          severity: 'error',
+          type: "missing_connection",
+          severity: "error",
           message: `IF action "${action.name || action.id}" must have both true and false branches`,
-          details: { actionId: action.id, hasTrue: !!mainOutputs[0]?.length, hasFalse: !!mainOutputs[1]?.length },
+          details: {
+            actionId: action.id,
+            hasTrue: !!mainOutputs[0]?.length,
+            hasFalse: !!mainOutputs[1]?.length,
+          },
         });
       }
     }
 
-    if (action.type === 'SWITCH') {
+    if (action.type === "SWITCH") {
       // SWITCH must have all case branches
       const cases = (action.config as any).cases || [];
       const mainOutputs = connections?.main || [];
@@ -388,15 +407,19 @@ function detectMissingConnections(workflow: Workflow): ValidationError[] {
         errors.push({
           id: `missing-switch-branch-${action.id}`,
           actionId: action.id,
-          type: 'missing_connection',
-          severity: 'warning',
+          type: "missing_connection",
+          severity: "warning",
           message: `SWITCH action "${action.name || action.id}" is missing some case branches`,
-          details: { actionId: action.id, expectedBranches: cases.length + 1, actualBranches: mainOutputs.length },
+          details: {
+            actionId: action.id,
+            expectedBranches: cases.length + 1,
+            actualBranches: mainOutputs.length,
+          },
         });
       }
     }
 
-    if (action.type === 'TRY_CATCH') {
+    if (action.type === "TRY_CATCH") {
       // TRY_CATCH should have both success and error branches
       const mainOutputs = connections?.main || [];
 
@@ -404,8 +427,8 @@ function detectMissingConnections(workflow: Workflow): ValidationError[] {
         errors.push({
           id: `missing-try-success-${action.id}`,
           actionId: action.id,
-          type: 'missing_connection',
-          severity: 'warning',
+          type: "missing_connection",
+          severity: "warning",
           message: `TRY_CATCH action "${action.name || action.id}" should have a success branch`,
           details: { actionId: action.id },
         });
@@ -415,8 +438,8 @@ function detectMissingConnections(workflow: Workflow): ValidationError[] {
         errors.push({
           id: `missing-catch-${action.id}`,
           actionId: action.id,
-          type: 'missing_connection',
-          severity: 'info',
+          type: "missing_connection",
+          severity: "info",
           message: `TRY_CATCH action "${action.name || action.id}" has no catch handler`,
           details: { actionId: action.id },
         });
@@ -448,21 +471,21 @@ function detectUnreachableActions(workflow: Workflow): ValidationError[] {
     }
   }
 
-  const startNodes = workflow.actions.filter(a => !hasIncoming.has(a.id));
+  const startNodes = workflow.actions.filter((a) => !hasIncoming.has(a.id));
 
   if (startNodes.length === 0) {
     warnings.push({
-      id: 'no-start-node',
-      type: 'unreachable',
-      severity: 'warning',
-      message: 'No start node found (no action without incoming connections)',
+      id: "no-start-node",
+      type: "unreachable",
+      severity: "warning",
+      message: "No start node found (no action without incoming connections)",
     });
     return warnings;
   }
 
   // BFS from start nodes to find reachable actions
   const reachable = new Set<string>();
-  const queue = [...startNodes.map(a => a.id)];
+  const queue = [...startNodes.map((a) => a.id)];
 
   while (queue.length > 0) {
     const nodeId = queue.shift()!;
@@ -492,8 +515,8 @@ function detectUnreachableActions(workflow: Workflow): ValidationError[] {
       warnings.push({
         id: `unreachable-${action.id}`,
         actionId: action.id,
-        type: 'unreachable',
-        severity: 'warning',
+        type: "unreachable",
+        severity: "warning",
         message: `Action "${action.name || action.type}" is unreachable from start nodes`,
         details: { actionId: action.id },
       });
@@ -509,9 +532,59 @@ function detectUnreachableActions(workflow: Workflow): ValidationError[] {
 function validateVariableReferences(workflow: Workflow): ValidationError[] {
   const warnings: ValidationError[] = [];
 
-  // TODO: Implement variable reference validation
-  // This would require parsing action configs for variable references
-  // and checking against workflow.variables
+  // Build set of all available variables
+  const availableVariables = new Set<string>();
+
+  if (workflow.variables) {
+    if (workflow.variables.local) {
+      Object.keys(workflow.variables.local).forEach((v) =>
+        availableVariables.add(v)
+      );
+    }
+    if (workflow.variables.process) {
+      Object.keys(workflow.variables.process).forEach((v) =>
+        availableVariables.add(v)
+      );
+    }
+    if (workflow.variables.global) {
+      Object.keys(workflow.variables.global).forEach((v) =>
+        availableVariables.add(v)
+      );
+    }
+  }
+
+  // Regular expression to find variable references like ${variableName}
+  const variablePattern = /\$\{([^}]+)\}/g;
+
+  // Check each action's config for variable references
+  for (const action of workflow.actions) {
+    if (!action.config) continue;
+
+    // Convert config to JSON string to search for variable references
+    const configStr = JSON.stringify(action.config);
+    const matches = configStr.matchAll(variablePattern);
+
+    for (const match of matches) {
+      const varName = match[1];
+      if (!varName) continue;
+
+      // Check if variable exists
+      if (!availableVariables.has(varName)) {
+        warnings.push({
+          id: `undefined-variable-${action.id}-${varName}`,
+          actionId: action.id,
+          type: "variable",
+          severity: "warning",
+          message: `Action "${action.name || action.type}" references undefined variable: ${varName}`,
+          details: {
+            actionId: action.id,
+            variableName: varName,
+            availableVariables: Array.from(availableVariables),
+          },
+        });
+      }
+    }
+  }
 
   return warnings;
 }
@@ -523,19 +596,208 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
   const errors: ValidationError[] = [];
 
   for (const action of workflow.actions) {
-    // TODO: Implement config validation based on action type
-    // This would require schema validation for each action type
-
     // Basic validation: check if config exists
     if (!action.config) {
       errors.push({
         id: `missing-config-${action.id}`,
         actionId: action.id,
-        type: 'invalid_config',
-        severity: 'error',
+        type: "invalid_config",
+        severity: "error",
         message: `Action "${action.name || action.type}" is missing configuration`,
         details: { actionId: action.id },
       });
+      continue;
+    }
+
+    // Type-specific validation
+    const config = action.config as any;
+
+    // Type-specific validation using string checks instead of type enum
+    if (action.type === "CLICK") {
+      if (!config.target && !config.position) {
+        errors.push({
+          id: `missing-target-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `${action.type} action "${action.name || action.id}" must have either a target or position`,
+          details: { actionId: action.id, actionType: action.type },
+        });
+      }
+    }
+
+    switch (action.type) {
+      case "TYPE":
+        if (!config.text && !config.variableRef) {
+          errors.push({
+            id: `missing-text-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `TYPE action "${action.name || action.id}" must have text or variableRef`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "WAIT":
+        if (!config.duration && !config.condition) {
+          errors.push({
+            id: `missing-wait-param-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `WAIT action "${action.name || action.id}" must have duration or condition`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "IF":
+        if (!config.condition) {
+          errors.push({
+            id: `missing-condition-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `IF action "${action.name || action.id}" must have a condition`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "SWITCH":
+        if (!config.value) {
+          errors.push({
+            id: `missing-switch-value-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `SWITCH action "${action.name || action.id}" must have a value to switch on`,
+            details: { actionId: action.id },
+          });
+        }
+        if (!config.cases || config.cases.length === 0) {
+          errors.push({
+            id: `missing-switch-cases-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "warning",
+            message: `SWITCH action "${action.name || action.id}" should have at least one case`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "LOOP":
+        if (!config.condition && !config.count && !config.items) {
+          errors.push({
+            id: `missing-loop-param-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `LOOP action "${action.name || action.id}" must have condition, count, or items`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "SET_VARIABLE":
+        if (!config.variableName) {
+          errors.push({
+            id: `missing-variable-name-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `SET_VARIABLE action "${action.name || action.id}" must specify variableName`,
+            details: { actionId: action.id },
+          });
+        }
+        if (config.value === undefined && !config.expression) {
+          errors.push({
+            id: `missing-variable-value-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `SET_VARIABLE action "${action.name || action.id}" must have value or expression`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+    }
+
+    // Additional validation for types not in ActionType enum
+    if ((action.type as string) === "EXTRACT") {
+      if (!config.target && !config.region) {
+        errors.push({
+          id: `missing-extract-target-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `EXTRACT action "${action.name || action.id}" must have target or region`,
+          details: { actionId: action.id },
+        });
+      }
+      if (!config.outputVariable) {
+        errors.push({
+          id: `missing-output-variable-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "warning",
+          message: `EXTRACT action "${action.name || action.id}" should specify outputVariable`,
+          details: { actionId: action.id },
+        });
+      }
+    }
+
+    if ((action.type as string) === "ASSERT") {
+      if (!config.condition && !config.expected) {
+        errors.push({
+          id: `missing-assertion-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `ASSERT action "${action.name || action.id}" must have condition or expected value`,
+          details: { actionId: action.id },
+        });
+      }
+    }
+
+    if ((action.type as string) === "EXECUTE_CODE") {
+      if (!config.code && !config.function) {
+        errors.push({
+          id: `missing-code-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `EXECUTE_CODE action "${action.name || action.id}" must have code or function`,
+          details: { actionId: action.id },
+        });
+      }
+    }
+
+    if ((action.type as string) === "API_CALL") {
+      if (!config.url) {
+        errors.push({
+          id: `missing-api-url-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `API_CALL action "${action.name || action.id}" must have url`,
+          details: { actionId: action.id },
+        });
+      }
+      if (!config.method) {
+        errors.push({
+          id: `missing-http-method-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "warning",
+          message: `API_CALL action "${action.name || action.id}" should specify HTTP method (defaults to GET)`,
+          details: { actionId: action.id },
+        });
+      }
+      break;
     }
   }
 
@@ -568,7 +830,9 @@ export class ValidationManager {
     // Limit cache size
     if (this.validationCache.size > 100) {
       const firstKey = this.validationCache.keys().next().value;
-      this.validationCache.delete(firstKey);
+      if (firstKey !== undefined) {
+        this.validationCache.delete(firstKey);
+      }
     }
 
     return result;
@@ -595,10 +859,12 @@ export class ValidationManager {
     // Simple cache key based on action count and connection count
     const actionCount = workflow.actions.length;
     const connectionCount = Object.keys(workflow.connections).length;
-    const hash = JSON.stringify(workflow).split('').reduce((a, b) => {
-      a = (a << 5) - a + b.charCodeAt(0);
-      return a & a;
-    }, 0);
+    const hash = JSON.stringify(workflow)
+      .split("")
+      .reduce((a, b) => {
+        a = (a << 5) - a + b.charCodeAt(0);
+        return a & a;
+      }, 0);
 
     return `${actionCount}-${connectionCount}-${hash}`;
   }

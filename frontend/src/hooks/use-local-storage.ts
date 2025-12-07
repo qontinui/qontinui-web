@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 
 /**
  * Custom hook for syncing state with localStorage
@@ -45,7 +45,9 @@ export function useLocalStorage<T>(
       console.error(`Error saving ${key} to localStorage:`, error);
       // Handle quota exceeded error
       if (error instanceof DOMException && error.code === 22) {
-        console.warn('localStorage quota exceeded. Consider cleaning up old data.');
+        console.warn(
+          "localStorage quota exceeded. Consider cleaning up old data."
+        );
       }
     }
   }, [key, storedValue, serialize, isHydrated]);
@@ -76,13 +78,13 @@ export function useLocalStorageSync<T>(
         try {
           setValue(JSON.parse(e.newValue));
         } catch (error) {
-          console.error('Error parsing storage event:', error);
+          console.error("Error parsing storage event:", error);
         }
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, [key, setValue]);
 
   return [value, setValue];

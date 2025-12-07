@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import React, { useState, useCallback, useEffect } from "react"
+import React, { useState, useCallback, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,34 +8,43 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Card, CardContent } from "@/components/ui/card"
-import { toast } from "sonner"
-import { useAutomation } from "@/contexts/automation-context"
-import { Plus, Info, MapPin, Search } from "lucide-react"
-import type { ExtractedPattern, OptimizationStrategy } from "@/types/pattern-optimization"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "sonner";
+import { useAutomation } from "@/contexts/automation-context";
+import { Info, MapPin, Search } from "lucide-react";
+import type {
+  ExtractedPattern,
+  OptimizationStrategy,
+} from "@/types/pattern-optimization";
 
 interface StateImageCreationDialogProps {
-  isOpen: boolean
-  onClose: () => void
-  patterns: ExtractedPattern[]
-  strategy: OptimizationStrategy
-  onCreateStateImage: (config: StateImageConfig) => void
+  isOpen: boolean;
+  onClose: () => void;
+  patterns: ExtractedPattern[];
+  strategy: OptimizationStrategy;
+  onCreateStateImage: (config: StateImageConfig) => void;
 }
 
 export interface StateImageConfig {
-  stateName: string
-  stateId: string | null
-  imageNames: string[]
-  includeSearchRegions: boolean
-  searchRegionName?: string
-  createNewState: boolean
+  stateName: string;
+  stateId: string | null;
+  imageNames: string[];
+  includeSearchRegions: boolean;
+  searchRegionName?: string;
+  createNewState: boolean;
 }
 
 export function StateImageCreationDialog({
@@ -45,73 +54,77 @@ export function StateImageCreationDialog({
   strategy,
   onCreateStateImage,
 }: StateImageCreationDialogProps) {
-  const { states, addState, updateState } = useAutomation()
+  const { states } = useAutomation();
 
-  const [createNewState, setCreateNewState] = useState(false)
-  const [selectedStateId, setSelectedStateId] = useState<string>("")
-  const [newStateName, setNewStateName] = useState("")
-  const [imageNames, setImageNames] = useState<string[]>([])
-  const [includeSearchRegions, setIncludeSearchRegions] = useState(true)
-  const [searchRegionName, setSearchRegionName] = useState("Pattern Search Region")
+  const [createNewState, setCreateNewState] = useState(false);
+  const [selectedStateId, setSelectedStateId] = useState<string>("");
+  const [newStateName, setNewStateName] = useState("");
+  const [imageNames, setImageNames] = useState<string[]>([]);
+  const [includeSearchRegions, setIncludeSearchRegions] = useState(true);
+  const [searchRegionName, setSearchRegionName] = useState(
+    "Pattern Search Region"
+  );
 
   // Initialize image names based on patterns (only once)
   useEffect(() => {
     if (patterns.length > 0 && imageNames.length === 0) {
-      const names = patterns.map((_, idx) => `Pattern_${idx + 1}`)
-      setImageNames(names)
+      const names = patterns.map((_, idx) => `Pattern_${idx + 1}`);
+      setImageNames(names);
     }
-  }, [patterns.length]) // Only depend on length, not the array itself
+  }, [patterns.length]); // Only depend on length, not the array itself
 
   // Auto-select first state if available
   useEffect(() => {
     if (states.length > 0 && !selectedStateId) {
-      setSelectedStateId(states[0].id)
+      setSelectedStateId(states[0]?.id ?? "");
     }
-  }, [states, selectedStateId])
+  }, [states, selectedStateId]);
 
   const handleImageNameChange = useCallback((index: number, value: string) => {
-    setImageNames(prev => {
-      const updated = [...prev]
-      updated[index] = value
-      return updated
-    })
-  }, [])
+    setImageNames((prev) => {
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  }, []);
 
   const handleCreate = useCallback(() => {
     // Validation
     if (createNewState && !newStateName.trim()) {
-      toast.error("Please enter a name for the new state")
-      return
+      toast.error("Please enter a name for the new state");
+      return;
     }
 
     if (!createNewState && !selectedStateId) {
-      toast.error("Please select a state")
-      return
+      toast.error("Please select a state");
+      return;
     }
 
-    if (imageNames.some(name => !name.trim())) {
-      toast.error("Please provide names for all StateImages")
-      return
+    if (imageNames.some((name) => !name.trim())) {
+      toast.error("Please provide names for all StateImages");
+      return;
     }
 
     // Check for duplicate names
-    const uniqueNames = new Set(imageNames)
+    const uniqueNames = new Set(imageNames);
     if (uniqueNames.size !== imageNames.length) {
-      toast.error("StateImage names must be unique")
-      return
+      toast.error("StateImage names must be unique");
+      return;
     }
 
     const config: StateImageConfig = {
-      stateName: createNewState ? newStateName : states.find(s => s.id === selectedStateId)?.name || "",
+      stateName: createNewState
+        ? newStateName
+        : states.find((s) => s.id === selectedStateId)?.name || "",
       stateId: createNewState ? null : selectedStateId,
       imageNames,
       includeSearchRegions,
       searchRegionName: includeSearchRegions ? searchRegionName : undefined,
       createNewState,
-    }
+    };
 
-    onCreateStateImage(config)
-    onClose()
+    onCreateStateImage(config);
+    onClose();
   }, [
     createNewState,
     newStateName,
@@ -122,7 +135,7 @@ export function StateImageCreationDialog({
     states,
     onCreateStateImage,
     onClose,
-  ])
+  ]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -130,7 +143,8 @@ export function StateImageCreationDialog({
         <DialogHeader>
           <DialogTitle>Create StateImages from Optimized Patterns</DialogTitle>
           <DialogDescription>
-            Add the optimized patterns as StateImages to your project. They will be used for visual state identification.
+            Add the optimized patterns as StateImages to your project. They will
+            be used for visual state identification.
           </DialogDescription>
         </DialogHeader>
 
@@ -155,7 +169,10 @@ export function StateImageCreationDialog({
                 </div>
                 {!createNewState && (
                   <div className="ml-6 mt-2">
-                    <Select value={selectedStateId} onValueChange={setSelectedStateId}>
+                    <Select
+                      value={selectedStateId}
+                      onValueChange={setSelectedStateId}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select a state" />
                       </SelectTrigger>
@@ -214,12 +231,16 @@ export function StateImageCreationDialog({
                           className="w-full h-full object-contain"
                         />
                       ) : (
-                        <span className="text-xs text-gray-500">P{idx + 1}</span>
+                        <span className="text-xs text-gray-500">
+                          P{idx + 1}
+                        </span>
                       )}
                     </div>
                     <Input
                       value={imageNames[idx] || ""}
-                      onChange={(e) => handleImageNameChange(idx, e.target.value)}
+                      onChange={(e) =>
+                        handleImageNameChange(idx, e.target.value)
+                      }
                       placeholder={`Name for pattern ${idx + 1}`}
                       className="flex-1"
                     />
@@ -228,8 +249,12 @@ export function StateImageCreationDialog({
               </div>
 
               <div className="text-xs text-gray-400">
-                {patterns.length} pattern{patterns.length > 1 ? "s" : ""} will be added using the{" "}
-                <span className="font-medium text-[#00D9FF]">{strategy.type}</span> strategy
+                {patterns.length} pattern{patterns.length > 1 ? "s" : ""} will
+                be added using the{" "}
+                <span className="font-medium text-[#00D9FF]">
+                  {strategy.type}
+                </span>{" "}
+                strategy
               </div>
             </CardContent>
           </Card>
@@ -244,15 +269,18 @@ export function StateImageCreationDialog({
                 </div>
                 <Checkbox
                   checked={includeSearchRegions}
-                  onCheckedChange={(checked) => setIncludeSearchRegions(checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    setIncludeSearchRegions(checked as boolean)
+                  }
                 />
               </div>
 
               {includeSearchRegions && (
                 <>
                   <div className="text-xs text-gray-400">
-                    The bounding boxes you drew will be added as search regions for each StateImage.
-                    This limits where the pattern will be searched on the screen.
+                    The bounding boxes you drew will be added as search regions
+                    for each StateImage. This limits where the pattern will be
+                    searched on the screen.
                   </div>
                   <div>
                     <Label htmlFor="search-region-name" className="text-xs">
@@ -275,10 +303,13 @@ export function StateImageCreationDialog({
           <Card className="bg-blue-500/10 border-blue-500/30">
             <CardContent className="p-4">
               <p className="text-sm text-blue-300">
-                <span className="font-medium">Summary:</span> Will create {patterns.length} StateImage
+                <span className="font-medium">Summary:</span> Will create{" "}
+                {patterns.length} StateImage
                 {patterns.length > 1 ? "s" : ""} in{" "}
                 {createNewState ? (
-                  <span className="font-medium">new state "{newStateName}"</span>
+                  <span className="font-medium">
+                    new state "{newStateName}"
+                  </span>
                 ) : (
                   <span className="font-medium">
                     state "{states.find((s) => s.id === selectedStateId)?.name}"
@@ -294,11 +325,14 @@ export function StateImageCreationDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleCreate} className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black">
+          <Button
+            onClick={handleCreate}
+            className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+          >
             Create StateImages
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

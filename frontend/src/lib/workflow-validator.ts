@@ -9,10 +9,10 @@
  * - Empty connections
  */
 
-import { Workflow, ActionType } from './export-schema';
+import { Workflow } from "./export-schema";
 
 export interface WorkflowValidationError {
-  type: 'error' | 'warning';
+  type: "error" | "warning";
   message: string;
   actionId?: string;
   connectionType?: string;
@@ -24,27 +24,12 @@ export interface WorkflowValidationResult {
   warnings: WorkflowValidationError[];
 }
 
-// Read-only actions that are safe for parallel execution
-const READ_ONLY_ACTIONS = new Set<ActionType>([
-  'FIND',
-  'FIND_STATE_IMAGE',
-  'EXISTS',
-  'VANISH',
-  'SCREENSHOT',
-  'WAIT'
-]);
-
-/**
- * Check if an action type is read-only (safe for parallel execution)
- */
-function isReadOnlyAction(actionType: ActionType): boolean {
-  return READ_ONLY_ACTIONS.has(actionType);
-}
-
 /**
  * Validate workflow connections
  */
-export function validateWorkflowConnections(workflow: Workflow): WorkflowValidationResult {
+export function validateWorkflowConnections(
+  workflow: Workflow
+): WorkflowValidationResult {
   const errors: WorkflowValidationError[] = [];
   const warnings: WorkflowValidationError[] = [];
 
@@ -52,7 +37,7 @@ export function validateWorkflowConnections(workflow: Workflow): WorkflowValidat
     return {
       valid: true,
       errors: [],
-      warnings: [{ type: 'warning', message: 'Workflow has no actions' }]
+      warnings: [{ type: "warning", message: "Workflow has no actions" }],
     };
   }
 
@@ -77,15 +62,15 @@ export function validateWorkflowConnections(workflow: Workflow): WorkflowValidat
   // 4. Warn if no connections (will use sequential execution)
   if (!workflow.connections || Object.keys(workflow.connections).length === 0) {
     warnings.push({
-      type: 'warning',
-      message: 'No connections defined - workflow will execute sequentially'
+      type: "warning",
+      message: "No connections defined - workflow will execute sequentially",
     });
   }
 
   return {
     valid: errors.length === 0,
     errors,
-    warnings
+    warnings,
   };
 }
 
@@ -103,26 +88,26 @@ function validateConnectionIndices(
     // Check that the action ID exists
     if (!actionIndexMap.has(actionId)) {
       errors.push({
-        type: 'error',
+        type: "error",
         message: `Connection references non-existent action ID: ${actionId}`,
-        actionId
+        actionId,
       });
       return;
     }
 
     // Check all output paths
-    ['main', 'success', 'error', 'parallel'].forEach((outputType) => {
+    ["main", "success", "error", "parallel"].forEach((outputType) => {
       const connections = outputs[outputType as keyof typeof outputs];
       if (!connections) return;
 
-      connections.forEach((outputArray, outputIndex) => {
-        outputArray.forEach((targetIndex) => {
-          if (targetIndex < 0 || targetIndex > maxIndex) {
+      connections.forEach((outputArray) => {
+        outputArray.forEach((conn) => {
+          if (conn.index < 0 || conn.index > maxIndex) {
             errors.push({
-              type: 'error',
-              message: `Invalid connection index ${targetIndex} (valid range: 0-${maxIndex})`,
+              type: "error",
+              message: `Invalid connection index ${conn.index} (valid range: 0-${maxIndex})`,
               actionId,
-              connectionType: outputType
+              connectionType: outputType,
             });
           }
         });
@@ -136,7 +121,7 @@ function validateConnectionIndices(
  */
 function detectUnreachableActions(
   workflow: Workflow,
-  actionIndexMap: Map<string, number>,
+  _actionIndexMap: Map<string, number>,
   warnings: WorkflowValidationError[]
 ): void {
   const reachable = new Set<number>();
@@ -158,15 +143,22 @@ function detectUnreachableActions(
     if (!connections) continue;
 
     // Follow all connection paths
-    ['main', 'success', 'error', 'parallel'].forEach((outputType) => {
+    ["main", "success", "error", "parallel"].forEach((outputType) => {
       const outputs = connections[outputType as keyof typeof connections];
       if (!outputs) return;
 
       outputs.forEach((outputArray) => {
-        outputArray.forEach((targetIndex) => {
-          if (!reachable.has(targetIndex)) {
-            reachable.add(targetIndex);
-            queue.push(targetIndex);
+        outputArray.forEach((conn) => {
+          // Find the target action index
+          const targetAction = workflow.actions.find(
+            (a) => a.id === conn.action
+          );
+          if (targetAction) {
+            const targetIndex = workflow.actions.indexOf(targetAction);
+            if (!reachable.has(targetIndex)) {
+              reachable.add(targetIndex);
+              queue.push(targetIndex);
+            }
           }
         });
       });
@@ -177,9 +169,9 @@ function detectUnreachableActions(
   workflow.actions.forEach((action, index) => {
     if (index > 0 && !reachable.has(index)) {
       warnings.push({
-        type: 'warning',
+        type: "warning",
         message: `Action "${action.name || action.id}" is unreachable from workflow start`,
-        actionId: action.id
+        actionId: action.id,
       });
     }
   });
@@ -190,7 +182,7 @@ function detectUnreachableActions(
  */
 function detectCycles(
   workflow: Workflow,
-  actionIndexMap: Map<string, number>,
+  _actionIndexMap: Map<string, number>,
   warnings: WorkflowValidationError[]
 ): void {
   const visited = new Set<number>();
@@ -209,26 +201,39 @@ function detectCycles(
     const connections = workflow.connections[action.id];
 
     if (connections) {
-      ['main', 'success', 'error', 'parallel'].forEach((outputType) => {
+      let foundCycle = false;
+      ["main", "success", "error", "parallel"].forEach((outputType) => {
         const outputs = connections[outputType as keyof typeof connections];
         if (!outputs) return;
 
         outputs.forEach((outputArray) => {
-          outputArray.forEach((targetIndex) => {
+          outputArray.forEach((conn) => {
+            // Find the target action index
+            const targetAction = workflow.actions.find(
+              (a) => a.id === conn.action
+            );
+            if (!targetAction) return;
+            const targetIndex = workflow.actions.indexOf(targetAction);
+
             if (!visited.has(targetIndex)) {
               if (hasCycle(targetIndex, [...path, targetIndex])) {
                 cycleDetected.add(index);
-                return true;
+                foundCycle = true;
               }
             } else if (recursionStack.has(targetIndex)) {
               // Cycle detected
               cycleDetected.add(index);
               cycleDetected.add(targetIndex);
-              return true;
+              foundCycle = true;
             }
           });
         });
       });
+
+      if (foundCycle) {
+        recursionStack.delete(index);
+        return true;
+      }
     }
 
     recursionStack.delete(index);
@@ -240,12 +245,15 @@ function detectCycles(
 
   if (cycleDetected.size > 0) {
     const cycleActions = Array.from(cycleDetected)
-      .map(index => workflow.actions[index].name || workflow.actions[index].id)
-      .join(', ');
+      .map((index) => {
+        const action = workflow.actions[index];
+        return action ? action.name || action.id : `unknown-${index}`;
+      })
+      .join(", ");
 
     warnings.push({
-      type: 'warning',
-      message: `Cycle detected in workflow graph involving actions: ${cycleActions}. Ensure proper exit conditions to avoid infinite loops.`
+      type: "warning",
+      message: `Cycle detected in workflow graph involving actions: ${cycleActions}. Ensure proper exit conditions to avoid infinite loops.`,
     });
   }
 }
@@ -255,7 +263,7 @@ function detectCycles(
  */
 export function hasConditionalLogic(workflow: Workflow): boolean {
   return Object.values(workflow.connections).some(
-    outputs => outputs.success || outputs.error
+    (outputs) => outputs.success || outputs.error
   );
 }
 
@@ -271,15 +279,32 @@ export function hasLoops(workflow: Workflow): boolean {
     recursionStack.add(index);
 
     const action = workflow.actions[index];
+    if (!action) {
+      recursionStack.delete(index);
+      return false;
+    }
+
     const connections = workflow.connections[action.id];
 
     if (connections) {
-      for (const outputType of ['main', 'success', 'error', 'parallel'] as const) {
+      for (const outputType of [
+        "main",
+        "success",
+        "error",
+        "parallel",
+      ] as const) {
         const outputs = connections[outputType];
         if (!outputs) continue;
 
         for (const outputArray of outputs) {
-          for (const targetIndex of outputArray) {
+          for (const conn of outputArray) {
+            // Find the target action index
+            const targetAction = workflow.actions.find(
+              (a) => a.id === conn.action
+            );
+            if (!targetAction) continue;
+            const targetIndex = workflow.actions.indexOf(targetAction);
+
             if (!visited.has(targetIndex)) {
               if (hasCycle(targetIndex)) {
                 return true;

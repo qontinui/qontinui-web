@@ -10,27 +10,29 @@
  * - Generating share links
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { ProjectCollaborationService } from '@/services/collaboration/project-collaboration-service';
-import { OrganizationService } from '@/services/collaboration/organization-service';
-import { HttpClient } from '@/services/http-client';
-import type { Collaborator, Organization, PermissionLevel } from '@/types/collaboration';
+import { useState, useEffect, useCallback } from "react";
+import {
+  projectCollaborationService,
+  organizationService,
+} from "@/services/service-factory";
+import type {
+  Collaborator,
+  Organization,
+  PermissionLevel,
+} from "@/types/collaboration";
 
-// Initialize services
-const httpClient = new HttpClient();
-const collaborationService = new ProjectCollaborationService(httpClient);
-const organizationService = new OrganizationService(httpClient);
+// Use services from the service factory (properly wired with TokenManager)
+const collaborationService = projectCollaborationService;
 
 interface UseProjectSharingOptions {
   projectId: string | null;
   enabled?: boolean;
 }
 
-interface ShareProjectOptions {
-  expiresAt?: string;
-}
-
-export function useProjectSharing({ projectId, enabled = true }: UseProjectSharingOptions) {
+export function useProjectSharing({
+  projectId,
+  enabled = true,
+}: UseProjectSharingOptions) {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(false);
@@ -46,7 +48,7 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
       const data = await collaborationService.getCollaborators(projectId);
       setCollaborators(data);
     } catch (err) {
-      console.error('Failed to load collaborators:', err);
+      console.error("Failed to load collaborators:", err);
       setError(err as Error);
     }
   }, [projectId, enabled]);
@@ -61,7 +63,7 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
       const data = await organizationService.getOrganizations();
       setOrganizations(data);
     } catch (err) {
-      console.error('Failed to load organizations:', err);
+      console.error("Failed to load organizations:", err);
       // Don't set error for organizations, as user might not have any
       setOrganizations([]);
     }
@@ -73,8 +75,9 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
   useEffect(() => {
     if (projectId && enabled) {
       setLoading(true);
-      Promise.all([loadCollaborators(), loadOrganizations()])
-        .finally(() => setLoading(false));
+      Promise.all([loadCollaborators(), loadOrganizations()]).finally(() =>
+        setLoading(false)
+      );
     }
   }, [projectId, enabled, loadCollaborators, loadOrganizations]);
 
@@ -82,9 +85,9 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
    * Add a user to the project
    */
   const addUser = useCallback(
-    async (email: string, permission: PermissionLevel, expiresAt?: string) => {
+    async (email: string, permission: PermissionLevel, _expiresAt?: string) => {
       if (!projectId) {
-        throw new Error('No project ID provided');
+        throw new Error("No project ID provided");
       }
 
       // For now, we need to look up the user by email
@@ -105,12 +108,16 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
    * Add an organization to the project
    */
   const addOrganization = useCallback(
-    async (orgId: string, permission: PermissionLevel, expiresAt?: string) => {
+    async (orgId: string, permission: PermissionLevel, _expiresAt?: string) => {
       if (!projectId) {
-        throw new Error('No project ID provided');
+        throw new Error("No project ID provided");
       }
 
-      await collaborationService.shareWithOrganization(projectId, orgId, permission);
+      await collaborationService.shareWithOrganization(
+        projectId,
+        orgId,
+        permission
+      );
 
       // Reload collaborators
       await loadCollaborators();
@@ -124,7 +131,7 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
   const changePermission = useCallback(
     async (collaboratorId: string, permission: PermissionLevel) => {
       if (!projectId) {
-        throw new Error('No project ID provided');
+        throw new Error("No project ID provided");
       }
 
       await collaborationService.updateCollaboratorPermission(
@@ -135,9 +142,7 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
 
       // Update local state optimistically
       setCollaborators((prev) =>
-        prev.map((c) =>
-          c.id === collaboratorId ? { ...c, permission } : c
-        )
+        prev.map((c) => (c.id === collaboratorId ? { ...c, permission } : c))
       );
     },
     [projectId]
@@ -149,7 +154,7 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
   const revokeAccess = useCallback(
     async (collaboratorId: string) => {
       if (!projectId) {
-        throw new Error('No project ID provided');
+        throw new Error("No project ID provided");
       }
 
       await collaborationService.revokeAccess(projectId, collaboratorId);
@@ -165,12 +170,12 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
    */
   const generateShareLink = useCallback(async (): Promise<string> => {
     if (!projectId) {
-      throw new Error('No project ID provided');
+      throw new Error("No project ID provided");
     }
 
     // This would be implemented on the backend
     // For now, return a placeholder link
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
     return `${baseUrl}/shared/project/${projectId}?token=PLACEHOLDER_TOKEN`;
   }, [projectId]);
 
@@ -179,14 +184,14 @@ export function useProjectSharing({ projectId, enabled = true }: UseProjectShari
    */
   const getMyPermission = useCallback(async (): Promise<PermissionLevel> => {
     if (!projectId) {
-      return 'none';
+      return "none";
     }
 
     try {
       return await collaborationService.getProjectAccessLevel(projectId);
     } catch (err) {
-      console.error('Failed to get permission level:', err);
-      return 'none';
+      console.error("Failed to get permission level:", err);
+      return "none";
     }
   }, [projectId]);
 

@@ -5,21 +5,18 @@ Analyzes completed capture sessions to automatically generate workflow structure
 from the sequence of states, actions, and detected elements.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID
 
 import structlog
-from app.models.capture import (
-    CaptureAction,
-    CaptureScreenshot,
-    CaptureSession,
-    LearnedWorkflow,
-    ScreenshotStateMatch,
-)
-from fastapi import HTTPException, status
+from fastapi import HTTPException
+from fastapi import status as http_status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.models.capture import CaptureScreenshot, CaptureSession, LearnedWorkflow
 
 logger = structlog.get_logger(__name__)
 
@@ -77,14 +74,14 @@ class WorkflowGenerationService:
 
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Capture session not found or access denied",
             )
 
         # Verify session has screenshots
         if not session.screenshots:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Cannot generate workflow from empty session",
             )
 
@@ -215,7 +212,7 @@ class WorkflowGenerationService:
 
             # Calculate average confidence
             avg_confidence = (
-                sum(s["confidence"] for s in matching_screenshots)
+                sum(cast(float, s["confidence"]) for s in matching_screenshots)
                 / len(matching_screenshots)
                 if matching_screenshots
                 else 0.0
@@ -248,7 +245,8 @@ class WorkflowGenerationService:
 
             # Calculate transition confidence (average of source and target confidences)
             transition_confidence = (
-                current["confidence"] + next_item["confidence"]
+                cast(float, current["confidence"])
+                + cast(float, next_item["confidence"])
             ) / 2
 
             if transition_confidence < 0.5:
@@ -292,7 +290,7 @@ class WorkflowGenerationService:
                 "screenshot_count": len(screenshots),
                 "unique_state_count": len(states),
                 "transition_count": len(transitions),
-                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "generated_at": datetime.now(UTC).isoformat(),
             },
         }
 
@@ -314,9 +312,9 @@ class WorkflowGenerationService:
             List of LearnedWorkflow records
         """
         # Verify session access
-        from app.services.capture_session_service import CaptureSessionService
+        from app.services.session_repository import SessionRepository
 
-        await CaptureSessionService.get_session(db, session_id, user_id)
+        await SessionRepository.get_by_id(db, session_id, user_id)
 
         # Get workflows
         result = await db.execute(
@@ -361,21 +359,21 @@ class WorkflowGenerationService:
 
         if not workflow:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Learned workflow not found",
             )
 
         # Verify user owns the session
         if workflow.session.user_id != user_id:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=http_status.HTTP_403_FORBIDDEN,
                 detail="Access denied",
             )
 
         # Update workflow
         workflow.status = status
         if status in ["approved", "rejected"]:
-            workflow.reviewed_at = datetime.now(timezone.utc)
+            workflow.reviewed_at = datetime.now(UTC)
             workflow.reviewer_id = user_id
 
         await db.commit()

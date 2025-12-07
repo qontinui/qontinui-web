@@ -151,12 +151,8 @@ const {
 Manages folder selection state.
 
 ```typescript
-const {
-  selectedFolderId,
-  selectFolder,
-  clearSelection,
-  isSelected,
-} = useFolderSelection();
+const { selectedFolderId, selectFolder, clearSelection, isSelected } =
+  useFolderSelection();
 ```
 
 ## Utilities
@@ -175,7 +171,7 @@ import {
   exportFolders,
   importFolders,
   getFolderStats,
-} from '@/components/workflow-organization';
+} from "@/components/workflow-organization";
 ```
 
 #### createFolder
@@ -183,9 +179,9 @@ import {
 Create a new folder object.
 
 ```typescript
-const folder = createFolder('My Folder', parentId, {
-  color: '#3b82f6',
-  icon: 'Folder',
+const folder = createFolder("My Folder", parentId, {
+  color: "#3b82f6",
+  icon: "Folder",
   order: 0,
 });
 ```
@@ -299,13 +295,13 @@ interface FolderTreeNode extends WorkflowFolder {
 
 ## Keyboard Navigation
 
-| Key | Action |
-|-----|--------|
-| ↓ | Select next folder |
-| ↑ | Select previous folder |
-| → | Expand selected folder |
-| ← | Collapse selected folder or select parent |
-| Enter | Toggle expand/collapse |
+| Key    | Action                                     |
+| ------ | ------------------------------------------ |
+| ↓      | Select next folder                         |
+| ↑      | Select previous folder                     |
+| →      | Expand selected folder                     |
+| ←      | Collapse selected folder or select parent  |
+| Enter  | Toggle expand/collapse                     |
 | Delete | Delete selected folder (with confirmation) |
 
 ## Drag and Drop
@@ -323,8 +319,8 @@ Default colors are provided, but you can customize them:
 
 ```typescript
 const CUSTOM_COLORS = [
-  '#3b82f6', // blue
-  '#10b981', // green
+  "#3b82f6", // blue
+  "#10b981", // green
   // ... add your colors
 ];
 ```

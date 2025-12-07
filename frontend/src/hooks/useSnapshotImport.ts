@@ -1,8 +1,8 @@
 // hooks/useSnapshotImport.ts
 
-import { useState } from 'react';
-import { importSnapshot } from '@/lib/api/snapshots';
-import type { ImportSnapshotRequest, SnapshotRun } from '@/types/snapshots';
+import { useState } from "react";
+import { importSnapshot } from "@/lib/api/snapshots";
+import type { ImportSnapshotRequest, SnapshotRun } from "@/types/snapshots";
 
 export function useSnapshotImport() {
   const [importing, setImporting] = useState(false);
@@ -18,7 +18,7 @@ export function useSnapshotImport() {
       setLastImported(snapshot);
       return snapshot;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error');
+      const error = err instanceof Error ? err : new Error("Unknown error");
       setError(error);
       throw error;
     } finally {

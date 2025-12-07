@@ -9,10 +9,10 @@
  * - Select nodes and edges together
  */
 
-'use client';
+"use client";
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { COLORS, hexToRgba } from './canvas-config';
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { COLORS, hexToRgba } from "./canvas-config";
 
 // ============================================================================
 // Types
@@ -21,14 +21,14 @@ import { COLORS, hexToRgba } from './canvas-config';
 export interface SelectionBoxProps {
   start: { x: number; y: number };
   end: { x: number; y: number };
-  mode: 'add' | 'remove' | 'replace';
+  mode: "add" | "remove" | "replace";
 }
 
 export interface SelectionBoxState {
   active: boolean;
   start: { x: number; y: number } | null;
   current: { x: number; y: number } | null;
-  mode: 'add' | 'remove' | 'replace';
+  mode: "add" | "remove" | "replace";
 }
 
 // ============================================================================
@@ -41,7 +41,7 @@ export function SelectionBox({ start, end, mode }: SelectionBoxProps) {
   const width = Math.abs(end.x - start.x);
   const height = Math.abs(end.y - start.y);
 
-  const borderColor = mode === 'remove' ? COLORS.error : COLORS.selection;
+  const borderColor = mode === "remove" ? COLORS.error : COLORS.selection;
   const fillColor = hexToRgba(borderColor, 0.1);
 
   return (
@@ -54,9 +54,9 @@ export function SelectionBox({ start, end, mode }: SelectionBoxProps) {
         height: `${height}px`,
         border: `2px dashed ${borderColor}`,
         backgroundColor: fillColor,
-        borderRadius: '4px',
+        borderRadius: "4px",
         zIndex: 9999,
-        transition: 'none',
+        transition: "none",
       }}
     >
       {/* Mode indicator */}
@@ -64,10 +64,14 @@ export function SelectionBox({ start, end, mode }: SelectionBoxProps) {
         className="absolute -top-6 left-0 px-2 py-1 text-xs rounded"
         style={{
           backgroundColor: borderColor,
-          color: 'white',
+          color: "white",
         }}
       >
-        {mode === 'add' ? 'Add to selection' : mode === 'remove' ? 'Remove from selection' : 'Select'}
+        {mode === "add"
+          ? "Add to selection"
+          : mode === "remove"
+            ? "Remove from selection"
+            : "Select"}
       </div>
     </div>
   );
@@ -82,23 +86,27 @@ export function useSelectionBox() {
     active: false,
     start: null,
     current: null,
-    mode: 'replace',
+    mode: "replace",
   });
 
   const startSelection = useCallback(
-    (position: { x: number; y: number }, shiftKey: boolean, ctrlKey: boolean) => {
+    (
+      position: { x: number; y: number },
+      shiftKey: boolean,
+      ctrlKey: boolean
+    ) => {
       setState({
         active: true,
         start: position,
         current: position,
-        mode: shiftKey ? 'add' : ctrlKey ? 'remove' : 'replace',
+        mode: shiftKey ? "add" : ctrlKey ? "remove" : "replace",
       });
     },
     []
   );
 
   const updateSelection = useCallback((position: { x: number; y: number }) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       current: position,
     }));
@@ -109,7 +117,7 @@ export function useSelectionBox() {
       active: false,
       start: null,
       current: null,
-      mode: 'replace',
+      mode: "replace",
     });
   }, []);
 
@@ -118,7 +126,7 @@ export function useSelectionBox() {
       active: false,
       start: null,
       current: null,
-      mode: 'replace',
+      mode: "replace",
     });
   }, []);
 
@@ -139,10 +147,19 @@ export function SelectionBoxManager({
   onSelectionChange,
   containerRef,
 }: {
-  onSelectionChange?: (bounds: { x: number; y: number; width: number; height: number }, mode: 'add' | 'remove' | 'replace') => void;
+  onSelectionChange?: (
+    bounds: { x: number; y: number; width: number; height: number },
+    mode: "add" | "remove" | "replace"
+  ) => void;
   containerRef?: React.RefObject<HTMLElement>;
 }) {
-  const { state, startSelection, updateSelection, endSelection, cancelSelection } = useSelectionBox();
+  const {
+    state,
+    startSelection,
+    updateSelection,
+    endSelection,
+    cancelSelection,
+  } = useSelectionBox();
   const isDragging = useRef(false);
 
   useEffect(() => {
@@ -152,7 +169,12 @@ export function SelectionBoxManager({
     const handleMouseDown = (e: MouseEvent) => {
       // Only start selection on left click on canvas background
       if (e.button !== 0) return;
-      if ((e.target as HTMLElement).closest('.react-flow__node, .react-flow__edge')) return;
+      if (
+        (e.target as HTMLElement).closest(
+          ".react-flow__node, .react-flow__edge"
+        )
+      )
+        return;
 
       isDragging.current = true;
       const rect = container.getBoundingClientRect();
@@ -176,7 +198,7 @@ export function SelectionBoxManager({
       updateSelection(position);
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = (_e: MouseEvent) => {
       if (!isDragging.current || !state.active) return;
 
       isDragging.current = false;
@@ -194,28 +216,38 @@ export function SelectionBoxManager({
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && state.active) {
+      if (e.key === "Escape" && state.active) {
         isDragging.current = false;
         cancelSelection();
       }
     };
 
-    container.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    window.addEventListener('keydown', handleKeyDown);
+    container.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      container.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('keydown', handleKeyDown);
+      container.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [state, containerRef, startSelection, updateSelection, endSelection, cancelSelection, onSelectionChange]);
+  }, [
+    state,
+    containerRef,
+    startSelection,
+    updateSelection,
+    endSelection,
+    cancelSelection,
+    onSelectionChange,
+  ]);
 
   if (!state.active || !state.start || !state.current) return null;
 
-  return <SelectionBox start={state.start} end={state.current} mode={state.mode} />;
+  return (
+    <SelectionBox start={state.start} end={state.current} mode={state.mode} />
+  );
 }
 
 export default SelectionBox;

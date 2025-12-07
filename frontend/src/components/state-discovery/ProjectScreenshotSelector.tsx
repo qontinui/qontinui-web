@@ -3,15 +3,20 @@
  * Allows selecting existing screenshots from the project
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Image, CheckCircle, Circle, Search } from 'lucide-react';
-import { Input } from '@/components/ui/input';
+import React, { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Image, CheckCircle, Circle, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 interface ProjectScreenshot {
   id: string;
@@ -33,11 +38,13 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
   isOpen,
   onClose,
   onSelect,
-  currentHashes = []
+  currentHashes = [],
 }) => {
-  const [projectScreenshots, setProjectScreenshots] = useState<ProjectScreenshot[]>([]);
+  const [projectScreenshots, setProjectScreenshots] = useState<
+    ProjectScreenshot[]
+  >([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Load project screenshots
@@ -51,30 +58,34 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
     setLoading(true);
     try {
       // Use default project ID for now
-      const projectId = 'default';
+      const projectId = "default";
 
       // Call actual API
-      const response = await fetch(`http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`);
+      const response = await fetch(
+        `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`
+      );
 
       if (!response.ok) {
-        throw new Error('Failed to load screenshots');
+        throw new Error("Failed to load screenshots");
       }
 
       const data = await response.json();
 
       // Map API response to component format
-      const screenshots: ProjectScreenshot[] = data.screenshots.map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        hash: s.hash,
-        size: s.size,
-        createdAt: s.created_at,
-        thumbnailUrl: s.thumbnail_url
-      }));
+      const screenshots: ProjectScreenshot[] = data.screenshots.map(
+        (s: any) => ({
+          id: s.id,
+          name: s.name,
+          hash: s.hash,
+          size: s.size,
+          createdAt: s.created_at,
+          thumbnailUrl: s.thumbnail_url,
+        })
+      );
 
       setProjectScreenshots(screenshots);
     } catch (error) {
-      console.error('Failed to load project screenshots:', error);
+      console.error("Failed to load project screenshots:", error);
       // Set empty array on error
       setProjectScreenshots([]);
     } finally {
@@ -97,18 +108,18 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
     if (selectedIds.size === filtered.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filtered.map(s => s.id)));
+      setSelectedIds(new Set(filtered.map((s) => s.id)));
     }
   };
 
   const handleConfirm = () => {
-    const selected = projectScreenshots.filter(s => selectedIds.has(s.id));
+    const selected = projectScreenshots.filter((s) => selectedIds.has(s.id));
     onSelect(selected);
     onClose();
   };
 
   const getFilteredScreenshots = () => {
-    return projectScreenshots.filter(screenshot =>
+    return projectScreenshots.filter((screenshot) =>
       screenshot.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
   };
@@ -121,10 +132,10 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
 
   const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
   };
 
@@ -149,12 +160,10 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
                 className="pl-9"
               />
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSelectAll}
-            >
-              {selectedIds.size === filteredScreenshots.length ? 'Deselect All' : 'Select All'}
+            <Button variant="outline" size="sm" onClick={handleSelectAll}>
+              {selectedIds.size === filteredScreenshots.length
+                ? "Deselect All"
+                : "Select All"}
             </Button>
           </div>
 
@@ -178,9 +187,13 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
                     <Card
                       key={screenshot.id}
                       className={`cursor-pointer transition-colors ${
-                        isSelected ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
+                        isSelected
+                          ? "border-blue-500 bg-blue-50"
+                          : "hover:bg-gray-50"
                       }`}
-                      onClick={() => !isDuplicate && handleToggleSelect(screenshot.id)}
+                      onClick={() =>
+                        !isDuplicate && handleToggleSelect(screenshot.id)
+                      }
                     >
                       <CardContent className="p-3">
                         <div className="flex items-center gap-3">
@@ -210,9 +223,12 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
 
                           {/* Info */}
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{screenshot.name}</p>
+                            <p className="font-medium truncate">
+                              {screenshot.name}
+                            </p>
                             <p className="text-sm text-gray-500">
-                              {formatFileSize(screenshot.size)} • {formatDate(screenshot.createdAt)}
+                              {formatFileSize(screenshot.size)} •{" "}
+                              {formatDate(screenshot.createdAt)}
                             </p>
                           </div>
 
@@ -232,7 +248,8 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
           {/* Selection Summary */}
           <div className="flex items-center justify-between text-sm text-gray-600">
             <span>
-              {selectedIds.size} screenshot{selectedIds.size !== 1 ? 's' : ''} selected
+              {selectedIds.size} screenshot{selectedIds.size !== 1 ? "s" : ""}{" "}
+              selected
             </span>
             {currentHashes.length > 0 && (
               <span className="text-gray-500">
@@ -246,10 +263,7 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={handleConfirm}
-            disabled={selectedIds.size === 0}
-          >
+          <Button onClick={handleConfirm} disabled={selectedIds.size === 0}>
             Add Selected ({selectedIds.size})
           </Button>
         </DialogFooter>

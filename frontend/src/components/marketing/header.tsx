@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { ArrowRight, LogIn, Globe } from 'lucide-react';
-import { AuthDialog } from '@/components/auth-dialog';
-import { useAuth } from '@/contexts/auth-context';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { ArrowRight, LogIn, Globe } from "lucide-react";
+import { AuthDialog } from "@/components/auth-dialog";
+import { useAuth } from "@/contexts/auth-context";
 
 export function Header() {
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
@@ -19,14 +19,14 @@ export function Header() {
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <h2
             className="text-2xl font-bold text-primary cursor-pointer"
-            onClick={() => router.push('/')}
+            onClick={() => router.push("/")}
           >
             Qontinui
           </h2>
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              onClick={() => router.push('/demo')}
+              onClick={() => router.push("/demo")}
               className="hover:bg-primary/10"
             >
               <Globe className="mr-2 h-4 w-4" />
@@ -34,24 +34,26 @@ export function Header() {
             </Button>
             <Button
               variant="ghost"
-              onClick={() => router.push('/runner/download')}
+              onClick={() => router.push("/runner/download")}
               className="hover:bg-primary/10"
             >
               Download
             </Button>
             <Button
               variant="ghost"
-              onClick={() => router.push('/docs')}
+              onClick={() => router.push("/docs")}
               className="hover:bg-primary/10"
             >
               Docs
             </Button>
             {user ? (
               <div className="flex items-center space-x-4">
-                <span className="text-sm text-muted-foreground">{user.email}</span>
+                <span className="text-sm text-muted-foreground">
+                  {user.email}
+                </span>
                 <Button
                   variant="outline"
-                  onClick={() => router.push('/dashboard')}
+                  onClick={() => router.push("/dashboard")}
                   className="border-primary/50 hover:border-primary hover:bg-primary/10"
                 >
                   Go to Dashboard
@@ -60,7 +62,7 @@ export function Header() {
                 {user.is_superuser && (
                   <Button
                     variant="outline"
-                    onClick={() => router.push('/admin')}
+                    onClick={() => router.push("/admin")}
                     className="border-secondary/50 hover:border-secondary hover:bg-secondary/10"
                   >
                     Go to Admin

@@ -1,10 +1,15 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useProjects, useCreateProject, useUpdateProject, useDeleteProject, useProject } from '@/hooks/use-projects';
-import type { Project } from '@/lib/schemas';
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/components/ui/button';
+import { useState } from "react";
+import {
+  useProjects,
+  useCreateProject,
+  useUpdateProject,
+  useDeleteProject,
+} from "@/hooks/use-projects";
+import type { Project } from "@/lib/schemas";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -12,29 +17,40 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Switch } from '@/components/ui/switch';
-import { toast } from 'sonner';
-import { Save, FolderOpen, Plus, Trash2, FileText, ChevronDown, Globe } from 'lucide-react';
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+import {
+  Save,
+  FolderOpen,
+  Plus,
+  Trash2,
+  FileText,
+  ChevronDown,
+  Globe,
+} from "lucide-react";
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 
 interface ProjectManagerProps {
   currentConfiguration: any;
   onLoadConfiguration: (config: any) => void;
 }
 
-export function ProjectManager({ currentConfiguration, onLoadConfiguration }: ProjectManagerProps) {
+export function ProjectManager({
+  currentConfiguration,
+  onLoadConfiguration,
+}: ProjectManagerProps) {
   const { user } = useAuth();
   const { data: projects = [] } = useProjects();
   const createProject = useCreateProject();
@@ -46,17 +62,20 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
   // Dialog states
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectDescription, setNewProjectDescription] = useState('');
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectDescription, setNewProjectDescription] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
-  const loading = createProject.isPending || updateProject.isPending || deleteProject.isPending;
+  const loading =
+    createProject.isPending ||
+    updateProject.isPending ||
+    deleteProject.isPending;
 
   const handleSaveNew = async () => {
     if (!newProjectName.trim()) {
-      toast.error('Please enter a project name');
+      toast.error("Please enter a project name");
       return;
     }
 
@@ -65,16 +84,18 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
         name: newProjectName,
         description: newProjectDescription,
         configuration: currentConfiguration,
-        is_public: isPublic,
       });
-      setSelectedProject(project);
+      setSelectedProject({
+        ...project,
+        configuration: project.configuration ?? {},
+      });
       setSaveDialogOpen(false);
-      setNewProjectName('');
-      setNewProjectDescription('');
+      setNewProjectName("");
+      setNewProjectDescription("");
       setIsPublic(false);
-      toast.success('Project saved successfully');
+      toast.success("Project saved successfully");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to save project');
+      toast.error(error.message || "Failed to save project");
     }
   };
 
@@ -86,27 +107,34 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
         id: selectedProject.id,
         data: { configuration: currentConfiguration },
       });
-      setSelectedProject(updated);
-      toast.success('Project updated successfully');
+      setSelectedProject({
+        ...updated,
+        configuration: updated.configuration ?? {},
+      });
+      toast.success("Project updated successfully");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update project');
+      toast.error(error.message || "Failed to update project");
     }
   };
 
   const handleLoad = async (project: Project) => {
     try {
       // Query is cached, so this will be fast
-      onLoadConfiguration(project.configuration);
-      setSelectedProject(project);
+      const config = project.configuration ?? {};
+      onLoadConfiguration(config);
+      setSelectedProject({ ...project, configuration: config } as Project);
       setLoadDialogOpen(false);
       toast.success(`Loaded project: ${project.name}`);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to load project');
+      toast.error(error.message || "Failed to load project");
     }
   };
 
   const handleDelete = (project: Project) => {
-    setProjectToDelete(project);
+    setProjectToDelete({
+      ...project,
+      configuration: project.configuration ?? {},
+    } as Project);
     setDeleteDialogOpen(true);
   };
 
@@ -118,11 +146,11 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
       if (selectedProject?.id === projectToDelete.id) {
         setSelectedProject(null);
       }
-      toast.success('Project deleted successfully');
+      toast.success("Project deleted successfully");
       setDeleteDialogOpen(false);
       setProjectToDelete(null);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to delete project');
+      toast.error(error.message || "Failed to delete project");
     }
   };
 
@@ -134,7 +162,11 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="text-gray-700 dark:text-gray-300">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-gray-700 dark:text-gray-300"
+          >
             <FileText className="w-4 h-4 mr-2" />
             Project
             <ChevronDown className="w-4 h-4 ml-2" />
@@ -175,7 +207,9 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
               <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-md">
                 <p className="text-sm font-medium">{selectedProject.name}</p>
                 {selectedProject.description && (
-                  <p className="text-xs text-zinc-500 mt-1">{selectedProject.description}</p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    {selectedProject.description}
+                  </p>
                 )}
               </div>
               <p className="text-sm text-zinc-500">
@@ -195,7 +229,9 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="project-description">Description (optional)</Label>
+                <Label htmlFor="project-description">
+                  Description (optional)
+                </Label>
                 <Textarea
                   id="project-description"
                   value={newProjectDescription}
@@ -209,10 +245,15 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
                 <div className="flex items-center space-x-2">
                   <Globe className="w-4 h-4 text-zinc-500" />
                   <div className="flex flex-col">
-                    <Label htmlFor="is-public" className="text-sm font-medium cursor-pointer">
+                    <Label
+                      htmlFor="is-public"
+                      className="text-sm font-medium cursor-pointer"
+                    >
                       Make Public
                     </Label>
-                    <p className="text-xs text-zinc-500">Allow anyone to view this project as a demo</p>
+                    <p className="text-xs text-zinc-500">
+                      Allow anyone to view this project as a demo
+                    </p>
                   </div>
                 </div>
                 <Switch
@@ -235,8 +276,8 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
                   variant="outline"
                   onClick={() => {
                     setSelectedProject(null);
-                    setNewProjectName('');
-                    setNewProjectDescription('');
+                    setNewProjectName("");
+                    setNewProjectDescription("");
                     setIsPublic(false);
                   }}
                 >
@@ -244,12 +285,12 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
                   Save as New
                 </Button>
                 <Button onClick={handleSaveExisting} disabled={loading}>
-                  {loading ? 'Updating...' : 'Update'}
+                  {loading ? "Updating..." : "Update"}
                 </Button>
               </>
             ) : (
               <Button onClick={handleSaveNew} disabled={loading}>
-                {loading ? 'Saving...' : 'Save'}
+                {loading ? "Saving..." : "Save"}
               </Button>
             )}
           </DialogFooter>
@@ -281,24 +322,37 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
                     <div className="flex-1">
                       <p className="font-medium text-sm">{project.name}</p>
                       {project.description && (
-                        <p className="text-xs text-zinc-500 mt-1">{project.description}</p>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          {project.description}
+                        </p>
                       )}
                       <p className="text-xs text-zinc-400 mt-1">
-                        Updated: {new Date(project.updated_at).toLocaleDateString()}
+                        Updated:{" "}
+                        {new Date(project.updated_at).toLocaleDateString()}
                       </p>
                     </div>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleLoad(project)}
+                        onClick={() =>
+                          handleLoad({
+                            ...project,
+                            configuration: project.configuration || {},
+                          })
+                        }
                       >
                         Load
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => handleDelete(project)}
+                        onClick={() =>
+                          handleDelete({
+                            ...project,
+                            configuration: project.configuration || {},
+                          })
+                        }
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -321,7 +375,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
       <DeleteConfirmationDialog
         open={deleteDialogOpen}
         title="Delete Project"
-        itemName={projectToDelete?.name || ''}
+        itemName={projectToDelete?.name || ""}
         description={`Are you sure you want to delete "${projectToDelete?.name}"? This will permanently delete the project and all its configuration. This action cannot be undone.`}
         onClose={() => {
           setDeleteDialogOpen(false);

@@ -1,68 +1,117 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import dynamic from "next/dynamic"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
-import { authService } from "@/services/service-factory"
-import { LayoutDashboard, Users, FolderOpen, TrendingUp, Server, Home, Activity, Tag, Network, Smartphone } from "lucide-react"
+import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import {
+  LayoutDashboard,
+  Users,
+  FolderOpen,
+  TrendingUp,
+  Server,
+  Home,
+  Activity,
+  Tag,
+  Network,
+  Smartphone,
+  Bell,
+} from "lucide-react";
 
 // Dynamic imports for admin tabs - these are loaded only when accessed
 const OverviewTab = dynamic(() => import("@/components/admin/OverviewTab"), {
-  loading: () => <div className="flex items-center justify-center h-64">Loading Overview...</div>
-})
+  loading: () => (
+    <div className="flex items-center justify-center h-64">
+      Loading Overview...
+    </div>
+  ),
+});
 
 const UsersTab = dynamic(() => import("@/components/admin/UsersTab"), {
-  loading: () => <div className="flex items-center justify-center h-64">Loading Users...</div>
-})
+  loading: () => (
+    <div className="flex items-center justify-center h-64">
+      Loading Users...
+    </div>
+  ),
+});
 
 const ProjectsTab = dynamic(() => import("@/components/admin/ProjectsTab"), {
-  loading: () => <div className="flex items-center justify-center h-64">Loading Projects...</div>
-})
+  loading: () => (
+    <div className="flex items-center justify-center h-64">
+      Loading Projects...
+    </div>
+  ),
+});
 
 const AnalyticsTab = dynamic(() => import("@/components/admin/AnalyticsTab"), {
-  loading: () => <div className="flex items-center justify-center h-64">Loading Analytics...</div>
-})
+  loading: () => (
+    <div className="flex items-center justify-center h-64">
+      Loading Analytics...
+    </div>
+  ),
+});
 
 const SystemTab = dynamic(() => import("@/components/admin/SystemTab"), {
-  loading: () => <div className="flex items-center justify-center h-64">Loading System Info...</div>
-})
+  loading: () => (
+    <div className="flex items-center justify-center h-64">
+      Loading System Info...
+    </div>
+  ),
+});
 
-const HealthDashboardTab = dynamic(() => import("@/components/admin/health/HealthDashboardTab"), {
-  loading: () => <div className="flex items-center justify-center h-64">Loading Health Dashboard...</div>
-})
+const HealthDashboardTab = dynamic(
+  () => import("@/components/admin/health/HealthDashboardTab"),
+  {
+    loading: () => (
+      <div className="flex items-center justify-center h-64">
+        Loading Health Dashboard...
+      </div>
+    ),
+  }
+);
+
+const NotificationsTab = dynamic(
+  () => import("@/components/admin/NotificationsTab"),
+  {
+    loading: () => (
+      <div className="flex items-center justify-center h-64">
+        Loading Notifications...
+      </div>
+    ),
+  }
+);
 
 export default function AdminDashboard() {
-  const { user, loading: authLoading } = useAuth()
-  const router = useRouter()
-  const [activeTab, setActiveTab] = useState("overview")
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
-      return
+      router.push("/");
+      return;
     }
 
     if (!authLoading && user && !user.is_superuser) {
-      toast.error('Access denied - Admin privileges required')
-      router.push('/dashboard')
-      return
+      toast.error("Access denied - Admin privileges required");
+      router.push("/dashboard");
+      return;
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-gray-400">Loading...</div>
       </div>
-    )
+    );
   }
 
   if (!user?.is_superuser) {
-    return null
+    return null;
   }
 
   return (
@@ -72,12 +121,14 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
-              <p className="text-muted-foreground">Manage users, projects, and monitor system health</p>
+              <p className="text-muted-foreground">
+                Manage users, projects, and monitor system health
+              </p>
             </div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                onClick={() => router.push('/admin/architecture')}
+                onClick={() => router.push("/admin/architecture")}
                 className="flex items-center gap-2"
               >
                 <Network className="h-4 w-4" />
@@ -85,7 +136,7 @@ export default function AdminDashboard() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => router.push('/admin/mobile')}
+                onClick={() => router.push("/admin/mobile")}
                 className="flex items-center gap-2"
               >
                 <Smartphone className="h-4 w-4" />
@@ -93,7 +144,7 @@ export default function AdminDashboard() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => router.push('/admin/annotations')}
+                onClick={() => router.push("/admin/annotations")}
                 className="flex items-center gap-2"
               >
                 <Tag className="h-4 w-4" />
@@ -101,7 +152,7 @@ export default function AdminDashboard() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => router.push('/dashboard')}
+                onClick={() => router.push("/dashboard")}
                 className="flex items-center gap-2"
               >
                 <Home className="h-4 w-4" />
@@ -111,8 +162,12 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-6"
+        >
+          <TabsList className="grid w-full grid-cols-7 lg:w-auto lg:inline-grid">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <LayoutDashboard className="h-4 w-4" />
               <span className="hidden sm:inline">Overview</span>
@@ -128,6 +183,13 @@ export default function AdminDashboard() {
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
               <span className="hidden sm:inline">Analytics</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="notifications"
+              className="flex items-center gap-2"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="hidden sm:inline">Notifications</span>
             </TabsTrigger>
             <TabsTrigger value="health" className="flex items-center gap-2">
               <Activity className="h-4 w-4" />
@@ -155,6 +217,10 @@ export default function AdminDashboard() {
             <AnalyticsTab />
           </TabsContent>
 
+          <TabsContent value="notifications" className="space-y-6">
+            <NotificationsTab />
+          </TabsContent>
+
           <TabsContent value="health" className="space-y-6">
             <HealthDashboardTab />
           </TabsContent>
@@ -165,5 +231,5 @@ export default function AdminDashboard() {
         </Tabs>
       </div>
     </div>
-  )
+  );
 }

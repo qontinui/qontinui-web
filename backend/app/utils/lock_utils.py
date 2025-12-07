@@ -11,7 +11,7 @@ import structlog
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.collaboration import ProjectLock, ResourceType
+from app.models.collaboration import ProjectLock
 
 logger = structlog.get_logger(__name__)
 
@@ -19,7 +19,7 @@ logger = structlog.get_logger(__name__)
 async def check_resource_lock(
     db: AsyncSession,
     user_id: UUID,
-    project_id: int,
+    project_id: UUID,
     resource_type: str,
     resource_id: str,
 ) -> tuple[bool, ProjectLock | None]:
@@ -40,11 +40,12 @@ async def check_resource_lock(
     """
     try:
         # Check if resource has a lock
+        # Pass resource_type as lowercase string to match PostgreSQL enum values
         result = await db.execute(
             select(ProjectLock).filter(
                 and_(
                     ProjectLock.project_id == project_id,
-                    ProjectLock.resource_type == ResourceType(resource_type),
+                    ProjectLock.resource_type == resource_type.lower(),
                     ProjectLock.resource_id == resource_id,
                 )
             )
@@ -96,7 +97,11 @@ async def check_resource_lock(
         return False, lock
 
     except Exception as e:
-        logger.error("lock_check_failed", error=str(e), user_id=user_id, project_id=project_id)
+        logger.error(
+            "lock_check_failed", error=str(e), user_id=user_id, project_id=project_id
+        )
+        # Rollback the transaction to clear the failed state
+        await db.rollback()
         # On error, be permissive to avoid blocking legitimate operations
         return True, None
 
@@ -116,7 +121,7 @@ async def get_lock_info(lock: ProjectLock, db: AsyncSession) -> dict:
 
     try:
         # Get lock holder's information
-        result = await db.execute(select(User).filter(User.id == lock.user_id))
+        result = await db.execute(select(User).where(User.id == lock.user_id))  # type: ignore[arg-type]
         user = result.scalar_one_or_none()
 
         return {
@@ -124,7 +129,7 @@ async def get_lock_info(lock: ProjectLock, db: AsyncSession) -> dict:
             "locked_by": user.email if user else "Unknown user",
             "locked_by_id": str(lock.user_id),
             "expires_at": lock.expires_at.isoformat(),
-            "resource_type": lock.resource_type.value,
+            "resource_type": lock.resource_type,
             "resource_id": lock.resource_id,
         }
     except Exception as e:
@@ -134,6 +139,6 @@ async def get_lock_info(lock: ProjectLock, db: AsyncSession) -> dict:
             "locked_by": "Unknown user",
             "locked_by_id": str(lock.user_id),
             "expires_at": lock.expires_at.isoformat(),
-            "resource_type": lock.resource_type.value,
+            "resource_type": lock.resource_type,
             "resource_id": lock.resource_id,
         }

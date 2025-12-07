@@ -10,7 +10,7 @@ Detects buttons by analyzing color consistency:
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -67,7 +67,7 @@ class ButtonColorDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # K-means clustering parameters
             "num_clusters": 8,  # Number of color clusters
@@ -105,7 +105,7 @@ class ButtonColorDetector(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, (img_gray, img_color) in enumerate(
-            zip(images_gray, images_color)
+            zip(images_gray, images_color, strict=False)
         ):
             elements = await self._analyze_screenshot(
                 img_gray, img_color, screenshot_idx, params
@@ -129,7 +129,7 @@ class ButtonColorDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -137,7 +137,7 @@ class ButtonColorDetector(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color (BGR for OpenCV)"""
         images = []
         for data in screenshot_data:
@@ -152,8 +152,8 @@ class ButtonColorDetector(BaseAnalyzer):
         img_gray: np.ndarray,
         img_color: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot for color-based buttons"""
         elements = []
 
@@ -239,8 +239,8 @@ class ButtonColorDetector(BaseAnalyzer):
         return elements
 
     def _kmeans_segmentation(
-        self, img_color: np.ndarray, params: Dict[str, Any]
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, img_color: np.ndarray, params: dict[str, Any]
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Segment image using k-means color clustering
 
@@ -255,18 +255,21 @@ class ButtonColorDetector(BaseAnalyzer):
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.2)
 
         # Perform k-means clustering
+        # bestLabels should be a properly initialized array, not None
+        best_labels = np.zeros((len(pixels), 1), dtype=np.int32)
         _, labels, centers = cv2.kmeans(
             pixels,
             params["num_clusters"],
-            None,
+            best_labels,
             criteria,
             params["kmeans_attempts"],
             cv2.KMEANS_PP_CENTERS,
         )
 
         # Convert back to image
-        centers = np.uint8(centers)
-        clustered = centers[labels.flatten()]
+        centers_uint8 = np.asarray(centers, dtype=np.uint8)
+        labels_flat = labels.flatten().astype(np.int32)
+        clustered = centers_uint8[labels_flat]
         clustered_img = clustered.reshape((h, w, 3))
 
         # Reshape labels
@@ -275,8 +278,8 @@ class ButtonColorDetector(BaseAnalyzer):
         return clustered_img, labels
 
     def _analyze_region_color(
-        self, region: np.ndarray, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, region: np.ndarray, params: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Analyze color properties of a region
 
@@ -316,8 +319,8 @@ class ButtonColorDetector(BaseAnalyzer):
         }
 
     def _check_common_button_color(
-        self, region: np.ndarray, params: Dict[str, Any]
-    ) -> Tuple[bool, str | None]:
+        self, region: np.ndarray, params: dict[str, Any]
+    ) -> tuple[bool, str | None]:
         """
         Check if region matches common button colors
 
@@ -400,9 +403,9 @@ class ButtonColorDetector(BaseAnalyzer):
         width: int,
         height: int,
         aspect_ratio: float,
-        color_info: Dict[str, Any],
+        color_info: dict[str, Any],
         contrast: float,
-        params: Dict[str, Any],
+        params: dict[str, Any],
     ) -> float:
         """
         Calculate confidence score for color-based button detection
@@ -441,4 +444,4 @@ class ButtonColorDetector(BaseAnalyzer):
         size_score = (max(0, width_score) + max(0, height_score)) / 2.0
         confidence += size_score * 0.05
 
-        return min(1.0, max(0.0, confidence))
+        return float(min(1.0, max(0.0, confidence)))

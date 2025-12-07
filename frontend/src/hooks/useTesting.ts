@@ -4,34 +4,38 @@
  * Provides automatic caching, refetching, and optimistic updates for testing data.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { testingService } from '@/services/service-factory';
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { testingService } from "@/services/service-factory";
 import type {
-  TestRun,
-  TestRunDetail,
   Deficiency,
-  CoverageTrend,
-  ReliabilityStats,
-  StateGraphData,
   TestRunFilters,
   DeficiencyFilters,
-  PaginatedResponse,
-} from '@/services/testing-service';
+} from "@/services/testing-service";
 
 // Query keys for organizing cache
 export const testingKeys = {
-  all: ['testing'] as const,
-  runs: () => [...testingKeys.all, 'runs'] as const,
-  runsList: (filters?: TestRunFilters) => [...testingKeys.runs(), 'list', { filters }] as const,
-  runDetail: (id: string) => [...testingKeys.runs(), 'detail', id] as const,
-  deficiencies: () => [...testingKeys.all, 'deficiencies'] as const,
-  deficienciesList: (filters?: DeficiencyFilters) => [...testingKeys.deficiencies(), 'list', { filters }] as const,
+  all: ["testing"] as const,
+  runs: () => [...testingKeys.all, "runs"] as const,
+  runsList: (filters?: TestRunFilters) =>
+    [...testingKeys.runs(), "list", { filters }] as const,
+  runDetail: (id: string) => [...testingKeys.runs(), "detail", id] as const,
+  deficiencies: () => [...testingKeys.all, "deficiencies"] as const,
+  deficienciesList: (filters?: DeficiencyFilters) =>
+    [...testingKeys.deficiencies(), "list", { filters }] as const,
   coverageTrends: (projectId: string, startDate?: string, endDate?: string) =>
-    [...testingKeys.all, 'coverage-trends', { projectId, startDate, endDate }] as const,
+    [
+      ...testingKeys.all,
+      "coverage-trends",
+      { projectId, startDate, endDate },
+    ] as const,
   reliabilityStats: (projectId: string, workflowId?: string) =>
-    [...testingKeys.all, 'reliability-stats', { projectId, workflowId }] as const,
+    [
+      ...testingKeys.all,
+      "reliability-stats",
+      { projectId, workflowId },
+    ] as const,
   stateGraph: (projectId: string, workflowId: string) =>
-    [...testingKeys.all, 'state-graph', { projectId, workflowId }] as const,
+    [...testingKeys.all, "state-graph", { projectId, workflowId }] as const,
 };
 
 /**
@@ -44,10 +48,11 @@ export function useTestRuns(filters?: TestRunFilters) {
       try {
         return await testingService.getTestRuns(filters);
       } catch (error) {
-        console.error('[useTestRuns] Error fetching test runs:', error);
+        console.error("[useTestRuns] Error fetching test runs:", error);
         throw error;
       }
     },
+    enabled: !!filters?.project_id, // Only fetch when project_id is provided
     placeholderData: (previousData) => previousData,
     staleTime: 30000, // Consider data stale after 30 seconds
   });
@@ -63,7 +68,7 @@ export function useTestRun(id: string, enabled = true) {
       try {
         return await testingService.getTestRun(id);
       } catch (error) {
-        console.error('[useTestRun] Error fetching test run:', error);
+        console.error("[useTestRun] Error fetching test run:", error);
         throw error;
       }
     },
@@ -82,7 +87,7 @@ export function useDeficiencies(filters?: DeficiencyFilters) {
       try {
         return await testingService.getDeficiencies(filters);
       } catch (error) {
-        console.error('[useDeficiencies] Error fetching deficiencies:', error);
+        console.error("[useDeficiencies] Error fetching deficiencies:", error);
         throw error;
       }
     },
@@ -98,10 +103,16 @@ export function useUpdateDeficiency() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Deficiency> }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Partial<Deficiency>;
+    }) => {
       return await testingService.updateDeficiency(id, data);
     },
-    onSuccess: (updatedDeficiency) => {
+    onSuccess: () => {
       // Invalidate deficiency lists to refetch
       queryClient.invalidateQueries({ queryKey: testingKeys.deficiencies() });
 
@@ -124,9 +135,16 @@ export function useCoverageTrends(
     queryKey: testingKeys.coverageTrends(projectId, startDate, endDate),
     queryFn: async () => {
       try {
-        return await testingService.getCoverageTrends(projectId, startDate, endDate);
+        return await testingService.getCoverageTrends(
+          projectId,
+          startDate,
+          endDate
+        );
       } catch (error) {
-        console.error('[useCoverageTrends] Error fetching coverage trends:', error);
+        console.error(
+          "[useCoverageTrends] Error fetching coverage trends:",
+          error
+        );
         throw error;
       }
     },
@@ -150,7 +168,10 @@ export function useReliabilityStats(
       try {
         return await testingService.getReliabilityStats(projectId, workflowId);
       } catch (error) {
-        console.error('[useReliabilityStats] Error fetching reliability stats:', error);
+        console.error(
+          "[useReliabilityStats] Error fetching reliability stats:",
+          error
+        );
         throw error;
       }
     },
@@ -174,7 +195,7 @@ export function useStateGraph(
       try {
         return await testingService.getStateGraph(projectId, workflowId);
       } catch (error) {
-        console.error('[useStateGraph] Error fetching state graph:', error);
+        console.error("[useStateGraph] Error fetching state graph:", error);
         throw error;
       }
     },
@@ -189,12 +210,18 @@ export function useStateGraph(
  */
 export function useExportTestRun() {
   return useMutation({
-    mutationFn: async ({ id, format }: { id: string; format: 'json' | 'csv' | 'pdf' }) => {
+    mutationFn: async ({
+      id,
+      format,
+    }: {
+      id: string;
+      format: "json" | "csv" | "pdf";
+    }) => {
       const blob = await testingService.exportTestRun(id, format);
 
       // Trigger download
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `test-run-${id}.${format}`;
       document.body.appendChild(a);
@@ -215,13 +242,13 @@ export function useExportDeficiencies() {
       format,
     }: {
       filters: DeficiencyFilters;
-      format: 'json' | 'csv';
+      format: "json" | "csv";
     }) => {
       const blob = await testingService.exportDeficiencies(filters, format);
 
       // Trigger download
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `deficiencies-export.${format}`;
       document.body.appendChild(a);

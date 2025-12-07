@@ -5,35 +5,35 @@
  */
 
 // Main Components
-export { CanvasPropertiesPanel } from './CanvasPropertiesPanel';
-export type { CanvasPropertiesPanelProps } from './CanvasPropertiesPanel';
+export { CanvasPropertiesPanel } from "./CanvasPropertiesPanel";
+export type { CanvasPropertiesPanelProps } from "./CanvasPropertiesPanel";
 
-export { WorkflowProperties } from './WorkflowProperties';
-export type { WorkflowPropertiesProps } from './WorkflowProperties';
+export { WorkflowProperties } from "./WorkflowProperties";
+export type { WorkflowPropertiesProps } from "./WorkflowProperties";
 
-export { MultiSelectProperties } from './MultiSelectProperties';
-export type { MultiSelectPropertiesProps } from './MultiSelectProperties';
+export { MultiSelectProperties } from "./MultiSelectProperties";
+export type { MultiSelectPropertiesProps } from "./MultiSelectProperties";
 
-export { ConnectionProperties } from './ConnectionProperties';
-export type { ConnectionPropertiesProps } from './ConnectionProperties';
+export { ConnectionProperties } from "./ConnectionProperties";
+export type { ConnectionPropertiesProps } from "./ConnectionProperties";
 
-export { QuickEditPopover } from './QuickEditPopover';
-export type { QuickEditPopoverProps } from './QuickEditPopover';
+export { QuickEditPopover } from "./QuickEditPopover";
+export type { QuickEditPopoverProps } from "./QuickEditPopover";
 
-export { PropertyHistory } from './PropertyHistory';
-export type { PropertyHistoryProps } from './PropertyHistory';
+export { PropertyHistory } from "./PropertyHistory";
+export type { PropertyHistoryProps } from "./PropertyHistory";
 
 // Adapters and Hooks
 export {
   usePropertyAdapter,
   useMultiPropertyAdapter,
   PropertyEditorWrapper,
-} from './property-adapter';
+} from "./property-adapter";
 export type {
   PropertyAdapterResult,
   MultiPropertyAdapterResult,
   PropertyEditorWrapperProps,
-} from './property-adapter';
+} from "./property-adapter";
 
 // Validation
 export {
@@ -52,13 +52,13 @@ export {
   enumValue,
   arrayLength,
   custom,
-} from './property-validation';
+} from "./property-validation";
 export type {
   ValidationSeverity,
   ValidationError,
   ValidationResult,
   ValidatorFunction,
-} from './property-validation';
+} from "./property-validation";
 
 // Store
 export {
@@ -66,11 +66,11 @@ export {
   useIsSectionCollapsed,
   usePanelDimensions,
   useUnsavedChangesCount,
-} from '../../stores/properties-panel-store';
+} from "../../stores/properties-panel-store";
 export type {
   PanelPosition,
   UnsavedChange,
   PropertiesPanelState,
   PropertiesPanelActions,
   PropertiesPanelStore,
-} from '../../stores/properties-panel-store';
+} from "../../stores/properties-panel-store";

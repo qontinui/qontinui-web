@@ -9,8 +9,13 @@ import io
 import uuid
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.error_codes import ErrorCode
 from app.crud.project import get_project
@@ -22,16 +27,11 @@ from app.middleware.error_handler import (
 from app.models.organization import PermissionLevel
 from app.models.storage_usage import StorageUsage
 from app.models.user import User
-from app.services.image_processing_service import ImageProcessingService
 from app.services.limit_checker import LimitChecker
 from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
 from app.services.storage_service import StorageQuotaExceeded, StorageService
-from app.utils.authorization import verify_project_access
-from app.worker.arq_pool import enqueue_task, get_job_result
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.worker.arq_pool import enqueue_task
 
 logger = structlog.get_logger(__name__)
 
@@ -51,8 +51,8 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
 
 # Magic bytes for file type validation
 MAGIC_BYTES = {
-    "image/png": b"\x89\x50\x4E\x47",  # PNG signature
-    "image/jpeg": b"\xFF\xD8\xFF",  # JPEG signature
+    "image/png": b"\x89\x50\x4e\x47",  # PNG signature
+    "image/jpeg": b"\xff\xd8\xff",  # JPEG signature
     "image/gif": b"\x47\x49\x46",  # GIF signature
     "image/webp": b"\x52\x49\x46\x46",  # RIFF (WebP container)
 }
@@ -212,13 +212,13 @@ async def upload_image(
     )
 
     # Step 1: Verify project exists and user has EDIT permission
-    project = await get_project(db, project_id=project_id)
+    project = await get_project(db, project_id=UUID(project_id))
     if not project:
         raise not_found_error("Project", "project")
 
     # Check user has EDIT permission (required to upload images)
     has_permission = await permission_service.can_user_access_project(
-        db, current_user.id, int(project_id), PermissionLevel.EDIT
+        db, current_user.id, UUID(project_id), PermissionLevel.EDIT
     )
     if not has_permission:
         raise forbidden_error(
@@ -371,7 +371,13 @@ async def upload_image(
 
     # Step 11: Generate CDN URL for original image (CloudFront if enabled, else presigned S3 URL)
     try:
-        presigned_url = object_storage.get_cdn_url(original_key)
+        # Use get_cdn_url if available (S3Backend), otherwise fall back to presigned URL
+        if hasattr(object_storage.backend, "get_cdn_url"):
+            presigned_url = object_storage.backend.get_cdn_url(original_key)
+        else:
+            presigned_url = object_storage.generate_presigned_url(
+                original_key, expiration=PRESIGNED_URL_EXPIRATION
+            )
     except Exception as e:
         logger.error(
             "presigned_url_generation_failed",
@@ -435,13 +441,13 @@ async def delete_image(
     )
 
     # Verify project exists and user has EDIT permission
-    project = await get_project(db, project_id=project_id)
+    project = await get_project(db, project_id=UUID(project_id))
     if not project:
         raise not_found_error("Project", "project")
 
     # Check user has EDIT permission (required to delete images)
     has_permission = await permission_service.can_user_access_project(
-        db, current_user.id, int(project_id), PermissionLevel.EDIT
+        db, current_user.id, UUID(project_id), PermissionLevel.EDIT
     )
     if not has_permission:
         raise forbidden_error(
@@ -538,13 +544,13 @@ async def refresh_presigned_url(
     )
 
     # Verify project exists and user has VIEW permission
-    project = await get_project(db, project_id=project_id)
+    project = await get_project(db, project_id=UUID(project_id))
     if not project:
         raise not_found_error("Project", "project")
 
     # Check user has VIEW permission (required to access images)
     has_permission = await permission_service.can_user_access_project(
-        db, current_user.id, int(project_id), PermissionLevel.VIEW
+        db, current_user.id, UUID(project_id), PermissionLevel.VIEW
     )
     if not has_permission:
         raise forbidden_error(
@@ -581,7 +587,13 @@ async def refresh_presigned_url(
 
     # Generate new CDN URL (CloudFront if enabled, else presigned S3 URL)
     try:
-        presigned_url = object_storage.get_cdn_url(s3_key)
+        # Use get_cdn_url if available (S3Backend), otherwise fall back to presigned URL
+        if hasattr(object_storage.backend, "get_cdn_url"):
+            presigned_url = object_storage.backend.get_cdn_url(s3_key)
+        else:
+            presigned_url = object_storage.generate_presigned_url(
+                s3_key, expiration=PRESIGNED_URL_EXPIRATION
+            )
     except Exception as e:
         logger.error(
             "presigned_url_generation_failed",
@@ -647,13 +659,13 @@ async def get_image_processing_status(
     )
 
     # Verify project exists and user has VIEW permission
-    project = await get_project(db, project_id=project_id)
+    project = await get_project(db, project_id=UUID(project_id))
     if not project:
         raise not_found_error("Project", "project")
 
     # Check user has VIEW permission (required to access images)
     has_permission = await permission_service.can_user_access_project(
-        db, current_user.id, int(project_id), PermissionLevel.VIEW
+        db, current_user.id, UUID(project_id), PermissionLevel.VIEW
     )
     if not has_permission:
         raise forbidden_error(
@@ -677,11 +689,13 @@ async def get_image_processing_status(
         raise not_found_error("Image", "image")
 
     # Extract metadata
-    metadata = storage_record.file_metadata or {}
+    metadata: dict[str, Any] = (
+        dict(storage_record.file_metadata) if storage_record.file_metadata else {}
+    )
     processing_status = metadata.get("processing_status", "processing")
 
     # Build response based on status
-    response = {
+    response: dict[str, Any] = {
         "original_s3_key": storage_record.file_path,
         "image_id": image_id,
     }

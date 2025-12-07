@@ -7,7 +7,7 @@ Handles overlapping regions, nested regions, and weighted voting for confidence.
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from .base import (
     BoundingBox,
@@ -27,16 +27,16 @@ class FusedRegion:
     bounding_box: BoundingBox
     confidence: float  # Combined confidence
     region_type: RegionType
-    sources: List[str]  # Which analyzers detected this
-    source_confidences: Dict[str, float]  # Individual analyzer confidences
+    sources: list[str]  # Which analyzers detected this
+    source_confidences: dict[str, float]  # Individual analyzer confidences
     votes: int  # How many analyzers agreed
-    label: Optional[str] = None
+    label: str | None = None
     screenshot_index: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     is_nested: bool = False  # Whether this region is nested within another
     parent_region: Optional["FusedRegion"] = None  # Reference to parent if nested
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization"""
         return {
             "bounding_box": {
@@ -61,8 +61,8 @@ class RegionFusionStrategy:
     """Base class for region fusion strategies"""
 
     def fuse(
-        self, results: List[RegionAnalysisResult], overlap_threshold: float = 0.5
-    ) -> List[FusedRegion]:
+        self, results: list[RegionAnalysisResult], overlap_threshold: float = 0.5
+    ) -> list[FusedRegion]:
         """
         Combine results from multiple analyzers
 
@@ -84,7 +84,7 @@ class WeightedVotingRegionFusion(RegionFusionStrategy):
     Handles nested regions (e.g., minimap within a larger UI panel).
     """
 
-    def __init__(self, weights: Optional[Dict[RegionAnalysisType, float]] = None):
+    def __init__(self, weights: dict[RegionAnalysisType, float] | None = None):
         """
         Initialize fusion strategy
 
@@ -102,21 +102,21 @@ class WeightedVotingRegionFusion(RegionFusionStrategy):
         }
 
     def fuse(
-        self, results: List[RegionAnalysisResult], overlap_threshold: float = 0.5
-    ) -> List[FusedRegion]:
+        self, results: list[RegionAnalysisResult], overlap_threshold: float = 0.5
+    ) -> list[FusedRegion]:
         """Combine results using weighted voting"""
 
         if not results:
             return []
 
         # Collect all regions
-        all_regions: List[tuple[DetectedRegion, RegionAnalysisResult]] = []
+        all_regions: list[tuple[DetectedRegion, RegionAnalysisResult]] = []
         for result in results:
             for region in result.regions:
                 all_regions.append((region, result))
 
         # Group overlapping regions (but only if same type)
-        region_groups: List[List[tuple[DetectedRegion, RegionAnalysisResult]]] = []
+        region_groups: list[list[tuple[DetectedRegion, RegionAnalysisResult]]] = []
 
         for region, result in all_regions:
             # Find existing group this region belongs to
@@ -152,7 +152,7 @@ class WeightedVotingRegionFusion(RegionFusionStrategy):
         return fused_regions
 
     def _fuse_group(
-        self, group: List[tuple[DetectedRegion, RegionAnalysisResult]]
+        self, group: list[tuple[DetectedRegion, RegionAnalysisResult]]
     ) -> FusedRegion:
         """Fuse a group of overlapping regions"""
 
@@ -239,7 +239,7 @@ class WeightedVotingRegionFusion(RegionFusionStrategy):
 
         # Merge metadata
         merged_metadata = {}
-        for region, result in group:
+        for region, _result in group:
             merged_metadata.update(region.metadata)
 
         return FusedRegion(
@@ -254,7 +254,7 @@ class WeightedVotingRegionFusion(RegionFusionStrategy):
             metadata=merged_metadata,
         )
 
-    def _identify_nested_regions(self, regions: List[FusedRegion]) -> List[FusedRegion]:
+    def _identify_nested_regions(self, regions: list[FusedRegion]) -> list[FusedRegion]:
         """
         Identify and mark nested regions
 
@@ -290,7 +290,7 @@ class RegionFusion:
 
     def __init__(
         self,
-        strategy: Optional[RegionFusionStrategy] = None,
+        strategy: RegionFusionStrategy | None = None,
         min_confidence: float = 0.3,
         min_votes: int = 1,
         include_nested: bool = True,
@@ -310,8 +310,8 @@ class RegionFusion:
         self.include_nested = include_nested
 
     async def fuse(
-        self, results: List[RegionAnalysisResult], overlap_threshold: float = 0.5
-    ) -> List[FusedRegion]:
+        self, results: list[RegionAnalysisResult], overlap_threshold: float = 0.5
+    ) -> list[FusedRegion]:
         """
         Combine results from multiple region analyzers
 
@@ -353,8 +353,8 @@ class RegionFusion:
         return filtered
 
     def get_analyzer_statistics(
-        self, results: List[RegionAnalysisResult]
-    ) -> Dict[str, Any]:
+        self, results: list[RegionAnalysisResult]
+    ) -> dict[str, Any]:
         """
         Get statistics about region analyzer performance
 
@@ -364,7 +364,7 @@ class RegionFusion:
         Returns:
             Dictionary with statistics per analyzer
         """
-        stats = defaultdict(
+        stats: dict[str, dict[str, Any]] = defaultdict(
             lambda: {"regions": 0, "avg_confidence": 0.0, "region_types": {}}
         )
 
@@ -378,7 +378,9 @@ class RegionFusion:
                 # Count region types
                 for region in result.regions:
                     region_type = region.region_type.value
-                    type_counts = stats[result.analyzer_name]["region_types"]
+                    type_counts: dict[str, int] = stats[result.analyzer_name][
+                        "region_types"
+                    ]
                     type_counts[region_type] = type_counts.get(region_type, 0) + 1
 
         return dict(stats)

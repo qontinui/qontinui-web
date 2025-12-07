@@ -44,7 +44,7 @@ async def csrf_middleware(request: Request, call_next):
             "application/x-www-form-urlencoded"
         ):
             form = await request.form()
-            csrf_token = form.get("csrf_token")
+            csrf_token = form.get("csrf_token")  # type: ignore[assignment]
 
     if not csrf_token:
         raise HTTPException(

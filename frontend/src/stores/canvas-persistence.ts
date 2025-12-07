@@ -11,8 +11,8 @@
  * - Selective persistence (don't save temporary state)
  */
 
-import type { Workflow } from '../lib/action-schema/action-types';
-import type { Viewport } from '../stores/canvas-store';
+import type { Workflow } from "../lib/action-schema/action-types";
+import type { Viewport } from "../stores/canvas-store";
 
 // ============================================================================
 // Types
@@ -57,8 +57,8 @@ export interface PersistenceOptions {
   storage?: Storage;
 }
 
-const CURRENT_VERSION = '1.0.0';
-const DEFAULT_KEY_PREFIX = 'qontinui-canvas';
+const CURRENT_VERSION = "1.0.0";
+const DEFAULT_KEY_PREFIX = "qontinui-canvas";
 
 // ============================================================================
 // Persistence Manager Class
@@ -68,14 +68,17 @@ export class PersistenceManager {
   private options: Required<PersistenceOptions>;
   private sessionId: string;
   private autoSaveTimer: NodeJS.Timeout | null = null;
-  private listeners: Set<(state: PersistedCanvasState | null) => void> = new Set();
+  private listeners: Set<(state: PersistedCanvasState | null) => void> =
+    new Set();
 
   constructor(options: PersistenceOptions = {}) {
     this.options = {
       keyPrefix: options.keyPrefix || DEFAULT_KEY_PREFIX,
       autoSaveInterval: options.autoSaveInterval ?? 30000, // 30 seconds
       enableMigration: options.enableMigration ?? true,
-      storage: options.storage || (typeof window !== 'undefined' ? window.localStorage : {} as Storage),
+      storage:
+        options.storage ||
+        (typeof window !== "undefined" ? window.localStorage : ({} as Storage)),
     };
 
     this.sessionId = this.generateSessionId();
@@ -96,7 +99,7 @@ export class PersistenceManager {
   save(
     workflow: Workflow | null,
     viewport: Viewport,
-    ui: PersistedCanvasState['ui']
+    ui: PersistedCanvasState["ui"]
   ): boolean {
     try {
       const state: PersistedCanvasState = {
@@ -114,7 +117,7 @@ export class PersistenceManager {
       this.notifyListeners(state);
       return true;
     } catch (error) {
-      console.error('Failed to save canvas state:', error);
+      console.error("Failed to save canvas state:", error);
       return false;
     }
   }
@@ -140,12 +143,12 @@ export class PersistenceManager {
 
       // Check for session conflicts
       if (state.sessionId !== this.sessionId) {
-        console.warn('Canvas state from different session detected');
+        console.warn("Canvas state from different session detected");
       }
 
       return state;
     } catch (error) {
-      console.error('Failed to load canvas state:', error);
+      console.error("Failed to load canvas state:", error);
       return null;
     }
   }
@@ -161,7 +164,7 @@ export class PersistenceManager {
       this.notifyListeners(null);
       return true;
     } catch (error) {
-      console.error('Failed to clear canvas state:', error);
+      console.error("Failed to clear canvas state:", error);
       return false;
     }
   }
@@ -223,7 +226,9 @@ export class PersistenceManager {
    */
   private migrate(state: PersistedCanvasState): PersistedCanvasState {
     // Add migration logic here as schema evolves
-    console.log(`Migrating canvas state from ${state.version} to ${CURRENT_VERSION}`);
+    console.log(
+      `Migrating canvas state from ${state.version} to ${CURRENT_VERSION}`
+    );
 
     // Example migration (v0.9.0 -> v1.0.0):
     // if (state.version === '0.9.0') {
@@ -257,8 +262,12 @@ export class PersistenceManager {
       // Try to estimate available space (rough estimate)
       let available = 5 * 1024 * 1024; // Assume 5MB limit
 
-      if (typeof navigator !== 'undefined' && 'storage' in navigator && 'estimate' in navigator.storage) {
-        navigator.storage.estimate().then(estimate => {
+      if (
+        typeof navigator !== "undefined" &&
+        "storage" in navigator &&
+        "estimate" in navigator.storage
+      ) {
+        navigator.storage.estimate().then((estimate) => {
           if (estimate.quota) {
             available = estimate.quota - (estimate.usage || 0);
           }
@@ -277,7 +286,7 @@ export class PersistenceManager {
   isStorageAvailable(): boolean {
     try {
       const testKey = `${this.options.keyPrefix}-test`;
-      this.options.storage.setItem(testKey, 'test');
+      this.options.storage.setItem(testKey, "test");
       this.options.storage.removeItem(testKey);
       return true;
     } catch (error) {
@@ -306,7 +315,7 @@ export class PersistenceManager {
       this.notifyListeners(state);
       return true;
     } catch (error) {
-      console.error('Failed to import canvas state:', error);
+      console.error("Failed to import canvas state:", error);
       return false;
     }
   }
@@ -314,7 +323,9 @@ export class PersistenceManager {
   /**
    * Subscribe to persistence changes
    */
-  subscribe(listener: (state: PersistedCanvasState | null) => void): () => void {
+  subscribe(
+    listener: (state: PersistedCanvasState | null) => void
+  ): () => void {
     this.listeners.add(listener);
 
     return () => {
@@ -326,7 +337,7 @@ export class PersistenceManager {
    * Notify listeners of state changes
    */
   private notifyListeners(state: PersistedCanvasState | null): void {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       listener(state);
     });
   }
@@ -347,7 +358,9 @@ export class PersistenceManager {
 /**
  * Create a new persistence manager instance
  */
-export function createPersistenceManager(options?: PersistenceOptions): PersistenceManager {
+export function createPersistenceManager(
+  options?: PersistenceOptions
+): PersistenceManager {
   return new PersistenceManager(options);
 }
 
@@ -362,7 +375,7 @@ export function usePersistence(manager: PersistenceManager) {
   const save = (
     workflow: Workflow | null,
     viewport: Viewport,
-    ui: PersistedCanvasState['ui']
+    ui: PersistedCanvasState["ui"]
   ) => {
     return manager.save(workflow, viewport, ui);
   };

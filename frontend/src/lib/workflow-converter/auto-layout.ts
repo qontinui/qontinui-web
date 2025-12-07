@@ -5,8 +5,8 @@
  * Handles branches, merges, and complex control flow structures.
  */
 
-import { Action } from '../action-schema/action-types';
-import { Connections } from '../action-schema/action-types';
+import { Action } from "../action-schema/action-types";
+import { Connections } from "../action-schema/action-types";
 
 /**
  * Layout options
@@ -103,7 +103,7 @@ export class AutoLayout {
     this.assignPositions(depthGroups);
 
     // Handle branches
-    this.adjustBranches(depthGroups);
+    this.adjustBranches();
 
     // Apply positions to actions
     this.applyPositions(actions);
@@ -129,7 +129,7 @@ export class AutoLayout {
       const sourceNode = this.nodes.get(sourceId);
       if (!sourceNode) return;
 
-      ['main', 'error', 'success', 'parallel'].forEach((type) => {
+      ["main", "error", "success", "parallel"].forEach((type) => {
         const conns = outputs[type as keyof typeof outputs];
         if (!conns) return;
 
@@ -159,9 +159,12 @@ export class AutoLayout {
 
     if (entryPoints.length === 0 && actions.length > 0) {
       // No entry points found, use first action
-      const firstNode = this.nodes.get(actions[0].id);
-      if (firstNode) {
-        entryPoints.push(firstNode);
+      const firstAction = actions[0];
+      if (firstAction) {
+        const firstNode = this.nodes.get(firstAction.id);
+        if (firstNode) {
+          entryPoints.push(firstNode);
+        }
       }
     }
 
@@ -266,7 +269,7 @@ export class AutoLayout {
    *
    * Branches should be visually separated to show control flow.
    */
-  private adjustBranches(depthGroups: Map<number, LayoutNode[]>): void {
+  private adjustBranches(): void {
     const { branchOffset } = this.options;
 
     this.nodes.forEach((node) => {
@@ -278,7 +281,9 @@ export class AutoLayout {
 
       // Get child nodes
       const children = outputs.main.flatMap((outputConns) =>
-        outputConns.map((conn) => this.nodes.get(conn.action)).filter((n): n is LayoutNode => n !== undefined)
+        outputConns
+          .map((conn) => this.nodes.get(conn.action))
+          .filter((n): n is LayoutNode => n !== undefined)
       );
 
       if (children.length <= 1) return;
@@ -290,7 +295,8 @@ export class AutoLayout {
 
       children.forEach((child, index) => {
         const x = child.action.position[0];
-        const y = startY + index * this.options.verticalSpacing + index * branchOffset;
+        const y =
+          startY + index * this.options.verticalSpacing + index * branchOffset;
         child.action.position = [x, y];
       });
     });

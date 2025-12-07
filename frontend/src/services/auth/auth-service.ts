@@ -1,17 +1,24 @@
-import { TokenResponse, LoginRequest, RegisterRequest, User } from '@/types/auth-types';
-import { TokenManager } from './token-manager';
-import { TokenRefreshService } from './token-refresh-service';
-import { ApiConfig } from '../api-config';
+import {
+  TokenResponse,
+  LoginRequest,
+  RegisterRequest,
+  User,
+} from "@/types/auth-types";
+import { TokenManager } from "./token-manager";
+import { TokenRefreshService } from "./token-refresh-service";
+import { ApiConfig } from "../api-config";
 
 /**
  * Map backend error codes to user-friendly messages
  */
 function getFriendlyErrorMessage(errorCode: string): string {
   const errorMessages: Record<string, string> = {
-    'REGISTER_USER_ALREADY_EXISTS': 'This email is already registered. Please use a different email or try logging in.',
-    'LOGIN_BAD_CREDENTIALS': 'Invalid username or password. Please try again.',
-    'LOGIN_USER_NOT_VERIFIED': 'Please verify your email address before logging in.',
-    'VALIDATION_ERROR': 'Please check your input and try again.',
+    REGISTER_USER_ALREADY_EXISTS:
+      "This email is already registered. Please use a different email or try logging in.",
+    LOGIN_BAD_CREDENTIALS: "Invalid username or password. Please try again.",
+    LOGIN_USER_NOT_VERIFIED:
+      "Please verify your email address before logging in.",
+    VALIDATION_ERROR: "Please check your input and try again.",
   };
 
   return errorMessages[errorCode] || errorCode;
@@ -43,36 +50,66 @@ export class AuthService {
    */
   async login(credentials: LoginRequest): Promise<User> {
     const formData = new URLSearchParams();
-    formData.append('username', credentials.username);
-    formData.append('password', credentials.password);
+    formData.append("username", credentials.username);
+    formData.append("password", credentials.password);
 
-    console.log('[AuthService] Attempting login to:', ApiConfig.AUTH_LOGIN);
-    console.log('[AuthService] Remember me:', credentials.remember_me);
+    console.log("[AuthService] Attempting login to:", ApiConfig.AUTH_LOGIN);
+    console.log("[AuthService] Remember me:", credentials.remember_me);
 
     // Add remember_me as query parameter
-    const url = new URL(ApiConfig.AUTH_LOGIN);
+    let loginUrl = ApiConfig.AUTH_LOGIN;
     if (credentials.remember_me) {
-      url.searchParams.append('remember_me', 'true');
+      loginUrl += "?remember_me=true";
     }
 
-    const response = await fetch(url.toString(), {
-      method: 'POST',
+    const response = await fetch(loginUrl, {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        "Content-Type": "application/x-www-form-urlencoded",
       },
       body: formData,
-      credentials: 'include', // Critical: Allows cookies to be set
+      credentials: "include", // Critical: Allows cookies to be set
     });
 
-    console.log('[AuthService] Login response status:', response.status);
+    console.log("[AuthService] Login response status:", response.status);
 
     if (!response.ok) {
-      const error = await response.json();
-      const errorMessage = error.message || error.detail || 'Login failed';
+      // Safely parse error response - might not be JSON
+      let errorMessage = "Login failed";
+      try {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          errorMessage = error.message || error.detail || "Login failed";
+        } else {
+          const text = await response.text();
+          // Check for common server errors
+          if (response.status >= 500) {
+            errorMessage =
+              "Server is temporarily unavailable. Please try again later.";
+          } else if (text && text.length < 200) {
+            errorMessage = text;
+          }
+        }
+      } catch {
+        // If parsing fails, use status-based message
+        if (response.status >= 500) {
+          errorMessage =
+            "Server is temporarily unavailable. Please try again later.";
+        } else if (response.status === 401) {
+          errorMessage = "Invalid username or password. Please try again.";
+        }
+      }
       throw new Error(getFriendlyErrorMessage(errorMessage));
     }
 
-    const tokens: TokenResponse = await response.json();
+    // Safely parse success response
+    let tokens: TokenResponse;
+    try {
+      tokens = await response.json();
+    } catch {
+      throw new Error("Invalid response from server. Please try again.");
+    }
 
     // Store expiry timestamps and authentication state (not actual tokens)
     // Backend sets HttpOnly cookies automatically
@@ -88,21 +125,45 @@ export class AuthService {
    */
   async register(data: RegisterRequest): Promise<User> {
     const response = await fetch(ApiConfig.AUTH_REGISTER, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(data),
-      credentials: 'include',
+      credentials: "include",
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      const errorMessage = error.message || error.detail || 'Registration failed';
+      // Safely parse error response - might not be JSON
+      let errorMessage = "Registration failed";
+      try {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const error = await response.json();
+          errorMessage = error.message || error.detail || "Registration failed";
+        } else {
+          const text = await response.text();
+          if (response.status >= 500) {
+            errorMessage =
+              "Server is temporarily unavailable. Please try again later.";
+          } else if (text && text.length < 200) {
+            errorMessage = text;
+          }
+        }
+      } catch {
+        if (response.status >= 500) {
+          errorMessage =
+            "Server is temporarily unavailable. Please try again later.";
+        }
+      }
       throw new Error(getFriendlyErrorMessage(errorMessage));
     }
 
-    return response.json();
+    try {
+      return await response.json();
+    } catch {
+      throw new Error("Invalid response from server. Please try again.");
+    }
   }
 
   /**
@@ -118,16 +179,18 @@ export class AuthService {
     try {
       // Always call logout endpoint to clear HttpOnly cookies
       await fetch(ApiConfig.AUTH_LOGOUT, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        credentials: 'include', // Critical: Sends access_token cookie for authentication
+        credentials: "include", // Critical: Sends access_token cookie for authentication
       });
 
-      console.log('[AuthService] Logout successful, cookies cleared on backend');
+      console.log(
+        "[AuthService] Logout successful, cookies cleared on backend"
+      );
     } catch (error) {
-      console.error('[AuthService] Logout request failed:', error);
+      console.error("[AuthService] Logout request failed:", error);
       // Continue to clear local tokens even if backend request fails
     } finally {
       // Clear authentication state from localStorage
@@ -145,27 +208,32 @@ export class AuthService {
    * - No Authorization header needed (tokens are in HttpOnly cookies)
    */
   async getCurrentUser(): Promise<User> {
-    console.log('[AuthService] Getting current user from:', ApiConfig.USERS_ME);
-    console.log('[AuthService] Using HttpOnly cookie authentication');
+    console.log("[AuthService] Getting current user from:", ApiConfig.USERS_ME);
+    console.log("[AuthService] Using HttpOnly cookie authentication");
 
     const response = await fetch(ApiConfig.USERS_ME, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      credentials: 'include', // Critical: Sends access_token cookie for authentication
+      credentials: "include", // Critical: Sends access_token cookie for authentication
     });
 
-    console.log('[AuthService] getCurrentUser response status:', response.status);
+    console.log(
+      "[AuthService] getCurrentUser response status:",
+      response.status
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[AuthService] getCurrentUser error response:', errorText);
-      throw new Error(`Failed to get user info: ${response.status} - ${errorText}`);
+      console.error("[AuthService] getCurrentUser error response:", errorText);
+      throw new Error(
+        `Failed to get user info: ${response.status} - ${errorText}`
+      );
     }
 
     const user = await response.json();
-    console.log('[AuthService] Current user:', user);
+    console.log("[AuthService] Current user:", user);
     return user;
   }
 

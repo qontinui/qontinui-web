@@ -32,7 +32,7 @@ export function StorageBreakdown({ data }: StorageBreakdownProps) {
     const k = 1024;
     const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i];
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
   const totalStorage = Object.values(data).reduce((acc, val) => acc + val, 0);
@@ -41,7 +41,9 @@ export function StorageBreakdown({ data }: StorageBreakdownProps) {
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
       <CardHeader>
         <CardTitle className="text-lg">Storage Breakdown</CardTitle>
-        <p className="text-sm text-gray-400">Total: {formatBytes(totalStorage)}</p>
+        <p className="text-sm text-gray-400">
+          Total: {formatBytes(totalStorage)}
+        </p>
       </CardHeader>
       <CardContent>
         {chartData.length > 0 ? (
@@ -57,7 +59,7 @@ export function StorageBreakdown({ data }: StorageBreakdownProps) {
                   fill="#8884d8"
                   dataKey="value"
                   label={({ name, percent }) =>
-                    `${name} ${(percent * 100).toFixed(0)}%`
+                    `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
                   }
                 >
                   {chartData.map((entry, index) => (
@@ -85,7 +87,9 @@ export function StorageBreakdown({ data }: StorageBreakdownProps) {
                   />
                   <div className="flex-1">
                     <p className="text-sm text-gray-400">{item.name}</p>
-                    <p className="text-sm font-semibold">{formatBytes(item.value)}</p>
+                    <p className="text-sm font-semibold">
+                      {formatBytes(item.value)}
+                    </p>
                   </div>
                 </div>
               ))}

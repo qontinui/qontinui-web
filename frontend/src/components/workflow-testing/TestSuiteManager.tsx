@@ -12,9 +12,9 @@
  * - Keyboard shortcuts support
  */
 
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
   Plus,
   Trash2,
@@ -24,36 +24,34 @@ import {
   Filter,
   X,
   Settings,
-  ChevronRight,
   Loader2,
   CheckCircle2,
   XCircle,
   Clock,
   FileText,
   Save,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -61,32 +59,29 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import type {
-  TestSuite,
-  TestCase,
-} from "@/services/workflow-testing-service"
-import type { Workflow } from "@/lib/action-schema/action-types"
+} from "@/components/ui/dialog";
+import type { TestSuite, TestCase } from "@/services/workflow-testing-service";
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface TestSuiteManagerProps {
-  workflows: Workflow[]
-  testSuites: TestSuite[]
-  testCases: TestCase[]
-  onCreateSuite: (suite: TestSuite) => void
-  onUpdateSuite: (id: string, updates: Partial<TestSuite>) => void
-  onDeleteSuite: (id: string) => void
-  onRunSuite: (id: string) => void
-  className?: string
+  workflows: Workflow[];
+  testSuites: TestSuite[];
+  testCases: TestCase[];
+  onCreateSuite: (suite: TestSuite) => void;
+  onUpdateSuite: (id: string, updates: Partial<TestSuite>) => void;
+  onDeleteSuite: (id: string) => void;
+  onRunSuite: (id: string) => void;
+  className?: string;
 }
 
 interface SuiteStatistics {
-  totalTests: number
-  passRate: number
-  lastRun?: string
+  totalTests: number;
+  passRate: number;
+  lastRun?: string;
 }
 
 // ============================================================================
@@ -107,24 +102,28 @@ export function TestSuiteManager({
   // State
   // ========================================================================
 
-  const [searchQuery, setSearchQuery] = React.useState("")
-  const [filterTags, setFilterTags] = React.useState<string[]>([])
-  const [selectedSuite, setSelectedSuite] = React.useState<TestSuite | null>(null)
-  const [isCreating, setIsCreating] = React.useState(false)
-  const [isEditing, setIsEditing] = React.useState(false)
-  const [runningSuites, setRunningSuites] = React.useState<Set<string>>(new Set())
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [filterTags, setFilterTags] = React.useState<string[]>([]);
+  const [selectedSuite, setSelectedSuite] = React.useState<TestSuite | null>(
+    null
+  );
+  const [isCreating, setIsCreating] = React.useState(false);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [runningSuites, setRunningSuites] = React.useState<Set<string>>(
+    new Set()
+  );
 
   // ========================================================================
   // Computed values
   // ========================================================================
 
   const allTags = React.useMemo(() => {
-    const tags = new Set<string>()
+    const tags = new Set<string>();
     testSuites.forEach((suite) => {
-      suite.tags?.forEach((tag) => tags.add(tag))
-    })
-    return Array.from(tags)
-  }, [testSuites])
+      suite.tags?.forEach((tag) => tags.add(tag));
+    });
+    return Array.from(tags);
+  }, [testSuites]);
 
   const filteredSuites = React.useMemo(() => {
     return testSuites.filter((suite) => {
@@ -132,77 +131,95 @@ export function TestSuiteManager({
       const matchesSearch =
         !searchQuery ||
         suite.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        suite.description?.toLowerCase().includes(searchQuery.toLowerCase())
+        suite.description?.toLowerCase().includes(searchQuery.toLowerCase());
 
       // Tag filter
       const matchesTags =
         filterTags.length === 0 ||
-        filterTags.some((tag) => suite.tags?.includes(tag))
+        filterTags.some((tag) => suite.tags?.includes(tag));
 
-      return matchesSearch && matchesTags
-    })
-  }, [testSuites, searchQuery, filterTags])
+      return matchesSearch && matchesTags;
+    });
+  }, [testSuites, searchQuery, filterTags]);
 
   const getSuiteStatistics = React.useCallback(
     (suite: TestSuite): SuiteStatistics => {
       const suiteTestCases = testCases.filter((tc) =>
         suite.testCaseIds.includes(tc.id)
-      )
+      );
 
-      // TODO: Get actual pass rate from test results
-      // For now, return mock data
+      // Calculate actual pass rate from test results
+      let passedCount = 0;
+      let totalWithResults = 0;
+
+      suiteTestCases.forEach((testCase) => {
+        // Get the most recent test result for each test case
+        const testResults = testCase.metadata?.testResults as any[] | undefined;
+        if (testResults && testResults.length > 0) {
+          const latestResult = testResults[0]; // Results are stored most recent first
+          totalWithResults++;
+          if (latestResult.passed) {
+            passedCount++;
+          }
+        }
+      });
+
+      // Calculate pass rate (0 if no test results exist)
+      const passRate =
+        totalWithResults > 0 ? (passedCount / totalWithResults) * 100 : 0;
+
       return {
         totalTests: suiteTestCases.length,
-        passRate: 0,
+        passRate,
         lastRun: suite.metadata?.lastRun,
-      }
+      };
     },
     [testCases]
-  )
+  );
 
   // ========================================================================
   // Handlers
   // ========================================================================
 
   const handleCreateSuite = React.useCallback(() => {
-    setIsCreating(true)
-  }, [])
+    setIsCreating(true);
+  }, []);
 
   const handleEditSuite = React.useCallback((suite: TestSuite) => {
-    setSelectedSuite(suite)
-    setIsEditing(true)
-  }, [])
+    setSelectedSuite(suite);
+    setIsEditing(true);
+  }, []);
 
   const handleDeleteSuite = React.useCallback(
     (suiteId: string) => {
       if (confirm("Are you sure you want to delete this test suite?")) {
-        onDeleteSuite(suiteId)
+        onDeleteSuite(suiteId);
       }
     },
     [onDeleteSuite]
-  )
+  );
 
   const handleRunSuite = React.useCallback(
     (suiteId: string) => {
-      setRunningSuites((prev) => new Set(prev).add(suiteId))
-      onRunSuite(suiteId)
+      setRunningSuites((prev) => new Set(prev).add(suiteId));
+      onRunSuite(suiteId);
       // Simulate completion after 2 seconds
       setTimeout(() => {
         setRunningSuites((prev) => {
-          const next = new Set(prev)
-          next.delete(suiteId)
-          return next
-        })
-      }, 2000)
+          const next = new Set(prev);
+          next.delete(suiteId);
+          return next;
+        });
+      }, 2000);
     },
     [onRunSuite]
-  )
+  );
 
   const toggleFilterTag = React.useCallback((tag: string) => {
     setFilterTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    )
-  }, [])
+    );
+  }, []);
 
   // ========================================================================
   // Render
@@ -272,7 +289,9 @@ export function TestSuiteManager({
           <Card>
             <CardContent className="py-12 text-center">
               <FileText className="size-12 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">No test suites found</h3>
+              <h3 className="text-lg font-semibold mb-2">
+                No test suites found
+              </h3>
               <p className="text-muted-foreground mb-4">
                 {searchQuery || filterTags.length > 0
                   ? "Try adjusting your search or filters"
@@ -288,8 +307,8 @@ export function TestSuiteManager({
           </Card>
         ) : (
           filteredSuites.map((suite) => {
-            const stats = getSuiteStatistics(suite)
-            const isRunning = runningSuites.has(suite.id)
+            const stats = getSuiteStatistics(suite);
+            const isRunning = runningSuites.has(suite.id);
 
             return (
               <Card key={suite.id}>
@@ -344,7 +363,9 @@ export function TestSuiteManager({
                       <FileText className="size-4 text-muted-foreground" />
                       <div>
                         <p className="text-2xl font-bold">{stats.totalTests}</p>
-                        <p className="text-xs text-muted-foreground">Total Tests</p>
+                        <p className="text-xs text-muted-foreground">
+                          Total Tests
+                        </p>
                       </div>
                     </div>
 
@@ -359,9 +380,13 @@ export function TestSuiteManager({
                       )}
                       <div>
                         <p className="text-2xl font-bold">
-                          {stats.passRate > 0 ? `${stats.passRate.toFixed(0)}%` : "N/A"}
+                          {stats.passRate > 0
+                            ? `${stats.passRate.toFixed(0)}%`
+                            : "N/A"}
                         </p>
-                        <p className="text-xs text-muted-foreground">Pass Rate</p>
+                        <p className="text-xs text-muted-foreground">
+                          Pass Rate
+                        </p>
                       </div>
                     </div>
 
@@ -374,7 +399,9 @@ export function TestSuiteManager({
                             ? new Date(stats.lastRun).toLocaleDateString()
                             : "Never"}
                         </p>
-                        <p className="text-xs text-muted-foreground">Last Run</p>
+                        <p className="text-xs text-muted-foreground">
+                          Last Run
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -382,7 +409,9 @@ export function TestSuiteManager({
                   {/* Settings */}
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <Badge variant="outline">
-                      {suite.executionOrder === "parallel" ? "Parallel" : "Sequential"}
+                      {suite.executionOrder === "parallel"
+                        ? "Parallel"
+                        : "Sequential"}
                     </Badge>
                     {suite.stopOnFailure && (
                       <Badge variant="outline">Stop on Failure</Badge>
@@ -401,7 +430,7 @@ export function TestSuiteManager({
                   )}
                 </CardContent>
               </Card>
-            )
+            );
           })
         )}
       </div>
@@ -414,23 +443,23 @@ export function TestSuiteManager({
           workflows={workflows}
           onSave={(suite) => {
             if (isEditing && selectedSuite) {
-              onUpdateSuite(selectedSuite.id, suite)
+              onUpdateSuite(selectedSuite.id, suite);
             } else {
-              onCreateSuite(suite as TestSuite)
+              onCreateSuite(suite as TestSuite);
             }
-            setIsCreating(false)
-            setIsEditing(false)
-            setSelectedSuite(null)
+            setIsCreating(false);
+            setIsEditing(false);
+            setSelectedSuite(null);
           }}
           onCancel={() => {
-            setIsCreating(false)
-            setIsEditing(false)
-            setSelectedSuite(null)
+            setIsCreating(false);
+            setIsEditing(false);
+            setSelectedSuite(null);
           }}
         />
       )}
     </div>
-  )
+  );
 }
 
 // ============================================================================
@@ -438,11 +467,11 @@ export function TestSuiteManager({
 // ============================================================================
 
 interface SuiteEditorDialogProps {
-  suite?: TestSuite | null
-  testCases: TestCase[]
-  workflows: Workflow[]
-  onSave: (suite: Partial<TestSuite>) => void
-  onCancel: () => void
+  suite?: TestSuite | null;
+  testCases: TestCase[];
+  workflows: Workflow[];
+  onSave: (suite: Partial<TestSuite>) => void;
+  onCancel: () => void;
 }
 
 function SuiteEditorDialog({
@@ -452,45 +481,47 @@ function SuiteEditorDialog({
   onSave,
   onCancel,
 }: SuiteEditorDialogProps) {
-  const [name, setName] = React.useState(suite?.name || "")
-  const [description, setDescription] = React.useState(suite?.description || "")
-  const [selectedTestCaseIds, setSelectedTestCaseIds] = React.useState<string[]>(
-    suite?.testCaseIds || []
-  )
-  const [executionOrder, setExecutionOrder] = React.useState<"parallel" | "sequential">(
-    suite?.executionOrder || "sequential"
-  )
+  const [name, setName] = React.useState(suite?.name || "");
+  const [description, setDescription] = React.useState(
+    suite?.description || ""
+  );
+  const [selectedTestCaseIds, setSelectedTestCaseIds] = React.useState<
+    string[]
+  >(suite?.testCaseIds || []);
+  const [executionOrder, setExecutionOrder] = React.useState<
+    "parallel" | "sequential"
+  >(suite?.executionOrder || "sequential");
   const [stopOnFailure, setStopOnFailure] = React.useState(
     suite?.stopOnFailure || false
-  )
-  const [tags, setTags] = React.useState<string[]>(suite?.tags || [])
-  const [newTag, setNewTag] = React.useState("")
-  const [filterWorkflow, setFilterWorkflow] = React.useState<string>("")
+  );
+  const [tags, setTags] = React.useState<string[]>(suite?.tags || []);
+  const [newTag, setNewTag] = React.useState("");
+  const [filterWorkflow, setFilterWorkflow] = React.useState<string>("");
 
-  const [errors, setErrors] = React.useState<Record<string, string>>({})
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
 
   const filteredTestCases = React.useMemo(() => {
-    if (!filterWorkflow) return testCases
-    return testCases.filter((tc) => tc.workflowId === filterWorkflow)
-  }, [testCases, filterWorkflow])
+    if (!filterWorkflow) return testCases;
+    return testCases.filter((tc) => tc.workflowId === filterWorkflow);
+  }, [testCases, filterWorkflow]);
 
   const validate = () => {
-    const newErrors: Record<string, string> = {}
+    const newErrors: Record<string, string> = {};
 
     if (!name.trim()) {
-      newErrors.name = "Suite name is required"
+      newErrors.name = "Suite name is required";
     }
 
     if (selectedTestCaseIds.length === 0) {
-      newErrors.testCases = "At least one test case is required"
+      newErrors.testCases = "At least one test case is required";
     }
 
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSave = () => {
-    if (!validate()) return
+    if (!validate()) return;
 
     const suiteData: Partial<TestSuite> = {
       id: suite?.id || `suite-${Date.now()}`,
@@ -505,35 +536,37 @@ function SuiteEditorDialog({
         created: suite?.metadata?.created || new Date().toISOString(),
         updated: new Date().toISOString(),
       },
-    }
+    };
 
-    onSave(suiteData)
-  }
+    onSave(suiteData);
+  };
 
   const toggleTestCase = (testCaseId: string) => {
     setSelectedTestCaseIds((prev) =>
       prev.includes(testCaseId)
         ? prev.filter((id) => id !== testCaseId)
         : [...prev, testCaseId]
-    )
-  }
+    );
+  };
 
   const addTag = () => {
     if (newTag.trim() && !tags.includes(newTag.trim())) {
-      setTags((prev) => [...prev, newTag.trim()])
-      setNewTag("")
+      setTags((prev) => [...prev, newTag.trim()]);
+      setNewTag("");
     }
-  }
+  };
 
   const removeTag = (tag: string) => {
-    setTags((prev) => prev.filter((t) => t !== tag))
-  }
+    setTags((prev) => prev.filter((t) => t !== tag));
+  };
 
   return (
     <Dialog open onOpenChange={onCancel}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{suite ? "Edit Test Suite" : "Create Test Suite"}</DialogTitle>
+          <DialogTitle>
+            {suite ? "Edit Test Suite" : "Create Test Suite"}
+          </DialogTitle>
           <DialogDescription>
             Configure your test suite settings and select test cases
           </DialogDescription>
@@ -596,7 +629,8 @@ function SuiteEditorDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Sequential runs tests one after another, parallel runs them simultaneously
+                Sequential runs tests one after another, parallel runs them
+                simultaneously
               </p>
             </div>
 
@@ -627,8 +661,8 @@ function SuiteEditorDialog({
                 onChange={(e) => setNewTag(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    e.preventDefault()
-                    addTag()
+                    e.preventDefault();
+                    addTag();
                   }
                 }}
                 placeholder="Add tag..."
@@ -697,8 +731,10 @@ function SuiteEditorDialog({
                   {filteredTestCases.map((testCase) => {
                     const workflow = workflows.find(
                       (w) => w.id === testCase.workflowId
-                    )
-                    const isSelected = selectedTestCaseIds.includes(testCase.id)
+                    );
+                    const isSelected = selectedTestCaseIds.includes(
+                      testCase.id
+                    );
 
                     return (
                       <label
@@ -712,7 +748,9 @@ function SuiteEditorDialog({
                           className="size-4 rounded border-input"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{testCase.name}</p>
+                          <p className="font-medium truncate">
+                            {testCase.name}
+                          </p>
                           <p className="text-sm text-muted-foreground truncate">
                             {workflow?.name}
                           </p>
@@ -721,7 +759,7 @@ function SuiteEditorDialog({
                           <Badge variant="outline">Disabled</Badge>
                         )}
                       </label>
-                    )
+                    );
                   })}
                 </div>
               )}
@@ -744,5 +782,5 @@ function SuiteEditorDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

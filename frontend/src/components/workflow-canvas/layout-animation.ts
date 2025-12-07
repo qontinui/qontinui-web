@@ -9,8 +9,8 @@
  * - Multiple easing curves
  */
 
-import type { Workflow, Action } from '@/lib/action-schema/action-types';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 // ============================================================================
 // Types
@@ -18,7 +18,13 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 
 export type EasingFunction = (t: number) => number;
 
-export type EasingType = 'linear' | 'easeInOut' | 'easeOut' | 'easeIn' | 'easeInOutCubic' | 'spring';
+export type EasingType =
+  | "linear"
+  | "easeInOut"
+  | "easeOut"
+  | "easeIn"
+  | "easeInOutCubic"
+  | "spring";
 
 export interface AnimationOptions {
   /** Animation duration in milliseconds */
@@ -56,9 +62,7 @@ export const EASING_FUNCTIONS: Record<EasingType, EasingFunction> = {
   linear: (t: number) => t,
 
   easeInOut: (t: number) => {
-    return t < 0.5
-      ? 2 * t * t
-      : -1 + (4 - 2 * t) * t;
+    return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
   },
 
   easeOut: (t: number) => {
@@ -70,9 +74,7 @@ export const EASING_FUNCTIONS: Record<EasingType, EasingFunction> = {
   },
 
   easeInOutCubic: (t: number) => {
-    return t < 0.5
-      ? 4 * t * t * t
-      : 1 + (--t) * (2 * t) * (2 * t);
+    return t < 0.5 ? 4 * t * t * t : 1 + --t * (2 * t) * (2 * t);
   },
 
   spring: (t: number) => {
@@ -104,7 +106,7 @@ export class LayoutAnimationController {
   ): Promise<void> {
     const {
       duration = 500,
-      easing = 'easeInOutCubic',
+      easing = "easeInOutCubic",
       onProgress,
       onComplete,
       onCancel,
@@ -115,7 +117,6 @@ export class LayoutAnimationController {
 
     return new Promise((resolve, reject) => {
       const startTime = performance.now();
-      const endTime = startTime + duration;
       const easingFn = EASING_FUNCTIONS[easing];
 
       // Store cancel callback
@@ -126,9 +127,9 @@ export class LayoutAnimationController {
       const animate = (currentTime: number) => {
         // Check if cancelled
         if (this.animationFrameId === null) {
-          this.cancelledCallbacks.forEach(cb => cb());
+          this.cancelledCallbacks.forEach((cb) => cb());
           this.cancelledCallbacks = [];
-          reject(new Error('Animation cancelled'));
+          reject(new Error("Animation cancelled"));
           return;
         }
 
@@ -143,6 +144,7 @@ export class LayoutAnimationController {
         for (const actionId in toPositions) {
           const from = fromPositions[actionId] || toPositions[actionId];
           const to = toPositions[actionId];
+          if (!from || !to) continue;
 
           currentPositions[actionId] = [
             from[0] + (to[0] - from[0]) * easedProgress,
@@ -216,7 +218,10 @@ export function extractPositions(workflow: Workflow): PositionMap {
 /**
  * Apply position map to workflow (mutates workflow)
  */
-export function applyPositions(workflow: Workflow, positions: PositionMap): void {
+export function applyPositions(
+  workflow: Workflow,
+  positions: PositionMap
+): void {
   for (const action of workflow.actions) {
     const position = positions[action.id];
     if (position) {
@@ -390,16 +395,18 @@ export async function animateAction(
   action: Action,
   toPosition: [number, number],
   duration: number = 300,
-  easing: EasingType = 'easeOut'
+  easing: EasingType = "easeOut"
 ): Promise<void> {
   const controller = new LayoutAnimationController();
-  const fromPosition = action.position ? [...action.position] : toPosition;
+  const fromPosition: [number, number] = action.position
+    ? [...action.position]
+    : toPosition;
 
   await controller.animate(
-    { [action.id]: fromPosition as [number, number] },
+    { [action.id]: fromPosition },
     { [action.id]: toPosition },
     (positions) => {
-      action.position = positions[action.id];
+      action.position = positions[action.id] as [number, number];
     },
     { duration, easing }
   );
@@ -412,13 +419,15 @@ export async function animateActions(
   actions: Action[],
   toPositions: PositionMap,
   duration: number = 300,
-  easing: EasingType = 'easeOut'
+  easing: EasingType = "easeOut"
 ): Promise<void> {
   const controller = new LayoutAnimationController();
   const fromPositions: PositionMap = {};
 
   for (const action of actions) {
-    fromPositions[action.id] = action.position ? [...action.position] : toPositions[action.id];
+    fromPositions[action.id] = (
+      action.position ? [...action.position] : toPositions[action.id]
+    ) as [number, number];
   }
 
   await controller.animate(
@@ -448,10 +457,11 @@ export async function animateStaggered(
     easing?: EasingType;
   } = {}
 ): Promise<void> {
-  const { duration = 300, staggerDelay = 50, easing = 'easeOut' } = options;
+  const { duration = 300, staggerDelay = 50, easing = "easeOut" } = options;
 
   for (let i = 0; i < actions.length; i++) {
     const action = actions[i];
+    if (!action) continue;
     const toPosition = toPositions[action.id];
 
     if (!toPosition) continue;
@@ -461,7 +471,7 @@ export async function animateStaggered(
 
     // Wait for stagger delay
     if (i < actions.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, staggerDelay));
+      await new Promise((resolve) => setTimeout(resolve, staggerDelay));
     }
   }
 }
@@ -471,8 +481,8 @@ export async function animateStaggered(
  */
 export function createZoomAnimation(
   scale: { from: number; to: number },
-  duration: number = 300,
-  easing: EasingType = 'easeOut'
+  _duration: number = 300,
+  easing: EasingType = "easeOut"
 ): (progress: number) => number {
   const easingFn = EASING_FUNCTIONS[easing];
 
@@ -487,8 +497,8 @@ export function createZoomAnimation(
  */
 export function createFadeAnimation(
   opacity: { from: number; to: number },
-  duration: number = 300,
-  easing: EasingType = 'linear'
+  _duration: number = 300,
+  easing: EasingType = "linear"
 ): (progress: number) => number {
   const easingFn = EASING_FUNCTIONS[easing];
 

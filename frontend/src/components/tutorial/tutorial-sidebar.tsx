@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import React from "react"
-import { useTutorialStore, Tutorial } from "@/stores/tutorial-store"
-import { CheckCircle2, Circle, ChevronRight } from "lucide-react"
+import React from "react";
+import { useTutorialStore, Tutorial } from "@/stores/tutorial-store";
+import { CheckCircle2, Circle, ChevronRight } from "lucide-react";
 
 interface TutorialSidebarProps {
-  tutorial: Tutorial
+  tutorial: Tutorial;
 }
 
 /**
@@ -20,8 +20,8 @@ interface TutorialSidebarProps {
  * Takes up 1/3 of the dialog width on the left side.
  */
 export function TutorialSidebar({ tutorial }: TutorialSidebarProps) {
-  const currentStepIndex = useTutorialStore((state) => state.currentStepIndex)
-  const goToStep = useTutorialStore((state) => state.goToStep)
+  const currentStepIndex = useTutorialStore((state) => state.currentStepIndex);
+  const goToStep = useTutorialStore((state) => state.goToStep);
 
   return (
     <div className="space-y-2 px-4">
@@ -38,9 +38,9 @@ export function TutorialSidebar({ tutorial }: TutorialSidebarProps) {
       {/* Steps list */}
       <div className="space-y-1">
         {tutorial.steps.map((step, index) => {
-          const isCompleted = index < currentStepIndex
-          const isCurrent = index === currentStepIndex
-          const isUpcoming = index > currentStepIndex
+          const isCompleted = index < currentStepIndex;
+          const isCurrent = index === currentStepIndex;
+          const isUpcoming = index > currentStepIndex;
 
           return (
             <button
@@ -90,7 +90,7 @@ export function TutorialSidebar({ tutorial }: TutorialSidebarProps) {
                 <ChevronRight className="h-4 w-4 text-cyan-600 dark:text-cyan-400 flex-shrink-0" />
               )}
             </button>
-          )
+          );
         })}
       </div>
 
@@ -98,10 +98,11 @@ export function TutorialSidebar({ tutorial }: TutorialSidebarProps) {
       {tutorial.estimatedTime && (
         <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            <span className="font-medium">Estimated time:</span> {tutorial.estimatedTime} min
+            <span className="font-medium">Estimated time:</span>{" "}
+            {tutorial.estimatedTime} min
           </p>
         </div>
       )}
     </div>
-  )
+  );
 }

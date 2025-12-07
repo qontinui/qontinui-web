@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import * as React from 'react';
+import * as React from "react";
 import {
   MessageSquare,
   Reply,
@@ -12,21 +12,21 @@ import {
   AtSign,
   Send,
   Loader2,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
-import { formatDistanceToNow } from 'date-fns';
-import { toast } from 'sonner';
+} from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
 
 export interface Comment {
   id: string;
@@ -45,7 +45,7 @@ export interface CommentThread {
   id: string;
   resource_id: string;
   resource_type: string;
-  status: 'open' | 'resolved';
+  status: "open" | "resolved";
   comments: Comment[];
   position?: { x: number; y: number };
 }
@@ -66,7 +66,7 @@ interface CommentThreadProps {
 export function CommentThread({
   thread,
   currentUserId,
-  currentUserName,
+  currentUserName: _currentUserName,
   availableUsers = [],
   onAddComment,
   onEditComment,
@@ -75,27 +75,27 @@ export function CommentThread({
   onReopen,
   className,
 }: CommentThreadProps) {
-  const [newComment, setNewComment] = React.useState('');
+  const [newComment, setNewComment] = React.useState("");
   const [replyToId, setReplyToId] = React.useState<string | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
-  const [editContent, setEditContent] = React.useState('');
+  const [editContent, setEditContent] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
   const [showMentions, setShowMentions] = React.useState(false);
-  const [mentionQuery, setMentionQuery] = React.useState('');
+  const [mentionQuery, setMentionQuery] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
 
   const formatDate = (date: Date | string) => {
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    const dateObj = typeof date === "string" ? new Date(date) : date;
     return formatDistanceToNow(dateObj, { addSuffix: true });
   };
 
@@ -105,11 +105,11 @@ export function CommentThread({
     setLoading(true);
     try {
       await onAddComment(content, parentId);
-      setNewComment('');
+      setNewComment("");
       setReplyToId(null);
-      toast.success('Comment added');
+      toast.success("Comment added");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to add comment');
+      toast.error(error.message || "Failed to add comment");
     } finally {
       setLoading(false);
     }
@@ -122,24 +122,24 @@ export function CommentThread({
     try {
       await onEditComment(commentId, editContent);
       setEditingId(null);
-      setEditContent('');
-      toast.success('Comment updated');
+      setEditContent("");
+      toast.success("Comment updated");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update comment');
+      toast.error(error.message || "Failed to update comment");
     } finally {
       setActionLoading(null);
     }
   };
 
   const handleDelete = async (commentId: string) => {
-    if (!confirm('Delete this comment?')) return;
+    if (!confirm("Delete this comment?")) return;
 
     setActionLoading(commentId);
     try {
       await onDeleteComment(commentId);
-      toast.success('Comment deleted');
+      toast.success("Comment deleted");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to delete comment');
+      toast.error(error.message || "Failed to delete comment");
     } finally {
       setActionLoading(null);
     }
@@ -148,15 +148,15 @@ export function CommentThread({
   const handleResolve = async () => {
     setLoading(true);
     try {
-      if (thread.status === 'resolved') {
+      if (thread.status === "resolved") {
         await onReopen();
-        toast.success('Discussion reopened');
+        toast.success("Discussion reopened");
       } else {
         await onResolve();
-        toast.success('Discussion resolved');
+        toast.success("Discussion resolved");
       }
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update status');
+      toast.error(error.message || "Failed to update status");
     } finally {
       setLoading(false);
     }
@@ -166,10 +166,10 @@ export function CommentThread({
     setNewComment(text);
 
     // Check for @ mentions
-    const lastAtIndex = text.lastIndexOf('@');
+    const lastAtIndex = text.lastIndexOf("@");
     if (lastAtIndex !== -1) {
       const textAfterAt = text.slice(lastAtIndex + 1);
-      if (!textAfterAt.includes(' ')) {
+      if (!textAfterAt.includes(" ")) {
         setMentionQuery(textAfterAt);
         setShowMentions(true);
       } else {
@@ -181,7 +181,7 @@ export function CommentThread({
   };
 
   const insertMention = (userName: string) => {
-    const lastAtIndex = newComment.lastIndexOf('@');
+    const lastAtIndex = newComment.lastIndexOf("@");
     const newText = newComment.slice(0, lastAtIndex) + `@${userName} `;
     setNewComment(newText);
     setShowMentions(false);
@@ -204,7 +204,7 @@ export function CommentThread({
     const replies = getReplies(comment.id);
 
     return (
-      <div key={comment.id} className={cn(depth > 0 && 'ml-8 mt-2')}>
+      <div key={comment.id} className={cn(depth > 0 && "ml-8 mt-2")}>
         <div className="flex gap-3 group">
           <Avatar
             src={comment.author_avatar}
@@ -223,7 +223,9 @@ export function CommentThread({
               </span>
               {comment.updated_at &&
                 comment.updated_at !== comment.created_at && (
-                  <span className="text-xs text-muted-foreground">(edited)</span>
+                  <span className="text-xs text-muted-foreground">
+                    (edited)
+                  </span>
                 )}
             </div>
 
@@ -252,7 +254,7 @@ export function CommentThread({
                     variant="ghost"
                     onClick={() => {
                       setEditingId(null);
-                      setEditContent('');
+                      setEditContent("");
                     }}
                     disabled={isLoading}
                   >
@@ -334,7 +336,7 @@ export function CommentThread({
                     variant="ghost"
                     onClick={() => {
                       setReplyToId(null);
-                      setNewComment('');
+                      setNewComment("");
                     }}
                     disabled={loading}
                   >
@@ -357,7 +359,9 @@ export function CommentThread({
   };
 
   return (
-    <div className={cn('flex flex-col bg-background border rounded-lg', className)}>
+    <div
+      className={cn("flex flex-col bg-background border rounded-lg", className)}
+    >
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b">
         <div className="flex items-center gap-2">
@@ -370,18 +374,18 @@ export function CommentThread({
           <Badge
             variant="outline"
             className={
-              thread.status === 'resolved'
-                ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                : 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+              thread.status === "resolved"
+                ? "bg-green-500/10 text-green-500 border-green-500/20"
+                : "bg-blue-500/10 text-blue-500 border-blue-500/20"
             }
           >
-            {thread.status === 'resolved' ? (
+            {thread.status === "resolved" ? (
               <>
                 <Check className="mr-1 h-3 w-3" />
                 Resolved
               </>
             ) : (
-              'Open'
+              "Open"
             )}
           </Badge>
           <Button
@@ -390,7 +394,7 @@ export function CommentThread({
             onClick={handleResolve}
             disabled={loading}
           >
-            {thread.status === 'resolved' ? 'Reopen' : 'Resolve'}
+            {thread.status === "resolved" ? "Reopen" : "Resolve"}
           </Button>
         </div>
       </div>
@@ -408,7 +412,7 @@ export function CommentThread({
       </ScrollArea>
 
       {/* New Comment Input */}
-      {!replyToId && thread.status === 'open' && (
+      {!replyToId && thread.status === "open" && (
         <div className="p-3 border-t space-y-2">
           <div className="relative">
             <Textarea

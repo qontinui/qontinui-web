@@ -10,7 +10,7 @@
  * - Time-travel debugging support
  */
 
-import type { Workflow } from '../lib/action-schema/action-types';
+import type { Workflow } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -30,7 +30,14 @@ export interface HistoryEntry {
   description?: string;
 
   /** Type of operation that caused this entry */
-  operationType?: 'add' | 'update' | 'delete' | 'move' | 'connect' | 'batch' | 'other';
+  operationType?:
+    | "add"
+    | "update"
+    | "delete"
+    | "move"
+    | "connect"
+    | "batch"
+    | "other";
 
   /** User-defined metadata */
   metadata?: Record<string, any>;
@@ -67,7 +74,7 @@ export interface HistoryState {
   pendingRecord?: {
     workflow: Workflow;
     description?: string;
-    operationType?: HistoryEntry['operationType'];
+    operationType?: HistoryEntry["operationType"];
   };
 }
 
@@ -106,7 +113,7 @@ export class HistoryManager {
   record(
     workflow: Workflow,
     description?: string,
-    operationType?: HistoryEntry['operationType']
+    operationType?: HistoryEntry["operationType"]
   ): void {
     if (this.state.inBatch) {
       // In batch mode, just update the pending record
@@ -132,7 +139,7 @@ export class HistoryManager {
   recordImmediate(
     workflow: Workflow,
     description?: string,
-    operationType?: HistoryEntry['operationType']
+    operationType?: HistoryEntry["operationType"]
   ): void {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
@@ -162,7 +169,7 @@ export class HistoryManager {
       this.addEntry(
         this.state.pendingRecord.workflow,
         this.state.batchDescription || this.state.pendingRecord.description,
-        'batch'
+        "batch"
       );
     }
 
@@ -180,7 +187,7 @@ export class HistoryManager {
     const entry = this.state.entries[this.state.currentIndex];
     this.notifyListeners();
 
-    return entry;
+    return entry ?? null;
   }
 
   /**
@@ -193,7 +200,7 @@ export class HistoryManager {
     const entry = this.state.entries[this.state.currentIndex];
     this.notifyListeners();
 
-    return entry;
+    return entry ?? null;
   }
 
   /**
@@ -208,7 +215,7 @@ export class HistoryManager {
     const entry = this.state.entries[index];
     this.notifyListeners();
 
-    return entry;
+    return entry ?? null;
   }
 
   /**
@@ -230,7 +237,7 @@ export class HistoryManager {
    */
   getCurrentState(): HistoryEntry | null {
     if (this.state.currentIndex < 0) return null;
-    return this.state.entries[this.state.currentIndex];
+    return this.state.entries[this.state.currentIndex] ?? null;
   }
 
   /**
@@ -305,7 +312,7 @@ export class HistoryManager {
       const data = JSON.parse(json);
 
       if (!Array.isArray(data.entries)) {
-        throw new Error('Invalid history format');
+        throw new Error("Invalid history format");
       }
 
       this.state.entries = data.entries;
@@ -314,7 +321,7 @@ export class HistoryManager {
 
       return true;
     } catch (error) {
-      console.error('Failed to import history:', error);
+      console.error("Failed to import history:", error);
       return false;
     }
   }
@@ -347,7 +354,7 @@ export class HistoryManager {
   private addEntry(
     workflow: Workflow,
     description?: string,
-    operationType?: HistoryEntry['operationType']
+    operationType?: HistoryEntry["operationType"]
   ): void {
     // Clone workflow to avoid reference issues
     const workflowClone = JSON.parse(JSON.stringify(workflow));
@@ -384,7 +391,7 @@ export class HistoryManager {
   }
 
   private notifyListeners(): void {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       listener(this.state);
     });
   }

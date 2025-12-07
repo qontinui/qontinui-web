@@ -8,9 +8,16 @@
  * - Badge showing suggestion count
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, ChevronDown, Lightbulb, FileText, Search, Zap } from 'lucide-react';
-import { useMCPStore, useSuggestionsCount } from '../../stores/mcp-store';
+import React, { useState, useRef, useEffect } from "react";
+import {
+  Sparkles,
+  ChevronDown,
+  Lightbulb,
+  FileText,
+  Search,
+  Zap,
+} from "lucide-react";
+import { useMCPStore, useSuggestionsCount } from "../../stores/mcp-store";
 
 // ============================================================================
 // Types
@@ -40,93 +47,104 @@ export function AIToolbarButton({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const isConnected = useMCPStore(state => state.isConnected);
+  const isConnected = useMCPStore((state) => state.isConnected);
   const suggestionsCount = useSuggestionsCount();
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
 
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }
+    return undefined;
   }, [isOpen]);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+Shift+G - Generate Workflow
-      if (e.ctrlKey && e.shiftKey && e.key === 'G') {
+      if (e.ctrlKey && e.shiftKey && e.key === "G") {
         e.preventDefault();
         onGenerateWorkflow();
       }
       // Ctrl+Shift+S - Show Suggestions
-      else if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+      else if (e.ctrlKey && e.shiftKey && e.key === "S") {
         e.preventDefault();
         onShowSuggestions();
       }
       // Ctrl+Shift+E - Show Explanation
-      else if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+      else if (e.ctrlKey && e.shiftKey && e.key === "E") {
         e.preventDefault();
         onShowExplanation();
       }
       // Ctrl+Shift+F - Show Search
-      else if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+      else if (e.ctrlKey && e.shiftKey && e.key === "F") {
         e.preventDefault();
         onShowSearch();
       }
       // Ctrl+Shift+O - Optimize
-      else if (e.ctrlKey && e.shiftKey && e.key === 'O') {
+      else if (e.ctrlKey && e.shiftKey && e.key === "O") {
         e.preventDefault();
         onOptimizeWorkflow();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onGenerateWorkflow, onShowSuggestions, onShowExplanation, onShowSearch, onOptimizeWorkflow]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    onGenerateWorkflow,
+    onShowSuggestions,
+    onShowExplanation,
+    onShowSearch,
+    onOptimizeWorkflow,
+  ]);
 
   const menuItems = [
     {
-      label: 'Generate Workflow',
+      label: "Generate Workflow",
       icon: Sparkles,
-      shortcut: 'Ctrl+Shift+G',
+      shortcut: "Ctrl+Shift+G",
       onClick: onGenerateWorkflow,
-      description: 'Create workflow from natural language',
+      description: "Create workflow from natural language",
     },
     {
-      label: 'Get Suggestions',
+      label: "Get Suggestions",
       icon: Lightbulb,
-      shortcut: 'Ctrl+Shift+S',
+      shortcut: "Ctrl+Shift+S",
       onClick: onShowSuggestions,
-      description: 'AI-powered workflow improvements',
+      description: "AI-powered workflow improvements",
       badge: suggestionsCount > 0 ? suggestionsCount : undefined,
     },
     {
-      label: 'Explain Workflow',
+      label: "Explain Workflow",
       icon: FileText,
-      shortcut: 'Ctrl+Shift+E',
+      shortcut: "Ctrl+Shift+E",
       onClick: onShowExplanation,
-      description: 'Get natural language explanation',
+      description: "Get natural language explanation",
     },
     {
-      label: 'AI Search',
+      label: "AI Search",
       icon: Search,
-      shortcut: 'Ctrl+Shift+F',
+      shortcut: "Ctrl+Shift+F",
       onClick: onShowSearch,
-      description: 'Search actions semantically',
+      description: "Search actions semantically",
     },
     {
-      label: 'Optimize Workflow',
+      label: "Optimize Workflow",
       icon: Zap,
-      shortcut: 'Ctrl+Shift+O',
+      shortcut: "Ctrl+Shift+O",
       onClick: onOptimizeWorkflow,
-      description: 'Improve performance and reliability',
+      description: "Improve performance and reliability",
     },
   ];
 
@@ -138,19 +156,25 @@ export function AIToolbarButton({
         disabled={disabled || !isConnected}
         className={`relative flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
           disabled || !isConnected
-            ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-            : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl'
+            ? "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+            : "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl"
         }`}
-        title={!isConnected ? 'MCP server not connected' : 'AI Features (Ctrl+Shift+G)'}
+        title={
+          !isConnected
+            ? "MCP server not connected"
+            : "AI Features (Ctrl+Shift+G)"
+        }
       >
         <Sparkles className="w-5 h-5" />
         <span>AI</span>
-        <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+        />
 
         {/* Suggestion Badge */}
         {suggestionsCount > 0 && (
           <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-            {suggestionsCount > 9 ? '9+' : suggestionsCount}
+            {suggestionsCount > 9 ? "9+" : suggestionsCount}
           </span>
         )}
       </button>
@@ -165,7 +189,7 @@ export function AIToolbarButton({
               <h3 className="font-semibold">AI Features</h3>
             </div>
             <p className="text-xs text-purple-100">
-              {isConnected ? 'Connected to MCP server' : 'Disconnected'}
+              {isConnected ? "Connected to MCP server" : "Disconnected"}
             </p>
           </div>
 

@@ -12,6 +12,7 @@ Tables managed:
 """
 
 import calendar
+import re
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
@@ -21,8 +22,40 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
+# Valid identifier pattern for PostgreSQL table names
+# Only allows alphanumeric characters and underscores, must start with letter or underscore
+_VALID_IDENTIFIER_PATTERN = re.compile(r"^[a-z_][a-z0-9_]*$", re.IGNORECASE)
+
+
+def _validate_identifier(name: str) -> str:
+    """
+    Validate and sanitize a PostgreSQL identifier (table/partition name).
+
+    Prevents SQL injection by ensuring the name contains only safe characters.
+
+    Args:
+        name: The identifier to validate
+
+    Returns:
+        The validated identifier
+
+    Raises:
+        ValueError: If the identifier contains invalid characters
+    """
+    if not name or not _VALID_IDENTIFIER_PATTERN.match(name):
+        raise ValueError(
+            f"Invalid identifier: {name!r}. Must contain only letters, "
+            "numbers, and underscores, and start with a letter or underscore."
+        )
+    if len(name) > 63:  # PostgreSQL identifier length limit
+        raise ValueError(f"Identifier too long: {len(name)} chars (max 63)")
+    return name
+
+
 # Partition configuration
-PartitionTable = Literal["automation_logs", "analytics_events", "automation_input_events"]
+PartitionTable = Literal[
+    "automation_logs", "analytics_events", "automation_input_events"
+]
 
 PARTITION_CONFIG = {
     "automation_logs": {
@@ -60,7 +93,7 @@ def get_month_boundaries(year: int, month: int) -> tuple[datetime, datetime]:
     """
     start_date = datetime(year, month, 1)
     # Get last day of the month
-    last_day = calendar.monthrange(year, month)[1]
+    calendar.monthrange(year, month)[1]
     # End date is the first day of next month for range partitioning
     if month == 12:
         end_date = datetime(year + 1, 1, 1)
@@ -168,12 +201,14 @@ async def create_monthly_partition(
     partition_name = format_partition_name(table_name, start_date, "monthly")
 
     # Check if partition already exists
-    check_query = text("""
+    check_query = text(
+        """
         SELECT EXISTS (
             SELECT 1 FROM pg_tables
             WHERE tablename = :partition_name
         )
-    """)
+    """
+    )
     result = await db.execute(check_query, {"partition_name": partition_name})
     exists = result.scalar()
 
@@ -192,11 +227,13 @@ async def create_monthly_partition(
         }
 
     # Create the partition
-    create_query = text(f"""
+    create_query = text(
+        f"""
         CREATE TABLE {partition_name}
         PARTITION OF {table_name}
         FOR VALUES FROM ('{start_date.isoformat()}') TO ('{end_date.isoformat()}')
-    """)
+    """
+    )
 
     try:
         await db.execute(create_query)
@@ -266,12 +303,14 @@ async def create_weekly_partition(
     partition_name = format_partition_name(table_name, start_date, "weekly")
 
     # Check if partition already exists
-    check_query = text("""
+    check_query = text(
+        """
         SELECT EXISTS (
             SELECT 1 FROM pg_tables
             WHERE tablename = :partition_name
         )
-    """)
+    """
+    )
     result = await db.execute(check_query, {"partition_name": partition_name})
     exists = result.scalar()
 
@@ -290,11 +329,13 @@ async def create_weekly_partition(
         }
 
     # Create the partition
-    create_query = text(f"""
+    create_query = text(
+        f"""
         CREATE TABLE {partition_name}
         PARTITION OF {table_name}
         FOR VALUES FROM ('{start_date.isoformat()}') TO ('{end_date.isoformat()}')
-    """)
+    """
+    )
 
     try:
         await db.execute(create_query)
@@ -354,7 +395,8 @@ async def list_partitions(
             }
         ]
     """
-    query = text("""
+    query = text(
+        """
         SELECT
             c.relname AS partition_name,
             pg_get_expr(c.relpartbound, c.oid) AS partition_expression,
@@ -366,20 +408,23 @@ async def list_partitions(
         WHERE parent.relname = :table_name
         AND c.relkind = 'r'
         ORDER BY c.relname
-    """)
+    """
+    )
 
     result = await db.execute(query, {"table_name": table_name})
     partitions = []
 
     for row in result:
-        partitions.append({
-            "partition_name": row.partition_name,
-            "parent_table": table_name,
-            "partition_expression": row.partition_expression,
-            "size_bytes": row.size_bytes,
-            "size_mb": round(row.size_bytes / (1024 * 1024), 2),
-            "row_count": row.row_count,
-        })
+        partitions.append(
+            {
+                "partition_name": row.partition_name,
+                "parent_table": table_name,
+                "partition_expression": row.partition_expression,
+                "size_bytes": row.size_bytes,
+                "size_mb": round(row.size_bytes / (1024 * 1024), 2),
+                "row_count": row.row_count,
+            }
+        )
 
     logger.info(
         "partitions_listed",
@@ -402,11 +447,14 @@ async def drop_partition(
 
     Args:
         db: Database session
-        partition_name: Name of the partition to drop
+        partition_name: Name of the partition to drop (must be valid identifier)
         cascade: Whether to cascade deletion to dependent objects
 
     Returns:
         Dict with deletion status and details
+
+    Raises:
+        ValueError: If partition_name contains invalid characters (SQL injection prevention)
 
     Example:
         >>> await drop_partition(db, "automation_logs_y2024_m01", cascade=False)
@@ -416,8 +464,11 @@ async def drop_partition(
             "rows_deleted": 12500
         }
     """
+    # Validate partition name to prevent SQL injection
+    safe_partition_name = _validate_identifier(partition_name)
+
     # Get row count before deletion
-    count_query = text(f"SELECT COUNT(*) FROM {partition_name}")
+    count_query = text(f"SELECT COUNT(*) FROM {safe_partition_name}")
     try:
         result = await db.execute(count_query)
         row_count = result.scalar()
@@ -426,7 +477,7 @@ async def drop_partition(
 
     # Drop the partition
     cascade_clause = "CASCADE" if cascade else ""
-    drop_query = text(f"DROP TABLE {partition_name} {cascade_clause}")
+    drop_query = text(f"DROP TABLE {safe_partition_name} {cascade_clause}")
 
     try:
         await db.execute(drop_query)
@@ -434,14 +485,14 @@ async def drop_partition(
 
         logger.warning(
             "partition_dropped",
-            partition_name=partition_name,
+            partition_name=safe_partition_name,
             rows_deleted=row_count,
             cascade=cascade,
         )
 
         return {
             "status": "deleted",
-            "partition_name": partition_name,
+            "partition_name": safe_partition_name,
             "rows_deleted": row_count,
             "cascade": cascade,
         }
@@ -450,7 +501,7 @@ async def drop_partition(
         await db.rollback()
         logger.exception(
             "partition_drop_failed",
-            partition_name=partition_name,
+            partition_name=safe_partition_name,
             error=str(e),
         )
         raise
@@ -496,7 +547,7 @@ async def drop_old_partitions(
     granularity = config["granularity"]
 
     # Calculate cutoff date
-    cutoff_date = datetime.utcnow() - timedelta(days=retention_months * 30)
+    cutoff_date = datetime.utcnow() - timedelta(days=retention_months * 30)  # type: ignore[operator]
 
     logger.info(
         "drop_old_partitions_started",
@@ -532,20 +583,25 @@ async def drop_old_partitions(
                 # Convert ISO week to date
                 # Use January 4th which is always in week 1
                 jan4 = datetime(year, 1, 4)
-                partition_date = jan4 - timedelta(days=jan4.weekday()) + timedelta(weeks=week - 1)
+                partition_date = (
+                    jan4 - timedelta(days=jan4.weekday()) + timedelta(weeks=week - 1)
+                )
 
             # Check if partition is older than retention period
             if partition_date < cutoff_date:
-                age_months = (datetime.utcnow().year - partition_date.year) * 12 + \
-                           (datetime.utcnow().month - partition_date.month)
+                age_months = (datetime.utcnow().year - partition_date.year) * 12 + (
+                    datetime.utcnow().month - partition_date.month
+                )
 
-                partitions_to_delete.append({
-                    "partition_name": partition_name,
-                    "partition_date": partition_date.isoformat(),
-                    "age_months": age_months,
-                    "row_count": partition["row_count"],
-                    "size_mb": partition["size_mb"],
-                })
+                partitions_to_delete.append(
+                    {
+                        "partition_name": partition_name,
+                        "partition_date": partition_date.isoformat(),
+                        "age_months": age_months,
+                        "row_count": partition["row_count"],
+                        "size_mb": partition["size_mb"],
+                    }
+                )
                 total_rows += partition["row_count"]
 
         except (StopIteration, ValueError, IndexError) as e:

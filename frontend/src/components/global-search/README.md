@@ -5,13 +5,16 @@ A powerful command palette (Cmd/Ctrl+K) for searching across all resources in th
 ## Features
 
 ### Search Interface
+
 - **Keyboard Shortcut**: `Cmd/Ctrl + K` to open search
 - **Real-time Search**: Debounced search with 300ms delay
 - **Keyboard Navigation**: Arrow keys to navigate, Enter to select, ESC to close
 - **Auto-scroll**: Selected result automatically scrolls into view
 
 ### Search Capabilities
+
 Search across multiple resource types:
+
 - **Workflows**: Name, description, category, action names
 - **States**: Name, description, state images
 - **Images**: Filename, tags, metadata, source
@@ -20,6 +23,7 @@ Search across multiple resource types:
 - **Actions**: Name, type, parent workflow
 
 ### Search Features
+
 - **Fuzzy Matching**: Smart matching algorithm with scoring
 - **Search Operators**: Filter using syntax like `type:workflow`, `tag:login`
 - **Type Filters**: Toggle filters for specific resource types
@@ -30,6 +34,7 @@ Search across multiple resource types:
 ### Search Operators
 
 #### Type Filter
+
 ```
 type:workflow    # Search only workflows
 type:state       # Search only states
@@ -37,18 +42,21 @@ type:image       # Search only images
 ```
 
 #### Folder Filter
+
 ```
 folder:Main           # Search in Main folder
 folder:"User Login"   # Use quotes for multi-word folders
 ```
 
 #### Tag Filter
+
 ```
 tag:auth         # Search items with auth tag
 tag:login        # Search items with login tag
 ```
 
 #### Combined Filters
+
 ```
 type:workflow tag:auth login    # Search workflows with auth tag containing "login"
 ```
@@ -74,16 +82,16 @@ frontend/src/
 ### 1. Import the Component
 
 ```tsx
-import { GlobalSearch } from '@/components/global-search';
+import { GlobalSearch } from "@/components/global-search";
 ```
 
 ### 2. Add to Your Layout
 
 ```tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { GlobalSearch } from '@/components/global-search';
+import { useState } from "react";
+import { GlobalSearch } from "@/components/global-search";
 
 export function Layout({ children }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -100,7 +108,7 @@ export function Layout({ children }) {
 ### 3. Load Data into Search Index
 
 ```tsx
-import { globalSearchService } from '@/services/global-search-service';
+import { globalSearchService } from "@/services/global-search-service";
 
 // Load your data
 const workflows = await fetchWorkflows();
@@ -120,7 +128,7 @@ globalSearchService.updateIndex({
 ### Using the Hook
 
 ```tsx
-import { useGlobalSearch } from '@/components/global-search';
+import { useGlobalSearch } from "@/components/global-search";
 
 function MyComponent() {
   const { open, openSearch, closeSearch } = useGlobalSearch();
@@ -168,7 +176,7 @@ globalSearchService.updateIndex({
 // When a workflow is updated
 const updatedWorkflow = await updateWorkflow(id, data);
 globalSearchService.updateIndex({
-  workflows: existingWorkflows.map(wf =>
+  workflows: existingWorkflows.map((wf) =>
     wf.id === id ? updatedWorkflow : wf
   ),
 });
@@ -192,9 +200,9 @@ globalSearchService.clearRecentSearches();
 
 #### Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `open` | `boolean` | `undefined` | Controlled open state |
+| Prop           | Type                      | Default     | Description                      |
+| -------------- | ------------------------- | ----------- | -------------------------------- |
+| `open`         | `boolean`                 | `undefined` | Controlled open state            |
 | `onOpenChange` | `(open: boolean) => void` | `undefined` | Callback when open state changes |
 
 #### Features
@@ -238,10 +246,9 @@ globalSearchService.clearIndex();
 Search across all resource types.
 
 ```tsx
-const results = await globalSearchService.searchAll(
-  'login',
-  { types: ['workflow', 'state'] }
-);
+const results = await globalSearchService.searchAll("login", {
+  types: ["workflow", "state"],
+});
 ```
 
 ##### `searchWorkflows(query, filters)`
@@ -249,7 +256,7 @@ const results = await globalSearchService.searchAll(
 Search only workflows.
 
 ```tsx
-const workflows = await globalSearchService.searchWorkflows('login');
+const workflows = await globalSearchService.searchWorkflows("login");
 ```
 
 ##### `searchStates(query, filters)`
@@ -257,7 +264,7 @@ const workflows = await globalSearchService.searchWorkflows('login');
 Search only states.
 
 ```tsx
-const states = await globalSearchService.searchStates('main menu');
+const states = await globalSearchService.searchStates("main menu");
 ```
 
 ##### `searchImages(query, filters)`
@@ -265,7 +272,7 @@ const states = await globalSearchService.searchStates('main menu');
 Search only images.
 
 ```tsx
-const images = await globalSearchService.searchImages('button');
+const images = await globalSearchService.searchImages("button");
 ```
 
 ##### `saveRecentSearch(query, filters)`
@@ -273,8 +280,8 @@ const images = await globalSearchService.searchImages('button');
 Save a search to recent history (automatically called when selecting a result).
 
 ```tsx
-globalSearchService.saveRecentSearch('login workflow', {
-  types: ['workflow']
+globalSearchService.saveRecentSearch("login workflow", {
+  types: ["workflow"],
 });
 ```
 
@@ -331,15 +338,15 @@ interface SearchFilter {
 
 ```tsx
 type ResourceType =
-  | 'workflow'
-  | 'state'
-  | 'image'
-  | 'transition'
-  | 'folder'
-  | 'action'
-  | 'component'
-  | 'test'
-  | 'documentation';
+  | "workflow"
+  | "state"
+  | "image"
+  | "transition"
+  | "folder"
+  | "action"
+  | "component"
+  | "test"
+  | "documentation";
 ```
 
 ## Customization
@@ -351,7 +358,7 @@ To customize how results navigate when selected, fork `GlobalSearch.tsx` and mod
 ```tsx
 const handleResultClick = (result: SearchResultItem) => {
   switch (result.type) {
-    case 'workflow':
+    case "workflow":
       // Your custom navigation
       router.push(`/custom/workflow/${result.id}`);
       break;
@@ -414,12 +421,12 @@ globalSearchService.updateIndex({
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd/Ctrl + K` | Open search |
-| `↑/↓` | Navigate results |
-| `Enter` | Select result |
-| `ESC` | Close search |
+| Shortcut       | Action           |
+| -------------- | ---------------- |
+| `Cmd/Ctrl + K` | Open search      |
+| `↑/↓`          | Navigate results |
+| `Enter`        | Select result    |
+| `ESC`          | Close search     |
 
 ## Best Practices
 
@@ -434,6 +441,7 @@ globalSearchService.updateIndex({
 ### Search not working
 
 1. Check if index is populated:
+
 ```tsx
 console.log(globalSearchService.getAllWorkflows());
 ```

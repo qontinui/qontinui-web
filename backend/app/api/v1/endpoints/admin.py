@@ -5,10 +5,20 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
+
 from app.api.deps import get_async_db, get_current_user_async
 from app.models.project import Project
 from app.models.user import User
-from app.schemas.admin import AdminProjectData, AdminUserData
+from app.schemas.admin import (
+    AdminNotificationSettingsResponse,
+    AdminNotificationSettingsUpdate,
+    AdminProjectData,
+    AdminUserData,
+)
 from app.schemas.health import (
     DatabaseHealth,
     HealthOverview,
@@ -18,12 +28,9 @@ from app.schemas.health import (
     SessionStats,
     TokenBlacklistStats,
 )
+from app.services.admin_notification_service import admin_notification_service
 from app.services.auth_analytics_service import auth_analytics_service
 from app.services.health_service import health_service
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -37,7 +44,7 @@ async def bootstrap_first_admin(
 ) -> Any:
     """One-time endpoint to create the first admin. Remove after use!"""
     # Check if any admin exists
-    result = await db.execute(select(User).filter(User.is_superuser))
+    result = await db.execute(select(User).filter(User.is_superuser))  # type: ignore[arg-type]
     existing_admin = result.scalar_one_or_none()
     if existing_admin:
         raise HTTPException(
@@ -46,7 +53,7 @@ async def bootstrap_first_admin(
         )
 
     # Find user by email
-    result = await db.execute(select(User).filter(User.email == email))
+    result = await db.execute(select(User).filter(User.email == email))  # type: ignore[arg-type]
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(
@@ -80,20 +87,20 @@ async def get_admin_stats(
     """Get overall platform statistics."""
 
     # Total users
-    result = await db.execute(select(func.count(User.id)))
+    result = await db.execute(select(func.count(User.id)))  # type: ignore[arg-type]
     total_users = result.scalar()
 
     # Users registered in last 7 days
     week_ago = datetime.utcnow() - timedelta(days=7)
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= week_ago)
+        select(func.count(User.id)).filter(User.created_at >= week_ago)  # type: ignore[arg-type]
     )
     new_users_week = result.scalar()
 
     # Users registered in last 30 days
     month_ago = datetime.utcnow() - timedelta(days=30)
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= month_ago)
+        select(func.count(User.id)).filter(User.created_at >= month_ago)  # type: ignore[arg-type]
     )
     new_users_month = result.scalar()
 
@@ -156,7 +163,7 @@ async def get_users_list(
                 is_active=user.is_active,
                 is_verified=user.is_verified,
                 email_verified=user.is_verified,  # Alias for frontend compatibility
-                created_at=user.created_at.isoformat() if user.created_at else None,
+                created_at=user.created_at.isoformat() if user.created_at else None,  # type: ignore[arg-type]
                 project_count=project_count or 0,
                 subscription_tier=user.subscription_tier,
                 last_login=None,  # Add last_login tracking in future
@@ -174,7 +181,7 @@ async def get_user_details(
 ) -> Any:
     """Get detailed info about a specific user."""
 
-    result = await db.execute(select(User).filter(User.id == user_id))
+    result = await db.execute(select(User).filter(User.id == user_id))  # type: ignore[arg-type]
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(
@@ -234,7 +241,7 @@ async def get_all_projects(
     project_data = []
     for project in projects:
         # Count states and transitions from configuration
-        config = project.configuration or {}
+        config: dict[str, Any] = project.configuration or {}  # type: ignore[assignment]
         state_count = len(config.get("states", []))
         transition_count = sum(
             len(state.get("transitions", [])) for state in config.get("states", [])
@@ -243,8 +250,8 @@ async def get_all_projects(
         project_data.append(
             AdminProjectData(
                 id=str(project.id),
-                name=project.name,
-                description=project.description,
+                name=str(project.name),
+                description=project.description,  # type: ignore[arg-type]
                 owner_id=str(project.owner_id),
                 owner_username=project.owner.username,
                 owner_email=project.owner.email,
@@ -283,7 +290,7 @@ async def get_project_details(
         )
 
     # Get full configuration
-    config = project.configuration or {}
+    config: dict[str, Any] = project.configuration or {}  # type: ignore[assignment]
     states = config.get("states", [])
 
     # Extract image library from two sources:
@@ -366,17 +373,17 @@ async def get_analytics(
 
     # New users
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= day_ago)
+        select(func.count(User.id)).filter(User.created_at >= day_ago)  # type: ignore[arg-type]
     )
     new_users_today = result.scalar() or 0
 
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= week_ago)
+        select(func.count(User.id)).filter(User.created_at >= week_ago)  # type: ignore[arg-type]
     )
     new_users_week = result.scalar() or 0
 
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= month_ago)
+        select(func.count(User.id)).filter(User.created_at >= month_ago)  # type: ignore[arg-type]
     )
     new_users_month = result.scalar() or 0
 
@@ -387,11 +394,11 @@ async def get_analytics(
     active_projects_week = result.scalar() or 0
 
     # Simple retention calculation (users who created project in first week and are still active)
-    result = await db.execute(select(func.count(User.id)))
+    result = await db.execute(select(func.count(User.id)))  # type: ignore[arg-type]
     total_users = result.scalar() or 1
 
     result = await db.execute(
-        select(func.count(User.id))
+        select(func.count(User.id))  # type: ignore[arg-type]
         .filter(User.created_at <= week_ago)
         .filter(User.created_at >= month_ago)
     )
@@ -399,7 +406,7 @@ async def get_analytics(
 
     result = await db.execute(
         select(func.count(func.distinct(User.id)))
-        .join(Project, User.id == Project.owner_id)
+        .join(Project, User.id == Project.owner_id)  # type: ignore[arg-type]
         .filter(User.created_at <= week_ago)
         .filter(User.created_at >= month_ago)
         .filter(Project.updated_at >= day_ago)
@@ -411,13 +418,13 @@ async def get_analytics(
     )
 
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at <= month_ago)
+        select(func.count(User.id)).filter(User.created_at <= month_ago)  # type: ignore[arg-type]
     )
     users_30days_old = result.scalar() or 1
 
     result = await db.execute(
         select(func.count(func.distinct(User.id)))
-        .join(Project, User.id == Project.owner_id)
+        .join(Project, User.id == Project.owner_id)  # type: ignore[arg-type]
         .filter(User.created_at <= month_ago)
         .filter(Project.updated_at >= day_ago)
     )
@@ -774,4 +781,147 @@ async def get_health_thresholds(
 
     Requires superuser authentication.
     """
-    return HealthThresholds(**health_service.THRESHOLDS)
+    return HealthThresholds(**health_service.THRESHOLDS)  # type: ignore[arg-type]
+
+
+# ==================== Admin Notification Settings Endpoints ====================
+
+
+@router.get("/notifications/settings", response_model=AdminNotificationSettingsResponse)
+async def get_notification_settings(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> AdminNotificationSettingsResponse:
+    """
+    Get admin notification settings.
+
+    Returns the current configuration for admin email notifications including:
+    - Email address for notifications
+    - Which events trigger notifications (user signup, project creation)
+    - Whether notifications are enabled
+
+    If no settings exist, creates default settings using the current user's email.
+
+    Requires superuser authentication.
+    """
+    settings = await admin_notification_service.get_or_create_settings(
+        db, default_email=current_user.email
+    )
+
+    return AdminNotificationSettingsResponse(
+        id=str(settings.id),
+        notification_email=str(settings.notification_email),
+        notify_on_user_signup=bool(settings.notify_on_user_signup),
+        notify_on_project_created=bool(settings.notify_on_project_created),
+        notifications_enabled=bool(settings.notifications_enabled),
+        created_at=settings.created_at,  # type: ignore[arg-type]
+        updated_at=settings.updated_at,  # type: ignore[arg-type]
+    )
+
+
+@router.put("/notifications/settings", response_model=AdminNotificationSettingsResponse)
+async def update_notification_settings(
+    settings_update: AdminNotificationSettingsUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> AdminNotificationSettingsResponse:
+    """
+    Update admin notification settings.
+
+    Allows updating:
+    - notification_email: Email address to receive notifications
+    - notify_on_user_signup: Enable/disable user signup notifications
+    - notify_on_project_created: Enable/disable project creation notifications
+    - notifications_enabled: Master toggle for all notifications
+
+    Only provided fields will be updated.
+
+    Requires superuser authentication.
+    """
+    # Convert Pydantic model to dict, excluding None values
+    updates = settings_update.model_dump(exclude_none=True)
+
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid fields to update",
+        )
+
+    settings = await admin_notification_service.update_settings(db, updates)
+
+    logger.info(
+        "admin_notification_settings_updated",
+        admin_id=str(current_user.id),
+        admin_email=current_user.email,
+        updated_fields=list(updates.keys()),
+    )
+
+    return AdminNotificationSettingsResponse(
+        id=str(settings.id),
+        notification_email=str(settings.notification_email),
+        notify_on_user_signup=bool(settings.notify_on_user_signup),
+        notify_on_project_created=bool(settings.notify_on_project_created),
+        notifications_enabled=bool(settings.notifications_enabled),
+        created_at=settings.created_at,  # type: ignore[arg-type]
+        updated_at=settings.updated_at,  # type: ignore[arg-type]
+    )
+
+
+@router.post("/notifications/test")
+async def send_test_notification(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> Any:
+    """
+    Send a test notification email to verify settings are working.
+
+    Sends a test email to the configured notification email address.
+    Returns success or failure status.
+
+    Requires superuser authentication.
+    """
+    from app.services.email.email_transport_service import EmailTransportService
+
+    settings = await admin_notification_service.get_or_create_settings(
+        db, default_email=current_user.email
+    )
+
+    if not settings.notifications_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin notifications are disabled. Enable them first.",
+        )
+
+    email_transport = EmailTransportService()
+
+    success = await email_transport.send_email(
+        to_email=str(settings.notification_email),
+        subject="Qontinui Admin Notification Test",
+        text_body=(
+            f"This is a test notification from Qontinui.\n\n"
+            f"Your admin notification settings are configured correctly.\n\n"
+            f"Sent by: {current_user.username} ({current_user.email})"
+        ),
+        html_body=None,
+    )
+
+    if success:
+        logger.info(
+            "admin_test_notification_sent",
+            admin_id=str(current_user.id),
+            to_email=settings.notification_email,
+        )
+        return {
+            "success": True,
+            "message": f"Test notification sent to {settings.notification_email}",
+        }
+    else:
+        logger.error(
+            "admin_test_notification_failed",
+            admin_id=str(current_user.id),
+            to_email=settings.notification_email,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send test notification. Check email configuration.",
+        )

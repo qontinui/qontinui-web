@@ -9,8 +9,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from app.schemas.base import BaseORMSchema, IsoDatetime
 from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.base import IsoDatetime
 
 # ============================================================================
 # Test Run Schemas
@@ -20,12 +21,12 @@ from pydantic import BaseModel, Field, field_validator
 class TestRunCreate(BaseModel):
     """Request schema for creating a new test run."""
 
-    project_id: int = Field(..., description="Project ID", example=123)
+    project_id: UUID = Field(..., description="Project ID")
     run_name: str = Field(
         ...,
-        max_length=255,
         description="Name of the test run",
-        example="Nightly Regression - 2025-11-23",
+        max_length=255,
+        examples=["Nightly Regression - 2025-11-23"],
     )
     description: str | None = Field(
         None, description="Optional description of the test run"
@@ -33,32 +34,38 @@ class TestRunCreate(BaseModel):
     runner_metadata: dict[str, Any] = Field(
         ...,
         description="Metadata about the runner environment",
-        example={
-            "runner_version": "0.1.0",
-            "os": "Windows 11",
-            "hostname": "test-machine-01",
-            "screen_resolution": "1920x1080",
-        },
+        examples=[
+            {
+                "runner_version": "0.1.0",
+                "os": "Windows 11",
+                "hostname": "test-machine-01",
+                "screen_resolution": "1920x1080",
+            }
+        ],
     )
     workflow_metadata: dict[str, Any] = Field(
         ...,
         description="Metadata about the workflow being tested",
-        example={
-            "workflow_id": "workflow-uuid-456",
-            "workflow_name": "E-commerce Checkout Flow",
-            "total_states": 12,
-            "total_transitions": 24,
-        },
+        examples=[
+            {
+                "workflow_id": "workflow-uuid-456",
+                "workflow_name": "E-commerce Checkout Flow",
+                "total_states": 12,
+                "total_transitions": 24,
+            }
+        ],
     )
     configuration_snapshot: dict[str, Any] = Field(
         ...,
         description="Snapshot of the test configuration",
-        example={
-            "strategy": "random_walk",
-            "max_duration_seconds": 3600,
-            "max_transitions": 100,
-            "screenshot_on_error": True,
-        },
+        examples=[
+            {
+                "strategy": "random_walk",
+                "max_duration_seconds": 3600,
+                "max_transitions": 100,
+                "screenshot_on_error": True,
+            }
+        ],
     )
 
 
@@ -66,9 +73,9 @@ class TestRunResponse(BaseModel):
     """Response schema for test run creation and retrieval."""
 
     run_id: UUID = Field(..., description="Unique test run identifier")
-    project_id: int = Field(..., description="Project ID")
+    project_id: UUID = Field(..., description="Project ID")
     run_name: str = Field(..., description="Name of the test run")
-    status: str = Field(..., description="Test run status", example="running")
+    status: str = Field(..., description="Test run status", examples=["running"])
     started_at: IsoDatetime = Field(..., description="Test run start time")
     ended_at: IsoDatetime | None = Field(None, description="Test run end time")
     duration_seconds: int | None = Field(
@@ -92,7 +99,7 @@ class TestRunDetail(TestRunResponse):
     created_by: dict[str, Any] | None = Field(
         None,
         description="User who created the run",
-        example={"user_id": "user-uuid-456", "email": "tester@example.com"},
+        examples=[{"user_id": "user-uuid-456", "email": "tester@example.com"}],
     )
     transitions: list[Any] | None = Field(
         None, description="List of transitions (optional)"
@@ -112,7 +119,7 @@ class TestRunListResponse(BaseModel):
     pagination: dict[str, Any] = Field(
         ...,
         description="Pagination metadata",
-        example={"total": 145, "limit": 20, "offset": 0, "has_more": True},
+        examples=[{"total": 145, "limit": 20, "offset": 0, "has_more": True}],
     )
 
 
@@ -125,22 +132,22 @@ class TransitionCreate(BaseModel):
     """Schema for a single transition report."""
 
     sequence_number: int = Field(
-        ..., ge=1, description="Order within test run (1-indexed)"
+        ..., description="Order within test run (1-indexed)", ge=1
     )
-    from_state: str = Field(..., max_length=255, description="Source state")
-    to_state: str = Field(..., max_length=255, description="Destination state")
-    transition_name: str = Field(..., max_length=255, description="Transition name")
-    status: str = Field(..., description="Transition status", example="success")
+    from_state: str = Field(..., description="Source state", max_length=255)
+    to_state: str = Field(..., description="Destination state", max_length=255)
+    transition_name: str = Field(..., description="Transition name", max_length=255)
+    status: str = Field(..., description="Transition status", examples=["success"])
     started_at: datetime = Field(..., description="Transition start time")
     completed_at: datetime = Field(..., description="Transition completion time")
-    duration_ms: int = Field(..., ge=0, description="Duration in milliseconds")
+    duration_ms: int = Field(..., description="Duration in milliseconds", ge=0)
     error_message: str | None = Field(None, description="Error message if failed")
     error_type: str | None = Field(None, description="Error type if failed")
     screenshot_id: UUID | None = Field(None, description="Associated screenshot ID")
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional transition metadata",
-        example={"actions_executed": 3, "confidence_score": 0.95, "retry_count": 0},
+        examples=[{"actions_executed": 3, "confidence_score": 0.95, "retry_count": 0}],
     )
 
     @field_validator("status")
@@ -166,7 +173,7 @@ class TransitionBatchCreate(BaseModel):
     """Request schema for batch transition reporting."""
 
     transitions: list[TransitionCreate] = Field(
-        ..., min_length=1, max_length=50, description="List of transitions (max 50)"
+        ..., description="List of transitions (max 50)", min_length=1, max_length=50
     )
 
 
@@ -179,11 +186,13 @@ class TransitionBatchResponse(BaseModel):
     coverage_updated: dict[str, Any] = Field(
         ...,
         description="Updated coverage metrics",
-        example={
-            "total_transitions_executed": 2,
-            "unique_transitions_covered": 2,
-            "coverage_percentage": 8.33,
-        },
+        examples=[
+            {
+                "total_transitions_executed": 2,
+                "unique_transitions_covered": 2,
+                "coverage_percentage": 8.33,
+            }
+        ],
     )
 
 
@@ -211,7 +220,7 @@ class TransitionResponse(BaseModel):
 class DeficiencyCreate(BaseModel):
     """Schema for a single deficiency report."""
 
-    title: str = Field(..., max_length=500, description="Deficiency title")
+    title: str = Field(..., description="Deficiency title", max_length=500)
     description: str = Field(..., description="Detailed description")
     severity: str = Field(..., description="Severity level")
     deficiency_type: str = Field(..., description="Type of deficiency")
@@ -219,7 +228,7 @@ class DeficiencyCreate(BaseModel):
         None, description="Related transition sequence number"
     )
     state: str | None = Field(
-        None, max_length=255, description="State where deficiency occurred"
+        None, description="State where deficiency occurred", max_length=255
     )
     screenshot_ids: list[UUID] = Field(
         default_factory=list, description="Associated screenshot IDs"
@@ -260,7 +269,7 @@ class DeficiencyBatchCreate(BaseModel):
     """Request schema for batch deficiency reporting."""
 
     deficiencies: list[DeficiencyCreate] = Field(
-        ..., min_length=1, max_length=20, description="List of deficiencies (max 20)"
+        ..., description="List of deficiencies (max 20)", min_length=1, max_length=20
     )
 
 
@@ -352,11 +361,13 @@ class DeficiencyListResponse(BaseModel):
     summary: dict[str, Any] = Field(
         ...,
         description="Summary statistics",
-        example={
-            "total_deficiencies": 27,
-            "by_status": {"open": 15, "in_progress": 5, "resolved": 7},
-            "by_severity": {"critical": 2, "high": 8, "medium": 12, "low": 5},
-        },
+        examples=[
+            {
+                "total_deficiencies": 27,
+                "by_status": {"open": 15, "in_progress": 5, "resolved": 7},
+                "by_severity": {"critical": 2, "high": 8, "medium": 12, "low": 5},
+            }
+        ],
     )
 
 
@@ -369,28 +380,28 @@ class CoverageUpdate(BaseModel):
     """Request schema for updating coverage metrics."""
 
     total_transitions_executed: int = Field(
-        ..., ge=0, description="Total transitions executed"
+        ..., description="Total transitions executed", ge=0
     )
     unique_transitions_covered: int = Field(
-        ..., ge=0, description="Unique transitions covered"
+        ..., description="Unique transitions covered", ge=0
     )
     coverage_percentage: float = Field(
-        ..., ge=0.0, le=100.0, description="Coverage percentage"
+        ..., description="Coverage percentage", ge=0.0, le=100.0
     )
     transition_coverage_map: dict[str, int] = Field(
         default_factory=dict,
         description="Map of transition names to execution counts",
-        example={"login_page->dashboard": 5, "dashboard->profile_page": 3},
+        examples=[{"login_page->dashboard": 5, "dashboard->profile_page": 3}],
     )
     state_coverage_map: dict[str, int] = Field(
         default_factory=dict,
         description="Map of state names to visit counts",
-        example={"login_page": 5, "dashboard": 12, "profile_page": 8},
+        examples=[{"login_page": 5, "dashboard": 12, "profile_page": 8}],
     )
     uncovered_transitions: list[str] = Field(
         default_factory=list,
         description="List of uncovered transitions",
-        example=["dashboard->admin_panel", "profile_page->payment_methods"],
+        examples=[["dashboard->admin_panel", "profile_page->payment_methods"]],
     )
 
 
@@ -418,17 +429,19 @@ class TestRunComplete(BaseModel):
     final_metrics: dict[str, Any] = Field(
         ...,
         description="Final test metrics",
-        example={
-            "total_transitions_executed": 42,
-            "successful_transitions": 38,
-            "failed_transitions": 4,
-            "timeout_transitions": 0,
-            "unique_transitions_covered": 18,
-            "coverage_percentage": 75.0,
-            "total_deficiencies_found": 2,
-            "total_screenshots_captured": 15,
-            "total_duration_seconds": 3600,
-        },
+        examples=[
+            {
+                "total_transitions_executed": 42,
+                "successful_transitions": 38,
+                "failed_transitions": 4,
+                "timeout_transitions": 0,
+                "unique_transitions_covered": 18,
+                "coverage_percentage": 75.0,
+                "total_deficiencies_found": 2,
+                "total_screenshots_captured": 15,
+                "total_duration_seconds": 3600,
+            }
+        ],
     )
     summary: str | None = Field(None, description="Optional summary text")
 
@@ -461,17 +474,17 @@ class ScreenshotMetadata(BaseModel):
     """Metadata for screenshot upload."""
 
     screenshot_id: UUID = Field(..., description="Screenshot ID (client-generated)")
-    sequence_number: int = Field(..., ge=1, description="Screenshot sequence number")
+    sequence_number: int = Field(..., description="Screenshot sequence number", ge=1)
     transition_sequence_number: int | None = Field(
         None, description="Associated transition sequence number"
     )
     state: str | None = Field(
-        None, max_length=255, description="State when screenshot taken"
+        None, description="State when screenshot taken", max_length=255
     )
     screenshot_type: str = Field(..., description="Screenshot type")
     timestamp: datetime = Field(..., description="Screenshot timestamp")
-    width: int = Field(..., ge=1, description="Image width")
-    height: int = Field(..., ge=1, description="Image height")
+    width: int = Field(..., description="Image width", ge=1)
+    height: int = Field(..., description="Image height", ge=1)
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
@@ -526,7 +539,7 @@ class CoverageTrendDataPoint(BaseModel):
 class CoverageTrendResponse(BaseModel):
     """Response schema for coverage trends."""
 
-    project_id: int = Field(..., description="Project ID")
+    project_id: UUID = Field(..., description="Project ID")
     start_date: str = Field(..., description="Start date")
     end_date: str = Field(..., description="End date")
     granularity: str = Field(..., description="Granularity (daily, weekly, monthly)")
@@ -536,12 +549,14 @@ class CoverageTrendResponse(BaseModel):
     overall_stats: dict[str, Any] = Field(
         ...,
         description="Overall statistics",
-        example={
-            "total_runs": 45,
-            "avg_coverage_percentage": 70.2,
-            "coverage_trend": "increasing",
-            "total_unique_transitions": 24,
-        },
+        examples=[
+            {
+                "total_runs": 45,
+                "avg_coverage_percentage": 70.2,
+                "coverage_trend": "increasing",
+                "total_unique_transitions": 24,
+            }
+        ],
     )
 
 
@@ -561,7 +576,7 @@ class TransitionReliabilityStats(BaseModel):
     failure_modes: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Failure mode breakdown",
-        example=[{"error_type": "timeout", "count": 2, "percentage": 100.0}],
+        examples=[[{"error_type": "timeout", "count": 2, "percentage": 100.0}]],
     )
 
 
@@ -570,11 +585,11 @@ class ReliabilityResponse(BaseModel):
 
     workflow_id: str = Field(..., description="Workflow ID")
     workflow_name: str | None = Field(None, description="Workflow name")
-    project_id: int = Field(..., description="Project ID")
+    project_id: UUID = Field(..., description="Project ID")
     date_range: dict[str, str] = Field(
         ...,
         description="Date range",
-        example={"start": "2025-10-01", "end": "2025-11-30"},
+        examples=[{"start": "2025-10-01", "end": "2025-11-30"}],
     )
     transition_stats: list[TransitionReliabilityStats] = Field(
         ..., description="Transition statistics"
@@ -582,12 +597,14 @@ class ReliabilityResponse(BaseModel):
     overall_reliability: dict[str, Any] = Field(
         ...,
         description="Overall reliability metrics",
-        example={
-            "total_transitions_analyzed": 24,
-            "avg_success_rate": 87.3,
-            "most_reliable_transition": "successful_login",
-            "least_reliable_transition": "open_profile",
-        },
+        examples=[
+            {
+                "total_transitions_analyzed": 24,
+                "avg_success_rate": 87.3,
+                "most_reliable_transition": "successful_login",
+                "least_reliable_transition": "open_profile",
+            }
+        ],
     )
 
 
@@ -603,7 +620,7 @@ class DeficiencyCommentCreate(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Optional metadata",
-        example={"mentioned_users": ["user-uuid-123"]},
+        examples=[{"mentioned_users": ["user-uuid-123"]}],
     )
 
 
@@ -615,11 +632,13 @@ class DeficiencyCommentResponse(BaseModel):
     user: dict[str, Any] = Field(
         ...,
         description="User who created the comment",
-        example={
-            "user_id": "user-uuid-789",
-            "email": "dev@example.com",
-            "full_name": "Developer User",
-        },
+        examples=[
+            {
+                "user_id": "user-uuid-789",
+                "email": "dev@example.com",
+                "full_name": "Developer User",
+            }
+        ],
     )
     comment: str = Field(..., description="Comment text")
     created_at: IsoDatetime = Field(..., description="Creation time")

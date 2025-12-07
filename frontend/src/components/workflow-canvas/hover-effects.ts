@@ -14,9 +14,8 @@
  * - Proper z-index layering
  */
 
-import { Node, Edge } from '@xyflow/react';
-import { CanvasNode, CanvasEdge } from './canvas-types';
-import { COLORS, hexToRgba } from './canvas-config';
+import { CanvasNode, CanvasEdge } from "./canvas-types";
+import { COLORS, hexToRgba } from "./canvas-config";
 
 // ============================================================================
 // Types
@@ -26,7 +25,7 @@ export interface HoverState {
   nodeId: string | null;
   edgeId: string | null;
   handleId: string | null;
-  handleType: 'source' | 'target' | null;
+  handleType: "source" | "target" | null;
 }
 
 export interface NodeHoverEffect {
@@ -95,8 +94,15 @@ class HoverEffectsManager {
   /**
    * Set hovered handle
    */
-  setHoveredHandle(handleId: string | null, handleType: 'source' | 'target' | null = null) {
-    if (this.state.handleId === handleId && this.state.handleType === handleType) return;
+  setHoveredHandle(
+    handleId: string | null,
+    handleType: "source" | "target" | null = null
+  ) {
+    if (
+      this.state.handleId === handleId &&
+      this.state.handleType === handleType
+    )
+      return;
 
     this.state.handleId = handleId;
     this.state.handleType = handleType;
@@ -109,11 +115,7 @@ class HoverEffectsManager {
    * Clear all hover states
    */
   clearHover() {
-    if (
-      !this.state.nodeId &&
-      !this.state.edgeId &&
-      !this.state.handleId
-    ) {
+    if (!this.state.nodeId && !this.state.edgeId && !this.state.handleId) {
       return;
     }
 
@@ -139,7 +141,7 @@ class HoverEffectsManager {
   subscribe(listener: (state: HoverState) => void): () => void {
     this.listeners.push(listener);
     return () => {
-      this.listeners = this.listeners.filter(l => l !== listener);
+      this.listeners = this.listeners.filter((l) => l !== listener);
     };
   }
 
@@ -148,7 +150,7 @@ class HoverEffectsManager {
    */
   private notifyListeners() {
     const state = this.getState();
-    this.listeners.forEach(listener => listener(state));
+    this.listeners.forEach((listener) => listener(state));
   }
 }
 
@@ -169,7 +171,8 @@ export function getNodeHoverEffect(
 ): NodeHoverEffect {
   const isHovered = hoverState.nodeId === node.id;
   const isConnected = connectedNodeIds.has(node.id);
-  const hasActiveHover = hoverState.nodeId !== null || hoverState.edgeId !== null;
+  const hasActiveHover =
+    hoverState.nodeId !== null || hoverState.edgeId !== null;
 
   if (isHovered) {
     // Node is being hovered
@@ -221,7 +224,8 @@ export function getEdgeHoverEffect(
   isConnectedToHoveredNode: boolean = false
 ): EdgeHoverEffect {
   const isHovered = hoverState.edgeId === edge.id;
-  const hasActiveHover = hoverState.nodeId !== null || hoverState.edgeId !== null;
+  const hasActiveHover =
+    hoverState.nodeId !== null || hoverState.edgeId !== null;
 
   if (isHovered) {
     // Edge is being hovered
@@ -264,7 +268,7 @@ export function getEdgeHoverEffect(
  */
 export function getHandleHoverEffect(
   handleId: string,
-  handleType: 'source' | 'target',
+  handleType: "source" | "target",
   hoverState: HoverState,
   isValidConnection: boolean = true
 ): HandleHoverEffect {
@@ -294,7 +298,8 @@ export function getHandleHoverEffect(
 
 export class ConnectionGraph {
   private nodeToEdges: Map<string, Set<string>> = new Map();
-  private edgeToNodes: Map<string, { source: string; target: string }> = new Map();
+  private edgeToNodes: Map<string, { source: string; target: string }> =
+    new Map();
 
   /**
    * Build graph from nodes and edges
@@ -304,12 +309,12 @@ export class ConnectionGraph {
     this.edgeToNodes.clear();
 
     // Initialize all nodes
-    nodes.forEach(node => {
+    nodes.forEach((node) => {
       this.nodeToEdges.set(node.id, new Set());
     });
 
     // Map edges to nodes
-    edges.forEach(edge => {
+    edges.forEach((edge) => {
       this.edgeToNodes.set(edge.id, {
         source: edge.source,
         target: edge.target,
@@ -343,7 +348,7 @@ export class ConnectionGraph {
     const connectedNodes = new Set<string>();
     const edges = this.getConnectedEdges(nodeId);
 
-    edges.forEach(edgeId => {
+    edges.forEach((edgeId) => {
       const edgeNodes = this.edgeToNodes.get(edgeId);
       if (edgeNodes) {
         if (edgeNodes.source === nodeId) {
@@ -391,15 +396,14 @@ export class EffectApplicator {
   /**
    * Apply hover effects to all nodes
    */
-  applyNodeEffects(
-    nodes: CanvasNode[],
-    hoverState: HoverState
-  ): CanvasNode[] {
+  applyNodeEffects(nodes: CanvasNode[], hoverState: HoverState): CanvasNode[] {
     let connectedNodeIds = new Set<string>();
 
     // Get connected nodes if hovering a node
     if (hoverState.nodeId) {
-      connectedNodeIds = this.connectionGraph.getConnectedNodes(hoverState.nodeId);
+      connectedNodeIds = this.connectionGraph.getConnectedNodes(
+        hoverState.nodeId
+      );
       connectedNodeIds.add(hoverState.nodeId); // Include hovered node
     }
 
@@ -412,7 +416,7 @@ export class EffectApplicator {
       }
     }
 
-    return nodes.map(node => {
+    return nodes.map((node) => {
       const effect = getNodeHoverEffect(node, hoverState, connectedNodeIds);
 
       return {
@@ -425,7 +429,7 @@ export class EffectApplicator {
           transform: `scale(${effect.scale || 1})`,
           boxShadow: effect.shadow,
           zIndex: effect.zIndex,
-          transition: 'all 150ms ease-in-out',
+          transition: "all 150ms ease-in-out",
         },
       };
     });
@@ -434,11 +438,8 @@ export class EffectApplicator {
   /**
    * Apply hover effects to all edges
    */
-  applyEdgeEffects(
-    edges: CanvasEdge[],
-    hoverState: HoverState
-  ): CanvasEdge[] {
-    return edges.map(edge => {
+  applyEdgeEffects(edges: CanvasEdge[], hoverState: HoverState): CanvasEdge[] {
+    return edges.map((edge) => {
       const isConnected = hoverState.nodeId
         ? this.connectionGraph.isEdgeConnectedToNode(edge.id, hoverState.nodeId)
         : false;
@@ -452,7 +453,7 @@ export class EffectApplicator {
           strokeWidth: effect.strokeWidth,
           opacity: effect.opacity,
           stroke: effect.color || edge.style?.stroke,
-          transition: 'all 150ms ease-in-out',
+          transition: "all 150ms ease-in-out",
         },
         animated: effect.animated,
       };
@@ -483,10 +484,12 @@ export const effectApplicator = new EffectApplicator();
 // React Hook - Use Hover Effects
 // ============================================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 export function useHoverEffects() {
-  const [hoverState, setHoverState] = useState<HoverState>(hoverEffects.getState());
+  const [hoverState, setHoverState] = useState<HoverState>(
+    hoverEffects.getState()
+  );
 
   useEffect(() => {
     return hoverEffects.subscribe(setHoverState);
@@ -494,10 +497,14 @@ export function useHoverEffects() {
 
   return {
     hoverState,
-    setHoveredNode: (nodeId: string | null) => hoverEffects.setHoveredNode(nodeId),
-    setHoveredEdge: (edgeId: string | null) => hoverEffects.setHoveredEdge(edgeId),
-    setHoveredHandle: (handleId: string | null, handleType: 'source' | 'target' | null = null) =>
-      hoverEffects.setHoveredHandle(handleId, handleType),
+    setHoveredNode: (nodeId: string | null) =>
+      hoverEffects.setHoveredNode(nodeId),
+    setHoveredEdge: (edgeId: string | null) =>
+      hoverEffects.setHoveredEdge(edgeId),
+    setHoveredHandle: (
+      handleId: string | null,
+      handleType: "source" | "target" | null = null
+    ) => hoverEffects.setHoveredHandle(handleId, handleType),
     clearHover: () => hoverEffects.clearHover(),
   };
 }
@@ -524,10 +531,13 @@ export function throttleHover<T extends (...args: any[]) => void>(
       fn(...args);
     } else {
       if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        lastCall = Date.now();
-        fn(...args);
-      }, delay - (now - lastCall));
+      timeoutId = setTimeout(
+        () => {
+          lastCall = Date.now();
+          fn(...args);
+        },
+        delay - (now - lastCall)
+      );
     }
   }) as T;
 }

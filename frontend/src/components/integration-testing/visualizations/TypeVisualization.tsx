@@ -31,7 +31,7 @@ export function TypeVisualization({ location, text }: TypeVisualizationProps) {
         style={{
           left: `${x}px`,
           top: `${y + 30}px`,
-          transform: 'translateX(-50%)',
+          transform: "translateX(-50%)",
         }}
       >
         <div className="bg-blue-500 text-white px-3 py-2 rounded-lg shadow-lg max-w-xs">

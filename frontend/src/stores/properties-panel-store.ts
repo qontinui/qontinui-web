@@ -8,14 +8,14 @@
  * - Panel dimensions and position
  */
 
-import { create } from 'zustand';
-import { devtools, persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { devtools, persist } from "zustand/middleware";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type PanelPosition = 'right' | 'bottom' | 'floating';
+export type PanelPosition = "right" | "bottom" | "floating";
 
 export interface UnsavedChange {
   actionId: string;
@@ -72,7 +72,12 @@ export interface PropertiesPanelActions {
   setActiveSection: (sectionId: string | null) => void;
 
   // Unsaved changes
-  recordChange: (actionId: string, property: string, oldValue: any, newValue: any) => void;
+  recordChange: (
+    actionId: string,
+    property: string,
+    oldValue: any,
+    newValue: any
+  ) => void;
   clearChanges: (actionId?: string) => void;
   discardChanges: (actionId?: string) => void;
   hasChangesForAction: (actionId: string) => boolean;
@@ -86,7 +91,8 @@ export interface PropertiesPanelActions {
   reset: () => void;
 }
 
-export type PropertiesPanelStore = PropertiesPanelState & PropertiesPanelActions;
+export type PropertiesPanelStore = PropertiesPanelState &
+  PropertiesPanelActions;
 
 // ============================================================================
 // Initial State
@@ -94,7 +100,7 @@ export type PropertiesPanelStore = PropertiesPanelState & PropertiesPanelActions
 
 const initialState: PropertiesPanelState = {
   isOpen: true,
-  position: 'right',
+  position: "right",
 
   width: 400,
   height: 300,
@@ -158,7 +164,7 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
         },
 
         setFloatingPosition: (x: number, y: number) => {
-          set((state) => ({
+          set(() => ({
             floatingPosition: { x, y },
           }));
         },
@@ -168,7 +174,7 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
           const clampedWidth = Math.max(300, Math.min(800, width));
           const clampedHeight = Math.max(400, Math.min(1000, height));
 
-          set((state) => ({
+          set(() => ({
             floatingSize: { width: clampedWidth, height: clampedHeight },
           }));
         },
@@ -213,13 +219,20 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
         // Unsaved Changes
         // ========================================================================
 
-        recordChange: (actionId: string, property: string, oldValue: any, newValue: any) => {
+        recordChange: (
+          actionId: string,
+          property: string,
+          oldValue: any,
+          newValue: any
+        ) => {
           set((state) => {
             const changes = new Map(state.unsavedChanges);
             const actionChanges = changes.get(actionId) || [];
 
             // Check if this property already has a change recorded
-            const existingIndex = actionChanges.findIndex(c => c.property === property);
+            const existingIndex = actionChanges.findIndex(
+              (c) => c.property === property
+            );
 
             const change: UnsavedChange = {
               actionId,
@@ -231,10 +244,13 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
 
             if (existingIndex >= 0) {
               // Update existing change, keep original oldValue
-              actionChanges[existingIndex] = {
-                ...change,
-                oldValue: actionChanges[existingIndex].oldValue,
-              };
+              const existingChange = actionChanges[existingIndex];
+              if (existingChange) {
+                actionChanges[existingIndex] = {
+                  ...change,
+                  oldValue: existingChange.oldValue,
+                };
+              }
             } else {
               // Add new change
               actionChanges.push(change);
@@ -311,7 +327,7 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
         },
       }),
       {
-        name: 'properties-panel-storage',
+        name: "properties-panel-storage",
         partialize: (state) => ({
           position: state.position,
           width: state.width,
@@ -324,7 +340,7 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
         }),
       }
     ),
-    { name: 'PropertiesPanelStore' }
+    { name: "PropertiesPanelStore" }
   )
 );
 
@@ -336,7 +352,9 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
  * Hook to check if a specific section is collapsed
  */
 export function useIsSectionCollapsed(sectionId: string): boolean {
-  return usePropertiesPanelStore((state) => state.collapsedSections.has(sectionId));
+  return usePropertiesPanelStore((state) =>
+    state.collapsedSections.has(sectionId)
+  );
 }
 
 /**
@@ -344,10 +362,10 @@ export function useIsSectionCollapsed(sectionId: string): boolean {
  */
 export function usePanelDimensions() {
   return usePropertiesPanelStore((state) => {
-    if (state.position === 'right') {
-      return { width: state.width, height: '100%' };
-    } else if (state.position === 'bottom') {
-      return { width: '100%', height: state.height };
+    if (state.position === "right") {
+      return { width: state.width, height: "100%" };
+    } else if (state.position === "bottom") {
+      return { width: "100%", height: state.height };
     } else {
       return state.floatingSize;
     }

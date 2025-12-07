@@ -9,24 +9,24 @@ Provides endpoints for:
 """
 
 import re
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.audit import audit_logger
 from app.core.error_codes import ErrorCode
-from app.middleware.error_handler import (
-    conflict_error,
-    forbidden_error,
-    not_found_error,
-    validation_error,
-)
+from app.middleware.error_handler import forbidden_error, not_found_error
 from app.middleware.rate_limit import user_limiter
 from app.models.organization import (
     Organization,
     OrganizationInvitation,
-    PermissionLevel,
     TeamMember,
     TeamRole,
 )
@@ -37,7 +37,6 @@ from app.schemas.collaboration import (
     InvitationResponse,
     OrganizationCreate,
     OrganizationResponse,
-    OrganizationSwitchRequest,
     OrganizationSwitchResponse,
     OrganizationUpdate,
     TeamMemberCreate,
@@ -47,10 +46,6 @@ from app.schemas.collaboration import (
 from app.schemas.project import Project
 from app.services.collaboration_service import collaboration_service
 from app.services.permission_service import permission_service
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
 logger = structlog.get_logger(__name__)
 
@@ -106,7 +101,7 @@ def verify_organization_role(
         )
 
     role_hierarchy = {"viewer": 0, "member": 1, "admin": 2, "owner": 3}
-    user_level = role_hierarchy.get(membership.role, 0)
+    user_level = role_hierarchy.get(str(membership.role), 0)
     required_level = role_hierarchy.get(required_role, 0)
 
     if user_level < required_level:
@@ -122,12 +117,13 @@ def verify_organization_role(
 
 
 @router.post(
-    "/", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED
+    "", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED
 )
 @user_limiter.limit("10 per minute")
 async def create_organization(
     *,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     organization_in: OrganizationCreate,
     current_user: User = Depends(get_current_active_user_async),
@@ -168,13 +164,13 @@ async def create_organization(
     logger.info("organization_created", org_id=organization.id, slug=slug)
 
     # Add member count
-    response = OrganizationResponse.model_validate(organization)
-    response.member_count = 1
+    org_response = OrganizationResponse.model_validate(organization)
+    org_response.member_count = 1
 
-    return response
+    return org_response
 
 
-@router.get("/", response_model=list[OrganizationResponse])
+@router.get("", response_model=list[OrganizationResponse])
 async def list_user_organizations(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -511,8 +507,8 @@ async def update_team_member(
         action="change_role",
         organization_id=organization_id,
         target_user_id=user_id,
-        role=member.role,
-        old_role=old_role,
+        role=str(member.role),
+        old_role=str(old_role),
         request=request,
     )
     await db.commit()
@@ -584,7 +580,7 @@ async def remove_team_member(
         action="remove_member",
         organization_id=organization_id,
         target_user_id=user_id,
-        role=removed_role,
+        role=str(removed_role),
         request=request,
     )
     await db.commit()
@@ -632,7 +628,7 @@ async def create_invitation(
         raise not_found_error("Organization", "organization")
 
     # Check if user already a member
-    result = await db.execute(select(User).filter(User.email == invitation_in.email))
+    result = await db.execute(select(User).where(User.email == invitation_in.email))  # type: ignore[arg-type]
     existing_user = result.scalar_one_or_none()
 
     if existing_user:
@@ -814,7 +810,7 @@ async def accept_invitation(
     db.add(member)
 
     # Mark invitation as accepted
-    invitation.accepted_at = invitation.created_at.__class__.utcnow()
+    invitation.accepted_at = datetime.utcnow()  # type: ignore[assignment]
 
     await db.commit()
     await db.refresh(member)
@@ -867,7 +863,7 @@ async def switch_organization(
     return OrganizationSwitchResponse(
         current_organization_id=organization_id,
         success=True,
-        message=f"Switched to organization context",
+        message="Switched to organization context",
     )
 
 

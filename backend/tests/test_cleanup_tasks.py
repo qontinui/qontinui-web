@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
+
 from app.models.device_session import DeviceSession
 from app.models.session_activity import SessionActivity
 from app.worker.scheduler import run_all_cleanup_tasks
@@ -13,7 +15,6 @@ from app.worker.tasks.cleanup_tasks import (
     cleanup_old_analytics_events,
     cleanup_token_blacklist,
 )
-from sqlalchemy import select
 
 
 @pytest.mark.asyncio
@@ -184,7 +185,7 @@ async def test_run_all_cleanup_tasks(async_session, test_user):
     assert "token_blacklist" in results["tasks"]
 
     # Verify all tasks completed successfully
-    for task_name, task_result in results["tasks"].items():
+    for _task_name, task_result in results["tasks"].items():
         assert task_result["status"] == "success"
 
 

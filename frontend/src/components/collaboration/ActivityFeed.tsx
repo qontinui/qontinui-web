@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import * as React from 'react';
+import * as React from "react";
 import {
   Activity,
   FileEdit,
@@ -15,18 +15,18 @@ import {
   ChevronDown,
   Loader2,
   ExternalLink,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -34,27 +34,33 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
-import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from 'date-fns';
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import {
+  format,
+  formatDistanceToNow,
+  isToday,
+  isYesterday,
+  parseISO,
+} from "date-fns";
 
 export type ActivityAction =
-  | 'created'
-  | 'updated'
-  | 'deleted'
-  | 'commented'
-  | 'shared'
-  | 'invited'
-  | 'removed'
-  | 'forked';
+  | "created"
+  | "updated"
+  | "deleted"
+  | "commented"
+  | "shared"
+  | "invited"
+  | "removed"
+  | "forked";
 
 export type ResourceType =
-  | 'workflow'
-  | 'project'
-  | 'state'
-  | 'transition'
-  | 'comment'
-  | 'user';
+  | "workflow"
+  | "project"
+  | "state"
+  | "transition"
+  | "comment"
+  | "user";
 
 export interface ActivityItem {
   id: string;
@@ -92,25 +98,25 @@ const actionIcons: Record<ActivityAction, React.ComponentType<any>> = {
 };
 
 const actionColors: Record<ActivityAction, string> = {
-  created: 'text-green-500',
-  updated: 'text-blue-500',
-  deleted: 'text-red-500',
-  commented: 'text-purple-500',
-  shared: 'text-cyan-500',
-  invited: 'text-emerald-500',
-  removed: 'text-orange-500',
-  forked: 'text-indigo-500',
+  created: "text-green-500",
+  updated: "text-blue-500",
+  deleted: "text-red-500",
+  commented: "text-purple-500",
+  shared: "text-cyan-500",
+  invited: "text-emerald-500",
+  removed: "text-orange-500",
+  forked: "text-indigo-500",
 };
 
 const actionVerbs: Record<ActivityAction, string> = {
-  created: 'created',
-  updated: 'updated',
-  deleted: 'deleted',
-  commented: 'commented on',
-  shared: 'shared',
-  invited: 'invited',
-  removed: 'removed',
-  forked: 'forked',
+  created: "created",
+  updated: "updated",
+  deleted: "deleted",
+  commented: "commented on",
+  shared: "shared",
+  invited: "invited",
+  removed: "removed",
+  forked: "forked",
 };
 
 export function ActivityFeed({
@@ -122,51 +128,60 @@ export function ActivityFeed({
   onActivityClick,
   className,
 }: ActivityFeedProps) {
-  const [userFilter, setUserFilter] = React.useState<string>('all');
-  const [actionFilters, setActionFilters] = React.useState<ActivityAction[]>([]);
-  const [resourceFilters, setResourceFilters] = React.useState<ResourceType[]>([]);
+  const [userFilter, setUserFilter] = React.useState<string>("all");
+  const [actionFilters, setActionFilters] = React.useState<ActivityAction[]>(
+    []
+  );
+  const [resourceFilters, setResourceFilters] = React.useState<ResourceType[]>(
+    []
+  );
   const [loadingMore, setLoadingMore] = React.useState(false);
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
 
   const formatTimestamp = (timestamp: Date | string) => {
-    const date = typeof timestamp === 'string' ? parseISO(timestamp) : timestamp;
+    const date =
+      typeof timestamp === "string" ? parseISO(timestamp) : timestamp;
 
     if (isToday(date)) {
       return formatDistanceToNow(date, { addSuffix: true });
     } else if (isYesterday(date)) {
-      return `Yesterday at ${format(date, 'HH:mm')}`;
+      return `Yesterday at ${format(date, "HH:mm")}`;
     } else {
-      return format(date, 'MMM d, yyyy HH:mm');
+      return format(date, "MMM d, yyyy HH:mm");
     }
   };
 
   const getDateGroup = (timestamp: Date | string) => {
-    const date = typeof timestamp === 'string' ? parseISO(timestamp) : timestamp;
+    const date =
+      typeof timestamp === "string" ? parseISO(timestamp) : timestamp;
 
     if (isToday(date)) {
-      return 'Today';
+      return "Today";
     } else if (isYesterday(date)) {
-      return 'Yesterday';
+      return "Yesterday";
     } else {
-      return format(date, 'MMMM d, yyyy');
+      return format(date, "MMMM d, yyyy");
     }
   };
 
   // Filter activities
   const filteredActivities = React.useMemo(() => {
     return activities.filter((activity) => {
-      if (userFilter !== 'all' && activity.user_id !== userFilter) {
+      if (userFilter !== "all" && activity.user_id !== userFilter) {
         return false;
       }
-      if (actionFilters.length > 0 && !actionFilters.includes(activity.action)) {
+      if (
+        actionFilters.length > 0 &&
+        !actionFilters.includes(activity.action)
+      ) {
         return false;
       }
       if (
@@ -233,19 +248,24 @@ export function ActivityFeed({
   };
 
   const hasActiveFilters =
-    userFilter !== 'all' ||
+    userFilter !== "all" ||
     actionFilters.length > 0 ||
     resourceFilters.length > 0;
 
   return (
-    <div className={cn('flex flex-col bg-background border rounded-lg', className)}>
+    <div
+      className={cn("flex flex-col bg-background border rounded-lg", className)}
+    >
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4" />
           <span className="text-sm font-medium">Activity Feed</span>
           {realtime && (
-            <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
+            <Badge
+              variant="outline"
+              className="bg-green-500/10 text-green-500 border-green-500/20"
+            >
               <span className="relative flex h-2 w-2 mr-1">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
@@ -258,7 +278,10 @@ export function ActivityFeed({
           {/* User Filter */}
           {uniqueUsers.length > 1 && (
             <Select value={userFilter} onValueChange={setUserFilter}>
-              <SelectTrigger className="w-[140px] h-8" aria-label="Filter by user">
+              <SelectTrigger
+                className="w-[140px] h-8"
+                aria-label="Filter by user"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -302,19 +325,24 @@ export function ActivityFeed({
               <DropdownMenuSeparator />
               <DropdownMenuLabel>Resource Type</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {['workflow', 'project', 'state', 'transition', 'comment', 'user'].map(
-                (resource) => (
-                  <DropdownMenuCheckboxItem
-                    key={resource}
-                    checked={resourceFilters.includes(resource as ResourceType)}
-                    onCheckedChange={() =>
-                      toggleResourceFilter(resource as ResourceType)
-                    }
-                  >
-                    {resource.charAt(0).toUpperCase() + resource.slice(1)}
-                  </DropdownMenuCheckboxItem>
-                )
-              )}
+              {[
+                "workflow",
+                "project",
+                "state",
+                "transition",
+                "comment",
+                "user",
+              ].map((resource) => (
+                <DropdownMenuCheckboxItem
+                  key={resource}
+                  checked={resourceFilters.includes(resource as ResourceType)}
+                  onCheckedChange={() =>
+                    toggleResourceFilter(resource as ResourceType)
+                  }
+                >
+                  {resource.charAt(0).toUpperCase() + resource.slice(1)}
+                </DropdownMenuCheckboxItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -329,8 +357,8 @@ export function ActivityFeed({
         ) : filteredActivities.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             {hasActiveFilters
-              ? 'No activities match your filters'
-              : 'No activity yet'}
+              ? "No activities match your filters"
+              : "No activity yet"}
           </div>
         ) : (
           <div className="p-3 space-y-6">
@@ -351,8 +379,8 @@ export function ActivityFeed({
                       <div
                         key={activity.id}
                         className={cn(
-                          'flex gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors',
-                          onActivityClick && 'cursor-pointer'
+                          "flex gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors",
+                          onActivityClick && "cursor-pointer"
                         )}
                         onClick={() => onActivityClick?.(activity)}
                       >
@@ -367,15 +395,17 @@ export function ActivityFeed({
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start gap-2">
-                            <ActionIcon className={cn('h-4 w-4 mt-0.5', actionColor)} />
+                            <ActionIcon
+                              className={cn("h-4 w-4 mt-0.5", actionColor)}
+                            />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm">
                                 <span className="font-medium">
                                   {activity.user_name}
-                                </span>{' '}
+                                </span>{" "}
                                 <span className="text-muted-foreground">
                                   {verb}
-                                </span>{' '}
+                                </span>{" "}
                                 <span className="font-medium">
                                   {activity.resource_name}
                                 </span>

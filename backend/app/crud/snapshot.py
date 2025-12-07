@@ -4,10 +4,12 @@ CRUD operations for snapshots (async)
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
-from app.models.snapshot import Pattern, Screenshot, SnapshotRun
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.snapshot import Pattern, Screenshot, SnapshotRun
 
 
 async def create_snapshot_run(
@@ -16,7 +18,7 @@ async def create_snapshot_run(
     run_name: str,
     timestamp: datetime,
     states: list[str],
-    project_id: int | None = None,
+    project_id: UUID | None = None,
     workflow_id: int | None = None,
     description: str | None = None,
     tags: list[str] | None = None,
@@ -58,7 +60,7 @@ async def list_snapshot_runs(
     db: AsyncSession,
     skip: int = 0,
     limit: int = 50,
-    project_id: int | None = None,
+    project_id: UUID | None = None,
     workflow_id: int | None = None,
     tags: list[str] | None = None,
 ) -> tuple[list[SnapshotRun], int]:

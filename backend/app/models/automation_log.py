@@ -8,9 +8,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.db.base import Base
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.automation_session import AutomationSession
@@ -28,7 +30,7 @@ class AutomationLog(Base):
     __tablename__ = "automation_logs"
 
     id: Mapped[UUID] = mapped_column(
-        primary_key=True, server_default="gen_random_uuid()"
+        primary_key=True, server_default=text("gen_random_uuid()")
     )
 
     # Foreign key to automation session
@@ -46,7 +48,7 @@ class AutomationLog(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Structured log data (JSONB)
-    log_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    log_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     # Timestamps
     timestamp: Mapped[datetime] = mapped_column(
@@ -70,7 +72,12 @@ class AutomationLog(Base):
     # Composite indexes for common queries
     __table_args__ = (
         Index("ix_automation_logs_session_sequence", "session_id", "sequence_number"),
-        Index("ix_automation_logs_event_type", "log_data", postgresql_using="gin"),
+        Index(
+            "ix_automation_logs_event_type",
+            "log_data",
+            postgresql_using="gin",
+            postgresql_ops={"log_data": "jsonb_path_ops"},
+        ),
     )
 
     def __repr__(self) -> str:

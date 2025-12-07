@@ -11,11 +11,11 @@
  * - Export functionality
  */
 
-'use client';
+"use client";
 
-import React, { useState, useMemo } from 'react';
-import { Workflow } from '@/lib/action-schema/action-types';
-import { WorkflowMetrics, ExecutionRecord } from '@/services/workflow-analytics-service';
+import React, { useState, useMemo } from "react";
+import { Workflow } from "@/lib/action-schema/action-types";
+import { WorkflowMetrics } from "@/services/workflow-analytics-service";
 import {
   LineChart,
   Line,
@@ -27,14 +27,10 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
+} from "recharts";
 import {
   Calendar,
   Download,
-  RefreshCw,
   Activity,
   CheckCircle,
   Clock,
@@ -44,15 +40,26 @@ import {
   AlertTriangle,
   Filter,
   X,
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -138,16 +145,25 @@ function formatNumber(value: number): string {
 // Metric Card Component
 // ============================================================================
 
-function MetricCard({ title, value, icon, trend, description, className }: MetricCardProps) {
+function MetricCard({
+  title,
+  value,
+  icon,
+  trend,
+  description,
+  className,
+}: MetricCardProps) {
   return (
-    <Card className={cn('relative overflow-hidden', className)}>
+    <Card className={cn("relative overflow-hidden", className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <div className="text-muted-foreground">{icon}</div>
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold">{value}</div>
-        {description && <p className="text-xs text-muted-foreground mt-1">{description}</p>}
+        {description && (
+          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+        )}
         {trend !== undefined && (
           <div className="flex items-center mt-2 text-xs">
             {trend > 0 ? (
@@ -155,8 +171,16 @@ function MetricCard({ title, value, icon, trend, description, className }: Metri
             ) : trend < 0 ? (
               <TrendingDown className="h-3 w-3 text-red-500 mr-1" />
             ) : null}
-            <span className={cn(trend > 0 ? 'text-green-500' : trend < 0 ? 'text-red-500' : 'text-muted-foreground')}>
-              {trend > 0 ? '+' : ''}
+            <span
+              className={cn(
+                trend > 0
+                  ? "text-green-500"
+                  : trend < 0
+                    ? "text-red-500"
+                    : "text-muted-foreground"
+              )}
+            >
+              {trend > 0 ? "+" : ""}
               {trend.toFixed(1)}% from last period
             </span>
           </div>
@@ -177,28 +201,40 @@ export function AnalyticsDashboard({
   onTimeRangeChange,
   className,
 }: AnalyticsDashboardProps) {
-  const [selectedFolder, setSelectedFolder] = useState<string>('all');
-  const [selectedTag, setSelectedTag] = useState<string>('all');
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedFolder, setSelectedFolder] = useState<string>("all");
 
   // Calculate aggregated metrics
   const aggregatedMetrics = useMemo(() => {
     const metricsArray = Object.values(metrics);
 
     // Filter by folder if selected
-    const filteredMetrics = selectedFolder === 'all'
-      ? metricsArray
-      : metricsArray.filter(m => m.folderId === selectedFolder);
+    const filteredMetrics =
+      selectedFolder === "all"
+        ? metricsArray
+        : metricsArray.filter((m) => m.folderId === selectedFolder);
 
-    const totalExecutions = filteredMetrics.reduce((sum, m) => sum + m.totalExecutions, 0);
-    const totalSuccessful = filteredMetrics.reduce((sum, m) => sum + m.successfulExecutions, 0);
-    const totalFailed = filteredMetrics.reduce((sum, m) => sum + m.failedExecutions, 0);
-    const avgSuccessRate = filteredMetrics.length > 0
-      ? filteredMetrics.reduce((sum, m) => sum + m.successRate, 0) / filteredMetrics.length
-      : 0;
-    const avgDuration = filteredMetrics.length > 0
-      ? filteredMetrics.reduce((sum, m) => sum + m.avgDuration, 0) / filteredMetrics.length
-      : 0;
+    const totalExecutions = filteredMetrics.reduce(
+      (sum, m) => sum + m.totalExecutions,
+      0
+    );
+    const totalSuccessful = filteredMetrics.reduce(
+      (sum, m) => sum + m.successfulExecutions,
+      0
+    );
+    const totalFailed = filteredMetrics.reduce(
+      (sum, m) => sum + m.failedExecutions,
+      0
+    );
+    const avgSuccessRate =
+      filteredMetrics.length > 0
+        ? filteredMetrics.reduce((sum, m) => sum + m.successRate, 0) /
+          filteredMetrics.length
+        : 0;
+    const avgDuration =
+      filteredMetrics.length > 0
+        ? filteredMetrics.reduce((sum, m) => sum + m.avgDuration, 0) /
+          filteredMetrics.length
+        : 0;
 
     return {
       totalExecutions,
@@ -213,14 +249,16 @@ export function AnalyticsDashboard({
   // Top workflows
   const topWorkflows = useMemo(() => {
     const metricsArray = Object.values(metrics);
-    const sortedByExecutions = [...metricsArray].sort((a, b) => b.totalExecutions - a.totalExecutions).slice(0, 5);
+    const sortedByExecutions = [...metricsArray]
+      .sort((a, b) => b.totalExecutions - a.totalExecutions)
+      .slice(0, 5);
     const slowest = [...metricsArray]
-      .filter(m => m.totalExecutions > 0)
+      .filter((m) => m.totalExecutions > 0)
       .sort((a, b) => b.avgDuration - a.avgDuration)
       .slice(0, 5);
     const highestError = [...metricsArray]
-      .filter(m => m.totalExecutions > 0 && m.failedExecutions > 0)
-      .sort((a, b) => (1 - b.successRate) - (1 - a.successRate))
+      .filter((m) => m.totalExecutions > 0 && m.failedExecutions > 0)
+      .sort((a, b) => 1 - b.successRate - (1 - a.successRate))
       .slice(0, 5);
 
     return {
@@ -232,17 +270,30 @@ export function AnalyticsDashboard({
 
   // Timeline data
   const timelineData = useMemo(() => {
-    const metricsArray = Object.values(metrics);
-    const data: Array<{ name: string; executions: number; success: number; failed: number }> = [];
+    const data: Array<{
+      name: string;
+      executions: number;
+      success: number;
+      failed: number;
+    }> = [];
 
     // Group by day for the selected time range
-    const daysDiff = Math.ceil((timeRange.end.getTime() - timeRange.start.getTime()) / (1000 * 60 * 60 * 24));
+    const daysDiff = Math.ceil(
+      (timeRange.end.getTime() - timeRange.start.getTime()) /
+        (1000 * 60 * 60 * 24)
+    );
     const points = Math.min(daysDiff, 30); // Max 30 data points
 
     for (let i = 0; i < points; i++) {
-      const date = new Date(timeRange.start.getTime() + (i * (timeRange.end.getTime() - timeRange.start.getTime()) / points));
+      const date = new Date(
+        timeRange.start.getTime() +
+          (i * (timeRange.end.getTime() - timeRange.start.getTime())) / points
+      );
       data.push({
-        name: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        name: date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
         executions: Math.floor(Math.random() * 100), // TODO: Replace with actual data
         success: Math.floor(Math.random() * 80),
         failed: Math.floor(Math.random() * 20),
@@ -255,11 +306,14 @@ export function AnalyticsDashboard({
   // Success rate by workflow data
   const successRateData = useMemo(() => {
     return Object.values(metrics)
-      .filter(m => m.totalExecutions > 0)
+      .filter((m) => m.totalExecutions > 0)
       .sort((a, b) => b.totalExecutions - a.totalExecutions)
       .slice(0, 10)
-      .map(m => ({
-        name: m.workflowName.length > 20 ? m.workflowName.substring(0, 20) + '...' : m.workflowName,
+      .map((m) => ({
+        name:
+          m.workflowName.length > 20
+            ? m.workflowName.substring(0, 20) + "..."
+            : m.workflowName,
         successRate: m.successRate * 100,
         executions: m.totalExecutions,
       }));
@@ -268,11 +322,14 @@ export function AnalyticsDashboard({
   // Duration by workflow data
   const durationData = useMemo(() => {
     return Object.values(metrics)
-      .filter(m => m.totalExecutions > 0)
+      .filter((m) => m.totalExecutions > 0)
       .sort((a, b) => b.avgDuration - a.avgDuration)
       .slice(0, 10)
-      .map(m => ({
-        name: m.workflowName.length > 20 ? m.workflowName.substring(0, 20) + '...' : m.workflowName,
+      .map((m) => ({
+        name:
+          m.workflowName.length > 20
+            ? m.workflowName.substring(0, 20) + "..."
+            : m.workflowName,
         duration: m.avgDuration,
         minDuration: m.minDuration,
         maxDuration: m.maxDuration,
@@ -281,7 +338,7 @@ export function AnalyticsDashboard({
 
   // Handle time range change
   const handleTimeRangeChange = (preset: string) => {
-    if (preset === 'custom') {
+    if (preset === "custom") {
       // TODO: Open custom date picker
       return;
     }
@@ -301,21 +358,25 @@ export function AnalyticsDashboard({
       workflows: Object.values(metrics),
     };
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `workflow-analytics-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `workflow-analytics-${new Date().toISOString().split("T")[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   return (
-    <div className={cn('space-y-6', className)}>
+    <div className={cn("space-y-6", className)}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Analytics Dashboard</h2>
+          <h2 className="text-3xl font-bold tracking-tight">
+            Analytics Dashboard
+          </h2>
           <p className="text-muted-foreground">
             Monitor workflow performance and execution metrics
           </p>
@@ -335,9 +396,15 @@ export function AnalyticsDashboard({
               <SelectItem value="custom">Custom range...</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={() => setRefreshKey(k => k + 1)}>
+          {/* TODO: Implement refresh functionality
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setRefreshKey((k) => k + 1)}
+          >
             <RefreshCw className="h-4 w-4" />
           </Button>
+          */}
           <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Export
@@ -346,13 +413,16 @@ export function AnalyticsDashboard({
       </div>
 
       {/* Filters */}
-      {selectedFolder !== 'all' && (
+      {selectedFolder !== "all" && (
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm text-muted-foreground">Active filters:</span>
           <Badge variant="secondary" className="gap-1">
             Folder: {selectedFolder}
-            <X className="h-3 w-3 cursor-pointer" onClick={() => setSelectedFolder('all')} />
+            <X
+              className="h-3 w-3 cursor-pointer"
+              onClick={() => setSelectedFolder("all")}
+            />
           </Badge>
         </div>
       )}
@@ -408,9 +478,27 @@ export function AnalyticsDashboard({
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="executions" stroke="#3b82f6" name="Total" strokeWidth={2} />
-                  <Line type="monotone" dataKey="success" stroke="#10b981" name="Success" strokeWidth={2} />
-                  <Line type="monotone" dataKey="failed" stroke="#ef4444" name="Failed" strokeWidth={2} />
+                  <Line
+                    type="monotone"
+                    dataKey="executions"
+                    stroke="#3b82f6"
+                    name="Total"
+                    strokeWidth={2}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="success"
+                    stroke="#10b981"
+                    name="Success"
+                    strokeWidth={2}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="failed"
+                    stroke="#ef4444"
+                    name="Failed"
+                    strokeWidth={2}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>
@@ -421,7 +509,9 @@ export function AnalyticsDashboard({
           <Card>
             <CardHeader>
               <CardTitle>Success Rate by Workflow</CardTitle>
-              <CardDescription>Top 10 workflows by execution count</CardDescription>
+              <CardDescription>
+                Top 10 workflows by execution count
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -431,7 +521,11 @@ export function AnalyticsDashboard({
                   <YAxis type="category" dataKey="name" width={150} />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="successRate" fill="#10b981" name="Success Rate %" />
+                  <Bar
+                    dataKey="successRate"
+                    fill="#10b981"
+                    name="Success Rate %"
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -484,7 +578,11 @@ export function AnalyticsDashboard({
                     tick={{ fontSize: 12 }}
                   />
                   <Tooltip />
-                  <Bar dataKey="totalExecutions" fill="#8b5cf6" name="Executions" />
+                  <Bar
+                    dataKey="totalExecutions"
+                    fill="#8b5cf6"
+                    name="Executions"
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -503,16 +601,25 @@ export function AnalyticsDashboard({
             <ScrollArea className="h-[300px]">
               <div className="space-y-2">
                 {topWorkflows.mostExecuted.map((metric, index) => (
-                  <div key={metric.workflowId} className="flex items-center justify-between p-2 rounded hover:bg-accent">
+                  <div
+                    key={metric.workflowId}
+                    className="flex items-center justify-between p-2 rounded hover:bg-accent"
+                  >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-sm font-medium text-muted-foreground">#{index + 1}</span>
-                      <span className="text-sm truncate">{metric.workflowName}</span>
+                      <span className="text-sm font-medium text-muted-foreground">
+                        #{index + 1}
+                      </span>
+                      <span className="text-sm truncate">
+                        {metric.workflowName}
+                      </span>
                     </div>
                     <Badge variant="secondary">{metric.totalExecutions}</Badge>
                   </div>
                 ))}
                 {topWorkflows.mostExecuted.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-8">No data available</p>
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No data available
+                  </p>
                 )}
               </div>
             </ScrollArea>
@@ -528,16 +635,27 @@ export function AnalyticsDashboard({
             <ScrollArea className="h-[300px]">
               <div className="space-y-2">
                 {topWorkflows.slowest.map((metric, index) => (
-                  <div key={metric.workflowId} className="flex items-center justify-between p-2 rounded hover:bg-accent">
+                  <div
+                    key={metric.workflowId}
+                    className="flex items-center justify-between p-2 rounded hover:bg-accent"
+                  >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-sm font-medium text-muted-foreground">#{index + 1}</span>
-                      <span className="text-sm truncate">{metric.workflowName}</span>
+                      <span className="text-sm font-medium text-muted-foreground">
+                        #{index + 1}
+                      </span>
+                      <span className="text-sm truncate">
+                        {metric.workflowName}
+                      </span>
                     </div>
-                    <Badge variant="outline">{formatDuration(metric.avgDuration)}</Badge>
+                    <Badge variant="outline">
+                      {formatDuration(metric.avgDuration)}
+                    </Badge>
                   </div>
                 ))}
                 {topWorkflows.slowest.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-8">No data available</p>
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No data available
+                  </p>
                 )}
               </div>
             </ScrollArea>
@@ -556,16 +674,27 @@ export function AnalyticsDashboard({
             <ScrollArea className="h-[300px]">
               <div className="space-y-2">
                 {topWorkflows.highestError.map((metric, index) => (
-                  <div key={metric.workflowId} className="flex items-center justify-between p-2 rounded hover:bg-accent">
+                  <div
+                    key={metric.workflowId}
+                    className="flex items-center justify-between p-2 rounded hover:bg-accent"
+                  >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-sm font-medium text-muted-foreground">#{index + 1}</span>
-                      <span className="text-sm truncate">{metric.workflowName}</span>
+                      <span className="text-sm font-medium text-muted-foreground">
+                        #{index + 1}
+                      </span>
+                      <span className="text-sm truncate">
+                        {metric.workflowName}
+                      </span>
                     </div>
-                    <Badge variant="destructive">{formatPercentage(1 - metric.successRate)}</Badge>
+                    <Badge variant="destructive">
+                      {formatPercentage(1 - metric.successRate)}
+                    </Badge>
                   </div>
                 ))}
                 {topWorkflows.highestError.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-8">No failures detected</p>
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No failures detected
+                  </p>
                 )}
               </div>
             </ScrollArea>

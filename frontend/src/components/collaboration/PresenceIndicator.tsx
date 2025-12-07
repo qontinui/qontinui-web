@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { Eye, Edit, MousePointer2, User, X } from 'lucide-react';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import * as React from "react";
+import { Eye, Edit, MousePointer2, User, X } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-export type PresenceStatus = 'active' | 'viewing' | 'editing' | 'idle';
+export type PresenceStatus = "active" | "viewing" | "editing" | "idle";
 
 export interface UserPresence {
   id: string;
@@ -38,30 +38,30 @@ const statusIcons = {
 };
 
 const statusColors = {
-  active: 'bg-green-500/10 text-green-500 border-green-500/20',
-  viewing: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  editing: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-  idle: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
+  active: "bg-green-500/10 text-green-500 border-green-500/20",
+  viewing: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  editing: "bg-orange-500/10 text-orange-500 border-orange-500/20",
+  idle: "bg-gray-500/10 text-gray-500 border-gray-500/20",
 };
 
 const statusDotColors = {
-  active: 'bg-green-500',
-  viewing: 'bg-blue-500',
-  editing: 'bg-orange-500',
-  idle: 'bg-gray-500',
+  active: "bg-green-500",
+  viewing: "bg-blue-500",
+  editing: "bg-orange-500",
+  idle: "bg-gray-500",
 };
 
 const defaultColors = [
-  '#FF6B6B',
-  '#4ECDC4',
-  '#45B7D1',
-  '#FFA07A',
-  '#98D8C8',
-  '#F7B731',
-  '#5F27CD',
-  '#00D2D3',
-  '#FF9FF3',
-  '#54A0FF',
+  "#FF6B6B",
+  "#4ECDC4",
+  "#45B7D1",
+  "#FFA07A",
+  "#98D8C8",
+  "#F7B731",
+  "#5F27CD",
+  "#00D2D3",
+  "#FF9FF3",
+  "#54A0FF",
 ];
 
 export function PresenceIndicator({
@@ -76,28 +76,39 @@ export function PresenceIndicator({
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
 
   const getUserColor = (userId: string, userColor?: string) => {
     if (userColor) return userColor;
-    const index = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const index = userId
+      .split("")
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
     return defaultColors[index % defaultColors.length];
   };
 
-  const activeUsers = users.filter((u) => u.id !== currentUserId && u.status !== 'idle');
-  const idleUsers = users.filter((u) => u.id !== currentUserId && u.status === 'idle');
+  const activeUsers = users.filter(
+    (u) => u.id !== currentUserId && u.status !== "idle"
+  );
+  const idleUsers = users.filter(
+    (u) => u.id !== currentUserId && u.status === "idle"
+  );
 
-  if (users.length === 0 || (users.length === 1 && users[0].id === currentUserId)) {
+  if (
+    users.length === 0 ||
+    (users.length === 1 && users[0]?.id === currentUserId)
+  ) {
     return null;
   }
 
   return (
-    <div className={cn('flex flex-col bg-background border rounded-lg', className)}>
+    <div
+      className={cn("flex flex-col bg-background border rounded-lg", className)}
+    >
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b">
         <div className="flex items-center gap-2">
@@ -117,12 +128,14 @@ export function PresenceIndicator({
             size="icon"
             className="h-6 w-6"
             onClick={() => setCollapsed(!collapsed)}
-            aria-label={collapsed ? 'Expand presence panel' : 'Collapse presence panel'}
+            aria-label={
+              collapsed ? "Expand presence panel" : "Collapse presence panel"
+            }
           >
             <X
               className={cn(
-                'h-4 w-4 transition-transform',
-                collapsed && 'rotate-45'
+                "h-4 w-4 transition-transform",
+                collapsed && "rotate-45"
               )}
             />
           </Button>
@@ -144,8 +157,8 @@ export function PresenceIndicator({
                     <div
                       key={user.id}
                       className={cn(
-                        'flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors',
-                        onUserClick && 'cursor-pointer'
+                        "flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors",
+                        onUserClick && "cursor-pointer"
                       )}
                       onClick={() => onUserClick?.(user)}
                     >
@@ -160,12 +173,12 @@ export function PresenceIndicator({
                           className="h-8 w-8"
                           style={{
                             borderColor: userColor,
-                            borderWidth: '2px',
+                            borderWidth: "2px",
                           }}
                         />
                         <span
                           className={cn(
-                            'absolute bottom-0 right-0 block h-2 w-2 rounded-full ring-2 ring-background',
+                            "absolute bottom-0 right-0 block h-2 w-2 rounded-full ring-2 ring-background",
                             statusDotColors[user.status]
                           )}
                           aria-label={`${user.status} status`}
@@ -178,7 +191,10 @@ export function PresenceIndicator({
                           </span>
                           <Badge
                             variant="outline"
-                            className={cn('shrink-0 text-xs', statusColors[user.status])}
+                            className={cn(
+                              "shrink-0 text-xs",
+                              statusColors[user.status]
+                            )}
                           >
                             <StatusIcon className="mr-1 h-3 w-3" />
                             {user.status}
@@ -195,7 +211,9 @@ export function PresenceIndicator({
                         {user.current_location && !user.editing_item && (
                           <div className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Eye className="h-3 w-3" />
-                            <span className="truncate">{user.current_location}</span>
+                            <span className="truncate">
+                              {user.current_location}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -218,8 +236,8 @@ export function PresenceIndicator({
                   <div
                     key={user.id}
                     className={cn(
-                      'flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors opacity-60',
-                      onUserClick && 'cursor-pointer'
+                      "flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors opacity-60",
+                      onUserClick && "cursor-pointer"
                     )}
                     onClick={() => onUserClick?.(user)}
                   >
@@ -236,7 +254,9 @@ export function PresenceIndicator({
                       <span className="text-sm font-medium truncate">
                         {user.name}
                       </span>
-                      <span className="text-xs text-muted-foreground">Idle</span>
+                      <span className="text-xs text-muted-foreground">
+                        Idle
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -266,7 +286,7 @@ export function PresenceIndicator({
                 style={{
                   left: user.cursor_position!.x,
                   top: user.cursor_position!.y,
-                  transform: 'translate(-50%, -50%)',
+                  transform: "translate(-50%, -50%)",
                 }}
               >
                 <MousePointer2
@@ -277,7 +297,7 @@ export function PresenceIndicator({
                   className="absolute top-5 left-5 text-xs font-medium px-2 py-1 rounded shadow-lg whitespace-nowrap"
                   style={{
                     backgroundColor: userColor,
-                    color: 'white',
+                    color: "white",
                   }}
                 >
                   {user.name}

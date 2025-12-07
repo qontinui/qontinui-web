@@ -15,20 +15,20 @@ import random
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
 from uuid import uuid4
 
 # Add backend to path
 backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
+from PIL import Image, ImageDraw
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.session import AsyncSessionLocal
 from app.models.annotation import AnnotationSet
 from app.models.user import User
 from app.services.object_storage import upload_file
-from PIL import Image, ImageDraw, ImageFont
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class GUIScreenshotGenerator:
@@ -85,7 +85,7 @@ class GUIScreenshotGenerator:
             }
         )
 
-    def generate_menu_bar(self, draw: ImageDraw.Draw, items: List[str]):
+    def generate_menu_bar(self, draw: ImageDraw.Draw, items: list[str]):
         """Generate a menu bar at the top"""
         bar_height = 40
         draw.rectangle([0, 0, self.width, bar_height], fill="#333333")
@@ -143,7 +143,7 @@ class GUIScreenshotGenerator:
             draw, x + width - 90, button_y, 80, 35, "Cancel", "#F44336"
         )
 
-    def generate_sidebar(self, draw: ImageDraw.Draw, items: List[str]):
+    def generate_sidebar(self, draw: ImageDraw.Draw, items: list[str]):
         """Generate a sidebar navigation"""
         sidebar_width = 200
         draw.rectangle([0, 40, sidebar_width, self.height], fill="#424242")
@@ -169,7 +169,7 @@ class GUIScreenshotGenerator:
             }
         )
 
-    def generate_screenshot(self, variation: int = 0) -> Tuple[Image.Image, List[Dict]]:
+    def generate_screenshot(self, variation: int = 0) -> tuple[Image.Image, list[dict]]:
         """Generate a complete GUI screenshot"""
         # Create image
         img = Image.new("RGB", (self.width, self.height), color="#EEEEEE")
@@ -224,7 +224,7 @@ class GUIScreenshotGenerator:
 
 async def generate_test_annotation_sets(
     db: AsyncSession, user: User, count: int = 3, screenshots_per_set: int = 3
-) -> List[AnnotationSet]:
+) -> list[AnnotationSet]:
     """Generate test annotation sets with synthetic screenshots"""
 
     print(f"\n📸 Generating {count} test annotation sets...")
@@ -339,7 +339,7 @@ async def main():
             print(f"  {ann_set.id} - {ann_set.name}")
 
         print("\n💡 You can now run evaluation with these sets:")
-        print(f"   poetry run python test_analysis.py")
+        print("   poetry run python test_analysis.py")
 
 
 if __name__ == "__main__":

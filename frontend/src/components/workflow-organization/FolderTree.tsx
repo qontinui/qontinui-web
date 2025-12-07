@@ -5,7 +5,7 @@
  * Features drag-and-drop, context menus, keyboard navigation, and inline editing.
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -17,26 +17,27 @@ import {
   Edit2,
   Trash2,
   Palette,
-  Image as ImageIcon,
+  ImageIcon,
   Move,
   Plus,
   Minus,
   X,
-  FolderTree as FolderTreeIcon,
-} from 'lucide-react';
-import { Workflow } from '../../lib/action-schema/action-types';
-import { WorkflowFolder, FolderTreeNode, DragItem } from './types';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Badge } from '../ui/badge';
-import { ScrollArea } from '../ui/scroll-area';
+  FolderTreeIcon,
+} from "lucide-react";
+import { Workflow } from "../../lib/action-schema/action-types";
+import { WorkflowFolder, FolderTreeNode, DragItem } from "./types";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Badge } from "../ui/badge";
+import { ScrollArea } from "../ui/scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
+} from "../ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import {
   DndContext,
   DragOverlay,
@@ -49,14 +50,14 @@ import {
   DragEndEvent,
   DragOverEvent,
   UniqueIdentifier,
-} from '@dnd-kit/core';
+} from "@dnd-kit/core";
 import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { cn } from '../../lib/utils';
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { cn } from "../../lib/utils";
 
 // ============================================================================
 // Types
@@ -92,29 +93,29 @@ interface IconPickerProps {
 // ============================================================================
 
 const FOLDER_COLORS = [
-  '#3b82f6', // blue
-  '#10b981', // green
-  '#f59e0b', // amber
-  '#ef4444', // red
-  '#8b5cf6', // purple
-  '#ec4899', // pink
-  '#06b6d4', // cyan
-  '#84cc16', // lime
-  '#f97316', // orange
-  '#6366f1', // indigo
+  "#3b82f6", // blue
+  "#10b981", // green
+  "#f59e0b", // amber
+  "#ef4444", // red
+  "#8b5cf6", // purple
+  "#ec4899", // pink
+  "#06b6d4", // cyan
+  "#84cc16", // lime
+  "#f97316", // orange
+  "#6366f1", // indigo
 ];
 
 const FOLDER_ICONS = [
-  'Folder',
-  'FolderOpen',
-  'FolderPlus',
-  'FolderTree',
-  'Archive',
-  'Bookmark',
-  'Tag',
-  'Star',
-  'Heart',
-  'Shield',
+  "Folder",
+  "FolderOpen",
+  "FolderPlus",
+  "FolderTree",
+  "Archive",
+  "Bookmark",
+  "Tag",
+  "Star",
+  "Heart",
+  "Shield",
 ];
 
 // ============================================================================
@@ -249,7 +250,11 @@ function filterTree(nodes: FolderTreeNode[], query: string): FolderTreeNode[] {
 // Color Picker Component
 // ============================================================================
 
-function ColorPicker({ currentColor, onColorSelect, onClose }: ColorPickerProps) {
+function ColorPicker({
+  currentColor,
+  onColorSelect,
+  onClose,
+}: ColorPickerProps) {
   return (
     <div className="p-2">
       <div className="flex items-center justify-between mb-2">
@@ -263,8 +268,10 @@ function ColorPicker({ currentColor, onColorSelect, onClose }: ColorPickerProps)
           <button
             key={color}
             className={cn(
-              'w-8 h-8 rounded-md border-2 transition-all hover:scale-110',
-              currentColor === color ? 'border-foreground' : 'border-transparent'
+              "w-8 h-8 rounded-md border-2 transition-all hover:scale-110",
+              currentColor === color
+                ? "border-foreground"
+                : "border-transparent"
             )}
             style={{ backgroundColor: color }}
             onClick={() => {
@@ -280,7 +287,7 @@ function ColorPicker({ currentColor, onColorSelect, onClose }: ColorPickerProps)
         size="sm"
         className="w-full mt-2"
         onClick={() => {
-          onColorSelect('');
+          onColorSelect("");
           onClose();
         }}
       >
@@ -311,8 +318,8 @@ function IconPicker({ currentIcon, onIconSelect, onClose }: IconPickerProps) {
           <button
             key={icon}
             className={cn(
-              'w-8 h-8 rounded-md border-2 flex items-center justify-center transition-all hover:bg-accent',
-              currentIcon === icon ? 'border-foreground' : 'border-transparent'
+              "w-8 h-8 rounded-md border-2 flex items-center justify-center transition-all hover:bg-accent",
+              currentIcon === icon ? "border-foreground" : "border-transparent"
             )}
             onClick={() => {
               onIconSelect(icon);
@@ -329,7 +336,7 @@ function IconPicker({ currentIcon, onIconSelect, onClose }: IconPickerProps) {
         size="sm"
         className="w-full mt-2"
         onClick={() => {
-          onIconSelect('');
+          onIconSelect("");
           onClose();
         }}
       >
@@ -386,7 +393,7 @@ function FolderTreeItem({
   } = useSortable({
     id: node.id,
     data: {
-      type: 'folder',
+      type: "folder",
       id: node.id,
       parentId: node.parentId,
     } as DragItem,
@@ -408,15 +415,18 @@ function FolderTreeItem({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'group relative flex items-center gap-1 py-1 px-2 rounded-md cursor-pointer transition-colors',
-        isSelected && 'bg-accent',
-        !isSelected && 'hover:bg-accent/50'
+        "group relative flex items-center gap-1 py-1 px-2 rounded-md cursor-pointer transition-colors",
+        isSelected && "bg-accent",
+        !isSelected && "hover:bg-accent/50"
       )}
       onDoubleClick={() => hasChildren && onToggle(node.id)}
       {...attributes}
       {...listeners}
     >
-      <div className="flex items-center flex-1 gap-1" style={{ paddingLeft: indentWidth }}>
+      <div
+        className="flex items-center flex-1 gap-1"
+        style={{ paddingLeft: indentWidth }}
+      >
         {/* Expand/collapse button */}
         {hasChildren ? (
           <button
@@ -425,7 +435,7 @@ function FolderTreeItem({
               onToggle(node.id);
             }}
             className="flex-shrink-0 p-0.5 hover:bg-accent rounded"
-            aria-label={node.expanded ? 'Collapse folder' : 'Expand folder'}
+            aria-label={node.expanded ? "Collapse folder" : "Expand folder"}
           >
             {node.expanded ? (
               <ChevronDown className="h-4 w-4" />
@@ -450,9 +460,9 @@ function FolderTreeItem({
             onChange={(e) => onEditingNameChange(e.target.value)}
             onBlur={() => onFinishEdit(true)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === "Enter") {
                 onFinishEdit(true);
-              } else if (e.key === 'Escape') {
+              } else if (e.key === "Escape") {
                 onFinishEdit(false);
               }
             }}
@@ -572,16 +582,23 @@ export function FolderTree({
   className,
 }: FolderTreeProps) {
   // State
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
-  const [creatingInParentId, setCreatingInParentId] = useState<string | null>(null);
-  const [newFolderName, setNewFolderName] = useState('');
+  const [editingName, setEditingName] = useState("");
+  const [creatingInParentId, setCreatingInParentId] = useState<string | null>(
+    null
+  );
+  const [newFolderName, setNewFolderName] = useState("");
   const [showColorPicker, setShowColorPicker] = useState<string | null>(null);
   const [showIconPicker, setShowIconPicker] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
-  const [overId, setOverId] = useState<UniqueIdentifier | null>(null);
+  const [_overId, _setOverId] = useState<UniqueIdentifier | null>(null);
+  const [movingFolderId, setMovingFolderId] = useState<string | null>(null);
+  const [moveDialogSearchQuery, setMoveDialogSearchQuery] = useState("");
+  const [moveDialogExpandedIds, setMoveDialogExpandedIds] = useState<
+    Set<string>
+  >(new Set());
 
   // Build tree
   const tree = useMemo(
@@ -597,6 +614,35 @@ export function FolderTree({
 
   // Flatten for rendering
   const flatTree = useMemo(() => flattenTree(filteredTree), [filteredTree]);
+
+  // Build tree for move dialog
+  const moveDialogTree = useMemo(
+    () =>
+      buildFolderTree(
+        folders.filter((f) => f.id !== movingFolderId),
+        workflows,
+        moveDialogExpandedIds
+      ),
+    [folders, workflows, moveDialogExpandedIds, movingFolderId]
+  );
+
+  // Filter move dialog tree
+  const filteredMoveDialogTree = useMemo(
+    () => filterTree(moveDialogTree, moveDialogSearchQuery),
+    [moveDialogTree, moveDialogSearchQuery]
+  );
+
+  // Flatten move dialog tree
+  const flatMoveDialogTree = useMemo(
+    () => flattenTree(filteredMoveDialogTree),
+    [filteredMoveDialogTree]
+  );
+
+  // Get moving folder
+  const movingFolder = useMemo(
+    () => folders.find((f) => f.id === movingFolderId),
+    [folders, movingFolderId]
+  );
 
   // Count total workflows
   const totalWorkflows = workflows.length;
@@ -647,14 +693,14 @@ export function FolderTree({
         onUpdateFolder(editingFolderId, { name: editingName.trim() });
       }
       setEditingFolderId(null);
-      setEditingName('');
+      setEditingName("");
     },
     [editingFolderId, editingName, onUpdateFolder]
   );
 
   const handleCreateSubfolder = useCallback((parentId: string) => {
     setCreatingInParentId(parentId);
-    setNewFolderName('');
+    setNewFolderName("");
     // Expand parent
     setExpandedIds((prev) => new Set(prev).add(parentId));
   }, []);
@@ -665,7 +711,7 @@ export function FolderTree({
         onCreateFolder(newFolderName.trim(), creatingInParentId);
       }
       setCreatingInParentId(null);
-      setNewFolderName('');
+      setNewFolderName("");
     },
     [newFolderName, creatingInParentId, onCreateFolder]
   );
@@ -674,8 +720,8 @@ export function FolderTree({
     setActiveId(event.active.id);
   }, []);
 
-  const handleDragOver = useCallback((event: DragOverEvent) => {
-    setOverId(event.over?.id || null);
+  const handleDragOver = useCallback((_event: DragOverEvent) => {
+    // Drag over handling can be implemented here if needed
   }, []);
 
   const handleDragEnd = useCallback(
@@ -686,25 +732,48 @@ export function FolderTree({
         const dragData = active.data.current as DragItem;
         const dropData = over.data.current as DragItem | undefined;
 
-        if (dragData.type === 'folder') {
+        if (dragData.type === "folder") {
           // Moving a folder
-          const newParentId = dropData?.type === 'folder' ? dropData.id : null;
+          const newParentId = dropData?.type === "folder" ? dropData.id : null;
           // Prevent moving folder into itself or its descendants
           const folder = folders.find((f) => f.id === dragData.id);
           if (folder && newParentId !== folder.id) {
             onMoveFolder(dragData.id, newParentId);
           }
-        } else if (dragData.type === 'workflow') {
+        } else if (dragData.type === "workflow") {
           // Moving a workflow
-          const newFolderId = dropData?.type === 'folder' ? dropData.id : null;
+          const newFolderId = dropData?.type === "folder" ? dropData.id : null;
           onMoveWorkflow(dragData.id, newFolderId);
         }
       }
 
       setActiveId(null);
-      setOverId(null);
     },
     [folders, onMoveFolder, onMoveWorkflow]
+  );
+
+  const handleMoveDialogToggle = useCallback((id: string) => {
+    setMoveDialogExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleMoveFolder = useCallback(
+    (targetFolderId: string | null) => {
+      if (movingFolderId) {
+        onMoveFolder(movingFolderId, targetFolderId);
+        setMovingFolderId(null);
+        setMoveDialogSearchQuery("");
+        setMoveDialogExpandedIds(new Set());
+      }
+    },
+    [movingFolderId, onMoveFolder]
   );
 
   const handleKeyDown = useCallback(
@@ -715,30 +784,37 @@ export function FolderTree({
       if (currentIndex === -1) return;
 
       const currentNode = flatTree[currentIndex];
+      if (!currentNode) return;
 
       switch (e.key) {
-        case 'ArrowDown':
+        case "ArrowDown":
           e.preventDefault();
           if (currentIndex < flatTree.length - 1) {
-            onSelectFolder(flatTree[currentIndex + 1].id);
+            const nextNode = flatTree[currentIndex + 1];
+            if (nextNode) {
+              onSelectFolder(nextNode.id);
+            }
           }
           break;
 
-        case 'ArrowUp':
+        case "ArrowUp":
           e.preventDefault();
           if (currentIndex > 0) {
-            onSelectFolder(flatTree[currentIndex - 1].id);
+            const prevNode = flatTree[currentIndex - 1];
+            if (prevNode) {
+              onSelectFolder(prevNode.id);
+            }
           }
           break;
 
-        case 'ArrowRight':
+        case "ArrowRight":
           e.preventDefault();
           if (currentNode.children.length > 0 && !currentNode.expanded) {
             handleToggle(currentNode.id);
           }
           break;
 
-        case 'ArrowLeft':
+        case "ArrowLeft":
           e.preventDefault();
           if (currentNode.expanded) {
             handleToggle(currentNode.id);
@@ -747,16 +823,19 @@ export function FolderTree({
           }
           break;
 
-        case 'Enter':
+        case "Enter":
           e.preventDefault();
-          if (currentNode.children.length > 0) {
+          if (currentNode && currentNode.children.length > 0) {
             handleToggle(currentNode.id);
           }
           break;
 
-        case 'Delete':
+        case "Delete":
           e.preventDefault();
-          if (window.confirm(`Delete folder "${currentNode.name}"?`)) {
+          if (
+            currentNode &&
+            window.confirm(`Delete folder "${currentNode.name}"?`)
+          ) {
             onDeleteFolder(currentNode.id);
           }
           break;
@@ -766,7 +845,11 @@ export function FolderTree({
   );
 
   return (
-    <div className={cn('flex flex-col h-full', className)} onKeyDown={handleKeyDown} tabIndex={0}>
+    <div
+      className={cn("flex flex-col h-full", className)}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+    >
       {/* Header */}
       <div className="p-4 border-b space-y-3">
         {/* Search */}
@@ -785,16 +868,26 @@ export function FolderTree({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onCreateFolder('New Folder')}
+            onClick={() => onCreateFolder("New Folder")}
             className="flex-1"
           >
             <FolderPlus className="h-4 w-4 mr-2" />
             New Folder
           </Button>
-          <Button variant="ghost" size="sm" onClick={handleExpandAll} title="Expand All">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleExpandAll}
+            title="Expand All"
+          >
             <Plus className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" onClick={handleCollapseAll} title="Collapse All">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleCollapseAll}
+            title="Collapse All"
+          >
             <Minus className="h-4 w-4" />
           </Button>
         </div>
@@ -806,9 +899,9 @@ export function FolderTree({
           {/* All Workflows root */}
           <div
             className={cn(
-              'flex items-center gap-2 py-2 px-2 rounded-md cursor-pointer mb-1 transition-colors',
-              selectedFolderId === null && 'bg-accent',
-              selectedFolderId !== null && 'hover:bg-accent/50'
+              "flex items-center gap-2 py-2 px-2 rounded-md cursor-pointer mb-1 transition-colors",
+              selectedFolderId === null && "bg-accent",
+              selectedFolderId !== null && "hover:bg-accent/50"
             )}
             onClick={() => onSelectFolder(null)}
           >
@@ -823,11 +916,11 @@ export function FolderTree({
           {uncategorizedCount > 0 && (
             <div
               className={cn(
-                'flex items-center gap-2 py-2 px-2 rounded-md cursor-pointer mb-1 transition-colors',
-                selectedFolderId === 'uncategorized' && 'bg-accent',
-                selectedFolderId !== 'uncategorized' && 'hover:bg-accent/50'
+                "flex items-center gap-2 py-2 px-2 rounded-md cursor-pointer mb-1 transition-colors",
+                selectedFolderId === "uncategorized" && "bg-accent",
+                selectedFolderId !== "uncategorized" && "hover:bg-accent/50"
               )}
-              onClick={() => onSelectFolder('uncategorized')}
+              onClick={() => onSelectFolder("uncategorized")}
             >
               <Folder className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium flex-1 text-muted-foreground">
@@ -847,7 +940,10 @@ export function FolderTree({
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
           >
-            <SortableContext items={flatTree.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+            <SortableContext
+              items={flatTree.map((n) => n.id)}
+              strategy={verticalListSortingStrategy}
+            >
               <div className="space-y-0.5">
                 {flatTree.map((node) => (
                   <FolderTreeItem
@@ -866,8 +962,7 @@ export function FolderTree({
                     onChangeColor={(id) => setShowColorPicker(id)}
                     onChangeIcon={(id) => setShowIconPicker(id)}
                     onMove={(id) => {
-                      // TODO: Implement move dialog
-                      console.log('Move folder:', id);
+                      setMovingFolderId(id);
                     }}
                   />
                 ))}
@@ -879,7 +974,8 @@ export function FolderTree({
                     style={{
                       paddingLeft:
                         (folders.find((f) => f.id === creatingInParentId)
-                          ? flatTree.find((n) => n.id === creatingInParentId)?.depth || 0
+                          ? flatTree.find((n) => n.id === creatingInParentId)
+                              ?.depth || 0
                           : 0) *
                           20 +
                         44,
@@ -891,9 +987,9 @@ export function FolderTree({
                       onChange={(e) => setNewFolderName(e.target.value)}
                       onBlur={() => handleFinishCreate(true)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === "Enter") {
                           handleFinishCreate(true);
-                        } else if (e.key === 'Escape') {
+                        } else if (e.key === "Escape") {
                           handleFinishCreate(false);
                         }
                       }}
@@ -923,13 +1019,13 @@ export function FolderTree({
             <div className="text-center py-8 text-muted-foreground">
               <FolderTreeIcon className="h-12 w-12 mx-auto mb-2 opacity-20" />
               <p className="text-sm">
-                {searchQuery ? 'No folders found' : 'No folders yet'}
+                {searchQuery ? "No folders found" : "No folders yet"}
               </p>
               {!searchQuery && (
                 <Button
                   variant="link"
                   size="sm"
-                  onClick={() => onCreateFolder('New Folder')}
+                  onClick={() => onCreateFolder("New Folder")}
                   className="mt-2"
                 >
                   Create your first folder
@@ -945,7 +1041,9 @@ export function FolderTree({
         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-popover rounded-lg shadow-lg border">
             <ColorPicker
-              currentColor={folders.find((f) => f.id === showColorPicker)?.color}
+              currentColor={
+                folders.find((f) => f.id === showColorPicker)?.color
+              }
               onColorSelect={(color) => {
                 onUpdateFolder(showColorPicker, { color });
                 setShowColorPicker(null);
@@ -972,9 +1070,101 @@ export function FolderTree({
         </div>
       )}
 
+      {/* Move folder dialog */}
+      <Dialog
+        open={!!movingFolderId}
+        onOpenChange={(open) => !open && setMovingFolderId(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Move "{movingFolder?.name}" to...</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search folders..."
+                value={moveDialogSearchQuery}
+                onChange={(e) => setMoveDialogSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
+            {/* Folder list */}
+            <ScrollArea className="h-96">
+              <div className="space-y-1 pr-4">
+                {/* Root option */}
+                <button
+                  onClick={() => handleMoveFolder(null)}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2 rounded-md transition-colors hover:bg-accent"
+                  )}
+                >
+                  <FolderTreeIcon className="h-4 w-4" />
+                  <span>Root (Top Level)</span>
+                </button>
+
+                {/* Folder tree */}
+                {flatMoveDialogTree.map((node) => {
+                  const hasChildren = node.children.length > 0;
+                  const FolderIcon = node.expanded ? FolderOpen : Folder;
+
+                  return (
+                    <div
+                      key={node.id}
+                      className="flex items-center gap-1 px-3 py-2 rounded-md transition-colors hover:bg-accent"
+                      style={{ paddingLeft: `${node.depth * 20 + 12}px` }}
+                    >
+                      {/* Expand/collapse */}
+                      {hasChildren ? (
+                        <button
+                          onClick={() => handleMoveDialogToggle(node.id)}
+                          className="flex-shrink-0 p-0.5 hover:bg-accent rounded"
+                        >
+                          {node.expanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : (
+                        <div className="w-5" />
+                      )}
+
+                      {/* Folder button */}
+                      <button
+                        onClick={() => handleMoveFolder(node.id)}
+                        className="flex-1 flex items-center gap-2 text-left"
+                      >
+                        <FolderIcon
+                          className="h-4 w-4 flex-shrink-0"
+                          style={{ color: node.color || undefined }}
+                        />
+                        <span className="truncate">{node.name}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {/* Empty state */}
+                {flatMoveDialogTree.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground text-sm">
+                    {moveDialogSearchQuery
+                      ? "No folders found"
+                      : "No folders available"}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Breadcrumb / Info footer */}
       <div className="p-2 border-t text-xs text-muted-foreground">
-        {selectedFolderId && selectedFolderId !== 'uncategorized' && (
+        {selectedFolderId && selectedFolderId !== "uncategorized" && (
           <div className="flex items-center gap-1">
             {(() => {
               const folder = folders.find((f) => f.id === selectedFolderId);
@@ -987,12 +1177,14 @@ export function FolderTree({
                 current = folders.find((f) => f.id === current?.parentId);
               }
 
-              return breadcrumbs.join(' / ');
+              return breadcrumbs.join(" / ");
             })()}
           </div>
         )}
         {selectedFolderId === null && <div>Viewing all workflows</div>}
-        {selectedFolderId === 'uncategorized' && <div>Workflows without a folder</div>}
+        {selectedFolderId === "uncategorized" && (
+          <div>Workflows without a folder</div>
+        )}
       </div>
     </div>
   );

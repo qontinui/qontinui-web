@@ -1,17 +1,17 @@
 "use client";
 
-import React, { useState } from 'react';
-import { AlertCircle, Download, RefreshCw, Check } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
+import React, { useState } from "react";
+import { AlertCircle, Download, RefreshCw, Check } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 /**
  * Early Access Signup Warning
@@ -26,14 +26,20 @@ export function EarlyAccessSignupWarning() {
 
   return (
     <>
-      <Alert className={cn(
-        "mb-6 border-blue-500/50 bg-blue-500/10",
-        "shadow-[0_0_15px_rgba(59,130,246,0.1)]"
-      )}>
+      <Alert
+        className={cn(
+          "mb-6 border-blue-500/50 bg-blue-500/10",
+          "shadow-[0_0_15px_rgba(59,130,246,0.1)]"
+        )}
+      >
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0 mt-0.5">
             <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-              <img src="/early-access.svg" alt="Early Access" className="h-5 w-5" />
+              <img
+                src="/early-access.svg"
+                alt="Early Access"
+                className="h-5 w-5"
+              />
             </div>
           </div>
           <div className="flex-1 min-w-0">
@@ -63,7 +69,8 @@ export function EarlyAccessSignupWarning() {
               </div>
 
               <p className="text-gray-400 italic mt-3">
-                By signing up, you're joining as an early tester. Your feedback helps shape the product!
+                By signing up, you're joining as an early tester. Your feedback
+                helps shape the product!
               </p>
             </AlertDescription>
 
@@ -96,52 +103,68 @@ export function EarlyAccessSignupWarning() {
           <div className="space-y-6 mt-4 max-h-[60vh] overflow-y-auto pr-2">
             {/* FAQ Items */}
             <div>
-              <h3 className="font-semibold text-white mb-2">Q: What does "early access" mean?</h3>
+              <h3 className="font-semibold text-white mb-2">
+                Q: What does "early access" mean?
+              </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
-                You can use qontinui-web now, before the official February 2026 launch.
-                All features work, but the interface and functionality may change based
-                on user feedback.
+                You can use qontinui-web now, before the official February 2026
+                launch. All features work, but the interface and functionality
+                may change based on user feedback.
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold text-white mb-2">Q: Will I lose my work?</h3>
+              <h3 className="font-semibold text-white mb-2">
+                Q: Will I lose my work?
+              </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
-                Not if you export! Use File → Export to save your automation as a JSON
-                file. This JSON will always be compatible with future versions.
+                Not if you export! Use File → Export to save your automation as
+                a JSON file. This JSON will always be compatible with future
+                versions.
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold text-white mb-2">Q: What are "breaking changes"?</h3>
+              <h3 className="font-semibold text-white mb-2">
+                Q: What are "breaking changes"?
+              </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
-                We might reorganize the interface, change workflows, or update features
-                before launch. Your saved JSON files will always import, but the web
-                interface might look different between visits.
+                We might reorganize the interface, change workflows, or update
+                features before launch. Your saved JSON files will always
+                import, but the web interface might look different between
+                visits.
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold text-white mb-2">Q: Should I use this for production?</h3>
+              <h3 className="font-semibold text-white mb-2">
+                Q: Should I use this for production?
+              </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
-                If you export your work regularly, yes! Many users run automations from
-                exported JSON files using qontinui-runner (desktop app).
+                If you export your work regularly, yes! Many users run
+                automations from exported JSON files using qontinui-runner
+                (desktop app).
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold text-white mb-2">Q: How often should I export?</h3>
+              <h3 className="font-semibold text-white mb-2">
+                Q: How often should I export?
+              </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
-                After each significant change. Think of it like "Save" in a document.
+                After each significant change. Think of it like "Save" in a
+                document.
               </p>
             </div>
 
             <div>
-              <h3 className="font-semibold text-white mb-2">Q: What happens after February 2026 launch?</h3>
+              <h3 className="font-semibold text-white mb-2">
+                Q: What happens after February 2026 launch?
+              </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
-                Early access ends, official version launches. All your exported JSON
-                files will import seamlessly. Accounts created during early access
-                remain active.
+                Early access ends, official version launches. All your exported
+                JSON files will import seamlessly. Accounts created during early
+                access remain active.
               </p>
             </div>
           </div>

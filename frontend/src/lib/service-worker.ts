@@ -4,81 +4,87 @@
  * Handles registration, updates, and communication with the service worker.
  */
 
-import { syncProcessor } from './sync-processor';
+import { syncProcessor } from "./sync-processor";
 
 /**
  * Service worker registration status
  */
 export type ServiceWorkerStatus =
-  | 'unsupported'     // Browser doesn't support service workers
-  | 'registering'     // Registration in progress
-  | 'registered'      // Successfully registered
-  | 'updated'         // New version available
-  | 'error';          // Registration failed
+  | "unsupported" // Browser doesn't support service workers
+  | "registering" // Registration in progress
+  | "registered" // Successfully registered
+  | "updated" // New version available
+  | "error"; // Registration failed
 
 /**
  * Service worker manager
  */
 class ServiceWorkerManager {
   private registration: ServiceWorkerRegistration | null = null;
-  private status: ServiceWorkerStatus = 'unsupported';
-  private statusListeners: Set<(status: ServiceWorkerStatus) => void> = new Set();
+  private status: ServiceWorkerStatus = "unsupported";
+  private statusListeners: Set<(status: ServiceWorkerStatus) => void> =
+    new Set();
 
   /**
    * Register service worker
    */
   async register(): Promise<ServiceWorkerRegistration | null> {
     // Check if service workers are supported
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
-      console.warn('[ServiceWorker] Not supported in this browser');
-      this.setStatus('unsupported');
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+      console.warn("[ServiceWorker] Not supported in this browser");
+      this.setStatus("unsupported");
       return null;
     }
 
     try {
-      this.setStatus('registering');
+      this.setStatus("registering");
 
       // Register service worker
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/',
+      const registration = await navigator.serviceWorker.register("/sw.js", {
+        scope: "/",
       });
 
       this.registration = registration;
-      this.setStatus('registered');
+      this.setStatus("registered");
 
-      console.log('[ServiceWorker] Registered successfully');
+      console.log("[ServiceWorker] Registered successfully");
 
       // Setup update detection
-      registration.addEventListener('updatefound', () => {
+      registration.addEventListener("updatefound", () => {
         const newWorker = registration.installing;
 
         if (newWorker) {
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          newWorker.addEventListener("statechange", () => {
+            if (
+              newWorker.state === "installed" &&
+              navigator.serviceWorker.controller
+            ) {
               // New service worker installed, update available
-              console.log('[ServiceWorker] Update available');
-              this.setStatus('updated');
+              console.log("[ServiceWorker] Update available");
+              this.setStatus("updated");
             }
           });
         }
       });
 
       // Setup background sync message handler
-      navigator.serviceWorker.addEventListener('message', (event) => {
+      navigator.serviceWorker.addEventListener("message", (event) => {
         this.handleMessage(event);
       });
 
       // Register for background sync
-      if ('sync' in registration) {
-        console.log('[ServiceWorker] Background Sync API supported');
+      if ("sync" in registration) {
+        console.log("[ServiceWorker] Background Sync API supported");
       } else {
-        console.warn('[ServiceWorker] Background Sync API not supported, using polling');
+        console.warn(
+          "[ServiceWorker] Background Sync API not supported, using polling"
+        );
       }
 
       return registration;
     } catch (error) {
-      console.error('[ServiceWorker] Registration failed:', error);
-      this.setStatus('error');
+      console.error("[ServiceWorker] Registration failed:", error);
+      this.setStatus("error");
       return null;
     }
   }
@@ -94,12 +100,12 @@ class ServiceWorkerManager {
     try {
       const success = await this.registration.unregister();
       if (success) {
-        console.log('[ServiceWorker] Unregistered successfully');
+        console.log("[ServiceWorker] Unregistered successfully");
         this.registration = null;
       }
       return success;
     } catch (error) {
-      console.error('[ServiceWorker] Unregister failed:', error);
+      console.error("[ServiceWorker] Unregister failed:", error);
       return false;
     }
   }
@@ -110,26 +116,32 @@ class ServiceWorkerManager {
    * Triggers the service worker to process the sync queue.
    * Falls back to immediate processing if background sync is not supported.
    */
-  async requestBackgroundSync(tag = 'sync-screenshots'): Promise<void> {
+  async requestBackgroundSync(tag = "sync-screenshots"): Promise<void> {
     if (!this.registration) {
-      console.warn('[ServiceWorker] Not registered, processing sync immediately');
+      console.warn(
+        "[ServiceWorker] Not registered, processing sync immediately"
+      );
       await syncProcessor.processQueue();
       return;
     }
 
     // Try to use Background Sync API
-    if ('sync' in this.registration) {
+    if ("sync" in this.registration) {
       try {
-        await this.registration.sync.register(tag);
+        await (
+          this.registration.sync as { register: (tag: string) => Promise<void> }
+        ).register(tag);
         console.log(`[ServiceWorker] Background sync registered: ${tag}`);
       } catch (error) {
-        console.error('[ServiceWorker] Background sync failed:', error);
+        console.error("[ServiceWorker] Background sync failed:", error);
         // Fallback to immediate processing
         await syncProcessor.processQueue();
       }
     } else {
       // Fallback to immediate processing
-      console.log('[ServiceWorker] Background sync not supported, processing immediately');
+      console.log(
+        "[ServiceWorker] Background sync not supported, processing immediately"
+      );
       await syncProcessor.processQueue();
     }
   }
@@ -144,9 +156,9 @@ class ServiceWorkerManager {
 
     try {
       await this.registration.update();
-      console.log('[ServiceWorker] Update check completed');
+      console.log("[ServiceWorker] Update check completed");
     } catch (error) {
-      console.error('[ServiceWorker] Update check failed:', error);
+      console.error("[ServiceWorker] Update check failed:", error);
     }
   }
 
@@ -159,10 +171,10 @@ class ServiceWorkerManager {
     }
 
     // Send skip waiting message
-    this.registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    this.registration.waiting.postMessage({ type: "SKIP_WAITING" });
 
     // Reload page after activation
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
       window.location.reload();
     });
   }
@@ -173,7 +185,7 @@ class ServiceWorkerManager {
   private handleMessage(event: MessageEvent): void {
     const { data, ports } = event;
 
-    if (data.type === 'BACKGROUND_SYNC') {
+    if (data.type === "BACKGROUND_SYNC") {
       // Service worker requesting sync
       syncProcessor
         .processQueue()
@@ -211,7 +223,7 @@ class ServiceWorkerManager {
       try {
         listener(status);
       } catch (error) {
-        console.error('[ServiceWorker] Error in status listener:', error);
+        console.error("[ServiceWorker] Error in status listener:", error);
       }
     }
   }
@@ -242,14 +254,14 @@ class ServiceWorkerManager {
    * Check if service worker is supported
    */
   isSupported(): boolean {
-    return typeof window !== 'undefined' && 'serviceWorker' in navigator;
+    return typeof window !== "undefined" && "serviceWorker" in navigator;
   }
 
   /**
    * Check if background sync is supported
    */
   isBackgroundSyncSupported(): boolean {
-    return this.registration ? 'sync' in this.registration : false;
+    return this.registration ? "sync" in this.registration : false;
   }
 }
 
@@ -259,8 +271,8 @@ export const serviceWorkerManager = new ServiceWorkerManager();
 /**
  * Initialize service worker on page load
  */
-if (typeof window !== 'undefined') {
-  window.addEventListener('load', () => {
+if (typeof window !== "undefined") {
+  window.addEventListener("load", () => {
     serviceWorkerManager.register();
   });
 }

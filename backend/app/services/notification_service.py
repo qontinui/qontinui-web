@@ -55,7 +55,7 @@ class NotificationService:
         resource_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         send_email: bool = True,
-    ) -> Notification:
+    ) -> Notification | None:
         """
         Create a new notification.
 
@@ -115,9 +115,7 @@ class NotificationService:
 
             # Send email if enabled and user preferences allow
             if send_email and preferences.should_send_email(notification_type):
-                await self._send_notification_email(
-                    db, notification, notification_type
-                )
+                await self._send_notification_email(db, notification, notification_type)
 
             # Broadcast notification via WebSocket
             try:
@@ -232,9 +230,7 @@ class NotificationService:
 
             await db.commit()
 
-            logger.info(
-                "all_notifications_marked_read", user_id=user_id, count=count
-            )
+            logger.info("all_notifications_marked_read", user_id=user_id, count=count)
             return count
 
         except Exception as e:
@@ -330,7 +326,7 @@ class NotificationService:
             result = await db.execute(query)
             notifications = result.scalars().all()
 
-            return notifications
+            return list(notifications)
 
         except Exception as e:
             logger.error("get_notifications_failed", error=str(e))
@@ -720,7 +716,7 @@ class NotificationService:
                 if hasattr(preferences, key):
                     setattr(preferences, key, value)
 
-            preferences.updated_at = datetime.utcnow()
+            preferences.updated_at = datetime.utcnow()  # type: ignore[assignment]
             await db.commit()
             await db.refresh(preferences)
 
@@ -756,21 +752,19 @@ class NotificationService:
         try:
             # Get user
             result = await db.execute(
-                select(User).filter(User.id == notification.user_id)
+                select(User).where(User.id == notification.user_id)  # type: ignore[arg-type]
             )
             user = result.scalar_one_or_none()
 
             if not user:
-                logger.warning(
-                    "email_user_not_found", user_id=notification.user_id
-                )
+                logger.warning("email_user_not_found", user_id=notification.user_id)
                 return False
 
             # Get actor
             actor = None
             if notification.actor_id:
                 result = await db.execute(
-                    select(User).filter(User.id == notification.actor_id)
+                    select(User).where(User.id == notification.actor_id)  # type: ignore[arg-type]
                 )
                 actor = result.scalar_one_or_none()
 
@@ -799,15 +793,13 @@ class NotificationService:
             }
 
             # Render template
-            html_body = self.email_templates.render_template(
-                "notification", context
-            )
+            html_body = self.email_templates.render_template("notification", context)
 
             # Send email
             success = await self.email_transport.send_email(
                 to_email=user.email,
-                subject=notification.title,
-                text_body=notification.message,
+                subject=str(notification.title),
+                text_body=str(notification.message),
                 html_body=html_body,
             )
 

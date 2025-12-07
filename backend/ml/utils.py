@@ -9,11 +9,10 @@ Includes:
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image
 
 
 def coco_to_yolo(
@@ -29,7 +28,7 @@ def coco_to_yolo(
         split: Dataset split name (train/val/test)
     """
     # Load COCO annotations
-    with open(coco_json_path, "r") as f:
+    with open(coco_json_path) as f:
         coco_data = json.load(f)
 
     # Create output directories
@@ -84,7 +83,7 @@ def coco_to_yolo(
     print(f"Labels saved to: {labels_dir}")
 
 
-def analyze_dataset(coco_json_path: str) -> Dict[str, Any]:
+def analyze_dataset(coco_json_path: str) -> dict[str, Any]:
     """
     Analyze COCO dataset and return statistics
 
@@ -94,7 +93,7 @@ def analyze_dataset(coco_json_path: str) -> Dict[str, Any]:
     Returns:
         Dictionary with dataset statistics
     """
-    with open(coco_json_path, "r") as f:
+    with open(coco_json_path) as f:
         coco_data = json.load(f)
 
     # Basic stats
@@ -141,8 +140,8 @@ def analyze_dataset(coco_json_path: str) -> Dict[str, Any]:
 
 def visualize_annotations(
     image_path: str,
-    annotations: List[Dict[str, Any]],
-    categories: Dict[int, str],
+    annotations: list[dict[str, Any]],
+    categories: dict[int, str],
     output_path: str = None,
 ) -> np.ndarray:
     """
@@ -205,7 +204,7 @@ def visualize_annotations(
 
 
 def create_yolo_data_yaml(
-    dataset_path: str, categories: List[str], output_path: str = "data.yaml"
+    dataset_path: str, categories: list[str], output_path: str = "data.yaml"
 ) -> None:
     """
     Create YOLO data.yaml configuration file
@@ -238,7 +237,7 @@ def split_dataset(
     val_ratio: float = 0.1,
     test_ratio: float = 0.1,
     seed: int = 42,
-) -> Tuple[str, str, str]:
+) -> tuple[str, str, str]:
     """
     Split COCO dataset into train/val/test sets
 
@@ -256,7 +255,7 @@ def split_dataset(
     import random
 
     # Load COCO data
-    with open(coco_json_path, "r") as f:
+    with open(coco_json_path) as f:
         coco_data = json.load(f)
 
     # Set random seed
@@ -330,7 +329,7 @@ if __name__ == "__main__":
 
     elif args.command == "split":
         train_path, val_path, test_path = split_dataset(args.coco_json, args.output_dir)
-        print(f"\nDataset split complete:")
+        print("\nDataset split complete:")
         print(f"  Train: {train_path}")
         print(f"  Val: {val_path}")
         print(f"  Test: {test_path}")

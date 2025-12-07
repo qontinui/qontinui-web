@@ -1,5 +1,5 @@
-import { State, StateImage, StateLocation, StateRegion, ActionHistory } from "./types"
-import { ActionSnapshot } from "../../lib/integration-testing-framework"
+import { State, ActionHistory } from "./types";
+import { ActionSnapshot } from "../../lib/integration-testing-framework";
 
 export class ActionHistoryManager {
   /**
@@ -12,12 +12,10 @@ export class ActionHistoryManager {
   ): State {
     return {
       ...state,
-      stateImages: state.stateImages.map(img =>
-        img.id === stateImageId
-          ? { ...img, actionHistory }
-          : img
-      )
-    }
+      stateImages: state.stateImages.map((img) =>
+        img.id === stateImageId ? { ...img, actionHistory } : img
+      ),
+    };
   }
 
   /**
@@ -30,12 +28,10 @@ export class ActionHistoryManager {
   ): State {
     return {
       ...state,
-      locations: state.locations.map(loc =>
-        loc.id === locationId
-          ? { ...loc, actionHistory }
-          : loc
-      )
-    }
+      locations: state.locations.map((loc) =>
+        loc.id === locationId ? { ...loc, actionHistory } : loc
+      ),
+    };
   }
 
   /**
@@ -48,12 +44,10 @@ export class ActionHistoryManager {
   ): State {
     return {
       ...state,
-      regions: state.regions.map(reg =>
-        reg.id === regionId
-          ? { ...reg, actionHistory }
-          : reg
-      )
-    }
+      regions: state.regions.map((reg) =>
+        reg.id === regionId ? { ...reg, actionHistory } : reg
+      ),
+    };
   }
 
   /**
@@ -63,11 +57,11 @@ export class ActionHistoryManager {
     actionHistory: ActionHistory | undefined,
     snapshot: ActionSnapshot
   ): ActionHistory {
-    const history = actionHistory || { snapshots: [] }
+    const history = actionHistory || { snapshots: [] };
     return {
       snapshots: [...history.snapshots, snapshot],
-      lastUpdated: new Date()
-    }
+      lastUpdated: new Date(),
+    };
   }
 
   /**
@@ -78,12 +72,12 @@ export class ActionHistoryManager {
     snapshotId: string
   ): ActionHistory {
     if (!actionHistory) {
-      return { snapshots: [] }
+      return { snapshots: [] };
     }
     return {
-      snapshots: actionHistory.snapshots.filter(s => s.id !== snapshotId),
-      lastUpdated: new Date()
-    }
+      snapshots: actionHistory.snapshots.filter((s) => s.id !== snapshotId),
+      lastUpdated: new Date(),
+    };
   }
 
   /**
@@ -96,25 +90,25 @@ export class ActionHistoryManager {
     if (!actionHistory) {
       return {
         snapshots: [updatedSnapshot],
-        lastUpdated: new Date()
-      }
+        lastUpdated: new Date(),
+      };
     }
     return {
-      snapshots: actionHistory.snapshots.map(s =>
+      snapshots: actionHistory.snapshots.map((s) =>
         s.id === updatedSnapshot.id ? updatedSnapshot : s
       ),
-      lastUpdated: new Date()
-    }
+      lastUpdated: new Date(),
+    };
   }
 
   /**
    * Clear all snapshots from ActionHistory
    */
-  static clearHistory(actionHistory: ActionHistory | undefined): ActionHistory {
+  static clearHistory(): ActionHistory {
     return {
       snapshots: [],
-      lastUpdated: new Date()
-    }
+      lastUpdated: new Date(),
+    };
   }
 
   /**
@@ -124,8 +118,10 @@ export class ActionHistoryManager {
     actionHistory: ActionHistory | undefined,
     screenshotId: string
   ): ActionSnapshot[] {
-    if (!actionHistory) return []
-    return actionHistory.snapshots.filter(s => s.screenshotId === screenshotId)
+    if (!actionHistory) return [];
+    return actionHistory.snapshots.filter(
+      (s) => s.screenshotId === screenshotId
+    );
   }
 
   /**
@@ -135,8 +131,10 @@ export class ActionHistoryManager {
     actionHistory: ActionHistory | undefined,
     screenshotId: string
   ): ActionSnapshot[] {
-    if (!actionHistory) return []
-    return actionHistory.snapshots.filter(s => s.nextScreenshotId === screenshotId)
+    if (!actionHistory) return [];
+    return actionHistory.snapshots.filter(
+      (s) => s.nextScreenshotId === screenshotId
+    );
   }
 
   /**
@@ -146,19 +144,19 @@ export class ActionHistoryManager {
     history1: ActionHistory | undefined,
     history2: ActionHistory | undefined
   ): ActionHistory {
-    const snapshots1 = history1?.snapshots || []
-    const snapshots2 = history2?.snapshots || []
+    const snapshots1 = history1?.snapshots || [];
+    const snapshots2 = history2?.snapshots || [];
 
     // Combine snapshots, avoiding duplicates by ID
     const combinedMap = new Map<string, ActionSnapshot>();
-    [...snapshots1, ...snapshots2].forEach(s => {
+    [...snapshots1, ...snapshots2].forEach((s) => {
       combinedMap.set(s.id, s);
     });
 
     return {
       snapshots: Array.from(combinedMap.values()),
-      lastUpdated: new Date()
-    }
+      lastUpdated: new Date(),
+    };
   }
 
   /**
@@ -166,23 +164,23 @@ export class ActionHistoryManager {
    */
   static cloneHistory(actionHistory: ActionHistory | undefined): ActionHistory {
     if (!actionHistory) {
-      return { snapshots: [] }
+      return { snapshots: [] };
     }
     return {
-      snapshots: actionHistory.snapshots.map(s => ({ ...s })),
-      lastUpdated: actionHistory.lastUpdated
-    }
+      snapshots: actionHistory.snapshots.map((s) => ({ ...s })),
+      lastUpdated: actionHistory.lastUpdated,
+    };
   }
 
   /**
    * Get statistics about an ActionHistory
    */
   static getStatistics(actionHistory: ActionHistory | undefined): {
-    totalSnapshots: number
-    successfulSnapshots: number
-    failedSnapshots: number
-    uniqueScreenshots: number
-    hasTransitions: boolean
+    totalSnapshots: number;
+    successfulSnapshots: number;
+    failedSnapshots: number;
+    uniqueScreenshots: number;
+    hasTransitions: boolean;
   } {
     if (!actionHistory || actionHistory.snapshots.length === 0) {
       return {
@@ -190,19 +188,23 @@ export class ActionHistoryManager {
         successfulSnapshots: 0,
         failedSnapshots: 0,
         uniqueScreenshots: 0,
-        hasTransitions: false
-      }
+        hasTransitions: false,
+      };
     }
 
-    const snapshots = actionHistory.snapshots
-    const uniqueScreenshots = new Set(snapshots.map(s => s.screenshotId))
+    const snapshots = actionHistory.snapshots;
+    const uniqueScreenshots = new Set(snapshots.map((s) => s.screenshotId));
 
     return {
       totalSnapshots: snapshots.length,
-      successfulSnapshots: snapshots.filter(s => s.actionSuccess && s.resultSuccess).length,
-      failedSnapshots: snapshots.filter(s => !s.actionSuccess || !s.resultSuccess).length,
+      successfulSnapshots: snapshots.filter(
+        (s) => s.actionSuccess && s.resultSuccess
+      ).length,
+      failedSnapshots: snapshots.filter(
+        (s) => !s.actionSuccess || !s.resultSuccess
+      ).length,
       uniqueScreenshots: uniqueScreenshots.size,
-      hasTransitions: snapshots.some(s => s.nextScreenshotId !== undefined)
-    }
+      hasTransitions: snapshots.some((s) => s.nextScreenshotId !== undefined),
+    };
   }
 }

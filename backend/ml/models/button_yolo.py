@@ -5,12 +5,9 @@ Fine-tuned YOLOv8 or YOLOv5 for button detection and classification.
 Supports multi-class detection and ONNX export for fast inference.
 """
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-import numpy as np
 import torch
-import torch.nn as nn
 
 
 class ButtonYOLO:
@@ -125,7 +122,7 @@ class ButtonYOLO:
         batch_size: int = 16,
         img_size: int = 640,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Train the YOLO model
 
@@ -146,7 +143,7 @@ class ButtonYOLO:
 
     def _train_yolov8(
         self, data_yaml: str, epochs: int, batch_size: int, img_size: int, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Train YOLOv8 model"""
         results = self.model.train(
             data=data_yaml,
@@ -160,7 +157,7 @@ class ButtonYOLO:
 
     def _train_yolov5(
         self, data_yaml: str, epochs: int, batch_size: int, img_size: int, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Train YOLOv5 model - requires custom training loop"""
         # Note: YOLOv5 training typically done via train.py script
         # This is a simplified version
@@ -175,7 +172,7 @@ class ButtonYOLO:
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.45,
         max_det: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Run inference on images
 
@@ -195,7 +192,7 @@ class ButtonYOLO:
 
     def _predict_yolov8(
         self, images: Any, conf: float, iou: float, max_det: int
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Run YOLOv8 inference"""
         results = self.model.predict(
             images,
@@ -240,7 +237,7 @@ class ButtonYOLO:
 
     def _predict_yolov5(
         self, images: Any, conf: float, iou: float, max_det: int
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Run YOLOv5 inference"""
         self.model.conf = conf
         self.model.iou = iou
@@ -349,7 +346,7 @@ class ButtonYOLO:
         elif self.model_type == "yolov5":
             self.model.load_state_dict(torch.load(path, map_location=self.device))
 
-    def get_model_info(self) -> Dict[str, Any]:
+    def get_model_info(self) -> dict[str, Any]:
         """Get model information"""
         return {
             "model_type": self.model_type,
@@ -360,7 +357,7 @@ class ButtonYOLO:
         }
 
 
-def create_button_yolo(config: Dict[str, Any]) -> ButtonYOLO:
+def create_button_yolo(config: dict[str, Any]) -> ButtonYOLO:
     """
     Factory function to create ButtonYOLO from configuration
 

@@ -5,11 +5,11 @@
  * for powerful workflow management.
  */
 
-import React, { useState } from 'react';
-import { AdvancedSearch } from './AdvancedSearch';
-import { BulkOperations } from './BulkOperations';
-import { WorkflowFolder, SearchFilter, SavedFilter } from './types';
-import { Workflow } from '../../lib/action-schema/action-types';
+import React, { useState } from "react";
+import { AdvancedSearch } from "./AdvancedSearch";
+import { BulkOperations } from "./BulkOperations";
+import { WorkflowFolder, SearchFilter, SavedFilter } from "./types";
+import { Workflow } from "../../lib/action-schema/action-types";
 
 // ============================================================================
 // Example Component
@@ -18,11 +18,11 @@ import { Workflow } from '../../lib/action-schema/action-types';
 export function WorkflowManagementExample() {
   // State
   const [workflows, setWorkflows] = useState<Workflow[]>(EXAMPLE_WORKFLOWS);
-  const [folders, setFolders] = useState<WorkflowFolder[]>(EXAMPLE_FOLDERS);
-  const [filteredWorkflows, setFilteredWorkflows] = useState<Workflow[]>(workflows);
+  const [folders] = useState<WorkflowFolder[]>(EXAMPLE_FOLDERS);
+  const [filteredWorkflows, setFilteredWorkflows] =
+    useState<Workflow[]>(workflows);
   const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<string[]>([]);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
-  const [currentFilter, setCurrentFilter] = useState<SearchFilter>({});
 
   // Get selected workflow objects
   const selectedWorkflows = workflows.filter((w) =>
@@ -30,9 +30,8 @@ export function WorkflowManagementExample() {
   );
 
   // Handlers
-  const handleSearch = (results: Workflow[], filter: SearchFilter) => {
+  const handleSearch = (results: Workflow[]) => {
     setFilteredWorkflows(results);
-    setCurrentFilter(filter);
   };
 
   const handleSaveFilter = (name: string, filter: SearchFilter) => {
@@ -48,7 +47,7 @@ export function WorkflowManagementExample() {
   const handleMoveToFolder = (folderId: string) => {
     setWorkflows(
       workflows.map((w) =>
-        selectedWorkflowIds.includes(w.id) ? { ...w, folderId } as any : w
+        selectedWorkflowIds.includes(w.id) ? ({ ...w, folderId } as any) : w
       )
     );
     setSelectedWorkflowIds([]);
@@ -97,9 +96,9 @@ export function WorkflowManagementExample() {
 
   const handleExport = () => {
     const data = JSON.stringify(selectedWorkflows, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
+    const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `workflows-${Date.now()}.json`;
     a.click();
@@ -117,13 +116,18 @@ export function WorkflowManagementExample() {
   };
 
   const handleRunTests = () => {
-    console.log('Running tests for:', selectedWorkflows.map((w) => w.name));
+    console.log(
+      "Running tests for:",
+      selectedWorkflows.map((w) => w.name)
+    );
     // Implementation would trigger actual test execution
   };
 
   const toggleWorkflowSelection = (workflowId: string) => {
     if (selectedWorkflowIds.includes(workflowId)) {
-      setSelectedWorkflowIds(selectedWorkflowIds.filter((id) => id !== workflowId));
+      setSelectedWorkflowIds(
+        selectedWorkflowIds.filter((id) => id !== workflowId)
+      );
     } else {
       setSelectedWorkflowIds([...selectedWorkflowIds, workflowId]);
     }
@@ -166,8 +170,8 @@ export function WorkflowManagementExample() {
                 key={workflow.id}
                 className={`border rounded-lg p-4 cursor-pointer transition-colors ${
                   selectedWorkflowIds.includes(workflow.id)
-                    ? 'border-primary bg-primary/5'
-                    : 'hover:border-primary/50'
+                    ? "border-primary bg-primary/5"
+                    : "hover:border-primary/50"
                 }`}
                 onClick={() => toggleWorkflowSelection(workflow.id)}
               >
@@ -236,95 +240,159 @@ export function WorkflowManagementExample() {
 
 const EXAMPLE_FOLDERS: WorkflowFolder[] = [
   {
-    id: 'folder-1',
-    name: 'Automation',
+    id: "folder-1",
+    name: "Automation",
     parentId: null,
-    color: '#3b82f6',
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
+    color: "#3b82f6",
+    createdAt: new Date("2024-01-01"),
+    updatedAt: new Date("2024-01-01"),
     order: 0,
   },
   {
-    id: 'folder-2',
-    name: 'Testing',
+    id: "folder-2",
+    name: "Testing",
     parentId: null,
-    color: '#10b981',
-    createdAt: new Date('2024-01-02'),
-    updatedAt: new Date('2024-01-02'),
+    color: "#10b981",
+    createdAt: new Date("2024-01-02"),
+    updatedAt: new Date("2024-01-02"),
     order: 1,
   },
   {
-    id: 'folder-3',
-    name: 'Utilities',
+    id: "folder-3",
+    name: "Utilities",
     parentId: null,
-    color: '#f59e0b',
-    createdAt: new Date('2024-01-03'),
-    updatedAt: new Date('2024-01-03'),
+    color: "#f59e0b",
+    createdAt: new Date("2024-01-03"),
+    updatedAt: new Date("2024-01-03"),
     order: 2,
   },
 ];
 
 const EXAMPLE_WORKFLOWS: Workflow[] = [
   {
-    id: 'workflow-1',
-    name: 'Login Flow',
-    version: '1.0.0',
-    format: 'graph',
+    id: "workflow-1",
+    name: "Login Flow",
+    version: "1.0.0",
+    format: "graph",
     actions: [
-      { id: 'action-1', type: 'FIND', config: {} as any, position: { x: 0, y: 0 } },
-      { id: 'action-2', type: 'CLICK', config: {} as any, position: { x: 0, y: 0 } },
-      { id: 'action-3', type: 'TYPE', config: {} as any, position: { x: 0, y: 0 } },
-    ],
-    connections: { 'action-1': ['action-2'], 'action-2': ['action-3'] },
-    category: 'Main',
-    description: 'Automated login workflow',
-    tags: ['authentication', 'login'],
-    metadata: {
-      created: '2024-01-10T10:00:00Z',
-      updated: '2024-01-15T14:30:00Z',
-    },
-  },
-  {
-    id: 'workflow-2',
-    name: 'Data Processing',
-    version: '1.0.0',
-    format: 'graph',
-    actions: [
-      { id: 'action-1', type: 'MAP', config: {} as any, position: { x: 0, y: 0 } },
-      { id: 'action-2', type: 'FILTER', config: {} as any, position: { x: 0, y: 0 } },
-      { id: 'action-3', type: 'REDUCE', config: {} as any, position: { x: 0, y: 0 } },
-    ],
-    connections: { 'action-1': ['action-2'], 'action-2': ['action-3'] },
-    category: 'Utility',
-    description: 'Process and transform data',
-    tags: ['data', 'processing', 'utility'],
-    metadata: {
-      created: '2024-01-12T11:00:00Z',
-      updated: '2024-01-16T09:15:00Z',
-    },
-  },
-  {
-    id: 'workflow-3',
-    name: 'UI Test Suite',
-    version: '1.0.0',
-    format: 'graph',
-    actions: [
-      { id: 'action-1', type: 'IF', config: {} as any, position: { x: 0, y: 0 } },
-      { id: 'action-2', type: 'FIND', config: {} as any, position: { x: 0, y: 0 } },
-      { id: 'action-3', type: 'CLICK', config: {} as any, position: { x: 0, y: 0 } },
-      { id: 'action-4', type: 'EXISTS', config: {} as any, position: { x: 0, y: 0 } },
+      {
+        id: "action-1",
+        type: "FIND",
+        config: {} as any,
+        position: [0, 0],
+      },
+      {
+        id: "action-2",
+        type: "CLICK",
+        config: {} as any,
+        position: [0, 0],
+      },
+      {
+        id: "action-3",
+        type: "TYPE",
+        config: {} as any,
+        position: [0, 0],
+      },
     ],
     connections: {
-      'action-1': ['action-2', 'action-4'],
-      'action-2': ['action-3'],
+      "action-1": { main: [[{ action: "action-2", type: "main", index: 0 }]] },
+      "action-2": { main: [[{ action: "action-3", type: "main", index: 0 }]] },
     },
-    category: 'Testing',
-    description: 'Comprehensive UI testing',
-    tags: ['testing', 'ui', 'validation'],
-    initialScreenshotId: 'screenshot-1',
+    category: "Main",
+    description: "Automated login workflow",
+    tags: ["authentication", "login"],
     metadata: {
-      created: '2024-01-14T13:00:00Z',
-      updated: '2024-01-18T16:45:00Z',
+      created: "2024-01-10T10:00:00Z",
+      updated: "2024-01-15T14:30:00Z",
+    },
+  },
+  {
+    id: "workflow-2",
+    name: "Data Processing",
+    version: "1.0.0",
+    format: "graph",
+    actions: [
+      {
+        id: "action-1",
+        type: "MAP",
+        config: {} as any,
+        position: [0, 0],
+      },
+      {
+        id: "action-2",
+        type: "FILTER",
+        config: {} as any,
+        position: [0, 0],
+      },
+      {
+        id: "action-3",
+        type: "REDUCE",
+        config: {} as any,
+        position: [0, 0],
+      },
+    ],
+    connections: {
+      "action-1": { main: [[{ action: "action-2", type: "main", index: 0 }]] },
+      "action-2": { main: [[{ action: "action-3", type: "main", index: 0 }]] },
+    },
+    category: "Utility",
+    description: "Process and transform data",
+    tags: ["data", "processing", "utility"],
+    metadata: {
+      created: "2024-01-12T11:00:00Z",
+      updated: "2024-01-16T09:15:00Z",
+    },
+  },
+  {
+    id: "workflow-3",
+    name: "UI Test Suite",
+    version: "1.0.0",
+    format: "graph",
+    actions: [
+      {
+        id: "action-1",
+        type: "IF",
+        config: {} as any,
+        position: [0, 0],
+      },
+      {
+        id: "action-2",
+        type: "FIND",
+        config: {} as any,
+        position: [0, 0],
+      },
+      {
+        id: "action-3",
+        type: "CLICK",
+        config: {} as any,
+        position: [0, 0],
+      },
+      {
+        id: "action-4",
+        type: "EXISTS",
+        config: {} as any,
+        position: [0, 0],
+      },
+    ],
+    // @ts-ignore - example code uses simplified connection format
+    connections: {
+      "action-1": {
+        main: [
+          [
+            { action: "action-2", type: "main", index: 0 },
+            { action: "action-4", type: "main", index: 0 },
+          ],
+        ],
+      },
+      "action-2": { main: [[{ action: "action-3", type: "main", index: 0 }]] },
+    } as any,
+    category: "Testing",
+    description: "Comprehensive UI testing",
+    tags: ["testing", "ui", "validation"],
+    initialScreenshotId: "screenshot-1",
+    metadata: {
+      created: "2024-01-14T13:00:00Z",
+      updated: "2024-01-18T16:45:00Z",
     },
   },
 ];
@@ -334,6 +402,6 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
 // ============================================================================
 
 export default {
-  title: 'Workflow Organization/Advanced Search & Bulk Operations',
+  title: "Workflow Organization/Advanced Search & Bulk Operations",
   component: WorkflowManagementExample,
 };

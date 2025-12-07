@@ -13,7 +13,7 @@
  * - Normalized to 0-100 scale
  */
 
-import { Workflow, Action, Connections } from '@/lib/action-schema/action-types';
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -22,7 +22,7 @@ import { Workflow, Action, Connections } from '@/lib/action-schema/action-types'
 /**
  * Complexity rating levels
  */
-export type ComplexityRating = 'low' | 'medium' | 'high' | 'very-high';
+export type ComplexityRating = "low" | "medium" | "high" | "very-high";
 
 /**
  * Complete complexity analysis result
@@ -80,7 +80,7 @@ export interface ComplexityComparison {
   };
 
   /** Which workflow is more complex */
-  moreComplex: 'workflow1' | 'workflow2' | 'equal';
+  moreComplex: "workflow1" | "workflow2" | "equal";
 }
 
 /**
@@ -92,15 +92,15 @@ export interface ComplexityDistribution {
     low: number;
     medium: number;
     high: number;
-    'very-high': number;
+    "very-high": number;
   };
 
   /** Distribution by score ranges */
   byScore: {
-    '0-25': number;
-    '26-50': number;
-    '51-75': number;
-    '76-100': number;
+    "0-25": number;
+    "26-50": number;
+    "51-75": number;
+    "76-100": number;
   };
 
   /** Total workflows analyzed */
@@ -133,15 +133,15 @@ export interface ComplexityTrendPoint {
 export interface SimplificationSuggestion {
   /** Type of suggestion */
   type:
-    | 'reduce-depth'
-    | 'reduce-branching'
-    | 'extract-subworkflow'
-    | 'simplify-control-flow'
-    | 'remove-dead-code'
-    | 'combine-actions';
+    | "reduce-depth"
+    | "reduce-branching"
+    | "extract-subworkflow"
+    | "simplify-control-flow"
+    | "remove-dead-code"
+    | "combine-actions";
 
   /** Severity/priority */
-  severity: 'low' | 'medium' | 'high';
+  severity: "low" | "medium" | "high";
 
   /** Description of the issue */
   description: string;
@@ -173,7 +173,7 @@ function buildAdjacencyList(workflow: Workflow): Map<string, string[]> {
     const neighbors: string[] = [];
 
     // Collect all outgoing connections
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const outputType = outputs[type as keyof typeof outputs];
       if (outputType) {
         outputType.forEach((outputGroup) => {
@@ -197,7 +197,7 @@ function findRootNodes(workflow: Workflow): string[] {
   const hasIncoming = new Set<string>();
 
   Object.values(workflow.connections).forEach((outputs) => {
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const outputType = outputs[type as keyof typeof outputs];
       if (outputType) {
         outputType.forEach((outputGroup) => {
@@ -209,9 +209,7 @@ function findRootNodes(workflow: Workflow): string[] {
     });
   });
 
-  return workflow.actions
-    .map((a) => a.id)
-    .filter((id) => !hasIncoming.has(id));
+  return workflow.actions.map((a) => a.id).filter((id) => !hasIncoming.has(id));
 }
 
 /**
@@ -224,13 +222,18 @@ function calculateDepthBFS(workflow: Workflow): number {
   if (rootNodes.length === 0 && workflow.actions.length > 0) {
     // If no root nodes but we have actions, there might be cycles
     // Start from first action
-    rootNodes.push(workflow.actions[0].id);
+    const firstAction = workflow.actions[0];
+    if (firstAction) {
+      rootNodes.push(firstAction.id);
+    }
   }
 
   let maxDepth = 0;
 
   rootNodes.forEach((root) => {
-    const queue: Array<{ node: string; depth: number }> = [{ node: root, depth: 1 }];
+    const queue: Array<{ node: string; depth: number }> = [
+      { node: root, depth: 1 },
+    ];
     const visited = new Set<string>();
 
     while (queue.length > 0) {
@@ -333,7 +336,7 @@ export function getConnectionCount(workflow: Workflow): number {
   let count = 0;
 
   Object.values(workflow.connections).forEach((outputs) => {
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const outputType = outputs[type as keyof typeof outputs];
       if (outputType) {
         outputType.forEach((outputGroup) => {
@@ -365,7 +368,7 @@ export function calculateBranchingFactor(workflow: Workflow): number {
   Object.values(workflow.connections).forEach((outputs) => {
     let totalOutputs = 0;
 
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const outputType = outputs[type as keyof typeof outputs];
       if (outputType) {
         outputType.forEach((outputGroup) => {
@@ -403,7 +406,7 @@ export function calculateCyclomaticComplexity(workflow: Workflow): number {
 
   // Also count control flow actions as decision points
   const controlFlowActions = workflow.actions.filter((action) =>
-    ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH'].includes(action.type)
+    ["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(action.type)
   );
 
   // Return the higher of the two calculations
@@ -433,7 +436,10 @@ export function getComplexityScore(workflow: Workflow): number {
   const normalizeConnectionCount = Math.min((connectionCount / 75) * 100, 100);
   const normalizeMaxDepth = Math.min((maxDepth / 15) * 100, 100);
   const normalizeBranchingFactor = Math.min((branchingFactor / 3) * 100, 100);
-  const normalizeCyclomaticComplexity = Math.min((cyclomaticComplexity / 20) * 100, 100);
+  const normalizeCyclomaticComplexity = Math.min(
+    (cyclomaticComplexity / 20) * 100,
+    100
+  );
 
   // Weighted average
   const score =
@@ -452,10 +458,10 @@ export function getComplexityScore(workflow: Workflow): number {
 export function getComplexityRating(workflow: Workflow): ComplexityRating {
   const score = getComplexityScore(workflow);
 
-  if (score < 25) return 'low';
-  if (score < 50) return 'medium';
-  if (score < 75) return 'high';
-  return 'very-high';
+  if (score < 25) return "low";
+  if (score < 50) return "medium";
+  if (score < 75) return "high";
+  return "very-high";
 }
 
 /**
@@ -471,7 +477,9 @@ export function analyzeComplexity(workflow: Workflow): ComplexityAnalysis {
   const complexityRating = getComplexityRating(workflow);
 
   const controlFlowCount = workflow.actions.filter((action) =>
-    ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH', 'BREAK', 'CONTINUE'].includes(action.type)
+    ["IF", "LOOP", "SWITCH", "TRY_CATCH", "BREAK", "CONTINUE"].includes(
+      action.type
+    )
   ).length;
 
   const disconnectedComponents = countDisconnectedComponents(workflow);
@@ -494,7 +502,10 @@ export function analyzeComplexity(workflow: Workflow): ComplexityAnalysis {
 /**
  * Compare complexity between two workflows
  */
-export function compareComplexity(workflow1: Workflow, workflow2: Workflow): ComplexityComparison {
+export function compareComplexity(
+  workflow1: Workflow,
+  workflow2: Workflow
+): ComplexityComparison {
   const analysis1 = analyzeComplexity(workflow1);
   const analysis2 = analyzeComplexity(workflow2);
 
@@ -503,15 +514,16 @@ export function compareComplexity(workflow1: Workflow, workflow2: Workflow): Com
     connectionCountDiff: analysis2.connectionCount - analysis1.connectionCount,
     maxDepthDiff: analysis2.maxDepth - analysis1.maxDepth,
     branchingFactorDiff: analysis2.branchingFactor - analysis1.branchingFactor,
-    cyclomaticComplexityDiff: analysis2.cyclomaticComplexity - analysis1.cyclomaticComplexity,
+    cyclomaticComplexityDiff:
+      analysis2.cyclomaticComplexity - analysis1.cyclomaticComplexity,
     complexityScoreDiff: analysis2.complexityScore - analysis1.complexityScore,
   };
 
-  let moreComplex: 'workflow1' | 'workflow2' | 'equal' = 'equal';
+  let moreComplex: "workflow1" | "workflow2" | "equal" = "equal";
   if (analysis1.complexityScore > analysis2.complexityScore) {
-    moreComplex = 'workflow1';
+    moreComplex = "workflow1";
   } else if (analysis2.complexityScore > analysis1.complexityScore) {
-    moreComplex = 'workflow2';
+    moreComplex = "workflow2";
   }
 
   return {
@@ -549,7 +561,9 @@ export function getComplexWorkflows(
 /**
  * Get complexity distribution across multiple workflows
  */
-export function getComplexityDistribution(workflows: Workflow[]): ComplexityDistribution {
+export function getComplexityDistribution(
+  workflows: Workflow[]
+): ComplexityDistribution {
   const analyses = workflows.map((w) => analyzeComplexity(w));
 
   const distribution: ComplexityDistribution = {
@@ -557,13 +571,13 @@ export function getComplexityDistribution(workflows: Workflow[]): ComplexityDist
       low: 0,
       medium: 0,
       high: 0,
-      'very-high': 0,
+      "very-high": 0,
     },
     byScore: {
-      '0-25': 0,
-      '26-50': 0,
-      '51-75': 0,
-      '76-100': 0,
+      "0-25": 0,
+      "26-50": 0,
+      "51-75": 0,
+      "76-100": 0,
     },
     total: analyses.length,
     averageScore: 0,
@@ -580,13 +594,13 @@ export function getComplexityDistribution(workflows: Workflow[]): ComplexityDist
     // Count by score
     const score = analysis.complexityScore;
     if (score <= 25) {
-      distribution.byScore['0-25']++;
+      distribution.byScore["0-25"]++;
     } else if (score <= 50) {
-      distribution.byScore['26-50']++;
+      distribution.byScore["26-50"]++;
     } else if (score <= 75) {
-      distribution.byScore['51-75']++;
+      distribution.byScore["51-75"]++;
     } else {
-      distribution.byScore['76-100']++;
+      distribution.byScore["76-100"]++;
     }
 
     totalScore += score;
@@ -601,7 +615,7 @@ export function getComplexityDistribution(workflows: Workflow[]): ComplexityDist
  * Get complexity trends over time
  */
 export function getComplexityTrends(
-  workflowId: string,
+  _workflowId: string,
   history: Array<{ version: string; workflow: Workflow; timestamp: string }>
 ): ComplexityTrendPoint[] {
   return history.map((entry) => {
@@ -618,106 +632,118 @@ export function getComplexityTrends(
 /**
  * Generate simplification suggestions for a workflow
  */
-export function suggestSimplifications(workflow: Workflow): SimplificationSuggestion[] {
+export function suggestSimplifications(
+  workflow: Workflow
+): SimplificationSuggestion[] {
   const analysis = analyzeComplexity(workflow);
   const suggestions: SimplificationSuggestion[] = [];
 
   // Deep nesting suggestion
   if (analysis.maxDepth > 10) {
     suggestions.push({
-      type: 'reduce-depth',
-      severity: 'high',
+      type: "reduce-depth",
+      severity: "high",
       description: `Workflow has a maximum depth of ${analysis.maxDepth}, which makes it difficult to understand and maintain.`,
-      recommendation: 'Consider extracting nested logic into separate sub-workflows or flattening the structure.',
+      recommendation:
+        "Consider extracting nested logic into separate sub-workflows or flattening the structure.",
     });
   } else if (analysis.maxDepth > 7) {
     suggestions.push({
-      type: 'reduce-depth',
-      severity: 'medium',
+      type: "reduce-depth",
+      severity: "medium",
       description: `Workflow depth is ${analysis.maxDepth}, which is moderately complex.`,
-      recommendation: 'Consider simplifying nested control flow structures.',
+      recommendation: "Consider simplifying nested control flow structures.",
     });
   }
 
   // High branching factor
   if (analysis.branchingFactor > 2.5) {
     suggestions.push({
-      type: 'reduce-branching',
-      severity: 'high',
+      type: "reduce-branching",
+      severity: "high",
       description: `Average branching factor is ${analysis.branchingFactor.toFixed(2)}, indicating complex decision logic.`,
-      recommendation: 'Consider using lookup tables or extracting decision logic into separate workflows.',
+      recommendation:
+        "Consider using lookup tables or extracting decision logic into separate workflows.",
     });
   } else if (analysis.branchingFactor > 1.8) {
     suggestions.push({
-      type: 'reduce-branching',
-      severity: 'medium',
+      type: "reduce-branching",
+      severity: "medium",
       description: `Branching factor is ${analysis.branchingFactor.toFixed(2)}, which is moderately complex.`,
-      recommendation: 'Review conditional logic and consider simplification.',
+      recommendation: "Review conditional logic and consider simplification.",
     });
   }
 
   // Large workflow
   if (analysis.actionCount > 30) {
     suggestions.push({
-      type: 'extract-subworkflow',
-      severity: 'high',
+      type: "extract-subworkflow",
+      severity: "high",
       description: `Workflow contains ${analysis.actionCount} actions, making it difficult to understand at a glance.`,
-      recommendation: 'Consider breaking this workflow into smaller, reusable sub-workflows based on logical groupings.',
+      recommendation:
+        "Consider breaking this workflow into smaller, reusable sub-workflows based on logical groupings.",
     });
   } else if (analysis.actionCount > 20) {
     suggestions.push({
-      type: 'extract-subworkflow',
-      severity: 'medium',
+      type: "extract-subworkflow",
+      severity: "medium",
       description: `Workflow has ${analysis.actionCount} actions. Consider modularization.`,
-      recommendation: 'Identify logical sections that could be extracted into sub-workflows.',
+      recommendation:
+        "Identify logical sections that could be extracted into sub-workflows.",
     });
   }
 
   // High cyclomatic complexity
   if (analysis.cyclomaticComplexity > 15) {
     suggestions.push({
-      type: 'simplify-control-flow',
-      severity: 'high',
+      type: "simplify-control-flow",
+      severity: "high",
       description: `Cyclomatic complexity is ${analysis.cyclomaticComplexity}, indicating many decision points.`,
-      recommendation: 'Simplify control flow logic, reduce nested conditions, or use table-driven approaches.',
+      recommendation:
+        "Simplify control flow logic, reduce nested conditions, or use table-driven approaches.",
     });
   } else if (analysis.cyclomaticComplexity > 10) {
     suggestions.push({
-      type: 'simplify-control-flow',
-      severity: 'medium',
+      type: "simplify-control-flow",
+      severity: "medium",
       description: `Cyclomatic complexity is ${analysis.cyclomaticComplexity}.`,
-      recommendation: 'Consider reducing the number of conditional branches.',
+      recommendation: "Consider reducing the number of conditional branches.",
     });
   }
 
   // Disconnected components (dead code)
   if (analysis.disconnectedComponents > 1) {
     suggestions.push({
-      type: 'remove-dead-code',
-      severity: 'medium',
+      type: "remove-dead-code",
+      severity: "medium",
       description: `Workflow has ${analysis.disconnectedComponents} disconnected components, suggesting unreachable actions.`,
-      recommendation: 'Remove or connect isolated actions that are not part of the main execution flow.',
+      recommendation:
+        "Remove or connect isolated actions that are not part of the main execution flow.",
     });
   }
 
   // Many control flow actions
-  const controlFlowRatio = analysis.controlFlowCount / Math.max(analysis.actionCount, 1);
+  const controlFlowRatio =
+    analysis.controlFlowCount / Math.max(analysis.actionCount, 1);
   if (controlFlowRatio > 0.5) {
     suggestions.push({
-      type: 'simplify-control-flow',
-      severity: 'medium',
+      type: "simplify-control-flow",
+      severity: "medium",
       description: `${Math.round(controlFlowRatio * 100)}% of actions are control flow, suggesting overly complex logic.`,
-      recommendation: 'Consider data-driven approaches or simplifying the logic structure.',
+      recommendation:
+        "Consider data-driven approaches or simplifying the logic structure.",
     });
   }
 
   // Cycles detected
   if (analysis.hasCycles) {
     suggestions.push({
-      type: 'simplify-control-flow',
-      severity: 'low',
-      description: 'Workflow contains cycles (loops), which can make execution flow harder to follow.',
-      recommendation: 'Ensure loops have clear exit conditions and consider if iteration can be simplified.',
+      type: "simplify-control-flow",
+      severity: "low",
+      description:
+        "Workflow contains cycles (loops), which can make execution flow harder to follow.",
+      recommendation:
+        "Ensure loops have clear exit conditions and consider if iteration can be simplified.",
     });
   }
 

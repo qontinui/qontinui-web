@@ -10,22 +10,25 @@
  * - Three-panel layout (Library | Editor | Properties)
  */
 
-'use client'
+"use client";
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { UnifiedProcessLibrary } from '@/components/unified-process-library'
-import { ActionProperties } from '@/components/action-properties'
-import { useAutomation } from '@/contexts/automation-context'
-import { toast } from 'sonner'
-import type { Workflow, Action, ActionType } from '@/lib/action-schema/action-types'
-import { getDefaultConfig } from '@/lib/action-schema/default-configs'
-import type { PermissionLevel } from '@/types/collaboration'
+import React, { useState, useCallback, useEffect } from "react";
+import { UnifiedProcessLibrary } from "@/components/unified-process-library";
+import { ActionProperties } from "@/components/action-properties";
+import { useAutomation } from "@/contexts/automation-context";
+import { toast } from "sonner";
+import type {
+  Workflow,
+  Action,
+  ActionType,
+} from "@/lib/action-schema/action-types";
+import { getDefaultConfig } from "@/lib/action-schema/default-configs";
+import type { PermissionLevel } from "@/types/collaboration";
 
 // Import our new components
 import {
   BuilderMode,
   LibraryItem,
-  getSuggestedMode,
   isLinearWorkflow,
   useItemManagement,
   useModeDetection,
@@ -36,34 +39,41 @@ import {
   BuilderModeSelector,
   ItemMetadataPanel,
   EditorToolbar,
-} from './index'
-import { ShareProjectDialog } from './components/ShareProjectDialog'
-import { useProjectSharing } from './hooks/useProjectSharing'
+} from "./index";
+import { ShareProjectDialog } from "./components/ShareProjectDialog";
+import { ProjectExportDialog } from "./components/ProjectExportDialog";
+import { useProjectSharing } from "./hooks/useProjectSharing";
+import {
+  ExportDialog,
+  ImportDialog,
+} from "@/components/workflow-canvas/ImportExportDialog";
 
 export function AutomationBuilder() {
   // State
-  const [mode, setMode] = useState<BuilderMode>('sequential')
-  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
-  const [selectedAction, setSelectedAction] = useState<Action | null>(null)
-  const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [mode, setMode] = useState<BuilderMode>("sequential");
+  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
+  const [selectedAction, setSelectedAction] = useState<Action | null>(null);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [projectExportDialogOpen, setProjectExportDialogOpen] = useState(false);
 
   // Context
-  const { addWorkflow, updateWorkflow, deleteWorkflow } = useAutomation()
+  const { addWorkflow, updateWorkflow } = useAutomation();
 
   // Hooks
-  const { allItems, createProcess, createWorkflow, updateItem, deleteItem } = useItemManagement()
+  const { updateItem, deleteItem, createWorkflow } = useItemManagement();
   const { handleItemSelection } = useModeDetection({
     currentMode: mode,
     autoSwitch: true,
     onModeChange: setMode,
-  })
+  });
   const { openConversion, ConversionDialog } = useFormatConversion({
     onModeChange: setMode,
-  })
+  });
   const {
     collaborators,
     organizations,
-    loading: sharingLoading,
     addUser,
     addOrganization,
     changePermission,
@@ -73,19 +83,21 @@ export function AutomationBuilder() {
   } = useProjectSharing({
     projectId: selectedItem?.id || null,
     enabled: shareDialogOpen,
-  })
+  });
 
   // Track current user's permission
-  const [myPermission, setMyPermission] = useState<PermissionLevel | undefined>(undefined)
+  const [myPermission, setMyPermission] = useState<PermissionLevel | undefined>(
+    undefined
+  );
 
   // Load permission when item changes
   useEffect(() => {
     if (selectedItem?.id) {
-      getMyPermission().then(setMyPermission)
+      getMyPermission().then(setMyPermission);
     } else {
-      setMyPermission(undefined)
+      setMyPermission(undefined);
     }
-  }, [selectedItem?.id, getMyPermission])
+  }, [selectedItem?.id, getMyPermission]);
 
   /**
    * Handle item selection from library
@@ -93,51 +105,51 @@ export function AutomationBuilder() {
   const handleSelectItem = useCallback(
     (item: LibraryItem) => {
       // Check if item is compatible with current mode, auto-switch if needed
-      const canProceed = handleItemSelection(item)
+      const canProceed = handleItemSelection(item);
       if (canProceed) {
-        setSelectedItem(item)
-        setSelectedAction(null)
+        setSelectedItem(item);
+        setSelectedAction(null);
       }
     },
     [handleItemSelection]
-  )
+  );
 
   /**
    * Handle creating a new sequential workflow
    */
   const handleCreateSequential = useCallback(
-    (category: string = 'Main') => {
-      const newWorkflow = createWorkflow({ viewMode: 'sequential', category })
-      setSelectedItem(newWorkflow)
-      setSelectedAction(null)
-      setMode('sequential')
+    (category: string = "Main") => {
+      const newWorkflow = createWorkflow({ viewMode: "sequential", category });
+      setSelectedItem(newWorkflow);
+      setSelectedAction(null);
+      setMode("sequential");
     },
     [createWorkflow]
-  )
+  );
 
   /**
    * Handle creating a new graph workflow
    */
   const handleCreateGraph = useCallback(
-    (category: string = 'Main') => {
-      const newWorkflow = createWorkflow({ viewMode: 'graph', category })
-      setSelectedItem(newWorkflow)
-      setSelectedAction(null)
-      setMode('graph')
+    (category: string = "Main") => {
+      const newWorkflow = createWorkflow({ viewMode: "graph", category });
+      setSelectedItem(newWorkflow);
+      setSelectedAction(null);
+      setMode("graph");
     },
     [createWorkflow]
-  )
+  );
 
   /**
    * Handle updating the current item
    */
   const handleUpdateItem = useCallback(
     (item: LibraryItem) => {
-      updateItem(item)
-      setSelectedItem(item)
+      updateItem(item);
+      setSelectedItem(item);
     },
     [updateItem]
-  )
+  );
 
   /**
    * Handle deleting an item
@@ -145,24 +157,24 @@ export function AutomationBuilder() {
    */
   const handleDeleteItem = useCallback(
     (item: LibraryItem) => {
-      deleteItem(item)
+      deleteItem(item);
 
       // Clear selection if this was the selected item
       if (selectedItem?.id === item.id) {
-        setSelectedItem(null)
-        setSelectedAction(null)
+        setSelectedItem(null);
+        setSelectedAction(null);
       }
     },
     [deleteItem, selectedItem]
-  )
+  );
 
   /**
    * Handle duplicating an item
    */
   const handleDuplicateItem = useCallback(() => {
-    if (!selectedItem) return
+    if (!selectedItem) return;
 
-    const isLinear = isLinearWorkflow(selectedItem)
+    const isLinear = isLinearWorkflow(selectedItem);
     const duplicated: Workflow = {
       ...selectedItem,
       id: `workflow-${Date.now()}`,
@@ -172,71 +184,83 @@ export function AutomationBuilder() {
         created: new Date().toISOString(),
         updated: new Date().toISOString(),
       },
-    }
+    };
 
-    addWorkflow(duplicated)
-    setSelectedItem(duplicated)
-    toast.success(`${isLinear ? 'Sequential' : 'Graph'} workflow duplicated`, {
+    addWorkflow(duplicated);
+    setSelectedItem(duplicated);
+    toast.success(`${isLinear ? "Sequential" : "Graph"} workflow duplicated`, {
       description: `Created "${duplicated.name}"`,
-    })
-  }, [selectedItem, addWorkflow])
+    });
+  }, [selectedItem, addWorkflow]);
 
   /**
    * Update workflow
    */
   const handleUpdateWorkflow = useCallback(
     (workflow: Workflow) => {
-      console.log('[AutomationBuilder] handleUpdateWorkflow called:', {
+      console.log("[AutomationBuilder] handleUpdateWorkflow called:", {
         id: workflow.id,
         name: workflow.name,
         actionsCount: workflow.actions.length,
-        actions: workflow.actions.map(a => ({ id: a.id, type: a.type }))
-      })
-      updateWorkflow(workflow)
+        actions: workflow.actions.map((a) => ({ id: a.id, type: a.type })),
+      });
+      updateWorkflow(workflow);
       if (selectedItem?.id === workflow.id) {
-        setSelectedItem(workflow)
+        setSelectedItem(workflow);
       }
-      console.log('[AutomationBuilder] handleUpdateWorkflow completed')
+      console.log("[AutomationBuilder] handleUpdateWorkflow completed");
     },
     [updateWorkflow, selectedItem]
-  )
+  );
 
   /**
    * Handle updating actions for sequential editor
    */
   const handleUpdateActions = useCallback(
     (actions: Action[]) => {
-      if (!selectedItem) return
+      if (!selectedItem) return;
 
       const updatedWorkflow = {
         ...selectedItem,
         actions,
-      }
-      handleUpdateWorkflow(updatedWorkflow)
+      };
+      handleUpdateWorkflow(updatedWorkflow);
     },
     [selectedItem, handleUpdateWorkflow]
-  )
+  );
 
   /**
    * Handle selecting an action
    */
   const handleSelectAction = useCallback((action: Action | null) => {
-    setSelectedAction(action)
-  }, [])
+    setSelectedAction(action);
+  }, []);
 
   /**
    * Handle adding a node in graph mode
    */
   const handleAddNode = useCallback(
     (nodeType: ActionType) => {
-      const callId = Date.now()
-      console.log('[AutomationBuilder] handleAddNode called with:', nodeType, 'callId:', callId)
-      console.log('[AutomationBuilder] selectedItem:', selectedItem?.id, selectedItem?.name)
-      console.log('[AutomationBuilder] Current actions:', selectedItem?.actions)
+      const callId = Date.now();
+      console.log(
+        "[AutomationBuilder] handleAddNode called with:",
+        nodeType,
+        "callId:",
+        callId
+      );
+      console.log(
+        "[AutomationBuilder] selectedItem:",
+        selectedItem?.id,
+        selectedItem?.name
+      );
+      console.log(
+        "[AutomationBuilder] Current actions:",
+        selectedItem?.actions
+      );
 
       if (!selectedItem) {
-        console.warn('[AutomationBuilder] No selectedItem, cannot add node')
-        return
+        console.warn("[AutomationBuilder] No selectedItem, cannot add node");
+        return;
       }
 
       const newAction: Action = {
@@ -244,55 +268,110 @@ export function AutomationBuilder() {
         type: nodeType,
         config: getDefaultConfig(nodeType),
         position: [100, 100], // Auto-position
-      }
+      };
 
-      console.log('[AutomationBuilder] Created new action:', newAction)
+      console.log("[AutomationBuilder] Created new action:", newAction);
 
       const updatedWorkflow = {
         ...selectedItem,
         actions: [...selectedItem.actions, newAction],
-      }
+      };
 
-      console.log('[AutomationBuilder] Updated workflow actions count:', updatedWorkflow.actions.length)
-      console.log('[AutomationBuilder] Calling handleUpdateWorkflow with callId:', callId)
-      handleUpdateWorkflow(updatedWorkflow)
-      console.log('[AutomationBuilder] handleUpdateWorkflow completed for callId:', callId)
+      console.log(
+        "[AutomationBuilder] Updated workflow actions count:",
+        updatedWorkflow.actions.length
+      );
+      console.log(
+        "[AutomationBuilder] Calling handleUpdateWorkflow with callId:",
+        callId
+      );
+      handleUpdateWorkflow(updatedWorkflow);
+      console.log(
+        "[AutomationBuilder] handleUpdateWorkflow completed for callId:",
+        callId
+      );
     },
     [selectedItem, handleUpdateWorkflow]
-  )
+  );
 
   /**
    * Handle updating an action from the properties panel
    */
   const handleUpdateAction = useCallback(
     (updatedAction: Action) => {
-      if (!selectedItem) return
+      if (!selectedItem) return;
 
       const updatedActions = selectedItem.actions.map((a: Action) =>
         a.id === updatedAction.id ? updatedAction : a
-      )
+      );
 
-      handleUpdateActions(updatedActions)
-      setSelectedAction(updatedAction)
+      handleUpdateActions(updatedActions);
+      setSelectedAction(updatedAction);
     },
     [selectedItem, handleUpdateActions]
-  )
+  );
 
   /**
    * Handle opening the share dialog
    */
   const handleShare = useCallback(() => {
-    if (!selectedItem) return
-    setShareDialogOpen(true)
-  }, [selectedItem])
+    if (!selectedItem) return;
+    setShareDialogOpen(true);
+  }, [selectedItem]);
+
+  /**
+   * Handle opening the export dialog
+   */
+  const handleExport = useCallback(() => {
+    if (!selectedItem) return;
+    setExportDialogOpen(true);
+  }, [selectedItem]);
+
+  /**
+   * Handle opening the import dialog
+   */
+  const handleImport = useCallback(() => {
+    setImportDialogOpen(true);
+  }, []);
+
+  /**
+   * Handle opening the project export dialog
+   */
+  const handleExportProject = useCallback(() => {
+    setProjectExportDialogOpen(true);
+  }, []);
+
+  /**
+   * Handle importing a workflow
+   */
+  const handleImportWorkflow = useCallback(
+    (workflow: Workflow) => {
+      addWorkflow(workflow);
+      setSelectedItem(workflow);
+      setImportDialogOpen(false);
+      toast.success("Workflow imported", {
+        description: `Imported "${workflow.name}"`,
+      });
+    },
+    [addWorkflow]
+  );
 
   // Render the editor based on mode
   const renderEditor = () => {
     if (!selectedItem) {
-      return <EmptyState mode={mode} onCreateNew={mode === 'sequential' ? () => handleCreateSequential() : () => handleCreateGraph()} />
+      return (
+        <EmptyState
+          mode={mode}
+          onCreateNew={
+            mode === "sequential"
+              ? () => handleCreateSequential()
+              : () => handleCreateGraph()
+          }
+        />
+      );
     }
 
-    if (mode === 'sequential') {
+    if (mode === "sequential") {
       // Sequential mode - SequentialEditor
       // Warn if workflow has branching
       if (!isLinearWorkflow(selectedItem)) {
@@ -303,7 +382,7 @@ export function AutomationBuilder() {
               <p className="text-sm">Switch to graph mode to edit</p>
             </div>
           </div>
-        )
+        );
       }
 
       return (
@@ -312,25 +391,33 @@ export function AutomationBuilder() {
           selectedAction={selectedAction}
           onSelectAction={handleSelectAction}
           onUpdateActions={handleUpdateActions}
-          onAddAction={(action) => handleUpdateActions([...selectedItem.actions, action])}
+          onAddAction={(action) =>
+            handleUpdateActions([...selectedItem.actions, action])
+          }
           onDeleteAction={(actionId) =>
-            handleUpdateActions(selectedItem.actions.filter((a: Action) => a.id !== actionId))
+            handleUpdateActions(
+              selectedItem.actions.filter((a: Action) => a.id !== actionId)
+            )
           }
           onDuplicateAction={(actionId) => {
-            const action = selectedItem.actions.find((a: Action) => a.id === actionId)
+            const action = selectedItem.actions.find(
+              (a: Action) => a.id === actionId
+            );
             if (action) {
-              const duplicated = { ...action, id: `action-${Date.now()}` }
-              handleUpdateActions([...selectedItem.actions, duplicated])
+              const duplicated = { ...action, id: `action-${Date.now()}` };
+              handleUpdateActions([...selectedItem.actions, duplicated]);
             }
           }}
           onReorderActions={(startIndex, endIndex) => {
-            const actions = [...selectedItem.actions]
-            const [removed] = actions.splice(startIndex, 1)
-            actions.splice(endIndex, 0, removed)
-            handleUpdateActions(actions)
+            const actions = [...selectedItem.actions];
+            const [removed] = actions.splice(startIndex, 1);
+            if (removed) {
+              actions.splice(endIndex, 0, removed);
+              handleUpdateActions(actions);
+            }
           }}
         />
-      )
+      );
     } else {
       // Graph mode - GraphEditor (works with all workflows)
       return (
@@ -341,16 +428,25 @@ export function AutomationBuilder() {
           onUpdateWorkflow={handleUpdateWorkflow}
           onAddNode={handleAddNode}
         />
-      )
+      );
     }
-  }
+  };
 
   return (
-    <div className="flex h-full">
+    <div
+      className="flex h-full"
+      data-tutorial-id="automation-builder-container"
+    >
       {/* Left Panel - Library */}
-      <div className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-r border-gray-800 bg-[#27272A]/50 overflow-hidden flex flex-col">
+      <div
+        className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-r border-gray-800 bg-[#27272A]/50 overflow-hidden flex flex-col"
+        data-tutorial-id="action-library"
+      >
         {/* Mode Selector */}
-        <div className="p-4 border-b border-gray-800">
+        <div
+          className="p-4 border-b border-gray-800"
+          data-tutorial-id="mode-selector"
+        >
           <BuilderModeSelector mode={mode} onModeChange={setMode} />
         </div>
 
@@ -369,7 +465,10 @@ export function AutomationBuilder() {
       </div>
 
       {/* Center Panel - Editor */}
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <div
+        className="flex-1 min-w-0 flex flex-col overflow-hidden"
+        data-tutorial-id="workflow-editor"
+      >
         {/* Toolbar */}
         <EditorToolbar
           item={selectedItem}
@@ -378,6 +477,9 @@ export function AutomationBuilder() {
           onDuplicate={handleDuplicateItem}
           onConvert={() => selectedItem && openConversion(selectedItem)}
           onShare={handleShare}
+          onExport={handleExport}
+          onImport={handleImport}
+          onExportProject={handleExportProject}
         />
 
         {/* Editor Content */}
@@ -385,7 +487,10 @@ export function AutomationBuilder() {
       </div>
 
       {/* Right Panel - Properties */}
-      <div className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
+      <div
+        className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto"
+        data-tutorial-id="properties-panel"
+      >
         {selectedItem && !selectedAction ? (
           // Show item metadata when no action is selected
           <ItemMetadataPanel
@@ -397,7 +502,10 @@ export function AutomationBuilder() {
           />
         ) : (
           // Show action properties when an action is selected
-          <ActionProperties action={selectedAction} onUpdateAction={handleUpdateAction} />
+          <ActionProperties
+            action={selectedAction as any}
+            onUpdateAction={handleUpdateAction as any}
+          />
         )}
       </div>
 
@@ -420,6 +528,28 @@ export function AutomationBuilder() {
           onGenerateLink={generateShareLink}
         />
       )}
+
+      {/* Export Dialog */}
+      {selectedItem && (
+        <ExportDialog
+          workflow={selectedItem}
+          open={exportDialogOpen}
+          onClose={() => setExportDialogOpen(false)}
+        />
+      )}
+
+      {/* Import Dialog */}
+      <ImportDialog
+        open={importDialogOpen}
+        onImport={handleImportWorkflow}
+        onClose={() => setImportDialogOpen(false)}
+      />
+
+      {/* Project Export Dialog */}
+      <ProjectExportDialog
+        open={projectExportDialogOpen}
+        onOpenChange={setProjectExportDialogOpen}
+      />
     </div>
-  )
+  );
 }

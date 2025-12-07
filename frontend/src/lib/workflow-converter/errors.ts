@@ -11,7 +11,7 @@ export class NonLinearWorkflowError extends Error {
     public readonly issues: string[]
   ) {
     super(message);
-    this.name = 'NonLinearWorkflowError';
+    this.name = "NonLinearWorkflowError";
   }
 }
 
@@ -24,6 +24,6 @@ export class WorkflowValidationError extends Error {
     public readonly details?: Record<string, any>
   ) {
     super(message);
-    this.name = 'WorkflowValidationError';
+    this.name = "WorkflowValidationError";
   }
 }

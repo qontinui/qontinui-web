@@ -14,7 +14,11 @@ interface QontinuiPageProps extends React.ComponentProps<"div"> {
 /**
  * Full-screen page container with dark canvas background
  */
-export function QontinuiPage({ className, children, ...props }: QontinuiPageProps) {
+export function QontinuiPage({
+  className,
+  children,
+  ...props
+}: QontinuiPageProps) {
   return (
     <div
       className={cn(
@@ -35,12 +39,13 @@ interface QontinuiHeaderProps extends React.ComponentProps<"header"> {
 /**
  * Themed header with dark panel background and border
  */
-export function QontinuiHeader({ className, children, ...props }: QontinuiHeaderProps) {
+export function QontinuiHeader({
+  className,
+  children,
+  ...props
+}: QontinuiHeaderProps) {
   return (
-    <header
-      className={cn(styles.header, "px-6 py-4", className)}
-      {...props}
-    >
+    <header className={cn(styles.header, "px-6 py-4", className)} {...props}>
       {children}
     </header>
   );
@@ -70,9 +75,7 @@ export function QontinuiHeaderTitle({
       >
         {children}
       </h1>
-      {subtitle && (
-        <p className="text-gray-400 text-sm mt-1">{subtitle}</p>
-      )}
+      {subtitle && <p className="text-gray-400 text-sm mt-1">{subtitle}</p>}
     </div>
   );
 }
@@ -99,7 +102,11 @@ interface QontinuiMainProps extends React.ComponentProps<"main"> {}
 /**
  * Main content area with scrolling
  */
-export function QontinuiMain({ className, children, ...props }: QontinuiMainProps) {
+export function QontinuiMain({
+  className,
+  children,
+  ...props
+}: QontinuiMainProps) {
   return (
     <main
       className={cn("flex-1 overflow-auto bg-[#0A0A0B]", className)}
@@ -114,7 +121,7 @@ interface QontinuiContainerProps extends React.ComponentProps<"div"> {
   /**
    * Maximum width of the container
    */
-  maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "full";
+  maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "7xl" | "full";
 }
 
 /**
@@ -138,7 +145,11 @@ export function QontinuiContainer({
 
   return (
     <div
-      className={cn(maxWidthClasses[maxWidth as keyof typeof maxWidthClasses], "mx-auto p-6", className)}
+      className={cn(
+        maxWidthClasses[maxWidth as keyof typeof maxWidthClasses],
+        "mx-auto p-6",
+        className
+      )}
       {...props}
     >
       {children}
@@ -151,7 +162,11 @@ interface QontinuiSidebarProps extends React.ComponentProps<"aside"> {}
 /**
  * Themed sidebar with dark panel background
  */
-export function QontinuiSidebar({ className, children, ...props }: QontinuiSidebarProps) {
+export function QontinuiSidebar({
+  className,
+  children,
+  ...props
+}: QontinuiSidebarProps) {
   return (
     <aside
       className={cn(styles.sidebar, "w-64 p-4 overflow-y-auto", className)}
@@ -167,12 +182,13 @@ interface QontinuiToolbarProps extends React.ComponentProps<"div"> {}
 /**
  * Toolbar section (similar to header but can be used anywhere)
  */
-export function QontinuiToolbar({ className, children, ...props }: QontinuiToolbarProps) {
+export function QontinuiToolbar({
+  className,
+  children,
+  ...props
+}: QontinuiToolbarProps) {
   return (
-    <div
-      className={cn(styles.toolbar, "px-6 py-3", className)}
-      {...props}
-    >
+    <div className={cn(styles.toolbar, "px-6 py-3", className)} {...props}>
       {children}
     </div>
   );
@@ -203,8 +219,12 @@ export function QontinuiSection({
     <section className={cn("space-y-4", className)} {...props}>
       {(title || description) && (
         <div className="space-y-1">
-          {title && <h2 className="text-lg font-semibold text-white">{title}</h2>}
-          {description && <p className="text-sm text-gray-400">{description}</p>}
+          {title && (
+            <h2 className="text-lg font-semibold text-white">{title}</h2>
+          )}
+          {description && (
+            <p className="text-sm text-gray-400">{description}</p>
+          )}
         </div>
       )}
       {children}

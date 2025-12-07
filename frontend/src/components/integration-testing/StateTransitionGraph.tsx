@@ -1,8 +1,8 @@
 // components/integration-testing/StateTransitionGraph.tsx
 
-'use client';
+"use client";
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from "react";
 import {
   ReactFlow,
   Node,
@@ -13,10 +13,13 @@ import {
   useNodesState,
   useEdgesState,
   MarkerType,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import dagre from 'dagre';
-import type { StateCoverageMetrics, StateTransition } from '@/types/integration-testing';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import dagre from "dagre";
+import type {
+  StateCoverageMetrics,
+  StateTransition,
+} from "@/types/integration-testing";
 
 interface StateTransitionGraphProps {
   stateMetrics: Record<string, StateCoverageMetrics>;
@@ -33,10 +36,10 @@ function StateNode({ data }: { data: any }) {
 
   // Determine node color based on coverage
   const getNodeColor = () => {
-    if (coverage === 0) return 'bg-red-100 border-red-400 text-red-900';
-    if (coverage < 50) return 'bg-yellow-100 border-yellow-400 text-yellow-900';
-    if (coverage < 100) return 'bg-blue-100 border-blue-400 text-blue-900';
-    return 'bg-green-100 border-green-400 text-green-900';
+    if (coverage === 0) return "bg-red-100 border-red-400 text-red-900";
+    if (coverage < 50) return "bg-yellow-100 border-yellow-400 text-yellow-900";
+    if (coverage < 100) return "bg-blue-100 border-blue-400 text-blue-900";
+    return "bg-green-100 border-green-400 text-green-900";
   };
 
   return (
@@ -47,7 +50,9 @@ function StateNode({ data }: { data: any }) {
       `}
     >
       <div className="font-semibold text-sm">{data.label}</div>
-      <div className="text-xs mt-1 opacity-75">{coverage.toFixed(0)}% coverage</div>
+      <div className="text-xs mt-1 opacity-75">
+        {coverage.toFixed(0)}% coverage
+      </div>
       {data.actions > 0 && (
         <div className="text-xs mt-0.5 opacity-75">{data.actions} actions</div>
       )}
@@ -62,7 +67,7 @@ const nodeTypes = {
 /**
  * Layout nodes using Dagre for hierarchical positioning
  */
-function getLayoutedElements(nodes: Node[], edges: Edge[], direction = 'TB') {
+function getLayoutedElements(nodes: Node[], edges: Edge[], direction = "TB") {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
   dagreGraph.setGraph({ rankdir: direction, ranksep: 100, nodesep: 80 });
@@ -101,7 +106,7 @@ export function StateTransitionGraph({
     // Create nodes from state metrics
     const nodes: Node[] = Object.values(stateMetrics).map((metric) => ({
       id: metric.state_name,
-      type: 'stateNode',
+      type: "stateNode",
       data: {
         label: metric.state_name,
         coverage: metric.coverage_percentage,
@@ -116,15 +121,15 @@ export function StateTransitionGraph({
       id: `${transition.from_state}-${transition.to_state}-${index}`,
       source: transition.from_state,
       target: transition.to_state,
-      type: 'smoothstep',
+      type: "smoothstep",
       animated: transition.covered,
       style: {
-        stroke: transition.covered ? '#10b981' : '#9ca3af',
+        stroke: transition.covered ? "#10b981" : "#9ca3af",
         strokeWidth: Math.min(2 + transition.count / 2, 6),
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: transition.covered ? '#10b981' : '#9ca3af',
+        color: transition.covered ? "#10b981" : "#9ca3af",
       },
       label: transition.count > 1 ? `${transition.count}x` : undefined,
       labelStyle: {
@@ -132,13 +137,13 @@ export function StateTransitionGraph({
         fontWeight: 600,
       },
       labelBgStyle: {
-        fill: '#fff',
+        fill: "#fff",
       },
-      data: transition,
+      data: transition as unknown as Record<string, unknown>,
     }));
 
     // Apply dagre layout
-    return getLayoutedElements(nodes, edges, 'TB');
+    return getLayoutedElements(nodes, edges, "TB");
   }, [stateMetrics, transitions]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -156,7 +161,7 @@ export function StateTransitionGraph({
 
   const onEdgeClick = (_event: React.MouseEvent, edge: Edge) => {
     if (edge.data) {
-      onTransitionClick?.(edge.data);
+      onTransitionClick?.(edge.data as unknown as StateTransition);
     }
   };
 
@@ -165,7 +170,9 @@ export function StateTransitionGraph({
       <div className="h-96 flex items-center justify-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
         <div className="text-center text-gray-500">
           <p className="text-lg font-medium">No state transitions found</p>
-          <p className="text-sm mt-1">Execute a process to visualize state transitions</p>
+          <p className="text-sm mt-1">
+            Execute a process to visualize state transitions
+          </p>
         </div>
       </div>
     );

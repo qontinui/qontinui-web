@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, Globe, Play, CheckCircle } from "lucide-react";
+import { Download, CheckCircle } from "lucide-react";
 
 export const metadata = {
   title: "Getting Started with Qontinui - Quick Start Guide",
@@ -19,9 +19,7 @@ export default function GettingStartedPage() {
           >
             ← Back to Documentation
           </Link>
-          <h1 className="text-4xl font-bold mb-4">
-            Getting Started
-          </h1>
+          <h1 className="text-4xl font-bold mb-4">Getting Started</h1>
           <p className="text-xl text-muted-foreground">
             Create your first GUI automation workflow in 3 simple steps
           </p>
@@ -30,9 +28,7 @@ export default function GettingStartedPage() {
         {/* Overview */}
         <section className="mb-12">
           <div className="bg-primary/10 border border-primary/30 rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-3">
-              What You'll Learn
-            </h2>
+            <h2 className="text-xl font-semibold mb-3">What You'll Learn</h2>
             <ul className="space-y-2">
               <li className="flex items-start gap-2">
                 <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
@@ -98,11 +94,10 @@ export default function GettingStartedPage() {
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold mb-3">
-                Define Your States
-              </h3>
+              <h3 className="text-lg font-semibold mb-3">Define Your States</h3>
               <p className="text-muted-foreground mb-3">
-                States represent the different screens or conditions in your application. For example:
+                States represent the different screens or conditions in your
+                application. For example:
               </p>
               <ul className="list-disc list-inside space-y-1 text-muted-foreground ml-4">
                 <li>Login Screen</li>
@@ -110,7 +105,8 @@ export default function GettingStartedPage() {
                 <li>Settings Page</li>
               </ul>
               <p className="text-muted-foreground text-sm mt-3">
-                <strong>Tip:</strong> Add identifying images to each state so Qontinui can recognize when it's active.
+                <strong>Tip:</strong> Add identifying images to each state so
+                Qontinui can recognize when it's active.
               </p>
             </div>
 
@@ -131,15 +127,24 @@ export default function GettingStartedPage() {
             <div className="bg-card border border-border rounded-lg p-4">
               <p className="text-sm text-muted-foreground">
                 <strong>Learn More:</strong>{" "}
-                <Link href="/docs/web/states" className="text-primary hover:underline">
+                <Link
+                  href="/docs/web/states"
+                  className="text-primary hover:underline"
+                >
                   Working with States
                 </Link>
                 {" • "}
-                <Link href="/docs/web/actions" className="text-primary hover:underline">
+                <Link
+                  href="/docs/web/actions"
+                  className="text-primary hover:underline"
+                >
                   Action Types
                 </Link>
                 {" • "}
-                <Link href="/docs/web/transitions" className="text-primary hover:underline">
+                <Link
+                  href="/docs/web/transitions"
+                  className="text-primary hover:underline"
+                >
                   State Transitions
                 </Link>
               </p>
@@ -153,14 +158,13 @@ export default function GettingStartedPage() {
             <div className="w-10 h-10 bg-accent text-accent-foreground rounded-full flex items-center justify-center font-bold text-lg">
               2
             </div>
-            <h2 className="text-2xl font-bold">
-              Test with Mock Execution
-            </h2>
+            <h2 className="text-2xl font-bold">Test with Mock Execution</h2>
           </div>
 
           <div className="pl-13 space-y-4">
             <p className="text-muted-foreground">
-              Before running on real systems, test your automation logic directly in the browser:
+              Before running on real systems, test your automation logic
+              directly in the browser:
             </p>
             <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
               <li>Click the "Test" button in the automation builder</li>
@@ -170,15 +174,19 @@ export default function GettingStartedPage() {
             </ol>
             <div className="bg-accent/10 border border-accent/30 rounded-lg p-4 mt-4">
               <p className="text-sm">
-                <strong>Why Mock Testing?</strong> Mock execution lets you validate your state machine
-                and automation logic without requiring a real GUI environment. It's fast, safe, and perfect
+                <strong>Why Mock Testing?</strong> Mock execution lets you
+                validate your state machine and automation logic without
+                requiring a real GUI environment. It's fast, safe, and perfect
                 for iterating on your design.
               </p>
             </div>
             <div className="bg-card border border-border rounded-lg p-4">
               <p className="text-sm text-muted-foreground">
                 <strong>Learn More:</strong>{" "}
-                <Link href="/docs/web/testing" className="text-primary hover:underline">
+                <Link
+                  href="/docs/web/testing"
+                  className="text-primary hover:underline"
+                >
                   Mock Testing Guide
                 </Link>
               </p>
@@ -192,9 +200,7 @@ export default function GettingStartedPage() {
             <div className="w-10 h-10 bg-secondary text-secondary-foreground rounded-full flex items-center justify-center font-bold text-lg">
               3
             </div>
-            <h2 className="text-2xl font-bold">
-              Run with Qontinui Runner
-            </h2>
+            <h2 className="text-2xl font-bold">Run with Qontinui Runner</h2>
           </div>
 
           <div className="pl-13 space-y-6">
@@ -226,9 +232,7 @@ export default function GettingStartedPage() {
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold mb-3">
-                Load and Execute
-              </h3>
+              <h3 className="text-lg font-semibold mb-3">Load and Execute</h3>
               <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
                 <li>Open Qontinui Runner</li>
                 <li>Click "Load Configuration" and select your JSON file</li>
@@ -239,20 +243,27 @@ export default function GettingStartedPage() {
 
             <div className="bg-secondary/10 border border-secondary/30 rounded-lg p-4">
               <p className="text-sm">
-                <strong>Real Automation:</strong> Qontinui Runner performs actual mouse clicks,
-                keyboard input, and screen recognition on your system. Make sure you have the
-                target application ready before starting execution.
+                <strong>Real Automation:</strong> Qontinui Runner performs
+                actual mouse clicks, keyboard input, and screen recognition on
+                your system. Make sure you have the target application ready
+                before starting execution.
               </p>
             </div>
 
             <div className="bg-card border border-border rounded-lg p-4">
               <p className="text-sm text-muted-foreground">
                 <strong>Learn More:</strong>{" "}
-                <Link href="/docs/runner/installation" className="text-primary hover:underline">
+                <Link
+                  href="/docs/runner/installation"
+                  className="text-primary hover:underline"
+                >
                   Installation Guide
                 </Link>
                 {" • "}
-                <Link href="/docs/runner/execution" className="text-primary hover:underline">
+                <Link
+                  href="/docs/runner/execution"
+                  className="text-primary hover:underline"
+                >
                   Running Automations
                 </Link>
               </p>
@@ -262,9 +273,7 @@ export default function GettingStartedPage() {
 
         {/* Next Steps */}
         <section className="border-t border-border pt-12">
-          <h2 className="text-2xl font-bold mb-6">
-            Next Steps
-          </h2>
+          <h2 className="text-2xl font-bold mb-6">Next Steps</h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="Explore Examples"

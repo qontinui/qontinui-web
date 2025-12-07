@@ -1,16 +1,19 @@
-"use client"
+"use client";
 
-import { Label } from "@/components/ui/label"
-import { SpecialKeysSelector, SpecialKeyDisplay } from "@/components/special-keys-selector"
-import { ActionPropertiesComponentProps } from "../types"
-import { TimingProperties } from "../TimingProperties"
+import { Label } from "@/components/ui/label";
+import {
+  SpecialKeysSelector,
+  SpecialKeyDisplay,
+} from "@/components/special-keys-selector";
+import { ActionPropertiesComponentProps } from "../types";
+import { TimingProperties } from "../TimingProperties";
 
 /**
  * Properties component for KEY_PRESS, KEY_DOWN, and KEY_UP actions.
  */
 export function KeyboardActionProperties({
   action,
-  updateConfig
+  updateConfig,
 }: ActionPropertiesComponentProps) {
   return (
     <>
@@ -19,7 +22,6 @@ export function KeyboardActionProperties({
           <Label className="text-xs text-gray-400">Key</Label>
           <SpecialKeysSelector
             onInsertKey={(key) => updateConfig("key", key)}
-            textAreaRef={null}
           />
         </div>
         {action.config.key && (
@@ -31,11 +33,13 @@ export function KeyboardActionProperties({
           </div>
         )}
         {!action.config.key && (
-          <p className="text-xs text-gray-500">Select a key from the dropdown above</p>
+          <p className="text-xs text-gray-500">
+            Select a key from the dropdown above
+          </p>
         )}
       </div>
 
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
-  )
+  );
 }

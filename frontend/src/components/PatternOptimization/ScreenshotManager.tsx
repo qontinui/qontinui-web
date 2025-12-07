@@ -1,145 +1,155 @@
-"use client"
+"use client";
 
-import React, { useCallback, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Label } from "@/components/ui/label"
+import React, { useCallback, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Label } from "@/components/ui/label";
 import {
   Upload,
   Trash2,
-  Check,
-  X,
   Image as ImageIcon,
-  Plus,
-  Tag,
   CheckCircle,
   XCircle,
-  Circle
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { toast } from "sonner"
-import { usePatternOptimization } from "@/contexts/pattern-optimization-context"
-import { ScreenshotImage } from "./ScreenshotImage"
-import type { OptimizationScreenshot } from "@/types/pattern-optimization"
+  Circle,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { usePatternOptimization } from "@/contexts/pattern-optimization-context";
+import { ScreenshotImage } from "./ScreenshotImage";
+import type { OptimizationScreenshot } from "@/types/pattern-optimization";
 
 export function ScreenshotManager() {
-  const {
-    session,
-    addScreenshots,
-    removeScreenshot,
-    labelScreenshot,
-  } = usePatternOptimization()
+  const { session, addScreenshots, removeScreenshot, labelScreenshot } =
+    usePatternOptimization();
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [uploading, setUploading] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [uploading, setUploading] = useState(false);
 
-  const handleFileUpload = useCallback(async (files: FileList) => {
-    setUploading(true)
-    const newScreenshots: OptimizationScreenshot[] = []
+  const handleFileUpload = useCallback(
+    async (files: FileList) => {
+      setUploading(true);
+      const newScreenshots: OptimizationScreenshot[] = [];
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file) continue;
 
-      if (!file.type.startsWith("image/")) {
-        toast.error(`${file.name} is not an image`)
-        continue
+        if (!file.type.startsWith("image/")) {
+          toast.error(`${file.name} is not an image`);
+          continue;
+        }
+
+        const reader = new FileReader();
+        const result = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        // Validate dimensions
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = result;
+        });
+
+        if (img.width < 10 || img.height < 10) {
+          toast.error(
+            `${file.name} is too small (${img.width}x${img.height}). Minimum size is 10x10`
+          );
+          continue;
+        }
+
+        newScreenshots.push({
+          id: `screenshot-${Date.now()}-${i}`,
+          url: result,
+          name: file.name,
+          uploadedAt: new Date(),
+          label: "unlabeled",
+        });
       }
 
-      const reader = new FileReader()
-      const result = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
-
-      // Validate dimensions
-      const img = new Image()
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-        img.src = result
-      })
-
-      if (img.width < 10 || img.height < 10) {
-        toast.error(`${file.name} is too small (${img.width}x${img.height}). Minimum size is 10x10`)
-        continue
+      if (newScreenshots.length > 0) {
+        addScreenshots(newScreenshots);
+        toast.success(`Added ${newScreenshots.length} screenshot(s)`);
       }
 
-      newScreenshots.push({
-        id: `screenshot-${Date.now()}-${i}`,
-        url: result,
-        name: file.name,
-        uploadedAt: new Date(),
-        label: 'unlabeled',
-      })
-    }
+      setUploading(false);
+    },
+    [addScreenshots]
+  );
 
-    if (newScreenshots.length > 0) {
-      addScreenshots(newScreenshots)
-      toast.success(`Added ${newScreenshots.length} screenshot(s)`)
-    }
-
-    setUploading(false)
-  }, [addScreenshots])
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFileUpload(e.dataTransfer.files)
-    }
-  }, [handleFileUpload])
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleFileUpload(e.dataTransfer.files);
+      }
+    },
+    [handleFileUpload]
+  );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-  }, [])
+    e.preventDefault();
+  }, []);
 
   const toggleSelection = useCallback((id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
       if (next.has(id)) {
-        next.delete(id)
+        next.delete(id);
       } else {
-        next.add(id)
+        next.add(id);
       }
-      return next
-    })
-  }, [])
+      return next;
+    });
+  }, []);
 
   const selectAll = useCallback(() => {
-    if (!session?.screenshots) return
-    setSelectedIds(new Set(session.screenshots.map(s => s.id)))
-  }, [session])
+    if (!session?.screenshots) return;
+    setSelectedIds(new Set(session.screenshots.map((s) => s.id)));
+  }, [session]);
 
   const deselectAll = useCallback(() => {
-    setSelectedIds(new Set())
-  }, [])
+    setSelectedIds(new Set());
+  }, []);
 
-  const labelSelected = useCallback((label: 'positive' | 'negative' | 'unlabeled') => {
-    selectedIds.forEach(id => {
-      labelScreenshot(id, label)
-    })
-    toast.success(`Labeled ${selectedIds.size} screenshot(s) as ${label}`)
-    deselectAll()
-  }, [selectedIds, labelScreenshot, deselectAll])
+  const labelSelected = useCallback(
+    (label: "positive" | "negative" | "unlabeled") => {
+      selectedIds.forEach((id) => {
+        labelScreenshot(id, label);
+      });
+      toast.success(`Labeled ${selectedIds.size} screenshot(s) as ${label}`);
+      deselectAll();
+    },
+    [selectedIds, labelScreenshot, deselectAll]
+  );
 
   const removeSelected = useCallback(() => {
-    if (selectedIds.size === 0) return
+    if (selectedIds.size === 0) return;
 
     if (confirm(`Remove ${selectedIds.size} screenshot(s)?`)) {
-      selectedIds.forEach(id => {
-        removeScreenshot(id)
-      })
-      toast.success(`Removed ${selectedIds.size} screenshot(s)`)
-      deselectAll()
+      selectedIds.forEach((id) => {
+        removeScreenshot(id);
+      });
+      toast.success(`Removed ${selectedIds.size} screenshot(s)`);
+      deselectAll();
     }
-  }, [selectedIds, removeScreenshot, deselectAll])
+  }, [selectedIds, removeScreenshot, deselectAll]);
 
-  const screenshots = session?.screenshots || []
-  const positiveCount = screenshots.filter(s => s.label === 'positive').length
-  const negativeCount = screenshots.filter(s => s.label === 'negative').length
-  const unlabeledCount = screenshots.filter(s => s.label === 'unlabeled').length
+  const screenshots = session?.screenshots || [];
+  const positiveCount = screenshots.filter(
+    (s) => s.label === "positive"
+  ).length;
+  const negativeCount = screenshots.filter(
+    (s) => s.label === "negative"
+  ).length;
+  const unlabeledCount = screenshots.filter(
+    (s) => s.label === "unlabeled"
+  ).length;
 
   return (
     <div className="flex flex-col h-full space-y-4">
@@ -149,8 +159,14 @@ export function ScreenshotManager() {
           <p className="font-medium text-blue-400 mb-1">Quick Start:</p>
           <ol className="space-y-1 text-gray-300">
             <li>1. Upload screenshots using the button below</li>
-            <li>2. Label them as <span className="text-green-400">positive</span> (examples to find) or <span className="text-red-400">negative</span> (examples to avoid)</li>
-            <li>3. Draw regions on positive screenshots in the Region Editor</li>
+            <li>
+              2. Label them as <span className="text-green-400">positive</span>{" "}
+              (examples to find) or{" "}
+              <span className="text-red-400">negative</span> (examples to avoid)
+            </li>
+            <li>
+              3. Draw regions on positive screenshots in the Region Editor
+            </li>
             <li>4. Click Analyze to optimize patterns</li>
           </ol>
         </div>
@@ -161,25 +177,31 @@ export function ScreenshotManager() {
         <div className="flex items-center gap-4">
           <h3 className="text-sm font-medium">Screenshots</h3>
           <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1" title="Positive examples - what the pattern should match">
+            <span
+              className="flex items-center gap-1"
+              title="Positive examples - what the pattern should match"
+            >
               <CheckCircle className="w-3 h-3 text-green-500" />
               <span className="text-gray-400">{positiveCount}</span>
             </span>
-            <span className="flex items-center gap-1" title="Negative examples - what the pattern should NOT match">
+            <span
+              className="flex items-center gap-1"
+              title="Negative examples - what the pattern should NOT match"
+            >
               <XCircle className="w-3 h-3 text-red-500" />
               <span className="text-gray-400">{negativeCount}</span>
             </span>
-            <span className="flex items-center gap-1" title="Unlabeled - not yet categorized">
+            <span
+              className="flex items-center gap-1"
+              title="Unlabeled - not yet categorized"
+            >
               <Circle className="w-3 h-3 text-gray-500" />
               <span className="text-gray-400">{unlabeledCount}</span>
             </span>
           </div>
         </div>
 
-        <Label
-          htmlFor="screenshot-upload"
-          className="cursor-pointer"
-        >
+        <Label htmlFor="screenshot-upload" className="cursor-pointer">
           <Button
             size="sm"
             variant="outline"
@@ -215,7 +237,7 @@ export function ScreenshotManager() {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => labelSelected('positive')}
+            onClick={() => labelSelected("positive")}
             className="h-6 px-2 text-xs hover:bg-green-500/20"
             title="Mark selected screenshots as positive examples (what to find)"
           >
@@ -225,7 +247,7 @@ export function ScreenshotManager() {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => labelSelected('negative')}
+            onClick={() => labelSelected("negative")}
             className="h-6 px-2 text-xs hover:bg-red-500/20"
             title="Mark selected screenshots as negative examples (what to avoid)"
           >
@@ -235,7 +257,7 @@ export function ScreenshotManager() {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => labelSelected('unlabeled')}
+            onClick={() => labelSelected("unlabeled")}
             className="h-6 px-2 text-xs hover:bg-gray-500/20"
             title="Remove labels from selected screenshots"
           >
@@ -279,7 +301,8 @@ export function ScreenshotManager() {
               <div className="flex items-center gap-2 p-2 bg-[#27272A]/30 rounded border border-gray-700">
                 <div className="flex-1">
                   <p className="text-xs text-gray-400">
-                    <span className="font-medium">Bulk Actions:</span> Select screenshots to label or remove multiple at once
+                    <span className="font-medium">Bulk Actions:</span> Select
+                    screenshots to label or remove multiple at once
                   </p>
                 </div>
                 <div className="flex gap-1">
@@ -326,16 +349,19 @@ export function ScreenshotManager() {
 
                   {/* Label indicator */}
                   <div className="absolute top-1 right-1">
-                    {screenshot.label === 'positive' && (
+                    {screenshot.label === "positive" && (
                       <CheckCircle className="w-4 h-4 text-green-500 bg-black/50 rounded-full" />
                     )}
-                    {screenshot.label === 'negative' && (
+                    {screenshot.label === "negative" && (
                       <XCircle className="w-4 h-4 text-red-500 bg-black/50 rounded-full" />
                     )}
                   </div>
 
                   {/* Selection checkbox */}
-                  <div className="absolute top-1 left-1" title="Select for bulk actions">
+                  <div
+                    className="absolute top-1 left-1"
+                    title="Select for bulk actions"
+                  >
                     <Checkbox
                       checked={selectedIds.has(screenshot.id)}
                       className="bg-black/50 border-white/50"
@@ -353,7 +379,9 @@ export function ScreenshotManager() {
                 </div>
 
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
-                  <p className="text-xs text-white truncate">{screenshot.name}</p>
+                  <p className="text-xs text-white truncate">
+                    {screenshot.name}
+                  </p>
                 </div>
               </div>
             ))}
@@ -361,5 +389,5 @@ export function ScreenshotManager() {
         )}
       </ScrollArea>
     </div>
-  )
+  );
 }

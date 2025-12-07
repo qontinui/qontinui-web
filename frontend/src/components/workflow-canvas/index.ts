@@ -3,8 +3,8 @@
  */
 
 // Main component
-export { WorkflowCanvas } from './WorkflowCanvas';
-export type { WorkflowCanvasProps } from './WorkflowCanvas';
+export { WorkflowCanvas } from "./WorkflowCanvas";
+export type { WorkflowCanvasProps } from "./WorkflowCanvas";
 
 // Types
 export type {
@@ -21,7 +21,7 @@ export type {
   EdgeClickEvent,
   CanvasClickEvent,
   HandleDefinition,
-} from './canvas-types';
+} from "./canvas-types";
 
 export {
   DEFAULT_CANVAS_SETTINGS,
@@ -29,7 +29,7 @@ export {
   getActionCategory,
   getNodeType,
   NODE_TYPES,
-} from './canvas-types';
+} from "./canvas-types";
 
 // Configuration
 export {
@@ -54,7 +54,7 @@ export {
   getDarkerColor,
   getLighterColor,
   hexToRgba,
-} from './canvas-config';
+} from "./canvas-config";
 
 // Utilities
 export {
@@ -71,8 +71,13 @@ export {
   getIncomingEdges,
   getOutgoingEdges,
   updateEdgeAnimation,
-} from './canvas-utils';
+} from "./canvas-utils";
 
 // Components
-export { CustomEdge, SimpleCustomEdge, StraightCustomEdge, ExecutionEdge } from './CustomEdge';
-export { DefaultNode } from './nodes/DefaultNode';
+export {
+  CustomEdge,
+  SimpleCustomEdge,
+  StraightCustomEdge,
+  ExecutionEdge,
+} from "./CustomEdge";
+export { DefaultNode } from "./nodes/DefaultNode";

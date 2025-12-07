@@ -10,16 +10,17 @@ from uuid import UUID
 
 import httpx
 import structlog
-from app.core.config import settings
-from app.models.capture import CaptureScreenshot, CaptureSession, ScreenshotStateMatch
-from app.models.snapshot import Screenshot
-from app.schemas.capture import ScreenshotStateMatchCreate
-from app.services.object_storage import object_storage
 from fastapi import HTTPException, status
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.core.config import settings
+from app.models.capture import CaptureScreenshot, CaptureSession, ScreenshotStateMatch
+from app.models.snapshot import Screenshot
+from app.schemas.capture import ScreenshotStateMatchCreate
+from app.services.object_storage import object_storage
 
 logger = structlog.get_logger(__name__)
 
@@ -137,6 +138,7 @@ class StateMatchingService:
                                 },
                             },
                             is_confirmed=None,  # User hasn't reviewed yet
+                            review_notes=None,
                         )
 
                         # Create database record
@@ -172,7 +174,7 @@ class StateMatchingService:
                 "state_matches_created",
                 screenshot_id=str(screenshot_id),
                 match_count=len(matches),
-                unique_states=len(set(m.state_identifier for m in matches)),
+                unique_states=len({m.state_identifier for m in matches}),
             )
 
         return matches
@@ -283,7 +285,8 @@ class StateMatchingService:
                     result = response.json()
                     # Extract confidence from API response
                     if result.get("found"):
-                        return result.get("confidence", 0.0)
+                        confidence = result.get("confidence", 0.0)
+                        return float(confidence)
                     return 0.0
                 else:
                     logger.warning(

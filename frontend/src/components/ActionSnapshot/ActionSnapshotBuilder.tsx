@@ -1,7 +1,18 @@
-import React, { useState } from 'react';
-import { Camera, Target, MousePointer, Type, Move, Clock, Check, X, Plus, ChevronRight } from 'lucide-react';
-import { Screenshot } from '../../types/Screenshot';
-import { ActionSnapshot } from '../../lib/integration-testing-framework';
+import React, { useState } from "react";
+import {
+  Camera,
+  Target,
+  MousePointer,
+  Type,
+  Move,
+  Clock,
+  Check,
+  X,
+  Plus,
+  ChevronRight,
+} from "lucide-react";
+import { Screenshot } from "../../types/Screenshot";
+import { ActionSnapshot } from "../../lib/integration-testing-framework";
 
 interface ActionSnapshotBuilderProps {
   currentScreenshot: Screenshot;
@@ -20,14 +31,17 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
   stateName,
   activeStates,
   onSave,
-  onCancel
+  onCancel,
 }) => {
-  const [actionType, setActionType] = useState<ActionSnapshot['actionType']>('FIND');
-  const [nextScreenshotId, setNextScreenshotId] = useState<string | undefined>();
+  const [actionType, setActionType] =
+    useState<ActionSnapshot["actionType"]>("FIND");
+  const [nextScreenshotId, setNextScreenshotId] = useState<
+    string | undefined
+  >();
   const [actionSuccess, setActionSuccess] = useState(true);
   const [resultSuccess, setResultSuccess] = useState(true);
   const [duration, setDuration] = useState(100);
-  const [text, setText] = useState<string>('');
+  const [text, setText] = useState<string>("");
   const [matches, setMatches] = useState<any[]>([]);
   const [showScreenshotSelector, setShowScreenshotSelector] = useState(false);
 
@@ -35,28 +49,37 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
   const [actionConfig, setActionConfig] = useState({
     similarity: 0.8,
     waitTime: 0,
-    mouseButton: 'LEFT',
-    offset: { x: 0, y: 0 }
+    mouseButton: "LEFT",
+    offset: { x: 0, y: 0 },
   });
 
-  const actionTypes: ActionSnapshot['actionType'][] = [
-    'FIND', 'CLICK', 'TYPE', 'DRAG', 'SCROLL', 'WAIT'
+  const actionTypes: ActionSnapshot["actionType"][] = [
+    "FIND",
+    "CLICK",
+    "TYPE",
+    "DRAG",
+    "SCROLL",
+    "WAIT",
   ];
 
   const handleAddMatch = () => {
     const newMatch = {
       region: { x: 0, y: 0, width: 100, height: 100 },
       score: 0.95,
-      stateImageId: undefined
+      stateImageId: undefined,
     };
     setMatches([...matches, newMatch]);
   };
 
   const handleUpdateMatch = (index: number, field: string, value: any) => {
     const updated = [...matches];
-    if (field.includes('.')) {
-      const [parent, child] = field.split('.');
-      updated[index][parent][child] = value;
+    if (field.includes(".")) {
+      const parts = field.split(".");
+      const parent = parts[0];
+      const child = parts[1];
+      if (parent && child) {
+        updated[index][parent][child] = value;
+      }
     } else {
       updated[index][field] = value;
     }
@@ -82,20 +105,26 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
       screenshotId: currentScreenshot.id,
       nextScreenshotId,
       duration,
-      text: actionType === 'TYPE' ? text : undefined
+      text: actionType === "TYPE" ? text : undefined,
     };
 
     onSave(snapshot);
   };
 
-  const getActionIcon = (type: ActionSnapshot['actionType']) => {
+  const getActionIcon = (type: ActionSnapshot["actionType"]) => {
     switch (type) {
-      case 'FIND': return <Target className="w-4 h-4" />;
-      case 'CLICK': return <MousePointer className="w-4 h-4" />;
-      case 'TYPE': return <Type className="w-4 h-4" />;
-      case 'DRAG': return <Move className="w-4 h-4" />;
-      case 'SCROLL': return <Move className="w-4 h-4 rotate-90" />;
-      case 'WAIT': return <Clock className="w-4 h-4" />;
+      case "FIND":
+        return <Target className="w-4 h-4" />;
+      case "CLICK":
+        return <MousePointer className="w-4 h-4" />;
+      case "TYPE":
+        return <Type className="w-4 h-4" />;
+      case "DRAG":
+        return <Move className="w-4 h-4" />;
+      case "SCROLL":
+        return <Move className="w-4 h-4 rotate-90" />;
+      case "WAIT":
+        return <Clock className="w-4 h-4" />;
     }
   };
 
@@ -124,16 +153,18 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
 
           {/* Action Type Selection */}
           <div>
-            <label className="block text-sm font-medium mb-2">Action Type</label>
+            <label className="block text-sm font-medium mb-2">
+              Action Type
+            </label>
             <div className="grid grid-cols-3 gap-2">
-              {actionTypes.map(type => (
+              {actionTypes.map((type) => (
                 <button
                   key={type}
                   onClick={() => setActionType(type)}
                   className={`flex items-center gap-2 px-3 py-2 rounded border transition-colors ${
                     actionType === type
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'bg-white border-gray-300 hover:bg-gray-50'
+                      ? "bg-blue-50 border-blue-300 text-blue-700"
+                      : "bg-white border-gray-300 hover:bg-gray-50"
                   }`}
                 >
                   {getActionIcon(type)}
@@ -147,34 +178,42 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
           <div className="space-y-4">
             <h3 className="font-medium">Action Configuration</h3>
 
-            {actionType === 'FIND' && (
+            {actionType === "FIND" && (
               <div>
-                <label className="block text-sm font-medium mb-1">Similarity Threshold</label>
+                <label className="block text-sm font-medium mb-1">
+                  Similarity Threshold
+                </label>
                 <input
                   type="number"
                   min="0"
                   max="1"
                   step="0.1"
                   value={actionConfig.similarity}
-                  onChange={(e) => setActionConfig({
-                    ...actionConfig,
-                    similarity: parseFloat(e.target.value)
-                  })}
+                  onChange={(e) =>
+                    setActionConfig({
+                      ...actionConfig,
+                      similarity: parseFloat(e.target.value),
+                    })
+                  }
                   className="w-full px-3 py-1 border rounded"
                 />
               </div>
             )}
 
-            {actionType === 'CLICK' && (
+            {actionType === "CLICK" && (
               <div className="space-y-2">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Mouse Button</label>
+                  <label className="block text-sm font-medium mb-1">
+                    Mouse Button
+                  </label>
                   <select
                     value={actionConfig.mouseButton}
-                    onChange={(e) => setActionConfig({
-                      ...actionConfig,
-                      mouseButton: e.target.value
-                    })}
+                    onChange={(e) =>
+                      setActionConfig({
+                        ...actionConfig,
+                        mouseButton: e.target.value,
+                      })
+                    }
                     className="w-full px-3 py-1 border rounded"
                   >
                     <option value="LEFT">Left Click</option>
@@ -185,26 +224,40 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Offset X</label>
+                    <label className="block text-sm font-medium mb-1">
+                      Offset X
+                    </label>
                     <input
                       type="number"
                       value={actionConfig.offset.x}
-                      onChange={(e) => setActionConfig({
-                        ...actionConfig,
-                        offset: { ...actionConfig.offset, x: parseInt(e.target.value) }
-                      })}
+                      onChange={(e) =>
+                        setActionConfig({
+                          ...actionConfig,
+                          offset: {
+                            ...actionConfig.offset,
+                            x: parseInt(e.target.value),
+                          },
+                        })
+                      }
                       className="w-full px-3 py-1 border rounded"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Offset Y</label>
+                    <label className="block text-sm font-medium mb-1">
+                      Offset Y
+                    </label>
                     <input
                       type="number"
                       value={actionConfig.offset.y}
-                      onChange={(e) => setActionConfig({
-                        ...actionConfig,
-                        offset: { ...actionConfig.offset, y: parseInt(e.target.value) }
-                      })}
+                      onChange={(e) =>
+                        setActionConfig({
+                          ...actionConfig,
+                          offset: {
+                            ...actionConfig.offset,
+                            y: parseInt(e.target.value),
+                          },
+                        })
+                      }
                       className="w-full px-3 py-1 border rounded"
                     />
                   </div>
@@ -212,9 +265,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
               </div>
             )}
 
-            {actionType === 'TYPE' && (
+            {actionType === "TYPE" && (
               <div>
-                <label className="block text-sm font-medium mb-1">Text to Type</label>
+                <label className="block text-sm font-medium mb-1">
+                  Text to Type
+                </label>
                 <input
                   type="text"
                   value={text}
@@ -225,17 +280,21 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
               </div>
             )}
 
-            {actionType === 'WAIT' && (
+            {actionType === "WAIT" && (
               <div>
-                <label className="block text-sm font-medium mb-1">Wait Time (ms)</label>
+                <label className="block text-sm font-medium mb-1">
+                  Wait Time (ms)
+                </label>
                 <input
                   type="number"
                   min="0"
                   value={actionConfig.waitTime}
-                  onChange={(e) => setActionConfig({
-                    ...actionConfig,
-                    waitTime: parseInt(e.target.value)
-                  })}
+                  onChange={(e) =>
+                    setActionConfig({
+                      ...actionConfig,
+                      waitTime: parseInt(e.target.value),
+                    })
+                  }
                   className="w-full px-3 py-1 border rounded"
                 />
               </div>
@@ -259,7 +318,9 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
               {matches.map((match, index) => (
                 <div key={index} className="border rounded p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Match #{index + 1}</span>
+                    <span className="text-sm font-medium">
+                      Match #{index + 1}
+                    </span>
                     <button
                       onClick={() => handleRemoveMatch(index)}
                       className="text-red-500 hover:text-red-700"
@@ -274,7 +335,13 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                       <input
                         type="number"
                         value={match.region.x}
-                        onChange={(e) => handleUpdateMatch(index, 'region.x', parseInt(e.target.value))}
+                        onChange={(e) =>
+                          handleUpdateMatch(
+                            index,
+                            "region.x",
+                            parseInt(e.target.value)
+                          )
+                        }
                         className="w-full px-2 py-1 text-sm border rounded"
                       />
                     </div>
@@ -283,25 +350,47 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                       <input
                         type="number"
                         value={match.region.y}
-                        onChange={(e) => handleUpdateMatch(index, 'region.y', parseInt(e.target.value))}
+                        onChange={(e) =>
+                          handleUpdateMatch(
+                            index,
+                            "region.y",
+                            parseInt(e.target.value)
+                          )
+                        }
                         className="w-full px-2 py-1 text-sm border rounded"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600">Width</label>
+                      <label className="block text-xs text-gray-600">
+                        Width
+                      </label>
                       <input
                         type="number"
                         value={match.region.width}
-                        onChange={(e) => handleUpdateMatch(index, 'region.width', parseInt(e.target.value))}
+                        onChange={(e) =>
+                          handleUpdateMatch(
+                            index,
+                            "region.width",
+                            parseInt(e.target.value)
+                          )
+                        }
                         className="w-full px-2 py-1 text-sm border rounded"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600">Height</label>
+                      <label className="block text-xs text-gray-600">
+                        Height
+                      </label>
                       <input
                         type="number"
                         value={match.region.height}
-                        onChange={(e) => handleUpdateMatch(index, 'region.height', parseInt(e.target.value))}
+                        onChange={(e) =>
+                          handleUpdateMatch(
+                            index,
+                            "region.height",
+                            parseInt(e.target.value)
+                          )
+                        }
                         className="w-full px-2 py-1 text-sm border rounded"
                       />
                     </div>
@@ -315,7 +404,13 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                       max="1"
                       step="0.01"
                       value={match.score}
-                      onChange={(e) => handleUpdateMatch(index, 'score', parseFloat(e.target.value))}
+                      onChange={(e) =>
+                        handleUpdateMatch(
+                          index,
+                          "score",
+                          parseFloat(e.target.value)
+                        )
+                      }
                       className="w-full px-2 py-1 text-sm border rounded"
                     />
                   </div>
@@ -324,7 +419,8 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
 
               {matches.length === 0 && (
                 <p className="text-sm text-gray-500 text-center py-4">
-                  No matches defined. Add matches to define where this action finds elements.
+                  No matches defined. Add matches to define where this action
+                  finds elements.
                 </p>
               )}
             </div>
@@ -358,10 +454,12 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-medium">Next Screenshot (End State)</h3>
               <button
-                onClick={() => setShowScreenshotSelector(!showScreenshotSelector)}
+                onClick={() =>
+                  setShowScreenshotSelector(!showScreenshotSelector)
+                }
                 className="text-sm text-blue-600 hover:text-blue-700"
               >
-                {nextScreenshotId ? 'Change' : 'Select'} Screenshot
+                {nextScreenshotId ? "Change" : "Select"} Screenshot
               </button>
             </div>
 
@@ -371,7 +469,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                   <ChevronRight className="w-4 h-4 text-blue-600" />
                   <div>
                     <p className="text-sm font-medium">
-                      {screenshots.find(s => s.id === nextScreenshotId)?.name}
+                      {screenshots.find((s) => s.id === nextScreenshotId)?.name}
                     </p>
                     <p className="text-xs text-gray-600">
                       Transition to this screenshot after action
@@ -394,8 +492,8 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
             {showScreenshotSelector && (
               <div className="mt-2 max-h-48 overflow-y-auto border rounded-lg">
                 {screenshots
-                  .filter(s => s.id !== currentScreenshot.id)
-                  .map(screenshot => (
+                  .filter((s) => s.id !== currentScreenshot.id)
+                  .map((screenshot) => (
                     <button
                       key={screenshot.id}
                       onClick={() => {

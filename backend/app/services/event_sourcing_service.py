@@ -14,11 +14,7 @@ from uuid import UUID
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.version import (
-    create_command,
-    get_command_count,
-    get_commands_by_project,
-)
+from app.crud.version import create_command, get_command_count, get_commands_by_project
 from app.models.edit_command import EditCommand
 from app.schemas.version import EditCommandCreate, EditCommandHistoryResponse
 
@@ -31,7 +27,7 @@ class EventSourcingService:
     @staticmethod
     async def record_command(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         user_id: UUID | None,
         command_type: str,
         entity_type: str,
@@ -96,7 +92,7 @@ class EventSourcingService:
     @staticmethod
     async def get_command_history(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         skip: int = 0,
         limit: int = 100,
     ) -> EditCommandHistoryResponse:
@@ -124,8 +120,15 @@ class EventSourcingService:
         commands = await get_commands_by_project(db, project_id, skip, limit)
         total_count = await get_command_count(db, project_id)
 
+        # Convert EditCommand models to EditCommandResponse schemas
+        from app.schemas.version import EditCommandResponse
+
+        command_responses = [
+            EditCommandResponse.model_validate(cmd) for cmd in commands
+        ]
+
         return EditCommandHistoryResponse(
-            commands=commands,
+            commands=command_responses,
             total_count=total_count,
             project_id=project_id,
         )
@@ -133,7 +136,7 @@ class EventSourcingService:
     @staticmethod
     async def replay_commands(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         from_sequence: int = 1,
         to_sequence: int | None = None,
     ) -> dict[str, Any]:
@@ -166,7 +169,9 @@ class EventSourcingService:
         )
 
         # Get all commands in the range
-        all_commands = await get_commands_by_project(db, project_id, skip=0, limit=10000)
+        all_commands = await get_commands_by_project(
+            db, project_id, skip=0, limit=10000
+        )
 
         # Filter by sequence range
         filtered_commands = [
@@ -187,7 +192,11 @@ class EventSourcingService:
         return {
             "project_id": project_id,
             "from_sequence": from_sequence,
-            "to_sequence": to_sequence or filtered_commands[-1].sequence_number if filtered_commands else from_sequence,
+            "to_sequence": (
+                to_sequence or filtered_commands[-1].sequence_number
+                if filtered_commands
+                else from_sequence
+            ),
             "command_count": len(filtered_commands),
             "commands": [
                 {
@@ -196,7 +205,9 @@ class EventSourcingService:
                     "entity_type": cmd.entity_type,
                     "entity_id": cmd.entity_id,
                     "payload": cmd.payload,
-                    "applied_at": cmd.applied_at.isoformat() if cmd.applied_at else None,
+                    "applied_at": (
+                        cmd.applied_at.isoformat() if cmd.applied_at else None
+                    ),
                     "user_id": str(cmd.user_id) if cmd.user_id else None,
                 }
                 for cmd in filtered_commands
@@ -206,7 +217,7 @@ class EventSourcingService:
     @staticmethod
     async def get_entity_history(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         entity_type: str,
         entity_id: str,
     ) -> list[EditCommand]:
@@ -233,7 +244,9 @@ class EventSourcingService:
         )
 
         # Get all commands for this project
-        all_commands = await get_commands_by_project(db, project_id, skip=0, limit=10000)
+        all_commands = await get_commands_by_project(
+            db, project_id, skip=0, limit=10000
+        )
 
         # Filter by entity
         entity_commands = [
@@ -255,7 +268,7 @@ class EventSourcingService:
     @staticmethod
     async def record_project_update(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         user_id: UUID | None,
         old_configuration: dict[str, Any],
         new_configuration: dict[str, Any],

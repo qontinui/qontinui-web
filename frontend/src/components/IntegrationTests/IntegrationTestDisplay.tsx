@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from "react";
 import {
   TestTube2,
   Play,
@@ -14,11 +14,10 @@ import {
   Filter,
   FileText,
   Download,
-  Upload
-} from 'lucide-react';
-import { useAutomation } from '../../contexts/automation-context';
-import { ActionSnapshot } from '../../lib/integration-testing-framework';
-import { Screenshot } from '../../types/Screenshot';
+} from "lucide-react";
+import { useAutomation } from "../../contexts/automation-context";
+import { ActionSnapshot } from "../../lib/integration-testing-framework";
+import { Screenshot } from "../../types/Screenshot";
 
 interface IntegrationTestDisplayProps {
   screenshots: Screenshot[];
@@ -34,34 +33,38 @@ interface TestScenario {
   endScreenshot?: string;
 }
 
-export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ screenshots }) => {
+export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
+  screenshots,
+}) => {
   const { states } = useAutomation();
-  const [selectedScenario, setSelectedScenario] = useState<TestScenario | null>(null);
-  const [filterState, setFilterState] = useState<string>('');
-  const [filterActionType, setFilterActionType] = useState<string>('');
+  const [selectedScenario, setSelectedScenario] = useState<TestScenario | null>(
+    null
+  );
+  const [filterState, setFilterState] = useState<string>("");
+  const [filterActionType, setFilterActionType] = useState<string>("");
   const [showOnlySuccessful, setShowOnlySuccessful] = useState(false);
 
   // Collect all snapshots from all state objects
   const allSnapshots = useMemo(() => {
     const snapshots: ActionSnapshot[] = [];
 
-    states.forEach(state => {
+    states.forEach((state) => {
       // Collect from StateImages
-      state.stateImages?.forEach(img => {
+      state.stateImages?.forEach((img) => {
         if (img.actionHistory?.snapshots) {
           snapshots.push(...img.actionHistory.snapshots);
         }
       });
 
       // Collect from StateLocations
-      state.locations?.forEach(loc => {
+      state.locations?.forEach((loc) => {
         if (loc.actionHistory?.snapshots) {
           snapshots.push(...loc.actionHistory.snapshots);
         }
       });
 
       // Collect from StateRegions
-      state.regions?.forEach(reg => {
+      state.regions?.forEach((reg) => {
         if (reg.actionHistory?.snapshots) {
           snapshots.push(...reg.actionHistory.snapshots);
         }
@@ -78,7 +81,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
     // Group snapshots by screenshot sequence
     const screenshotChains = new Map<string, ActionSnapshot[]>();
 
-    allSnapshots.forEach(snapshot => {
+    allSnapshots.forEach((snapshot) => {
       const key = snapshot.screenshotId;
       if (!screenshotChains.has(key)) {
         screenshotChains.set(key, []);
@@ -87,19 +90,26 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
     });
 
     // Build scenarios from chains
-    screenshotChains.forEach((snapshots, startScreenshotId) => {
+    screenshotChains.forEach((_, startScreenshotId) => {
       // Follow the chain through transitions
       const scenarioSnapshots: ActionSnapshot[] = [];
       const visitedScreenshots = new Set<string>();
       let currentScreenshotId = startScreenshotId;
 
-      while (currentScreenshotId && !visitedScreenshots.has(currentScreenshotId)) {
+      while (
+        currentScreenshotId &&
+        !visitedScreenshots.has(currentScreenshotId)
+      ) {
         visitedScreenshots.add(currentScreenshotId);
-        const screenshotSnapshots = screenshotChains.get(currentScreenshotId) || [];
+        const screenshotSnapshots =
+          screenshotChains.get(currentScreenshotId) || [];
 
         for (const snapshot of screenshotSnapshots) {
           scenarioSnapshots.push(snapshot);
-          if (snapshot.nextScreenshotId && !visitedScreenshots.has(snapshot.nextScreenshotId)) {
+          if (
+            snapshot.nextScreenshotId &&
+            !visitedScreenshots.has(snapshot.nextScreenshotId)
+          ) {
             currentScreenshotId = snapshot.nextScreenshotId;
             break;
           }
@@ -108,18 +118,20 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
 
       if (scenarioSnapshots.length > 0) {
         const involvedStates = new Set<string>();
-        scenarioSnapshots.forEach(s => {
-          s.activeStates.forEach(state => involvedStates.add(state));
+        scenarioSnapshots.forEach((s) => {
+          s.activeStates.forEach((state) => involvedStates.add(state));
         });
 
         const scenario: TestScenario = {
           id: `scenario-${startScreenshotId}`,
-          name: `Test Flow from ${screenshots.find(s => s.id === startScreenshotId)?.name || 'Unknown'}`,
+          name: `Test Flow from ${screenshots.find((s) => s.id === startScreenshotId)?.name || "Unknown"}`,
           description: `${scenarioSnapshots.length} actions across ${visitedScreenshots.size} screenshots`,
           snapshots: scenarioSnapshots,
           states: Array.from(involvedStates),
           startScreenshot: startScreenshotId,
-          endScreenshot: scenarioSnapshots[scenarioSnapshots.length - 1]?.nextScreenshotId || startScreenshotId
+          endScreenshot:
+            scenarioSnapshots[scenarioSnapshots.length - 1]?.nextScreenshotId ||
+            startScreenshotId,
         };
 
         scenarios.push(scenario);
@@ -129,41 +141,28 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
     return scenarios;
   }, [allSnapshots, screenshots]);
 
-  // Filter snapshots
-  const filteredSnapshots = useMemo(() => {
-    let filtered = allSnapshots;
-
-    if (filterState) {
-      filtered = filtered.filter(s => s.activeStates.includes(filterState));
-    }
-
-    if (filterActionType) {
-      filtered = filtered.filter(s => s.actionType === filterActionType);
-    }
-
-    if (showOnlySuccessful) {
-      filtered = filtered.filter(s => s.actionSuccess && s.resultSuccess);
-    }
-
-    return filtered;
-  }, [allSnapshots, filterState, filterActionType, showOnlySuccessful]);
-
-  const getActionIcon = (type: ActionSnapshot['actionType']) => {
+  const getActionIcon = (type: ActionSnapshot["actionType"]) => {
     switch (type) {
-      case 'FIND': return <Target className="w-4 h-4" />;
-      case 'CLICK': return <MousePointer className="w-4 h-4" />;
-      case 'TYPE': return <Type className="w-4 h-4" />;
-      case 'DRAG': return <Move className="w-4 h-4" />;
-      case 'SCROLL': return <Move className="w-4 h-4 rotate-90" />;
-      case 'WAIT': return <Clock className="w-4 h-4" />;
+      case "FIND":
+        return <Target className="w-4 h-4" />;
+      case "CLICK":
+        return <MousePointer className="w-4 h-4" />;
+      case "TYPE":
+        return <Type className="w-4 h-4" />;
+      case "DRAG":
+        return <Move className="w-4 h-4" />;
+      case "SCROLL":
+        return <Move className="w-4 h-4 rotate-90" />;
+      case "WAIT":
+        return <Clock className="w-4 h-4" />;
     }
   };
 
   const exportScenario = (scenario: TestScenario) => {
     const data = JSON.stringify(scenario, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
+    const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `test-scenario-${scenario.id}.json`;
     a.click();
@@ -180,7 +179,8 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
             <div>
               <h2 className="text-xl font-semibold">Integration Tests</h2>
               <p className="text-sm text-gray-600">
-                {testScenarios.length} test scenarios, {allSnapshots.length} total snapshots
+                {testScenarios.length} test scenarios, {allSnapshots.length}{" "}
+                total snapshots
               </p>
             </div>
           </div>
@@ -205,8 +205,10 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
             className="px-3 py-1 border rounded-lg text-sm"
           >
             <option value="">All States</option>
-            {states.map(state => (
-              <option key={state.id} value={state.id}>{state.name}</option>
+            {states.map((state) => (
+              <option key={state.id} value={state.id}>
+                {state.name}
+              </option>
             ))}
           </select>
 
@@ -243,20 +245,22 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
           <div className="p-4">
             <h3 className="font-medium mb-3">Test Scenarios</h3>
             <div className="space-y-2">
-              {testScenarios.map(scenario => (
+              {testScenarios.map((scenario) => (
                 <button
                   key={scenario.id}
                   onClick={() => setSelectedScenario(scenario)}
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
                     selectedScenario?.id === scenario.id
-                      ? 'bg-blue-50 border-blue-300'
-                      : 'hover:bg-gray-50 border-gray-200'
+                      ? "bg-blue-50 border-blue-300"
+                      : "hover:bg-gray-50 border-gray-200"
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <h4 className="font-medium text-sm">{scenario.name}</h4>
-                      <p className="text-xs text-gray-600 mt-1">{scenario.description}</p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {scenario.description}
+                      </p>
                       <div className="flex items-center gap-2 mt-2">
                         <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">
                           {scenario.snapshots.length} actions
@@ -276,7 +280,9 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
               <div className="text-center py-8 text-gray-500">
                 <TestTube2 className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p className="text-sm">No test scenarios found</p>
-                <p className="text-xs mt-1">Record actions to create test scenarios</p>
+                <p className="text-xs mt-1">
+                  Record actions to create test scenarios
+                </p>
               </div>
             )}
           </div>
@@ -288,7 +294,9 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
             <div className="p-6">
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">{selectedScenario.name}</h3>
+                  <h3 className="text-lg font-semibold">
+                    {selectedScenario.name}
+                  </h3>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => exportScenario(selectedScenario)}
@@ -304,13 +312,18 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
                   </div>
                 </div>
 
-                <p className="text-sm text-gray-600">{selectedScenario.description}</p>
+                <p className="text-sm text-gray-600">
+                  {selectedScenario.description}
+                </p>
 
                 <div className="flex flex-wrap gap-2 mt-3">
-                  {selectedScenario.states.map(stateId => {
-                    const state = states.find(s => s.id === stateId);
+                  {selectedScenario.states.map((stateId) => {
+                    const state = states.find((s) => s.id === stateId);
                     return (
-                      <span key={stateId} className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                      <span
+                        key={stateId}
+                        className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded"
+                      >
                         {state?.name || stateId}
                       </span>
                     );
@@ -325,11 +338,13 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
                 {selectedScenario.snapshots.map((snapshot, index) => (
                   <div key={snapshot.id} className="flex items-start gap-3">
                     <div className="flex flex-col items-center">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        snapshot.actionSuccess && snapshot.resultSuccess
-                          ? 'bg-green-100 text-green-600'
-                          : 'bg-red-100 text-red-600'
-                      }`}>
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                          snapshot.actionSuccess && snapshot.resultSuccess
+                            ? "bg-green-100 text-green-600"
+                            : "bg-red-100 text-red-600"
+                        }`}
+                      >
                         {index + 1}
                       </div>
                       {index < selectedScenario.snapshots.length - 1 && (
@@ -342,8 +357,11 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             {getActionIcon(snapshot.actionType)}
-                            <span className="font-medium text-sm">{snapshot.actionType}</span>
-                            {snapshot.actionSuccess && snapshot.resultSuccess ? (
+                            <span className="font-medium text-sm">
+                              {snapshot.actionType}
+                            </span>
+                            {snapshot.actionSuccess &&
+                            snapshot.resultSuccess ? (
                               <CheckCircle className="w-4 h-4 text-green-500" />
                             ) : (
                               <XCircle className="w-4 h-4 text-red-500" />
@@ -364,7 +382,12 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
                           {snapshot.nextScreenshotId && (
                             <div className="flex items-center gap-1 mt-2 text-xs text-blue-600">
                               <ArrowRight className="w-3 h-3" />
-                              Transitions to: {screenshots.find(s => s.id === snapshot.nextScreenshotId)?.name}
+                              Transitions to:{" "}
+                              {
+                                screenshots.find(
+                                  (s) => s.id === snapshot.nextScreenshotId
+                                )?.name
+                              }
                             </div>
                           )}
                         </div>
@@ -378,7 +401,9 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({ 
             <div className="flex items-center justify-center h-full text-gray-500">
               <div className="text-center">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">Select a test scenario to view details</p>
+                <p className="text-sm">
+                  Select a test scenario to view details
+                </p>
               </div>
             </div>
           )}

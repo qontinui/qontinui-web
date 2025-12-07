@@ -5,11 +5,13 @@ A comprehensive image management UI for large automation projects with advanced 
 ## Features
 
 ### 1. **Three-Panel Layout**
+
 - **Left Sidebar**: Folder tree and collections
 - **Center Area**: Image grid/list with drag-and-drop upload
 - **Right Panel**: Detailed image information and metadata
 
 ### 2. **Folder Organization**
+
 - Hierarchical folder structure (like file explorer)
 - Drag-and-drop images between folders
 - Create, rename, delete folders
@@ -19,6 +21,7 @@ A comprehensive image management UI for large automation projects with advanced 
 - Nested folder support
 
 ### 3. **Image Grid**
+
 - Three grid sizes: Small, Medium, Large
 - Responsive grid layout
 - Hover preview with actions
@@ -28,6 +31,7 @@ A comprehensive image management UI for large automation projects with advanced 
 - Performance optimized for 100+ images
 
 ### 4. **Advanced Filtering**
+
 - **Search**: Search by filename/name
 - **Source Filter**: Filter by uploaded, pattern optimization, extraction, discovery
 - **Usage Filter**: All, Used (>0 usage), Unused (0 usage)
@@ -39,7 +43,9 @@ A comprehensive image management UI for large automation projects with advanced 
 - **Saved Filters**: Save and reuse filter presets
 
 ### 5. **Bulk Operations Toolbar**
+
 When images are selected, a toolbar appears with:
+
 - **Move to Folder**: Bulk move to any folder
 - **Add Tags**: Add tags to multiple images
 - **Add to Collection**: Add to existing collection
@@ -48,7 +54,9 @@ When images are selected, a toolbar appears with:
 - **Clear Selection**: Deselect all
 
 ### 6. **Image Details Panel**
+
 Shows for selected image:
+
 - Large preview
 - Name and metadata
 - File size
@@ -65,6 +73,7 @@ Shows for selected image:
   - Delete
 
 ### 7. **Collections**
+
 - Create named collections
 - Add/remove images from collections
 - Collection cards with 4-image thumbnail grid
@@ -72,6 +81,7 @@ Shows for selected image:
 - Manage collections (rename, delete)
 
 ### 8. **Upload Area**
+
 - Drag-and-drop anywhere in empty grid
 - Multiple file upload
 - Upload progress indicators (per file)
@@ -80,11 +90,13 @@ Shows for selected image:
 - Error handling with user-friendly messages
 
 ### 9. **View Modes**
+
 - **Grid View**: Responsive grid with adjustable size
 - **List View**: Table format with sortable columns
 - **Slideshow Mode**: Full-screen image viewer (future)
 
 ### 10. **Performance Optimizations**
+
 - Lazy loading images
 - Virtual scrolling support ready
 - Pagination (50 per page) ready
@@ -97,7 +109,7 @@ Shows for selected image:
 ### Basic Usage
 
 ```tsx
-import { EnhancedImageLibrary } from '@/components/image-library';
+import { EnhancedImageLibrary } from "@/components/image-library";
 
 export function ImageManagement() {
   return <EnhancedImageLibrary />;
@@ -107,7 +119,7 @@ export function ImageManagement() {
 ### With Custom Hook
 
 ```tsx
-import { useImageOrganization } from '@/components/image-library';
+import { useImageOrganization } from "@/components/image-library";
 
 function MyComponent() {
   const {
@@ -145,6 +157,7 @@ function MyComponent() {
 ### Type System
 
 All types are defined in `types.ts`:
+
 - `ImageFolder`: Folder metadata
 - `ImageFolderTreeNode`: Tree structure with counts
 - `ImageCollection`: Named image collections
@@ -154,9 +167,11 @@ All types are defined in `types.ts`:
 ## Components
 
 ### Main Component
+
 - **EnhancedImageLibrary**: Main container with three-panel layout
 
 ### Sub-Components
+
 - **FilterPanel**: Advanced filtering UI
 - **FolderTreeSidebar**: Folder navigation
 - **FolderTreeNode**: Recursive folder tree item
@@ -185,11 +200,11 @@ The component integrates seamlessly with the existing AutomationContext:
 
 ```tsx
 const {
-  images,           // ImageAsset[]
-  addImage,         // Add new image
-  updateImage,      // Update image
-  deleteImage,      // Delete image
-  getImageUsage,    // Get usage info
+  images, // ImageAsset[]
+  addImage, // Add new image
+  updateImage, // Update image
+  deleteImage, // Delete image
+  getImageUsage, // Get usage info
   // ... other context methods
 } = useAutomation();
 ```
@@ -201,6 +216,7 @@ Uses `apiClient.uploadProjectImage()` for S3 uploads with progress tracking.
 ### With Existing Components
 
 Reuses existing components:
+
 - `MaskEditor`: For image mask editing
 - `ImageDeletionDialog`: For deletion confirmation
 - `ImageUploadProgress`: For upload progress
@@ -208,6 +224,7 @@ Reuses existing components:
 ## Future Enhancements
 
 ### Phase 2
+
 - [ ] Virtual scrolling with react-window
 - [ ] Advanced search with regex
 - [ ] Image versioning support
@@ -217,6 +234,7 @@ Reuses existing components:
 - [ ] Image comparison view
 
 ### Phase 3
+
 - [ ] Slideshow mode implementation
 - [ ] Bulk export to ZIP
 - [ ] Cloud storage integration
@@ -230,22 +248,22 @@ Reuses existing components:
 ### Creating a Folder
 
 ```tsx
-const newFolder = createFolder('UI Components', null, '#3b82f6');
+const newFolder = createFolder("UI Components", null, "#3b82f6");
 ```
 
 ### Moving Images to Folder
 
 ```tsx
-handleBulkMove('folder-id-123');
+handleBulkMove("folder-id-123");
 ```
 
 ### Creating a Collection
 
 ```tsx
 const collection = createCollection(
-  'Login Screen Assets',
-  'All images for login screen',
-  ['image-1', 'image-2']
+  "Login Screen Assets",
+  "All images for login screen",
+  ["image-1", "image-2"]
 );
 ```
 
@@ -253,18 +271,18 @@ const collection = createCollection(
 
 ```tsx
 setCurrentFilter({
-  query: 'button',
-  sources: ['uploaded', 'pattern_optimization'],
-  usageFilter: 'used',
-  tags: ['ui', 'interactive'],
-  tagOperator: 'AND',
+  query: "button",
+  sources: ["uploaded", "pattern_optimization"],
+  usageFilter: "used",
+  tags: ["ui", "interactive"],
+  tagOperator: "AND",
 });
 ```
 
 ### Bulk Tagging
 
 ```tsx
-addTagToImages(['img-1', 'img-2', 'img-3'], 'navigation');
+addTagToImages(["img-1", "img-2", "img-3"], "navigation");
 ```
 
 ## Performance
@@ -311,17 +329,20 @@ addTagToImages(['img-1', 'img-2', 'img-3'], 'navigation');
 ## Troubleshooting
 
 ### Images not showing
+
 - Check if AutomationContext is providing images
 - Verify image URLs are valid
 - Check S3 presigned URL expiration
 
 ### Upload failing
+
 - Verify projectId is set
 - Check file size limits
 - Ensure valid image format
 - Check network connection
 
 ### Performance issues
+
 - Reduce grid size
 - Use list view for large libraries
 - Clear filters
@@ -330,6 +351,7 @@ addTagToImages(['img-1', 'img-2', 'img-3'], 'navigation');
 ## Contributing
 
 When enhancing this component:
+
 1. Maintain type safety
 2. Follow existing patterns
 3. Update documentation

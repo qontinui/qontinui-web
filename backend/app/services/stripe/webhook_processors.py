@@ -2,19 +2,21 @@
 
 import asyncio
 from datetime import datetime
+from typing import Any
 
 import stripe
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
 from app.models.user import User
 from app.services.stripe.tier_service import TierService
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class CheckoutCompletedProcessor:
     """Processes checkout.session.completed events."""
 
-    def __init__(self, tier_service: TierService, stripe_client: stripe = stripe):
+    def __init__(self, tier_service: TierService, stripe_client: Any = stripe):
         """Initialize the processor."""
         self.tier_service = tier_service
         self.stripe = stripe_client
@@ -41,25 +43,27 @@ class CheckoutCompletedProcessor:
 
         # Update subscription in database
         result = await db.execute(
-            select(Subscription).filter(Subscription.user_id == user_id)
+            select(Subscription).where(Subscription.user_id == user_id)
         )
         subscription = result.scalar_one_or_none()
 
         if subscription:
             subscription.stripe_subscription_id = subscription_id
             subscription.stripe_price_id = price_id
-            subscription.tier = tier
-            subscription.status = SubscriptionStatus.ACTIVE.value
-            subscription.current_period_start = datetime.fromtimestamp(
+            subscription.tier = tier  # type: ignore[assignment]
+            subscription.status = SubscriptionStatus.ACTIVE.value  # type: ignore[assignment]
+            subscription.current_period_start = datetime.fromtimestamp(  # type: ignore[assignment]
                 stripe_sub["current_period_start"]
             )
-            subscription.current_period_end = datetime.fromtimestamp(
+            subscription.current_period_end = datetime.fromtimestamp(  # type: ignore[assignment]
                 stripe_sub["current_period_end"]
             )
             subscription.cancel_at_period_end = stripe_sub["cancel_at_period_end"]
 
             # Also update user subscription_tier
-            result_user = await db.execute(select(User).filter(User.id == user_id))
+            result_user = await db.execute(
+                select(User).where(User.id == user_id)  # type: ignore[arg-type]
+            )
             user = result_user.scalar_one_or_none()
             if user:
                 user.subscription_tier = tier
@@ -79,7 +83,7 @@ class SubscriptionUpdatedProcessor:
             db: Database session
         """
         result = await db.execute(
-            select(Subscription).filter(
+            select(Subscription).where(
                 Subscription.stripe_subscription_id == stripe_sub["id"]
             )
         )
@@ -87,16 +91,16 @@ class SubscriptionUpdatedProcessor:
 
         if subscription:
             subscription.status = stripe_sub["status"]
-            subscription.current_period_start = datetime.fromtimestamp(
+            subscription.current_period_start = datetime.fromtimestamp(  # type: ignore[assignment]
                 stripe_sub["current_period_start"]
             )
-            subscription.current_period_end = datetime.fromtimestamp(
+            subscription.current_period_end = datetime.fromtimestamp(  # type: ignore[assignment]
                 stripe_sub["current_period_end"]
             )
             subscription.cancel_at_period_end = stripe_sub["cancel_at_period_end"]
 
             if stripe_sub["cancel_at_period_end"]:
-                subscription.canceled_at = datetime.utcnow()
+                subscription.canceled_at = datetime.utcnow()  # type: ignore[assignment]
 
             await db.commit()
 
@@ -113,20 +117,20 @@ class SubscriptionDeletedProcessor:
             db: Database session
         """
         result = await db.execute(
-            select(Subscription).filter(
+            select(Subscription).where(
                 Subscription.stripe_subscription_id == stripe_sub["id"]
             )
         )
         subscription = result.scalar_one_or_none()
 
         if subscription:
-            subscription.status = SubscriptionStatus.CANCELED.value
-            subscription.tier = SubscriptionTier.FREE.value
-            subscription.canceled_at = datetime.utcnow()
+            subscription.status = SubscriptionStatus.CANCELED.value  # type: ignore[assignment]
+            subscription.tier = SubscriptionTier.FREE.value  # type: ignore[assignment]
+            subscription.canceled_at = datetime.utcnow()  # type: ignore[assignment]
 
             # Also update user subscription_tier
             result_user = await db.execute(
-                select(User).filter(User.id == subscription.user_id)
+                select(User).where(User.id == subscription.user_id)  # type: ignore[arg-type]
             )
             user = result_user.scalar_one_or_none()
             if user:
@@ -149,10 +153,10 @@ class PaymentFailedProcessor:
         customer_id = invoice["customer"]
 
         result = await db.execute(
-            select(Subscription).filter(Subscription.stripe_customer_id == customer_id)
+            select(Subscription).where(Subscription.stripe_customer_id == customer_id)
         )
         subscription = result.scalar_one_or_none()
 
         if subscription:
-            subscription.status = SubscriptionStatus.PAST_DUE.value
+            subscription.status = SubscriptionStatus.PAST_DUE.value  # type: ignore[assignment]
             await db.commit()

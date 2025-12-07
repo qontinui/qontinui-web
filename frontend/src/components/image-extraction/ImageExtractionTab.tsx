@@ -1,15 +1,20 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Upload, X, Scissors, ImageIcon, Plus, FolderOpen, AlertCircle, Edit } from 'lucide-react';
-import { useAutomation } from '@/contexts/automation-context';
-import { useTabState } from '@/contexts/tab-state-context';
-import { ScreenshotPicker } from '../common/ScreenshotPicker';
-import { AdvancedRegionSelector } from '../pattern-optimization/AdvancedRegionSelector';
-import { MaskEditor } from '../mask-editor';
-import { Region } from '@/types/pattern-optimization';
-import { extractRegion, removeBorder, removeBackground, ProcessedImageResult } from '@/lib/image-processing';
-import { createStateImage, prepareStateImageCreation } from '@/lib/state-image-creator';
-import { createImageAsset, imageExistsInLibrary } from '@/lib/image-library-utils';
-import { toast } from 'sonner';
+import React, { useState, useEffect } from "react";
+import { Scissors, ImageIcon, Plus, AlertCircle, Edit } from "lucide-react";
+import { useAutomation } from "@/contexts/automation-context";
+import { useImageExtractionState } from "@/contexts/tab-state";
+import { ScreenshotPicker } from "../common/ScreenshotPicker";
+import { AdvancedRegionSelector } from "../pattern-optimization/AdvancedRegionSelector";
+import { MaskEditor } from "../mask-editor";
+import { Region } from "@/types/pattern-optimization";
+import {
+  extractRegion,
+  removeBorder,
+  removeBackground,
+  ProcessedImageResult,
+} from "@/lib/image-processing";
+import { prepareStateImageCreation } from "@/lib/state-image-creator";
+import { createImageAsset, findImageByData } from "@/lib/image-library-utils";
+import { toast } from "sonner";
 
 interface Screenshot {
   id: string;
@@ -18,28 +23,40 @@ interface Screenshot {
   region?: Region;
 }
 
-type ProcessingMode = 'none' | 'border' | 'background';
+type ProcessingMode = "none" | "border" | "background";
 
 export const ImageExtractionTab: React.FC = () => {
-  const [currentScreenshot, setCurrentScreenshot] = useState<Screenshot | null>(null);
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>('none');
+  const [currentScreenshot, setCurrentScreenshot] = useState<Screenshot | null>(
+    null
+  );
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>("none");
   const [tolerance, setTolerance] = useState(10);
-  const [extractedResult, setExtractedResult] = useState<ProcessedImageResult | null>(null);
+  const [extractedResult, setExtractedResult] =
+    useState<ProcessedImageResult | null>(null);
   const [showStateImageDialog, setShowStateImageDialog] = useState(false);
-  const [stateImageName, setStateImageName] = useState('');
-  const [selectedStateId, setSelectedStateId] = useState<string>('');
-  const [newStateName, setNewStateName] = useState('');
+  const [stateImageName, setStateImageName] = useState("");
+  const [selectedStateId, setSelectedStateId] = useState<string>("");
+  const [newStateName, setNewStateName] = useState("");
   const [fixedLocation, setFixedLocation] = useState(true);
   const [showMaskEditor, setShowMaskEditor] = useState(false);
-  const [editingMask, setEditingMask] = useState<{ imageUrl: string; initialMask?: string } | null>(null);
+  const [editingMask, setEditingMask] = useState<{
+    imageUrl: string;
+    initialMask?: string;
+  } | null>(null);
 
-  const { states, addState, updateState, screenshots: projectScreenshots, images, addImage } = useAutomation();
-  const { getImageExtractionState, setImageExtractionState } = useTabState();
+  const {
+    states,
+    addState,
+    updateState,
+    screenshots: projectScreenshots,
+    images,
+    addImage,
+  } = useAutomation();
+  const { state: persistedState, setState: setPersistedState } =
+    useImageExtractionState();
 
   // Load persisted state on mount
   useEffect(() => {
-    const persistedState = getImageExtractionState();
-
     if (persistedState.selectedStateId) {
       setSelectedStateId(persistedState.selectedStateId);
     }
@@ -50,16 +67,21 @@ export const ImageExtractionTab: React.FC = () => {
 
     // Note: We don't persist screenshots due to storage limitations
     // Users will need to re-upload when navigating back
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist state changes (only metadata, not images)
   useEffect(() => {
-    setImageExtractionState({
+    setPersistedState({
       selectedRegion: currentScreenshot?.region || null,
       selectedStateId,
       newStateName,
     });
-  }, [currentScreenshot?.region, selectedStateId, newStateName, setImageExtractionState]);
+  }, [
+    currentScreenshot?.region,
+    selectedStateId,
+    newStateName,
+    setPersistedState,
+  ]);
 
   const handleUploadScreenshot = (file: File) => {
     const url = URL.createObjectURL(file);
@@ -75,8 +97,10 @@ export const ImageExtractionTab: React.FC = () => {
   };
 
   const handleProjectScreenshotSelect = async (screenshotId: string) => {
-    const projectScreenshot = projectScreenshots.find(s => s.id === screenshotId);
-    if (projectScreenshot) {
+    const projectScreenshot = projectScreenshots.find(
+      (s) => s.id === screenshotId
+    );
+    if (projectScreenshot && projectScreenshot.url) {
       setCurrentScreenshot({
         id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: projectScreenshot.name,
@@ -85,6 +109,12 @@ export const ImageExtractionTab: React.FC = () => {
 
       // Reset extracted result when new screenshot is loaded
       setExtractedResult(null);
+    } else {
+      console.warn(
+        "[ImageExtractionTab] Project screenshot missing URL:",
+        screenshotId
+      );
+      toast.error("Selected screenshot has no image URL");
     }
   };
 
@@ -104,26 +134,37 @@ export const ImageExtractionTab: React.FC = () => {
 
   const handleExtract = async () => {
     if (!currentScreenshot?.region) {
-      toast.error('Please select a region first');
+      toast.error("Please select a region first");
       return;
     }
 
     try {
       let result: ProcessedImageResult;
 
-      if (processingMode === 'none') {
-        result = await extractRegion(currentScreenshot.url, currentScreenshot.region);
-      } else if (processingMode === 'border') {
-        result = await removeBorder(currentScreenshot.url, currentScreenshot.region, tolerance);
+      if (processingMode === "none") {
+        result = await extractRegion(
+          currentScreenshot.url,
+          currentScreenshot.region
+        );
+      } else if (processingMode === "border") {
+        result = await removeBorder(
+          currentScreenshot.url,
+          currentScreenshot.region,
+          tolerance
+        );
       } else {
-        result = await removeBackground(currentScreenshot.url, currentScreenshot.region, tolerance);
+        result = await removeBackground(
+          currentScreenshot.url,
+          currentScreenshot.region,
+          tolerance
+        );
       }
 
       setExtractedResult(result);
-      toast.success('Image extracted successfully');
+      toast.success("Image extracted successfully");
     } catch (error) {
-      console.error('Extraction failed:', error);
-      toast.error('Failed to extract image');
+      console.error("Extraction failed:", error);
+      toast.error("Failed to extract image");
     }
   };
 
@@ -149,41 +190,61 @@ export const ImageExtractionTab: React.FC = () => {
 
     setShowMaskEditor(false);
     setEditingMask(null);
-    toast.success('Mask updated');
+    toast.success("Mask updated");
   };
 
   const handleCreateStateImage = async () => {
     if (!extractedResult || !stateImageName) {
-      toast.error('Missing required fields');
+      toast.error("Missing required fields");
       return;
     }
 
     // Validate new state name when creating a new state
-    if (selectedStateId === 'new' && !newStateName.trim()) {
-      toast.error('Please enter a name for the new state');
+    if (selectedStateId === "new" && !newStateName.trim()) {
+      toast.error("Please enter a name for the new state");
       return;
     }
 
     try {
       const imageData = extractedResult.croppedImage;
 
-      // Prepare search region if fixed location is enabled
-      // Use the cropped bounds (after border/background removal) rather than original selection
-      const searchRegion = fixedLocation && extractedResult.bounds ? {
-        id: `search_region_${Date.now()}`,
-        name: 'Extraction Region',
-        x: extractedResult.bounds.x,
-        y: extractedResult.bounds.y,
-        width: extractedResult.bounds.width,
-        height: extractedResult.bounds.height
-      } : undefined;
+      // Step 1: Add image to library first (or find existing)
+      // The library is the source of truth for all image data
+      let imageAsset = findImageByData(images, imageData);
+      if (!imageAsset) {
+        imageAsset = createImageAsset(
+          imageData,
+          stateImageName,
+          "image_extraction"
+        );
+        // Add mask to the image asset if present
+        if (extractedResult.mask) {
+          imageAsset.mask = extractedResult.mask;
+        }
+        addImage(imageAsset);
+        toast.success("Added to Image Library");
+      }
 
+      // Step 2: Prepare search region if fixed location is enabled
+      // Use the cropped bounds (after border/background removal) rather than original selection
+      const searchRegion =
+        fixedLocation && extractedResult.bounds
+          ? {
+              id: `search_region_${Date.now()}`,
+              name: "Extraction Region",
+              x: extractedResult.bounds.x,
+              y: extractedResult.bounds.y,
+              width: extractedResult.bounds.width,
+              height: extractedResult.bounds.height,
+            }
+          : undefined;
+
+      // Step 3: Create StateImage with imageId referencing the library
       const result = prepareStateImageCreation(
         {
           name: stateImageName,
-          image: imageData,
-          mask: extractedResult.mask,
-          source: 'image-extraction',
+          imageId: imageAsset.id, // Reference to library image
+          source: "image-extraction",
           fixed: fixedLocation,
           searchRegion: searchRegion,
         },
@@ -192,38 +253,30 @@ export const ImageExtractionTab: React.FC = () => {
         newStateName.trim() || undefined
       );
 
-      if (result.action === 'create-state' && result.targetState) {
+      if (result.action === "create-state" && result.targetState) {
         addState(result.targetState);
         toast.success(`Created new state: ${result.targetState.name}`);
-      } else if (result.action === 'update-state' && result.targetState) {
+      } else if (result.action === "update-state" && result.targetState) {
         updateState(result.targetState);
         toast.success(`Added StateImage to ${result.targetState.name}`);
       }
 
-      // Add image to Image Library (avoid duplicates)
-      if (!imageExistsInLibrary(images, imageData)) {
-        const imageAsset = createImageAsset(
-          imageData,
-          stateImageName,
-          'image_extraction'
-        );
-        addImage(imageAsset);
-        toast.success('Added to Image Library');
-      }
-
       // Reset dialog
       setShowStateImageDialog(false);
-      setStateImageName('');
-      setSelectedStateId('');
-      setNewStateName('');
+      setStateImageName("");
+      setSelectedStateId("");
+      setNewStateName("");
       setExtractedResult(null);
     } catch (error) {
-      console.error('Error creating StateImage:', error);
-      toast.error('Failed to create StateImage');
+      console.error("Error creating StateImage:", error);
+      toast.error("Failed to create StateImage");
     }
   };
 
-  const canExtract = currentScreenshot?.region && currentScreenshot.region.width > 0 && currentScreenshot.region.height > 0;
+  const canExtract =
+    currentScreenshot?.region &&
+    currentScreenshot.region.width > 0 &&
+    currentScreenshot.region.height > 0;
 
   return (
     <div className="h-full flex flex-col bg-[#0A0A0B]">
@@ -231,7 +284,8 @@ export const ImageExtractionTab: React.FC = () => {
       <div className="bg-[#27272A] border-b border-gray-800 px-6 py-4">
         <h1 className="text-2xl font-bold text-white">Image Extraction</h1>
         <p className="text-gray-400 mt-1">
-          Extract images from screenshots with optional border and background removal
+          Extract images from screenshots with optional border and background
+          removal
         </p>
       </div>
 
@@ -239,22 +293,32 @@ export const ImageExtractionTab: React.FC = () => {
         {/* Left Panel - Screenshot Info */}
         <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 flex flex-col overflow-hidden">
           <ScreenshotPicker
-            currentScreenshot={currentScreenshot ? {
-              id: currentScreenshot.id,
-              name: currentScreenshot.name,
-              url: currentScreenshot.url,
-            } : null}
+            currentScreenshot={
+              currentScreenshot
+                ? {
+                    id: currentScreenshot.id,
+                    name: currentScreenshot.name,
+                    url: currentScreenshot.url,
+                  }
+                : null
+            }
             onUploadScreenshot={handleUploadScreenshot}
             onSelectProjectScreenshot={handleProjectScreenshotSelect}
             onClearScreenshot={handleClearScreenshot}
             showRegionInfo={true}
-            regionDimensions={currentScreenshot?.region ? {
-              width: currentScreenshot.region.width,
-              height: currentScreenshot.region.height,
-            } : null}
+            regionDimensions={
+              currentScreenshot?.region
+                ? {
+                    width: currentScreenshot.region.width,
+                    height: currentScreenshot.region.height,
+                  }
+                : null
+            }
             additionalInfo={
               <div className="bg-[#27272A] rounded-lg p-3 border border-gray-700">
-                <h3 className="text-xs font-medium text-gray-300 mb-2">Instructions</h3>
+                <h3 className="text-xs font-medium text-gray-300 mb-2">
+                  Instructions
+                </h3>
                 <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
                   <li>Draw a selection box on the image</li>
                   <li>Choose processing mode</li>
@@ -286,17 +350,19 @@ export const ImageExtractionTab: React.FC = () => {
                   <label className="flex items-center">
                     <input
                       type="radio"
-                      checked={processingMode === 'none'}
-                      onChange={() => setProcessingMode('none')}
+                      checked={processingMode === "none"}
+                      onChange={() => setProcessingMode("none")}
                       className="mr-2"
                     />
-                    <span className="text-sm text-gray-300">None (Full Region)</span>
+                    <span className="text-sm text-gray-300">
+                      None (Full Region)
+                    </span>
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
-                      checked={processingMode === 'border'}
-                      onChange={() => setProcessingMode('border')}
+                      checked={processingMode === "border"}
+                      onChange={() => setProcessingMode("border")}
                       className="mr-2"
                     />
                     <span className="text-sm text-gray-300">Remove Border</span>
@@ -304,25 +370,32 @@ export const ImageExtractionTab: React.FC = () => {
                   <label className="flex items-center">
                     <input
                       type="radio"
-                      checked={processingMode === 'background'}
-                      onChange={() => setProcessingMode('background')}
+                      checked={processingMode === "background"}
+                      onChange={() => setProcessingMode("background")}
                       className="mr-2"
                     />
-                    <span className="text-sm text-gray-300">Remove Background</span>
+                    <span className="text-sm text-gray-300">
+                      Remove Background
+                    </span>
                   </label>
                 </div>
                 <p className="text-xs text-gray-400 mt-2">
-                  {processingMode === 'none' && 'Extract the entire selected region'}
-                  {processingMode === 'border' && 'Crop out border pixels matching edge color'}
-                  {processingMode === 'background' && 'Create mask for background pixels and crop'}
+                  {processingMode === "none" &&
+                    "Extract the entire selected region"}
+                  {processingMode === "border" &&
+                    "Crop out border pixels matching edge color"}
+                  {processingMode === "background" &&
+                    "Create mask for background pixels and crop"}
                 </p>
               </div>
 
               {/* Tolerance (only for border/background removal) */}
-              {processingMode !== 'none' && (
+              {processingMode !== "none" && (
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <label className="text-sm font-medium text-gray-300">Color Tolerance</label>
+                    <label className="text-sm font-medium text-gray-300">
+                      Color Tolerance
+                    </label>
                     <span className="text-sm font-mono bg-[#0A0A0B] px-2 py-1 rounded text-gray-300">
                       {tolerance}
                     </span>
@@ -340,7 +413,8 @@ export const ImageExtractionTab: React.FC = () => {
                     <span>Loose</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-2">
-                    How similar colors must be to be considered border/background
+                    How similar colors must be to be considered
+                    border/background
                   </p>
                 </div>
               )}
@@ -352,8 +426,8 @@ export const ImageExtractionTab: React.FC = () => {
                   disabled={!canExtract}
                   className={`w-full py-2.5 rounded-md font-medium transition-colors ${
                     canExtract
-                      ? 'bg-[#00FF88] hover:bg-[#00FF88]/90 text-black'
-                      : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                      ? "bg-[#00FF88] hover:bg-[#00FF88]/90 text-black"
+                      : "bg-gray-700 text-gray-500 cursor-not-allowed"
                   }`}
                 >
                   Extract Image
@@ -382,7 +456,9 @@ export const ImageExtractionTab: React.FC = () => {
               <div className="flex items-center justify-center h-full text-gray-500">
                 <div className="text-center">
                   <ImageIcon className="w-12 h-12 mx-auto mb-2" />
-                  <p className="text-sm">Upload or select a screenshot to begin</p>
+                  <p className="text-sm">
+                    Upload or select a screenshot to begin
+                  </p>
                 </div>
               </div>
             )}
@@ -400,7 +476,9 @@ export const ImageExtractionTab: React.FC = () => {
               <div className="space-y-4">
                 {/* Extracted Image */}
                 <div>
-                  <h3 className="text-sm font-medium text-gray-300 mb-2">Image</h3>
+                  <h3 className="text-sm font-medium text-gray-300 mb-2">
+                    Image
+                  </h3>
                   <div
                     className="border border-gray-700 rounded p-2"
                     style={{
@@ -410,33 +488,36 @@ export const ImageExtractionTab: React.FC = () => {
                         linear-gradient(45deg, transparent 75%, #f3f4f6 75%),
                         linear-gradient(-45deg, transparent 75%, #f3f4f6 75%)
                       `,
-                      backgroundSize: '10px 10px',
-                      backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
-                      backgroundColor: '#ffffff'
+                      backgroundSize: "10px 10px",
+                      backgroundPosition: "0 0, 0 5px, 5px -5px, -5px 0px",
+                      backgroundColor: "#ffffff",
                     }}
                   >
                     <img
                       src={extractedResult.croppedImage}
                       alt="Extracted"
                       className="w-full h-auto"
-                      style={{ maxHeight: '300px', objectFit: 'contain' }}
+                      style={{ maxHeight: "300px", objectFit: "contain" }}
                     />
                   </div>
                   <p className="text-xs text-gray-400 mt-1">
-                    {extractedResult.bounds.width}×{extractedResult.bounds.height} pixels
+                    {extractedResult.bounds.width}×
+                    {extractedResult.bounds.height} pixels
                   </p>
                 </div>
 
                 {/* Mask (if available) */}
                 {extractedResult.mask && (
                   <div>
-                    <h3 className="text-sm font-medium text-gray-300 mb-2">Mask</h3>
+                    <h3 className="text-sm font-medium text-gray-300 mb-2">
+                      Mask
+                    </h3>
                     <div className="border border-gray-700 rounded bg-[#0A0A0B] p-2">
                       <img
                         src={extractedResult.mask}
                         alt="Mask"
                         className="w-full h-auto"
-                        style={{ maxHeight: '200px', objectFit: 'contain' }}
+                        style={{ maxHeight: "200px", objectFit: "contain" }}
                       />
                     </div>
                     <p className="text-xs text-gray-400 mt-1">
@@ -447,14 +528,32 @@ export const ImageExtractionTab: React.FC = () => {
 
                 {/* Info */}
                 <div className="bg-[#00D9FF]/10 border border-[#00D9FF] rounded-md p-3">
-                  <h4 className="text-sm font-medium text-white mb-1">Processing Info</h4>
+                  <h4 className="text-sm font-medium text-white mb-1">
+                    Processing Info
+                  </h4>
                   <ul className="text-xs text-gray-300 space-y-1">
-                    <li>Mode: {processingMode === 'none' ? 'Full Region' : processingMode === 'border' ? 'Border Removed' : 'Background Removed'}</li>
-                    {processingMode !== 'none' && <li>Tolerance: {tolerance}</li>}
-                    {currentScreenshot?.region && (
-                      <li>Original bounds: {Math.round(currentScreenshot.region.x)}, {Math.round(currentScreenshot.region.y)}</li>
+                    <li>
+                      Mode:{" "}
+                      {processingMode === "none"
+                        ? "Full Region"
+                        : processingMode === "border"
+                          ? "Border Removed"
+                          : "Background Removed"}
+                    </li>
+                    {processingMode !== "none" && (
+                      <li>Tolerance: {tolerance}</li>
                     )}
-                    <li>Cropped bounds: {extractedResult.bounds.x}, {extractedResult.bounds.y}</li>
+                    {currentScreenshot?.region && (
+                      <li>
+                        Original bounds:{" "}
+                        {Math.round(currentScreenshot.region.x)},{" "}
+                        {Math.round(currentScreenshot.region.y)}
+                      </li>
+                    )}
+                    <li>
+                      Cropped bounds: {extractedResult.bounds.x},{" "}
+                      {extractedResult.bounds.y}
+                    </li>
                   </ul>
                 </div>
 
@@ -497,7 +596,9 @@ export const ImageExtractionTab: React.FC = () => {
       {showStateImageDialog && extractedResult && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-[#27272A] border border-gray-700 rounded-lg p-6 w-96 max-w-full">
-            <h3 className="text-lg font-semibold text-white mb-4">Create StateImage</h3>
+            <h3 className="text-lg font-semibold text-white mb-4">
+              Create StateImage
+            </h3>
 
             <div className="space-y-4">
               <div>
@@ -532,7 +633,7 @@ export const ImageExtractionTab: React.FC = () => {
                 </select>
               </div>
 
-              {selectedStateId === 'new' && (
+              {selectedStateId === "new" && (
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">
                     New State Name
@@ -555,8 +656,12 @@ export const ImageExtractionTab: React.FC = () => {
                   onChange={(e) => setFixedLocation(e.target.checked)}
                   className="h-4 w-4 text-[#00D9FF] focus:ring-[#00D9FF] border-gray-700 rounded"
                 />
-                <label htmlFor="fixed-location" className="ml-2 block text-sm text-gray-300">
-                  Fixed location pattern (saves extraction region as search region)
+                <label
+                  htmlFor="fixed-location"
+                  className="ml-2 block text-sm text-gray-300"
+                >
+                  Fixed location pattern (saves extraction region as search
+                  region)
                 </label>
               </div>
 
@@ -571,9 +676,9 @@ export const ImageExtractionTab: React.FC = () => {
               <button
                 onClick={() => {
                   setShowStateImageDialog(false);
-                  setStateImageName('');
-                  setSelectedStateId('');
-                  setNewStateName('');
+                  setStateImageName("");
+                  setSelectedStateId("");
+                  setNewStateName("");
                 }}
                 className="px-4 py-2 text-sm text-gray-300 bg-gray-700 rounded-md hover:bg-gray-600"
               >
@@ -581,7 +686,11 @@ export const ImageExtractionTab: React.FC = () => {
               </button>
               <button
                 onClick={handleCreateStateImage}
-                disabled={!stateImageName || !selectedStateId || (selectedStateId === 'new' && !newStateName.trim())}
+                disabled={
+                  !stateImageName ||
+                  !selectedStateId ||
+                  (selectedStateId === "new" && !newStateName.trim())
+                }
                 className="px-4 py-2 text-sm text-black bg-[#00FF88] rounded-md hover:bg-[#00FF88]/90 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
               >
                 Create StateImage

@@ -11,7 +11,7 @@ logger = structlog.get_logger(__name__)
 class EmailTemplateService:
     """Handles email template loading and rendering."""
 
-    def __init__(self, template_dir: str | Path = None):
+    def __init__(self, template_dir: str | Path | None = None):
         """
         Initialize the template service.
 

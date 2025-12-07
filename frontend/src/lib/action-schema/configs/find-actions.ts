@@ -2,24 +2,14 @@
  * Find action configurations
  */
 
-import { TargetConfig } from '../shared/target-config';
-import { SearchOptions } from '../shared/search-options';
-import { VerificationConfig } from '../shared/verification-config';
+import { TargetConfig } from "../shared/target-config";
+import { SearchOptions } from "../shared/search-options";
 
 /**
  * FIND - Search for a target on screen
  */
 export interface FindActionConfig {
   target: TargetConfig;
-  searchOptions?: SearchOptions;
-}
-
-/**
- * FIND_STATE_IMAGE - Find an image associated with a state
- */
-export interface FindStateImageActionConfig {
-  stateId: string;
-  imageId: string;
   searchOptions?: SearchOptions;
 }
 
@@ -47,7 +37,7 @@ export interface ExistsActionConfig {
  */
 export interface WaitActionConfig {
   /** What to wait for */
-  waitFor: 'time' | 'target' | 'state' | 'condition';
+  waitFor: "time" | "target" | "state" | "condition";
 
   /** Wait duration (milliseconds) - for 'time' mode */
   duration?: number;
@@ -60,7 +50,7 @@ export interface WaitActionConfig {
 
   /** Custom condition - for 'condition' mode */
   condition?: {
-    type: 'javascript' | 'variable';
+    type: "javascript" | "variable";
     expression: string;
   };
 

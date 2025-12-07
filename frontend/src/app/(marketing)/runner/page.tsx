@@ -134,12 +134,8 @@ export default function RunnerPage() {
                 Subject: CN=SignPath Foundation, O=SignPath Foundation, L=Lewes,
                 S=Delaware, C=US
               </p>
-              <p className="font-mono text-xs mt-2">
-                Issuer: DigiCert
-              </p>
-              <p className="font-mono text-xs mt-2">
-                Algorithm: SHA256
-              </p>
+              <p className="font-mono text-xs mt-2">Issuer: DigiCert</p>
+              <p className="font-mono text-xs mt-2">Algorithm: SHA256</p>
             </div>
           </details>
         </div>

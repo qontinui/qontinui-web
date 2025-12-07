@@ -16,12 +16,14 @@ import type {
   Comment,
   Activity,
   WebSocketMessage,
-  WebSocketMessageType,
   PresenceUpdateMessage,
   CursorMoveMessage,
   CursorPosition,
-} from '@/types/collaboration';
-import { ExecutionWebSocket, type WebSocketConfig } from './execution-websocket';
+} from "@/types/collaboration";
+import {
+  ExecutionWebSocket,
+  type WebSocketConfig,
+} from "./execution-websocket";
 
 // ============================================================================
 // Types
@@ -66,7 +68,7 @@ class WebSocketCollaborationService {
    */
   connect(projectId: string, config?: Partial<WebSocketConfig>): void {
     if (this.ws && this.projectId === projectId) {
-      console.warn('[CollaborationWS] Already connected to this project');
+      console.warn("[CollaborationWS] Already connected to this project");
       return;
     }
 
@@ -78,7 +80,7 @@ class WebSocketCollaborationService {
     this.projectId = projectId;
 
     // Determine WebSocket URL
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
     const url = `${protocol}//${host}/api/collaboration/${projectId}/ws`;
 
@@ -93,15 +95,15 @@ class WebSocketCollaborationService {
       },
       {
         onConnect: () => {
-          console.log('[CollaborationWS] Connected');
+          console.log("[CollaborationWS] Connected");
 
           // Request sync state if reconnecting (not first connection)
           if (this.lastAckedSequence > 0) {
             console.log(
-              '[CollaborationWS] Reconnecting, requesting sync state'
+              "[CollaborationWS] Reconnecting, requesting sync state"
             );
             this.send({
-              type: 'sync_state',
+              type: "sync_state" as any,
               timestamp: new Date().toISOString(),
               data: {
                 last_acked_sequence: this.lastAckedSequence,
@@ -120,15 +122,15 @@ class WebSocketCollaborationService {
           this.handlers.onConnect?.();
         },
         onDisconnect: () => {
-          console.log('[CollaborationWS] Disconnected');
+          console.log("[CollaborationWS] Disconnected");
           // Don't reset sequence tracking on disconnect - preserve for reconnect
           this.handlers.onDisconnect?.();
         },
         onMessage: (event: any) => {
           this.handleMessage(event);
         },
-        onError: (error: Error) => {
-          console.error('[CollaborationWS] Error:', error);
+        onError: (error: any) => {
+          console.error("[CollaborationWS] Error:", error);
           this.handlers.onError?.(error);
         },
       }
@@ -178,11 +180,14 @@ class WebSocketCollaborationService {
   /**
    * Send presence update
    */
-  sendPresenceUpdate(status: PresenceStatus, currentView?: string | null): void {
+  sendPresenceUpdate(
+    status: PresenceStatus,
+    currentView?: string | null
+  ): void {
     const message: PresenceUpdateMessage = {
-      user_id: '', // Will be set by server
+      user_id: "", // Will be set by server
       user_name: null,
-      user_email: '',
+      user_email: "",
       status,
       current_view: currentView ?? null,
     };
@@ -190,7 +195,7 @@ class WebSocketCollaborationService {
     this.currentPresence = message;
 
     this.send({
-      type: 'presence_update',
+      type: "presence_update",
       timestamp: new Date().toISOString(),
       data: message,
     });
@@ -201,7 +206,7 @@ class WebSocketCollaborationService {
    */
   sendCursorMove(position: CursorPosition): void {
     const message: CursorMoveMessage = {
-      user_id: '', // Will be set by server
+      user_id: "", // Will be set by server
       user_name: null,
       x: position.x,
       y: position.y,
@@ -209,7 +214,7 @@ class WebSocketCollaborationService {
     };
 
     this.send({
-      type: 'cursor_move',
+      type: "cursor_move",
       timestamp: new Date().toISOString(),
       data: message,
     });
@@ -303,17 +308,17 @@ class WebSocketCollaborationService {
       const message = event as WebSocketMessage & { sequence?: number };
 
       // Handle connection state message
-      if (message.type === 'connection_state') {
+      if (message.type === "connection_state") {
         this.handleConnectionState(message.data);
         return;
       }
 
       // Handle resend complete message
-      if (message.type === 'resend_complete') {
+      if (message.type === "resend_complete") {
         console.log(
-          '[CollaborationWS] Resend complete:',
+          "[CollaborationWS] Resend complete:",
           message.data?.count,
-          'messages'
+          "messages"
         );
         return;
       }
@@ -326,7 +331,7 @@ class WebSocketCollaborationService {
         this.dispatchMessage(message);
       }
     } catch (error) {
-      console.error('[CollaborationWS] Failed to handle message:', error);
+      console.error("[CollaborationWS] Failed to handle message:", error);
       this.handlers.onError?.(error as Error);
     }
   }
@@ -356,9 +361,9 @@ class WebSocketCollaborationService {
     } else if (sequence > this.expectedSequence) {
       // Out of order - buffer it
       console.warn(
-        '[CollaborationWS] Out-of-order message:',
+        "[CollaborationWS] Out-of-order message:",
         sequence,
-        'expected:',
+        "expected:",
         this.expectedSequence
       );
       this.outOfOrderBuffer.set(sequence, message);
@@ -367,7 +372,7 @@ class WebSocketCollaborationService {
       const gap = sequence - this.expectedSequence;
       if (gap > 5) {
         console.warn(
-          '[CollaborationWS] Large gap detected, requesting resend from',
+          "[CollaborationWS] Large gap detected, requesting resend from",
           this.expectedSequence
         );
         this.requestResend(this.expectedSequence);
@@ -375,9 +380,9 @@ class WebSocketCollaborationService {
     } else {
       // Duplicate or old message - ignore
       console.debug(
-        '[CollaborationWS] Duplicate/old message:',
+        "[CollaborationWS] Duplicate/old message:",
         sequence,
-        'expected:',
+        "expected:",
         this.expectedSequence
       );
     }
@@ -404,45 +409,45 @@ class WebSocketCollaborationService {
    */
   private dispatchMessage(message: any): void {
     switch (message.type) {
-      case 'presence_update':
+      case "presence_update":
         this.handlers.onPresenceUpdate?.(message.data);
         break;
 
-      case 'cursor_move':
+      case "cursor_move":
         this.handlers.onCursorMove?.(message.data);
         break;
 
-      case 'lock_acquired':
+      case "lock_acquired":
         this.handlers.onLockAcquired?.(message.data);
         break;
 
-      case 'lock_released':
+      case "lock_released":
         this.handlers.onLockReleased?.(message.data);
         break;
 
-      case 'comment_added':
+      case "comment_added":
         this.handlers.onCommentAdded?.(message.data);
         break;
 
-      case 'comment_updated':
+      case "comment_updated":
         this.handlers.onCommentUpdated?.(message.data);
         break;
 
-      case 'comment_deleted':
+      case "comment_deleted":
         this.handlers.onCommentDeleted?.(message.data);
         break;
 
-      case 'activity_update':
+      case "activity_update":
         this.handlers.onActivityUpdate?.(message.data);
         break;
 
-      case 'pong':
-      case 'heartbeat_ack':
+      case "pong":
+      case "heartbeat_ack":
         // Heartbeat response, no action needed
         break;
 
       default:
-        console.warn('[CollaborationWS] Unknown message type:', message.type);
+        console.warn("[CollaborationWS] Unknown message type:", message.type);
     }
   }
 
@@ -465,12 +470,12 @@ class WebSocketCollaborationService {
    */
   private sendAck(sequence: number): void {
     this.send({
-      type: 'ack',
+      type: "ack" as any,
       timestamp: new Date().toISOString(),
       data: { sequence },
     });
 
-    console.debug('[CollaborationWS] Acknowledged up to sequence:', sequence);
+    console.debug("[CollaborationWS] Acknowledged up to sequence:", sequence);
   }
 
   /**
@@ -478,19 +483,22 @@ class WebSocketCollaborationService {
    */
   private requestResend(fromSequence: number): void {
     this.send({
-      type: 'resend',
+      type: "resend" as any,
       timestamp: new Date().toISOString(),
       data: { from_sequence: fromSequence },
     });
 
-    console.log('[CollaborationWS] Requested resend from sequence:', fromSequence);
+    console.log(
+      "[CollaborationWS] Requested resend from sequence:",
+      fromSequence
+    );
   }
 
   /**
    * Handle connection state message
    */
   private handleConnectionState(state: any): void {
-    console.log('[CollaborationWS] Connection state:', state);
+    console.log("[CollaborationWS] Connection state:", state);
 
     // If reconnecting and there are unacknowledged messages, request resend
     if (
@@ -499,7 +507,7 @@ class WebSocketCollaborationService {
     ) {
       const fromSequence = this.lastAckedSequence + 1;
       console.log(
-        '[CollaborationWS] Reconnected, requesting resend from:',
+        "[CollaborationWS] Reconnected, requesting resend from:",
         fromSequence
       );
       this.requestResend(fromSequence);
@@ -541,7 +549,7 @@ class WebSocketCollaborationService {
    */
   private send(message: WebSocketMessage): void {
     if (!this.ws || !this.ws.isConnected()) {
-      console.warn('[CollaborationWS] Cannot send message: not connected');
+      console.warn("[CollaborationWS] Cannot send message: not connected");
       return;
     }
 
@@ -550,4 +558,5 @@ class WebSocketCollaborationService {
 }
 
 // Export singleton instance
-export const websocketCollaborationService = new WebSocketCollaborationService();
+export const websocketCollaborationService =
+  new WebSocketCollaborationService();

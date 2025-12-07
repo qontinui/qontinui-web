@@ -5,7 +5,7 @@
  * with different annotation types and configurations.
  */
 
-import { AnnotatedImage, Annotation } from "./annotated-image"
+import { AnnotatedImage, Annotation } from "./annotated-image";
 
 /**
  * Example 1: Basic highlight annotation
@@ -22,7 +22,7 @@ export function BasicHighlightExample() {
       color: "cyan",
       opacity: 0.3,
     },
-  ]
+  ];
 
   return (
     <AnnotatedImage
@@ -30,7 +30,7 @@ export function BasicHighlightExample() {
       alt="Tutorial step 1"
       annotations={annotations}
     />
-  )
+  );
 }
 
 /**
@@ -66,7 +66,7 @@ export function MultipleHighlightsExample() {
       color: "purple",
       opacity: 0.25,
     },
-  ]
+  ];
 
   return (
     <AnnotatedImage
@@ -74,7 +74,7 @@ export function MultipleHighlightsExample() {
       alt="Tutorial step with multiple highlights"
       annotations={annotations}
     />
-  )
+  );
 }
 
 /**
@@ -107,7 +107,7 @@ export function ArrowAnnotationsExample() {
       color: "purple",
       size: "sm",
     },
-  ]
+  ];
 
   return (
     <AnnotatedImage
@@ -115,7 +115,7 @@ export function ArrowAnnotationsExample() {
       alt="Tutorial step with arrows"
       annotations={annotations}
     />
-  )
+  );
 }
 
 /**
@@ -149,7 +149,7 @@ export function PulseAnnotationsExample() {
       duration: 2500,
       delay: 500,
     },
-  ]
+  ];
 
   return (
     <AnnotatedImage
@@ -157,7 +157,7 @@ export function PulseAnnotationsExample() {
       alt="Tutorial step with pulsing indicators"
       annotations={annotations}
     />
-  )
+  );
 }
 
 /**
@@ -190,7 +190,7 @@ export function LabelAnnotationsExample() {
       color: "purple",
       size: "sm",
     },
-  ]
+  ];
 
   return (
     <AnnotatedImage
@@ -198,7 +198,7 @@ export function LabelAnnotationsExample() {
       alt="Tutorial step with labels"
       annotations={annotations}
     />
-  )
+  );
 }
 
 /**
@@ -257,7 +257,7 @@ export function CompleteExampleStep1() {
       color: "purple",
       size: "sm",
     },
-  ]
+  ];
 
   return (
     <AnnotatedImage
@@ -265,7 +265,7 @@ export function CompleteExampleStep1() {
       alt="Tutorial step 1: Complete example with all annotation types"
       annotations={annotations}
     />
-  )
+  );
 }
 
 /**
@@ -291,7 +291,7 @@ export function ResponsiveExampleWithCustomStyling() {
       color: "cyan",
       size: "md",
     },
-  ]
+  ];
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -303,7 +303,7 @@ export function ResponsiveExampleWithCustomStyling() {
         imageClassName="w-full h-auto border-2 border-qontinui-cyan/30"
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -379,7 +379,7 @@ export function TutorialSequenceExample() {
         },
       ] as Annotation[],
     },
-  ]
+  ];
 
   return (
     <div className="space-y-8">
@@ -398,7 +398,7 @@ export function TutorialSequenceExample() {
         </div>
       ))}
     </div>
-  )
+  );
 }
 
 /**
@@ -424,7 +424,7 @@ export function InteractiveAnnotationsExample() {
       size: "md",
       duration: 2000,
     },
-  ]
+  ];
 
   return (
     <div className="relative">
@@ -438,7 +438,7 @@ export function InteractiveAnnotationsExample() {
         Hover over the image to see the highlighted areas
       </p>
     </div>
-  )
+  );
 }
 
 /**
@@ -455,7 +455,7 @@ export function AllArrowDirectionsExample() {
     "down-left",
     "left",
     "up-left",
-  ] as const
+  ] as const;
 
   const annotations: Annotation[] = directions.map((dir, i) => ({
     type: "arrow" as const,
@@ -464,7 +464,7 @@ export function AllArrowDirectionsExample() {
     direction: dir,
     color: "cyan" as const,
     size: "md" as const,
-  }))
+  }));
 
   return (
     <AnnotatedImage
@@ -472,7 +472,7 @@ export function AllArrowDirectionsExample() {
       alt="All arrow directions"
       annotations={annotations}
     />
-  )
+  );
 }
 
 /**
@@ -508,7 +508,7 @@ export function StaggeredPulsesExample() {
       duration: 2000,
       delay: 400,
     },
-  ]
+  ];
 
   return (
     <AnnotatedImage
@@ -516,7 +516,7 @@ export function StaggeredPulsesExample() {
       alt="Staggered pulse animations"
       annotations={annotations}
     />
-  )
+  );
 }
 
 /**
@@ -524,7 +524,7 @@ export function StaggeredPulsesExample() {
  * Shows the range of available colors
  */
 export function ColorVariationsExample() {
-  const colors = ["cyan", "green", "purple", "red", "yellow", "blue"] as const
+  const colors = ["cyan", "green", "purple", "red", "yellow", "blue"] as const;
 
   const annotations: Annotation[] = colors.map((color, i) => ({
     type: "pulse" as const,
@@ -533,7 +533,7 @@ export function ColorVariationsExample() {
     color: color,
     size: "md" as const,
     duration: 2000,
-  }))
+  }));
 
   return (
     <AnnotatedImage
@@ -541,5 +541,5 @@ export function ColorVariationsExample() {
       alt="Color variations"
       annotations={annotations}
     />
-  )
+  );
 }

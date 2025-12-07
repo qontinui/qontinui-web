@@ -4,36 +4,41 @@
  * Displays region analysis results with visual overlay of detected regions and grid cells
  */
 
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
-import { Eye, EyeOff, Download, Layers, Grid3x3, Info } from 'lucide-react'
-import { toast } from 'sonner'
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Eye, EyeOff, Download, Layers, Grid3x3, Info } from "lucide-react";
+import { toast } from "sonner";
 import type {
   RegionAnalysisResponse,
   FusedRegion,
   DetectedRegion,
-  RegionAnalyzerResult,
-} from '@/services/regionAnalysis'
+} from "@/services/regionAnalysis";
 
 interface RegionAnalysisResultsProps {
-  results: RegionAnalysisResponse
-  imageUrl?: string
-  imageWidth?: number
-  imageHeight?: number
+  results: RegionAnalysisResponse;
+  imageUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 export function RegionAnalysisResults({
@@ -42,67 +47,69 @@ export function RegionAnalysisResults({
   imageWidth = 800,
   imageHeight = 600,
 }: RegionAnalysisResultsProps) {
-  const [selectedView, setSelectedView] = useState<'fused' | 'individual'>('fused')
-  const [selectedAnalyzer, setSelectedAnalyzer] = useState<string | null>(null)
-  const [visibleSources, setVisibleSources] = useState<Set<string>>(new Set())
-  const [selectedRegion, setSelectedRegion] = useState<FusedRegion | DetectedRegion | null>(
-    null
-  )
-  const [showGridCells, setShowGridCells] = useState(true)
-  const [showCellNumbers, setShowCellNumbers] = useState(true)
-  const [zoom, setZoom] = useState(1)
+  const [selectedView, setSelectedView] = useState<"fused" | "individual">(
+    "fused"
+  );
+  const [selectedAnalyzer, setSelectedAnalyzer] = useState<string | null>(null);
+  const [visibleSources, setVisibleSources] = useState<Set<string>>(new Set());
+  const [selectedRegion, setSelectedRegion] = useState<
+    FusedRegion | DetectedRegion | null
+  >(null);
+  const [showGridCells, setShowGridCells] = useState(true);
+  const [showCellNumbers, setShowCellNumbers] = useState(true);
+  const [zoom, setZoom] = useState(1);
 
   // Toggle source visibility
   const toggleSource = (source: string) => {
-    const newVisible = new Set(visibleSources)
+    const newVisible = new Set(visibleSources);
     if (newVisible.has(source)) {
-      newVisible.delete(source)
+      newVisible.delete(source);
     } else {
-      newVisible.add(source)
+      newVisible.add(source);
     }
-    setVisibleSources(newVisible)
-  }
+    setVisibleSources(newVisible);
+  };
 
   // Export results as JSON
   const handleExport = () => {
-    const dataStr = JSON.stringify(results, null, 2)
-    const blob = new Blob([dataStr], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `region_analysis_results_${results.annotation_set_id}_${Date.now()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-    toast.success('Results exported')
-  }
+    const dataStr = JSON.stringify(results, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `region_analysis_results_${results.annotation_set_id}_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Results exported");
+  };
 
-  const getColorForSource = (source: string, index: number): string => {
+  const getColorForSource = (_source: string, index: number): string => {
     const colors = [
-      '#ef4444', // red
-      '#3b82f6', // blue
-      '#10b981', // green
-      '#f59e0b', // yellow
-      '#8b5cf6', // purple
-      '#ec4899', // pink
-      '#06b6d4', // cyan
-      '#f97316', // orange
-    ]
-    return colors[index % colors.length]
-  }
+      "#ef4444", // red
+      "#3b82f6", // blue
+      "#10b981", // green
+      "#f59e0b", // yellow
+      "#8b5cf6", // purple
+      "#ec4899", // pink
+      "#06b6d4", // cyan
+      "#f97316", // orange
+    ];
+    return (colors[index % colors.length] ?? colors[0]) as string;
+  };
 
   const regionsToDisplay =
-    selectedView === 'fused'
+    selectedView === "fused"
       ? results.fused_regions || []
       : selectedAnalyzer
-      ? results.analyzer_results
-          .find((r) => r.analyzer_name === selectedAnalyzer)
-          ?.regions || []
-      : []
+        ? results.analyzer_results.find(
+            (r) => r.analyzer_name === selectedAnalyzer
+          )?.regions || []
+        : [];
 
   // Calculate total grid cells
   const totalGridCells = regionsToDisplay.reduce((sum, region) => {
-    return sum + (region.grid_metadata?.cells.length || 0)
-  }, 0)
+    return sum + (region.grid_metadata?.cells.length || 0);
+  }, 0);
 
   return (
     <div className="space-y-4">
@@ -129,7 +136,9 @@ export function RegionAnalysisResults({
                   0
                 )}
               </div>
-              <div className="text-xs text-muted-foreground">Total Detections</div>
+              <div className="text-xs text-muted-foreground">
+                Total Detections
+              </div>
             </div>
             <div>
               <div className="text-2xl font-bold">
@@ -139,9 +148,11 @@ export function RegionAnalysisResults({
             </div>
             <div>
               <div className="text-2xl font-bold">
-                {results.fusion_stats?.avg_confidence.toFixed(2) || 'N/A'}
+                {results.fusion_stats?.avg_confidence.toFixed(2) || "N/A"}
               </div>
-              <div className="text-xs text-muted-foreground">Avg Confidence</div>
+              <div className="text-xs text-muted-foreground">
+                Avg Confidence
+              </div>
             </div>
             <div>
               <div className="text-2xl font-bold">
@@ -176,7 +187,9 @@ export function RegionAnalysisResults({
               <div className="flex gap-2">
                 <Select
                   value={selectedView}
-                  onValueChange={(v: 'fused' | 'individual') => setSelectedView(v)}
+                  onValueChange={(v: "fused" | "individual") =>
+                    setSelectedView(v)
+                  }
                 >
                   <SelectTrigger className="w-40">
                     <SelectValue />
@@ -224,21 +237,17 @@ export function RegionAnalysisResults({
                 >
                   Zoom -
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setZoom(1)}
-                >
+                <Button variant="outline" size="sm" onClick={() => setZoom(1)}>
                   Reset
                 </Button>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            {selectedView === 'individual' && (
+            {selectedView === "individual" && (
               <div className="mb-4">
                 <Select
-                  value={selectedAnalyzer || ''}
+                  value={selectedAnalyzer || ""}
                   onValueChange={setSelectedAnalyzer}
                 >
                   <SelectTrigger>
@@ -246,7 +255,10 @@ export function RegionAnalysisResults({
                   </SelectTrigger>
                   <SelectContent>
                     {results.analyzer_results.map((result) => (
-                      <SelectItem key={result.analyzer_name} value={result.analyzer_name}>
+                      <SelectItem
+                        key={result.analyzer_name}
+                        value={result.analyzer_name}
+                      >
                         {result.analyzer_name} ({result.regions.length} regions)
                       </SelectItem>
                     ))}
@@ -257,7 +269,13 @@ export function RegionAnalysisResults({
 
             <div className="relative border rounded-lg overflow-auto bg-muted">
               {imageUrl ? (
-                <div className="relative inline-block" style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
+                <div
+                  className="relative inline-block"
+                  style={{
+                    transform: `scale(${zoom})`,
+                    transformOrigin: "top left",
+                  }}
+                >
                   <img
                     src={imageUrl}
                     alt="Region analysis visualization"
@@ -273,89 +291,110 @@ export function RegionAnalysisResults({
                     viewBox={`0 0 ${imageWidth} ${imageHeight}`}
                     preserveAspectRatio="xMidYMid meet"
                   >
-                    {selectedView === 'fused' &&
-                      (results.fused_regions || []).map((region, regionIndex) => {
-                        const color = getColorForSource(
-                          region.sources[0],
-                          regionIndex
-                        )
-                        const hasGrid = region.grid_metadata && region.grid_metadata.cells.length > 0
+                    {selectedView === "fused" &&
+                      (results.fused_regions || []).map(
+                        (region, regionIndex) => {
+                          const color = getColorForSource(
+                            region.sources[0] ?? "",
+                            regionIndex
+                          );
+                          const hasGrid =
+                            region.grid_metadata &&
+                            region.grid_metadata.cells.length > 0;
 
-                        return (
-                          <g key={regionIndex}>
-                            {/* Region bounding box */}
-                            <rect
-                              x={region.bounding_box.x}
-                              y={region.bounding_box.y}
-                              width={region.bounding_box.width}
-                              height={region.bounding_box.height}
-                              fill="none"
-                              stroke={color}
-                              strokeWidth="4"
-                              opacity="0.9"
-                            />
+                          return (
+                            <g key={regionIndex}>
+                              {/* Region bounding box */}
+                              <rect
+                                x={region.bounding_box.x}
+                                y={region.bounding_box.y}
+                                width={region.bounding_box.width}
+                                height={region.bounding_box.height}
+                                fill="none"
+                                stroke={color}
+                                strokeWidth="4"
+                                opacity="0.9"
+                              />
 
-                            {/* Region label */}
-                            <text
-                              x={region.bounding_box.x + 5}
-                              y={region.bounding_box.y + 25}
-                              fill={color}
-                              fontSize="16"
-                              fontWeight="bold"
-                              style={{
-                                textShadow: '0 0 4px black, 0 0 4px black',
-                              }}
-                            >
-                              {region.label || region.region_type || `R${regionIndex + 1}`}
-                              {hasGrid && ` (${region.grid_metadata!.rows}×${region.grid_metadata!.cols})`}
-                            </text>
+                              {/* Region label */}
+                              <text
+                                x={region.bounding_box.x + 5}
+                                y={region.bounding_box.y + 25}
+                                fill={color}
+                                fontSize="16"
+                                fontWeight="bold"
+                                style={{
+                                  textShadow: "0 0 4px black, 0 0 4px black",
+                                }}
+                              >
+                                {region.label ||
+                                  region.region_type ||
+                                  `R${regionIndex + 1}`}
+                                {hasGrid &&
+                                  ` (${region.grid_metadata!.rows}×${region.grid_metadata!.cols})`}
+                              </text>
 
-                            {/* Grid cells if available */}
-                            {showGridCells && hasGrid && region.grid_metadata!.cells.map((cell, cellIndex) => (
-                              <g key={cellIndex}>
-                                <rect
-                                  x={cell.bounding_box.x}
-                                  y={cell.bounding_box.y}
-                                  width={cell.bounding_box.width}
-                                  height={cell.bounding_box.height}
-                                  fill="none"
-                                  stroke={color}
-                                  strokeWidth="2"
-                                  strokeDasharray="4,4"
-                                  opacity="0.6"
-                                />
+                              {/* Grid cells if available */}
+                              {showGridCells &&
+                                hasGrid &&
+                                region.grid_metadata!.cells.map(
+                                  (cell, cellIndex) => (
+                                    <g key={cellIndex}>
+                                      <rect
+                                        x={cell.bounding_box.x}
+                                        y={cell.bounding_box.y}
+                                        width={cell.bounding_box.width}
+                                        height={cell.bounding_box.height}
+                                        fill="none"
+                                        stroke={color}
+                                        strokeWidth="2"
+                                        strokeDasharray="4,4"
+                                        opacity="0.6"
+                                      />
 
-                                {/* Cell numbers */}
-                                {showCellNumbers && (
-                                  <text
-                                    x={cell.bounding_box.x + cell.bounding_box.width / 2}
-                                    y={cell.bounding_box.y + cell.bounding_box.height / 2 + 5}
-                                    fill={color}
-                                    fontSize="12"
-                                    fontWeight="bold"
-                                    textAnchor="middle"
-                                    style={{
-                                      textShadow: '0 0 3px black, 0 0 3px black',
-                                    }}
-                                  >
-                                    [{cell.row},{cell.col}]
-                                  </text>
+                                      {/* Cell numbers */}
+                                      {showCellNumbers && (
+                                        <text
+                                          x={
+                                            cell.bounding_box.x +
+                                            cell.bounding_box.width / 2
+                                          }
+                                          y={
+                                            cell.bounding_box.y +
+                                            cell.bounding_box.height / 2 +
+                                            5
+                                          }
+                                          fill={color}
+                                          fontSize="12"
+                                          fontWeight="bold"
+                                          textAnchor="middle"
+                                          style={{
+                                            textShadow:
+                                              "0 0 3px black, 0 0 3px black",
+                                          }}
+                                        >
+                                          [{cell.row},{cell.col}]
+                                        </text>
+                                      )}
+                                    </g>
+                                  )
                                 )}
-                              </g>
-                            ))}
-                          </g>
-                        )
-                      })}
+                            </g>
+                          );
+                        }
+                      )}
 
-                    {selectedView === 'individual' &&
+                    {selectedView === "individual" &&
                       selectedAnalyzer &&
                       (
                         results.analyzer_results.find(
                           (r) => r.analyzer_name === selectedAnalyzer
                         )?.regions || []
                       ).map((region, regionIndex) => {
-                        const color = '#3b82f6'
-                        const hasGrid = region.grid_metadata && region.grid_metadata.cells.length > 0
+                        const color = "#3b82f6";
+                        const hasGrid =
+                          region.grid_metadata &&
+                          region.grid_metadata.cells.length > 0;
 
                         return (
                           <g key={regionIndex}>
@@ -379,48 +418,63 @@ export function RegionAnalysisResults({
                               fontSize="14"
                               fontWeight="bold"
                               style={{
-                                textShadow: '0 0 3px black, 0 0 3px black',
+                                textShadow: "0 0 3px black, 0 0 3px black",
                               }}
                             >
-                              {region.label || region.region_type || `R${regionIndex + 1}`}
-                              {hasGrid && ` (${region.grid_metadata!.rows}×${region.grid_metadata!.cols})`}
+                              {region.label ||
+                                region.region_type ||
+                                `R${regionIndex + 1}`}
+                              {hasGrid &&
+                                ` (${region.grid_metadata!.rows}×${region.grid_metadata!.cols})`}
                             </text>
 
                             {/* Grid cells if available */}
-                            {showGridCells && hasGrid && region.grid_metadata!.cells.map((cell, cellIndex) => (
-                              <g key={cellIndex}>
-                                <rect
-                                  x={cell.bounding_box.x}
-                                  y={cell.bounding_box.y}
-                                  width={cell.bounding_box.width}
-                                  height={cell.bounding_box.height}
-                                  fill="none"
-                                  stroke={color}
-                                  strokeWidth="1.5"
-                                  strokeDasharray="3,3"
-                                  opacity="0.5"
-                                />
+                            {showGridCells &&
+                              hasGrid &&
+                              region.grid_metadata!.cells.map(
+                                (cell, cellIndex) => (
+                                  <g key={cellIndex}>
+                                    <rect
+                                      x={cell.bounding_box.x}
+                                      y={cell.bounding_box.y}
+                                      width={cell.bounding_box.width}
+                                      height={cell.bounding_box.height}
+                                      fill="none"
+                                      stroke={color}
+                                      strokeWidth="1.5"
+                                      strokeDasharray="3,3"
+                                      opacity="0.5"
+                                    />
 
-                                {/* Cell numbers */}
-                                {showCellNumbers && (
-                                  <text
-                                    x={cell.bounding_box.x + cell.bounding_box.width / 2}
-                                    y={cell.bounding_box.y + cell.bounding_box.height / 2 + 4}
-                                    fill={color}
-                                    fontSize="10"
-                                    fontWeight="bold"
-                                    textAnchor="middle"
-                                    style={{
-                                      textShadow: '0 0 2px black, 0 0 2px black',
-                                    }}
-                                  >
-                                    [{cell.row},{cell.col}]
-                                  </text>
-                                )}
-                              </g>
-                            ))}
+                                    {/* Cell numbers */}
+                                    {showCellNumbers && (
+                                      <text
+                                        x={
+                                          cell.bounding_box.x +
+                                          cell.bounding_box.width / 2
+                                        }
+                                        y={
+                                          cell.bounding_box.y +
+                                          cell.bounding_box.height / 2 +
+                                          4
+                                        }
+                                        fill={color}
+                                        fontSize="10"
+                                        fontWeight="bold"
+                                        textAnchor="middle"
+                                        style={{
+                                          textShadow:
+                                            "0 0 2px black, 0 0 2px black",
+                                        }}
+                                      >
+                                        [{cell.row},{cell.col}]
+                                      </text>
+                                    )}
+                                  </g>
+                                )
+                              )}
                           </g>
-                        )
+                        );
                       })}
                   </svg>
                 </div>
@@ -434,41 +488,44 @@ export function RegionAnalysisResults({
               )}
             </div>
 
-            {selectedView === 'fused' && (results.fused_regions?.length || 0) > 0 && (
-              <div className="mt-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Layers className="h-4 w-4" />
-                  <span className="text-sm font-medium">Sources</span>
+            {selectedView === "fused" &&
+              (results.fused_regions?.length || 0) > 0 && (
+                <div className="mt-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Layers className="h-4 w-4" />
+                    <span className="text-sm font-medium">Sources</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from(
+                      new Set(
+                        results.fused_regions?.flatMap((r) => r.sources) || []
+                      )
+                    ).map((source, index) => (
+                      <Badge
+                        key={source}
+                        variant={
+                          visibleSources.has(source) ? "default" : "outline"
+                        }
+                        className="cursor-pointer"
+                        onClick={() => toggleSource(source)}
+                        style={{
+                          borderColor: getColorForSource(source, index),
+                          backgroundColor: visibleSources.has(source)
+                            ? getColorForSource(source, index)
+                            : "transparent",
+                        }}
+                      >
+                        {visibleSources.has(source) ? (
+                          <Eye className="mr-1 h-3 w-3" />
+                        ) : (
+                          <EyeOff className="mr-1 h-3 w-3" />
+                        )}
+                        {source}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {Array.from(
-                    new Set(
-                      results.fused_regions?.flatMap((r) => r.sources) || []
-                    )
-                  ).map((source, index) => (
-                    <Badge
-                      key={source}
-                      variant={visibleSources.has(source) ? 'default' : 'outline'}
-                      className="cursor-pointer"
-                      onClick={() => toggleSource(source)}
-                      style={{
-                        borderColor: getColorForSource(source, index),
-                        backgroundColor: visibleSources.has(source)
-                          ? getColorForSource(source, index)
-                          : 'transparent',
-                      }}
-                    >
-                      {visibleSources.has(source) ? (
-                        <Eye className="mr-1 h-3 w-3" />
-                      ) : (
-                        <EyeOff className="mr-1 h-3 w-3" />
-                      )}
-                      {source}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
+              )}
           </CardContent>
         </Card>
 
@@ -476,9 +533,7 @@ export function RegionAnalysisResults({
         <Card>
           <CardHeader>
             <CardTitle>Region Details</CardTitle>
-            <CardDescription>
-              Click a region to view details
-            </CardDescription>
+            <CardDescription>Click a region to view details</CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="list" className="w-full">
@@ -496,41 +551,52 @@ export function RegionAnalysisResults({
                   ) : (
                     <div className="space-y-2">
                       {regionsToDisplay.map((region, index) => {
-                        const isFused = 'votes' in region
-                        const hasGrid = region.grid_metadata && region.grid_metadata.cells.length > 0
+                        const isFused = "votes" in region;
+                        const hasGrid =
+                          region.grid_metadata &&
+                          region.grid_metadata.cells.length > 0;
                         return (
                           <button
                             key={index}
                             onClick={() => setSelectedRegion(region)}
                             className={`w-full text-left p-3 rounded border transition-colors ${
                               selectedRegion === region
-                                ? 'border-primary bg-accent'
-                                : 'border-border hover:bg-accent'
+                                ? "border-primary bg-accent"
+                                : "border-border hover:bg-accent"
                             }`}
                           >
                             <div className="flex items-start justify-between mb-1">
                               <div className="font-medium flex items-center gap-2">
-                                {region.label || region.region_type || `Region ${index + 1}`}
+                                {region.label ||
+                                  region.region_type ||
+                                  `Region ${index + 1}`}
                                 {hasGrid && (
-                                  <Badge variant="secondary" className="text-xs">
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs"
+                                  >
                                     <Grid3x3 className="h-3 w-3 mr-1" />
-                                    {region.grid_metadata!.rows}×{region.grid_metadata!.cols}
+                                    {region.grid_metadata!.rows}×
+                                    {region.grid_metadata!.cols}
                                   </Badge>
                                 )}
                               </div>
                               <div className="flex items-center gap-1">
                                 {isFused && (
-                                  <Badge variant="secondary" className="text-xs">
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs"
+                                  >
                                     {(region as FusedRegion).votes} votes
                                   </Badge>
                                 )}
                                 <Badge
                                   variant={
                                     region.confidence > 0.7
-                                      ? 'default'
+                                      ? "default"
                                       : region.confidence > 0.4
-                                      ? 'secondary'
-                                      : 'outline'
+                                        ? "secondary"
+                                        : "outline"
                                   }
                                   className="text-xs"
                                 >
@@ -540,26 +606,30 @@ export function RegionAnalysisResults({
                             </div>
 
                             <div className="text-xs text-muted-foreground">
-                              {Math.round(region.bounding_box.width)} ×{' '}
+                              {Math.round(region.bounding_box.width)} ×{" "}
                               {Math.round(region.bounding_box.height)}px
-                              {hasGrid && ` • ${region.grid_metadata!.cells.length} cells`}
+                              {hasGrid &&
+                                ` • ${region.grid_metadata!.cells.length} cells`}
                             </div>
 
-                            {isFused && (region as FusedRegion).sources.length > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {(region as FusedRegion).sources.map((source) => (
-                                  <Badge
-                                    key={source}
-                                    variant="outline"
-                                    className="text-xs"
-                                  >
-                                    {source}
-                                  </Badge>
-                                ))}
-                              </div>
-                            )}
+                            {isFused &&
+                              (region as FusedRegion).sources.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {(region as FusedRegion).sources.map(
+                                    (source) => (
+                                      <Badge
+                                        key={source}
+                                        variant="outline"
+                                        className="text-xs"
+                                      >
+                                        {source}
+                                      </Badge>
+                                    )
+                                  )}
+                                </div>
+                              )}
                           </button>
-                        )
+                        );
                       })}
                     </div>
                   )}
@@ -568,7 +638,9 @@ export function RegionAnalysisResults({
 
               <TabsContent value="stats" className="space-y-3">
                 <div className="space-y-2">
-                  <div className="text-sm font-medium">Per-Analyzer Results</div>
+                  <div className="text-sm font-medium">
+                    Per-Analyzer Results
+                  </div>
                   {results.analyzer_results.map((result) => (
                     <div
                       key={result.analyzer_name}
@@ -576,7 +648,9 @@ export function RegionAnalysisResults({
                     >
                       <div className="text-sm">{result.analyzer_name}</div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="secondary">{result.regions.length}</Badge>
+                        <Badge variant="secondary">
+                          {result.regions.length}
+                        </Badge>
                         <Badge variant="outline">
                           {(result.confidence * 100).toFixed(0)}%
                         </Badge>
@@ -591,13 +665,17 @@ export function RegionAnalysisResults({
                   <div className="text-sm font-medium">Grid Statistics</div>
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Total Grids</span>
+                      <span className="text-sm text-muted-foreground">
+                        Total Grids
+                      </span>
                       <Badge variant="outline">
-                        {regionsToDisplay.filter(r => r.grid_metadata).length}
+                        {regionsToDisplay.filter((r) => r.grid_metadata).length}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Total Cells</span>
+                      <span className="text-sm text-muted-foreground">
+                        Total Cells
+                      </span>
                       <Badge variant="outline">{totalGridCells}</Badge>
                     </div>
                   </div>
@@ -606,20 +684,30 @@ export function RegionAnalysisResults({
                 <Separator />
 
                 <div className="space-y-2">
-                  <div className="text-sm font-medium">Confidence Distribution</div>
-                  {['High (>70%)', 'Medium (40-70%)', 'Low (<40%)'].map((range, i) => {
-                    const count = regionsToDisplay.filter((r) => {
-                      if (i === 0) return r.confidence > 0.7
-                      if (i === 1) return r.confidence >= 0.4 && r.confidence <= 0.7
-                      return r.confidence < 0.4
-                    }).length
-                    return (
-                      <div key={range} className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">{range}</span>
-                        <Badge variant="outline">{count}</Badge>
-                      </div>
-                    )
-                  })}
+                  <div className="text-sm font-medium">
+                    Confidence Distribution
+                  </div>
+                  {["High (>70%)", "Medium (40-70%)", "Low (<40%)"].map(
+                    (range, i) => {
+                      const count = regionsToDisplay.filter((r) => {
+                        if (i === 0) return r.confidence > 0.7;
+                        if (i === 1)
+                          return r.confidence >= 0.4 && r.confidence <= 0.7;
+                        return r.confidence < 0.4;
+                      }).length;
+                      return (
+                        <div
+                          key={range}
+                          className="flex items-center justify-between"
+                        >
+                          <span className="text-sm text-muted-foreground">
+                            {range}
+                          </span>
+                          <Badge variant="outline">{count}</Badge>
+                        </div>
+                      );
+                    }
+                  )}
                 </div>
               </TabsContent>
             </Tabs>
@@ -642,13 +730,13 @@ export function RegionAnalysisResults({
                 <div>
                   <div className="text-sm font-medium">Label</div>
                   <div className="text-sm text-muted-foreground">
-                    {selectedRegion.label || 'N/A'}
+                    {selectedRegion.label || "N/A"}
                   </div>
                 </div>
                 <div>
                   <div className="text-sm font-medium">Type</div>
                   <div className="text-sm text-muted-foreground">
-                    {selectedRegion.region_type || 'N/A'}
+                    {selectedRegion.region_type || "N/A"}
                   </div>
                 </div>
                 <div>
@@ -660,14 +748,14 @@ export function RegionAnalysisResults({
                 <div>
                   <div className="text-sm font-medium">Position</div>
                   <div className="text-sm text-muted-foreground">
-                    ({Math.round(selectedRegion.bounding_box.x)},{' '}
+                    ({Math.round(selectedRegion.bounding_box.x)},{" "}
                     {Math.round(selectedRegion.bounding_box.y)})
                   </div>
                 </div>
                 <div>
                   <div className="text-sm font-medium">Size</div>
                   <div className="text-sm text-muted-foreground">
-                    {Math.round(selectedRegion.bounding_box.width)} ×{' '}
+                    {Math.round(selectedRegion.bounding_box.width)} ×{" "}
                     {Math.round(selectedRegion.bounding_box.height)}px
                   </div>
                 </div>
@@ -677,7 +765,7 @@ export function RegionAnalysisResults({
                     {Math.round(
                       selectedRegion.bounding_box.width *
                         selectedRegion.bounding_box.height
-                    )}{' '}
+                    )}{" "}
                     px²
                   </div>
                 </div>
@@ -696,7 +784,8 @@ export function RegionAnalysisResults({
                       <div>
                         <div className="text-sm font-medium">Grid Size</div>
                         <div className="text-sm text-muted-foreground">
-                          {selectedRegion.grid_metadata.rows} rows × {selectedRegion.grid_metadata.cols} columns
+                          {selectedRegion.grid_metadata.rows} rows ×{" "}
+                          {selectedRegion.grid_metadata.cols} columns
                         </div>
                       </div>
                       <div>
@@ -708,16 +797,26 @@ export function RegionAnalysisResults({
                       <div>
                         <div className="text-sm font-medium">Cell Size</div>
                         <div className="text-sm text-muted-foreground">
-                          {Math.round(selectedRegion.grid_metadata.cell_width)} ×{' '}
-                          {Math.round(selectedRegion.grid_metadata.cell_height)}px
+                          {Math.round(selectedRegion.grid_metadata.cell_width)}{" "}
+                          ×{" "}
+                          {Math.round(selectedRegion.grid_metadata.cell_height)}
+                          px
                         </div>
                       </div>
-                      {selectedRegion.grid_metadata.horizontal_spacing !== undefined && (
+                      {selectedRegion.grid_metadata.horizontal_spacing !==
+                        undefined && (
                         <div>
                           <div className="text-sm font-medium">Spacing</div>
                           <div className="text-sm text-muted-foreground">
-                            H: {Math.round(selectedRegion.grid_metadata.horizontal_spacing)}px,{' '}
-                            V: {Math.round(selectedRegion.grid_metadata.vertical_spacing || 0)}px
+                            H:{" "}
+                            {Math.round(
+                              selectedRegion.grid_metadata.horizontal_spacing
+                            )}
+                            px, V:{" "}
+                            {Math.round(
+                              selectedRegion.grid_metadata.vertical_spacing || 0
+                            )}
+                            px
                           </div>
                         </div>
                       )}
@@ -726,17 +825,24 @@ export function RegionAnalysisResults({
                 </>
               )}
 
-              {'votes' in selectedRegion && (
+              {"votes" in selectedRegion && (
                 <>
                   <Separator />
                   <div>
-                    <div className="text-sm font-medium mb-2">Source Confidences</div>
+                    <div className="text-sm font-medium mb-2">
+                      Source Confidences
+                    </div>
                     <div className="space-y-1">
                       {Object.entries(
                         (selectedRegion as FusedRegion).source_confidences
                       ).map(([source, conf]) => (
-                        <div key={source} className="flex items-center justify-between">
-                          <span className="text-sm text-muted-foreground">{source}</span>
+                        <div
+                          key={source}
+                          className="flex items-center justify-between"
+                        >
+                          <span className="text-sm text-muted-foreground">
+                            {source}
+                          </span>
                           <Badge variant="outline">
                             {(conf * 100).toFixed(0)}%
                           </Badge>
@@ -764,5 +870,5 @@ export function RegionAnalysisResults({
         </Card>
       )}
     </div>
-  )
+  );
 }

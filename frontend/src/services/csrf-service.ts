@@ -33,7 +33,7 @@ export class CsrfService {
    */
   private initialize(): void {
     // Skip initialization in server-side rendering
-    if (typeof window === 'undefined') {
+    if (typeof window === "undefined") {
       return;
     }
 
@@ -41,17 +41,17 @@ export class CsrfService {
       // First, try to get token from meta tag
       const metaTag = document.querySelector('meta[name="csrf-token"]');
       if (metaTag) {
-        this.csrfToken = metaTag.getAttribute('content');
+        this.csrfToken = metaTag.getAttribute("content");
         return;
       }
 
       // Fallback to parsing from cookies
       const match = document.cookie.match(/csrf_token=([^;]+)/);
       if (match) {
-        this.csrfToken = match[1];
+        this.csrfToken = match[1] ?? null;
       }
     } catch (error) {
-      console.warn('Failed to initialize CSRF token:', error);
+      console.warn("Failed to initialize CSRF token:", error);
     }
   }
 

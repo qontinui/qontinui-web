@@ -10,7 +10,7 @@ Uses morphological operations to identify isolated content regions.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -61,7 +61,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Whitespace detection
             "background_threshold": 240,  # Brightness threshold for background
@@ -118,7 +118,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -127,8 +127,8 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         return images
 
     async def _analyze_screenshot(
-        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, img: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Analyze single screenshot for isolated elements"""
 
         # Create content map
@@ -184,7 +184,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         return elements
 
     def _create_content_map(
-        self, img: np.ndarray, params: Dict[str, Any]
+        self, img: np.ndarray, params: dict[str, Any]
     ) -> np.ndarray:
         """
         Create binary map of content vs. whitespace
@@ -215,8 +215,8 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         return content_map.astype(bool)
 
     def _find_content_islands(
-        self, content_map: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float]]:
+        self, content_map: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float]]:
         """
         Find isolated regions of content ("islands")
 
@@ -235,7 +235,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
             y = stats[label, cv2.CC_STAT_TOP]
             w = stats[label, cv2.CC_STAT_WIDTH]
             h = stats[label, cv2.CC_STAT_HEIGHT]
-            area = stats[label, cv2.CC_STAT_AREA]
+            stats[label, cv2.CC_STAT_AREA]
 
             # Size filter
             if not (params["min_area"] <= w * h <= params["max_area"]):
@@ -268,7 +268,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         y: int,
         w: int,
         h: int,
-        params: Dict[str, Any],
+        params: dict[str, Any],
     ) -> float:
         """
         Calculate how isolated an element is from surrounding content
@@ -302,15 +302,15 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
 
         isolation_score = whitespace_surrounding / total_surrounding
 
-        return isolation_score
+        return float(isolation_score)
 
     def _calculate_padding(
         self,
         img: np.ndarray,
         bbox: BoundingBox,
         content_map: np.ndarray,
-        params: Dict[str, Any],
-    ) -> Tuple[float, float]:
+        params: dict[str, Any],
+    ) -> tuple[float, float] | None:
         """
         Calculate padding around element and padding consistency score
 
@@ -345,16 +345,18 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
 
         # Padding consistency: low std = consistent padding
         # Normalize std by average to get consistency score
+        consistency: float
         if avg_padding > 0:
-            consistency = max(0, 1 - (std_padding / avg_padding))
+            consistency_val = 1 - (std_padding / avg_padding)
+            consistency = max(0.0, float(consistency_val))
         else:
-            consistency = 0
+            consistency = 0.0
 
         # Require minimum consistency
         if consistency < params["padding_consistency"]:
             return None
 
-        return (consistency, avg_padding)
+        return (consistency, float(avg_padding))
 
     def _measure_padding_direction(
         self,
@@ -364,8 +366,8 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         w: int,
         h: int,
         direction: str,
-        params: Dict[str, Any],
-    ) -> float:
+        params: dict[str, Any],
+    ) -> float | None:
         """
         Measure padding in a specific direction
 
@@ -382,7 +384,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
             # Find first row with content (from top)
             row_has_content = np.any(search_region, axis=1)
             if not np.any(row_has_content):
-                return max_search  # No content found = max padding
+                return float(max_search)  # No content found = max padding
 
             first_content = np.where(row_has_content)[0][-1]  # Last occurrence
             padding = y - (search_start + first_content)
@@ -395,7 +397,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
 
             row_has_content = np.any(search_region, axis=1)
             if not np.any(row_has_content):
-                return max_search
+                return float(max_search)
 
             first_content = np.where(row_has_content)[0][0]
             padding = first_content
@@ -408,7 +410,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
 
             col_has_content = np.any(search_region, axis=0)
             if not np.any(col_has_content):
-                return max_search
+                return float(max_search)
 
             first_content = np.where(col_has_content)[0][-1]
             padding = x - (search_start + first_content)
@@ -421,7 +423,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
 
             col_has_content = np.any(search_region, axis=0)
             if not np.any(col_has_content):
-                return max_search
+                return float(max_search)
 
             first_content = np.where(col_has_content)[0][0]
             padding = first_content
@@ -429,10 +431,10 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         else:
             return None
 
-        return max(0, padding)
+        return float(max(0, padding))
 
     def _is_button_like(
-        self, img: np.ndarray, bbox: BoundingBox, params: Dict[str, Any]
+        self, img: np.ndarray, bbox: BoundingBox, params: dict[str, Any]
     ) -> bool:
         """
         Validate that region has button-like visual properties
@@ -469,7 +471,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         isolation_score: float,
         padding_score: float,
         avg_padding: float,
-        params: Dict[str, Any],
+        params: dict[str, Any],
     ) -> float:
         """
         Calculate final confidence based on isolation and padding metrics

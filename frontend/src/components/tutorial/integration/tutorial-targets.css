@@ -1,0 +1,167 @@
+/**
+ * Tutorial Target Styles
+ *
+ * CSS classes for tutorial target highlighting and animations.
+ * Import this file in your main application CSS or component.
+ */
+
+/* Base tutorial target class */
+.tutorial-target {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+/* Active tutorial target - being highlighted */
+.tutorial-target-active {
+  position: relative;
+  z-index: 1000;
+  animation: tutorial-glow 2s ease-in-out infinite;
+}
+
+/* Spotlight highlight - circular glow */
+.tutorial-target-spotlight {
+  box-shadow:
+    0 0 0 4px rgba(59, 130, 246, 0.5),
+    0 0 0 8px rgba(59, 130, 246, 0.3),
+    0 0 20px rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+}
+
+/* Border highlight - solid border */
+.tutorial-target-border {
+  border: 3px solid rgb(59, 130, 246);
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+}
+
+/* Pulse animation highlight */
+.tutorial-target-pulse {
+  animation: tutorial-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Arrow indicator (positioned absolutely) */
+.tutorial-target-arrow::before {
+  content: "";
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 15px solid transparent;
+  border-right: 15px solid transparent;
+  border-top: 20px solid rgb(59, 130, 246);
+  animation: tutorial-bounce 1s ease-in-out infinite;
+}
+
+/* Current target being focused */
+.tutorial-target-current {
+  outline: 2px solid rgb(59, 130, 246);
+  outline-offset: 4px;
+}
+
+/* Overlay backdrop for contextual tutorials */
+.tutorial-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  pointer-events: none;
+}
+
+/* Cutout area for highlighted element */
+.tutorial-cutout {
+  position: absolute;
+  background-color: transparent;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  pointer-events: auto;
+  transition: all 0.3s ease;
+}
+
+/* ============================================================================
+ * Animations
+ * ========================================================================== */
+
+@keyframes tutorial-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 5px rgba(59, 130, 246, 0.4),
+      0 0 10px rgba(59, 130, 246, 0.3),
+      0 0 15px rgba(59, 130, 246, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 10px rgba(59, 130, 246, 0.6),
+      0 0 20px rgba(59, 130, 246, 0.4),
+      0 0 30px rgba(59, 130, 246, 0.3);
+  }
+}
+
+@keyframes tutorial-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes tutorial-bounce {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-10px);
+  }
+}
+
+/* ============================================================================
+ * Accessibility
+ * ========================================================================== */
+
+/* Ensure targets are keyboard accessible */
+.tutorial-target:focus-visible {
+  outline: 2px solid rgb(59, 130, 246);
+  outline-offset: 2px;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-target,
+  .tutorial-target-active,
+  .tutorial-target-pulse,
+  .tutorial-target-arrow::before,
+  .tutorial-cutout {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .tutorial-target-active {
+    box-shadow:
+      0 0 0 4px rgba(96, 165, 250, 0.5),
+      0 0 0 8px rgba(96, 165, 250, 0.3),
+      0 0 20px rgba(96, 165, 250, 0.2);
+  }
+
+  .tutorial-target-border {
+    border-color: rgb(96, 165, 250);
+    box-shadow: 0 0 10px rgba(96, 165, 250, 0.3);
+  }
+
+  .tutorial-target-arrow::before {
+    border-top-color: rgb(96, 165, 250);
+  }
+
+  .tutorial-target-current {
+    outline-color: rgb(96, 165, 250);
+  }
+}

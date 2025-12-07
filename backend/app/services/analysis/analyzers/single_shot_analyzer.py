@@ -7,7 +7,7 @@ Can work with ML models like YOLO, Faster R-CNN, or classical CV techniques.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any, TypedDict
 
 import numpy as np
 from PIL import Image
@@ -20,6 +20,15 @@ from ..base import (
     BoundingBox,
     DetectedElement,
 )
+
+
+class DetectionDict(TypedDict):
+    """Type for mock ML detections."""
+
+    bbox: BoundingBox
+    class_name: str
+    confidence: float
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +59,7 @@ class SingleShotAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "backend": "classical",  # "classical", "ml", or "hybrid"
             "confidence_threshold": 0.5,  # Minimum detection confidence
@@ -95,7 +104,7 @@ class SingleShotAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -104,8 +113,8 @@ class SingleShotAnalyzer(BaseAnalyzer):
         return images
 
     async def _analyze_screenshot(
-        self, image: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, image: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot"""
 
         backend = params["backend"]
@@ -124,8 +133,8 @@ class SingleShotAnalyzer(BaseAnalyzer):
             return await self._classical_cv_analysis(image, screenshot_idx, params)
 
     async def _classical_cv_analysis(
-        self, image: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, image: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """
         Classical computer vision analysis
 
@@ -190,8 +199,8 @@ class SingleShotAnalyzer(BaseAnalyzer):
         return elements
 
     async def _ml_analysis(
-        self, image: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, image: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """
         Machine learning-based analysis
 
@@ -213,15 +222,15 @@ class SingleShotAnalyzer(BaseAnalyzer):
         height, width = image.shape[:2]
 
         # Simulate ML model detecting various GUI elements
-        mock_detections = [
+        mock_detections: list[DetectionDict] = [
             {
                 "bbox": BoundingBox(x=50, y=50, width=100, height=40),
-                "class": "button",
+                "class_name": "button",
                 "confidence": 0.92,
             },
             {
                 "bbox": BoundingBox(x=200, y=100, width=150, height=30),
-                "class": "input",
+                "class_name": "input",
                 "confidence": 0.88,
             },
         ]
@@ -231,8 +240,8 @@ class SingleShotAnalyzer(BaseAnalyzer):
                 DetectedElement(
                     bounding_box=detection["bbox"],
                     confidence=detection["confidence"],
-                    label=detection["class"].title(),
-                    element_type=detection["class"],
+                    label=detection["class_name"].title(),
+                    element_type=detection["class_name"],
                     screenshot_index=screenshot_idx,
                     metadata={
                         "method": "ml",
@@ -243,7 +252,7 @@ class SingleShotAnalyzer(BaseAnalyzer):
 
         return elements
 
-    def _detect_buttons_cv(self, image: np.ndarray) -> List[BoundingBox]:
+    def _detect_buttons_cv(self, image: np.ndarray) -> list[BoundingBox]:
         """
         Detect buttons using classical CV
 
@@ -254,7 +263,7 @@ class SingleShotAnalyzer(BaseAnalyzer):
             BoundingBox(x=100, y=100, width=80, height=30),
         ]
 
-    def _detect_inputs_cv(self, image: np.ndarray) -> List[BoundingBox]:
+    def _detect_inputs_cv(self, image: np.ndarray) -> list[BoundingBox]:
         """
         Detect input fields using classical CV
 
@@ -265,7 +274,7 @@ class SingleShotAnalyzer(BaseAnalyzer):
             BoundingBox(x=100, y=200, width=200, height=25),
         ]
 
-    def _detect_images_cv(self, image: np.ndarray) -> List[BoundingBox]:
+    def _detect_images_cv(self, image: np.ndarray) -> list[BoundingBox]:
         """
         Detect images/icons using classical CV
 

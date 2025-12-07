@@ -1,5 +1,5 @@
 """
-AutomationContext - Provides context and utilities for custom automation functions.
+AutomationContext - Facade providing context and utilities for custom automation functions.
 
 Available to custom functions via the 'context' parameter:
 
@@ -10,18 +10,27 @@ def my_function(input, context: AutomationContext):
     ...
 """
 
-import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+from app.services.action_executor import ActionExecutor
+from app.services.pattern_matcher import PatternMatcher
+from app.services.screenshot_capture import ScreenshotCapture
+from app.services.state_tracker import StateTracker
+from app.services.variable_store import VariableStore
 
 
 class AutomationContext:
     """
-    Provides context and utilities for custom automation functions.
+    Facade providing context and utilities for custom automation functions.
+
+    This class delegates to specialized services for different responsibilities:
+    - VariableStore: Variable and state management
+    - ActionExecutor: Action execution and history
+    - ScreenshotCapture: Screenshot operations
+    - PatternMatcher: Pattern matching delegation
+    - StateTracker: State tracking and logging
 
     Available methods and properties:
     - State management: get_state(), set_state()
@@ -35,11 +44,11 @@ class AutomationContext:
     def __init__(
         self,
         workflow_run_id: str,
-        workflow_id: Optional[str] = None,
-        db: Optional[AsyncSession] = None,
-        variables: Optional[Dict[str, Any]] = None,
-        action_history: Optional[List[Dict[str, Any]]] = None,
-        active_states: Optional[Set[str]] = None,
+        workflow_id: str | None = None,
+        db: AsyncSession | None = None,
+        variables: dict[str, Any] | None = None,
+        action_history: list[dict[str, Any]] | None = None,
+        active_states: set[str] | None = None,
     ):
         """
         Initialize automation context.
@@ -54,25 +63,30 @@ class AutomationContext:
         """
         self.workflow_run_id = workflow_run_id
         self._workflow_id = workflow_id
-        self._db = db
-        self._variables = variables or {}
-        self._action_history = action_history or []
-        self._active_states = active_states or set()
 
-        # In-memory state (for this run)
-        self._state: Dict[str, Any] = {}
-
-        # Persistent state (across runs) - would be loaded from DB
-        self._persistent_state: Dict[str, Any] = {}
-
-        # Debug breakpoints
-        self._breakpoints: List[Dict[str, Any]] = []
-
-        # Execution logs
-        self._logs: List[Dict[str, Any]] = []
+        # Initialize specialized services
+        self._variable_store = VariableStore(
+            workflow_run_id=workflow_run_id,
+            db=db,
+            variables=variables,
+        )
+        self._action_executor = ActionExecutor(
+            workflow_run_id=workflow_run_id,
+            action_history=action_history,
+        )
+        self._screenshot_capture = ScreenshotCapture(
+            workflow_run_id=workflow_run_id,
+        )
+        self._pattern_matcher = PatternMatcher(
+            workflow_run_id=workflow_run_id,
+        )
+        self._state_tracker = StateTracker(
+            workflow_run_id=workflow_run_id,
+            active_states=active_states,
+        )
 
     # ========================================================================
-    # State Management
+    # State Management (Delegates to VariableStore)
     # ========================================================================
 
     def get_state(self, key: str, default: Any = None) -> Any:
@@ -89,7 +103,7 @@ class AutomationContext:
         Returns:
             State value or default
         """
-        return self._state.get(key, default)
+        return self._variable_store.get_state(key, default)
 
     def set_state(self, key: str, value: Any) -> None:
         """
@@ -102,8 +116,7 @@ class AutomationContext:
             key: State variable name
             value: Value to store
         """
-        self._state[key] = value
-
+        self._variable_store.set_state(key, value)
         # Log state change
         self.log(f"State updated: {key} = {value}", level="debug")
 
@@ -123,8 +136,7 @@ class AutomationContext:
         Returns:
             Persistent state value or default
         """
-        # TODO: Load from database (workflow_variables table)
-        return self._persistent_state.get(key, default)
+        return self._variable_store.get_persistent(key, default)
 
     def set_persistent(self, key: str, value: Any) -> None:
         """
@@ -137,12 +149,7 @@ class AutomationContext:
             key: Persistent state variable name
             value: Value to store
         """
-        self._persistent_state[key] = value
-
-        # TODO: Save to database (workflow_variables table)
-        # This requires async, so we'd need to queue the write
-
-        self.log(f"Persistent state updated: {key} = {value}", level="debug")
+        self._variable_store.set_persistent(key, value)
 
     def get_active_states(self) -> frozenset[str]:
         """
@@ -156,10 +163,10 @@ class AutomationContext:
         Returns:
             Frozen set of active state names
         """
-        return frozenset(self._active_states)
+        return self._state_tracker.get_active_states()
 
     # ========================================================================
-    # Logging & Debugging
+    # Logging & Debugging (Delegates to StateTracker)
     # ========================================================================
 
     def log(self, message: str, level: str = "info") -> None:
@@ -174,21 +181,9 @@ class AutomationContext:
             message: Log message
             level: Log level (debug, info, warning, error)
         """
-        log_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "level": level,
-            "message": message,
-            "workflow_run_id": self.workflow_run_id,
-        }
+        self._state_tracker.log(message, level)
 
-        self._logs.append(log_entry)
-
-        # Also log to Python logger
-        logger.log(
-            getattr(logging, level.upper()), f"[{self.workflow_run_id}] {message}"
-        )
-
-    def debug_breakpoint(self, locals_dict: Dict[str, Any]) -> None:
+    def debug_breakpoint(self, locals_dict: dict[str, Any]) -> None:
         """
         Pause execution and show variables in UI (debugging).
 
@@ -199,24 +194,14 @@ class AutomationContext:
         Args:
             locals_dict: Local variables to inspect (use locals())
         """
-        breakpoint_data = {
-            "timestamp": datetime.now().isoformat(),
-            "workflow_run_id": self.workflow_run_id,
-            "locals": locals_dict,
-            "state": self._state.copy(),
-        }
-
-        self._breakpoints.append(breakpoint_data)
-        self.log("Debug breakpoint triggered", level="debug")
-
-        # TODO: Send to frontend via WebSocket for interactive debugging
+        self._state_tracker.debug_breakpoint(locals_dict)
 
     # ========================================================================
-    # Action History
+    # Action History (Delegates to ActionExecutor)
     # ========================================================================
 
     @property
-    def action_history(self) -> List[Dict[str, Any]]:
+    def action_history(self) -> list[dict[str, Any]]:
         """
         Get history of previous actions in workflow.
 
@@ -229,10 +214,10 @@ class AutomationContext:
         Returns:
             List of action result dictionaries
         """
-        return self._action_history
+        return self._action_executor.get_action_history()
 
     @property
-    def previous_result(self) -> Optional[Dict[str, Any]]:
+    def previous_result(self) -> dict[str, Any] | None:
         """
         Get result of previous action.
 
@@ -244,14 +229,14 @@ class AutomationContext:
         Returns:
             Previous action result dict, or None if no previous action
         """
-        return self._action_history[-1] if self._action_history else None
+        return self._action_executor.get_previous_result()
 
     # ========================================================================
     # Workflow Metadata
     # ========================================================================
 
     @property
-    def workflow_id(self) -> Optional[str]:
+    def workflow_id(self) -> str | None:
         """
         Current workflow ID.
 
@@ -271,7 +256,7 @@ class AutomationContext:
         return self.workflow_run_id
 
     @property
-    def variables(self) -> Dict[str, Any]:
+    def variables(self) -> dict[str, Any]:
         """
         Get all workflow variables.
 
@@ -281,10 +266,10 @@ class AutomationContext:
         Returns:
             Dictionary of workflow variables
         """
-        return self._variables
+        return self._variable_store.get_variables()
 
     # ========================================================================
-    # Screen/Display Info (Future Implementation)
+    # Screen/Display Info (Delegates to ScreenshotCapture)
     # ========================================================================
 
     @property
@@ -297,25 +282,23 @@ class AutomationContext:
         Returns:
             PIL Image object, or None if not available
         """
-        # TODO: Get screenshot from runner
-        return None
+        return self._screenshot_capture.get_current_screenshot()
 
     @property
-    def screen_size(self) -> Optional[tuple[int, int]]:
+    def screen_size(self) -> tuple[int, int] | None:
         """
         Get screen dimensions (width, height).
 
         Returns:
             Tuple of (width, height), or None if not available
         """
-        # TODO: Get from runner
-        return None
+        return self._screenshot_capture.get_screen_size()
 
     # ========================================================================
-    # Trigger GUI Actions from Code (Future Implementation)
+    # Trigger GUI Actions (Delegates to ActionExecutor & PatternMatcher)
     # ========================================================================
 
-    def click(self, x: int, y: int) -> Dict[str, Any]:
+    def click(self, x: int, y: int) -> dict[str, Any]:
         """
         Click at coordinates.
 
@@ -331,10 +314,9 @@ class AutomationContext:
         Returns:
             Action result dictionary
         """
-        # TODO: Send action to runner via WebSocket
-        raise NotImplementedError("GUI actions require runner integration")
+        return self._action_executor.click(x, y)
 
-    def find_pattern(self, image_path: str) -> Dict[str, Any]:
+    def find_pattern(self, image_path: str) -> dict[str, Any]:
         """
         Find pattern on screen.
 
@@ -349,27 +331,26 @@ class AutomationContext:
         Returns:
             Action result dictionary with match information
         """
-        # TODO: Call qontinui-api pattern matching
-        raise NotImplementedError("Pattern matching requires runner integration")
+        return self._pattern_matcher.find_pattern(image_path)
 
     # ========================================================================
-    # Internal Methods
+    # Internal Methods (For CodeExecutionService & WorkflowEngine)
     # ========================================================================
 
-    def _get_execution_logs(self) -> List[Dict[str, Any]]:
+    def _get_execution_logs(self) -> list[dict[str, Any]]:
         """Get all execution logs (for debugging)."""
-        return self._logs.copy()
+        return self._state_tracker.get_execution_logs()
 
-    def _get_breakpoints(self) -> List[Dict[str, Any]]:
+    def _get_breakpoints(self) -> list[dict[str, Any]]:
         """Get all breakpoints (for debugging)."""
-        return self._breakpoints.copy()
+        return self._state_tracker.get_breakpoints()
 
-    def _update_action_history(self, action_result: Dict[str, Any]) -> None:
+    def _update_action_history(self, action_result: dict[str, Any]) -> None:
         """Add new action to history (internal use)."""
-        self._action_history.append(action_result)
+        self._action_executor.update_action_history(action_result)
 
     def _clear_state(self) -> None:
         """Clear in-memory state (internal use)."""
-        self._state.clear()
-        self._logs.clear()
-        self._breakpoints.clear()
+        self._variable_store.clear_state()
+        self._state_tracker.clear_logs()
+        self._state_tracker.clear_breakpoints()

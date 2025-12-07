@@ -2,13 +2,12 @@
  * Linearizability checker - determines if a graph workflow can be converted to sequential format
  */
 
-import { Workflow, Connections, Action } from '../action-schema/action-types';
+import { Workflow } from "../action-schema/action-types";
 import {
   getEntryPoints,
-  getPreviousActions,
   getNextActions,
   hasCycles,
-} from '../action-schema/workflow-utils';
+} from "../action-schema/workflow-utils";
 
 /**
  * Result of linearizability check
@@ -29,6 +28,7 @@ export interface LinearizabilityResult {
    */
   details?: {
     entryPointCount: number;
+    branchingNodeCount: number;
     mergeNodeCount: number;
     parallelBranchCount: number;
     cycleCount: number;
@@ -46,20 +46,24 @@ export class LinearizabilityChecker {
     const issues: string[] = [];
     const details = {
       entryPointCount: 0,
+      branchingNodeCount: 0,
       mergeNodeCount: 0,
       parallelBranchCount: 0,
       cycleCount: 0,
     };
 
     // Graph workflows are always in graph format (no sequential format support)
-    if (workflow.format !== 'graph') {
-      issues.push('Workflow is not in graph format');
+    if (workflow.format !== "graph") {
+      issues.push("Workflow is not in graph format");
       return { linearizable: false, issues, details };
     }
 
     // Must have connections
-    if (!workflow.connections || Object.keys(workflow.connections).length === 0) {
-      issues.push('Graph workflow has no connections');
+    if (
+      !workflow.connections ||
+      Object.keys(workflow.connections).length === 0
+    ) {
+      issues.push("Graph workflow has no connections");
       return { linearizable: false, issues, details };
     }
 
@@ -67,39 +71,45 @@ export class LinearizabilityChecker {
     const entryPoints = getEntryPoints(workflow);
     details.entryPointCount = entryPoints.length;
     if (entryPoints.length === 0) {
-      issues.push('No entry points detected');
+      issues.push("No entry points detected");
     } else if (entryPoints.length > 1) {
       issues.push(
-        `Multiple entry points detected: ${entryPoints.join(', ')} (only one allowed)`
+        `Multiple entry points detected: ${entryPoints.join(", ")} (only one allowed)`
       );
     }
 
-    // Check 2: Merge nodes (actions with multiple inputs)
+    // Check 2: Branching nodes (actions with multiple outputs)
+    const branchingNodes = this.findBranchingNodes(workflow);
+    details.branchingNodeCount = branchingNodes.length;
+
+    // Check 3: Merge nodes (actions with multiple inputs)
     const mergeNodes = this.findMergeNodes(workflow);
     details.mergeNodeCount = mergeNodes.length;
     if (mergeNodes.length > 0) {
       issues.push(
-        `Merge nodes detected: ${mergeNodes.join(', ')} (multiple paths converge to same action)`
+        `Merge nodes detected: ${mergeNodes.join(", ")} (multiple paths converge to same action)`
       );
     }
 
-    // Check 3: Parallel execution
+    // Check 4: Parallel execution
     const parallelBranches = this.findParallelBranches(workflow);
     details.parallelBranchCount = parallelBranches.length;
     if (parallelBranches.length > 0) {
       issues.push(
-        `Parallel execution detected at actions: ${parallelBranches.join(', ')} (only sequential allowed)`
+        `Parallel execution detected at actions: ${parallelBranches.join(", ")} (only sequential allowed)`
       );
     }
 
-    // Check 4: Cycles (except valid LOOP back-edges)
+    // Check 5: Cycles (except valid LOOP back-edges)
     const cycles = this.detectNonLoopCycles(workflow);
     details.cycleCount = cycles.length;
     if (cycles.length > 0) {
-      issues.push(`Non-LOOP cycles detected: ${cycles.join(', ')} (circular dependencies)`);
+      issues.push(
+        `Non-LOOP cycles detected: ${cycles.join(", ")} (circular dependencies)`
+      );
     }
 
-    // Check 5: IF branches must eventually converge or terminate
+    // Check 6: IF branches must eventually converge or terminate
     const ifIssues = this.checkIfBranchStructure(workflow);
     issues.push(...ifIssues);
 
@@ -108,6 +118,37 @@ export class LinearizabilityChecker {
       issues,
       details,
     };
+  }
+
+  /**
+   * Find all branching nodes (actions with multiple outgoing connections)
+   */
+  private findBranchingNodes(workflow: Workflow): string[] {
+    if (!workflow.connections) {
+      return [];
+    }
+
+    const branchingNodes: string[] = [];
+
+    Object.entries(workflow.connections).forEach(([actionId, outputs]) => {
+      // Count total outputs across all output types
+      let outputCount = 0;
+      ["main", "error", "success", "parallel"].forEach((type) => {
+        const connections = outputs[type as keyof typeof outputs];
+        if (connections) {
+          connections.forEach((outputConnections) => {
+            outputCount += outputConnections.length;
+          });
+        }
+      });
+
+      // If action has more than one output, it's a branching node
+      if (outputCount > 1) {
+        branchingNodes.push(actionId);
+      }
+    });
+
+    return branchingNodes;
   }
 
   /**
@@ -122,7 +163,7 @@ export class LinearizabilityChecker {
 
     // Count incoming connections for each action
     Object.values(workflow.connections).forEach((outputs) => {
-      ['main', 'error', 'success', 'parallel'].forEach((type) => {
+      ["main", "error", "success", "parallel"].forEach((type) => {
         const connections = outputs[type as keyof typeof outputs];
         if (connections) {
           connections.forEach((outputConnections) => {
@@ -161,7 +202,7 @@ export class LinearizabilityChecker {
       if (outputs.main && outputs.main.length > 1) {
         // For IF/SWITCH, multiple outputs are expected
         const action = workflow.actions.find((a) => a.id === actionId);
-        if (action && !['IF', 'SWITCH', 'TRY_CATCH'].includes(action.type)) {
+        if (action && !["IF", "SWITCH", "TRY_CATCH"].includes(action.type)) {
           parallelActions.push(actionId);
         }
       }
@@ -180,7 +221,7 @@ export class LinearizabilityChecker {
     }
 
     // If there are cycles, we need to check if they're all valid LOOP back-edges
-    const loopActions = workflow.actions.filter((a) => a.type === 'LOOP');
+    const loopActions = workflow.actions.filter((a) => a.type === "LOOP");
 
     // For each cycle, check if it's a valid LOOP back-edge
     // For now, we'll use a simplified approach:
@@ -194,11 +235,14 @@ export class LinearizabilityChecker {
       // Check if this cycle is a valid LOOP back-edge
       const isValidLoop = loopActions.some((loopAction) => {
         // A valid LOOP cycle starts and ends at the same LOOP action
-        return cycle[0] === loopAction.id && cycle[cycle.length - 1] === loopAction.id;
+        return (
+          cycle[0] === loopAction.id &&
+          cycle[cycle.length - 1] === loopAction.id
+        );
       });
 
       if (!isValidLoop) {
-        invalidCycles.push(`cycle-${index + 1}(${cycle.join('->')})`);
+        invalidCycles.push(`cycle-${index + 1}(${cycle.join("->")})`);
       }
     });
 
@@ -248,7 +292,7 @@ export class LinearizabilityChecker {
    */
   private checkIfBranchStructure(workflow: Workflow): string[] {
     const issues: string[] = [];
-    const ifActions = workflow.actions.filter((a) => a.type === 'IF');
+    const ifActions = workflow.actions.filter((a) => a.type === "IF");
 
     if (!workflow.connections) {
       return issues;
@@ -275,7 +319,12 @@ export class LinearizabilityChecker {
       const trueBranch = connections.main[0];
       const falseBranch = connections.main[1];
 
-      if (trueBranch.length === 0 && falseBranch.length === 0) {
+      if (
+        trueBranch &&
+        falseBranch &&
+        trueBranch.length === 0 &&
+        falseBranch.length === 0
+      ) {
         issues.push(`IF action ${ifAction.id} has no outgoing connections`);
       }
     });

@@ -4,17 +4,17 @@ API endpoints for region analysis (inventory grids, minimaps, etc.)
 
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, cast
 from uuid import UUID
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_async_db, get_current_user_async
 from app.models.annotation import AnnotationSet
-from app.models.region_result import (
-    DetectedRegionModel,
-    FusedRegionModel,
-    RegionAnalysisJob,
-    RegionAnalyzerResult,
-)
+from app.models.region_result import FusedRegionModel, RegionAnalysisJob
 from app.models.user import User
 from app.schemas.region_analysis import (
     BoundingBoxSchema,
@@ -38,10 +38,6 @@ from app.services.region_analysis.orchestrator import (
     RegionOrchestrator,
     region_analyzer_registry,
 )
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +110,7 @@ async def run_region_analysis(
             raise HTTPException(status_code=403, detail="Access denied")
 
         # Get screenshots metadata
-        screenshots = annotation_set.screenshots or []
+        screenshots: list[Any] = annotation_set.screenshots or []
         if not screenshots:
             # Fall back to single screenshot mode
             screenshots = [
@@ -218,8 +214,8 @@ async def run_quick_region_analysis(
 
 @router.get("/jobs", response_model=RegionJobListResponse)
 async def list_region_analysis_jobs(
-    annotation_set_id: Optional[UUID] = None,
-    status: Optional[str] = None,
+    annotation_set_id: UUID | None = None,
+    status: str | None = None,
     page: int = 1,
     page_size: int = 20,
     db: AsyncSession = Depends(get_async_db),
@@ -254,7 +250,7 @@ async def list_region_analysis_jobs(
         # Count total
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await db.execute(count_query)
-        total = total_result.scalar()
+        total = total_result.scalar() or 0
 
         # Add pagination
         query = query.order_by(desc(RegionAnalysisJob.created_at))
@@ -303,47 +299,8 @@ async def get_region_analysis_job(
         if job.created_by_id != current_user.id and not current_user.is_superuser:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        # Convert to schema
-        job_dict = {
-            "id": job.id,
-            "annotation_set_id": job.annotation_set_id,
-            "analyzers_used": job.analyzers_used,
-            "parameters": job.parameters,
-            "fusion_enabled": bool(job.fusion_enabled),
-            "fusion_config": job.fusion_config,
-            "status": job.status,
-            "started_at": job.started_at,
-            "completed_at": job.completed_at,
-            "error_message": job.error_message,
-            "total_regions_found": job.total_regions_found,
-            "total_fused_regions": job.total_fused_regions,
-            "analyzer_statistics": job.analyzer_statistics,
-            "created_at": job.created_at,
-            "created_by_id": job.created_by_id,
-            "fused_regions": [
-                FusedRegionSchema(
-                    bounding_box=BoundingBoxSchema(
-                        x=region.x, y=region.y, width=region.width, height=region.height
-                    ),
-                    confidence=region.confidence,
-                    sources=region.sources,
-                    source_confidences=region.source_confidences,
-                    votes=region.votes,
-                    label=region.label,
-                    region_type=region.region_type,
-                    screenshot_index=region.screenshot_index,
-                    grid_metadata=(
-                        _convert_grid_metadata(region.grid_metadata)
-                        if region.grid_metadata
-                        else None
-                    ),
-                    metadata=region.region_metadata or {},
-                )
-                for region in job.fused_regions
-            ],
-        }
-
-        return RegionJobDetailSchema(**job_dict)
+        # Convert to schema using model_validate
+        return RegionJobDetailSchema.model_validate(job)
 
     except HTTPException:
         raise
@@ -446,7 +403,7 @@ async def _save_region_analysis_to_db(
                 db.add(region)
 
         await db.commit()
-        return job.id
+        return cast(UUID, job.id)
 
     except Exception as e:
         logger.error(f"Error saving region analysis to database: {e}", exc_info=True)
@@ -499,7 +456,7 @@ def _convert_fused_region(region_dict: dict) -> FusedRegionSchema:
     )
 
 
-def _convert_grid_metadata(grid_data: dict) -> GridMetadataSchema:
+def _convert_grid_metadata(grid_data: Any) -> GridMetadataSchema | None:
     """Convert grid metadata dict to schema"""
     if not grid_data:
         return None

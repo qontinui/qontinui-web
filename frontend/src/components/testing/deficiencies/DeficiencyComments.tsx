@@ -1,18 +1,18 @@
-'use client';
+"use client";
 
-import { useState, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+import { useState, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import {
   MessageSquare,
   Send,
@@ -23,15 +23,19 @@ import {
   Download,
   User,
   Clock,
-} from 'lucide-react';
-import { DeficiencyComment } from '@/types/deficiency';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { DeficiencyComment } from "@/types/deficiency";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface DeficiencyCommentsProps {
   deficiencyId: string;
   comments: DeficiencyComment[];
-  onCommentAdd?: (content: string, mentions: string[], attachments: File[]) => Promise<void>;
+  onCommentAdd?: (
+    content: string,
+    mentions: string[],
+    attachments: File[]
+  ) => Promise<void>;
   className?: string;
 }
 
@@ -48,12 +52,12 @@ interface DeficiencyCommentsProps {
  * - Keyboard shortcuts (Ctrl+Enter to submit)
  */
 export function DeficiencyComments({
-  deficiencyId,
+  deficiencyId: _deficiencyId,
   comments,
   onCommentAdd,
   className,
 }: DeficiencyCommentsProps) {
-  const [newComment, setNewComment] = useState('');
+  const [newComment, setNewComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [mentions, setMentions] = useState<string[]>([]);
@@ -79,25 +83,25 @@ export function DeficiencyComments({
 
   const handleSubmit = async () => {
     if (!newComment.trim() && attachments.length === 0) {
-      toast.error('Please enter a comment or attach a file');
+      toast.error("Please enter a comment or attach a file");
       return;
     }
 
     if (!onCommentAdd) {
-      toast.error('Comment submission not available');
+      toast.error("Comment submission not available");
       return;
     }
 
     setIsSubmitting(true);
     try {
       await onCommentAdd(newComment.trim(), mentions, attachments);
-      setNewComment('');
+      setNewComment("");
       setAttachments([]);
       setMentions([]);
-      toast.success('Comment added successfully');
+      toast.success("Comment added successfully");
     } catch (error) {
-      toast.error('Failed to add comment');
-      console.error('Comment submission error:', error);
+      toast.error("Failed to add comment");
+      console.error("Comment submission error:", error);
     } finally {
       setIsSubmitting(false);
     }
@@ -105,7 +109,7 @@ export function DeficiencyComments({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Submit with Ctrl+Enter or Cmd+Enter
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       handleSubmit();
     }
@@ -118,7 +122,7 @@ export function DeficiencyComments({
   };
 
   return (
-    <Card className={cn('w-full', className)}>
+    <Card className={cn("w-full", className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <MessageSquare className="h-5 w-5" />
@@ -199,11 +203,14 @@ export function DeficiencyComments({
               </div>
               <Button
                 onClick={handleSubmit}
-                disabled={isSubmitting || (!newComment.trim() && attachments.length === 0)}
+                disabled={
+                  isSubmitting ||
+                  (!newComment.trim() && attachments.length === 0)
+                }
                 size="sm"
               >
                 {isSubmitting ? (
-                  'Posting...'
+                  "Posting..."
                 ) : (
                   <>
                     <Send className="h-4 w-4 mr-2" />
@@ -235,7 +242,9 @@ export function DeficiencyComments({
                   <div className="flex-1 min-w-0 space-y-2">
                     {/* Comment Header */}
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-sm">{comment.user_name}</span>
+                      <span className="font-medium text-sm">
+                        {comment.user_name}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         {comment.user_email}
                       </span>
@@ -276,7 +285,9 @@ export function DeficiencyComments({
                             className="flex items-center gap-2 p-2 rounded bg-muted/30 text-sm hover:bg-muted/50 transition-colors"
                           >
                             <FileIcon className="h-4 w-4 text-muted-foreground" />
-                            <span className="flex-1 truncate">{attachment.name}</span>
+                            <span className="flex-1 truncate">
+                              {attachment.name}
+                            </span>
                             <span className="text-xs text-muted-foreground">
                               {formatFileSize(attachment.size)}
                             </span>

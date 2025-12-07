@@ -8,12 +8,11 @@
 
 import {
   Operation,
-  OperationType,
   TransformResult,
   ComposedOperation,
   InvertedOperation,
-  PathTransformResult
-} from '../../types/collaboration/conflict-types'
+  PathTransformResult,
+} from "../../types/collaboration/conflict-types";
 
 /**
  * Operational Transformation Service
@@ -29,13 +28,13 @@ export class OperationalTransformService {
   transform(op1: Operation, op2: Operation): [Operation, Operation] {
     // If operations don't conflict, return them as-is
     if (!this.operationsConflict(op1, op2)) {
-      return [op1, op2]
+      return [op1, op2];
     }
 
     // Transform based on operation types
-    const result = this.transformByType(op1, op2)
+    const result = this.transformByType(op1, op2);
 
-    return [result.op1Prime, result.op2Prime]
+    return [result.op1Prime, result.op2Prime];
   }
 
   /**
@@ -43,7 +42,7 @@ export class OperationalTransformService {
    */
   private operationsConflict(op1: Operation, op2: Operation): boolean {
     // Operations conflict if they affect the same path or related paths
-    return this.pathsConflict(op1.path, op2.path)
+    return this.pathsConflict(op1.path, op2.path);
   }
 
   /**
@@ -51,115 +50,118 @@ export class OperationalTransformService {
    */
   private pathsConflict(path1: string[], path2: string[]): boolean {
     // Paths conflict if one is a prefix of the other
-    const minLength = Math.min(path1.length, path2.length)
+    const minLength = Math.min(path1.length, path2.length);
 
     for (let i = 0; i < minLength; i++) {
       if (path1[i] !== path2[i]) {
-        return false
+        return false;
       }
     }
 
-    return true
+    return true;
   }
 
   /**
    * Transform operations based on their types
    */
   private transformByType(op1: Operation, op2: Operation): TransformResult {
-    const typeKey = `${op1.type}-${op2.type}`
+    const typeKey = `${op1.type}-${op2.type}`;
 
     switch (typeKey) {
       // Insert vs Insert
-      case 'insert-insert':
-        return this.transformInsertInsert(op1, op2)
+      case "insert-insert":
+        return this.transformInsertInsert(op1, op2);
 
       // Insert vs Delete
-      case 'insert-delete':
-        return this.transformInsertDelete(op1, op2)
-      case 'delete-insert':
-        return this.transformDeleteInsert(op1, op2)
+      case "insert-delete":
+        return this.transformInsertDelete(op1, op2);
+      case "delete-insert":
+        return this.transformDeleteInsert(op1, op2);
 
       // Insert vs Update
-      case 'insert-update':
-        return this.transformInsertUpdate(op1, op2)
-      case 'update-insert':
-        return this.transformUpdateInsert(op1, op2)
+      case "insert-update":
+        return this.transformInsertUpdate(op1, op2);
+      case "update-insert":
+        return this.transformUpdateInsert(op1, op2);
 
       // Delete vs Delete
-      case 'delete-delete':
-        return this.transformDeleteDelete(op1, op2)
+      case "delete-delete":
+        return this.transformDeleteDelete(op1, op2);
 
       // Delete vs Update
-      case 'delete-update':
-        return this.transformDeleteUpdate(op1, op2)
-      case 'update-delete':
-        return this.transformUpdateDelete(op1, op2)
+      case "delete-update":
+        return this.transformDeleteUpdate(op1, op2);
+      case "update-delete":
+        return this.transformUpdateDelete(op1, op2);
 
       // Update vs Update
-      case 'update-update':
-        return this.transformUpdateUpdate(op1, op2)
+      case "update-update":
+        return this.transformUpdateUpdate(op1, op2);
 
       // Move operations
-      case 'move-move':
-        return this.transformMoveMove(op1, op2)
-      case 'move-delete':
-        return this.transformMoveDelete(op1, op2)
-      case 'delete-move':
-        return this.transformDeleteMove(op1, op2)
+      case "move-move":
+        return this.transformMoveMove(op1, op2);
+      case "move-delete":
+        return this.transformMoveDelete(op1, op2);
+      case "delete-move":
+        return this.transformDeleteMove(op1, op2);
 
       // Connect/Disconnect operations
-      case 'connect-disconnect':
-        return this.transformConnectDisconnect(op1, op2)
-      case 'disconnect-connect':
-        return this.transformDisconnectConnect(op1, op2)
-      case 'connect-connect':
-        return this.transformConnectConnect(op1, op2)
-      case 'disconnect-disconnect':
-        return this.transformDisconnectDisconnect(op1, op2)
+      case "connect-disconnect":
+        return this.transformConnectDisconnect(op1, op2);
+      case "disconnect-connect":
+        return this.transformDisconnectConnect(op1, op2);
+      case "connect-connect":
+        return this.transformConnectConnect(op1, op2);
+      case "disconnect-disconnect":
+        return this.transformDisconnectDisconnect(op1, op2);
 
       // Default: no transformation needed
       default:
         return {
           op1Prime: op1,
           op2Prime: op2,
-          success: true
-        }
+          success: true,
+        };
     }
   }
 
   /**
    * Transform: Insert vs Insert
    */
-  private transformInsertInsert(op1: Operation, op2: Operation): TransformResult {
-    const pos1 = op1.position ?? 0
-    const pos2 = op2.position ?? 0
+  private transformInsertInsert(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
+    const pos1 = op1.position ?? 0;
+    const pos2 = op2.position ?? 0;
 
     if (pos1 < pos2) {
       return {
         op1Prime: op1,
         op2Prime: { ...op2, position: pos2 + 1 },
-        success: true
-      }
+        success: true,
+      };
     } else if (pos1 > pos2) {
       return {
         op1Prime: { ...op1, position: pos1 + 1 },
         op2Prime: op2,
-        success: true
-      }
+        success: true,
+      };
     } else {
       // Same position - use timestamp to break tie
       if (op1.timestamp < op2.timestamp) {
         return {
           op1Prime: op1,
           op2Prime: { ...op2, position: pos2 + 1 },
-          success: true
-        }
+          success: true,
+        };
       } else {
         return {
           op1Prime: { ...op1, position: pos1 + 1 },
           op2Prime: op2,
-          success: true
-        }
+          success: true,
+        };
       }
     }
   }
@@ -167,140 +169,168 @@ export class OperationalTransformService {
   /**
    * Transform: Insert vs Delete
    */
-  private transformInsertDelete(op1: Operation, op2: Operation): TransformResult {
-    const pos1 = op1.position ?? 0
-    const pos2 = op2.position ?? 0
+  private transformInsertDelete(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
+    const pos1 = op1.position ?? 0;
+    const pos2 = op2.position ?? 0;
 
     if (pos1 <= pos2) {
       return {
         op1Prime: op1,
         op2Prime: { ...op2, position: pos2 + 1 },
-        success: true
-      }
+        success: true,
+      };
     } else {
       return {
         op1Prime: { ...op1, position: pos1 - 1 },
         op2Prime: op2,
-        success: true
-      }
+        success: true,
+      };
     }
   }
 
   /**
    * Transform: Delete vs Insert
    */
-  private transformDeleteInsert(op1: Operation, op2: Operation): TransformResult {
-    const result = this.transformInsertDelete(op2, op1)
+  private transformDeleteInsert(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
+    const result = this.transformInsertDelete(op2, op1);
     return {
       op1Prime: result.op2Prime,
       op2Prime: result.op1Prime,
-      success: result.success
-    }
+      success: result.success,
+    };
   }
 
   /**
    * Transform: Insert vs Update
    */
-  private transformInsertUpdate(op1: Operation, op2: Operation): TransformResult {
+  private transformInsertUpdate(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
     // Insert doesn't affect update if paths are different
     if (!this.pathsConflict(op1.path, op2.path)) {
       return {
         op1Prime: op1,
         op2Prime: op2,
-        success: true
-      }
+        success: true,
+      };
     }
 
     // If insert is in the update's path, adjust the path
-    const transformedPath = this.adjustPathForInsert(op2.path, op1.path, op1.position ?? 0)
+    const transformedPath = this.adjustPathForInsert(
+      op2.path,
+      op1.path,
+      op1.position ?? 0
+    );
 
     return {
       op1Prime: op1,
       op2Prime: { ...op2, path: transformedPath },
-      success: true
-    }
+      success: true,
+    };
   }
 
   /**
    * Transform: Update vs Insert
    */
-  private transformUpdateInsert(op1: Operation, op2: Operation): TransformResult {
-    const result = this.transformInsertUpdate(op2, op1)
+  private transformUpdateInsert(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
+    const result = this.transformInsertUpdate(op2, op1);
     return {
       op1Prime: result.op2Prime,
       op2Prime: result.op1Prime,
-      success: result.success
-    }
+      success: result.success,
+    };
   }
 
   /**
    * Transform: Delete vs Delete
    */
-  private transformDeleteDelete(op1: Operation, op2: Operation): TransformResult {
-    const pos1 = op1.position ?? 0
-    const pos2 = op2.position ?? 0
+  private transformDeleteDelete(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
+    const pos1 = op1.position ?? 0;
+    const pos2 = op2.position ?? 0;
 
     if (pos1 === pos2) {
       // Both delete the same item - make one a no-op
       return {
-        op1Prime: { ...op1, type: 'update', value: null },
-        op2Prime: { ...op2, type: 'update', value: null },
+        op1Prime: { ...op1, type: "update", value: null },
+        op2Prime: { ...op2, type: "update", value: null },
         success: true,
-        warnings: ['Both operations deleted the same item']
-      }
+        warnings: ["Both operations deleted the same item"],
+      };
     } else if (pos1 < pos2) {
       return {
         op1Prime: op1,
         op2Prime: { ...op2, position: pos2 - 1 },
-        success: true
-      }
+        success: true,
+      };
     } else {
       return {
         op1Prime: { ...op1, position: pos1 - 1 },
         op2Prime: op2,
-        success: true
-      }
+        success: true,
+      };
     }
   }
 
   /**
    * Transform: Delete vs Update
    */
-  private transformDeleteUpdate(op1: Operation, op2: Operation): TransformResult {
+  private transformDeleteUpdate(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
     // If delete removes the item being updated, update becomes no-op
     if (this.pathsEqual(op1.path, op2.path)) {
       return {
         op1Prime: op1,
-        op2Prime: { ...op2, type: 'update', value: null },
+        op2Prime: { ...op2, type: "update", value: null },
         success: true,
-        warnings: ['Update target was deleted']
-      }
+        warnings: ["Update target was deleted"],
+      };
     }
 
     return {
       op1Prime: op1,
       op2Prime: op2,
-      success: true
-    }
+      success: true,
+    };
   }
 
   /**
    * Transform: Update vs Delete
    */
-  private transformUpdateDelete(op1: Operation, op2: Operation): TransformResult {
-    const result = this.transformDeleteUpdate(op2, op1)
+  private transformUpdateDelete(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
+    const result = this.transformDeleteUpdate(op2, op1);
     return {
       op1Prime: result.op2Prime,
       op2Prime: result.op1Prime,
       success: result.success,
-      warnings: result.warnings
-    }
+      warnings: result.warnings,
+    };
   }
 
   /**
    * Transform: Update vs Update
    */
-  private transformUpdateUpdate(op1: Operation, op2: Operation): TransformResult {
+  private transformUpdateUpdate(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
     // If updating the same path, use timestamp to decide
     if (this.pathsEqual(op1.path, op2.path)) {
       if (op1.timestamp < op2.timestamp) {
@@ -308,15 +338,19 @@ export class OperationalTransformService {
           op1Prime: op1,
           op2Prime: { ...op2, oldValue: op1.value },
           success: true,
-          warnings: ['Concurrent updates to same field - using timestamp ordering']
-        }
+          warnings: [
+            "Concurrent updates to same field - using timestamp ordering",
+          ],
+        };
       } else {
         return {
           op1Prime: { ...op1, oldValue: op2.value },
           op2Prime: op2,
           success: true,
-          warnings: ['Concurrent updates to same field - using timestamp ordering']
-        }
+          warnings: [
+            "Concurrent updates to same field - using timestamp ordering",
+          ],
+        };
       }
     }
 
@@ -324,92 +358,95 @@ export class OperationalTransformService {
     return {
       op1Prime: op1,
       op2Prime: op2,
-      success: true
-    }
+      success: true,
+    };
   }
 
   /**
    * Transform: Move vs Move
    */
   private transformMoveMove(op1: Operation, op2: Operation): TransformResult {
-    const from1 = op1.position ?? 0
-    const to1 = op1.newPosition ?? 0
-    const from2 = op2.position ?? 0
-    const to2 = op2.newPosition ?? 0
+    const from1 = op1.position ?? 0;
+    const to1 = op1.newPosition ?? 0;
+    const from2 = op2.position ?? 0;
+    const to2 = op2.newPosition ?? 0;
 
     // Complex transformation for concurrent moves
-    let newFrom1 = from1
-    let newTo1 = to1
-    let newFrom2 = from2
-    let newTo2 = to2
+    let newFrom1 = from1;
+    let newTo1 = to1;
+    let newFrom2 = from2;
+    let newTo2 = to2;
 
     // Adjust positions based on the other move
-    if (from2 <= from1 && to2 > from1) newFrom1--
-    if (from2 < from1 && to2 <= from1) newFrom1--
-    if (from2 <= to1 && to2 > to1) newTo1--
-    if (from2 < to1 && to2 <= to1) newTo1--
+    if (from2 <= from1 && to2 > from1) newFrom1--;
+    if (from2 < from1 && to2 <= from1) newFrom1--;
+    if (from2 <= to1 && to2 > to1) newTo1--;
+    if (from2 < to1 && to2 <= to1) newTo1--;
 
-    if (from1 <= from2 && to1 > from2) newFrom2--
-    if (from1 < from2 && to1 <= from2) newFrom2--
-    if (from1 <= to2 && to1 > to2) newTo2--
-    if (from1 < to2 && to1 <= to2) newTo2--
+    if (from1 <= from2 && to1 > from2) newFrom2--;
+    if (from1 < from2 && to1 <= from2) newFrom2--;
+    if (from1 <= to2 && to1 > to2) newTo2--;
+    if (from1 < to2 && to1 <= to2) newTo2--;
 
     return {
       op1Prime: { ...op1, position: newFrom1, newPosition: newTo1 },
       op2Prime: { ...op2, position: newFrom2, newPosition: newTo2 },
-      success: true
-    }
+      success: true,
+    };
   }
 
   /**
    * Transform: Move vs Delete
    */
   private transformMoveDelete(op1: Operation, op2: Operation): TransformResult {
-    const moveFrom = op1.position ?? 0
-    const moveTo = op1.newPosition ?? 0
-    const deletePos = op2.position ?? 0
+    const moveFrom = op1.position ?? 0;
+    const moveTo = op1.newPosition ?? 0;
+    const deletePos = op2.position ?? 0;
 
     if (deletePos === moveFrom) {
       // Deleted item is being moved - delete wins
       return {
-        op1Prime: { ...op1, type: 'update', value: null },
+        op1Prime: { ...op1, type: "update", value: null },
         op2Prime: op2,
         success: true,
-        warnings: ['Move source was deleted']
-      }
+        warnings: ["Move source was deleted"],
+      };
     }
 
     // Adjust move positions based on delete
-    let newFrom = moveFrom
-    let newTo = moveTo
+    let newFrom = moveFrom;
+    let newTo = moveTo;
 
-    if (deletePos < moveFrom) newFrom--
-    if (deletePos < moveTo) newTo--
+    if (deletePos < moveFrom) newFrom--;
+    if (deletePos < moveTo) newTo--;
 
     return {
       op1Prime: { ...op1, position: newFrom, newPosition: newTo },
       op2Prime: op2,
-      success: true
-    }
+      success: true,
+    };
   }
 
   /**
    * Transform: Delete vs Move
    */
   private transformDeleteMove(op1: Operation, op2: Operation): TransformResult {
-    const result = this.transformMoveDelete(op2, op1)
+    const result = this.transformMoveDelete(op2, op1);
     return {
       op1Prime: result.op2Prime,
       op2Prime: result.op1Prime,
       success: result.success,
-      warnings: result.warnings
-    }
+      warnings: result.warnings,
+    };
   }
 
   /**
    * Transform: Connect vs Disconnect
    */
-  private transformConnectDisconnect(op1: Operation, op2: Operation): TransformResult {
+  private transformConnectDisconnect(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
     // If connecting and disconnecting the same connection
     if (op1.sourceId === op2.sourceId && op1.targetId === op2.targetId) {
       // Use timestamp to decide
@@ -418,80 +455,91 @@ export class OperationalTransformService {
           op1Prime: op1,
           op2Prime: op2,
           success: true,
-          warnings: ['Concurrent connect/disconnect - using timestamp ordering']
-        }
+          warnings: [
+            "Concurrent connect/disconnect - using timestamp ordering",
+          ],
+        };
       } else {
         return {
-          op1Prime: { ...op1, type: 'update', value: null },
+          op1Prime: { ...op1, type: "update", value: null },
           op2Prime: op2,
           success: true,
-          warnings: ['Connection was disconnected before connect completed']
-        }
+          warnings: ["Connection was disconnected before connect completed"],
+        };
       }
     }
 
     return {
       op1Prime: op1,
       op2Prime: op2,
-      success: true
-    }
+      success: true,
+    };
   }
 
   /**
    * Transform: Disconnect vs Connect
    */
-  private transformDisconnectConnect(op1: Operation, op2: Operation): TransformResult {
-    const result = this.transformConnectDisconnect(op2, op1)
+  private transformDisconnectConnect(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
+    const result = this.transformConnectDisconnect(op2, op1);
     return {
       op1Prime: result.op2Prime,
       op2Prime: result.op1Prime,
       success: result.success,
-      warnings: result.warnings
-    }
+      warnings: result.warnings,
+    };
   }
 
   /**
    * Transform: Connect vs Connect
    */
-  private transformConnectConnect(op1: Operation, op2: Operation): TransformResult {
+  private transformConnectConnect(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
     // If creating the same connection
     if (op1.sourceId === op2.sourceId && op1.targetId === op2.targetId) {
       // Make one a no-op
       return {
         op1Prime: op1,
-        op2Prime: { ...op2, type: 'update', value: null },
+        op2Prime: { ...op2, type: "update", value: null },
         success: true,
-        warnings: ['Duplicate connection attempt']
-      }
+        warnings: ["Duplicate connection attempt"],
+      };
     }
 
     return {
       op1Prime: op1,
       op2Prime: op2,
-      success: true
-    }
+      success: true,
+    };
   }
 
   /**
    * Transform: Disconnect vs Disconnect
    */
-  private transformDisconnectDisconnect(op1: Operation, op2: Operation): TransformResult {
+  private transformDisconnectDisconnect(
+    op1: Operation,
+    op2: Operation
+  ): TransformResult {
     // If disconnecting the same connection
     if (op1.sourceId === op2.sourceId && op1.targetId === op2.targetId) {
       // Make one a no-op
       return {
         op1Prime: op1,
-        op2Prime: { ...op2, type: 'update', value: null },
+        op2Prime: { ...op2, type: "update", value: null },
         success: true,
-        warnings: ['Duplicate disconnect attempt']
-      }
+        warnings: ["Duplicate disconnect attempt"],
+      };
     }
 
     return {
       op1Prime: op1,
       op2Prime: op2,
-      success: true
-    }
+      success: true,
+    };
   }
 
   /**
@@ -500,45 +548,45 @@ export class OperationalTransformService {
   compose(op1: Operation, op2: Operation): ComposedOperation {
     // Only compose operations on the same path
     if (!this.pathsEqual(op1.path, op2.path)) {
-      throw new Error('Cannot compose operations on different paths')
+      throw new Error("Cannot compose operations on different paths");
     }
 
     // Compose based on operation types
-    const typeKey = `${op1.type}-${op2.type}`
+    const typeKey = `${op1.type}-${op2.type}`;
 
     switch (typeKey) {
-      case 'insert-delete':
+      case "insert-delete":
         // Insert then delete = no-op
         return {
           ...op1,
-          type: 'update',
+          type: "update",
           value: null,
-          composedFrom: [op1, op2]
-        }
+          composedFrom: [op1, op2],
+        };
 
-      case 'update-update':
+      case "update-update":
         // Chain updates
         return {
           ...op1,
           value: op2.value,
-          composedFrom: [op1, op2]
-        }
+          composedFrom: [op1, op2],
+        };
 
-      case 'delete-insert':
+      case "delete-insert":
         // Delete then insert = update
         return {
           ...op1,
-          type: 'update',
+          type: "update",
           value: op2.value,
-          composedFrom: [op1, op2]
-        }
+          composedFrom: [op1, op2],
+        };
 
       default:
         // For other combinations, return the second operation
         return {
           ...op2,
-          composedFrom: [op1, op2]
-        }
+          composedFrom: [op1, op2],
+        };
     }
   }
 
@@ -547,56 +595,56 @@ export class OperationalTransformService {
    */
   invert(op: Operation): InvertedOperation {
     switch (op.type) {
-      case 'insert':
+      case "insert":
         return {
           ...op,
-          type: 'delete',
+          type: "delete",
           value: op.oldValue,
           oldValue: op.value,
-          invertedFrom: op
-        }
+          invertedFrom: op,
+        };
 
-      case 'delete':
+      case "delete":
         return {
           ...op,
-          type: 'insert',
+          type: "insert",
           value: op.oldValue,
           oldValue: op.value,
-          invertedFrom: op
-        }
+          invertedFrom: op,
+        };
 
-      case 'update':
+      case "update":
         return {
           ...op,
           value: op.oldValue,
           oldValue: op.value,
-          invertedFrom: op
-        }
+          invertedFrom: op,
+        };
 
-      case 'move':
+      case "move":
         return {
           ...op,
           position: op.newPosition,
           newPosition: op.position,
-          invertedFrom: op
-        }
+          invertedFrom: op,
+        };
 
-      case 'connect':
+      case "connect":
         return {
           ...op,
-          type: 'disconnect',
-          invertedFrom: op
-        }
+          type: "disconnect",
+          invertedFrom: op,
+        };
 
-      case 'disconnect':
+      case "disconnect":
         return {
           ...op,
-          type: 'connect',
-          invertedFrom: op
-        }
+          type: "connect",
+          invertedFrom: op,
+        };
 
       default:
-        throw new Error(`Cannot invert operation of type: ${op.type}`)
+        throw new Error(`Cannot invert operation of type: ${op.type}`);
     }
   }
 
@@ -604,48 +652,50 @@ export class OperationalTransformService {
    * Apply an operation to a document
    */
   apply(doc: any, op: Operation): any {
-    const result = JSON.parse(JSON.stringify(doc)) // Deep clone
+    const result = JSON.parse(JSON.stringify(doc)); // Deep clone
 
     switch (op.type) {
-      case 'insert':
-        this.applyInsert(result, op)
-        break
+      case "insert":
+        this.applyInsert(result, op);
+        break;
 
-      case 'delete':
-        this.applyDelete(result, op)
-        break
+      case "delete":
+        this.applyDelete(result, op);
+        break;
 
-      case 'update':
-        this.applyUpdate(result, op)
-        break
+      case "update":
+        this.applyUpdate(result, op);
+        break;
 
-      case 'move':
-        this.applyMove(result, op)
-        break
+      case "move":
+        this.applyMove(result, op);
+        break;
 
-      case 'connect':
-        this.applyConnect(result, op)
-        break
+      case "connect":
+        this.applyConnect(result, op);
+        break;
 
-      case 'disconnect':
-        this.applyDisconnect(result, op)
-        break
+      case "disconnect":
+        this.applyDisconnect(result, op);
+        break;
     }
 
-    return result
+    return result;
   }
 
   /**
    * Apply insert operation
    */
   private applyInsert(doc: any, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1))
-    const key = op.path[op.path.length - 1]
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1));
+    const key = op.path[op.path.length - 1];
 
-    if (Array.isArray(parent[key])) {
-      parent[key].splice(op.position ?? 0, 0, op.value)
-    } else {
-      parent[key] = op.value
+    if (key !== undefined) {
+      if (Array.isArray(parent[key])) {
+        parent[key].splice(op.position ?? 0, 0, op.value);
+      } else {
+        parent[key] = op.value;
+      }
     }
   }
 
@@ -653,13 +703,15 @@ export class OperationalTransformService {
    * Apply delete operation
    */
   private applyDelete(doc: any, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1))
-    const key = op.path[op.path.length - 1]
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1));
+    const key = op.path[op.path.length - 1];
 
-    if (Array.isArray(parent[key])) {
-      parent[key].splice(op.position ?? 0, 1)
-    } else {
-      delete parent[key]
+    if (key !== undefined) {
+      if (Array.isArray(parent[key])) {
+        parent[key].splice(op.position ?? 0, 1);
+      } else {
+        delete parent[key];
+      }
     }
   }
 
@@ -667,21 +719,23 @@ export class OperationalTransformService {
    * Apply update operation
    */
   private applyUpdate(doc: any, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1))
-    const key = op.path[op.path.length - 1]
-    parent[key] = op.value
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1));
+    const key = op.path[op.path.length - 1];
+    if (key !== undefined) {
+      parent[key] = op.value;
+    }
   }
 
   /**
    * Apply move operation
    */
   private applyMove(doc: any, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1))
-    const key = op.path[op.path.length - 1]
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1));
+    const key = op.path[op.path.length - 1];
 
-    if (Array.isArray(parent[key])) {
-      const item = parent[key].splice(op.position ?? 0, 1)[0]
-      parent[key].splice(op.newPosition ?? 0, 0, item)
+    if (key !== undefined && Array.isArray(parent[key])) {
+      const item = parent[key].splice(op.position ?? 0, 1)[0];
+      parent[key].splice(op.newPosition ?? 0, 0, item);
     }
   }
 
@@ -690,42 +744,43 @@ export class OperationalTransformService {
    */
   private applyConnect(doc: any, op: Operation): void {
     if (!doc.connections) {
-      doc.connections = []
+      doc.connections = [];
     }
 
     doc.connections.push({
       id: op.operationId,
       source: op.sourceId,
       target: op.targetId,
-      ...op.value
-    })
+      ...op.value,
+    });
   }
 
   /**
    * Apply disconnect operation
    */
   private applyDisconnect(doc: any, op: Operation): void {
-    if (!doc.connections) return
+    if (!doc.connections) return;
 
     doc.connections = doc.connections.filter(
-      (conn: any) => !(conn.source === op.sourceId && conn.target === op.targetId)
-    )
+      (conn: any) =>
+        !(conn.source === op.sourceId && conn.target === op.targetId)
+    );
   }
 
   /**
    * Navigate to a path in the document
    */
   private navigateToPath(doc: any, path: string[]): any {
-    let current = doc
+    let current = doc;
 
     for (const segment of path) {
       if (!current[segment]) {
-        current[segment] = {}
+        current[segment] = {};
       }
-      current = current[segment]
+      current = current[segment];
     }
 
-    return current
+    return current;
   }
 
   /**
@@ -736,86 +791,97 @@ export class OperationalTransformService {
     if (!this.pathsConflict(path, op.path)) {
       return {
         transformedPath: path,
-        exists: true
-      }
+        exists: true,
+      };
     }
 
     // If operation deletes the path or a parent
-    if (op.type === 'delete' && this.pathIsChildOf(path, op.path)) {
+    if (op.type === "delete" && this.pathIsChildOf(path, op.path)) {
       return {
         transformedPath: path,
         exists: false,
-        reason: 'Path was deleted'
-      }
+        reason: "Path was deleted",
+      };
     }
 
     // If operation inserts before this path
-    if (op.type === 'insert') {
+    if (op.type === "insert") {
       return {
-        transformedPath: this.adjustPathForInsert(path, op.path, op.position ?? 0),
-        exists: true
-      }
+        transformedPath: this.adjustPathForInsert(
+          path,
+          op.path,
+          op.position ?? 0
+        ),
+        exists: true,
+      };
     }
 
     // Default: path unchanged
     return {
       transformedPath: path,
-      exists: true
-    }
+      exists: true,
+    };
   }
 
   /**
    * Check if path1 is a child of path2
    */
   private pathIsChildOf(path1: string[], path2: string[]): boolean {
-    if (path1.length <= path2.length) return false
+    if (path1.length <= path2.length) return false;
 
     for (let i = 0; i < path2.length; i++) {
-      if (path1[i] !== path2[i]) return false
+      if (path1[i] !== path2[i]) return false;
     }
 
-    return true
+    return true;
   }
 
   /**
    * Adjust path for an insert operation
    */
-  private adjustPathForInsert(path: string[], insertPath: string[], position: number): string[] {
+  private adjustPathForInsert(
+    path: string[],
+    insertPath: string[],
+    position: number
+  ): string[] {
     if (!this.pathsConflict(path, insertPath)) {
-      return path
+      return path;
     }
 
     // If insert is at a parent level, adjust the corresponding segment
-    const commonLength = Math.min(path.length, insertPath.length)
+    const commonLength = Math.min(path.length, insertPath.length);
 
     for (let i = 0; i < commonLength; i++) {
-      if (path[i] !== insertPath[i]) {
-        const pathIndex = parseInt(path[i], 10)
+      const pathSegment = path[i];
+      const insertSegment = insertPath[i];
+      if (pathSegment !== insertSegment) {
+        if (!pathSegment) break;
+        const pathIndex = parseInt(pathSegment, 10);
         if (!isNaN(pathIndex) && pathIndex >= position) {
-          const newPath = [...path]
-          newPath[i] = String(pathIndex + 1)
-          return newPath
+          const newPath = [...path];
+          newPath[i] = String(pathIndex + 1);
+          return newPath;
         }
-        break
+        break;
       }
     }
 
-    return path
+    return path;
   }
 
   /**
    * Check if two paths are equal
    */
   private pathsEqual(path1: string[], path2: string[]): boolean {
-    if (path1.length !== path2.length) return false
+    if (path1.length !== path2.length) return false;
 
     for (let i = 0; i < path1.length; i++) {
-      if (path1[i] !== path2[i]) return false
+      if (path1[i] !== path2[i]) return false;
     }
 
-    return true
+    return true;
   }
 }
 
 // Export singleton instance
-export const operationalTransformService = new OperationalTransformService()
+export const operationalTransformService = new OperationalTransformService();

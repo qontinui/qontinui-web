@@ -6,7 +6,7 @@
  * utilities and manual testing helpers.
  */
 
-import { useOnboardingStore } from '@/stores/onboarding-store';
+import { useOnboardingStore } from "@/stores/onboarding-store";
 
 // ============================================================================
 // Test Utilities
@@ -18,7 +18,7 @@ import { useOnboardingStore } from '@/stores/onboarding-store';
 export function resetOnboardingForTesting() {
   const { resetOnboarding } = useOnboardingStore.getState();
   resetOnboarding();
-  console.log('[Test] Onboarding state reset');
+  console.log("[Test] Onboarding state reset");
 }
 
 /**
@@ -27,7 +27,7 @@ export function resetOnboardingForTesting() {
 export function startTutorialForTesting() {
   const { startTour } = useOnboardingStore.getState();
   startTour();
-  console.log('[Test] Tutorial started');
+  console.log("[Test] Tutorial started");
 }
 
 /**
@@ -81,13 +81,13 @@ export function validateTourTargets(): {
  */
 export function logOnboardingState() {
   const state = useOnboardingStore.getState();
-  console.group('[Test] Onboarding State');
-  console.log('Tutorial Active:', state.showTutorialOverlay);
-  console.log('Current Step:', state.currentTourStep + 1);
-  console.log('Has Started Tour:', state.hasStartedTour);
-  console.log('Has Completed Welcome:', state.hasCompletedWelcome);
-  console.log('Welcome Modal Visible:', state.showWelcomeModal);
-  console.log('Don\'t Show Again:', state.dontShowWelcomeAgain);
+  console.group("[Test] Onboarding State");
+  console.log("Tutorial Active:", state.showTutorialOverlay);
+  console.log("Current Step:", state.currentTourStep + 1);
+  console.log("Has Started Tour:", state.hasStartedTour);
+  console.log("Has Completed Welcome:", state.hasCompletedWelcome);
+  console.log("Welcome Modal Visible:", state.showWelcomeModal);
+  console.log("Don't Show Again:", state.dontShowWelcomeAgain);
   console.groupEnd();
 }
 
@@ -95,28 +95,28 @@ export function logOnboardingState() {
  * Test keyboard navigation programmatically
  */
 export function testKeyboardNavigation() {
-  console.group('[Test] Keyboard Navigation');
+  console.group("[Test] Keyboard Navigation");
 
   // Test Right Arrow
-  console.log('Testing Right Arrow...');
-  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+  console.log("Testing Right Arrow...");
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
 
   setTimeout(() => {
     // Test Left Arrow
-    console.log('Testing Left Arrow...');
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    console.log("Testing Left Arrow...");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
   }, 1000);
 
   setTimeout(() => {
     // Test Enter
-    console.log('Testing Enter...');
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    console.log("Testing Enter...");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
   }, 2000);
 
   setTimeout(() => {
     // Test Escape
-    console.log('Testing Escape...');
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    console.log("Testing Escape...");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   }, 3000);
 
   console.groupEnd();
@@ -127,20 +127,20 @@ export function testKeyboardNavigation() {
  */
 export function testTooltipPositioning() {
   const viewportSizes = [
-    { width: 1920, height: 1080, name: 'Desktop Large' },
-    { width: 1366, height: 768, name: 'Desktop Medium' },
-    { width: 768, height: 1024, name: 'Tablet' },
-    { width: 375, height: 667, name: 'Mobile' },
+    { width: 1920, height: 1080, name: "Desktop Large" },
+    { width: 1366, height: 768, name: "Desktop Medium" },
+    { width: 768, height: 1024, name: "Tablet" },
+    { width: 375, height: 667, name: "Mobile" },
   ];
 
-  console.group('[Test] Tooltip Positioning');
+  console.group("[Test] Tooltip Positioning");
 
   viewportSizes.forEach((size, index) => {
     setTimeout(() => {
       console.log(`Testing ${size.name} (${size.width}x${size.height})`);
       // Note: This won't actually resize the window in most browsers
       // Manual testing required for different viewport sizes
-      console.log('Manual test required: Resize window to test positioning');
+      console.log("Manual test required: Resize window to test positioning");
     }, index * 1000);
   });
 
@@ -151,22 +151,22 @@ export function testTooltipPositioning() {
  * Simulate new user flow
  */
 export function simulateNewUserFlow() {
-  console.group('[Test] New User Flow Simulation');
+  console.group("[Test] New User Flow Simulation");
 
   // Step 1: Reset state
-  console.log('Step 1: Resetting onboarding state...');
+  console.log("Step 1: Resetting onboarding state...");
   resetOnboardingForTesting();
 
   // Step 2: Show welcome modal
   setTimeout(() => {
-    console.log('Step 2: Showing welcome modal...');
+    console.log("Step 2: Showing welcome modal...");
     const { toggleWelcomeModal } = useOnboardingStore.getState();
     toggleWelcomeModal(true);
   }, 1000);
 
   // Step 3: Start tour from welcome modal
   setTimeout(() => {
-    console.log('Step 3: Starting tour from welcome modal...');
+    console.log("Step 3: Starting tour from welcome modal...");
     const { completeWelcome, startTour } = useOnboardingStore.getState();
     completeWelcome();
     startTour();
@@ -174,7 +174,7 @@ export function simulateNewUserFlow() {
 
   // Step 4: Navigate through steps
   setTimeout(() => {
-    console.log('Step 4: Auto-navigating through steps...');
+    console.log("Step 4: Auto-navigating through steps...");
     let currentStep = 0;
     const maxSteps = 5;
 
@@ -184,7 +184,7 @@ export function simulateNewUserFlow() {
         goToStepForTesting(currentStep);
       } else {
         clearInterval(interval);
-        console.log('Step 5: Tour completed!');
+        console.log("Step 5: Tour completed!");
         const { completeTour } = useOnboardingStore.getState();
         completeTour();
       }
@@ -210,12 +210,12 @@ export function simulateNewUserFlow() {
  *    - Tutorial completes
  */
 export function testBasicFlow() {
-  console.log('[Test Scenario 1] Basic Flow');
+  console.log("[Test Scenario 1] Basic Flow");
 
   // Validate targets first
   const validation = validateTourTargets();
   if (!validation.valid) {
-    console.error('[Test] Missing targets:', validation.missing);
+    console.error("[Test] Missing targets:", validation.missing);
     return;
   }
 
@@ -223,7 +223,7 @@ export function testBasicFlow() {
   startTutorialForTesting();
 
   console.log('[Test] Use arrow keys or click "Next" to navigate');
-  console.log('[Test] Press ESC to exit');
+  console.log("[Test] Press ESC to exit");
 }
 
 /**
@@ -236,22 +236,22 @@ export function testBasicFlow() {
  *    - State is marked as completed
  */
 export function testSkipFlow() {
-  console.log('[Test Scenario 2] Skip Flow');
+  console.log("[Test Scenario 2] Skip Flow");
 
   // Start tutorial
   startTutorialForTesting();
 
   // Skip after 2 seconds
   setTimeout(() => {
-    console.log('[Test] Skipping tutorial...');
+    console.log("[Test] Skipping tutorial...");
     const { skipTour } = useOnboardingStore.getState();
     skipTour();
 
     // Verify state
     setTimeout(() => {
       const state = useOnboardingStore.getState();
-      console.log('[Test] Tutorial active:', state.showTutorialOverlay);
-      console.log('[Test] Expected: false');
+      console.log("[Test] Tutorial active:", state.showTutorialOverlay);
+      console.log("[Test] Expected: false");
     }, 500);
   }, 2000);
 }
@@ -266,7 +266,7 @@ export function testSkipFlow() {
  *    - Next button works
  */
 export function testStepNavigation() {
-  console.log('[Test Scenario 3] Step Navigation');
+  console.log("[Test Scenario 3] Step Navigation");
 
   // Start tutorial
   startTutorialForTesting();
@@ -281,11 +281,14 @@ export function testStepNavigation() {
   });
 
   // Complete after all jumps
-  setTimeout(() => {
-    const { completeTour } = useOnboardingStore.getState();
-    completeTour();
-    console.log('[Test] Tour completed');
-  }, steps.length * 2000 + 1000);
+  setTimeout(
+    () => {
+      const { completeTour } = useOnboardingStore.getState();
+      completeTour();
+      console.log("[Test] Tour completed");
+    },
+    steps.length * 2000 + 1000
+  );
 }
 
 /**
@@ -297,20 +300,20 @@ export function testStepNavigation() {
  * 4. Verify state is restored
  */
 export function testPersistence() {
-  console.log('[Test Scenario 4] Persistence');
+  console.log("[Test Scenario 4] Persistence");
 
   // Start tutorial and go to step 3
   startTutorialForTesting();
   setTimeout(() => {
     goToStepForTesting(2); // Step 3 (0-indexed)
 
-    console.log('[Test] Now refresh the page and check localStorage');
-    console.log('[Test] State should be preserved');
+    console.log("[Test] Now refresh the page and check localStorage");
+    console.log("[Test] State should be preserved");
 
     // Log localStorage
-    const stored = localStorage.getItem('qontinui-onboarding-state');
+    const stored = localStorage.getItem("qontinui-onboarding-state");
     if (stored) {
-      console.log('[Test] Stored state:', JSON.parse(stored));
+      console.log("[Test] Stored state:", JSON.parse(stored));
     }
   }, 1000);
 }
@@ -326,30 +329,32 @@ export function testPersistence() {
  *    - No overflow issues
  */
 export function testResponsive() {
-  console.log('[Test Scenario 5] Responsive Design');
+  console.log("[Test Scenario 5] Responsive Design");
 
   startTutorialForTesting();
 
-  console.log('[Test] Manually resize browser window to test responsiveness');
-  console.log('[Test] Check:');
-  console.log('  - Tooltip stays in viewport');
-  console.log('  - Spotlight follows target element');
-  console.log('  - No horizontal scroll');
-  console.log('  - Buttons are accessible');
+  console.log("[Test] Manually resize browser window to test responsiveness");
+  console.log("[Test] Check:");
+  console.log("  - Tooltip stays in viewport");
+  console.log("  - Spotlight follows target element");
+  console.log("  - No horizontal scroll");
+  console.log("  - Buttons are accessible");
 
   // Listen for resize events
   let resizeCount = 0;
   const handleResize = () => {
     resizeCount++;
-    console.log(`[Test] Resize event ${resizeCount}: ${window.innerWidth}x${window.innerHeight}`);
+    console.log(
+      `[Test] Resize event ${resizeCount}: ${window.innerWidth}x${window.innerHeight}`
+    );
   };
 
-  window.addEventListener('resize', handleResize);
+  window.addEventListener("resize", handleResize);
 
   // Clean up after 30 seconds
   setTimeout(() => {
-    window.removeEventListener('resize', handleResize);
-    console.log('[Test] Resize listener removed');
+    window.removeEventListener("resize", handleResize);
+    console.log("[Test] Resize listener removed");
   }, 30000);
 }
 
@@ -362,29 +367,31 @@ export function testResponsive() {
  * 4. Verify ARIA attributes
  */
 export function testAccessibility() {
-  console.log('[Test Scenario 6] Accessibility');
+  console.log("[Test Scenario 6] Accessibility");
 
   startTutorialForTesting();
 
-  console.log('[Test] Accessibility Checklist:');
-  console.log('  ✓ Use Tab to navigate buttons');
-  console.log('  ✓ Use Arrow keys to change steps');
-  console.log('  ✓ Use Enter to activate buttons');
-  console.log('  ✓ Use Escape to close tutorial');
-  console.log('  ✓ Enable screen reader and verify announcements');
+  console.log("[Test] Accessibility Checklist:");
+  console.log("  ✓ Use Tab to navigate buttons");
+  console.log("  ✓ Use Arrow keys to change steps");
+  console.log("  ✓ Use Enter to activate buttons");
+  console.log("  ✓ Use Escape to close tutorial");
+  console.log("  ✓ Enable screen reader and verify announcements");
 
   // Check ARIA attributes
   setTimeout(() => {
-    const overlay = document.querySelector('[role="dialog"][aria-modal="true"]');
+    const overlay = document.querySelector(
+      '[role="dialog"][aria-modal="true"]'
+    );
     if (overlay) {
-      console.log('[Test] ✓ Dialog role found');
-      console.log('[Test] ARIA attributes:', {
-        'aria-modal': overlay.getAttribute('aria-modal'),
-        'aria-labelledby': overlay.getAttribute('aria-labelledby'),
-        'aria-describedby': overlay.getAttribute('aria-describedby'),
+      console.log("[Test] ✓ Dialog role found");
+      console.log("[Test] ARIA attributes:", {
+        "aria-modal": overlay.getAttribute("aria-modal"),
+        "aria-labelledby": overlay.getAttribute("aria-labelledby"),
+        "aria-describedby": overlay.getAttribute("aria-describedby"),
       });
     } else {
-      console.error('[Test] ✗ Dialog role not found');
+      console.error("[Test] ✗ Dialog role not found");
     }
   }, 1000);
 }
@@ -397,20 +404,22 @@ export function testAccessibility() {
  * Measure tutorial rendering performance
  */
 export function measurePerformance() {
-  console.log('[Test] Performance Measurement');
+  console.log("[Test] Performance Measurement");
 
   // Measure start time
-  performance.mark('tutorial-start');
+  performance.mark("tutorial-start");
 
   startTutorialForTesting();
 
   // Measure end time
   setTimeout(() => {
-    performance.mark('tutorial-end');
-    performance.measure('tutorial-render', 'tutorial-start', 'tutorial-end');
+    performance.mark("tutorial-end");
+    performance.measure("tutorial-render", "tutorial-start", "tutorial-end");
 
-    const measure = performance.getEntriesByName('tutorial-render')[0];
-    console.log(`[Test] Tutorial render time: ${measure.duration.toFixed(2)}ms`);
+    const measure = performance.getEntriesByName("tutorial-render")[0];
+    console.log(
+      `[Test] Tutorial render time: ${measure.duration.toFixed(2)}ms`
+    );
 
     // Clean up marks
     performance.clearMarks();
@@ -423,7 +432,7 @@ export function measurePerformance() {
 // ============================================================================
 
 // Attach test utilities to window for easy access in console
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   (window as any).tutorialTests = {
     // Utilities
     reset: resetOnboardingForTesting,
@@ -444,21 +453,21 @@ if (typeof window !== 'undefined') {
     performance: measurePerformance,
   };
 
-  console.log('[TutorialOverlay] Test utilities loaded!');
-  console.log('[TutorialOverlay] Available commands:');
-  console.log('  tutorialTests.reset()        - Reset onboarding state');
-  console.log('  tutorialTests.start()        - Start tutorial');
-  console.log('  tutorialTests.goToStep(n)    - Jump to step n (0-indexed)');
-  console.log('  tutorialTests.validate()     - Check if all targets exist');
-  console.log('  tutorialTests.logState()     - Log current state');
-  console.log('  tutorialTests.basicFlow()    - Run basic flow test');
-  console.log('  tutorialTests.skipFlow()     - Test skip functionality');
-  console.log('  tutorialTests.navigation()   - Test step navigation');
-  console.log('  tutorialTests.persistence()  - Test state persistence');
-  console.log('  tutorialTests.responsive()   - Test responsive design');
-  console.log('  tutorialTests.accessibility()- Test accessibility');
-  console.log('  tutorialTests.simulate()     - Simulate new user flow');
-  console.log('  tutorialTests.performance()  - Measure performance');
+  console.log("[TutorialOverlay] Test utilities loaded!");
+  console.log("[TutorialOverlay] Available commands:");
+  console.log("  tutorialTests.reset()        - Reset onboarding state");
+  console.log("  tutorialTests.start()        - Start tutorial");
+  console.log("  tutorialTests.goToStep(n)    - Jump to step n (0-indexed)");
+  console.log("  tutorialTests.validate()     - Check if all targets exist");
+  console.log("  tutorialTests.logState()     - Log current state");
+  console.log("  tutorialTests.basicFlow()    - Run basic flow test");
+  console.log("  tutorialTests.skipFlow()     - Test skip functionality");
+  console.log("  tutorialTests.navigation()   - Test step navigation");
+  console.log("  tutorialTests.persistence()  - Test state persistence");
+  console.log("  tutorialTests.responsive()   - Test responsive design");
+  console.log("  tutorialTests.accessibility()- Test accessibility");
+  console.log("  tutorialTests.simulate()     - Simulate new user flow");
+  console.log("  tutorialTests.performance()  - Measure performance");
 }
 
 // ============================================================================

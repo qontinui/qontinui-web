@@ -8,15 +8,13 @@
  * - Inviting users
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import type {
   Organization,
   TeamMember,
   MemberRole,
-  OrganizationCreate,
-  InvitationCreate,
-} from '@/types/collaboration';
-import { organizationService } from '@/services/service-factory';
+} from "@/types/collaboration";
+import { organizationService } from "@/services/service-factory";
 
 // ============================================================================
 // Hook Return Type
@@ -33,11 +31,23 @@ interface UseOrganizationReturn {
   // Methods
   switchOrg: (orgId: string) => Promise<void>;
   createOrg: (name: string, description?: string) => Promise<Organization>;
-  updateOrg: (orgId: string, name: string, description?: string) => Promise<void>;
+  updateOrg: (
+    orgId: string,
+    name: string,
+    description?: string
+  ) => Promise<void>;
   deleteOrg: (orgId: string) => Promise<void>;
-  inviteMember: (orgId: string, email: string, role: MemberRole) => Promise<void>;
+  inviteMember: (
+    orgId: string,
+    email: string,
+    role: MemberRole
+  ) => Promise<void>;
   getMembers: (orgId: string) => Promise<void>;
-  updateMemberRole: (orgId: string, userId: string, role: MemberRole) => Promise<void>;
+  updateMemberRole: (
+    orgId: string,
+    userId: string,
+    role: MemberRole
+  ) => Promise<void>;
   removeMember: (orgId: string, userId: string) => Promise<void>;
   leaveOrg: (orgId: string) => Promise<void>;
   refresh: () => Promise<void>;
@@ -67,12 +77,12 @@ export function useOrganization(): UseOrganizationReturn {
 
       // Set first org as current if none selected
       if (orgs.length > 0 && !currentOrg) {
-        setCurrentOrg(orgs[0]);
+        setCurrentOrg(orgs[0] || null);
         // Load members for the first org
-        await loadMembers(orgs[0].id);
+        await loadMembers(orgs[0]!.id);
       }
     } catch (err) {
-      console.error('[useOrganization] Failed to load organizations:', err);
+      console.error("[useOrganization] Failed to load organizations:", err);
       setError(err as Error);
     } finally {
       setLoading(false);
@@ -87,7 +97,7 @@ export function useOrganization(): UseOrganizationReturn {
       const orgMembers = await organizationService.getMembers(orgId);
       setMembers(orgMembers);
     } catch (err) {
-      console.error('[useOrganization] Failed to load members:', err);
+      console.error("[useOrganization] Failed to load members:", err);
       throw err;
     }
   };
@@ -111,7 +121,7 @@ export function useOrganization(): UseOrganizationReturn {
       setCurrentOrg(org);
       await loadMembers(orgId);
     } catch (err) {
-      console.error('[useOrganization] Failed to switch organization:', err);
+      console.error("[useOrganization] Failed to switch organization:", err);
       setError(err as Error);
       throw err;
     } finally {
@@ -130,7 +140,10 @@ export function useOrganization(): UseOrganizationReturn {
     setError(null);
 
     try {
-      const newOrg = await organizationService.createOrganization(name, description);
+      const newOrg = await organizationService.createOrganization(
+        name,
+        description
+      );
 
       // Add to organizations list
       setOrganizations((prev) => [...prev, newOrg]);
@@ -141,7 +154,7 @@ export function useOrganization(): UseOrganizationReturn {
 
       return newOrg;
     } catch (err) {
-      console.error('[useOrganization] Failed to create organization:', err);
+      console.error("[useOrganization] Failed to create organization:", err);
       setError(err as Error);
       throw err;
     } finally {
@@ -161,8 +174,12 @@ export function useOrganization(): UseOrganizationReturn {
     setError(null);
 
     try {
-      const updates = description !== undefined ? { name, description } : { name };
-      const updatedOrg = await organizationService.updateOrganization(orgId, updates);
+      const updates =
+        description !== undefined ? { name, description } : { name };
+      const updatedOrg = await organizationService.updateOrganization(
+        orgId,
+        updates
+      );
 
       // Update in organizations list
       setOrganizations((prev) =>
@@ -174,7 +191,7 @@ export function useOrganization(): UseOrganizationReturn {
         setCurrentOrg(updatedOrg);
       }
     } catch (err) {
-      console.error('[useOrganization] Failed to update organization:', err);
+      console.error("[useOrganization] Failed to update organization:", err);
       setError(err as Error);
       throw err;
     } finally {
@@ -198,11 +215,11 @@ export function useOrganization(): UseOrganizationReturn {
       // Clear current org if it's the one being deleted
       if (currentOrg && currentOrg.id === orgId) {
         const remaining = organizations.filter((org) => org.id !== orgId);
-        setCurrentOrg(remaining.length > 0 ? remaining[0] : null);
+        setCurrentOrg(remaining.length > 0 ? remaining[0] || null : null);
         setMembers([]);
       }
     } catch (err) {
-      console.error('[useOrganization] Failed to delete organization:', err);
+      console.error("[useOrganization] Failed to delete organization:", err);
       setError(err as Error);
       throw err;
     } finally {
@@ -229,7 +246,7 @@ export function useOrganization(): UseOrganizationReturn {
         await loadMembers(orgId);
       }
     } catch (err) {
-      console.error('[useOrganization] Failed to invite member:', err);
+      console.error("[useOrganization] Failed to invite member:", err);
       setError(err as Error);
       throw err;
     } finally {
@@ -247,7 +264,7 @@ export function useOrganization(): UseOrganizationReturn {
     try {
       await loadMembers(orgId);
     } catch (err) {
-      console.error('[useOrganization] Failed to get members:', err);
+      console.error("[useOrganization] Failed to get members:", err);
       setError(err as Error);
       throw err;
     } finally {
@@ -276,7 +293,7 @@ export function useOrganization(): UseOrganizationReturn {
         )
       );
     } catch (err) {
-      console.error('[useOrganization] Failed to update member role:', err);
+      console.error("[useOrganization] Failed to update member role:", err);
       setError(err as Error);
       throw err;
     } finally {
@@ -305,7 +322,7 @@ export function useOrganization(): UseOrganizationReturn {
         });
       }
     } catch (err) {
-      console.error('[useOrganization] Failed to remove member:', err);
+      console.error("[useOrganization] Failed to remove member:", err);
       setError(err as Error);
       throw err;
     } finally {
@@ -316,12 +333,13 @@ export function useOrganization(): UseOrganizationReturn {
   /**
    * Leave an organization
    */
-  const leaveOrg = async (orgId: string): Promise<void> => {
+  const leaveOrg = async (orgId: string, userId: string): Promise<void> => {
     setLoading(true);
     setError(null);
 
     try {
-      await organizationService.leaveOrganization(orgId);
+      // Leave organization by removing yourself as a member
+      await organizationService.removeMember(orgId, userId);
 
       // Remove from organizations list
       setOrganizations((prev) => prev.filter((org) => org.id !== orgId));
@@ -329,11 +347,11 @@ export function useOrganization(): UseOrganizationReturn {
       // Clear current org if it's the one being left
       if (currentOrg && currentOrg.id === orgId) {
         const remaining = organizations.filter((org) => org.id !== orgId);
-        setCurrentOrg(remaining.length > 0 ? remaining[0] : null);
+        setCurrentOrg(remaining.length > 0 ? remaining[0] || null : null);
         setMembers([]);
       }
     } catch (err) {
-      console.error('[useOrganization] Failed to leave organization:', err);
+      console.error("[useOrganization] Failed to leave organization:", err);
       setError(err as Error);
       throw err;
     } finally {
@@ -362,7 +380,7 @@ export function useOrganization(): UseOrganizationReturn {
     getMembers,
     updateMemberRole,
     removeMember,
-    leaveOrg,
+    leaveOrg: leaveOrg as (orgId: string) => Promise<void>,
     refresh,
   };
 }

@@ -4,11 +4,11 @@
  * Display folder path as breadcrumb navigation
  */
 
-import React from 'react';
-import { ChevronRight, Home, Folder } from 'lucide-react';
-import { WorkflowFolder } from './types';
-import { getFolderPath } from './folder-utils';
-import { cn } from '../../lib/utils';
+import React from "react";
+import { ChevronRight, Home, Folder } from "lucide-react";
+import { WorkflowFolder } from "./types";
+import { getFolderPath } from "./folder-utils";
+import { cn } from "../../lib/utils";
 
 export interface FolderBreadcrumbProps {
   folderId: string | null;
@@ -36,11 +36,10 @@ export function FolderBreadcrumb({
       return [];
     }
 
-    if (folderId === 'uncategorized') {
-      return [{ id: 'uncategorized', name: 'Uncategorized' }];
+    if (folderId === "uncategorized") {
+      return [{ id: "uncategorized", name: "Uncategorized" }];
     }
 
-    const path = getFolderPath(folderId, folders);
     const result: Array<{ id: string; name: string }> = [];
 
     let currentId: string | null = null;
@@ -64,27 +63,27 @@ export function FolderBreadcrumb({
     // Show first item, ellipsis, and last few items
     return [
       items[0],
-      { id: '...', name: '...' },
+      { id: "...", name: "..." },
       ...items.slice(-(maxItems - 2)),
     ];
   }, [items, maxItems]);
 
   const handleClick = (itemId: string) => {
-    if (itemId === '...' || !onNavigate) return;
-    onNavigate(itemId === 'root' ? null : itemId);
+    if (itemId === "..." || !onNavigate) return;
+    onNavigate(itemId === "root" ? null : itemId);
   };
 
   return (
     <nav
       aria-label="Folder breadcrumb"
-      className={cn('flex items-center gap-1 text-sm', className)}
+      className={cn("flex items-center gap-1 text-sm", className)}
     >
       {/* Home / Root */}
       <button
         onClick={() => onNavigate?.(null)}
         className={cn(
-          'flex items-center gap-1 px-2 py-1 rounded hover:bg-accent transition-colors',
-          folderId === null && 'bg-accent font-medium'
+          "flex items-center gap-1 px-2 py-1 rounded hover:bg-accent transition-colors",
+          folderId === null && "bg-accent font-medium"
         )}
         aria-label="All Workflows"
       >
@@ -97,8 +96,9 @@ export function FolderBreadcrumb({
         <>
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
           {displayItems.map((item, index) => {
+            if (!item) return null;
             const isLast = index === displayItems.length - 1;
-            const isEllipsis = item.id === '...';
+            const isEllipsis = item.id === "...";
 
             return (
               <React.Fragment key={item.id}>
@@ -108,15 +108,17 @@ export function FolderBreadcrumb({
                   <button
                     onClick={() => handleClick(item.id)}
                     className={cn(
-                      'flex items-center gap-1 px-2 py-1 rounded transition-colors',
+                      "flex items-center gap-1 px-2 py-1 rounded transition-colors",
                       isLast
-                        ? 'bg-accent font-medium'
-                        : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+                        ? "bg-accent font-medium"
+                        : "hover:bg-accent text-muted-foreground hover:text-foreground"
                     )}
-                    aria-current={isLast ? 'page' : undefined}
+                    aria-current={isLast ? "page" : undefined}
                   >
                     {!isLast && <Folder className="h-3.5 w-3.5" />}
-                    <span className={cn(isLast && 'font-medium')}>{item.name}</span>
+                    <span className={cn(isLast && "font-medium")}>
+                      {item.name}
+                    </span>
                   </button>
                 )}
                 {!isLast && (
@@ -144,19 +146,19 @@ export interface CompactFolderBreadcrumbProps {
 export function CompactFolderBreadcrumb({
   folderId,
   folders,
-  separator = ' / ',
+  separator = " / ",
   className,
 }: CompactFolderBreadcrumbProps) {
   const path = React.useMemo(() => {
-    if (folderId === null) return 'All Workflows';
-    if (folderId === 'uncategorized') return 'Uncategorized';
+    if (folderId === null) return "All Workflows";
+    if (folderId === "uncategorized") return "Uncategorized";
 
     const folderPath = getFolderPath(folderId, folders);
-    return folderPath.length > 0 ? folderPath.join(separator) : 'Unknown';
+    return folderPath.length > 0 ? folderPath.join(separator) : "Unknown";
   }, [folderId, folders, separator]);
 
   return (
-    <div className={cn('text-sm text-muted-foreground truncate', className)}>
+    <div className={cn("text-sm text-muted-foreground truncate", className)}>
       {path}
     </div>
   );

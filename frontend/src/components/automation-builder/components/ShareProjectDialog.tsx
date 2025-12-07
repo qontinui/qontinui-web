@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import * as React from 'react';
+import * as React from "react";
 import {
   Share2,
   Users,
@@ -15,30 +15,34 @@ import {
   Calendar,
   X,
   Check,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Avatar } from '@/components/ui/avatar';
-import { Separator } from '@/components/ui/separator';
-import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-import type { PermissionLevel, Collaborator, Organization } from '@/types/collaboration';
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import type {
+  PermissionLevel,
+  Collaborator,
+  Organization,
+} from "@/types/collaboration";
 
 interface ShareProjectDialogProps {
   open: boolean;
@@ -48,9 +52,20 @@ interface ShareProjectDialogProps {
   collaborators: Collaborator[];
   organizations: Organization[];
   shareLink?: string;
-  onAddUser: (email: string, permission: PermissionLevel, expiresAt?: string) => Promise<void>;
-  onAddOrganization: (orgId: string, permission: PermissionLevel, expiresAt?: string) => Promise<void>;
-  onChangePermission: (collaboratorId: string, permission: PermissionLevel) => Promise<void>;
+  onAddUser: (
+    email: string,
+    permission: PermissionLevel,
+    expiresAt?: string
+  ) => Promise<void>;
+  onAddOrganization: (
+    orgId: string,
+    permission: PermissionLevel,
+    expiresAt?: string
+  ) => Promise<void>;
+  onChangePermission: (
+    collaboratorId: string,
+    permission: PermissionLevel
+  ) => Promise<void>;
   onRevoke: (collaboratorId: string) => Promise<void>;
   onGenerateLink?: () => Promise<string>;
 }
@@ -65,18 +80,17 @@ const permissionIcons = {
 };
 
 const permissionColors = {
-  view: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
-  comment: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  edit: 'bg-green-500/10 text-green-500 border-green-500/20',
-  admin: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
-  owner: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-  none: 'bg-red-500/10 text-red-500 border-red-500/20',
+  view: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  comment: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  edit: "bg-green-500/10 text-green-500 border-green-500/20",
+  admin: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  owner: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  none: "bg-red-500/10 text-red-500 border-red-500/20",
 };
 
 export function ShareProjectDialog({
   open,
   onOpenChange,
-  projectId,
   projectName,
   collaborators,
   organizations,
@@ -87,11 +101,14 @@ export function ShareProjectDialog({
   onRevoke,
   onGenerateLink,
 }: ShareProjectDialogProps) {
-  const [shareMode, setShareMode] = React.useState<'user' | 'organization'>('user');
-  const [emailInput, setEmailInput] = React.useState('');
-  const [selectedOrg, setSelectedOrg] = React.useState('');
-  const [selectedPermission, setSelectedPermission] = React.useState<PermissionLevel>('view');
-  const [expirationDate, setExpirationDate] = React.useState('');
+  const [shareMode, setShareMode] = React.useState<"user" | "organization">(
+    "user"
+  );
+  const [emailInput, setEmailInput] = React.useState("");
+  const [selectedOrg, setSelectedOrg] = React.useState("");
+  const [selectedPermission, setSelectedPermission] =
+    React.useState<PermissionLevel>("view");
+  const [expirationDate, setExpirationDate] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
   const [linkCopied, setLinkCopied] = React.useState(false);
@@ -99,18 +116,22 @@ export function ShareProjectDialog({
 
   const handleAddUser = async () => {
     if (!emailInput.trim()) {
-      toast.error('Please enter an email address');
+      toast.error("Please enter an email address");
       return;
     }
 
     setLoading(true);
     try {
-      await onAddUser(emailInput, selectedPermission, expirationDate || undefined);
+      await onAddUser(
+        emailInput,
+        selectedPermission,
+        expirationDate || undefined
+      );
       toast.success(`Shared with ${emailInput}`);
-      setEmailInput('');
-      setExpirationDate('');
+      setEmailInput("");
+      setExpirationDate("");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to share project');
+      toast.error(error.message || "Failed to share project");
     } finally {
       setLoading(false);
     }
@@ -118,43 +139,53 @@ export function ShareProjectDialog({
 
   const handleAddOrganization = async () => {
     if (!selectedOrg) {
-      toast.error('Please select an organization');
+      toast.error("Please select an organization");
       return;
     }
 
     setLoading(true);
     try {
-      await onAddOrganization(selectedOrg, selectedPermission, expirationDate || undefined);
+      await onAddOrganization(
+        selectedOrg,
+        selectedPermission,
+        expirationDate || undefined
+      );
       const org = organizations.find((o) => o.id === selectedOrg);
       toast.success(`Shared with ${org?.name}`);
-      setSelectedOrg('');
-      setExpirationDate('');
+      setSelectedOrg("");
+      setExpirationDate("");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to share project');
+      toast.error(error.message || "Failed to share project");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChangePermission = async (collaboratorId: string, permission: PermissionLevel) => {
+  const handleChangePermission = async (
+    collaboratorId: string,
+    permission: PermissionLevel
+  ) => {
     setActionLoading(collaboratorId);
     try {
       await onChangePermission(collaboratorId, permission);
-      toast.success('Permission updated');
+      toast.success("Permission updated");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update permission');
+      toast.error(error.message || "Failed to update permission");
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleRevoke = async (collaboratorId: string, collaboratorEmail: string) => {
+  const handleRevoke = async (
+    collaboratorId: string,
+    collaboratorEmail: string
+  ) => {
     setActionLoading(collaboratorId);
     try {
       await onRevoke(collaboratorId);
       toast.success(`Revoked access for ${collaboratorEmail}`);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to revoke access');
+      toast.error(error.message || "Failed to revoke access");
     } finally {
       setActionLoading(null);
     }
@@ -162,7 +193,7 @@ export function ShareProjectDialog({
 
   const handleCopyLink = async () => {
     if (!onGenerateLink) {
-      toast.error('Link generation not available');
+      toast.error("Link generation not available");
       return;
     }
 
@@ -173,32 +204,28 @@ export function ShareProjectDialog({
         setGeneratedLink(link);
         await navigator.clipboard.writeText(link);
         setLinkCopied(true);
-        toast.success('Link copied to clipboard');
+        toast.success("Link copied to clipboard");
         setTimeout(() => setLinkCopied(false), 2000);
       } catch (error: any) {
-        toast.error(error.message || 'Failed to generate link');
+        toast.error(error.message || "Failed to generate link");
       } finally {
         setLoading(false);
       }
     } else {
       await navigator.clipboard.writeText(generatedLink);
       setLinkCopied(true);
-      toast.success('Link copied to clipboard');
+      toast.success("Link copied to clipboard");
       setTimeout(() => setLinkCopied(false), 2000);
     }
   };
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString();
   };
 
   return (
@@ -207,7 +234,7 @@ export function ShareProjectDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="h-5 w-5" />
-            Share {projectName ? `"${projectName}"` : 'Project'}
+            Share {projectName ? `"${projectName}"` : "Project"}
           </DialogTitle>
           <DialogDescription>
             Share this project with team members or your organization
@@ -220,18 +247,18 @@ export function ShareProjectDialog({
             {/* Mode Tabs */}
             <div className="flex gap-2 p-1 bg-gray-900 rounded-lg border border-gray-800">
               <Button
-                variant={shareMode === 'user' ? 'secondary' : 'ghost'}
+                variant={shareMode === "user" ? "secondary" : "ghost"}
                 size="sm"
-                onClick={() => setShareMode('user')}
+                onClick={() => setShareMode("user")}
                 className="flex-1"
               >
                 <Mail className="mr-2 h-4 w-4" />
                 Specific User
               </Button>
               <Button
-                variant={shareMode === 'organization' ? 'secondary' : 'ghost'}
+                variant={shareMode === "organization" ? "secondary" : "ghost"}
                 size="sm"
-                onClick={() => setShareMode('organization')}
+                onClick={() => setShareMode("organization")}
                 className="flex-1"
               >
                 <Building2 className="mr-2 h-4 w-4" />
@@ -240,7 +267,7 @@ export function ShareProjectDialog({
             </div>
 
             {/* User Share */}
-            {shareMode === 'user' && (
+            {shareMode === "user" && (
               <div className="space-y-3">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email Address</Label>
@@ -252,7 +279,7 @@ export function ShareProjectDialog({
                     onChange={(e) => setEmailInput(e.target.value)}
                     disabled={loading}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === "Enter") {
                         e.preventDefault();
                         handleAddUser();
                       }
@@ -264,7 +291,9 @@ export function ShareProjectDialog({
                     <Label htmlFor="permission">Permission Level</Label>
                     <Select
                       value={selectedPermission}
-                      onValueChange={(value) => setSelectedPermission(value as PermissionLevel)}
+                      onValueChange={(value) =>
+                        setSelectedPermission(value as PermissionLevel)
+                      }
                       disabled={loading}
                     >
                       <SelectTrigger id="permission">
@@ -279,9 +308,7 @@ export function ShareProjectDialog({
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="expiration">
-                      Expires (Optional)
-                    </Label>
+                    <Label htmlFor="expiration">Expires (Optional)</Label>
                     <div className="relative">
                       <Input
                         id="expiration"
@@ -289,14 +316,18 @@ export function ShareProjectDialog({
                         value={expirationDate}
                         onChange={(e) => setExpirationDate(e.target.value)}
                         disabled={loading}
-                        min={new Date().toISOString().split('T')[0]}
+                        min={new Date().toISOString().split("T")[0]}
                         className="pr-8"
                       />
                       <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                     </div>
                   </div>
                 </div>
-                <Button onClick={handleAddUser} disabled={loading} className="w-full">
+                <Button
+                  onClick={handleAddUser}
+                  disabled={loading}
+                  className="w-full"
+                >
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
@@ -308,7 +339,7 @@ export function ShareProjectDialog({
             )}
 
             {/* Organization Share */}
-            {shareMode === 'organization' && (
+            {shareMode === "organization" && (
               <div className="space-y-3">
                 <div className="space-y-2">
                   <Label htmlFor="organization">Organization</Label>
@@ -334,7 +365,9 @@ export function ShareProjectDialog({
                     <Label htmlFor="org-permission">Permission Level</Label>
                     <Select
                       value={selectedPermission}
-                      onValueChange={(value) => setSelectedPermission(value as PermissionLevel)}
+                      onValueChange={(value) =>
+                        setSelectedPermission(value as PermissionLevel)
+                      }
                       disabled={loading}
                     >
                       <SelectTrigger id="org-permission">
@@ -349,9 +382,7 @@ export function ShareProjectDialog({
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="org-expiration">
-                      Expires (Optional)
-                    </Label>
+                    <Label htmlFor="org-expiration">Expires (Optional)</Label>
                     <div className="relative">
                       <Input
                         id="org-expiration"
@@ -359,14 +390,18 @@ export function ShareProjectDialog({
                         value={expirationDate}
                         onChange={(e) => setExpirationDate(e.target.value)}
                         disabled={loading}
-                        min={new Date().toISOString().split('T')[0]}
+                        min={new Date().toISOString().split("T")[0]}
                         className="pr-8"
                       />
                       <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                     </div>
                   </div>
                 </div>
-                <Button onClick={handleAddOrganization} disabled={loading} className="w-full">
+                <Button
+                  onClick={handleAddOrganization}
+                  disabled={loading}
+                  className="w-full"
+                >
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
@@ -386,14 +421,14 @@ export function ShareProjectDialog({
                 <Label>Share Link</Label>
                 <div className="flex gap-2">
                   <Input
-                    value={generatedLink || 'Generate a shareable link'}
+                    value={generatedLink || "Generate a shareable link"}
                     readOnly
                     className="flex-1 font-mono text-sm"
                   />
                   <Button
                     onClick={handleCopyLink}
                     disabled={loading}
-                    variant={linkCopied ? 'default' : 'outline'}
+                    variant={linkCopied ? "default" : "outline"}
                   >
                     {loading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -429,7 +464,7 @@ export function ShareProjectDialog({
               {collaborators.map((collaborator) => {
                 const PermissionIcon = permissionIcons[collaborator.permission];
                 const isUpdating = actionLoading === collaborator.id;
-                const isOwner = collaborator.permission === 'owner';
+                const isOwner = collaborator.permission === "owner";
 
                 return (
                   <div
@@ -440,7 +475,9 @@ export function ShareProjectDialog({
                       <Avatar
                         fallback={
                           <span className="text-xs font-medium">
-                            {getInitials(collaborator.name || collaborator.email)}
+                            {getInitials(
+                              collaborator.name || collaborator.email
+                            )}
                           </span>
                         }
                         className="h-8 w-8 bg-gray-800"
@@ -457,7 +494,10 @@ export function ShareProjectDialog({
                     <div className="flex items-center gap-2 shrink-0">
                       {isOwner ? (
                         <Badge
-                          className={cn('w-[120px] justify-center', permissionColors.owner)}
+                          className={cn(
+                            "w-[120px] justify-center",
+                            permissionColors.owner
+                          )}
                           variant="outline"
                         >
                           <PermissionIcon className="h-3 w-3 mr-1" />
@@ -468,12 +508,18 @@ export function ShareProjectDialog({
                           <Select
                             value={collaborator.permission}
                             onValueChange={(value) =>
-                              handleChangePermission(collaborator.id, value as PermissionLevel)
+                              handleChangePermission(
+                                collaborator.id,
+                                value as PermissionLevel
+                              )
                             }
                             disabled={isUpdating}
                           >
                             <SelectTrigger
-                              className={cn('w-[120px] h-8 text-xs', permissionColors[collaborator.permission])}
+                              className={cn(
+                                "w-[120px] h-8 text-xs",
+                                permissionColors[collaborator.permission]
+                              )}
                             >
                               <div className="flex items-center gap-1.5">
                                 <PermissionIcon className="h-3 w-3" />
@@ -482,7 +528,9 @@ export function ShareProjectDialog({
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="view">Can View</SelectItem>
-                              <SelectItem value="comment">Can Comment</SelectItem>
+                              <SelectItem value="comment">
+                                Can Comment
+                              </SelectItem>
                               <SelectItem value="edit">Can Edit</SelectItem>
                               <SelectItem value="admin">Admin</SelectItem>
                             </SelectContent>
@@ -491,7 +539,9 @@ export function ShareProjectDialog({
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-950/30"
-                            onClick={() => handleRevoke(collaborator.id, collaborator.email)}
+                            onClick={() =>
+                              handleRevoke(collaborator.id, collaborator.email)
+                            }
                             disabled={isUpdating}
                             aria-label={`Remove ${collaborator.name || collaborator.email}`}
                           >
@@ -511,7 +561,9 @@ export function ShareProjectDialog({
                 <div className="text-center py-12 text-gray-400 border border-gray-800 rounded-lg bg-gray-950/30">
                   <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">No collaborators yet</p>
-                  <p className="text-xs mt-1">Share this project to get started</p>
+                  <p className="text-xs mt-1">
+                    Share this project to get started
+                  </p>
                 </div>
               )}
             </div>

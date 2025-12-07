@@ -9,13 +9,12 @@
 
 import type {
   Comment,
-  CreateCommentRequest,
-  UpdateCommentRequest,
-  CommentStatus,
-} from '@/types/collaboration';
-import { httpClient } from './http-client';
+  CommentCreate,
+  CommentUpdate,
+} from "@/types/collaboration";
+import { httpClient } from "./service-factory";
 
-const API_BASE = '/api/comments';
+const API_BASE = "/api/comments";
 
 // ============================================================================
 // Comment Service
@@ -25,10 +24,13 @@ class CommentService {
   /**
    * Get comments for a project
    */
-  async getComments(projectId: string, workflowId?: string): Promise<Comment[]> {
+  async getComments(
+    projectId: string,
+    workflowId?: string
+  ): Promise<Comment[]> {
     const params = new URLSearchParams({ project_id: projectId });
     if (workflowId) {
-      params.append('workflow_id', workflowId);
+      params.append("workflow_id", workflowId);
     }
 
     const comments = await httpClient.get<Comment[]>(`${API_BASE}?${params}`);
@@ -47,14 +49,13 @@ class CommentService {
    * Add a new comment
    */
   async addComment(
-    projectId: string,
+    _projectId: string,
     workflowId: string | undefined,
     content: string,
     position?: { x: number; y: number },
     parentId?: string
   ): Promise<Comment> {
-    const data: CreateCommentRequest = {
-      project_id: projectId,
+    const data: CommentCreate = {
       workflow_id: workflowId,
       content,
       position,
@@ -70,9 +71,12 @@ class CommentService {
    */
   async updateComment(
     commentId: string,
-    data: UpdateCommentRequest
+    data: CommentUpdate | { resolved?: boolean }
   ): Promise<Comment> {
-    const comment = await httpClient.patch<Comment>(`${API_BASE}/${commentId}`, data);
+    const comment = await httpClient.patch<Comment>(
+      `${API_BASE}/${commentId}`,
+      data
+    );
     return comment;
   }
 
@@ -87,14 +91,14 @@ class CommentService {
    * Resolve a comment
    */
   async resolveComment(commentId: string): Promise<Comment> {
-    return this.updateComment(commentId, { status: 'resolved' });
+    return this.updateComment(commentId, { resolved: true });
   }
 
   /**
    * Reopen a comment
    */
   async reopenComment(commentId: string): Promise<Comment> {
-    return this.updateComment(commentId, { status: 'open' });
+    return this.updateComment(commentId, { resolved: false });
   }
 
   /**
@@ -108,7 +112,7 @@ class CommentService {
     const parentComment = await this.getComment(commentId);
     return this.addComment(
       projectId,
-      parentComment.workflow_id,
+      parentComment.workflow_id ?? undefined,
       content,
       undefined,
       commentId
@@ -116,15 +120,15 @@ class CommentService {
   }
 
   /**
-   * Get comments by status
+   * Get comments by resolved status
    */
   async getCommentsByStatus(
     projectId: string,
-    status: CommentStatus
+    resolved: boolean
   ): Promise<Comment[]> {
     const params = new URLSearchParams({
       project_id: projectId,
-      status,
+      resolved: resolved.toString(),
     });
 
     const comments = await httpClient.get<Comment[]>(`${API_BASE}?${params}`);
@@ -140,7 +144,7 @@ class CommentService {
   ): Promise<{ total: number; open: number; resolved: number }> {
     const params = new URLSearchParams({ project_id: projectId });
     if (workflowId) {
-      params.append('workflow_id', workflowId);
+      params.append("workflow_id", workflowId);
     }
 
     const count = await httpClient.get<{

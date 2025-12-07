@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.redis_config import RedisConfig
 from app.core.config import settings
-from app.models.collaboration import ActionType, ProjectLock, ResourceType
+from app.models.collaboration import ProjectLock, ResourceType
 
 logger = structlog.get_logger(__name__)
 
@@ -59,7 +59,7 @@ class DistributedLockService:
         return self._redis_client if self._redis_available else None
 
     def _make_lock_key(
-        self, project_id: int, resource_type: str, resource_id: str
+        self, project_id: UUID, resource_type: str, resource_id: str
     ) -> str:
         """
         Generate Redis key for a lock.
@@ -104,7 +104,7 @@ class DistributedLockService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int = 5,
@@ -134,18 +134,30 @@ class DistributedLockService:
 
         if redis:
             return await self._acquire_redis_lock(
-                redis, user_id, project_id, resource_type, resource_id, duration_minutes, metadata
+                redis,
+                user_id,
+                project_id,
+                resource_type,
+                resource_id,
+                duration_minutes,
+                metadata,
             )
         else:
             return await self._acquire_db_lock(
-                db, user_id, project_id, resource_type, resource_id, duration_minutes, metadata
+                db,
+                user_id,
+                project_id,
+                resource_type,
+                resource_id,
+                duration_minutes,
+                metadata,
             )
 
     async def _acquire_redis_lock(
         self,
         redis: aioredis.Redis,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int,
@@ -163,7 +175,9 @@ class DistributedLockService:
 
             if existing_value:
                 # Parse existing lock
-                existing_user_id, existing_lock_id = self._parse_lock_value(existing_value)
+                existing_user_id, existing_lock_id = self._parse_lock_value(
+                    existing_value
+                )
 
                 if existing_user_id == user_id:
                     # Extend existing lock (refresh TTL)
@@ -240,7 +254,7 @@ class DistributedLockService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int,
@@ -336,6 +350,8 @@ class DistributedLockService:
                     "backend": "postgresql",
                 }
 
+            return None
+
         except Exception as e:
             logger.error("db_lock_error", error=str(e))
             await db.rollback()
@@ -346,7 +362,7 @@ class DistributedLockService:
         db: AsyncSession,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
     ) -> bool:
@@ -380,7 +396,7 @@ class DistributedLockService:
         redis: aioredis.Redis,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
     ) -> bool:
@@ -407,7 +423,9 @@ class DistributedLockService:
             # Delete the lock
             await redis.delete(lock_key)
 
-            logger.info("redis_lock_released", lock_id=str(lock_id), user_id=str(user_id))
+            logger.info(
+                "redis_lock_released", lock_id=str(lock_id), user_id=str(user_id)
+            )
             return True
 
         except Exception as e:
@@ -427,7 +445,9 @@ class DistributedLockService:
             lock = result.scalar_one_or_none()
 
             if not lock:
-                logger.warning("db_lock_not_found_or_unauthorized", lock_id=str(lock_id))
+                logger.warning(
+                    "db_lock_not_found_or_unauthorized", lock_id=str(lock_id)
+                )
                 return False
 
             await db.delete(lock)
@@ -446,7 +466,7 @@ class DistributedLockService:
         db: AsyncSession,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int = 5,
@@ -474,7 +494,13 @@ class DistributedLockService:
 
         if redis:
             return await self._refresh_redis_lock(
-                redis, lock_id, user_id, project_id, resource_type, resource_id, duration_minutes
+                redis,
+                lock_id,
+                user_id,
+                project_id,
+                resource_type,
+                resource_id,
+                duration_minutes,
             )
         else:
             return await self._refresh_db_lock(db, lock_id, user_id, duration_minutes)
@@ -484,7 +510,7 @@ class DistributedLockService:
         redis: aioredis.Redis,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int,
@@ -513,7 +539,9 @@ class DistributedLockService:
             ttl_seconds = duration_minutes * 60
             await redis.expire(lock_key, ttl_seconds)
 
-            logger.info("redis_lock_refreshed", lock_id=str(lock_id), user_id=str(user_id))
+            logger.info(
+                "redis_lock_refreshed", lock_id=str(lock_id), user_id=str(user_id)
+            )
             return True
 
         except Exception as e:

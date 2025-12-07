@@ -11,8 +11,8 @@
  * - Local storage persistence
  */
 
-import { LayoutStyle, LayoutConfig } from '@/lib/workflow-layout/auto-layout';
-import type { LayoutOptions } from './layout-service';
+import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
+import type { LayoutOptions } from "./layout-service";
 
 // ============================================================================
 // Types
@@ -38,7 +38,7 @@ export interface LayoutPreset {
   icon?: string;
 
   /** Preset category */
-  category: 'compact' | 'readable' | 'presentation' | 'custom' | 'debug';
+  category: "compact" | "readable" | "presentation" | "custom" | "debug";
 
   /** Whether this is a built-in preset */
   builtIn: boolean;
@@ -51,7 +51,7 @@ export interface LayoutPreset {
 }
 
 export interface PresetCategory {
-  id: 'compact' | 'readable' | 'presentation' | 'custom' | 'debug';
+  id: "compact" | "readable" | "presentation" | "custom" | "debug";
   name: string;
   description: string;
   icon?: string;
@@ -64,9 +64,10 @@ export interface PresetCategory {
 export const BUILTIN_PRESETS: LayoutPreset[] = [
   // Compact category
   {
-    id: 'compact-dense',
-    name: 'Compact Dense',
-    description: 'Minimize space usage with tight spacing - best for small workflows',
+    id: "compact-dense",
+    name: "Compact Dense",
+    description:
+      "Minimize space usage with tight spacing - best for small workflows",
     style: LayoutStyle.TREE,
     options: {
       horizontalSpacing: 100,
@@ -74,15 +75,15 @@ export const BUILTIN_PRESETS: LayoutPreset[] = [
       branchOffset: 100,
       minNodeSpacing: 10,
     },
-    icon: 'compress',
-    category: 'compact',
+    icon: "compress",
+    category: "compact",
     builtIn: true,
-    tags: ['compact', 'tight', 'small'],
+    tags: ["compact", "tight", "small"],
   },
   {
-    id: 'compact-balanced',
-    name: 'Compact Balanced',
-    description: 'Good balance between compactness and readability',
+    id: "compact-balanced",
+    name: "Compact Balanced",
+    description: "Good balance between compactness and readability",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       horizontalSpacing: 150,
@@ -90,17 +91,18 @@ export const BUILTIN_PRESETS: LayoutPreset[] = [
       branchOffset: 120,
       minNodeSpacing: 15,
     },
-    icon: 'grid',
-    category: 'compact',
+    icon: "grid",
+    category: "compact",
     builtIn: true,
-    tags: ['compact', 'balanced'],
+    tags: ["compact", "balanced"],
   },
 
   // Readable category
   {
-    id: 'readable-standard',
-    name: 'Readable Standard',
-    description: 'Optimized for readability with comfortable spacing - best for most workflows',
+    id: "readable-standard",
+    name: "Readable Standard",
+    description:
+      "Optimized for readability with comfortable spacing - best for most workflows",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       horizontalSpacing: 200,
@@ -108,15 +110,15 @@ export const BUILTIN_PRESETS: LayoutPreset[] = [
       branchOffset: 150,
       minNodeSpacing: 20,
     },
-    icon: 'eye',
-    category: 'readable',
+    icon: "eye",
+    category: "readable",
     builtIn: true,
-    tags: ['readable', 'standard', 'default'],
+    tags: ["readable", "standard", "default"],
   },
   {
-    id: 'readable-spacious',
-    name: 'Readable Spacious',
-    description: 'Extra spacing for maximum clarity and ease of editing',
+    id: "readable-spacious",
+    name: "Readable Spacious",
+    description: "Extra spacing for maximum clarity and ease of editing",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       horizontalSpacing: 250,
@@ -124,15 +126,16 @@ export const BUILTIN_PRESETS: LayoutPreset[] = [
       branchOffset: 180,
       minNodeSpacing: 30,
     },
-    icon: 'maximize',
-    category: 'readable',
+    icon: "maximize",
+    category: "readable",
     builtIn: true,
-    tags: ['readable', 'spacious', 'clear'],
+    tags: ["readable", "spacious", "clear"],
   },
   {
-    id: 'readable-horizontal',
-    name: 'Readable Horizontal',
-    description: 'Left-to-right flow with good spacing - best for linear workflows',
+    id: "readable-horizontal",
+    name: "Readable Horizontal",
+    description:
+      "Left-to-right flow with good spacing - best for linear workflows",
     style: LayoutStyle.HORIZONTAL,
     options: {
       horizontalSpacing: 200,
@@ -140,17 +143,17 @@ export const BUILTIN_PRESETS: LayoutPreset[] = [
       branchOffset: 150,
       minNodeSpacing: 20,
     },
-    icon: 'arrow-right',
-    category: 'readable',
+    icon: "arrow-right",
+    category: "readable",
     builtIn: true,
-    tags: ['readable', 'horizontal', 'linear'],
+    tags: ["readable", "horizontal", "linear"],
   },
 
   // Presentation category
   {
-    id: 'presentation-clean',
-    name: 'Presentation Clean',
-    description: 'Clean layout optimized for presentations and screenshots',
+    id: "presentation-clean",
+    name: "Presentation Clean",
+    description: "Clean layout optimized for presentations and screenshots",
     style: LayoutStyle.HORIZONTAL,
     options: {
       horizontalSpacing: 250,
@@ -158,15 +161,16 @@ export const BUILTIN_PRESETS: LayoutPreset[] = [
       branchOffset: 200,
       minNodeSpacing: 25,
     },
-    icon: 'presentation',
-    category: 'presentation',
+    icon: "presentation",
+    category: "presentation",
     builtIn: true,
-    tags: ['presentation', 'clean', 'screenshot'],
+    tags: ["presentation", "clean", "screenshot"],
   },
   {
-    id: 'presentation-symmetric',
-    name: 'Presentation Symmetric',
-    description: 'Symmetrical hierarchical layout for professional presentations',
+    id: "presentation-symmetric",
+    name: "Presentation Symmetric",
+    description:
+      "Symmetrical hierarchical layout for professional presentations",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       horizontalSpacing: 280,
@@ -174,32 +178,33 @@ export const BUILTIN_PRESETS: LayoutPreset[] = [
       branchOffset: 200,
       minNodeSpacing: 30,
     },
-    icon: 'layout',
-    category: 'presentation',
+    icon: "layout",
+    category: "presentation",
     builtIn: true,
-    tags: ['presentation', 'symmetric', 'professional'],
+    tags: ["presentation", "symmetric", "professional"],
   },
   {
-    id: 'presentation-circular',
-    name: 'Presentation Circular',
-    description: 'Artistic circular layout - best for small workflows in presentations',
+    id: "presentation-circular",
+    name: "Presentation Circular",
+    description:
+      "Artistic circular layout - best for small workflows in presentations",
     style: LayoutStyle.CIRCULAR,
     options: {
       horizontalSpacing: 200,
       verticalSpacing: 200,
       minNodeSpacing: 20,
     },
-    icon: 'circle',
-    category: 'presentation',
+    icon: "circle",
+    category: "presentation",
     builtIn: true,
-    tags: ['presentation', 'circular', 'artistic'],
+    tags: ["presentation", "circular", "artistic"],
   },
 
   // Debug category
   {
-    id: 'debug-spread',
-    name: 'Debug Spread Out',
-    description: 'Very spacious layout for debugging and detailed inspection',
+    id: "debug-spread",
+    name: "Debug Spread Out",
+    description: "Very spacious layout for debugging and detailed inspection",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       horizontalSpacing: 350,
@@ -207,25 +212,25 @@ export const BUILTIN_PRESETS: LayoutPreset[] = [
       branchOffset: 250,
       minNodeSpacing: 40,
     },
-    icon: 'bug',
-    category: 'debug',
+    icon: "bug",
+    category: "debug",
     builtIn: true,
-    tags: ['debug', 'spacious', 'inspection'],
+    tags: ["debug", "spacious", "inspection"],
   },
   {
-    id: 'debug-force',
-    name: 'Debug Force-Directed',
-    description: 'Physics-based layout to reveal complex connections',
+    id: "debug-force",
+    name: "Debug Force-Directed",
+    description: "Physics-based layout to reveal complex connections",
     style: LayoutStyle.FORCE_DIRECTED,
     options: {
       horizontalSpacing: 200,
       verticalSpacing: 120,
       minNodeSpacing: 20,
     },
-    icon: 'git-network',
-    category: 'debug',
+    icon: "git-network",
+    category: "debug",
     builtIn: true,
-    tags: ['debug', 'force', 'connections'],
+    tags: ["debug", "force", "connections"],
   },
 ];
 
@@ -235,34 +240,34 @@ export const BUILTIN_PRESETS: LayoutPreset[] = [
 
 export const PRESET_CATEGORIES: PresetCategory[] = [
   {
-    id: 'compact',
-    name: 'Compact',
-    description: 'Minimize space usage',
-    icon: 'compress',
+    id: "compact",
+    name: "Compact",
+    description: "Minimize space usage",
+    icon: "compress",
   },
   {
-    id: 'readable',
-    name: 'Readable',
-    description: 'Optimized for clarity',
-    icon: 'eye',
+    id: "readable",
+    name: "Readable",
+    description: "Optimized for clarity",
+    icon: "eye",
   },
   {
-    id: 'presentation',
-    name: 'Presentation',
-    description: 'Professional layouts',
-    icon: 'presentation',
+    id: "presentation",
+    name: "Presentation",
+    description: "Professional layouts",
+    icon: "presentation",
   },
   {
-    id: 'custom',
-    name: 'Custom',
-    description: 'User-created presets',
-    icon: 'star',
+    id: "custom",
+    name: "Custom",
+    description: "User-created presets",
+    icon: "star",
   },
   {
-    id: 'debug',
-    name: 'Debug',
-    description: 'Development and debugging',
-    icon: 'bug',
+    id: "debug",
+    name: "Debug",
+    description: "Development and debugging",
+    icon: "bug",
   },
 ];
 
@@ -270,8 +275,8 @@ export const PRESET_CATEGORIES: PresetCategory[] = [
 // Preset Storage Key
 // ============================================================================
 
-const STORAGE_KEY = 'qontinui-layout-presets';
-const RECENT_PRESETS_KEY = 'qontinui-layout-presets-recent';
+const STORAGE_KEY = "qontinui-layout-presets";
+const RECENT_PRESETS_KEY = "qontinui-layout-presets-recent";
 const MAX_RECENT = 10;
 
 // ============================================================================
@@ -289,15 +294,17 @@ export function getAllPresets(): LayoutPreset[] {
 /**
  * Get presets by category
  */
-export function getPresetsByCategory(category: PresetCategory['id']): LayoutPreset[] {
-  return getAllPresets().filter(p => p.category === category);
+export function getPresetsByCategory(
+  category: PresetCategory["id"]
+): LayoutPreset[] {
+  return getAllPresets().filter((p) => p.category === category);
 }
 
 /**
  * Get a preset by ID
  */
 export function getPresetById(id: string): LayoutPreset | undefined {
-  return getAllPresets().find(p => p.id === id);
+  return getAllPresets().find((p) => p.id === id);
 }
 
 /**
@@ -305,17 +312,20 @@ export function getPresetById(id: string): LayoutPreset | undefined {
  */
 export function searchPresets(query: string): LayoutPreset[] {
   const lowerQuery = query.toLowerCase();
-  return getAllPresets().filter(preset =>
-    preset.name.toLowerCase().includes(lowerQuery) ||
-    preset.description.toLowerCase().includes(lowerQuery) ||
-    preset.tags?.some(tag => tag.toLowerCase().includes(lowerQuery))
+  return getAllPresets().filter(
+    (preset) =>
+      preset.name.toLowerCase().includes(lowerQuery) ||
+      preset.description.toLowerCase().includes(lowerQuery) ||
+      preset.tags?.some((tag) => tag.toLowerCase().includes(lowerQuery))
   );
 }
 
 /**
  * Save a custom preset
  */
-export function saveCustomPreset(preset: Omit<LayoutPreset, 'id' | 'builtIn' | 'createdAt'>): LayoutPreset {
+export function saveCustomPreset(
+  preset: Omit<LayoutPreset, "id" | "builtIn" | "createdAt">
+): LayoutPreset {
   const customPresets = loadCustomPresets();
 
   const newPreset: LayoutPreset = {
@@ -323,7 +333,7 @@ export function saveCustomPreset(preset: Omit<LayoutPreset, 'id' | 'builtIn' | '
     id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     builtIn: false,
     createdAt: new Date().toISOString(),
-    category: 'custom',
+    category: "custom",
   };
 
   customPresets.push(newPreset);
@@ -335,18 +345,29 @@ export function saveCustomPreset(preset: Omit<LayoutPreset, 'id' | 'builtIn' | '
 /**
  * Update an existing custom preset
  */
-export function updateCustomPreset(id: string, updates: Partial<LayoutPreset>): boolean {
+export function updateCustomPreset(
+  id: string,
+  updates: Partial<LayoutPreset>
+): boolean {
   const customPresets = loadCustomPresets();
-  const index = customPresets.findIndex(p => p.id === id);
+  const index = customPresets.findIndex((p) => p.id === id);
 
   if (index === -1) return false;
 
+  const current = customPresets[index];
+  if (!current) return false;
+
   customPresets[index] = {
-    ...customPresets[index],
+    ...current,
     ...updates,
     id, // Preserve ID
     builtIn: false, // Cannot change built-in status
-  };
+    category: updates.category ?? current.category,
+    style: updates.style ?? current.style,
+    options: updates.options ?? current.options,
+    name: updates.name ?? current.name,
+    description: updates.description ?? current.description,
+  } as LayoutPreset;
 
   saveCustomPresetsToStorage(customPresets);
   return true;
@@ -357,7 +378,7 @@ export function updateCustomPreset(id: string, updates: Partial<LayoutPreset>): 
  */
 export function deleteCustomPreset(id: string): boolean {
   const customPresets = loadCustomPresets();
-  const filtered = customPresets.filter(p => p.id !== id);
+  const filtered = customPresets.filter((p) => p.id !== id);
 
   if (filtered.length === customPresets.length) {
     return false; // Preset not found
@@ -371,7 +392,7 @@ export function deleteCustomPreset(id: string): boolean {
  * Get default preset (readable-standard)
  */
 export function getDefaultPreset(): LayoutPreset {
-  return BUILTIN_PRESETS.find(p => p.id === 'readable-standard')!;
+  return BUILTIN_PRESETS.find((p) => p.id === "readable-standard")!;
 }
 
 /**
@@ -389,15 +410,19 @@ export function createPresetFromSettings(
     description,
     style,
     options,
-    tags,
-    icon: 'star',
+    tags: tags ?? [],
+    icon: "star",
+    category: "custom",
   });
 }
 
 /**
  * Duplicate a preset
  */
-export function duplicatePreset(id: string, newName?: string): LayoutPreset | null {
+export function duplicatePreset(
+  id: string,
+  newName?: string
+): LayoutPreset | null {
   const preset = getPresetById(id);
   if (!preset) return null;
 
@@ -406,8 +431,9 @@ export function duplicatePreset(id: string, newName?: string): LayoutPreset | nu
     description: preset.description,
     style: preset.style,
     options: { ...preset.options },
-    icon: preset.icon,
-    tags: preset.tags ? [...preset.tags] : undefined,
+    icon: preset.icon ?? "star",
+    tags: preset.tags ? [...preset.tags] : [],
+    category: "custom",
   });
 }
 
@@ -425,10 +451,10 @@ export function getRecentPresets(): LayoutPreset[] {
 
     const presetIds: string[] = JSON.parse(recent);
     return presetIds
-      .map(id => getPresetById(id))
+      .map((id) => getPresetById(id))
       .filter((p): p is LayoutPreset => p !== undefined);
   } catch (error) {
-    console.error('Failed to load recent presets:', error);
+    console.error("Failed to load recent presets:", error);
     return [];
   }
 }
@@ -441,7 +467,7 @@ export function addToRecentPresets(presetId: string): void {
     let recent = getRecentPresetIds();
 
     // Remove if already in list
-    recent = recent.filter(id => id !== presetId);
+    recent = recent.filter((id) => id !== presetId);
 
     // Add to front
     recent.unshift(presetId);
@@ -451,7 +477,7 @@ export function addToRecentPresets(presetId: string): void {
 
     localStorage.setItem(RECENT_PRESETS_KEY, JSON.stringify(recent));
   } catch (error) {
-    console.error('Failed to save recent preset:', error);
+    console.error("Failed to save recent preset:", error);
   }
 }
 
@@ -462,7 +488,7 @@ export function clearRecentPresets(): void {
   try {
     localStorage.removeItem(RECENT_PRESETS_KEY);
   } catch (error) {
-    console.error('Failed to clear recent presets:', error);
+    console.error("Failed to clear recent presets:", error);
   }
 }
 
@@ -481,12 +507,15 @@ export function exportCustomPresets(): string {
 /**
  * Import custom presets from JSON
  */
-export function importCustomPresets(json: string): { success: number; failed: number } {
+export function importCustomPresets(json: string): {
+  success: number;
+  failed: number;
+} {
   try {
     const imported = JSON.parse(json) as LayoutPreset[];
 
     if (!Array.isArray(imported)) {
-      throw new Error('Invalid format: expected array');
+      throw new Error("Invalid format: expected array");
     }
 
     let success = 0;
@@ -502,11 +531,12 @@ export function importCustomPresets(json: string): { success: number; failed: nu
 
         saveCustomPreset({
           name: preset.name,
-          description: preset.description || '',
+          description: preset.description || "",
           style: preset.style,
           options: preset.options,
-          icon: preset.icon,
-          tags: preset.tags,
+          icon: preset.icon ?? "star",
+          tags: preset.tags ?? [],
+          category: preset.category ?? "custom",
         });
 
         success++;
@@ -517,7 +547,7 @@ export function importCustomPresets(json: string): { success: number; failed: nu
 
     return { success, failed };
   } catch (error) {
-    console.error('Failed to import presets:', error);
+    console.error("Failed to import presets:", error);
     return { success: 0, failed: 0 };
   }
 }
@@ -533,7 +563,7 @@ function loadCustomPresets(): LayoutPreset[] {
 
     return JSON.parse(stored) as LayoutPreset[];
   } catch (error) {
-    console.error('Failed to load custom presets:', error);
+    console.error("Failed to load custom presets:", error);
     return [];
   }
 }
@@ -542,7 +572,7 @@ function saveCustomPresetsToStorage(presets: LayoutPreset[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
   } catch (error) {
-    console.error('Failed to save custom presets:', error);
+    console.error("Failed to save custom presets:", error);
   }
 }
 
@@ -567,7 +597,7 @@ export function getPresetDisplayInfo(preset: LayoutPreset): {
   };
 
   if (preset.builtIn) {
-    info.badge = 'Built-in';
+    info.badge = "Built-in";
   }
 
   return info;
@@ -582,20 +612,23 @@ export function validatePresetOptions(options: LayoutOptions): {
 } {
   const errors: string[] = [];
 
-  if (options.horizontalSpacing !== undefined && options.horizontalSpacing < 50) {
-    errors.push('Horizontal spacing must be at least 50px');
+  if (
+    options.horizontalSpacing !== undefined &&
+    options.horizontalSpacing < 50
+  ) {
+    errors.push("Horizontal spacing must be at least 50px");
   }
 
   if (options.verticalSpacing !== undefined && options.verticalSpacing < 50) {
-    errors.push('Vertical spacing must be at least 50px');
+    errors.push("Vertical spacing must be at least 50px");
   }
 
   if (options.nodeWidth !== undefined && options.nodeWidth < 100) {
-    errors.push('Node width must be at least 100px');
+    errors.push("Node width must be at least 100px");
   }
 
   if (options.nodeHeight !== undefined && options.nodeHeight < 60) {
-    errors.push('Node height must be at least 60px');
+    errors.push("Node height must be at least 60px");
   }
 
   return {

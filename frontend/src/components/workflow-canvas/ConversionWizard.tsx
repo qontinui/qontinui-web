@@ -10,11 +10,15 @@
  * 5. Confirm - Apply conversion
  */
 
-import React, { useState, useEffect } from 'react';
-import type { Workflow } from '@/lib/action-schema/action-types';
-import { getFormatConverter, ConversionPreview, ConversionResult } from '@/services/format-converter';
-import { LayoutStyle } from '@/lib/workflow-layout/auto-layout';
-import { ConversionPreview as ConversionPreviewComponent } from './ConversionPreview';
+import React, { useState, useEffect } from "react";
+import type { Workflow } from "@/lib/action-schema/action-types";
+import {
+  getFormatConverter,
+  ConversionPreview,
+  ConversionResult,
+} from "@/services/format-converter";
+import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
+import { ConversionPreview as ConversionPreviewComponent } from "./ConversionPreview";
 
 // ============================================================================
 // Types
@@ -23,12 +27,12 @@ import { ConversionPreview as ConversionPreviewComponent } from './ConversionPre
 export interface ConversionWizardProps {
   open: boolean;
   workflow: Workflow;
-  currentFormat: 'sequential' | 'graph';
-  onComplete: (workflow: Workflow, format: 'sequential' | 'graph') => void;
+  currentFormat: "sequential" | "graph";
+  onComplete: (workflow: Workflow, format: "sequential" | "graph") => void;
   onCancel: () => void;
 }
 
-type WizardStep = 'format' | 'validation' | 'layout' | 'preview' | 'confirm';
+type WizardStep = "format" | "validation" | "layout" | "preview" | "confirm";
 
 // ============================================================================
 // Conversion Wizard Component
@@ -39,14 +43,17 @@ export function ConversionWizard({
   workflow,
   currentFormat,
   onComplete,
-  onCancel
+  onCancel,
 }: ConversionWizardProps) {
-  const [currentStep, setCurrentStep] = useState<WizardStep>('format');
-  const [targetFormat, setTargetFormat] = useState<'sequential' | 'graph'>(
-    currentFormat === 'sequential' ? 'graph' : 'sequential'
+  const [currentStep, setCurrentStep] = useState<WizardStep>("format");
+  const [targetFormat, setTargetFormat] = useState<"sequential" | "graph">(
+    currentFormat === "sequential" ? "graph" : "sequential"
   );
-  const [selectedLayout, setSelectedLayout] = useState<LayoutStyle>(LayoutStyle.HIERARCHICAL);
-  const [conversionPreview, setConversionPreview] = useState<ConversionPreview | null>(null);
+  const [selectedLayout, setSelectedLayout] = useState<LayoutStyle>(
+    LayoutStyle.HIERARCHICAL
+  );
+  const [conversionPreview, setConversionPreview] =
+    useState<ConversionPreview | null>(null);
   const [previewWorkflow, setPreviewWorkflow] = useState<Workflow | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +62,8 @@ export function ConversionWizard({
 
   useEffect(() => {
     if (open) {
-      setCurrentStep('format');
-      setTargetFormat(currentFormat === 'sequential' ? 'graph' : 'sequential');
+      setCurrentStep("format");
+      setTargetFormat(currentFormat === "sequential" ? "graph" : "sequential");
       setError(null);
     }
   }, [open, currentFormat]);
@@ -69,37 +76,38 @@ export function ConversionWizard({
   }, [targetFormat, workflow]);
 
   const canProceed = () => {
-    if (currentStep === 'format') return targetFormat !== currentFormat;
-    if (currentStep === 'validation') return conversionPreview?.canConvert ?? false;
+    if (currentStep === "format") return targetFormat !== currentFormat;
+    if (currentStep === "validation")
+      return conversionPreview?.canConvert ?? false;
     return true;
   };
 
   const handleNext = async () => {
     switch (currentStep) {
-      case 'format':
+      case "format":
         // Check if validation is needed
-        if (targetFormat === 'sequential') {
-          setCurrentStep('validation');
-        } else if (targetFormat === 'graph') {
-          setCurrentStep('layout');
+        if (targetFormat === "sequential") {
+          setCurrentStep("validation");
+        } else if (targetFormat === "graph") {
+          setCurrentStep("layout");
         }
         break;
 
-      case 'validation':
-        setCurrentStep('preview');
+      case "validation":
+        setCurrentStep("preview");
         await generatePreview();
         break;
 
-      case 'layout':
-        setCurrentStep('preview');
+      case "layout":
+        setCurrentStep("preview");
         await generatePreview();
         break;
 
-      case 'preview':
-        setCurrentStep('confirm');
+      case "preview":
+        setCurrentStep("confirm");
         break;
 
-      case 'confirm':
+      case "confirm":
         await handleConvert();
         break;
     }
@@ -107,19 +115,19 @@ export function ConversionWizard({
 
   const handleBack = () => {
     switch (currentStep) {
-      case 'validation':
-      case 'layout':
-        setCurrentStep('format');
+      case "validation":
+      case "layout":
+        setCurrentStep("format");
         break;
-      case 'preview':
-        if (targetFormat === 'sequential') {
-          setCurrentStep('validation');
+      case "preview":
+        if (targetFormat === "sequential") {
+          setCurrentStep("validation");
         } else {
-          setCurrentStep('layout');
+          setCurrentStep("layout");
         }
         break;
-      case 'confirm':
-        setCurrentStep('preview');
+      case "confirm":
+        setCurrentStep("preview");
         break;
     }
   };
@@ -128,25 +136,29 @@ export function ConversionWizard({
     try {
       let result: ConversionResult;
 
-      if (targetFormat === 'graph') {
+      if (targetFormat === "graph") {
         result = await converter.convertToGraph(workflow, {
           autoLayout: true,
-          layoutStyle: selectedLayout,
-          validate: true
+          layoutStyle: selectedLayout as
+            | "tree"
+            | "horizontal"
+            | "hierarchical"
+            | undefined,
+          validate: true,
         });
       } else {
         result = await converter.convertToSequential(workflow, {
-          validate: true
+          validate: true,
         });
       }
 
       if (result.success && result.workflow) {
         setPreviewWorkflow(result.workflow);
       } else {
-        setError(result.errors?.[0]?.message || 'Failed to generate preview');
+        setError(result.errors?.[0]?.message || "Failed to generate preview");
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to generate preview');
+      setError(err.message || "Failed to generate preview");
     }
   };
 
@@ -159,7 +171,7 @@ export function ConversionWizard({
         onComplete(previewWorkflow, targetFormat);
       }
     } catch (err: any) {
-      setError(err.message || 'Conversion failed');
+      setError(err.message || "Conversion failed");
     } finally {
       setIsConverting(false);
     }
@@ -167,10 +179,10 @@ export function ConversionWizard({
 
   if (!open) return null;
 
-  const steps: WizardStep[] = ['format'];
-  if (targetFormat === 'sequential') steps.push('validation');
-  if (targetFormat === 'graph') steps.push('layout');
-  steps.push('preview', 'confirm');
+  const steps: WizardStep[] = ["format"];
+  if (targetFormat === "sequential") steps.push("validation");
+  if (targetFormat === "graph") steps.push("layout");
+  steps.push("preview", "confirm");
 
   const currentStepIndex = steps.indexOf(currentStep);
 
@@ -179,7 +191,9 @@ export function ConversionWizard({
       <div className="conversion-wizard">
         <div className="wizard-header">
           <h2>Convert Workflow Format</h2>
-          <button className="close-button" onClick={onCancel}>×</button>
+          <button className="close-button" onClick={onCancel}>
+            ×
+          </button>
         </div>
 
         {/* Progress Bar */}
@@ -187,7 +201,7 @@ export function ConversionWizard({
           {steps.map((step, index) => (
             <div
               key={step}
-              className={`progress-step ${index <= currentStepIndex ? 'active' : ''} ${index === currentStepIndex ? 'current' : ''}`}
+              className={`progress-step ${index <= currentStepIndex ? "active" : ""} ${index === currentStepIndex ? "current" : ""}`}
             >
               <div className="step-number">{index + 1}</div>
               <div className="step-label">{getStepLabel(step)}</div>
@@ -197,7 +211,7 @@ export function ConversionWizard({
 
         {/* Step Content */}
         <div className="wizard-content">
-          {currentStep === 'format' && (
+          {currentStep === "format" && (
             <FormatSelectionStep
               currentFormat={currentFormat}
               targetFormat={targetFormat}
@@ -205,26 +219,28 @@ export function ConversionWizard({
             />
           )}
 
-          {currentStep === 'validation' && conversionPreview && (
+          {currentStep === "validation" && conversionPreview && (
             <ValidationStep conversionPreview={conversionPreview} />
           )}
 
-          {currentStep === 'layout' && (
+          {currentStep === "layout" && (
             <LayoutSelectionStep
               selectedLayout={selectedLayout}
               onSelectLayout={setSelectedLayout}
             />
           )}
 
-          {currentStep === 'preview' && previewWorkflow && conversionPreview && (
-            <PreviewStep
-              beforeWorkflow={workflow}
-              afterWorkflow={previewWorkflow}
-              conversionPreview={conversionPreview}
-            />
-          )}
+          {currentStep === "preview" &&
+            previewWorkflow &&
+            conversionPreview && (
+              <PreviewStep
+                beforeWorkflow={workflow}
+                afterWorkflow={previewWorkflow}
+                conversionPreview={conversionPreview}
+              />
+            )}
 
-          {currentStep === 'confirm' && (
+          {currentStep === "confirm" && (
             <ConfirmStep
               conversionPreview={conversionPreview!}
               isConverting={isConverting}
@@ -253,11 +269,11 @@ export function ConversionWizard({
             onClick={handleNext}
             disabled={!canProceed() || isConverting}
           >
-            {currentStep === 'confirm'
+            {currentStep === "confirm"
               ? isConverting
-                ? 'Converting...'
-                : 'Convert'
-              : 'Next'}
+                ? "Converting..."
+                : "Convert"
+              : "Next"}
           </button>
         </div>
       </div>
@@ -272,29 +288,29 @@ export function ConversionWizard({
 function FormatSelectionStep({
   currentFormat,
   targetFormat,
-  onSelectFormat
+  onSelectFormat,
 }: {
   currentFormat: string;
   targetFormat: string;
-  onSelectFormat: (format: 'sequential' | 'graph') => void;
+  onSelectFormat: (format: "sequential" | "graph") => void;
 }) {
   return (
     <div className="format-selection-step">
       <h3>Select Target Format</h3>
       <div className="format-options">
         <button
-          className={`format-option ${targetFormat === 'sequential' ? 'selected' : ''}`}
-          onClick={() => onSelectFormat('sequential')}
-          disabled={currentFormat === 'sequential'}
+          className={`format-option ${targetFormat === "sequential" ? "selected" : ""}`}
+          onClick={() => onSelectFormat("sequential")}
+          disabled={currentFormat === "sequential"}
         >
           <div className="format-icon">📋</div>
           <h4>Sequential</h4>
           <p>Actions execute in order</p>
         </button>
         <button
-          className={`format-option ${targetFormat === 'graph' ? 'selected' : ''}`}
-          onClick={() => onSelectFormat('graph')}
-          disabled={currentFormat === 'graph'}
+          className={`format-option ${targetFormat === "graph" ? "selected" : ""}`}
+          onClick={() => onSelectFormat("graph")}
+          disabled={currentFormat === "graph"}
         >
           <div className="format-icon">🕸️</div>
           <h4>Graph</h4>
@@ -305,18 +321,26 @@ function FormatSelectionStep({
   );
 }
 
-function ValidationStep({ conversionPreview }: { conversionPreview: ConversionPreview }) {
+function ValidationStep({
+  conversionPreview,
+}: {
+  conversionPreview: ConversionPreview;
+}) {
   const linearizability = conversionPreview.linearizability!;
 
   return (
     <div className="validation-step">
       <h3>Validation Check</h3>
-      <div className={`validation-result ${linearizability.linearizable ? 'success' : 'error'}`}>
+      <div
+        className={`validation-result ${linearizability.linearizable ? "success" : "error"}`}
+      >
         {linearizability.linearizable ? (
           <>
             <div className="result-icon">✓</div>
             <h4>Workflow can be converted</h4>
-            <p>This workflow can be successfully converted to sequential format</p>
+            <p>
+              This workflow can be successfully converted to sequential format
+            </p>
           </>
         ) : (
           <>
@@ -337,7 +361,7 @@ function ValidationStep({ conversionPreview }: { conversionPreview: ConversionPr
 
 function LayoutSelectionStep({
   selectedLayout,
-  onSelectLayout
+  onSelectLayout,
 }: {
   selectedLayout: LayoutStyle;
   onSelectLayout: (style: LayoutStyle) => void;
@@ -346,10 +370,10 @@ function LayoutSelectionStep({
     <div className="layout-selection-step">
       <h3>Choose Layout Style</h3>
       <div className="layout-options">
-        {Object.values(LayoutStyle).map(style => (
+        {Object.values(LayoutStyle).map((style) => (
           <button
             key={style}
-            className={`layout-option ${selectedLayout === style ? 'selected' : ''}`}
+            className={`layout-option ${selectedLayout === style ? "selected" : ""}`}
             onClick={() => onSelectLayout(style)}
           >
             <h4>{style}</h4>
@@ -363,7 +387,7 @@ function LayoutSelectionStep({
 function PreviewStep({
   beforeWorkflow,
   afterWorkflow,
-  conversionPreview
+  conversionPreview,
 }: {
   beforeWorkflow: Workflow;
   afterWorkflow: Workflow;
@@ -383,7 +407,7 @@ function PreviewStep({
 
 function ConfirmStep({
   conversionPreview,
-  isConverting
+  isConverting,
 }: {
   conversionPreview: ConversionPreview;
   isConverting: boolean;
@@ -407,7 +431,8 @@ function ConfirmStep({
               <strong>Impact:</strong> {conversionPreview.impact}
             </div>
             <div className="summary-item">
-              <strong>Recommendation:</strong> {conversionPreview.recommendation}
+              <strong>Recommendation:</strong>{" "}
+              {conversionPreview.recommendation}
             </div>
           </div>
         </>
@@ -422,15 +447,15 @@ function ConfirmStep({
 
 function getStepLabel(step: WizardStep): string {
   switch (step) {
-    case 'format':
-      return 'Format';
-    case 'validation':
-      return 'Validation';
-    case 'layout':
-      return 'Layout';
-    case 'preview':
-      return 'Preview';
-    case 'confirm':
-      return 'Confirm';
+    case "format":
+      return "Format";
+    case "validation":
+      return "Validation";
+    case "layout":
+      return "Layout";
+    case "preview":
+      return "Preview";
+    case "confirm":
+      return "Confirm";
   }
 }

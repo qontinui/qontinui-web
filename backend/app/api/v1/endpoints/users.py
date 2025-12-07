@@ -1,6 +1,18 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     get_async_db,
@@ -8,7 +20,6 @@ from app.api.deps import (
     get_current_superuser_async,
 )
 from app.core.audit import audit_logger
-from app.core.error_codes import ErrorCode
 from app.crud.user import (
     delete_user,
     get_user,
@@ -34,8 +45,6 @@ from app.schemas.user import (
 )
 from app.services.avatar_service import avatar_service
 from app.services.storage_service import StorageService
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -44,6 +53,7 @@ router = APIRouter()
 @user_limiter.limit("200 per minute")
 async def read_user_me(
     request: Request,
+    response: Response,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     return current_user
@@ -52,7 +62,11 @@ async def read_user_me(
 @router.get("/me/connection-info", response_model=RunnerConnectionInfo)
 async def get_runner_connection_info(
     request: Request,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
+    use_dedicated_token: bool = False,
+    token_name: str | None = None,
+    expires_in_days: int | None = 30,
 ) -> Any:
     """
     Get connection information for qontinui-runner desktop app.
@@ -60,26 +74,72 @@ async def get_runner_connection_info(
     This endpoint returns all the necessary information for the desktop runner
     to connect to the backend, including the WebSocket URL and authentication token.
 
+    Query Parameters:
+        - use_dedicated_token: If true, creates a dedicated runner token (recommended for desktop runners)
+        - token_name: Name for the runner token (e.g., "My Laptop"). Auto-generated if not provided.
+        - expires_in_days: Token expiry in days. None or 0 = never expires. Default: 30 days.
+
     Returns:
         - version: Connection protocol version
         - url: WebSocket URL for the runner
-        - token: JWT access token for authentication
+        - token: Authentication token (JWT or dedicated runner token)
         - userId: Current user's ID
         - projectId: null (user will select this in the UI)
         - createdAt: Current timestamp
         - backendUrl: Backend HTTP(S) URL for REST API calls
+        - runnerTokenId: ID of the dedicated runner token (if created)
+        - tokenExpiresAt: When the token expires (None = never)
     """
     from app.core.config import settings
+    from app.crud import runner as runner_crud
 
-    # Extract JWT token from Authorization header
-    authorization = request.headers.get("Authorization")
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
+    token: str | None = None
+    runner_token_id: str | None = None
+    token_expires_at: datetime | None = None
+
+    if use_dedicated_token:
+        # Create a dedicated runner token for long-running automations
+        if not token_name:
+            token_name = f"Runner {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+
+        # expires_in_days=0 or None means never expires
+        expiry_days = (
+            expires_in_days if expires_in_days and expires_in_days > 0 else None
         )
 
-    token = authorization.replace("Bearer ", "")
+        # Returns (RunnerToken model, plain text token)
+        runner_token, plain_token = await runner_crud.create_runner_token(
+            db=db,
+            user_id=current_user.id,
+            name=token_name,
+            expires_in_days=expiry_days,
+        )
+        await db.commit()
+
+        token = plain_token
+        runner_token_id = str(runner_token.id)
+        token_expires_at = runner_token.expires_at
+    else:
+        # Use the session JWT token (expires in 1 hour)
+        # Extract JWT token from cookie (preferred) or Authorization header (fallback)
+        token = request.cookies.get("access_token")
+
+        if not token:
+            # Fallback to Authorization header for backward compatibility
+            authorization = request.headers.get("Authorization")
+            if authorization and authorization.startswith("Bearer "):
+                token = authorization.replace("Bearer ", "")
+
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing authentication token",
+            )
+
+        # JWT tokens expire in 1 hour (from settings)
+        token_expires_at = datetime.now(UTC) + timedelta(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
 
     # Create connection info response
     connection_info = RunnerConnectionInfo(
@@ -88,8 +148,10 @@ async def get_runner_connection_info(
         token=token,
         userId=str(current_user.id),
         projectId=None,
-        createdAt=datetime.now(timezone.utc),
+        createdAt=datetime.now(UTC),
         backendUrl=settings.RUNNER_BACKEND_URL,
+        runnerTokenId=runner_token_id,
+        tokenExpiresAt=token_expires_at,
     )
 
     return connection_info
@@ -105,7 +167,7 @@ async def claim_admin(
     from sqlalchemy import select
 
     # Check if any admin exists
-    result = await db.execute(select(UserModel).filter(UserModel.is_superuser))
+    result = await db.execute(select(UserModel).filter(UserModel.is_superuser))  # type: ignore[arg-type]
     existing_admin = result.scalar_one_or_none()
     if existing_admin:
         raise HTTPException(
@@ -126,6 +188,7 @@ async def claim_admin(
 async def update_user_me(
     *,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     user_update: UserUpdate,
     current_user: UserModel = Depends(get_current_active_user_async),
@@ -134,7 +197,7 @@ async def update_user_me(
     return user
 
 
-@router.get("/", response_model=list[User])
+@router.get("", response_model=list[User])
 async def read_users(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -282,6 +345,7 @@ async def delete_user_by_id(
 @user_limiter.limit("60 per minute")
 async def get_user_storage(
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
@@ -413,7 +477,7 @@ async def remove_avatar(
         await avatar_service.delete_avatar(
             current_user.avatar_url, db=db, user_id=current_user.id
         )
-        user = await update_user_avatar(db, current_user, None)
+        user = await update_user_avatar(db, current_user, None)  # type: ignore[arg-type]
         return user
 
     return current_user
@@ -454,7 +518,9 @@ async def get_automation_streaming_settings(
     )
 
 
-@router.post("/me/automation-streaming/toggle", response_model=AutomationStreamingSettings)
+@router.post(
+    "/me/automation-streaming/toggle", response_model=AutomationStreamingSettings
+)
 async def toggle_automation_streaming(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -478,7 +544,7 @@ async def toggle_automation_streaming(
 
     if toggle_data.enabled:
         # Calculate next month for reset date
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if now.month == 12:
             next_month = now.replace(year=now.year + 1, month=1, day=1)
         else:
@@ -505,7 +571,9 @@ async def toggle_automation_streaming(
     )
 
 
-@router.post("/me/automation-streaming/reset-limit", response_model=AutomationStreamingSettings)
+@router.post(
+    "/me/automation-streaming/reset-limit", response_model=AutomationStreamingSettings
+)
 async def reset_automation_streaming_limit(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -523,7 +591,7 @@ async def reset_automation_streaming_limit(
     current_user.automation_sessions_used = 0
 
     # Calculate next reset date (next month)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if now.month == 12:
         next_month = now.replace(year=now.year + 1, month=1, day=1)
     else:

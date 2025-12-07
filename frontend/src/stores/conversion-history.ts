@@ -5,10 +5,10 @@
  * Provides conversion history, statistics, and rollback capabilities.
  */
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { Workflow } from '../lib/action-schema/action-types';
-import type { ConversionStatistics } from '../services/format-converter';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type { Workflow } from "../lib/action-schema/action-types";
+import type { ConversionStatistics } from "../services/format-converter";
 
 // ============================================================================
 // Types
@@ -25,10 +25,10 @@ export interface ConversionRecord {
   workflowName: string;
 
   /** Source format */
-  fromFormat: 'sequential' | 'graph';
+  fromFormat: "sequential" | "graph";
 
   /** Target format */
-  toFormat: 'sequential' | 'graph';
+  toFormat: "sequential" | "graph";
 
   /** Timestamp of conversion */
   timestamp: string;
@@ -68,7 +68,7 @@ export interface ConversionHistoryState {
 
 export interface ConversionHistoryActions {
   /** Add a new conversion record */
-  addRecord: (record: Omit<ConversionRecord, 'id' | 'timestamp'>) => string;
+  addRecord: (record: Omit<ConversionRecord, "id" | "timestamp">) => string;
 
   /** Get a specific conversion record */
   getRecord: (id: string) => ConversionRecord | undefined;
@@ -102,7 +102,7 @@ export interface ConversionHistoryActions {
   getWorkflowTrend: (workflowId: string) => {
     totalConversions: number;
     lastConversion?: ConversionRecord;
-    preferredFormat: 'sequential' | 'graph' | 'unknown';
+    preferredFormat: "sequential" | "graph" | "unknown";
   };
 
   /** Export history as JSON */
@@ -124,7 +124,8 @@ export interface ConversionHistoryActions {
   setMaxSnapshots: (max: number) => void;
 }
 
-export type ConversionHistoryStore = ConversionHistoryState & ConversionHistoryActions;
+export type ConversionHistoryStore = ConversionHistoryState &
+  ConversionHistoryActions;
 
 // ============================================================================
 // Default State
@@ -150,7 +151,9 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
       // Record Management
       // ========================================================================
 
-      addRecord: (record: Omit<ConversionRecord, 'id' | 'timestamp'>): string => {
+      addRecord: (
+        record: Omit<ConversionRecord, "id" | "timestamp">
+      ): string => {
         const id = `conversion-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const timestamp = new Date().toISOString();
 
@@ -173,14 +176,15 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
             (r) => r.beforeSnapshot || r.afterSnapshot
           );
           if (recordsWithSnapshots.length > state.maxSnapshots) {
-            const excessCount = recordsWithSnapshots.length - state.maxSnapshots;
+            const excessCount =
+              recordsWithSnapshots.length - state.maxSnapshots;
             // Remove snapshots from oldest records
             for (let i = 0; i < excessCount; i++) {
               const oldRecord = recordsWithSnapshots[i];
-              const index = records.findIndex((r) => r.id === oldRecord.id);
-              if (index !== -1) {
+              const index = records.findIndex((r) => r.id === oldRecord?.id);
+              if (index !== -1 && records[index]) {
                 records[index] = {
-                  ...records[index],
+                  ...records[index]!,
                   beforeSnapshot: undefined,
                   afterSnapshot: undefined,
                 };
@@ -203,7 +207,9 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
       },
 
       getLastConversion: (workflowId: string): ConversionRecord | undefined => {
-        const records = get().records.filter((r) => r.workflowId === workflowId);
+        const records = get().records.filter(
+          (r) => r.workflowId === workflowId
+        );
         return records.length > 0 ? records[records.length - 1] : undefined;
       },
 
@@ -235,8 +241,12 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
         const totalConversions = records.length;
         const successfulConversions = records.filter((r) => r.success).length;
         const failedConversions = records.filter((r) => !r.success).length;
-        const toGraphCount = records.filter((r) => r.toFormat === 'graph').length;
-        const toSequentialCount = records.filter((r) => r.toFormat === 'sequential').length;
+        const toGraphCount = records.filter(
+          (r) => r.toFormat === "graph"
+        ).length;
+        const toSequentialCount = records.filter(
+          (r) => r.toFormat === "sequential"
+        ).length;
 
         const conversionTimes = records
           .filter((r) => r.statistics?.conversionTime)
@@ -244,7 +254,8 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
 
         const averageConversionTime =
           conversionTimes.length > 0
-            ? conversionTimes.reduce((sum, time) => sum + time, 0) / conversionTimes.length
+            ? conversionTimes.reduce((sum, time) => sum + time, 0) /
+              conversionTimes.length
             : 0;
 
         return {
@@ -258,21 +269,28 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
       },
 
       getWorkflowTrend: (workflowId: string) => {
-        const records = get().records.filter((r) => r.workflowId === workflowId);
+        const records = get().records.filter(
+          (r) => r.workflowId === workflowId
+        );
 
         const totalConversions = records.length;
-        const lastConversion = records.length > 0 ? records[records.length - 1] : undefined;
+        const lastConversion =
+          records.length > 0 ? records[records.length - 1] : undefined;
 
         // Determine preferred format based on most recent conversions
         const recentRecords = records.slice(-5); // Last 5 conversions
-        const toGraphCount = recentRecords.filter((r) => r.toFormat === 'graph').length;
-        const toSequentialCount = recentRecords.filter((r) => r.toFormat === 'sequential').length;
+        const toGraphCount = recentRecords.filter(
+          (r) => r.toFormat === "graph"
+        ).length;
+        const toSequentialCount = recentRecords.filter(
+          (r) => r.toFormat === "sequential"
+        ).length;
 
-        let preferredFormat: 'sequential' | 'graph' | 'unknown' = 'unknown';
+        let preferredFormat: "sequential" | "graph" | "unknown" = "unknown";
         if (toGraphCount > toSequentialCount) {
-          preferredFormat = 'graph';
+          preferredFormat = "graph";
         } else if (toSequentialCount > toGraphCount) {
-          preferredFormat = 'sequential';
+          preferredFormat = "sequential";
         }
 
         return {
@@ -313,7 +331,7 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
 
           return true;
         } catch (error) {
-          console.error('Failed to import history:', error);
+          console.error("Failed to import history:", error);
           return false;
         }
       },
@@ -324,7 +342,9 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
 
       addNotes: (id: string, notes: string) => {
         set((state) => ({
-          records: state.records.map((r) => (r.id === id ? { ...r, notes } : r)),
+          records: state.records.map((r) =>
+            r.id === id ? { ...r, notes } : r
+          ),
         }));
       },
 
@@ -344,7 +364,7 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
       },
     }),
     {
-      name: 'conversion-history-storage',
+      name: "conversion-history-storage",
       version: 1,
       // Don't persist snapshots (they're too large for localStorage)
       partialize: (state) => ({
@@ -371,14 +391,14 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
 export function createConversionRecord(
   workflowId: string,
   workflowName: string,
-  fromFormat: 'sequential' | 'graph',
-  toFormat: 'sequential' | 'graph',
+  fromFormat: "sequential" | "graph",
+  toFormat: "sequential" | "graph",
   success: boolean,
   statistics?: ConversionStatistics,
   beforeSnapshot?: Workflow,
   afterSnapshot?: Workflow,
   error?: string
-): Omit<ConversionRecord, 'id' | 'timestamp'> {
+): Omit<ConversionRecord, "id" | "timestamp"> {
   return {
     workflowId,
     workflowName,
@@ -397,7 +417,7 @@ export function createConversionRecord(
  */
 export function getConversionDescription(record: ConversionRecord): string {
   const direction = `${record.fromFormat} → ${record.toFormat}`;
-  const status = record.success ? 'succeeded' : 'failed';
+  const status = record.success ? "succeeded" : "failed";
   return `Conversion ${direction} ${status}`;
 }
 
@@ -414,10 +434,10 @@ export function getTimeSinceConversion(record: ConversionRecord): string {
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (days > 0) return `${days} day${days !== 1 ? 's' : ''} ago`;
-  if (hours > 0) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
-  if (minutes > 0) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
-  return `${seconds} second${seconds !== 1 ? 's' : ''} ago`;
+  if (days > 0) return `${days} day${days !== 1 ? "s" : ""} ago`;
+  if (hours > 0) return `${hours} hour${hours !== 1 ? "s" : ""} ago`;
+  if (minutes > 0) return `${minutes} minute${minutes !== 1 ? "s" : ""} ago`;
+  return `${seconds} second${seconds !== 1 ? "s" : ""} ago`;
 }
 
 /**

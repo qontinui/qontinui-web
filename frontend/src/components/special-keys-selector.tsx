@@ -1,20 +1,20 @@
-"use client"
+"use client";
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuLabel
-} from "@/components/ui/dropdown-menu"
-import { Plus, Keyboard } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import { Keyboard } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 // Define special keys based on qontinui Key enum
 const SPECIAL_KEYS = {
-  "Navigation": [
+  Navigation: [
     { label: "Enter", value: "\n", display: "↵ Enter" },
     { label: "Tab", value: "\t", display: "⇥ Tab" },
     { label: "Space", value: " ", display: "␣ Space" },
@@ -22,19 +22,19 @@ const SPECIAL_KEYS = {
     { label: "Delete", value: "{DELETE}", display: "⌦ Delete" },
     { label: "Escape", value: "{ESCAPE}", display: "⎋ Escape" },
   ],
-  "Arrows": [
+  Arrows: [
     { label: "Up", value: "{UP}", display: "↑ Up" },
     { label: "Down", value: "{DOWN}", display: "↓ Down" },
     { label: "Left", value: "{LEFT}", display: "← Left" },
     { label: "Right", value: "{RIGHT}", display: "→ Right" },
   ],
-  "Modifiers": [
+  Modifiers: [
     { label: "Ctrl", value: "{CTRL}", display: "⌃ Ctrl" },
     { label: "Alt", value: "{ALT}", display: "⌥ Alt" },
     { label: "Shift", value: "{SHIFT}", display: "⇧ Shift" },
     { label: "Win/Cmd", value: "{META}", display: "⌘ Win/Cmd" },
   ],
-  "Function": [
+  Function: [
     { label: "F1", value: "{F1}", display: "F1" },
     { label: "F2", value: "{F2}", display: "F2" },
     { label: "F3", value: "{F3}", display: "F3" },
@@ -65,37 +65,41 @@ const SPECIAL_KEYS = {
     { label: "Alt+Tab", value: "{ALT+TAB}", display: "⌥⇥ Alt+Tab" },
     { label: "Alt+F4", value: "{ALT+F4}", display: "⌥F4 Close" },
   ],
-}
+};
 
 interface SpecialKeysSelectorProps {
-  onInsertKey: (key: string) => void
-  textAreaRef?: React.RefObject<HTMLTextAreaElement>
+  onInsertKey: (key: string) => void;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement | null>;
 }
 
-export function SpecialKeysSelector({ onInsertKey, textAreaRef }: SpecialKeysSelectorProps) {
+export function SpecialKeysSelector({
+  onInsertKey,
+  textAreaRef,
+}: SpecialKeysSelectorProps) {
   const insertSpecialKey = (keyValue: string) => {
     if (textAreaRef?.current) {
-      const textarea = textAreaRef.current
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const currentText = textarea.value
+      const textarea = textAreaRef.current;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const currentText = textarea.value;
 
       // Insert the special key at the cursor position
-      const newText = currentText.substring(0, start) + keyValue + currentText.substring(end)
+      const newText =
+        currentText.substring(0, start) + keyValue + currentText.substring(end);
 
-      onInsertKey(newText)
+      onInsertKey(newText);
 
       // Set cursor position after the inserted key
       setTimeout(() => {
-        textarea.focus()
-        const newPosition = start + keyValue.length
-        textarea.setSelectionRange(newPosition, newPosition)
-      }, 0)
+        textarea.focus();
+        const newPosition = start + keyValue.length;
+        textarea.setSelectionRange(newPosition, newPosition);
+      }, 0);
     } else {
       // If no textarea ref, just append to the end
-      onInsertKey(keyValue)
+      onInsertKey(keyValue);
     }
-  }
+  };
 
   return (
     <DropdownMenu>
@@ -109,7 +113,10 @@ export function SpecialKeysSelector({ onInsertKey, textAreaRef }: SpecialKeysSel
           Special Keys
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-80 max-h-96 overflow-y-auto bg-[#27272A] border-gray-700" align="start">
+      <DropdownMenuContent
+        className="w-80 max-h-96 overflow-y-auto bg-[#27272A] border-gray-700"
+        align="start"
+      >
         <DropdownMenuLabel className="text-sm font-medium text-gray-300">
           Insert Special Keys
         </DropdownMenuLabel>
@@ -129,39 +136,41 @@ export function SpecialKeysSelector({ onInsertKey, textAreaRef }: SpecialKeysSel
                 <span className="font-mono">{key.display}</span>
               </DropdownMenuItem>
             ))}
-            {category !== "Common Combos" && <DropdownMenuSeparator className="bg-gray-700" />}
+            {category !== "Common Combos" && (
+              <DropdownMenuSeparator className="bg-gray-700" />
+            )}
           </div>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }
 
 // Helper component to display special keys in the text
 export function SpecialKeyDisplay({ text }: { text: string }) {
   // Map special key placeholders to their display symbols
   const keySymbols: { [key: string]: string } = {
-    "ENTER": "↵",
-    "TAB": "⇥",
-    "SPACE": "␣",
-    "BACKSPACE": "⌫",
-    "DELETE": "⌦",
-    "ESCAPE": "⎋",
-    "UP": "↑",
-    "DOWN": "↓",
-    "LEFT": "←",
-    "RIGHT": "→",
-    "HOME": "⇱",
-    "END": "⇲",
-    "PAGE_UP": "⇞",
-    "PAGE_DOWN": "⇟",
-    "INSERT": "INS",
-    "CTRL": "⌃",
-    "ALT": "⌥",
-    "SHIFT": "⇧",
-    "META": "⌘",
-    "WIN": "⊞",
-    "CMD": "⌘",
+    ENTER: "↵",
+    TAB: "⇥",
+    SPACE: "␣",
+    BACKSPACE: "⌫",
+    DELETE: "⌦",
+    ESCAPE: "⎋",
+    UP: "↑",
+    DOWN: "↓",
+    LEFT: "←",
+    RIGHT: "→",
+    HOME: "⇱",
+    END: "⇲",
+    PAGE_UP: "⇞",
+    PAGE_DOWN: "⇟",
+    INSERT: "INS",
+    CTRL: "⌃",
+    ALT: "⌥",
+    SHIFT: "⇧",
+    META: "⌘",
+    WIN: "⊞",
+    CMD: "⌘",
     "CTRL+A": "⌃A",
     "CTRL+C": "⌃C",
     "CTRL+V": "⌃V",
@@ -170,25 +179,25 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
     "CTRL+S": "⌃S",
     "ALT+TAB": "⌥⇥",
     "ALT+F4": "⌥F4",
-  }
+  };
 
   // Parse the text and highlight special keys
-  const parts: React.ReactNode[] = []
-  let currentPart = ""
-  let i = 0
+  const parts: React.ReactNode[] = [];
+  let currentPart = "";
+  let i = 0;
 
   while (i < text.length) {
     if (text[i] === "{" && text.indexOf("}", i) > i) {
       // Found a special key placeholder
       if (currentPart) {
-        parts.push(<span key={parts.length}>{currentPart}</span>)
-        currentPart = ""
+        parts.push(<span key={parts.length}>{currentPart}</span>);
+        currentPart = "";
       }
 
-      const endIndex = text.indexOf("}", i)
-      const keyPlaceholder = text.substring(i, endIndex + 1)
-      const keyName = keyPlaceholder.substring(1, keyPlaceholder.length - 1)
-      const displaySymbol = keySymbols[keyName] || keyName
+      const endIndex = text.indexOf("}", i);
+      const keyPlaceholder = text.substring(i, endIndex + 1);
+      const keyName = keyPlaceholder.substring(1, keyPlaceholder.length - 1);
+      const displaySymbol = keySymbols[keyName] || keyName;
 
       parts.push(
         <Badge
@@ -199,13 +208,13 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
         >
           {displaySymbol}
         </Badge>
-      )
-      i = endIndex + 1
+      );
+      i = endIndex + 1;
     } else if (text[i] === "\n") {
       // Special handling for actual newline character
       if (currentPart) {
-        parts.push(<span key={parts.length}>{currentPart}</span>)
-        currentPart = ""
+        parts.push(<span key={parts.length}>{currentPart}</span>);
+        currentPart = "";
       }
       parts.push(
         <Badge
@@ -216,13 +225,13 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
         >
           ↵
         </Badge>
-      )
-      i++
+      );
+      i++;
     } else if (text[i] === "\t") {
       // Special handling for actual tab character
       if (currentPart) {
-        parts.push(<span key={parts.length}>{currentPart}</span>)
-        currentPart = ""
+        parts.push(<span key={parts.length}>{currentPart}</span>);
+        currentPart = "";
       }
       parts.push(
         <Badge
@@ -233,17 +242,17 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
         >
           ⇥
         </Badge>
-      )
-      i++
+      );
+      i++;
     } else {
-      currentPart += text[i]
-      i++
+      currentPart += text[i];
+      i++;
     }
   }
 
   if (currentPart) {
-    parts.push(<span key={parts.length}>{currentPart}</span>)
+    parts.push(<span key={parts.length}>{currentPart}</span>);
   }
 
-  return <>{parts}</>
+  return <>{parts}</>;
 }

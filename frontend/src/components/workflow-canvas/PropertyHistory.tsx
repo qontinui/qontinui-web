@@ -8,14 +8,14 @@
  * - Visual diff display
  */
 
-'use client';
+"use client";
 
-import React from 'react';
-import { usePropertiesPanelStore } from '@/stores/properties-panel-store';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { History, RotateCcw, Trash2, Clock } from 'lucide-react';
+import React from "react";
+import { usePropertiesPanelStore } from "@/stores/properties-panel-store";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { History, RotateCcw, Trash2, Clock } from "lucide-react";
 
 export interface PropertyHistoryProps {
   actionId: string;
@@ -24,17 +24,19 @@ export interface PropertyHistoryProps {
 
 export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
   actionId,
-  className = '',
+  className = "",
 }) => {
-  const getChangesForAction = usePropertiesPanelStore((state) => state.getChangesForAction);
+  const getChangesForAction = usePropertiesPanelStore(
+    (state) => state.getChangesForAction
+  );
   const clearChanges = usePropertiesPanelStore((state) => state.clearChanges);
 
   const changes = getChangesForAction(actionId);
 
   const formatValue = (value: any): string => {
-    if (value === null || value === undefined) return 'null';
-    if (typeof value === 'string') return `"${value}"`;
-    if (typeof value === 'object') return JSON.stringify(value, null, 2);
+    if (value === null || value === undefined) return "null";
+    if (typeof value === "string") return `"${value}"`;
+    if (typeof value === "object") return JSON.stringify(value, null, 2);
     return String(value);
   };
 
@@ -51,12 +53,12 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
   };
 
   const handleRevert = (property: string) => {
-    console.log('Revert property:', property);
+    console.log("Revert property:", property);
     // This would need to integrate with canvas store to actually revert
   };
 
   const handleClearHistory = () => {
-    if (confirm('Clear all change history for this action?')) {
+    if (confirm("Clear all change history for this action?")) {
       clearChanges(actionId);
     }
   };
@@ -66,7 +68,9 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
       <div className={`p-4 ${className}`}>
         <div className="flex items-center gap-2 mb-4">
           <History className="w-4 h-4 text-gray-400" />
-          <h4 className="text-sm font-semibold text-gray-400">Change History</h4>
+          <h4 className="text-sm font-semibold text-gray-400">
+            Change History
+          </h4>
         </div>
         <div className="text-xs text-gray-500 text-center py-8">
           No changes recorded yet
@@ -82,7 +86,9 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <History className="w-4 h-4 text-purple-400" />
-            <h4 className="text-sm font-semibold text-gray-200">Change History</h4>
+            <h4 className="text-sm font-semibold text-gray-200">
+              Change History
+            </h4>
             <Badge variant="secondary" className="text-xs">
               {changes.length}
             </Badge>
@@ -102,7 +108,7 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
 
         {/* Changes List */}
         <div className="space-y-3">
-          {changes.map((change, index) => (
+          {changes.map((change) => (
             <div
               key={`${change.property}-${change.timestamp}`}
               className="p-3 rounded bg-gray-800/50 border border-gray-700 space-y-2"
@@ -134,13 +140,17 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
               {/* Value Changes */}
               <div className="space-y-1">
                 <div className="flex items-start gap-2">
-                  <div className="text-xs text-red-400 font-medium w-12">From:</div>
+                  <div className="text-xs text-red-400 font-medium w-12">
+                    From:
+                  </div>
                   <div className="flex-1 text-xs text-gray-400 font-mono bg-red-900/10 px-2 py-1 rounded border border-red-900/30">
                     {formatValue(change.oldValue)}
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
-                  <div className="text-xs text-green-400 font-medium w-12">To:</div>
+                  <div className="text-xs text-green-400 font-medium w-12">
+                    To:
+                  </div>
                   <div className="flex-1 text-xs text-gray-300 font-mono bg-green-900/10 px-2 py-1 rounded border border-green-900/30">
                     {formatValue(change.newValue)}
                   </div>
@@ -153,8 +163,9 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
         {/* Info */}
         <div className="p-3 rounded bg-blue-900/20 border border-blue-700/30">
           <div className="text-xs text-gray-300">
-            <strong>Change Tracking:</strong> All property modifications are tracked. Use the
-            revert button to undo specific changes. Changes are auto-saved based on your settings.
+            <strong>Change Tracking:</strong> All property modifications are
+            tracked. Use the revert button to undo specific changes. Changes are
+            auto-saved based on your settings.
           </div>
         </div>
       </div>

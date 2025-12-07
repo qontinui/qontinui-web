@@ -1,12 +1,17 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useTestRuns, useExportTestRun } from '@/hooks/useTesting';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useState } from "react";
+import { useTestRuns, useExportTestRun } from "@/hooks/useTesting";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -14,7 +19,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   PlayCircle,
   CheckCircle2,
@@ -23,11 +28,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Filter,
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { useRouter } from 'next/navigation';
-import type { TestRunFilters } from '@/services/testing-service';
+} from "lucide-react";
+import { format } from "date-fns";
+import { useRouter } from "next/navigation";
+import type { TestRunFilters } from "@/services/testing-service";
 
 interface TestRunsListProps {
   projectId?: string;
@@ -41,12 +45,11 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
     workflow_id: workflowId,
     page: 1,
     page_size: 10,
-    sort_by: 'created_at',
-    sort_order: 'desc',
+    sort_by: "created_at",
+    sort_order: "desc",
   });
 
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [dateRangeFilter, setDateRangeFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const { data, isLoading, error } = useTestRuns(filters);
   const exportTestRun = useExportTestRun();
@@ -59,26 +62,29 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
     setStatusFilter(value);
     setFilters((prev) => ({
       ...prev,
-      status: value === 'all' ? undefined : (value as any),
+      status: value === "all" ? undefined : (value as any),
       page: 1,
     }));
   };
 
-  const handleExport = async (runId: string, format: 'json' | 'csv' | 'pdf') => {
+  const handleExport = async (
+    runId: string,
+    format: "json" | "csv" | "pdf"
+  ) => {
     try {
       await exportTestRun.mutateAsync({ id: runId, format });
     } catch (error) {
-      console.error('Export failed:', error);
+      console.error("Export failed:", error);
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed':
+      case "completed":
         return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-      case 'failed':
+      case "failed":
         return <XCircle className="w-4 h-4 text-red-500" />;
-      case 'running':
+      case "running":
         return <PlayCircle className="w-4 h-4 text-blue-500 animate-pulse" />;
       default:
         return <Clock className="w-4 h-4 text-gray-500" />;
@@ -87,21 +93,37 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'completed':
-        return <Badge className="bg-green-500/20 text-green-500 border-green-500/30">Completed</Badge>;
-      case 'failed':
-        return <Badge className="bg-red-500/20 text-red-500 border-red-500/30">Failed</Badge>;
-      case 'running':
-        return <Badge className="bg-blue-500/20 text-blue-500 border-blue-500/30">Running</Badge>;
+      case "completed":
+        return (
+          <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+            Completed
+          </Badge>
+        );
+      case "failed":
+        return (
+          <Badge className="bg-red-500/20 text-red-500 border-red-500/30">
+            Failed
+          </Badge>
+        );
+      case "running":
+        return (
+          <Badge className="bg-blue-500/20 text-blue-500 border-blue-500/30">
+            Running
+          </Badge>
+        );
       default:
-        return <Badge className="bg-gray-500/20 text-gray-500 border-gray-500/30">Unknown</Badge>;
+        return (
+          <Badge className="bg-gray-500/20 text-gray-500 border-gray-500/30">
+            Unknown
+          </Badge>
+        );
     }
   };
 
   const getCoverageColor = (percentage: number) => {
-    if (percentage >= 80) return 'text-green-500';
-    if (percentage >= 60) return 'text-yellow-500';
-    return 'text-red-500';
+    if (percentage >= 80) return "text-green-500";
+    if (percentage >= 60) return "text-yellow-500";
+    return "text-red-500";
   };
 
   if (isLoading) {
@@ -118,7 +140,9 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
     return (
       <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
         <CardContent className="p-12 text-center">
-          <div className="text-red-400">Error loading test runs: {error.message}</div>
+          <div className="text-red-400">
+            Error loading test runs: {error.message}
+          </div>
         </CardContent>
       </Card>
     );
@@ -134,7 +158,10 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl">Test Runs</CardTitle>
           <div className="flex items-center gap-2">
-            <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
+            <Select
+              value={statusFilter}
+              onValueChange={handleStatusFilterChange}
+            >
               <SelectTrigger className="w-[150px] bg-[#0A0A0B]/50 border-gray-700">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
@@ -187,18 +214,23 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                       </TableCell>
                       <TableCell>
                         <div className="text-sm text-gray-400">
-                          {format(new Date(run.start_time), 'MMM dd, yyyy HH:mm')}
+                          {format(
+                            new Date(run.start_time),
+                            "MMM dd, yyyy HH:mm"
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
                           {run.duration_seconds
                             ? `${Math.floor(run.duration_seconds / 60)}m ${run.duration_seconds % 60}s`
-                            : '-'}
+                            : "-"}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className={`font-medium ${getCoverageColor(run.coverage_percentage)}`}>
+                        <div
+                          className={`font-medium ${getCoverageColor(run.coverage_percentage)}`}
+                        >
                           {run.coverage_percentage.toFixed(1)}%
                         </div>
                         <div className="text-xs text-gray-500">
@@ -208,20 +240,30 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                       <TableCell>
                         <div className="font-medium">
                           {run.total_transitions > 0
-                            ? ((run.successful_transitions / run.total_transitions) * 100).toFixed(1)
-                            : 0}%
+                            ? (
+                                (run.successful_transitions /
+                                  run.total_transitions) *
+                                100
+                              ).toFixed(1)
+                            : 0}
+                          %
                         </div>
                         <div className="text-xs text-gray-500">
-                          {run.successful_transitions}/{run.total_transitions} transitions
+                          {run.successful_transitions}/{run.total_transitions}{" "}
+                          transitions
                         </div>
                       </TableCell>
                       <TableCell>
                         <Badge
-                          variant={run.deficiencies_found > 0 ? 'destructive' : 'secondary'}
+                          variant={
+                            run.deficiencies_found > 0
+                              ? "destructive"
+                              : "secondary"
+                          }
                           className={
                             run.deficiencies_found > 0
-                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                              : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                              ? "bg-red-500/20 text-red-400 border-red-500/30"
+                              : "bg-gray-500/20 text-gray-400 border-gray-500/30"
                           }
                         >
                           {run.deficiencies_found}
@@ -233,7 +275,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                           variant="ghost"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleExport(run.id, 'json');
+                            handleExport(run.id, "json");
                           }}
                           className="hover:text-[#00D9FF]"
                         >

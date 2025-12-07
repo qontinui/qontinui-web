@@ -155,6 +155,7 @@ ASCII art visualization of the component layout and features.
 ## Image Grid Sizes
 
 ### Small (80px cards, 20 columns)
+
 ```
 ┌──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┐
 │📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│📷│
@@ -162,6 +163,7 @@ ASCII art visualization of the component layout and features.
 ```
 
 ### Medium (128px cards, 10 columns) - Default
+
 ```
 ┌────┬────┬────┬────┬────┬────┬────┬────┬────┬────┐
 │    │    │    │    │    │    │    │    │    │    │
@@ -173,6 +175,7 @@ ASCII art visualization of the component layout and features.
 ```
 
 ### Large (192px cards, 5 columns)
+
 ```
 ┌────────┬────────┬────────┬────────┬────────┐
 │        │        │        │        │        │
@@ -190,6 +193,7 @@ ASCII art visualization of the component layout and features.
 ## Image Card States
 
 ### Normal State
+
 ```
 ┌────────────┐
 │            │
@@ -205,6 +209,7 @@ ASCII art visualization of the component layout and features.
 ```
 
 ### Hover State
+
 ```
 ┌────────────┐
 │    [✓]     │  ← Checkbox appears
@@ -221,6 +226,7 @@ ASCII art visualization of the component layout and features.
 ```
 
 ### Selected State
+
 ```
 ┌════════════┐  ← Ring highlight
 ║  [✓]       ║
@@ -239,6 +245,7 @@ ASCII art visualization of the component layout and features.
 ## Upload Flow
 
 ### Step 1: Drag Files
+
 ```
 ┌─────────────────────────────────────────┐
 │                                         │
@@ -255,6 +262,7 @@ ASCII art visualization of the component layout and features.
 ```
 
 ### Step 2: Upload Progress
+
 ```
 ┌─────────────────────────────────────────┐
 │ ⏫ Uploading 3 files...                  │
@@ -265,6 +273,7 @@ ASCII art visualization of the component layout and features.
 ```
 
 ### Step 3: Complete
+
 ```
 ┌─────────────────────────────────────────┐
 │ ✓ Upload complete - 3 images added     │
@@ -362,36 +371,43 @@ Desktop (> 1024px):
 ## User Interactions
 
 ### Click Image
+
 ```
 Click → Select image → Details panel opens →
 ```
 
 ### Checkbox Image
+
 ```
 Click ☐ → ☑ Selected → Bulk toolbar appears →
 ```
 
 ### Drag & Drop
+
 ```
 Grab image card → Drag to folder → Drop → Image moved
 ```
 
 ### Create Folder
+
 ```
 Click [+ New Folder] → Input appears → Type name → Enter → Folder created
 ```
 
 ### Rename Folder
+
 ```
 Click folder [...] → Rename → Input appears → Type → Enter → Renamed
 ```
 
 ### Upload Files
+
 ```
 Click [Upload] OR Drag files → Select → Upload progress → Complete → Images added
 ```
 
 ### Bulk Delete
+
 ```
 Select images → Click [Delete] → Confirm → Images deleted → Toast shown
 ```
@@ -399,6 +415,7 @@ Select images → Click [Delete] → Confirm → Images deleted → Toast shown
 ## Empty States
 
 ### No Images
+
 ```
 ┌─────────────────────────────────────┐
 │                                     │
@@ -415,6 +432,7 @@ Select images → Click [Delete] → Confirm → Images deleted → Toast shown
 ```
 
 ### No Folders
+
 ```
 ┌─────────────────────┐
 │ 📁 All Images       │
@@ -426,6 +444,7 @@ Select images → Click [Delete] → Confirm → Images deleted → Toast shown
 ```
 
 ### No Collections
+
 ```
 ┌─────────────────────┐
 │ (No collections)    │
@@ -439,6 +458,7 @@ Select images → Click [Delete] → Confirm → Images deleted → Toast shown
 ```
 
 ### No Search Results
+
 ```
 ┌─────────────────────────────────────┐
 │                                     │

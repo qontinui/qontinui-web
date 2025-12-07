@@ -8,13 +8,17 @@ This module sets up Celery for handling long-running tasks like:
 - Long automation runs
 """
 
-from celery import Celery
+import os
+from typing import Any
 
-# TODO: Import settings
-# from app.config.settings import settings
+from celery import Celery  # type: ignore[import-not-found]
 
-# Temporary hardcoded values - replace with settings
-REDIS_URL = "redis://localhost:6379/0"
+from app.core.config import settings
+
+# Get Redis URL from settings with fallback
+REDIS_URL = getattr(settings, "REDIS_URL", None) or os.getenv(
+    "REDIS_URL", "redis://localhost:6379/0"
+)
 
 celery_app = Celery(
     "qontinui", broker=REDIS_URL, backend=REDIS_URL, include=["app.tasks"]
@@ -58,20 +62,84 @@ def example_task(self, value: str):
 
 
 @celery_app.task(bind=True, name="app.tasks.process_image")
-def process_image_task(self, image_path: str):
+def process_image_task(
+    self,
+    image_path: str,
+    max_width: int = 1920,
+    max_height: int = 1080,
+    quality: int = 85,
+    create_thumbnail: bool = True,
+    thumbnail_size: tuple[int, int] = (200, 200),
+):
     """
     Process uploaded image (resize, optimize, etc.).
 
     Args:
         image_path: Path to image file
+        max_width: Maximum width for resized image
+        max_height: Maximum height for resized image
+        quality: JPEG quality (1-100)
+        create_thumbnail: Whether to create a thumbnail
+        thumbnail_size: Thumbnail dimensions
 
     Returns:
-        Processing result
+        Processing result with paths to processed images
     """
-    # TODO: Implement image processing with Pillow
-    # 1. Load image
-    # 2. Resize/optimize
-    # 3. Save processed image
-    # 4. Return result
+    from pathlib import Path
 
-    return {"status": "processed", "path": image_path}
+    from PIL import Image
+
+    result: dict[str, Any] = {
+        "status": "processing",
+        "original_path": image_path,
+        "processed_path": None,
+        "thumbnail_path": None,
+        "original_size": None,
+        "processed_size": None,
+        "error": None,
+    }
+
+    try:
+        # Load image
+        img: Any = Image.open(image_path)
+        result["original_size"] = img.size
+
+        # Get output paths
+        path = Path(image_path)
+        processed_path = path.parent / f"{path.stem}_processed{path.suffix}"
+        thumbnail_path = path.parent / f"{path.stem}_thumb{path.suffix}"
+
+        # Resize if needed (maintain aspect ratio)
+        width, height = img.size
+        if width > max_width or height > max_height:
+            ratio = min(max_width / width, max_height / height)
+            new_size = (int(width * ratio), int(height * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+        result["processed_size"] = img.size
+
+        # Convert to RGB if necessary (for JPEG)
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+
+        # Save processed image
+        img.save(str(processed_path), "JPEG", quality=quality, optimize=True)
+        result["processed_path"] = str(processed_path)
+
+        # Create thumbnail if requested
+        if create_thumbnail:
+            thumb = img.copy()
+            thumb.thumbnail(thumbnail_size, Image.Resampling.LANCZOS)
+            thumb.save(str(thumbnail_path), "JPEG", quality=quality, optimize=True)
+            result["thumbnail_path"] = str(thumbnail_path)
+
+        result["status"] = "completed"
+
+    except FileNotFoundError:
+        result["status"] = "failed"
+        result["error"] = f"Image file not found: {image_path}"
+    except Exception as e:
+        result["status"] = "failed"
+        result["error"] = str(e)
+
+    return result

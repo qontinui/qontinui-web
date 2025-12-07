@@ -22,10 +22,11 @@ from pathlib import Path
 # Add parent directory to path so we can import from app
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.config import settings
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+
+from app.core.config import settings
 
 
 async def export_users(engine):

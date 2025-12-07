@@ -7,18 +7,18 @@
  * NOT FOR PRODUCTION - This is a reference implementation
  */
 
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Plus, Filter as FilterIcon } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Plus, Filter as FilterIcon } from "lucide-react";
 import {
   DeficiencyDetails,
   DeficiencyFilters,
   DeficiencyExport,
-} from '@/components/testing/deficiencies';
+} from "@/components/testing/deficiencies";
 import {
   Deficiency,
   DeficiencyComment,
@@ -28,13 +28,14 @@ import {
   DeficiencyExportOptions,
   SEVERITY_CONFIG,
   STATUS_CONFIG,
-} from '@/types/deficiency';
-import { User } from '@/types/auth-types';
+} from "@/types/deficiency";
+import { User } from "@/types/auth-types";
 
 export function DeficiencyDashboard() {
   // State
   const [deficiencies, setDeficiencies] = useState<Deficiency[]>([]);
-  const [selectedDeficiency, setSelectedDeficiency] = useState<Deficiency | null>(null);
+  const [selectedDeficiency, setSelectedDeficiency] =
+    useState<Deficiency | null>(null);
   const [comments, setComments] = useState<DeficiencyComment[]>([]);
   const [activities, setActivities] = useState<DeficiencyActivity[]>([]);
   const [filters, setFilters] = useState<Filters>({});
@@ -50,18 +51,22 @@ export function DeficiencyDashboard() {
       setLoading(true);
       try {
         const queryParams = new URLSearchParams();
-        if (filters.search) queryParams.append('search', filters.search);
-        if (filters.severity) queryParams.append('severity', filters.severity.join(','));
-        if (filters.status) queryParams.append('status', filters.status.join(','));
-        if (filters.assigned_to) queryParams.append('assigned_to', filters.assigned_to.join(','));
-        if (filters.date_from) queryParams.append('date_from', filters.date_from);
-        if (filters.date_to) queryParams.append('date_to', filters.date_to);
+        if (filters.search) queryParams.append("search", filters.search);
+        if (filters.severity)
+          queryParams.append("severity", filters.severity.join(","));
+        if (filters.status)
+          queryParams.append("status", filters.status.join(","));
+        if (filters.assigned_to)
+          queryParams.append("assigned_to", filters.assigned_to.join(","));
+        if (filters.date_from)
+          queryParams.append("date_from", filters.date_from);
+        if (filters.date_to) queryParams.append("date_to", filters.date_to);
 
         const response = await fetch(`/api/deficiencies?${queryParams}`);
         const data = await response.json();
         setDeficiencies(data);
       } catch (error) {
-        console.error('Failed to fetch deficiencies:', error);
+        console.error("Failed to fetch deficiencies:", error);
       } finally {
         setLoading(false);
       }
@@ -74,11 +79,11 @@ export function DeficiencyDashboard() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const response = await fetch('/api/users');
+        const response = await fetch("/api/users");
         const data = await response.json();
         setUsers(data);
       } catch (error) {
-        console.error('Failed to fetch users:', error);
+        console.error("Failed to fetch users:", error);
       }
     };
 
@@ -110,7 +115,7 @@ export function DeficiencyDashboard() {
         setComments(commentsData);
         setActivities(activitiesData);
       } catch (error) {
-        console.error('Failed to fetch deficiency details:', error);
+        console.error("Failed to fetch deficiency details:", error);
       }
     };
 
@@ -122,11 +127,14 @@ export function DeficiencyDashboard() {
     if (!selectedDeficiency) return;
 
     try {
-      const response = await fetch(`/api/deficiencies/${selectedDeficiency.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      const response = await fetch(
+        `/api/deficiencies/${selectedDeficiency.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
 
       if (response.ok) {
         const updated = await response.json();
@@ -136,7 +144,7 @@ export function DeficiencyDashboard() {
         );
       }
     } catch (error) {
-      console.error('Failed to update status:', error);
+      console.error("Failed to update status:", error);
       throw error;
     }
   };
@@ -145,11 +153,14 @@ export function DeficiencyDashboard() {
     if (!selectedDeficiency) return;
 
     try {
-      const response = await fetch(`/api/deficiencies/${selectedDeficiency.id}/assign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId }),
-      });
+      const response = await fetch(
+        `/api/deficiencies/${selectedDeficiency.id}/assign`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId }),
+        }
+      );
 
       if (response.ok) {
         const updated = await response.json();
@@ -159,7 +170,7 @@ export function DeficiencyDashboard() {
         );
       }
     } catch (error) {
-      console.error('Failed to assign deficiency:', error);
+      console.error("Failed to assign deficiency:", error);
       throw error;
     }
   };
@@ -173,30 +184,33 @@ export function DeficiencyDashboard() {
 
     try {
       const formData = new FormData();
-      formData.append('content', content);
-      formData.append('mentions', JSON.stringify(mentions));
-      attachments.forEach((file) => formData.append('attachments', file));
+      formData.append("content", content);
+      formData.append("mentions", JSON.stringify(mentions));
+      attachments.forEach((file) => formData.append("attachments", file));
 
-      const response = await fetch(`/api/deficiencies/${selectedDeficiency.id}/comments`, {
-        method: 'POST',
-        body: formData,
-      });
+      const response = await fetch(
+        `/api/deficiencies/${selectedDeficiency.id}/comments`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
       if (response.ok) {
         const newComment = await response.json();
         setComments((prev) => [...prev, newComment]);
       }
     } catch (error) {
-      console.error('Failed to add comment:', error);
+      console.error("Failed to add comment:", error);
       throw error;
     }
   };
 
   const handleExport = async (options: DeficiencyExportOptions) => {
     try {
-      const response = await fetch('/api/deficiencies/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/deficiencies/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...options,
           filters,
@@ -206,7 +220,7 @@ export function DeficiencyDashboard() {
       if (response.ok) {
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        const a = document.createElement("a");
         a.href = url;
         a.download = `deficiencies-${Date.now()}.${options.format}`;
         document.body.appendChild(a);
@@ -215,7 +229,7 @@ export function DeficiencyDashboard() {
         URL.revokeObjectURL(url);
       }
     } catch (error) {
-      console.error('Failed to export:', error);
+      console.error("Failed to export:", error);
       throw error;
     }
   };
@@ -238,9 +252,7 @@ export function DeficiencyDashboard() {
             <FilterIcon className="h-4 w-4 mr-2" />
             Filters
           </Button>
-          <Button onClick={() => setExportOpen(true)}>
-            Export
-          </Button>
+          <Button onClick={() => setExportOpen(true)}>Export</Button>
           <Button>
             <Plus className="h-4 w-4 mr-2" />
             New Deficiency
@@ -306,7 +318,8 @@ export function DeficiencyDashboard() {
                       <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
                         <span>ID: {deficiency.id.slice(0, 8)}</span>
                         <span>
-                          Created: {new Date(deficiency.created_at).toLocaleDateString()}
+                          Created:{" "}
+                          {new Date(deficiency.created_at).toLocaleDateString()}
                         </span>
                         {deficiency.assigned_to_user_id && (
                           <span>Assigned</span>

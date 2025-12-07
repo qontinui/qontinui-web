@@ -19,7 +19,7 @@ export interface ScreenshotRegion {
   screenshotId: string;
   stateId: string; // State to save this region to
   name: string;
-  type: 'StateRegion' | 'SearchRegion';
+  type: "StateRegion" | "SearchRegion";
   bounds: {
     x: number;
     y: number;
@@ -27,23 +27,23 @@ export interface ScreenshotRegion {
     height: number;
   };
   linkedStateObjectId?: string; // For SearchRegions and StateRegions linked to StateImages
-  linkedStateObjectType?: 'StateImage'; // Type of linked object
+  linkedStateObjectType?: "StateImage"; // Type of linked object
   referenceStateId?: string; // State containing the reference image (for SearchRegions)
   saveToStateImageId?: string; // For SearchRegions: the StateImage to save this SearchRegion to
   saveToStateImageStateId?: string; // For SearchRegions: the state containing the StateImage to save to
 }
 
 export type AnchorType =
-  | 'TOP_LEFT'
-  | 'TOP_CENTER'
-  | 'TOP_RIGHT'
-  | 'MIDDLE_LEFT'
-  | 'CENTER'
-  | 'MIDDLE_RIGHT'
-  | 'BOTTOM_LEFT'
-  | 'BOTTOM_CENTER'
-  | 'BOTTOM_RIGHT'
-  | 'CUSTOM';
+  | "TOP_LEFT"
+  | "TOP_CENTER"
+  | "TOP_RIGHT"
+  | "MIDDLE_LEFT"
+  | "CENTER"
+  | "MIDDLE_RIGHT"
+  | "BOTTOM_LEFT"
+  | "BOTTOM_CENTER"
+  | "BOTTOM_RIGHT"
+  | "CUSTOM";
 
 export interface ScreenshotLocation {
   id: string;
@@ -63,7 +63,7 @@ export interface ScreenshotLocation {
   percentH?: number; // Percent of height (0.0-1.0) for relative positioning
 }
 
-export type SelectionMode = 'view' | 'region' | 'location';
+export type SelectionMode = "view" | "region" | "location";
 
 export interface ScreenshotCanvasState {
   scale: number;

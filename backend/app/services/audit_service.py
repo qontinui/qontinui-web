@@ -3,9 +3,10 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.audit_log import AuditLog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.audit_log import AuditLog
 
 logger = structlog.get_logger(__name__)
 
@@ -19,7 +20,7 @@ class AuditService:
         user_id: UUID,
         action: str,
         resource_type: str | None = None,
-        resource_id: int | None = None,
+        resource_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         ip_address: str | None = None,
     ) -> AuditLog:
@@ -145,7 +146,7 @@ class AuditService:
             user_id=user_id,
             action="settings_changed",
             resource_type="user",
-            resource_id=user_id,
+            resource_id=str(user_id),
             ip_address=ip_address,
             metadata={"changed_fields": changed_fields},
         )
@@ -159,7 +160,7 @@ class AuditService:
             user_id=user_id,
             action="password_changed",
             resource_type="user",
-            resource_id=user_id,
+            resource_id=str(user_id),
             ip_address=ip_address,
         )
 
@@ -190,13 +191,13 @@ class AuditService:
         result = await db.execute(
             query.order_by(AuditLog.created_at.desc()).limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_resource_audit_logs(
         self,
         db: AsyncSession,
         resource_type: str,
-        resource_id: int,
+        resource_id: str,
         limit: int = 100,
     ) -> list[AuditLog]:
         """
@@ -220,7 +221,7 @@ class AuditService:
             .order_by(AuditLog.created_at.desc())
             .limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
 
 # Global instance

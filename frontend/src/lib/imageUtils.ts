@@ -17,12 +17,12 @@ export async function extractImageRegion(
     const url = URL.createObjectURL(imageFile);
 
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
 
       if (!ctx) {
         URL.revokeObjectURL(url);
-        reject(new Error('Could not get canvas context'));
+        reject(new Error("Could not get canvas context"));
         return;
       }
 
@@ -37,12 +37,18 @@ export async function extractImageRegion(
       // Draw the specific region
       ctx.drawImage(
         img,
-        x, y, width, height,  // Source rectangle
-        0, 0, width, height   // Destination rectangle
+        x,
+        y,
+        width,
+        height, // Source rectangle
+        0,
+        0,
+        width,
+        height // Destination rectangle
       );
 
       // Convert to data URL
-      const dataUrl = canvas.toDataURL('image/png');
+      const dataUrl = canvas.toDataURL("image/png");
 
       URL.revokeObjectURL(url);
       resolve(dataUrl);
@@ -50,7 +56,7 @@ export async function extractImageRegion(
 
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Failed to load image'));
+      reject(new Error("Failed to load image"));
     };
 
     img.src = url;
@@ -79,9 +85,11 @@ export async function generateStateImageThumbnail(
     if (stateImage.screenshots && stateImage.screenshots.length > 0) {
       // Extract index from screenshot ID (e.g., "screenshot_001" -> 1)
       const firstScreenshotId = stateImage.screenshots[0];
-      const match = firstScreenshotId.match(/screenshot_(\d+)/);
-      if (match) {
-        targetIndex = parseInt(match[1], 10);
+      if (firstScreenshotId) {
+        const match = firstScreenshotId.match(/screenshot_(\d+)/);
+        if (match && match[1]) {
+          targetIndex = parseInt(match[1], 10);
+        }
       }
     }
 
@@ -92,7 +100,7 @@ export async function generateStateImageThumbnail(
 
     // Extract the region from the screenshot
     const thumbnail = await extractImageRegion(
-      screenshots[targetIndex],
+      screenshots[targetIndex]!,
       stateImage.x,
       stateImage.y,
       stateImage.x2,
@@ -101,7 +109,7 @@ export async function generateStateImageThumbnail(
 
     return thumbnail;
   } catch (error) {
-    console.error('Error generating thumbnail:', error);
+    console.error("Error generating thumbnail:", error);
     return null;
   }
 }

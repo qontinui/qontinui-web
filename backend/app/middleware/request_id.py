@@ -71,4 +71,4 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         logger.info("request_completed", status_code=response.status_code)
         structlog.contextvars.clear_contextvars()
 
-        return response
+        return response  # type: ignore[no-any-return]

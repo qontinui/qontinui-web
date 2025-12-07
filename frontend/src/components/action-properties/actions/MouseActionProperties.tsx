@@ -1,23 +1,32 @@
-"use client"
+"use client";
 
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ActionPropertiesComponentProps } from "../types"
-import { TimingProperties } from "../TimingProperties"
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ActionPropertiesComponentProps } from "../types";
+import { TimingProperties } from "../TimingProperties";
 
 /**
  * Properties component for MOUSE_MOVE action.
  */
 export function MouseMoveProperties({
   action,
-  updateConfig
+  updateConfig,
 }: ActionPropertiesComponentProps) {
   return (
     <>
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Target</Label>
-        <Select value={action.config.target} onValueChange={(value) => updateConfig("target", value)}>
+        <Select
+          value={action.config.target}
+          onValueChange={(value) => updateConfig("target", value)}
+        >
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
@@ -35,7 +44,9 @@ export function MouseMoveProperties({
             <Input
               type="number"
               value={action.config.x || 0}
-              onChange={(e) => updateConfig("x", Number.parseInt(e.target.value))}
+              onChange={(e) =>
+                updateConfig("x", Number.parseInt(e.target.value))
+              }
               className="bg-transparent border-gray-700"
             />
           </div>
@@ -44,7 +55,9 @@ export function MouseMoveProperties({
             <Input
               type="number"
               value={action.config.y || 0}
-              onChange={(e) => updateConfig("y", Number.parseInt(e.target.value))}
+              onChange={(e) =>
+                updateConfig("y", Number.parseInt(e.target.value))
+              }
               className="bg-transparent border-gray-700"
             />
           </div>
@@ -57,15 +70,19 @@ export function MouseMoveProperties({
           type="number"
           min="0"
           value={action.config.duration || 0}
-          onChange={(e) => updateConfig("duration", Number.parseInt(e.target.value))}
+          onChange={(e) =>
+            updateConfig("duration", Number.parseInt(e.target.value))
+          }
           className="bg-transparent border-gray-700"
         />
-        <p className="text-xs text-gray-500">0 = instant movement, &gt;0 = smooth animation</p>
+        <p className="text-xs text-gray-500">
+          0 = instant movement, &gt;0 = smooth animation
+        </p>
       </div>
 
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
-  )
+  );
 }
 
 /**
@@ -73,13 +90,16 @@ export function MouseMoveProperties({
  */
 export function MouseButtonProperties({
   action,
-  updateConfig
+  updateConfig,
 }: ActionPropertiesComponentProps) {
   return (
     <>
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Button</Label>
-        <Select value={action.config.button || "left"} onValueChange={(value) => updateConfig("button", value)}>
+        <Select
+          value={action.config.button || "left"}
+          onValueChange={(value) => updateConfig("button", value)}
+        >
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
@@ -93,7 +113,10 @@ export function MouseButtonProperties({
 
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Target (Optional)</Label>
-        <Select value={action.config.target || "Current Position"} onValueChange={(value) => updateConfig("target", value)}>
+        <Select
+          value={action.config.target || "Current Position"}
+          onValueChange={(value) => updateConfig("target", value)}
+        >
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
@@ -112,7 +135,9 @@ export function MouseButtonProperties({
             <Input
               type="number"
               value={action.config.x || 0}
-              onChange={(e) => updateConfig("x", Number.parseInt(e.target.value))}
+              onChange={(e) =>
+                updateConfig("x", Number.parseInt(e.target.value))
+              }
               className="bg-transparent border-gray-700"
             />
           </div>
@@ -121,7 +146,9 @@ export function MouseButtonProperties({
             <Input
               type="number"
               value={action.config.y || 0}
-              onChange={(e) => updateConfig("y", Number.parseInt(e.target.value))}
+              onChange={(e) =>
+                updateConfig("y", Number.parseInt(e.target.value))
+              }
               className="bg-transparent border-gray-700"
             />
           </div>
@@ -130,7 +157,7 @@ export function MouseButtonProperties({
 
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
-  )
+  );
 }
 
 /**
@@ -138,13 +165,16 @@ export function MouseButtonProperties({
  */
 export function SimpleClickProperties({
   action,
-  updateConfig
+  updateConfig,
 }: ActionPropertiesComponentProps) {
   return (
     <>
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Target</Label>
-        <Select value={action.config.target} onValueChange={(value) => updateConfig("target", value)}>
+        <Select
+          value={action.config.target}
+          onValueChange={(value) => updateConfig("target", value)}
+        >
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
@@ -162,7 +192,9 @@ export function SimpleClickProperties({
             <Input
               type="number"
               value={action.config.x || 0}
-              onChange={(e) => updateConfig("x", Number.parseInt(e.target.value))}
+              onChange={(e) =>
+                updateConfig("x", Number.parseInt(e.target.value))
+              }
               className="bg-transparent border-gray-700"
             />
           </div>
@@ -171,7 +203,9 @@ export function SimpleClickProperties({
             <Input
               type="number"
               value={action.config.y || 0}
-              onChange={(e) => updateConfig("y", Number.parseInt(e.target.value))}
+              onChange={(e) =>
+                updateConfig("y", Number.parseInt(e.target.value))
+              }
               className="bg-transparent border-gray-700"
             />
           </div>
@@ -180,5 +214,5 @@ export function SimpleClickProperties({
 
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
-  )
+  );
 }

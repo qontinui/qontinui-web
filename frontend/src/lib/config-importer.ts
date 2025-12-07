@@ -1,6 +1,10 @@
-import { QontinuiConfig, ImageAsset as ExportImageAsset, Workflow as ExportWorkflow } from './export-schema';
-import { Action as NewFormatAction, Workflow } from './action-schema';
-import { migrateConfigToLatest, needsMigration } from './config-migration';
+import {
+  QontinuiConfig,
+  ImageAsset as ExportImageAsset,
+  Workflow as ExportWorkflow,
+} from "./export-schema";
+import { Workflow } from "./action-schema";
+import { migrateConfigToLatest, needsMigration } from "./config-migration";
 
 // Types that match the automation context
 interface ImageAsset {
@@ -11,12 +15,6 @@ interface ImageAsset {
   uploadedAt: Date;
   usageCount: number;
   usedIn: Array<{ type: "workflow" | "state"; id: string; name: string }>;
-}
-
-interface Action {
-  id: string;
-  type: string;
-  config: Record<string, any>;
 }
 
 interface State {
@@ -49,20 +47,21 @@ export interface ImportResult {
 }
 
 export class ConfigImporter {
-  private readonly SUPPORTED_VERSION = '2.0.1';
+  private readonly SUPPORTED_VERSION = "2.1.0";
 
   /**
    * Import a Qontinui configuration from JSON
    */
-  async importConfiguration(configJson: string | QontinuiConfig | any): Promise<ImportResult> {
+  async importConfiguration(
+    configJson: string | QontinuiConfig | any
+  ): Promise<ImportResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
 
     try {
       // Parse JSON if string
-      let config: any = typeof configJson === 'string'
-        ? JSON.parse(configJson)
-        : configJson;
+      let config: any =
+        typeof configJson === "string" ? JSON.parse(configJson) : configJson;
 
       // Migrate config if needed
       if (needsMigration(config.version)) {
@@ -79,7 +78,7 @@ export class ConfigImporter {
             transitions: [],
             settings: undefined,
             errors,
-            warnings
+            warnings,
           };
         }
 
@@ -95,7 +94,9 @@ export class ConfigImporter {
 
       // Validate version
       if (config.version !== this.SUPPORTED_VERSION) {
-        throw new Error(`Unsupported configuration version: ${config.version}. Only version ${this.SUPPORTED_VERSION} is supported.`);
+        throw new Error(
+          `Unsupported configuration version: ${config.version}. Only version ${this.SUPPORTED_VERSION} is supported.`
+        );
       }
 
       // Import components
@@ -115,10 +116,12 @@ export class ConfigImporter {
         transitions,
         settings: config.settings, // Pass through settings for backend to apply
         errors,
-        warnings
+        warnings,
       };
     } catch (error) {
-      errors.push(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      errors.push(
+        `Import failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
       return {
         success: false,
         images: [],
@@ -127,7 +130,7 @@ export class ConfigImporter {
         transitions: [],
         settings: undefined,
         errors,
-        warnings
+        warnings,
       };
     }
   }
@@ -135,13 +138,18 @@ export class ConfigImporter {
   /**
    * Import images from configuration
    */
-  private async importImages(exportImages: ExportImageAsset[]): Promise<ImageAsset[]> {
+  private async importImages(
+    exportImages: ExportImageAsset[]
+  ): Promise<ImageAsset[]> {
     const images: ImageAsset[] = [];
 
     for (const exportImage of exportImages) {
       try {
         // Convert base64 to blob URL
-        const url = await this.base64ToUrl(exportImage.data, exportImage.format);
+        const url = await this.base64ToUrl(
+          exportImage.data,
+          exportImage.format
+        );
 
         images.push({
           id: exportImage.id,
@@ -150,7 +158,7 @@ export class ConfigImporter {
           size: this.calculateBase64Size(exportImage.data),
           uploadedAt: new Date(),
           usageCount: 0,
-          usedIn: []
+          usedIn: [],
         });
       } catch (error) {
         console.error(`Failed to import image ${exportImage.name}:`, error);
@@ -164,33 +172,41 @@ export class ConfigImporter {
    * Import workflows from v2.0.0 configuration
    */
   private importWorkflows(exportWorkflows: ExportWorkflow[]): Workflow[] {
-    return exportWorkflows.map(exportWorkflow => ({
+    return exportWorkflows.map((exportWorkflow) => ({
       id: exportWorkflow.id,
       name: exportWorkflow.name,
-      description: exportWorkflow.description || '',
+      description: exportWorkflow.description || "",
       category: exportWorkflow.category,
-      format: 'graph' as const,
+      format: "graph" as const,
       version: this.SUPPORTED_VERSION,
-      actions: exportWorkflow.actions?.map(action => this.importAction(action)) || [],
-      connections: exportWorkflow.connections || {},
-      metadata: exportWorkflow.metadata || {}
+      actions:
+        exportWorkflow.actions?.map((action) => this.importAction(action)) ||
+        [],
+      connections: (exportWorkflow.connections as any) || {},
+      metadata: exportWorkflow.metadata || {},
     }));
   }
 
   /**
    * Import a single action from export format
+   *
+   * Note: FIND_STATE_IMAGE conversion is handled by the migration system
+   * (v2.0.1-to-v2.1.0 migration). This method assumes the config has
+   * already been migrated to the latest version.
    */
   private importAction(action: any): any {
     const imported: any = {
       id: action.id,
       type: action.type,
-      config: this.importActionConfig(action)
+      config: this.importActionConfig(action),
     };
 
     if (action.position) imported.position = action.position;
     if (action.timeout !== undefined) imported.timeout = action.timeout;
-    if (action.retryCount !== undefined) imported.retryCount = action.retryCount;
-    if (action.continueOnError !== undefined) imported.continueOnError = action.continueOnError;
+    if (action.retryCount !== undefined)
+      imported.retryCount = action.retryCount;
+    if (action.continueOnError !== undefined)
+      imported.continueOnError = action.continueOnError;
 
     return imported;
   }
@@ -202,7 +218,7 @@ export class ConfigImporter {
     const config: Record<string, any> = { ...action.config };
 
     // Handle target conversions - only FIND supports multiple images (imageIds)
-    if (config.target?.type === 'image' && action.type === 'FIND') {
+    if (config.target?.type === "image" && action.type === "FIND") {
       if (config.target.imageId && !config.target.imageIds) {
         config.target.imageIds = [config.target.imageId];
         delete config.target.imageId;
@@ -214,46 +230,45 @@ export class ConfigImporter {
 
     // Handle target object to string conversion for UI
     // Convert proper target objects back to UI string format
-    if (config.target && typeof config.target === 'object' && config.target.type) {
+    if (
+      config.target &&
+      typeof config.target === "object" &&
+      config.target.type
+    ) {
       const targetType = config.target.type;
 
-      if (targetType === 'lastFindResult') {
-        config.target = 'Last Find Result';
-      } else if (targetType === 'currentPosition') {
-        config.target = 'Current Position';
-      } else if (targetType === 'coordinates' && config.target.coordinates) {
-        config.target = 'Coordinates';
+      if (targetType === "lastFindResult") {
+        config.target = "Last Find Result";
+      } else if (targetType === "currentPosition") {
+        config.target = "Current Position";
+      } else if (targetType === "coordinates" && config.target.coordinates) {
+        config.target = "Coordinates";
         config.x = config.target.coordinates.x;
         config.y = config.target.coordinates.y;
       }
       // Handle the 3 new multi-result target types
       // These are imported as objects and stay as objects in the UI
-      else if (targetType === 'resultIndex') {
+      else if (targetType === "resultIndex") {
         // ResultIndexTarget: Ensure index field exists (default to 0)
         if (config.target.index === undefined) {
           config.target.index = 0;
         }
-      }
-      else if (targetType === 'allResults') {
+      } else if (targetType === "allResults") {
         // AllResultsTarget: No additional processing needed
         // Already has correct type field
-      }
-      else if (targetType === 'resultByImage') {
+      } else if (targetType === "resultByImage") {
         // ResultByImageTarget: Ensure imageId field exists
         // The JSON format uses imageId (camelCase), which matches UI expectation
         if (!config.target.imageId) {
-          console.warn('ResultByImageTarget missing imageId field');
+          console.warn("ResultByImageTarget missing imageId field");
         }
       }
       // Keep image and other complex targets as objects
     }
 
     // Handle action-specific transformations
-    if (action.type === 'GO_TO_STATE' && config.stateIds) {
+    if (action.type === "GO_TO_STATE" && config.stateIds) {
       config.states = config.stateIds;
-    }
-    if (action.type === 'FIND_STATE_IMAGE' && config.stateId) {
-      config.state = config.stateId;
     }
 
     return config;
@@ -263,38 +278,40 @@ export class ConfigImporter {
    * Import states from configuration
    */
   private importStates(exportStates: any[], images: ImageAsset[]): State[] {
-    return exportStates.map(exportState => {
+    return exportStates.map((exportState) => {
       this.updateImageUsage(exportState, images);
 
       return {
         id: exportState.id,
         name: exportState.name,
-        description: exportState.description || '',
+        description: exportState.description || "",
         initial: exportState.isInitial || false,
-        stateImages: exportState.stateImages?.map((img: any) => ({
-          id: img.id,
-          name: img.name,
-          patterns: img.patterns?.map((pattern: any) => ({
-            id: pattern.id,
-            name: pattern.name,
-            image: this.resolveImageId(pattern.imageId, images),
-            mask: pattern.mask,
-            searchRegions: pattern.searchRegions || [],
-            fixed: pattern.fixed || false,
-            similarity: pattern.similarity,
-            targetPosition: pattern.targetPosition,
-            offsetX: pattern.offsetX,
-            offsetY: pattern.offsetY
+        stateImages:
+          exportState.stateImages?.map((img: any) => ({
+            id: img.id,
+            name: img.name,
+            patterns:
+              img.patterns?.map((pattern: any) => ({
+                id: pattern.id,
+                name: pattern.name,
+                image: this.resolveImageId(pattern.imageId, images),
+                mask: pattern.mask,
+                searchRegions: pattern.searchRegions || [],
+                fixed: pattern.fixed || false,
+                similarity: pattern.similarity,
+                targetPosition: pattern.targetPosition,
+                offsetX: pattern.offsetX,
+                offsetY: pattern.offsetY,
+              })) || [],
+            shared: img.shared || false,
+            source: img.source,
+            probability: img.probability,
+            searchRegions: img.searchRegions || [],
           })) || [],
-          shared: img.shared || false,
-          source: img.source,
-          probability: img.probability,
-          searchRegions: img.searchRegions || []
-        })) || [],
         regions: exportState.regions || [],
         locations: exportState.locations || [],
         strings: exportState.strings || [],
-        position: exportState.position
+        position: exportState.position,
       };
     });
   }
@@ -303,8 +320,9 @@ export class ConfigImporter {
    * Import transitions from configuration
    */
   private importTransitions(exportTransitions: any[]): Transition[] {
-    return exportTransitions.map(exportTransition => {
-      const type: "OutgoingTransition" | "IncomingTransition" = exportTransition.type;
+    return exportTransitions.map((exportTransition) => {
+      const type: "OutgoingTransition" | "IncomingTransition" =
+        exportTransition.type;
 
       // Keep workflows as string[] array to match export format
       const workflows: string[] = Array.isArray(exportTransition.workflows)
@@ -316,16 +334,24 @@ export class ConfigImporter {
         type: type,
         workflows: workflows,
         timeout: exportTransition.timeout || 10000,
-        retryCount: exportTransition.retryCount || 0
+        retryCount: exportTransition.retryCount || 0,
       };
 
-      if (type === 'OutgoingTransition') {
+      if (type === "OutgoingTransition") {
         transition.fromState = exportTransition.fromState;
         transition.toState = exportTransition.toState;
         transition.staysVisible = exportTransition.staysVisible;
-        transition.activateStates = Array.isArray(exportTransition.activateStates) ? exportTransition.activateStates : [];
-        transition.deactivateStates = Array.isArray(exportTransition.deactivateStates) ? exportTransition.deactivateStates : [];
-      } else if (type === 'IncomingTransition') {
+        transition.activateStates = Array.isArray(
+          exportTransition.activateStates
+        )
+          ? exportTransition.activateStates
+          : [];
+        transition.deactivateStates = Array.isArray(
+          exportTransition.deactivateStates
+        )
+          ? exportTransition.deactivateStates
+          : [];
+      } else if (type === "IncomingTransition") {
         transition.toState = exportTransition.toState;
       }
 
@@ -342,31 +368,39 @@ export class ConfigImporter {
     transitions: Transition[],
     errors: string[]
   ): void {
-    const stateIds = new Set(states.map(s => s.id));
-    const workflowIds = new Set(workflows.map(w => w.id));
+    const stateIds = new Set(states.map((s) => s.id));
+    const workflowIds = new Set(workflows.map((w) => w.id));
 
     // Check transition references
-    transitions.forEach(transition => {
+    transitions.forEach((transition) => {
       // Check workflow references
       if (Array.isArray(transition.workflows)) {
-        transition.workflows.forEach(workflowId => {
+        transition.workflows.forEach((workflowId) => {
           if (!workflowIds.has(workflowId)) {
-            errors.push(`Transition ${transition.id} references unknown workflow: ${workflowId}`);
+            errors.push(
+              `Transition ${transition.id} references unknown workflow: ${workflowId}`
+            );
           }
         });
       }
 
       // Check state references
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         if (transition.fromState && !stateIds.has(transition.fromState)) {
-          errors.push(`Transition ${transition.id} references unknown fromState: ${transition.fromState}`);
+          errors.push(
+            `Transition ${transition.id} references unknown fromState: ${transition.fromState}`
+          );
         }
         if (transition.toState && !stateIds.has(transition.toState)) {
-          errors.push(`Transition ${transition.id} references unknown toState: ${transition.toState}`);
+          errors.push(
+            `Transition ${transition.id} references unknown toState: ${transition.toState}`
+          );
         }
-      } else if (transition.type === 'IncomingTransition') {
+      } else if (transition.type === "IncomingTransition") {
         if (transition.toState && !stateIds.has(transition.toState)) {
-          errors.push(`Transition ${transition.id} references unknown toState: ${transition.toState}`);
+          errors.push(
+            `Transition ${transition.id} references unknown toState: ${transition.toState}`
+          );
         }
       }
     });
@@ -385,7 +419,7 @@ export class ConfigImporter {
    */
   private calculateBase64Size(base64: string): number {
     // Remove data URI prefix if present
-    const data = base64.replace(/^data:.*,/, '');
+    const data = base64.replace(/^data:.*,/, "");
     // Calculate approximate size in bytes
     return Math.round(data.length * 0.75);
   }
@@ -394,7 +428,7 @@ export class ConfigImporter {
    * Resolve image ID to base64 data URL
    */
   private resolveImageId(imageId: string, images: ImageAsset[]): string {
-    const imageAsset = images.find(img => img.id === imageId);
+    const imageAsset = images.find((img) => img.id === imageId);
 
     if (!imageAsset) {
       throw new Error(`Pattern references unknown image ID: ${imageId}`);
@@ -409,14 +443,14 @@ export class ConfigImporter {
   private updateImageUsage(exportState: any, images: ImageAsset[]): void {
     exportState.stateImages?.forEach((stateImage: any) => {
       stateImage.patterns?.forEach((pattern: any) => {
-        const image = images.find(img => img.id === pattern.imageId);
+        const image = images.find((img) => img.id === pattern.imageId);
 
         if (image) {
           image.usageCount++;
           image.usedIn.push({
-            type: 'state',
+            type: "state",
             id: exportState.id,
-            name: exportState.name
+            name: exportState.name,
           });
         }
       });
@@ -440,7 +474,7 @@ export class ConfigImporter {
         }
       };
 
-      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onerror = () => reject(new Error("Failed to read file"));
       reader.readAsText(file);
     });
   }
@@ -452,21 +486,23 @@ export class ConfigImporter {
     const errors: string[] = [];
 
     // Check required fields
-    if (!config.version) errors.push('Version is required');
-    if (!config.metadata?.name) errors.push('Configuration name is required');
-    if (!Array.isArray(config.images)) errors.push('Images must be an array');
-    if (!Array.isArray(config.workflows)) errors.push('Workflows must be an array');
-    if (!Array.isArray(config.states)) errors.push('States must be an array');
-    if (!Array.isArray(config.transitions)) errors.push('Transitions must be an array');
+    if (!config.version) errors.push("Version is required");
+    if (!config.metadata?.name) errors.push("Configuration name is required");
+    if (!Array.isArray(config.images)) errors.push("Images must be an array");
+    if (!Array.isArray(config.workflows))
+      errors.push("Workflows must be an array");
+    if (!Array.isArray(config.states)) errors.push("States must be an array");
+    if (!Array.isArray(config.transitions))
+      errors.push("Transitions must be an array");
 
     // Check for at least one state
     if (config.states?.length === 0) {
-      errors.push('At least one state is required');
+      errors.push("At least one state is required");
     }
 
     return {
       valid: errors.length === 0,
-      errors
+      errors,
     };
   }
 
@@ -487,92 +523,101 @@ export class ConfigImporter {
 
     // Merge images
     const mergedImages = [...existing.images];
-    imported.images.forEach(image => {
+    imported.images.forEach((image) => {
       const newId = `imported_${Date.now()}_${image.id}`;
       idMap.set(image.id, newId);
       mergedImages.push({
         ...image,
-        id: newId
+        id: newId,
       });
     });
 
     // Update workflow references
     const mergedWorkflows = [...existing.workflows];
-    imported.workflows.forEach(workflow => {
+    imported.workflows.forEach((workflow) => {
       const newId = `imported_${Date.now()}_${workflow.id}`;
       idMap.set(workflow.id, newId);
 
       // Update image references in actions
-      const updatedActions = workflow.actions.map(action => ({
+      const updatedActions = workflow.actions.map((action) => ({
         ...action,
         config: {
           ...action.config,
-          imageId: action.config.imageId ? idMap.get(action.config.imageId) || action.config.imageId : undefined
-        }
+          imageId: (action.config as any).imageId
+            ? idMap.get((action.config as any).imageId) ||
+              (action.config as any).imageId
+            : undefined,
+        },
       }));
 
       mergedWorkflows.push({
         ...workflow,
         id: newId,
-        actions: updatedActions
+        actions: updatedActions,
       });
     });
 
     // Update state references
     const mergedStates = [...existing.states];
-    imported.states.forEach(state => {
+    imported.states.forEach((state) => {
       const newId = `imported_${Date.now()}_${state.id}`;
       idMap.set(state.id, newId);
 
       // Update image references
-      const updatedImages = state.stateImages.map(img => ({
+      const updatedImages = state.stateImages.map((img) => ({
         ...img,
-        image: idMap.get(img.image) || img.image
+        image: idMap.get(img.image) || img.image,
       }));
 
       mergedStates.push({
         ...state,
         id: newId,
-        stateImages: updatedImages
+        stateImages: updatedImages,
       });
     });
 
     // Update transition references
     const mergedTransitions = [...existing.transitions];
-    imported.transitions.forEach(transition => {
+    imported.transitions.forEach((transition) => {
       const newId = `imported_${Date.now()}_${transition.id}`;
 
       // Update workflow references
-      const updatedWorkflows = transition.workflows.map(wid =>
-        idMap.get(wid) || wid
+      const updatedWorkflows = transition.workflows.map(
+        (wid) => idMap.get(wid) || wid
       );
 
       const updatedTransition: Transition = {
         ...transition,
         id: newId,
-        workflows: updatedWorkflows
+        workflows: updatedWorkflows,
       };
 
       // Update state references
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         if (transition.fromState) {
-          updatedTransition.fromState = idMap.get(transition.fromState) || transition.fromState;
+          updatedTransition.fromState =
+            idMap.get(transition.fromState) || transition.fromState;
         }
         if (transition.toState) {
-          updatedTransition.toState = idMap.get(transition.toState) || transition.toState;
+          updatedTransition.toState =
+            idMap.get(transition.toState) || transition.toState;
         }
         if (transition.activateStates) {
-          updatedTransition.activateStates = transition.activateStates.map(sid =>
-            idMap.get(sid) || sid
+          updatedTransition.activateStates = transition.activateStates.map(
+            (sid: any) => idMap.get(sid) || sid
           );
         }
         if (transition.deactivateStates) {
-          updatedTransition.deactivateStates = transition.deactivateStates.map(sid =>
-            idMap.get(sid) || sid
+          updatedTransition.deactivateStates = transition.deactivateStates.map(
+            (sid: any) => idMap.get(sid) || sid
           );
         }
-      } else if (transition.type === 'IncomingTransition' && transition.toState) {
-        updatedTransition.toState = idMap.get(transition.toState) || transition.toState;
+      } else if (
+        transition.type === "IncomingTransition" &&
+        transition.toState
+      ) {
+        updatedTransition.toState =
+          idMap.get(transition.toState) || transition.toState;
       }
 
       mergedTransitions.push(updatedTransition);
@@ -585,7 +630,7 @@ export class ConfigImporter {
       states: mergedStates,
       transitions: mergedTransitions,
       errors: [],
-      warnings: ['Configuration merged with existing data']
+      warnings: ["Configuration merged with existing data"],
     };
   }
 }

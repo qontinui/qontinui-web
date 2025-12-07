@@ -2,8 +2,12 @@
  * Utility functions for working with regions and anchors
  */
 
-import { ScreenshotLocation, ScreenshotRegion, AnchorType } from '../types/Screenshot';
-import { generateId } from './utils';
+import {
+  ScreenshotLocation,
+  ScreenshotRegion,
+  AnchorType,
+} from "../types/Screenshot";
+import { generateId } from "./utils";
 
 /**
  * Calculate the actual position of an anchor based on its type within a bounding box
@@ -13,7 +17,7 @@ export function getAnchorPosition(
   boundingBox?: { x: number; y: number; width: number; height: number }
 ): { x: number; y: number } {
   // If no anchor type or CUSTOM, use the location's coordinates directly
-  if (!anchor.anchorType || anchor.anchorType === 'CUSTOM') {
+  if (!anchor.anchorType || anchor.anchorType === "CUSTOM") {
     return { x: anchor.x, y: anchor.y };
   }
 
@@ -22,28 +26,28 @@ export function getAnchorPosition(
     x: anchor.x,
     y: anchor.y,
     width: 0,
-    height: 0
+    height: 0,
   };
 
   // Calculate position based on anchor type
   switch (anchor.anchorType) {
-    case 'TOP_LEFT':
+    case "TOP_LEFT":
       return { x: box.x, y: box.y };
-    case 'TOP_CENTER':
+    case "TOP_CENTER":
       return { x: box.x + box.width / 2, y: box.y };
-    case 'TOP_RIGHT':
+    case "TOP_RIGHT":
       return { x: box.x + box.width, y: box.y };
-    case 'MIDDLE_LEFT':
+    case "MIDDLE_LEFT":
       return { x: box.x, y: box.y + box.height / 2 };
-    case 'CENTER':
+    case "CENTER":
       return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    case 'MIDDLE_RIGHT':
+    case "MIDDLE_RIGHT":
       return { x: box.x + box.width, y: box.y + box.height / 2 };
-    case 'BOTTOM_LEFT':
+    case "BOTTOM_LEFT":
       return { x: box.x, y: box.y + box.height };
-    case 'BOTTOM_CENTER':
+    case "BOTTOM_CENTER":
       return { x: box.x + box.width / 2, y: box.y + box.height };
-    case 'BOTTOM_RIGHT':
+    case "BOTTOM_RIGHT":
       return { x: box.x + box.width, y: box.y + box.height };
     default:
       return { x: anchor.x, y: anchor.y };
@@ -73,12 +77,12 @@ export function createRegionFromAnchors(
   // Apply offsets if present
   const finalPos1 = {
     x: pos1.x + (anchor1.offsetX || 0),
-    y: pos1.y + (anchor1.offsetY || 0)
+    y: pos1.y + (anchor1.offsetY || 0),
   };
 
   const finalPos2 = {
     x: pos2.x + (anchor2.offsetX || 0),
-    y: pos2.y + (anchor2.offsetY || 0)
+    y: pos2.y + (anchor2.offsetY || 0),
   };
 
   // Calculate the bounding box
@@ -92,13 +96,13 @@ export function createRegionFromAnchors(
     screenshotId,
     stateId,
     name: name || `Region_${anchor1.name}_to_${anchor2.name}`,
-    type: 'StateRegion',
+    type: "StateRegion",
     bounds: {
       x: minX,
       y: minY,
       width: maxX - minX,
-      height: maxY - minY
-    }
+      height: maxY - minY,
+    },
   };
 }
 
@@ -129,20 +133,20 @@ export function canCreateRegionFromAnchors(
  * Get a descriptive name for an anchor type
  */
 export function getAnchorTypeName(anchorType?: AnchorType): string {
-  if (!anchorType) return 'Custom';
+  if (!anchorType) return "Custom";
 
   const names: Record<AnchorType, string> = {
-    TOP_LEFT: 'Top Left',
-    TOP_CENTER: 'Top Center',
-    TOP_RIGHT: 'Top Right',
-    MIDDLE_LEFT: 'Middle Left',
-    CENTER: 'Center',
-    MIDDLE_RIGHT: 'Middle Right',
-    BOTTOM_LEFT: 'Bottom Left',
-    BOTTOM_CENTER: 'Bottom Center',
-    BOTTOM_RIGHT: 'Bottom Right',
-    CUSTOM: 'Custom'
+    TOP_LEFT: "Top Left",
+    TOP_CENTER: "Top Center",
+    TOP_RIGHT: "Top Right",
+    MIDDLE_LEFT: "Middle Left",
+    CENTER: "Center",
+    MIDDLE_RIGHT: "Middle Right",
+    BOTTOM_LEFT: "Bottom Left",
+    BOTTOM_CENTER: "Bottom Center",
+    BOTTOM_RIGHT: "Bottom Right",
+    CUSTOM: "Custom",
   };
 
-  return names[anchorType] || 'Custom';
+  return names[anchorType] || "Custom";
 }

@@ -14,11 +14,12 @@ import signal
 import sys
 import traceback
 from contextlib import contextmanager
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Set
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 from app.services.automation_context import AutomationContext
-from pydantic import BaseModel, Field
 
 # ============================================================================
 # Models
@@ -29,20 +30,20 @@ class ExecutionContext(BaseModel):
     """Context available during code execution."""
 
     # Previous action result (from workflow)
-    action_result: Optional[Dict[str, Any]] = None
+    action_result: dict[str, Any] | None = None
 
     # Workflow variables
-    variables: Dict[str, Any] = Field(default_factory=dict)
+    variables: dict[str, Any] = Field(default_factory=dict)
 
     # Workflow state
-    workflow_state: Dict[str, Any] = Field(default_factory=dict)
+    workflow_state: dict[str, Any] = Field(default_factory=dict)
 
     # Active states (from state machine)
-    active_states: Set[str] = Field(default_factory=set)
+    active_states: set[str] = Field(default_factory=set)
 
     # Execution metadata
-    workflow_id: Optional[str] = None
-    run_id: Optional[str] = None
+    workflow_id: str | None = None
+    run_id: str | None = None
 
 
 class CodeExecutionRequest(BaseModel):
@@ -54,7 +55,7 @@ class CodeExecutionRequest(BaseModel):
         default_factory=ExecutionContext, description="Execution context"
     )
 
-    inputs: Dict[str, Any] = Field(
+    inputs: dict[str, Any] = Field(
         default_factory=dict, description="Additional input variables"
     )
 
@@ -62,7 +63,7 @@ class CodeExecutionRequest(BaseModel):
         default=30, ge=1, le=60, description="Execution timeout in seconds"
     )
 
-    allowed_imports: List[str] = Field(
+    allowed_imports: list[str] = Field(
         default_factory=lambda: [
             "re",
             "json",
@@ -76,7 +77,7 @@ class CodeExecutionRequest(BaseModel):
         description="Whitelist of allowed imports",
     )
 
-    project_root: Optional[str] = Field(
+    project_root: str | None = Field(
         default=None,
         description="Project root directory for import resolution (file-based execution)",
     )
@@ -89,9 +90,9 @@ class CodeExecutionResult(BaseModel):
 
     success: bool
     result: Any = None
-    error: Optional[str] = None
-    error_type: Optional[str] = None
-    traceback: Optional[str] = None
+    error: str | None = None
+    error_type: str | None = None
+    traceback: str | None = None
     execution_time_ms: float
     stdout: str = ""
     stderr: str = ""
@@ -143,7 +144,7 @@ class CodeValidator:
 
     @staticmethod
     def validate_imports(
-        code: str, allowed_imports: List[str], allow_project_imports: bool = False
+        code: str, allowed_imports: list[str], allow_project_imports: bool = False
     ) -> None:
         """
         Validate that code only imports allowed modules.
@@ -251,9 +252,28 @@ def time_limit(seconds: int):
         finally:
             signal.alarm(0)
     else:
-        # Fallback for Windows: no timeout enforcement
-        # TODO: Implement threading-based timeout for Windows
-        yield
+        # Fallback for Windows: use threading-based timeout
+        import threading
+
+        # Create a flag to indicate timeout
+        timed_out = threading.Event()
+
+        def check_timeout():
+            if not timed_out.wait(seconds):
+                # Signal that we've timed out (though Python can't actually
+                # interrupt the thread, this at least lets us track it)
+                pass
+
+        # Start timeout watcher
+        timer = threading.Timer(seconds, lambda: timed_out.set())
+        timer.start()
+
+        try:
+            yield
+            if timed_out.is_set():
+                raise TimeoutError(f"Execution timed out after {seconds} seconds")
+        finally:
+            timer.cancel()
 
 
 # ============================================================================
@@ -267,10 +287,10 @@ class CodeExecutionService:
     @staticmethod
     def create_safe_globals(
         context: ExecutionContext,
-        inputs: Dict[str, Any],
-        allowed_imports: List[str],
+        inputs: dict[str, Any],
+        allowed_imports: list[str],
         allow_imports: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create a restricted global namespace for code execution.
 
@@ -284,18 +304,23 @@ class CodeExecutionService:
             Dict of safe globals for exec()
         """
         # Start with minimal builtins
+        # __builtins__ can be a dict or a module, so we need to handle both
+        import builtins
+
+        builtins_dict = builtins.__dict__
+
         safe_builtins = {
             k: v
-            for k, v in __builtins__.items()
+            for k, v in builtins_dict.items()
             if k not in BLOCKED_BUILTINS and not k.startswith("_")
         }
 
         # Allow __import__ for file-based execution
         if allow_imports:
-            safe_builtins["__import__"] = __builtins__["__import__"]
+            safe_builtins["__import__"] = builtins_dict["__import__"]
 
         # Add allowed imports
-        allowed_modules = {}
+        allowed_modules: dict[str, Any] = {}
         for module_name in allowed_imports:
             try:
                 if module_name == "datetime":
@@ -387,14 +412,27 @@ class CodeExecutionService:
                 request.allowed_imports,
                 allow_imports=allow_project_imports,
             )
-            safe_locals: Dict[str, Any] = {}
+            safe_locals: dict[str, Any] = {}
 
             # Capture stdout/stderr
-            # TODO: Implement stdout/stderr capture
+            import io
+            import sys
+
+            stdout_capture = io.StringIO()
+            stderr_capture = io.StringIO()
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
 
             # Execute with timeout
             result = None
+            stdout_output = ""
+            stderr_output = ""
+
             try:
+                # Redirect stdout/stderr
+                sys.stdout = stdout_capture
+                sys.stderr = stderr_capture
+
                 with time_limit(request.timeout):
                     # Execute code
                     exec(request.code, safe_globals, safe_locals)
@@ -413,12 +451,23 @@ class CodeExecutionService:
 
             except TimeoutError as e:
                 execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                # Capture any output before timeout
+                stdout_output = stdout_capture.getvalue()
+                stderr_output = stderr_capture.getvalue()
                 return CodeExecutionResult(
                     success=False,
                     error=str(e),
                     error_type="TimeoutError",
                     execution_time_ms=execution_time,
+                    stdout=stdout_output,
+                    stderr=stderr_output,
                 )
+            finally:
+                # Restore stdout/stderr
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                stdout_output = stdout_capture.getvalue()
+                stderr_output = stderr_capture.getvalue()
 
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
 
@@ -426,6 +475,8 @@ class CodeExecutionService:
                 success=True,
                 result=result,
                 execution_time_ms=execution_time,
+                stdout=stdout_output,
+                stderr=stderr_output,
             )
 
         except ValueError as e:

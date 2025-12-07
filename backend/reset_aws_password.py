@@ -36,7 +36,7 @@ psql -h qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com \\
      -c "UPDATE users SET hashed_password = '{hashed}' WHERE email = '{email}';"
 """
     )
-    print("\nPassword: 2008NawaNawa=")
+    print("\nPassword: YOUR_DB_PASSWORD_HERE")
 
 
 if __name__ == "__main__":

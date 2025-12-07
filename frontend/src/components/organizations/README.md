@@ -7,6 +7,7 @@ Components for managing organization invitations and members.
 ### InviteMemberDialog
 
 A dialog component for inviting new members to an organization. Features include:
+
 - Email input field
 - Role selector (Admin, Member, Viewer)
 - Send invitation button
@@ -16,16 +17,14 @@ A dialog component for inviting new members to an organization. Features include
 **Usage:**
 
 ```tsx
-import { InviteMemberDialog } from '@/components/organizations';
+import { InviteMemberDialog } from "@/components/organizations";
 
 function OrganizationSettingsPage() {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
 
   return (
     <>
-      <Button onClick={() => setShowInviteDialog(true)}>
-        Invite Members
-      </Button>
+      <Button onClick={() => setShowInviteDialog(true)}>Invite Members</Button>
 
       <InviteMemberDialog
         open={showInviteDialog}
@@ -33,7 +32,7 @@ function OrganizationSettingsPage() {
         organizationName="My Organization"
         onClose={() => setShowInviteDialog(false)}
         onInvitationSent={(invitation) => {
-          console.log('Invitation sent:', invitation);
+          console.log("Invitation sent:", invitation);
         }}
       />
     </>
@@ -56,6 +55,7 @@ function OrganizationSettingsPage() {
 Located at `/app/(app)/invitations/accept/page.tsx`
 
 This page handles accepting organization invitations from email links. It:
+
 - Extracts the invitation token from URL query parameters
 - Displays organization details
 - Shows the role being offered
@@ -64,11 +64,13 @@ This page handles accepting organization invitations from email links. It:
 - Redirects to dashboard after accepting/declining
 
 **URL Format:**
+
 ```
 /invitations/accept?token=<invitation-token>
 ```
 
 **Features:**
+
 - Loading states while fetching invitation details
 - Error handling for invalid or expired tokens
 - Visual feedback for different invitation states
@@ -80,46 +82,52 @@ This page handles accepting organization invitations from email links. It:
 The components use the following API endpoints from `@/lib/api/organizations`:
 
 ### Sending Invitations
+
 ```typescript
-import { inviteMember } from '@/lib/api/organizations';
+import { inviteMember } from "@/lib/api/organizations";
 
 const invitation = await inviteMember(organizationId, {
-  email: 'user@example.com',
-  role: 'member'
+  email: "user@example.com",
+  role: "member",
 });
 ```
 
 ### Getting Pending Invitations
+
 ```typescript
-import { getInvitations } from '@/lib/api/organizations';
+import { getInvitations } from "@/lib/api/organizations";
 
 const invitations = await getInvitations(organizationId);
 ```
 
 ### Accepting Invitations
+
 ```typescript
-import { acceptInvitation } from '@/lib/api/organizations';
+import { acceptInvitation } from "@/lib/api/organizations";
 
 const result = await acceptInvitation(token);
 ```
 
 ### Declining Invitations
+
 ```typescript
-import { declineInvitation } from '@/lib/api/organizations';
+import { declineInvitation } from "@/lib/api/organizations";
 
 await declineInvitation(token);
 ```
 
 ### Canceling Invitations
+
 ```typescript
-import { cancelInvitation } from '@/lib/api/organizations';
+import { cancelInvitation } from "@/lib/api/organizations";
 
 await cancelInvitation(organizationId, invitationId);
 ```
 
 ### Resending Invitations
+
 ```typescript
-import { resendInvitation } from '@/lib/api/organizations';
+import { resendInvitation } from "@/lib/api/organizations";
 
 const invitation = await resendInvitation(organizationId, invitationId);
 ```
@@ -134,16 +142,18 @@ import type {
   Invitation,
   InvitationCreate,
   MemberRole,
-  TeamMember
-} from '@/types/collaboration';
+  TeamMember,
+} from "@/types/collaboration";
 ```
 
 ### MemberRole
+
 ```typescript
-type MemberRole = 'owner' | 'admin' | 'member' | 'viewer';
+type MemberRole = "owner" | "admin" | "member" | "viewer";
 ```
 
 ### Invitation
+
 ```typescript
 interface Invitation {
   id: string;
@@ -154,7 +164,7 @@ interface Invitation {
   invited_at: string;
   expires_at: string;
   token: string;
-  status: 'pending' | 'accepted' | 'expired' | 'revoked';
+  status: "pending" | "accepted" | "expired" | "revoked";
 }
 ```
 

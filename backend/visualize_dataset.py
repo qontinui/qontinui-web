@@ -6,7 +6,6 @@ Draw bounding boxes and labels on sample images to verify dataset quality.
 
 import json
 import random
-import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -25,7 +24,7 @@ def visualize_sample(dataset_dir: str, split: str = "train", num_samples: int = 
     annotation_file = dataset_path / "annotations" / f"{split}.json"
 
     # Load annotations
-    with open(annotation_file, "r") as f:
+    with open(annotation_file) as f:
         dataset = json.load(f)
 
     # Select random samples
@@ -52,7 +51,7 @@ def visualize_sample(dataset_dir: str, split: str = "train", num_samples: int = 
             font = ImageFont.truetype(
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12
             )
-        except:
+        except OSError:
             font = ImageFont.load_default()
 
         # Draw bounding boxes

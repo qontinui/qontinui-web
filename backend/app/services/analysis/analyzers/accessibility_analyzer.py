@@ -11,10 +11,9 @@ Detects interactive elements using:
 Works best with browser automation tools that can inject accessibility data.
 """
 
-import json
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -71,7 +70,7 @@ class AccessibilityAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Accessibility data (injected by browser automation)
             "accessibility_data": None,
@@ -160,7 +159,7 @@ class AccessibilityAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -170,10 +169,10 @@ class AccessibilityAnalyzer(BaseAnalyzer):
 
     def _process_accessibility_data(
         self,
-        accessibility_data: List[Dict[str, Any]],
-        images: List[np.ndarray],
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        accessibility_data: list[dict[str, Any]],
+        images: list[np.ndarray],
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """
         Process accessibility data to extract interactive elements
         """
@@ -234,7 +233,7 @@ class AccessibilityAnalyzer(BaseAnalyzer):
 
         return elements
 
-    def _is_interactive(self, item: Dict[str, Any], params: Dict[str, Any]) -> bool:
+    def _is_interactive(self, item: dict[str, Any], params: dict[str, Any]) -> bool:
         """
         Determine if accessibility item represents an interactive element
         """
@@ -271,7 +270,7 @@ class AccessibilityAnalyzer(BaseAnalyzer):
         return False
 
     def _calculate_confidence(
-        self, item: Dict[str, Any], params: Dict[str, Any]
+        self, item: dict[str, Any], params: dict[str, Any]
     ) -> float:
         """
         Calculate confidence based on accessibility information quality
@@ -300,7 +299,7 @@ class AccessibilityAnalyzer(BaseAnalyzer):
 
         return confidence
 
-    def _determine_element_type(self, item: Dict[str, Any]) -> str:
+    def _determine_element_type(self, item: dict[str, Any]) -> str:
         """
         Determine element type from accessibility data
         """
@@ -339,25 +338,25 @@ class AccessibilityAnalyzer(BaseAnalyzer):
 
         return "interactive"
 
-    def _extract_label(self, item: Dict[str, Any]) -> str:
+    def _extract_label(self, item: dict[str, Any]) -> str:
         """
         Extract human-readable label for element
         """
         # Try accessible name first
         name = item.get("name")
         if name:
-            return name
+            return str(name)
 
         # Try aria-label
         aria_label = item.get("attributes", {}).get("aria-label")
         if aria_label:
-            return aria_label
+            return str(aria_label)
 
         # Try value/placeholder for inputs
         attributes = item.get("attributes", {})
         value = attributes.get("value")
         if value:
-            return value
+            return str(value)
 
         placeholder = attributes.get("placeholder")
         if placeholder:
@@ -366,11 +365,11 @@ class AccessibilityAnalyzer(BaseAnalyzer):
         # Fallback to role/tag
         role = item.get("role")
         if role:
-            return role.title()
+            return str(role).title()
 
         tag = item.get("tag")
         if tag:
-            return tag.title()
+            return str(tag).title()
 
         return "Interactive Element"
 

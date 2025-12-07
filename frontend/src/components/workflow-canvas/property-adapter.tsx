@@ -8,11 +8,11 @@
  * - Tracks unsaved changes
  */
 
-import { useCallback, useEffect, useRef } from 'react';
-import { useCanvasStore } from '@/stores/canvas-store';
-import { usePropertiesPanelStore } from '@/stores/properties-panel-store';
-import type { Action as CanvasAction } from '@/lib/action-schema/action-types';
-import type { Action as PropertyAction } from '@/components/action-properties/types';
+import { useCallback, useEffect, useRef } from "react";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { usePropertiesPanelStore } from "@/stores/properties-panel-store";
+import type { Action as CanvasAction } from "@/lib/action-schema/action-types";
+import type { Action as PropertyAction } from "@/components/action-properties/types";
 
 // ============================================================================
 // Type Conversions
@@ -24,19 +24,8 @@ import type { Action as PropertyAction } from '@/components/action-properties/ty
 function canvasActionToPropertyAction(action: CanvasAction): PropertyAction {
   return {
     id: action.id,
-    type: action.type as PropertyAction['type'],
+    type: action.type as PropertyAction["type"],
     config: action.config as Record<string, any>,
-  };
-}
-
-/**
- * Convert config updates back to canvas Action partial
- */
-function configUpdatesToActionPartial(
-  configUpdates: Record<string, any>
-): Partial<CanvasAction> {
-  return {
-    config: configUpdates,
   };
 }
 
@@ -49,7 +38,11 @@ export interface PropertyAdapterResult {
   action: PropertyAction | null;
 
   /** Update handler for property changes */
-  updateConfig: (key: string, value: any, additionalUpdates?: Record<string, any>) => void;
+  updateConfig: (
+    key: string,
+    value: any,
+    additionalUpdates?: Record<string, any>
+  ) => void;
 
   /** Full action update handler */
   updateAction: (updates: Partial<CanvasAction>) => void;
@@ -202,7 +195,9 @@ export function usePropertyAdapter(actionId: string): PropertyAdapterResult {
   }, []);
 
   // Convert to property action format
-  const propertyAction = canvasAction ? canvasActionToPropertyAction(canvasAction) : null;
+  const propertyAction = canvasAction
+    ? canvasActionToPropertyAction(canvasAction)
+    : null;
 
   return {
     action: propertyAction,
@@ -211,7 +206,7 @@ export function usePropertyAdapter(actionId: string): PropertyAdapterResult {
     hasUnsavedChanges: hasChangesForAction,
     saveChanges,
     discardChanges,
-    canvasAction,
+    canvasAction: canvasAction || null,
   };
 }
 
@@ -242,9 +237,14 @@ export interface MultiPropertyAdapterResult {
   canvasActions: CanvasAction[];
 }
 
-export function useMultiPropertyAdapter(actionIds: string[]): MultiPropertyAdapterResult {
-  const canvasActions = useCanvasStore((state) =>
-    actionIds.map((id) => state.getActionById(id)).filter(Boolean) as CanvasAction[]
+export function useMultiPropertyAdapter(
+  actionIds: string[]
+): MultiPropertyAdapterResult {
+  const canvasActions = useCanvasStore(
+    (state) =>
+      actionIds
+        .map((id) => state.getActionById(id))
+        .filter(Boolean) as CanvasAction[]
   );
 
   const updateActionInCanvas = useCanvasStore((state) => state.updateAction);
@@ -259,7 +259,7 @@ export function useMultiPropertyAdapter(actionIds: string[]): MultiPropertyAdapt
     (key: string): any | undefined => {
       if (canvasActions.length === 0) return undefined;
 
-      const firstValue = (canvasActions[0].config as any)[key];
+      const firstValue = (canvasActions[0]!.config as any)[key];
       const allSame = canvasActions.every(
         (action) => (action.config as any)[key] === firstValue
       );

@@ -1,79 +1,79 @@
-"use client"
+"use client";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { profileService } from "@/services/service-factory"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { ProfileForm } from "@/components/profile/profile-form"
-import { AvatarUpload } from "@/components/profile/avatar-upload"
-import { StorageUsageCard } from "@/components/profile/storage-usage-card"
-import { ActivityFeed } from "@/components/profile/activity-feed"
-import { ArrowLeft, Crown, Shield, Cable } from "lucide-react"
-import { toast } from "sonner"
-import type { StorageUsage, ActivityLog } from "@/services/profile-service"
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { profileService } from "@/services/service-factory";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ProfileForm } from "@/components/profile/profile-form";
+import { AvatarUpload } from "@/components/profile/avatar-upload";
+import { StorageUsageCard } from "@/components/profile/storage-usage-card";
+import { ActivityFeed } from "@/components/profile/activity-feed";
+import { ArrowLeft, Crown, Shield, Cable } from "lucide-react";
+import { toast } from "sonner";
+import type { StorageUsage, ActivityLog } from "@/services/profile-service";
 
 export default function ProfilePage() {
-  const { user, loading: authLoading, updateUser } = useAuth()
-  const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
-  const [activities, setActivities] = useState<ActivityLog[]>([])
+  const { user, loading: authLoading, updateUser } = useAuth();
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null);
+  const [activities, setActivities] = useState<ActivityLog[]>([]);
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
-      return
+      router.push("/");
+      return;
     }
 
     if (user) {
-      loadProfileData()
+      loadProfileData();
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   const loadProfileData = async () => {
     try {
-      setLoading(true)
+      setLoading(true);
 
       // Load storage usage and activity in parallel
       const [storageData, activityData] = await Promise.all([
         profileService.getStorageUsage().catch(() => ({
           used_bytes: 524288000, // 500 MB default
           total_bytes: 5368709120, // 5 GB default
-          used_percentage: 10
+          used_percentage: 10,
         })),
-        profileService.getActivity(10).catch(() => [])
-      ])
+        profileService.getActivity(10).catch(() => []),
+      ]);
 
-      setStorageUsage(storageData)
-      setActivities(activityData)
+      setStorageUsage(storageData);
+      setActivities(activityData);
     } catch (error) {
-      console.error('Failed to load profile data:', error)
-      toast.error('Failed to load some profile data')
+      console.error("Failed to load profile data:", error);
+      toast.error("Failed to load some profile data");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleUpdateProfile = async (data: any) => {
-    await profileService.updateProfile(data)
-    await updateUser(data)
-  }
+    await profileService.updateProfile(data);
+    await updateUser(data);
+  };
 
   const handleUploadAvatar = async (file: File) => {
-    return await profileService.uploadAvatar(file)
-  }
+    return await profileService.uploadAvatar(file);
+  };
 
   const handleDeleteAvatar = async () => {
-    await profileService.deleteAvatar()
-  }
+    await profileService.deleteAvatar();
+  };
 
   const handleBackToDashboard = () => {
-    router.push('/dashboard')
-  }
+    router.push("/dashboard");
+  };
 
   // Show loading while auth is checking
   if (authLoading) {
@@ -83,12 +83,12 @@ export default function ProfilePage() {
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
-    )
+    );
   }
 
   // Don't render anything if no user (will redirect)
   if (!user) {
-    return null
+    return null;
   }
 
   return (
@@ -111,7 +111,7 @@ export default function ProfilePage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push('/connect-runner')}
+              onClick={() => router.push("/connect-runner")}
               className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
               title="Connect Desktop Runner"
             >
@@ -131,7 +131,9 @@ export default function ProfilePage() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <h2 className="text-3xl font-bold mb-2">{user.full_name || user.username}</h2>
+              <h2 className="text-3xl font-bold mb-2">
+                {user.full_name || user.username}
+              </h2>
               <p className="text-gray-400">@{user.username}</p>
             </div>
             <div className="flex items-center gap-2">
@@ -150,10 +152,11 @@ export default function ProfilePage() {
             </div>
           </div>
           <p className="text-sm text-gray-500">
-            Member since {new Date(user.created_at).toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric'
+            Member since{" "}
+            {new Date(user.created_at).toLocaleDateString("en-US", {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
             })}
           </p>
         </div>
@@ -166,10 +169,7 @@ export default function ProfilePage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left Column - Profile Form and Avatar */}
             <div className="lg:col-span-2 space-y-6">
-              <ProfileForm
-                user={user}
-                onUpdate={handleUpdateProfile}
-              />
+              <ProfileForm user={user} onUpdate={handleUpdateProfile} />
 
               <AvatarUpload
                 userName={user.full_name || user.username}
@@ -193,5 +193,5 @@ export default function ProfilePage() {
         )}
       </main>
     </div>
-  )
+  );
 }

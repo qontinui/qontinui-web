@@ -4,11 +4,17 @@
  * These examples show common use cases and best practices.
  */
 
-import { convertSequentialToGraph, SequentialToGraphConverter } from './sequential-to-graph-converter';
-import { Action } from '../action-schema/action-types';
-import { ClickActionConfig } from '../action-schema/configs/mouse-actions';
-import { TypeActionConfig } from '../action-schema/configs/keyboard-actions';
-import { IfActionConfig, LoopActionConfig } from '../action-schema/configs/control-flow-actions';
+import {
+  convertSequentialToGraph,
+  SequentialToGraphConverter,
+} from "./sequential-to-graph-converter";
+import { Action } from "../action-schema/action-types";
+import { ClickActionConfig } from "../action-schema/configs/mouse-actions";
+import { TypeActionConfig } from "../action-schema/configs/keyboard-actions";
+import {
+  IfActionConfig,
+  LoopActionConfig,
+} from "../action-schema/configs/control-flow-actions";
 
 /**
  * Example 1: Simple Linear Workflow
@@ -18,44 +24,44 @@ import { IfActionConfig, LoopActionConfig } from '../action-schema/configs/contr
 export function exampleLinearWorkflow() {
   const actions: Action[] = [
     {
-      id: 'click-login',
-      type: 'CLICK',
-      name: 'Click Login Button',
+      id: "click-login",
+      type: "CLICK",
+      name: "Click Login Button",
       config: {
         target: {
-          image: 'login-button.png',
+          image: "login-button.png",
         },
-      } as ClickActionConfig,
+      } as unknown as ClickActionConfig,
       position: [0, 0],
     },
     {
-      id: 'type-username',
-      type: 'TYPE',
-      name: 'Enter Username',
+      id: "type-username",
+      type: "TYPE",
+      name: "Enter Username",
       config: {
-        text: 'user@example.com',
+        text: "user@example.com",
       } as TypeActionConfig,
       position: [0, 0],
     },
     {
-      id: 'click-submit',
-      type: 'CLICK',
-      name: 'Submit Form',
+      id: "click-submit",
+      type: "CLICK",
+      name: "Submit Form",
       config: {
         target: {
-          image: 'submit-button.png',
+          image: "submit-button.png",
         },
-      } as ClickActionConfig,
+      } as unknown as ClickActionConfig,
       position: [0, 0],
     },
   ];
 
   const workflow = convertSequentialToGraph(actions, {
-    workflowName: 'Login Workflow',
-    version: '1.0.0',
+    workflowName: "Login Workflow",
+    version: "1.0.0",
   });
 
-  console.log('Linear Workflow:', {
+  console.log("Linear Workflow:", {
     actions: workflow.actions.length,
     connections: Object.keys(workflow.connections).length,
   });
@@ -71,23 +77,23 @@ export function exampleLinearWorkflow() {
 export function exampleIfWorkflow() {
   const actions: Action[] = [
     {
-      id: 'check-logged-in',
-      type: 'IF',
-      name: 'Check if Already Logged In',
+      id: "check-logged-in",
+      type: "IF",
+      name: "Check if Already Logged In",
       config: {
         condition: {
-          type: 'expression',
-          expression: 'isLoggedIn === true',
+          type: "expression",
+          expression: "isLoggedIn === true",
         },
-        thenActions: ['skip-login'],
-        elseActions: ['do-login'],
+        thenActions: ["skip-login"],
+        elseActions: ["do-login"],
       } as IfActionConfig,
       position: [0, 0],
     },
   ];
 
   const workflow = convertSequentialToGraph(actions, {
-    workflowName: 'Conditional Login',
+    workflowName: "Conditional Login",
     layout: {
       horizontalSpacing: 250,
       verticalSpacing: 200,
@@ -105,20 +111,20 @@ export function exampleIfWorkflow() {
 export function exampleLoopWorkflow() {
   const actions: Action[] = [
     {
-      id: 'retry-loop',
-      type: 'LOOP',
-      name: 'Retry Connection',
+      id: "retry-loop",
+      type: "LOOP",
+      name: "Retry Connection",
       config: {
-        loopType: 'FOR',
+        loopType: "FOR",
         iterations: 3,
-        actions: ['attempt-connect', 'wait-retry'],
+        actions: ["attempt-connect", "wait-retry"],
       } as LoopActionConfig,
       position: [0, 0],
     },
   ];
 
   const workflow = convertSequentialToGraph(actions, {
-    workflowName: 'Retry Logic',
+    workflowName: "Retry Logic",
   });
 
   return workflow;
@@ -131,9 +137,9 @@ export function exampleLoopWorkflow() {
  */
 export function exampleDetailedConversion() {
   const converter = new SequentialToGraphConverter({
-    workflowName: 'Complex Workflow',
-    workflowId: 'workflow-complex-1',
-    version: '2.0.0',
+    workflowName: "Complex Workflow",
+    workflowId: "workflow-complex-1",
+    version: "2.0.0",
     preserveActionIds: true,
     layout: {
       horizontalSpacing: 300,
@@ -145,14 +151,14 @@ export function exampleDetailedConversion() {
 
   const actions: Action[] = [
     {
-      id: 'action-1',
-      type: 'CLICK',
+      id: "action-1",
+      type: "CLICK",
       config: {} as ClickActionConfig,
       position: [0, 0],
     },
     {
-      id: 'action-2',
-      type: 'TYPE',
+      id: "action-2",
+      type: "TYPE",
       config: {} as TypeActionConfig,
       position: [0, 0],
     },
@@ -160,15 +166,15 @@ export function exampleDetailedConversion() {
 
   const result = converter.convert(actions);
 
-  console.log('Conversion Statistics:');
-  console.log('  Actions Converted:', result.stats.actionsConverted);
-  console.log('  Connections Created:', result.stats.connectionsCreated);
-  console.log('  Control Flow Expanded:', result.stats.controlFlowExpanded);
-  console.log('  Max Depth:', result.stats.maxDepth);
+  console.log("Conversion Statistics:");
+  console.log("  Actions Converted:", result.stats.actionsConverted);
+  console.log("  Connections Created:", result.stats.connectionsCreated);
+  console.log("  Control Flow Expanded:", result.stats.controlFlowExpanded);
+  console.log("  Max Depth:", result.stats.maxDepth);
 
   if (result.warnings.length > 0) {
-    console.log('\nWarnings:');
-    result.warnings.forEach((warning) => console.log('  -', warning));
+    console.log("\nWarnings:");
+    result.warnings.forEach((warning) => console.log("  -", warning));
   }
 
   return result.workflow;
@@ -182,27 +188,27 @@ export function exampleDetailedConversion() {
 export function exampleCustomLayout() {
   const actions: Action[] = [
     {
-      id: 'a1',
-      type: 'CLICK',
+      id: "a1",
+      type: "CLICK",
       config: {} as ClickActionConfig,
       position: [0, 0],
     },
     {
-      id: 'a2',
-      type: 'CLICK',
+      id: "a2",
+      type: "CLICK",
       config: {} as ClickActionConfig,
       position: [0, 0],
     },
     {
-      id: 'a3',
-      type: 'CLICK',
+      id: "a3",
+      type: "CLICK",
       config: {} as ClickActionConfig,
       position: [0, 0],
     },
   ];
 
   const workflow = convertSequentialToGraph(actions, {
-    workflowName: 'Custom Layout',
+    workflowName: "Custom Layout",
     layout: {
       horizontalSpacing: 350, // Wide horizontal spacing
       verticalSpacing: 250, // Tall vertical spacing
@@ -258,61 +264,61 @@ export function exampleBatchConversion() {
 export function exampleComplexWorkflow() {
   const actions: Action[] = [
     {
-      id: 'init',
-      type: 'CLICK',
-      name: 'Initialize',
+      id: "init",
+      type: "CLICK",
+      name: "Initialize",
       config: {} as ClickActionConfig,
       position: [0, 0],
     },
     {
-      id: 'check-ready',
-      type: 'IF',
-      name: 'Check if Ready',
+      id: "check-ready",
+      type: "IF",
+      name: "Check if Ready",
       config: {
         condition: {
-          type: 'expression',
-          expression: 'isReady',
+          type: "expression",
+          expression: "isReady",
         },
-        thenActions: ['proceed'],
-        elseActions: ['wait-ready'],
+        thenActions: ["proceed"],
+        elseActions: ["wait-ready"],
       } as IfActionConfig,
       position: [0, 0],
     },
     {
-      id: 'retry-loop',
-      type: 'LOOP',
-      name: 'Retry on Failure',
+      id: "retry-loop",
+      type: "LOOP",
+      name: "Retry on Failure",
       config: {
-        loopType: 'WHILE',
+        loopType: "WHILE",
         condition: {
-          type: 'expression',
-          expression: 'attempts < 3',
+          type: "expression",
+          expression: "attempts < 3",
         },
-        actions: ['attempt-action'],
+        actions: ["attempt-action"],
       } as LoopActionConfig,
       position: [0, 0],
     },
     {
-      id: 'finalize',
-      type: 'CLICK',
-      name: 'Finalize',
+      id: "finalize",
+      type: "CLICK",
+      name: "Finalize",
       config: {} as ClickActionConfig,
       position: [0, 0],
     },
   ];
 
   const result = new SequentialToGraphConverter({
-    workflowName: 'Complex Process',
+    workflowName: "Complex Process",
     layout: {
       horizontalSpacing: 300,
       verticalSpacing: 200,
     },
   }).convert(actions);
 
-  console.log('Complex Workflow Statistics:');
-  console.log('  Total Actions:', result.stats.actionsConverted);
-  console.log('  Total Connections:', result.stats.connectionsCreated);
-  console.log('  Control Flow Actions:', result.stats.controlFlowExpanded);
+  console.log("Complex Workflow Statistics:");
+  console.log("  Total Actions:", result.stats.actionsConverted);
+  console.log("  Total Connections:", result.stats.connectionsCreated);
+  console.log("  Control Flow Actions:", result.stats.controlFlowExpanded);
 
   return result.workflow;
 }
@@ -325,19 +331,19 @@ export function exampleComplexWorkflow() {
 export function exampleExtractNestedActions() {
   const converter = new SequentialToGraphConverter();
 
-  const ifAction: Action<'IF'> = {
-    id: 'my-if',
-    type: 'IF',
+  const ifAction: Action<"IF"> = {
+    id: "my-if",
+    type: "IF",
     config: {
-      condition: { type: 'expression', expression: 'x > 5' },
-      thenActions: ['action-1', 'action-2'],
-      elseActions: ['action-3'],
+      condition: { type: "expression", expression: "x > 5" },
+      thenActions: ["action-1", "action-2"],
+      elseActions: ["action-3"],
     },
     position: [0, 0],
   };
 
   const nestedActionIds = converter.extractNestedActions(ifAction);
-  console.log('Nested action IDs:', nestedActionIds);
+  console.log("Nested action IDs:", nestedActionIds);
   // ['action-1', 'action-2', 'action-3']
 
   return nestedActionIds;

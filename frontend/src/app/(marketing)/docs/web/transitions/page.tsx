@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, GitBranch, CheckCircle2, Settings, Clock, Zap } from "lucide-react";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 
 export const metadata = {
   title: "State Transitions - Qontinui Web Documentation",
@@ -33,9 +33,10 @@ export default function TransitionsDocPage() {
             What is a Transition?
           </h2>
           <p className="text-slate-700 mb-4">
-            A <strong>Transition</strong> is a connection between two states that defines how
-            automation moves from one state to another. Transitions are the edges in your state
-            machine graph, while states are the nodes.
+            A <strong>Transition</strong> is a connection between two states
+            that defines how automation moves from one state to another.
+            Transitions are the edges in your state machine graph, while states
+            are the nodes.
           </p>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
@@ -43,9 +44,11 @@ export default function TransitionsDocPage() {
               Key Concept: Transitions = Navigation Logic
             </h3>
             <p className="text-sm text-blue-900">
-              Each transition defines <strong>what actions to perform</strong> (via a process) and{" "}
-              <strong>which states become active/inactive</strong> after the transition completes.
-              This gives you fine-grained control over your automation workflow.
+              Each transition defines <strong>what actions to perform</strong>{" "}
+              (via a process) and{" "}
+              <strong>which states become active/inactive</strong> after the
+              transition completes. This gives you fine-grained control over
+              your automation workflow.
             </p>
           </div>
 
@@ -56,19 +59,28 @@ export default function TransitionsDocPage() {
             <ol className="space-y-3 text-sm text-slate-700">
               <li className="flex items-start gap-2">
                 <span className="font-bold text-blue-600">1.</span>
-                <span>Automation is in the source state (e.g., "Login Screen")</span>
+                <span>
+                  Automation is in the source state (e.g., "Login Screen")
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-blue-600">2.</span>
-                <span>Transition's process executes (e.g., type username, click submit)</span>
+                <span>
+                  Transition's process executes (e.g., type username, click
+                  submit)
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-blue-600">3.</span>
-                <span>Destination state becomes active (e.g., "Dashboard")</span>
+                <span>
+                  Destination state becomes active (e.g., "Dashboard")
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-blue-600">4.</span>
-                <span>Source state deactivates (unless stays_visible is true)</span>
+                <span>
+                  Source state deactivates (unless stays_visible is true)
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-blue-600">5.</span>
@@ -97,7 +109,8 @@ export default function TransitionsDocPage() {
               ]}
               example={{
                 title: "Example: Login to Dashboard",
-                description: "from_state: 'Login Screen' → to_state: 'Dashboard'",
+                description:
+                  "from_state: 'Login Screen' → to_state: 'Dashboard'",
                 process: "Process: Type credentials, click submit button",
               }}
             />
@@ -115,7 +128,8 @@ export default function TransitionsDocPage() {
               example={{
                 title: "Example: Dashboard Load Verification",
                 description: "to_state: 'Dashboard'",
-                process: "Process: Wait for loading spinner to vanish, verify welcome message",
+                process:
+                  "Process: Wait for loading spinner to vanish, verify welcome message",
               }}
             />
           </div>
@@ -225,9 +239,9 @@ export default function TransitionsDocPage() {
           </h2>
 
           <p className="text-slate-700 mb-6">
-            Qontinui supports multiple states being active simultaneously. This is useful for
-            scenarios like dialog boxes appearing over background screens, or multi-panel UIs
-            with independent sections.
+            Qontinui supports multiple states being active simultaneously. This
+            is useful for scenarios like dialog boxes appearing over background
+            screens, or multi-panel UIs with independent sections.
           </p>
 
           <div className="space-y-6">
@@ -310,9 +324,7 @@ export default function TransitionsDocPage() {
 
         {/* Next Steps */}
         <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
-            Next Steps
-          </h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="Action Types"
@@ -363,7 +375,13 @@ interface TransitionTypeCardProps {
   };
 }
 
-function TransitionTypeCard({ icon, title, description, details, example }: TransitionTypeCardProps) {
+function TransitionTypeCard({
+  icon,
+  title,
+  description,
+  details,
+  example,
+}: TransitionTypeCardProps) {
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-6">
       <div className="flex items-start gap-4 mb-4">
@@ -373,7 +391,10 @@ function TransitionTypeCard({ icon, title, description, details, example }: Tran
           <p className="text-slate-600 mb-4">{description}</p>
           <ul className="space-y-2 mb-4">
             {details.map((detail, idx) => (
-              <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+              <li
+                key={idx}
+                className="flex items-start gap-2 text-sm text-slate-700"
+              >
                 <span className="text-blue-600 font-bold">•</span>
                 <span>{detail}</span>
               </li>
@@ -382,8 +403,12 @@ function TransitionTypeCard({ icon, title, description, details, example }: Tran
         </div>
       </div>
       <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-        <p className="text-xs font-semibold text-slate-600 mb-2">{example.title}</p>
-        <p className="text-sm text-slate-800 font-mono mb-1">{example.description}</p>
+        <p className="text-xs font-semibold text-slate-600 mb-2">
+          {example.title}
+        </p>
+        <p className="text-sm text-slate-800 font-mono mb-1">
+          {example.description}
+        </p>
         <p className="text-xs text-slate-600">{example.process}</p>
       </div>
     </div>
@@ -398,7 +423,13 @@ interface PropertyCardProps {
   isRequired?: boolean;
 }
 
-function PropertyCard({ name, type, description, defaultValue, isRequired }: PropertyCardProps) {
+function PropertyCard({
+  name,
+  type,
+  description,
+  defaultValue,
+  isRequired,
+}: PropertyCardProps) {
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-4">
       <div className="flex items-start justify-between mb-2">
@@ -417,7 +448,10 @@ function PropertyCard({ name, type, description, defaultValue, isRequired }: Pro
       <p className="text-sm text-slate-700 mb-2">{description}</p>
       {defaultValue && (
         <p className="text-xs text-slate-500">
-          Default: <span className="font-mono bg-slate-100 px-1 rounded">{defaultValue}</span>
+          Default:{" "}
+          <span className="font-mono bg-slate-100 px-1 rounded">
+            {defaultValue}
+          </span>
         </p>
       )}
     </div>
@@ -438,7 +472,12 @@ interface ParallelStateExampleProps {
   result: string;
 }
 
-function ParallelStateExample({ title, description, config, result }: ParallelStateExampleProps) {
+function ParallelStateExample({
+  title,
+  description,
+  config,
+  result,
+}: ParallelStateExampleProps) {
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
       <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
@@ -446,24 +485,28 @@ function ParallelStateExample({ title, description, config, result }: ParallelSt
       <div className="bg-white border border-slate-200 rounded p-3 font-mono text-xs mb-3">
         <div className="space-y-1">
           <div>
-            <span className="text-blue-600">from_state:</span> "{config.from_state}"
+            <span className="text-blue-600">from_state:</span> "
+            {config.from_state}"
           </div>
           <div>
             <span className="text-blue-600">to_state:</span> "{config.to_state}"
           </div>
           {config.stays_visible !== undefined && (
             <div>
-              <span className="text-blue-600">stays_visible:</span> {config.stays_visible.toString()}
+              <span className="text-blue-600">stays_visible:</span>{" "}
+              {config.stays_visible.toString()}
             </div>
           )}
           {config.activate_states && (
             <div>
-              <span className="text-blue-600">activate_states:</span> [{config.activate_states.map(s => `"${s}"`).join(", ")}]
+              <span className="text-blue-600">activate_states:</span> [
+              {config.activate_states.map((s) => `"${s}"`).join(", ")}]
             </div>
           )}
           {config.deactivate_states && (
             <div>
-              <span className="text-blue-600">deactivate_states:</span> [{config.deactivate_states.map(s => `"${s}"`).join(", ")}]
+              <span className="text-blue-600">deactivate_states:</span> [
+              {config.deactivate_states.map((s) => `"${s}"`).join(", ")}]
             </div>
           )}
           <div>

@@ -18,17 +18,17 @@ Usage:
 import asyncio
 from datetime import datetime, timedelta
 
-from app.db.session import AsyncSessionLocal
 from app.db.partition_manager import (
     PARTITION_CONFIG,
     create_monthly_partition,
     create_weekly_partition,
-    list_partitions,
     drop_old_partitions,
+    format_partition_name,
     get_month_boundaries,
     get_week_boundaries,
-    format_partition_name,
+    list_partitions,
 )
+from app.db.session import AsyncSessionLocal
 
 
 async def test_helper_functions():
@@ -67,7 +67,9 @@ async def test_helper_functions():
         "automation_input_events", datetime(2025, 11, 17), "weekly"
     )
     print(f"  Weekly: {name}")
-    assert name.startswith("automation_input_events_y2025_w"), "Invalid weekly partition name"
+    assert name.startswith(
+        "automation_input_events_y2025_w"
+    ), "Invalid weekly partition name"
 
     print("\n✓ All helper functions passed")
 
@@ -84,8 +86,8 @@ async def test_configuration():
         print(f"  Partition Key: {config['partition_key']}")
         print(f"  Retention: {config['retention_months']} months")
 
-        assert config['granularity'] in ['monthly', 'weekly'], "Invalid granularity"
-        assert config['retention_months'] > 0, "Invalid retention period"
+        assert config["granularity"] in ["monthly", "weekly"], "Invalid granularity"
+        assert config["retention_months"] > 0, "Invalid retention period"
 
     print("\n✓ Configuration valid")
 
@@ -185,9 +187,11 @@ async def test_list_partitions():
 
             print("\n  Recent partitions:")
             for partition in partitions[-5:]:  # Show last 5
-                print(f"    {partition['partition_name']}: "
-                      f"{partition['row_count']} rows, "
-                      f"{partition['size_mb']} MB")
+                print(
+                    f"    {partition['partition_name']}: "
+                    f"{partition['row_count']} rows, "
+                    f"{partition['size_mb']} MB"
+                )
 
     print("\n✓ Partition listing successful")
 
@@ -210,13 +214,15 @@ async def test_cleanup_dry_run():
             print(f"  Partitions to delete: {len(result['partitions_to_delete'])}")
             print(f"  Total rows to delete: {result['total_rows_to_delete']}")
 
-            if result['partitions_to_delete']:
+            if result["partitions_to_delete"]:
                 print("\n  Partitions that would be deleted:")
-                for p in result['partitions_to_delete']:
-                    print(f"    {p['partition_name']}: "
-                          f"{p['row_count']} rows, "
-                          f"{p['size_mb']} MB, "
-                          f"{p['age_months']} months old")
+                for p in result["partitions_to_delete"]:
+                    print(
+                        f"    {p['partition_name']}: "
+                        f"{p['row_count']} rows, "
+                        f"{p['size_mb']} MB, "
+                        f"{p['age_months']} months old"
+                    )
 
     print("\n✓ Cleanup dry run successful")
 

@@ -5,16 +5,16 @@
  * Handles represent connection points where edges can attach to nodes.
  */
 
-import React from 'react';
-import { Handle, Position, HandleProps } from '@xyflow/react';
-import { ActionType } from '@/lib/action-schema/action-types';
+import React from "react";
+import { Handle, Position, HandleProps } from "@xyflow/react";
+import { ActionType } from "@/lib/action-schema/action-types";
 
 /**
  * Handle configuration for a node
  */
 export interface HandleConfig {
   id: string;
-  type: 'source' | 'target';
+  type: "source" | "target";
   position: Position;
   label?: string;
   color?: string;
@@ -25,8 +25,8 @@ export interface HandleConfig {
  * Standard input handle (left side)
  */
 export function InputHandle({
-  id = 'input',
-  className = '',
+  id = "input",
+  className = "",
   isConnectable = true,
   ...props
 }: Partial<HandleProps>) {
@@ -38,11 +38,11 @@ export function InputHandle({
       className={`node-handle input-handle ${className}`}
       isConnectable={isConnectable}
       style={{
-        width: '12px',
-        height: '12px',
-        background: '#4b5563',
-        border: '2px solid #fff',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+        width: "12px",
+        height: "12px",
+        background: "#4b5563",
+        border: "2px solid #fff",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
       }}
       {...props}
     />
@@ -53,10 +53,10 @@ export function InputHandle({
  * Standard output handle (right side)
  */
 export function OutputHandle({
-  id = 'main-0',
-  className = '',
+  id = "main-0",
+  className = "",
   isConnectable = true,
-  top = '50%',
+  top = "50%",
   ...props
 }: Partial<HandleProps> & { top?: string | number }) {
   return (
@@ -68,11 +68,11 @@ export function OutputHandle({
       isConnectable={isConnectable}
       style={{
         top,
-        width: '12px',
-        height: '12px',
-        background: '#4b5563',
-        border: '2px solid #fff',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+        width: "12px",
+        height: "12px",
+        background: "#4b5563",
+        border: "2px solid #fff",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
       }}
       {...props}
     />
@@ -97,7 +97,7 @@ export interface MultiOutputHandlesProps {
 export function MultiOutputHandles({
   outputs,
   showLabels = true,
-  className = '',
+  className = "",
 }: MultiOutputHandlesProps) {
   if (outputs.length === 0) return null;
 
@@ -109,7 +109,7 @@ export function MultiOutputHandles({
     <>
       {outputs.map((output, index) => {
         const topPercent = spacing * (index + 1);
-        const handleColor = output.color || '#4b5563';
+        const handleColor = output.color || "#4b5563";
 
         return (
           <div key={output.id} className="relative">
@@ -120,11 +120,11 @@ export function MultiOutputHandles({
               className={`node-handle output-handle multi-output ${className}`}
               style={{
                 top: `${topPercent}%`,
-                width: '12px',
-                height: '12px',
+                width: "12px",
+                height: "12px",
                 background: handleColor,
-                border: '2px solid #fff',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                border: "2px solid #fff",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
               }}
             />
 
@@ -132,7 +132,7 @@ export function MultiOutputHandles({
             {showLabels && (
               <div
                 className="absolute right-full mr-3 pointer-events-none"
-                style={{ top: `${topPercent}%`, transform: 'translateY(-50%)' }}
+                style={{ top: `${topPercent}%`, transform: "translateY(-50%)" }}
               >
                 <span
                   className="px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap bg-gray-800 text-white shadow-sm"
@@ -160,15 +160,15 @@ export function getHandleConfig(actionType: ActionType): {
   const defaultConfig = {
     inputs: [
       {
-        id: 'input',
-        type: 'target' as const,
+        id: "input",
+        type: "target" as const,
         position: Position.Left,
       },
     ],
     outputs: [
       {
-        id: 'main-0',
-        type: 'source' as const,
+        id: "main-0",
+        type: "source" as const,
         position: Position.Right,
       },
     ],
@@ -176,94 +176,94 @@ export function getHandleConfig(actionType: ActionType): {
 
   // Special cases for multi-output actions
   switch (actionType) {
-    case 'IF':
+    case "IF":
       return {
         inputs: defaultConfig.inputs,
         outputs: [
           {
-            id: 'main-0',
-            type: 'source',
+            id: "main-0",
+            type: "source",
             position: Position.Right,
-            label: 'True',
-            color: '#10b981',
+            label: "True",
+            color: "#10b981",
           },
           {
-            id: 'main-1',
-            type: 'source',
+            id: "main-1",
+            type: "source",
             position: Position.Right,
-            label: 'False',
-            color: '#ef4444',
+            label: "False",
+            color: "#ef4444",
           },
         ],
       };
 
-    case 'LOOP':
+    case "LOOP":
       return {
         inputs: defaultConfig.inputs,
         outputs: [
           {
-            id: 'main-0',
-            type: 'source',
+            id: "main-0",
+            type: "source",
             position: Position.Right,
-            label: 'Loop',
-            color: '#3b82f6',
+            label: "Loop",
+            color: "#3b82f6",
           },
           {
-            id: 'main-1',
-            type: 'source',
+            id: "main-1",
+            type: "source",
             position: Position.Right,
-            label: 'Exit',
-            color: '#6b7280',
+            label: "Exit",
+            color: "#6b7280",
           },
         ],
       };
 
-    case 'TRY_CATCH':
+    case "TRY_CATCH":
       return {
         inputs: defaultConfig.inputs,
         outputs: [
           {
-            id: 'main-0',
-            type: 'source',
+            id: "main-0",
+            type: "source",
             position: Position.Right,
-            label: 'Success',
-            color: '#10b981',
+            label: "Success",
+            color: "#10b981",
           },
           {
-            id: 'error-0',
-            type: 'source',
+            id: "error-0",
+            type: "source",
             position: Position.Right,
-            label: 'Error',
-            color: '#ef4444',
+            label: "Error",
+            color: "#ef4444",
           },
         ],
       };
 
-    case 'SWITCH':
+    case "SWITCH":
       // SWITCH handles are dynamic based on config
       // This is a placeholder - actual implementation should read from config
       return {
         inputs: defaultConfig.inputs,
         outputs: [
           {
-            id: 'main-0',
-            type: 'source',
+            id: "main-0",
+            type: "source",
             position: Position.Right,
-            label: 'Case 0',
+            label: "Case 0",
           },
           {
-            id: 'main-1',
-            type: 'source',
+            id: "main-1",
+            type: "source",
             position: Position.Right,
-            label: 'Default',
-            color: '#6b7280',
+            label: "Default",
+            color: "#6b7280",
           },
         ],
       };
 
     // Terminal nodes
-    case 'BREAK':
-    case 'CONTINUE':
+    case "BREAK":
+    case "CONTINUE":
       return {
         inputs: defaultConfig.inputs,
         outputs: [], // No outputs
@@ -285,15 +285,15 @@ export function getSwitchOutputHandles(cases: number): MultiOutputConfig[] {
     outputs.push({
       id: `main-${i}`,
       label: `Case ${i}`,
-      color: '#3b82f6',
+      color: "#3b82f6",
     });
   }
 
   // Add default handle (as the last index)
   outputs.push({
     id: `main-${cases}`,
-    label: 'Default',
-    color: '#6b7280',
+    label: "Default",
+    color: "#6b7280",
   });
 
   return outputs;
@@ -317,44 +317,44 @@ export function canConnect(
   targetHandleId: string
 ): boolean {
   // Basic validation - source must be 'source' type, target must be 'target' type
-  if (targetHandleId !== 'input') {
+  if (targetHandleId !== "input") {
     return false;
   }
 
   // Can't connect to terminal nodes (BREAK, CONTINUE)
-  if (targetType === 'BREAK' || targetType === 'CONTINUE') {
+  if (targetType === "BREAK" || targetType === "CONTINUE") {
     return false;
   }
 
   // Special validation for control flow
   // All control flow nodes now use 'main-N' or 'error-N' format
-  if (sourceType === 'IF') {
-    return sourceHandleId === 'main-0' || sourceHandleId === 'main-1';
+  if (sourceType === "IF") {
+    return sourceHandleId === "main-0" || sourceHandleId === "main-1";
   }
 
-  if (sourceType === 'LOOP') {
-    return sourceHandleId === 'main-0' || sourceHandleId === 'main-1';
+  if (sourceType === "LOOP") {
+    return sourceHandleId === "main-0" || sourceHandleId === "main-1";
   }
 
-  if (sourceType === 'TRY_CATCH') {
-    return sourceHandleId === 'main-0' || sourceHandleId === 'error-0';
+  if (sourceType === "TRY_CATCH") {
+    return sourceHandleId === "main-0" || sourceHandleId === "error-0";
   }
 
-  if (sourceType === 'SWITCH') {
-    return sourceHandleId.startsWith('main-');
+  if (sourceType === "SWITCH") {
+    return sourceHandleId.startsWith("main-");
   }
 
   // Default: main-0 output (or just 'main' for backward compatibility)
-  return sourceHandleId === 'main-0' || sourceHandleId === 'main';
+  return sourceHandleId === "main-0" || sourceHandleId === "main";
 }
 
 /**
  * Get handle color based on type
  */
 export function getHandleColor(handleId: string): string {
-  if (handleId === 'main-0' || handleId === 'main') return '#10b981';
-  if (handleId === 'main-1') return '#ef4444';
-  if (handleId === 'error-0' || handleId === 'error') return '#ef4444';
-  if (handleId.startsWith('main-')) return '#3b82f6';
-  return '#6b7280';
+  if (handleId === "main-0" || handleId === "main") return "#10b981";
+  if (handleId === "main-1") return "#ef4444";
+  if (handleId === "error-0" || handleId === "error") return "#ef4444";
+  if (handleId.startsWith("main-")) return "#3b82f6";
+  return "#6b7280";
 }

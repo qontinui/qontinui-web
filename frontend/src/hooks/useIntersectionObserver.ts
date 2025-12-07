@@ -1,4 +1,4 @@
-import { useEffect, useState, RefObject } from 'react';
+import { useEffect, useState, RefObject } from "react";
 
 /**
  * Custom hook for intersection observer
@@ -28,14 +28,14 @@ export function useIntersectionObserver(
     // Default options: trigger when 10% visible, with 100px margin for preloading
     const defaultOptions: IntersectionObserverInit = {
       threshold: 0.1,
-      rootMargin: '100px',
+      rootMargin: "100px",
       ...options,
     };
 
     const observer = new IntersectionObserver(([entry]) => {
       // Once visible, keep it visible (for lazy loading)
       // Images should load once and stay loaded
-      if (entry.isIntersecting) {
+      if (entry?.isIntersecting) {
         setIsVisible(true);
       }
     }, defaultOptions);
@@ -70,12 +70,12 @@ export function useIntersectionObserverRepeating(
 
     const defaultOptions: IntersectionObserverInit = {
       threshold: 0.1,
-      rootMargin: '0px',
+      rootMargin: "0px",
       ...options,
     };
 
     const observer = new IntersectionObserver(([entry]) => {
-      setIsVisible(entry.isIntersecting);
+      setIsVisible(entry?.isIntersecting ?? false);
     }, defaultOptions);
 
     observer.observe(element);

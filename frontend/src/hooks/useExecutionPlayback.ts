@@ -1,7 +1,7 @@
 // hooks/useExecutionPlayback.ts
 
-import { useState, useEffect, useCallback } from 'react';
-import type { ActionVisualization } from '@/types/integration-testing';
+import { useState, useEffect, useCallback } from "react";
+import type { ActionVisualization } from "@/types/integration-testing";
 
 interface UseExecutionPlaybackProps {
   actions: ActionVisualization[];
@@ -23,7 +23,7 @@ export function useExecutionPlayback({
 
   const next = useCallback(() => {
     if (hasNext) {
-      setCurrentIndex(prev => prev + 1);
+      setCurrentIndex((prev) => prev + 1);
     } else {
       setIsPlaying(false);
     }
@@ -31,15 +31,18 @@ export function useExecutionPlayback({
 
   const previous = useCallback(() => {
     if (hasPrevious) {
-      setCurrentIndex(prev => prev - 1);
+      setCurrentIndex((prev) => prev - 1);
     }
   }, [hasPrevious]);
 
-  const jumpTo = useCallback((index: number) => {
-    if (index >= 0 && index < actions.length) {
-      setCurrentIndex(index);
-    }
-  }, [actions.length]);
+  const jumpTo = useCallback(
+    (index: number) => {
+      if (index >= 0 && index < actions.length) {
+        setCurrentIndex(index);
+      }
+    },
+    [actions.length]
+  );
 
   const play = useCallback(() => {
     setIsPlaying(true);

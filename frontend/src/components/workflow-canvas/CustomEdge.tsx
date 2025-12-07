@@ -4,18 +4,18 @@
  * Renders styled edges with labels, animations, and interactive elements.
  */
 
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   EdgeProps,
   getBezierPath,
   EdgeLabelRenderer,
   BaseEdge,
-} from '@xyflow/react';
-import { X } from 'lucide-react';
-import { CanvasEdgeData } from './canvas-types';
-import { getConnectionColor, hexToRgba } from './canvas-config';
+} from "@xyflow/react";
+import { X } from "lucide-react";
+import { CanvasEdgeData } from "./canvas-types";
+import { getConnectionColor } from "./canvas-config";
 
-export interface CustomEdgeProps extends EdgeProps {
+export interface CustomEdgeProps extends Omit<EdgeProps, "data"> {
   data: CanvasEdgeData;
 }
 
@@ -56,36 +56,36 @@ export function CustomEdge({
     ...style,
     stroke: connectionColor,
     strokeWidth: isSelected ? 3 : isHovered ? 3 : 2,
-    strokeDasharray: data.connectionType === 'parallel' ? '5,5' : undefined,
+    strokeDasharray: data.connectionType === "parallel" ? "5,5" : undefined,
     opacity: data.recentlyTraversed ? 1 : 0.8,
-    transition: 'stroke-width 0.15s ease-in-out, opacity 0.15s ease-in-out',
+    transition: "stroke-width 0.15s ease-in-out, opacity 0.15s ease-in-out",
   };
 
   // Label style
   const labelStyle: React.CSSProperties = {
-    position: 'absolute',
+    position: "absolute",
     transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
     fontSize: 11,
     fontWeight: 500,
-    background: '#27272A',
-    padding: '3px 8px',
+    background: "#27272A",
+    padding: "3px 8px",
     borderRadius: 4,
     border: `1px solid ${connectionColor}`,
     color: connectionColor,
-    pointerEvents: 'all',
+    pointerEvents: "all",
     opacity: isHovered || isSelected || data.label ? 1 : 0,
-    transition: 'opacity 0.15s ease-in-out',
+    transition: "opacity 0.15s ease-in-out",
   };
 
   // Delete button style
   // Position above label if label exists, otherwise at label position
   const deleteButtonY = data.label ? labelY - 35 : labelY;
   const deleteButtonStyle: React.CSSProperties = {
-    position: 'absolute',
+    position: "absolute",
     transform: `translate(-50%, -50%) translate(${labelX}px,${deleteButtonY}px)`,
-    pointerEvents: 'all',
+    pointerEvents: "all",
     opacity: isHovered ? 1 : 0,
-    transition: 'opacity 0.15s ease-in-out',
+    transition: "opacity 0.15s ease-in-out",
   };
 
   return (
@@ -132,7 +132,7 @@ export function CustomEdge({
               e.stopPropagation();
               // Edge deletion is handled by the parent component
               // This dispatches a custom event that WorkflowCanvas listens for
-              const event = new CustomEvent('delete-edge', {
+              const event = new CustomEvent("delete-edge", {
                 detail: { edgeId: id },
               });
               window.dispatchEvent(event);
@@ -180,20 +180,20 @@ export function SimpleCustomEdge({
     ...style,
     stroke: connectionColor,
     strokeWidth: isSelected ? 3 : 2,
-    strokeDasharray: data.connectionType === 'parallel' ? '5,5' : undefined,
+    strokeDasharray: data.connectionType === "parallel" ? "5,5" : undefined,
   };
 
   const labelStyle: React.CSSProperties = {
-    position: 'absolute',
+    position: "absolute",
     transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
     fontSize: 11,
     fontWeight: 500,
-    background: '#27272A',
-    padding: '3px 8px',
+    background: "#27272A",
+    padding: "3px 8px",
     borderRadius: 4,
     border: `1px solid ${connectionColor}`,
     color: connectionColor,
-    pointerEvents: 'none',
+    pointerEvents: "none",
   };
 
   return (
@@ -253,16 +253,16 @@ export function StraightCustomEdge({
   };
 
   const labelStyle: React.CSSProperties = {
-    position: 'absolute',
+    position: "absolute",
     transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
     fontSize: 11,
     fontWeight: 500,
-    background: '#27272A',
-    padding: '3px 8px',
+    background: "#27272A",
+    padding: "3px 8px",
     borderRadius: 4,
     border: `1px solid ${connectionColor}`,
     color: connectionColor,
-    pointerEvents: 'none',
+    pointerEvents: "none",
   };
 
   return (

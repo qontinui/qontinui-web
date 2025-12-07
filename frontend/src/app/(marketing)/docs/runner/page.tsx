@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Terminal, Download, Play, Monitor, AlertCircle } from "lucide-react";
+import { Download } from "lucide-react";
 
 export const metadata = {
   title: "Qontinui Runner Documentation - Desktop Automation Executor",
@@ -33,7 +33,9 @@ export default function RunnerDocsPage() {
             What is Qontinui Runner?
           </h2>
           <p className="text-slate-700 mb-4">
-            Qontinui Runner is a desktop application that executes automation workflows created in Qontinui Web. It performs <strong>real</strong> GUI automation on your system:
+            Qontinui Runner is a desktop application that executes automation
+            workflows created in Qontinui Web. It performs <strong>real</strong>{" "}
+            GUI automation on your system:
           </p>
           <ul className="space-y-2 text-slate-700">
             <li className="flex items-start gap-2">
@@ -56,10 +58,12 @@ export default function RunnerDocsPage() {
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
             <p className="text-sm text-blue-900">
-              <strong>Note:</strong> For testing automation logic without real GUI interactions, use{" "}
+              <strong>Note:</strong> For testing automation logic without real
+              GUI interactions, use{" "}
               <Link href="/docs/web/testing" className="underline">
                 Mock Execution in Qontinui Web
-              </Link>.
+              </Link>
+              .
             </p>
           </div>
         </section>
@@ -165,7 +169,8 @@ export default function RunnerDocsPage() {
             Ready to Get Started?
           </h2>
           <p className="text-slate-700 mb-6">
-            Download Qontinui Runner and start running your automation workflows today.
+            Download Qontinui Runner and start running your automation workflows
+            today.
           </p>
           <div className="flex flex-wrap gap-4">
             <Link
@@ -217,7 +222,10 @@ function SystemReq({ platform, requirements }: SystemReqProps) {
       <h3 className="font-bold text-slate-900 mb-4">{platform}</h3>
       <ul className="space-y-2">
         {requirements.map((req, idx) => (
-          <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
+          <li
+            key={idx}
+            className="text-sm text-slate-700 flex items-start gap-2"
+          >
             <span className="text-green-600 mt-0.5">•</span>
             <span>{req}</span>
           </li>

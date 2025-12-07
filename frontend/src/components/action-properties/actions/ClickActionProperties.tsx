@@ -1,23 +1,32 @@
-"use client"
+"use client";
 
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ActionPropertiesComponentProps } from "../types"
-import { TimingProperties } from "../TimingProperties"
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ActionPropertiesComponentProps } from "../types";
+import { TimingProperties } from "../TimingProperties";
 
 /**
  * Properties component for CLICK action.
  */
 export function ClickActionProperties({
   action,
-  updateConfig
+  updateConfig,
 }: ActionPropertiesComponentProps) {
   return (
     <>
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Target</Label>
-        <Select value={action.config.target || "Last Find Result"} onValueChange={(value) => updateConfig("target", value)}>
+        <Select
+          value={action.config.target || "Last Find Result"}
+          onValueChange={(value) => updateConfig("target", value)}
+        >
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
@@ -39,7 +48,9 @@ export function ClickActionProperties({
             <Input
               type="number"
               value={action.config.x || 0}
-              onChange={(e) => updateConfig("x", Number.parseInt(e.target.value))}
+              onChange={(e) =>
+                updateConfig("x", Number.parseInt(e.target.value))
+              }
               className="bg-transparent border-gray-700"
             />
           </div>
@@ -48,7 +59,9 @@ export function ClickActionProperties({
             <Input
               type="number"
               value={action.config.y || 0}
-              onChange={(e) => updateConfig("y", Number.parseInt(e.target.value))}
+              onChange={(e) =>
+                updateConfig("y", Number.parseInt(e.target.value))
+              }
               className="bg-transparent border-gray-700"
             />
           </div>
@@ -57,7 +70,10 @@ export function ClickActionProperties({
 
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Mouse Button</Label>
-        <Select value={action.config.mouseButton} onValueChange={(value) => updateConfig("mouseButton", value)}>
+        <Select
+          value={action.config.mouseButton}
+          onValueChange={(value) => updateConfig("mouseButton", value)}
+        >
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
@@ -75,7 +91,9 @@ export function ClickActionProperties({
           type="number"
           min="1"
           value={action.config.numberOfClicks}
-          onChange={(e) => updateConfig("numberOfClicks", Number.parseInt(e.target.value))}
+          onChange={(e) =>
+            updateConfig("numberOfClicks", Number.parseInt(e.target.value))
+          }
           className="bg-transparent border-gray-700"
         />
       </div>
@@ -86,12 +104,14 @@ export function ClickActionProperties({
           type="number"
           min="0"
           value={action.config.hold_duration}
-          onChange={(e) => updateConfig("hold_duration", Number.parseInt(e.target.value))}
+          onChange={(e) =>
+            updateConfig("hold_duration", Number.parseInt(e.target.value))
+          }
           className="bg-transparent border-gray-700"
         />
       </div>
 
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
-  )
+  );
 }

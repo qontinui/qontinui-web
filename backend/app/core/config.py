@@ -5,6 +5,7 @@ Loads configuration from environment variables and .env file.
 
 import json
 import warnings
+from typing import Any, cast
 
 from pydantic import AnyHttpUrl, Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings
@@ -21,16 +22,19 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Qontinui API"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
-    ENVIRONMENT: str = Field("development", description="Current environment")
+    ENVIRONMENT: str = Field(default="development", description="Current environment")
 
     # Database
     DATABASE_URL: PostgresDsn | str = Field(
-        ..., description="PostgreSQL connection string"
+        default="postgresql://user:pass@localhost/db",
+        description="PostgreSQL connection string",
     )
 
     # Security
     SECRET_KEY: str = Field(
-        ..., min_length=32, description="Secret key for JWT encoding"
+        default="change-me-in-production-min-32-chars",
+        min_length=32,
+        description="Secret key for JWT encoding",
     )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hour
@@ -52,13 +56,17 @@ class Settings(BaseSettings):
 
     # fastapi-users secrets (should be different from SECRET_KEY)
     ACCESS_SECRET_KEY: str | None = Field(
-        None, min_length=32, description="Secret key for access tokens (fastapi-users)"
+        default=None,
+        min_length=32,
+        description="Secret key for access tokens (fastapi-users)",
     )
     RESET_PASSWORD_SECRET_KEY: str | None = Field(
-        None, min_length=32, description="Secret key for password reset tokens"
+        default=None, min_length=32, description="Secret key for password reset tokens"
     )
     VERIFICATION_SECRET_KEY: str | None = Field(
-        None, min_length=32, description="Secret key for email verification tokens"
+        default=None,
+        min_length=32,
+        description="Secret key for email verification tokens",
     )
     ACCESS_TOKEN_EXPIRE_SECONDS: int = 3600  # 1 hour
 
@@ -72,7 +80,7 @@ class Settings(BaseSettings):
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, str) and v.startswith("["):
-            return json.loads(v)
+            return cast(list[str], json.loads(v))
         elif isinstance(v, list):
             return v
         raise ValueError(v)
@@ -93,13 +101,20 @@ class Settings(BaseSettings):
     )
 
     # Runner connection URLs (for desktop app)
+    # WebSocket endpoint is on main backend (port 8000), NOT qontinui-api (port 8001)
     RUNNER_WS_URL: str = Field(
-        default="ws://localhost:8001",
+        default="ws://localhost:8000",
         description="WebSocket URL for qontinui-runner desktop app",
     )
     RUNNER_BACKEND_URL: str = Field(
         default="http://localhost:8000",
         description="Backend HTTP(S) URL for qontinui-runner API calls",
+    )
+
+    # Qontinui API URL (for template matching and other features)
+    QONTINUI_API_URL: str = Field(
+        default="http://localhost:8001",
+        description="Qontinui API URL for template matching and other features",
     )
 
     # User settings
@@ -135,16 +150,18 @@ class Settings(BaseSettings):
     REDIS_DB: int = Field(default=0)
 
     # Stripe
-    STRIPE_SECRET_KEY: str | None = Field(None, description="Stripe secret key")
+    STRIPE_SECRET_KEY: str | None = Field(default=None, description="Stripe secret key")
     STRIPE_PUBLISHABLE_KEY: str | None = Field(
-        None, description="Stripe publishable key"
+        default=None, description="Stripe publishable key"
     )
-    STRIPE_WEBHOOK_SECRET: str | None = Field(None, description="Stripe webhook secret")
+    STRIPE_WEBHOOK_SECRET: str | None = Field(
+        default=None, description="Stripe webhook secret"
+    )
     STRIPE_PRICE_HOBBY: str | None = Field(
-        None, description="Stripe Price ID for Hobby tier"
+        default=None, description="Stripe Price ID for Hobby tier"
     )
     STRIPE_PRICE_PRO: str | None = Field(
-        None, description="Stripe Price ID for Pro tier"
+        default=None, description="Stripe Price ID for Pro tier"
     )
 
     # Object Storage (S3/MinIO)
@@ -157,10 +174,14 @@ class Settings(BaseSettings):
     STORAGE_REGION: str = Field(
         default="us-east-1", description="AWS region or MinIO region"
     )
-    STORAGE_ACCESS_KEY: str | None = Field(None, description="S3/MinIO access key")
-    STORAGE_SECRET_KEY: str | None = Field(None, description="S3/MinIO secret key")
+    STORAGE_ACCESS_KEY: str | None = Field(
+        default=None, description="S3/MinIO access key"
+    )
+    STORAGE_SECRET_KEY: str | None = Field(
+        default=None, description="S3/MinIO secret key"
+    )
     STORAGE_ENDPOINT_URL: str | None = Field(
-        None, description="MinIO endpoint URL (e.g., http://localhost:9000)"
+        default=None, description="MinIO endpoint URL (e.g., http://localhost:9000)"
     )
     STORAGE_USE_SSL: bool = Field(
         default=True, description="Use SSL for storage connections"
@@ -171,10 +192,11 @@ class Settings(BaseSettings):
         default=False, description="Use CloudFront CDN for image delivery"
     )
     CLOUDFRONT_DOMAIN: str | None = Field(
-        None, description="CloudFront distribution domain (e.g., d123abc.cloudfront.net)"
+        default=None,
+        description="CloudFront distribution domain (e.g., d123abc.cloudfront.net)",
     )
     CLOUDFRONT_DISTRIBUTION_ID: str | None = Field(
-        None, description="CloudFront distribution ID (for cache invalidation)"
+        default=None, description="CloudFront distribution ID (for cache invalidation)"
     )
 
     # Background cleanup jobs
@@ -227,23 +249,45 @@ class Settings(BaseSettings):
         description="Maximum number of queries per request before warning (N+1 detection)",
     )
 
+    # Allowed hosts for TrustedHostMiddleware
+    ALLOWED_HOSTS: list[str] = Field(
+        default=[],
+        description="Allowed hosts for TrustedHostMiddleware in production. Empty list uses defaults.",
+    )
+
+    @field_validator("ALLOWED_HOSTS", mode="before")
+    @classmethod
+    def parse_allowed_hosts(cls, v: str | list[str]) -> list[str]:
+        """Parse allowed hosts from string or list format."""
+        if isinstance(v, str) and not v:
+            return []
+        if isinstance(v, str) and v.startswith("["):
+            return cast(list[str], json.loads(v))
+        if isinstance(v, str):
+            return [h.strip() for h in v.split(",")]
+        if isinstance(v, list):
+            return v
+        return []
+
     @field_validator("SECRET_KEY")
     @classmethod
-    def validate_secret_key(cls, v: str) -> str:
+    def validate_secret_key(cls, v: str, info: Any) -> str:
         """Validate SECRET_KEY has sufficient length and complexity."""
         if v == "change-me" or len(v) < 32:
-            if cls.model_fields.get("ENVIRONMENT") != "development":
+            # Check if ENVIRONMENT is development
+            environment = info.data.get("ENVIRONMENT", "development")
+            if environment != "development":
                 raise ValueError(
                     "SECRET_KEY must be at least 32 characters in production"
                 )
-            warnings.warn("Using weak SECRET_KEY in development mode")
+            warnings.warn("Using weak SECRET_KEY in development mode", stacklevel=2)
         return v
 
     @field_validator(
         "ACCESS_SECRET_KEY", "RESET_PASSWORD_SECRET_KEY", "VERIFICATION_SECRET_KEY"
     )
     @classmethod
-    def validate_fastapi_users_secrets(cls, v: str | None, info) -> str:
+    def validate_fastapi_users_secrets(cls, v: str | None, info: Any) -> str:
         """Default fastapi-users secrets to SECRET_KEY if not provided."""
         if v is None:
             # Get SECRET_KEY from values (already validated)
@@ -251,9 +295,10 @@ class Settings(BaseSettings):
             if secret_key:
                 warnings.warn(
                     f"{info.field_name} not set, using SECRET_KEY as fallback. "
-                    "Consider setting unique secrets for production."
+                    "Consider setting unique secrets for production.",
+                    stacklevel=2,
                 )
-                return secret_key
+                return cast(str, secret_key)
             raise ValueError(f"{info.field_name} or SECRET_KEY must be set")
         return v
 

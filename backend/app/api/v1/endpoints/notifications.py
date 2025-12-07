@@ -15,14 +15,12 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
 from app.api.deps import get_async_db, get_current_active_user_async
-from app.models.notification import Notification, NotificationPreferences
+from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.notification import (
     MarkAllReadResponse,
-    NotificationFilterParams,
     NotificationPreferencesResponse,
     NotificationPreferencesUpdate,
     NotificationResponse,
@@ -82,7 +80,7 @@ async def get_notifications(
         actor_data = {}
         if notification.actor_id:
             result = await db.execute(
-                select(User).filter(User.id == notification.actor_id)
+                select(User).where(User.id == notification.actor_id)  # type: ignore[arg-type]
             )
             actor = result.scalar_one_or_none()
             if actor:
@@ -98,7 +96,7 @@ async def get_notifications(
             from app.models.project import Project
 
             result = await db.execute(
-                select(Project).filter(Project.id == notification.project_id)
+                select(Project).where(Project.id == notification.project_id)
             )
             project = result.scalar_one_or_none()
             if project:
@@ -206,7 +204,7 @@ async def mark_notification_read(
     actor_data = {}
     if notification.actor_id:
         result = await db.execute(
-            select(User).filter(User.id == notification.actor_id)
+            select(User).where(User.id == notification.actor_id)  # type: ignore[arg-type]
         )
         actor = result.scalar_one_or_none()
         if actor:
@@ -221,7 +219,7 @@ async def mark_notification_read(
         from app.models.project import Project
 
         result = await db.execute(
-            select(Project).filter(Project.id == notification.project_id)
+            select(Project).where(Project.id == notification.project_id)
         )
         project = result.scalar_one_or_none()
         if project:
@@ -263,9 +261,7 @@ async def mark_all_notifications_read(
     """Mark all notifications as read for current user."""
     logger.info("mark_all_read_request", user_id=current_user.id)
 
-    count = await notification_service.mark_all_as_read(
-        db=db, user_id=current_user.id
-    )
+    count = await notification_service.mark_all_as_read(db=db, user_id=current_user.id)
 
     logger.info("mark_all_read_success", user_id=current_user.id, count=count)
 
@@ -327,23 +323,7 @@ async def get_notification_preferences(
 
     logger.info("get_preferences_success", user_id=current_user.id)
 
-    return NotificationPreferencesResponse(
-        id=preferences.id,
-        user_id=preferences.user_id,
-        email_mentions=preferences.email_mentions,
-        email_comments=preferences.email_comments,
-        email_shares=preferences.email_shares,
-        email_replies=preferences.email_replies,
-        email_team_invites=preferences.email_team_invites,
-        in_app_mentions=preferences.in_app_mentions,
-        in_app_comments=preferences.in_app_comments,
-        in_app_shares=preferences.in_app_shares,
-        in_app_replies=preferences.in_app_replies,
-        in_app_team_invites=preferences.in_app_team_invites,
-        in_app_project_updates=preferences.in_app_project_updates,
-        created_at=preferences.created_at,
-        updated_at=preferences.updated_at,
-    )
+    return NotificationPreferencesResponse.model_validate(preferences)
 
 
 @router.put("/preferences", response_model=NotificationPreferencesResponse)
@@ -365,20 +345,4 @@ async def update_notification_preferences(
 
     logger.info("update_preferences_success", user_id=current_user.id)
 
-    return NotificationPreferencesResponse(
-        id=preferences.id,
-        user_id=preferences.user_id,
-        email_mentions=preferences.email_mentions,
-        email_comments=preferences.email_comments,
-        email_shares=preferences.email_shares,
-        email_replies=preferences.email_replies,
-        email_team_invites=preferences.email_team_invites,
-        in_app_mentions=preferences.in_app_mentions,
-        in_app_comments=preferences.in_app_comments,
-        in_app_shares=preferences.in_app_shares,
-        in_app_replies=preferences.in_app_replies,
-        in_app_team_invites=preferences.in_app_team_invites,
-        in_app_project_updates=preferences.in_app_project_updates,
-        created_at=preferences.created_at,
-        updated_at=preferences.updated_at,
-    )
+    return NotificationPreferencesResponse.model_validate(preferences)

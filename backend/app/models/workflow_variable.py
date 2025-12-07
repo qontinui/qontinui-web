@@ -10,7 +10,6 @@ Architecture:
 from datetime import datetime
 from enum import Enum as PyEnum
 
-from app.db.base import Base
 from sqlalchemy import (
     JSON,
     Column,
@@ -21,7 +20,10 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class VariableScope(str, PyEnum):
@@ -45,13 +47,17 @@ class WorkflowVariable(Base):
     __tablename__ = "workflow_variables"
 
     id = Column(String, primary_key=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    project_id = Column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+    )
     workflow_id = Column(
         String, nullable=True, index=True
     )  # NULL for global variables (workflow IDs are strings in project JSON)
     name = Column(String, nullable=False, index=True)
     value = Column(JSON, nullable=True)  # Supports any JSON-serializable type
-    scope = Column(Enum(VariableScope), nullable=False, index=True)
+    scope: Column[VariableScope] = Column(
+        Enum(VariableScope), nullable=False, index=True
+    )
     description = Column(String, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(

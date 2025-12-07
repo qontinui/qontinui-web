@@ -5,13 +5,13 @@
  * click-to-add, hover preview, and favorite/recent indicators.
  */
 
-import React, { useState } from 'react';
-import { ActionType } from '@/lib/action-schema/action-types';
-import { NodeMetadata, CATEGORIES } from './palette-config';
-import { useIsFavoriteNode, useToggleFavorite } from '@/stores/favorite-nodes';
-import { useIsRecentNode } from '@/stores/recent-nodes';
-import { Star, Plus, GripVertical } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React, { useState } from "react";
+import { ActionType } from "@/lib/action-schema/action-types";
+import { NodeMetadata, CATEGORIES } from "./palette-config";
+import { useIsFavoriteNode, useToggleFavorite } from "@/stores/favorite-nodes";
+import { useIsRecentNode } from "@/stores/recent-nodes";
+import { Star, Plus, GripVertical } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -53,12 +53,12 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
   };
 
   const handleClick = (event?: React.MouseEvent) => {
-    console.log('[PaletteItem] handleClick called for:', metadata.type);
+    console.log("[PaletteItem] handleClick called for:", metadata.type);
     if (event) {
       event.stopPropagation();
     }
     if (onAdd) {
-      console.log('[PaletteItem] Calling onAdd for:', metadata.type);
+      console.log("[PaletteItem] Calling onAdd for:", metadata.type);
       onAdd(metadata.type);
     }
   };
@@ -71,9 +71,9 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
   return (
     <div
       className={cn(
-        'palette-item',
-        compact && 'palette-item--compact',
-        isHovered && 'palette-item--hovered',
+        "palette-item",
+        compact && "palette-item--compact",
+        isHovered && "palette-item--hovered",
         className
       )}
       draggable
@@ -144,15 +144,13 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
         {/* Favorite Button */}
         <button
           className={cn(
-            'palette-item__action-btn palette-item__favorite-btn',
-            isFavorite && 'palette-item__favorite-btn--active'
+            "palette-item__action-btn palette-item__favorite-btn",
+            isFavorite && "palette-item__favorite-btn--active"
           )}
           onClick={handleToggleFavorite}
-          title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          title={isFavorite ? "Remove from favorites" : "Add to favorites"}
         >
-          <Star
-            className={cn('h-4 w-4', isFavorite && 'fill-current')}
-          />
+          <Star className={cn("h-4 w-4", isFavorite && "fill-current")} />
         </button>
 
         {/* Add Button */}
@@ -169,7 +167,10 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
       {isHovered && !compact && (
         <div className="palette-item__tooltip">
           <div className="palette-item__tooltip-header">
-            <IconComponent className="h-5 w-5" style={{ color: category.color }} />
+            <IconComponent
+              className="h-5 w-5"
+              style={{ color: category.color }}
+            />
             <span className="palette-item__tooltip-title">
               {metadata.displayName}
             </span>
@@ -215,29 +216,31 @@ export const CompactPaletteItem: React.FC<PaletteItemProps> = (props) => {
 
 interface CategoryBadgeProps {
   category: keyof typeof CATEGORIES;
-  size?: 'sm' | 'md' | 'lg';
+  size?: "sm" | "md" | "lg";
 }
 
 export const CategoryBadge: React.FC<CategoryBadgeProps> = ({
   category,
-  size = 'md',
+  size = "md",
 }) => {
   const categoryInfo = CATEGORIES[category];
   const IconComponent = categoryInfo.icon;
 
   return (
     <div
-      className={cn('category-badge', `category-badge--${size}`)}
+      className={cn("category-badge", `category-badge--${size}`)}
       style={{
         backgroundColor: `${categoryInfo.color}20`,
         color: categoryInfo.color,
       }}
     >
-      <IconComponent className={cn(
-        size === 'sm' && 'h-3 w-3',
-        size === 'md' && 'h-4 w-4',
-        size === 'lg' && 'h-5 w-5'
-      )} />
+      <IconComponent
+        className={cn(
+          size === "sm" && "h-3 w-3",
+          size === "md" && "h-4 w-4",
+          size === "lg" && "h-5 w-5"
+        )}
+      />
       <span>{categoryInfo.label}</span>
     </div>
   );
@@ -298,8 +301,8 @@ export const NodePreview: React.FC<NodePreviewProps> = ({
             <div className="node-preview__section">
               <h5 className="node-preview__section-title">Outputs</h5>
               <p className="node-preview__section-text">
-                This node has {metadata.outputCount || 'multiple'} output{' '}
-                {(metadata.outputCount || 2) > 1 ? 'branches' : 'branch'}
+                This node has {metadata.outputCount || "multiple"} output{" "}
+                {(metadata.outputCount || 2) > 1 ? "branches" : "branch"}
               </p>
             </div>
           )}

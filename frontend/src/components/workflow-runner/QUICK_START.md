@@ -7,7 +7,7 @@ Get started with the Workflow Variable Monitor in 5 minutes.
 The component is already installed in your project. Just import and use!
 
 ```tsx
-import { VariableMonitor } from '@/components/workflow-runner';
+import { VariableMonitor } from "@/components/workflow-runner";
 ```
 
 ## Basic Usage
@@ -21,6 +21,7 @@ function MyWorkflowRunner() {
 ```
 
 That's it! The component will:
+
 - Auto-refresh every second
 - Display current variables in a table
 - Show change history in a timeline
@@ -32,12 +33,9 @@ That's it! The component will:
 ### 1. Disable Auto-refresh for Completed Workflows
 
 ```tsx
-const isComplete = workflow.status === 'completed';
+const isComplete = workflow.status === "completed";
 
-<VariableMonitor
-  runId={runId}
-  refreshInterval={isComplete ? 0 : 1000}
-/>
+<VariableMonitor runId={runId} refreshInterval={isComplete ? 0 : 1000} />;
 ```
 
 ### 2. Start with History Tab
@@ -68,7 +66,7 @@ const isComplete = workflow.status === 'completed';
 ### 5. Custom Hook for Advanced Use
 
 ```tsx
-import { useWorkflowVariables } from '@/hooks/useWorkflowVariables';
+import { useWorkflowVariables } from "@/hooks/useWorkflowVariables";
 
 function CustomView() {
   const { flattenedVariables, history, refetch } = useWorkflowVariables(runId);
@@ -77,7 +75,9 @@ function CustomView() {
     <div>
       <button onClick={refetch}>Refresh</button>
       {flattenedVariables.map((v) => (
-        <div>{v.name}: {JSON.stringify(v.value)}</div>
+        <div>
+          {v.name}: {JSON.stringify(v.value)}
+        </div>
       ))}
     </div>
   );
@@ -86,17 +86,17 @@ function CustomView() {
 
 ## Features at a Glance
 
-| Feature | Description |
-|---------|-------------|
-| **Real-time Updates** | Auto-refresh with configurable interval |
-| **Three Tabs** | Current values, change history, global variables |
-| **Search** | Filter variables by name |
-| **Scope Filters** | Filter by execution/workflow/global scope |
-| **JSON Expansion** | Expand complex objects and arrays |
-| **Copy to Clipboard** | Copy any variable value |
-| **Export** | Download all variables as JSON |
-| **Timeline View** | Visual history of all changes |
-| **Type Detection** | Automatic type detection and display |
+| Feature               | Description                                      |
+| --------------------- | ------------------------------------------------ |
+| **Real-time Updates** | Auto-refresh with configurable interval          |
+| **Three Tabs**        | Current values, change history, global variables |
+| **Search**            | Filter variables by name                         |
+| **Scope Filters**     | Filter by execution/workflow/global scope        |
+| **JSON Expansion**    | Expand complex objects and arrays                |
+| **Copy to Clipboard** | Copy any variable value                          |
+| **Export**            | Download all variables as JSON                   |
+| **Timeline View**     | Visual history of all changes                    |
+| **Type Detection**    | Automatic type detection and display             |
 
 ## API Requirements
 
@@ -108,6 +108,7 @@ GET /api/v1/workflow-runs/{run_id}/variable-changes
 ```
 
 Response format:
+
 ```json
 {
   "run_id": "...",
@@ -125,35 +126,37 @@ Response format:
 
 ### VariableMonitor
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `runId` | string | required | Workflow run ID |
-| `refreshInterval` | number | 1000 | Auto-refresh interval in ms (0 = disabled) |
-| `defaultTab` | string | "current" | Initial tab: "current" \| "history" \| "global" |
-| `onRefreshIntervalChange` | function | - | Callback when interval changes |
+| Prop                      | Type     | Default   | Description                                     |
+| ------------------------- | -------- | --------- | ----------------------------------------------- |
+| `runId`                   | string   | required  | Workflow run ID                                 |
+| `refreshInterval`         | number   | 1000      | Auto-refresh interval in ms (0 = disabled)      |
+| `defaultTab`              | string   | "current" | Initial tab: "current" \| "history" \| "global" |
+| `onRefreshIntervalChange` | function | -         | Callback when interval changes                  |
 
 ### VariableHistory
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `runId` | string | required | Workflow run ID |
-| `refreshInterval` | number | 1000 | Auto-refresh interval in ms (0 = disabled) |
+| Prop              | Type   | Default  | Description                                |
+| ----------------- | ------ | -------- | ------------------------------------------ |
+| `runId`           | string | required | Workflow run ID                            |
+| `refreshInterval` | number | 1000     | Auto-refresh interval in ms (0 = disabled) |
 
 ## TypeScript Types
 
 Import types from:
+
 ```tsx
 import type {
   WorkflowVariable,
   VariableChange,
   VariableSnapshot,
   VariableScope,
-} from '@/types/workflow-variables';
+} from "@/types/workflow-variables";
 ```
 
 ## Styling
 
 Components use the project's dark theme:
+
 - Dark background: `#1A1A1B`
 - Cyan accent: `#00D9FF`
 - Responsive design
@@ -169,16 +172,19 @@ Components use the project's dark theme:
 ## Troubleshooting
 
 **Variables not showing?**
+
 - Verify `runId` is correct
 - Check API endpoints are working
 - Look for errors in browser console
 
 **Slow performance?**
+
 - Increase `refreshInterval` (e.g., 5000ms)
 - Use scope filters to reduce items
 - Disable auto-refresh when not needed
 
 **Need custom behavior?**
+
 - Use `useWorkflowVariables` hook directly
 - Build custom UI with the data
 - See examples for inspiration

@@ -10,7 +10,7 @@
  * - Support dry-run mode
  */
 
-import { Workflow, Action, Connections } from '../lib/action-schema/action-types';
+import type { Workflow } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -45,20 +45,20 @@ export function detectWorkflowVersion(data: any): string {
   }
 
   // Detect by structure
-  if (data.format === 'graph' && data.connections) {
-    return '1.0.0'; // Current format
+  if (data.format === "graph" && data.connections) {
+    return "1.0.0"; // Current format
   }
 
-  if (data.format === 'sequential' || (!data.format && data.actions)) {
-    return '0.9.0'; // Legacy sequential format
+  if (data.format === "sequential" || (!data.format && data.actions)) {
+    return "0.9.0"; // Legacy sequential format
   }
 
   if (data.nodes && data.edges) {
-    return '0.5.0'; // Very old node/edge format
+    return "0.5.0"; // Very old node/edge format
   }
 
   // Default to current version if unknown
-  return '1.0.0';
+  return "1.0.0";
 }
 
 /**
@@ -66,8 +66,8 @@ export function detectWorkflowVersion(data: any): string {
  * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
  */
 export function compareVersions(v1: string, v2: string): number {
-  const parts1 = v1.split('.').map(Number);
-  const parts2 = v2.split('.').map(Number);
+  const parts1 = v1.split(".").map(Number);
+  const parts2 = v2.split(".").map(Number);
 
   for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
     const p1 = parts1[i] || 0;
@@ -83,7 +83,10 @@ export function compareVersions(v1: string, v2: string): number {
 /**
  * Check if migration is needed
  */
-export function needsMigration(currentVersion: string, targetVersion: string): boolean {
+export function needsMigration(
+  currentVersion: string,
+  targetVersion: string
+): boolean {
   return compareVersions(currentVersion, targetVersion) < 0;
 }
 
@@ -91,7 +94,7 @@ export function needsMigration(currentVersion: string, targetVersion: string): b
 // Main Migration Function
 // ============================================================================
 
-const CURRENT_VERSION = '1.0.0';
+const CURRENT_VERSION = "1.0.0";
 
 /**
  * Migrate workflow from one version to another
@@ -102,7 +105,7 @@ export function migrateWorkflow(
   toVersion: string = CURRENT_VERSION,
   options: MigrationOptions = {}
 ): Workflow {
-  const { dryRun = false, preserveUnknown = true, strict = false } = options;
+  const { preserveUnknown = true, strict = false } = options;
 
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -118,12 +121,17 @@ export function migrateWorkflow(
 
   for (const migration of migrations) {
     try {
-      current = migration(current, { warnings, errors, preserveUnknown, strict });
+      current = migration(current, {
+        warnings,
+        errors,
+        preserveUnknown,
+        strict,
+      });
     } catch (error) {
       errors.push(
-        `Migration failed at ${migration.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Migration failed at ${migration.name}: ${error instanceof Error ? error.message : "Unknown error"}`
       );
-      throw new Error(`Migration failed: ${errors.join(', ')}`);
+      throw new Error(`Migration failed: ${errors.join(", ")}`);
     }
   }
 
@@ -164,12 +172,18 @@ function getMigrationPath(from: string, to: string): MigrationFunction[] {
   const migrations: MigrationFunction[] = [];
 
   // v0.5.0 -> v0.9.0: node/edge format to sequential format
-  if (compareVersions(from, '0.5.0') <= 0 && compareVersions(to, '0.9.0') >= 0) {
+  if (
+    compareVersions(from, "0.5.0") <= 0 &&
+    compareVersions(to, "0.9.0") >= 0
+  ) {
     migrations.push(migrateV05ToV09);
   }
 
   // v0.9.0 -> v1.0.0: sequential format to graph format
-  if (compareVersions(from, '0.9.0') <= 0 && compareVersions(to, '1.0.0') >= 0) {
+  if (
+    compareVersions(from, "0.9.0") <= 0 &&
+    compareVersions(to, "1.0.0") >= 0
+  ) {
     migrations.push(migrateV09ToV10);
   }
 
@@ -194,13 +208,13 @@ function migrateV05ToV09(
 ): any {
   const { warnings } = context;
 
-  warnings.push('Migrating from node/edge format to sequential format');
+  warnings.push("Migrating from node/edge format to sequential format");
 
   const workflow: any = {
     id: data.id || `workflow-${Date.now()}`,
-    name: data.name || 'Untitled Workflow',
-    version: '0.9.0',
-    format: 'sequential',
+    name: data.name || "Untitled Workflow",
+    version: "0.9.0",
+    format: "sequential",
     actions: [],
     metadata: data.metadata || {},
   };
@@ -218,7 +232,9 @@ function migrateV05ToV09(
   }
 
   warnings.push(`Converted ${workflow.actions.length} nodes to actions`);
-  warnings.push('Note: Edge information was discarded (not supported in sequential format)');
+  warnings.push(
+    "Note: Edge information was discarded (not supported in sequential format)"
+  );
 
   return workflow;
 }
@@ -237,13 +253,13 @@ function migrateV09ToV10(
 ): any {
   const { warnings } = context;
 
-  warnings.push('Migrating from sequential format to graph format');
+  warnings.push("Migrating from sequential format to graph format");
 
   const workflow: Workflow = {
     id: data.id || `workflow-${Date.now()}`,
-    name: data.name || 'Untitled Workflow',
-    version: '1.0.0',
-    format: 'graph',
+    name: data.name || "Untitled Workflow",
+    version: "1.0.0",
+    format: "graph",
     actions: [],
     connections: {},
     variables: data.variables,
@@ -269,13 +285,17 @@ function migrateV09ToV10(
       const currentAction = workflow.actions[i];
       const nextAction = workflow.actions[i + 1];
 
-      workflow.connections[currentAction.id] = {
-        main: [[{ action: nextAction.id, type: 'main', index: 0 }]],
-      };
+      if (currentAction?.id && nextAction?.id) {
+        workflow.connections[currentAction.id] = {
+          main: [[{ action: nextAction.id, type: "main", index: 0 }]],
+        };
+      }
     }
 
-    warnings.push(`Converted ${workflow.actions.length} sequential actions to graph format`);
-    warnings.push('Created linear connections between actions');
+    warnings.push(
+      `Converted ${workflow.actions.length} sequential actions to graph format`
+    );
+    warnings.push("Created linear connections between actions");
   }
 
   return workflow;
@@ -315,7 +335,7 @@ export function dryRunMigration(
     return {
       success: false,
       warnings: [],
-      errors: [error instanceof Error ? error.message : 'Unknown error'],
+      errors: [error instanceof Error ? error.message : "Unknown error"],
     };
   }
 }
@@ -327,25 +347,31 @@ export function getMigrationSummary(from: string, to: string): string[] {
   const summary: string[] = [];
 
   if (compareVersions(from, to) === 0) {
-    summary.push('No migration needed - versions are the same');
+    summary.push("No migration needed - versions are the same");
     return summary;
   }
 
   // v0.5.0 -> v0.9.0
-  if (compareVersions(from, '0.5.0') <= 0 && compareVersions(to, '0.9.0') >= 0) {
-    summary.push('v0.5.0 -> v0.9.0:');
-    summary.push('  - Convert node/edge format to sequential format');
-    summary.push('  - Edge information will be discarded');
-    summary.push('  - Actions will be executed in array order');
+  if (
+    compareVersions(from, "0.5.0") <= 0 &&
+    compareVersions(to, "0.9.0") >= 0
+  ) {
+    summary.push("v0.5.0 -> v0.9.0:");
+    summary.push("  - Convert node/edge format to sequential format");
+    summary.push("  - Edge information will be discarded");
+    summary.push("  - Actions will be executed in array order");
   }
 
   // v0.9.0 -> v1.0.0
-  if (compareVersions(from, '0.9.0') <= 0 && compareVersions(to, '1.0.0') >= 0) {
-    summary.push('v0.9.0 -> v1.0.0:');
-    summary.push('  - Convert sequential format to graph format');
-    summary.push('  - Add positions to all actions');
-    summary.push('  - Create linear connections between sequential actions');
-    summary.push('  - Enable non-linear workflow capabilities');
+  if (
+    compareVersions(from, "0.9.0") <= 0 &&
+    compareVersions(to, "1.0.0") >= 0
+  ) {
+    summary.push("v0.9.0 -> v1.0.0:");
+    summary.push("  - Convert sequential format to graph format");
+    summary.push("  - Add positions to all actions");
+    summary.push("  - Create linear connections between sequential actions");
+    summary.push("  - Enable non-linear workflow capabilities");
   }
 
   return summary;
@@ -355,7 +381,7 @@ export function getMigrationSummary(from: string, to: string): string[] {
  * Check if version is supported
  */
 export function isSupportedVersion(version: string): boolean {
-  const supportedVersions = ['0.5.0', '0.9.0', '1.0.0'];
+  const supportedVersions = ["0.5.0", "0.9.0", "1.0.0"];
   return supportedVersions.includes(version);
 }
 
@@ -408,7 +434,7 @@ export function backupWorkflow(workflow: any): string {
 export function restoreWorkflow(backupKey: string): any {
   const backup = localStorage.getItem(backupKey);
   if (!backup) {
-    throw new Error('Backup not found');
+    throw new Error("Backup not found");
   }
 
   const data = JSON.parse(backup);
@@ -418,12 +444,17 @@ export function restoreWorkflow(backupKey: string): any {
 /**
  * List all workflow backups
  */
-export function listBackups(): Array<{ key: string; timestamp: string; version: string }> {
-  const backups: Array<{ key: string; timestamp: string; version: string }> = [];
+export function listBackups(): Array<{
+  key: string;
+  timestamp: string;
+  version: string;
+}> {
+  const backups: Array<{ key: string; timestamp: string; version: string }> =
+    [];
 
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key && key.startsWith('workflow-backup:')) {
+    if (key && key.startsWith("workflow-backup:")) {
       try {
         const backup = JSON.parse(localStorage.getItem(key)!);
         backups.push({

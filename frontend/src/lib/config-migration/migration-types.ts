@@ -20,7 +20,7 @@ export interface MigrationContext {
  * Result returned from migration operations
  */
 export interface MigrationResult {
-  config: any;  // Transformed configuration
+  config: any; // Transformed configuration
   context: MigrationContext;
   success: boolean;
 }
@@ -31,8 +31,8 @@ export interface MigrationResult {
 export interface MigrationHistoryEntry {
   fromVersion: string;
   toVersion: string;
-  date: string;  // ISO 8601 timestamp
-  path: string[];  // Array of version transitions, e.g., ["1.0.0→2.0.0", "2.0.0→2.1.0"]
+  date: string; // ISO 8601 timestamp
+  path: string[]; // Array of version transitions, e.g., ["1.0.0→2.0.0", "2.0.0→2.1.0"]
 }
 
 /**

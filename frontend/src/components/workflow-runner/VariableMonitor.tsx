@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 /**
  * VariableMonitor - Real-time workflow variable monitoring component
@@ -15,15 +15,21 @@
  * - Export variables as JSON
  */
 
-import { useState, useMemo } from "react"
-import { useWorkflowVariables, formatVariableValue } from "@/hooks/useWorkflowVariables"
-import type { WorkflowVariable, VariableScope, VariableFilter } from "@/types/workflow-variables"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { useState, useMemo } from "react";
+import {
+  useWorkflowVariables,
+  formatVariableValue,
+} from "@/hooks/useWorkflowVariables";
+import type {
+  WorkflowVariable,
+  VariableScope,
+} from "@/types/workflow-variables";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
   TableBody,
@@ -31,14 +37,13 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+} from "@/components/ui/tooltip";
 import {
   Search,
   Copy,
@@ -51,10 +56,9 @@ import {
   Database,
   Globe,
   AlertCircle,
-  CheckCircle2,
-} from "lucide-react"
-import { toast } from "sonner"
-import { VariableHistory } from "./VariableHistory"
+} from "lucide-react";
+import { toast } from "sonner";
+import { VariableHistory } from "./VariableHistory";
 
 interface VariableMonitorProps {
   /** Workflow run ID */
@@ -73,16 +77,18 @@ interface VariableMonitorProps {
 /**
  * Get badge variant for variable scope
  */
-function getScopeBadgeVariant(scope: VariableScope): "default" | "secondary" | "outline" {
+function getScopeBadgeVariant(
+  scope: VariableScope
+): "default" | "secondary" | "outline" {
   switch (scope) {
-    case 'execution':
-      return 'default'; // Cyan
-    case 'workflow':
-      return 'secondary'; // Gray
-    case 'global':
-      return 'outline'; // White outline
+    case "execution":
+      return "default"; // Cyan
+    case "workflow":
+      return "secondary"; // Gray
+    case "global":
+      return "outline"; // White outline
     default:
-      return 'default';
+      return "default";
   }
 }
 
@@ -91,11 +97,11 @@ function getScopeBadgeVariant(scope: VariableScope): "default" | "secondary" | "
  */
 function getScopeIcon(scope: VariableScope) {
   switch (scope) {
-    case 'execution':
+    case "execution":
       return <Activity className="w-3 h-3" />;
-    case 'workflow':
+    case "workflow":
       return <Database className="w-3 h-3" />;
-    case 'global':
+    case "global":
       return <Globe className="w-3 h-3" />;
     default:
       return null;
@@ -111,7 +117,7 @@ function formatRelativeTime(isoString: string): string {
   const diffMs = now.getTime() - date.getTime();
   const diffSec = Math.floor(diffMs / 1000);
 
-  if (diffSec < 1) return 'just now';
+  if (diffSec < 1) return "just now";
   if (diffSec < 60) return `${diffSec}s ago`;
 
   const diffMin = Math.floor(diffSec / 60);
@@ -129,17 +135,19 @@ function formatRelativeTime(isoString: string): string {
  */
 function VariableRow({ variable }: { variable: WorkflowVariable }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const isComplex = typeof variable.value === 'object' && variable.value !== null;
+  const isComplex =
+    typeof variable.value === "object" && variable.value !== null;
 
   const handleCopy = async () => {
     try {
-      const text = typeof variable.value === 'object'
-        ? JSON.stringify(variable.value, null, 2)
-        : String(variable.value);
+      const text =
+        typeof variable.value === "object"
+          ? JSON.stringify(variable.value, null, 2)
+          : String(variable.value);
       await navigator.clipboard.writeText(text);
       toast.success(`Copied "${variable.name}" to clipboard`);
     } catch (error) {
-      toast.error('Failed to copy to clipboard');
+      toast.error("Failed to copy to clipboard");
     }
   };
 
@@ -188,9 +196,7 @@ function VariableRow({ variable }: { variable: WorkflowVariable }) {
         </TableCell>
 
         {/* Type */}
-        <TableCell className="text-sm text-gray-400">
-          {variable.type}
-        </TableCell>
+        <TableCell className="text-sm text-gray-400">{variable.type}</TableCell>
 
         {/* Last updated */}
         <TableCell className="text-sm text-gray-400">
@@ -248,7 +254,7 @@ export function VariableMonitor({
 }: VariableMonitorProps) {
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [searchTerm, setSearchTerm] = useState("");
-  const [scopeFilter, setScopeFilter] = useState<VariableScope | 'all'>('all');
+  const [scopeFilter, setScopeFilter] = useState<VariableScope | "all">("all");
   const [isRefreshing, setIsRefreshing] = useState(true);
 
   const {
@@ -265,12 +271,15 @@ export function VariableMonitor({
   const filteredVariables = useMemo(() => {
     return flattenedVariables.filter((variable) => {
       // Search filter
-      if (searchTerm && !variable.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+      if (
+        searchTerm &&
+        !variable.name.toLowerCase().includes(searchTerm.toLowerCase())
+      ) {
         return false;
       }
 
       // Scope filter
-      if (scopeFilter !== 'all' && variable.scope !== scopeFilter) {
+      if (scopeFilter !== "all" && variable.scope !== scopeFilter) {
         return false;
       }
 
@@ -280,7 +289,7 @@ export function VariableMonitor({
 
   // Separate variables by scope for the global tab
   const globalVariables = useMemo(() => {
-    return flattenedVariables.filter((v) => v.scope === 'global');
+    return flattenedVariables.filter((v) => v.scope === "global");
   }, [flattenedVariables]);
 
   // Handle export
@@ -294,18 +303,18 @@ export function VariableMonitor({
       };
 
       const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-        type: 'application/json',
+        type: "application/json",
       });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `workflow-variables-${runId}-${Date.now()}.json`;
       a.click();
       URL.revokeObjectURL(url);
 
-      toast.success('Variables exported successfully');
+      toast.success("Variables exported successfully");
     } catch (error) {
-      toast.error('Failed to export variables');
+      toast.error("Failed to export variables");
     }
   };
 
@@ -336,7 +345,9 @@ export function VariableMonitor({
           <AlertCircle className="w-8 h-8 text-red-500 mr-3" />
           <div>
             <p className="text-red-500 font-medium">Failed to load variables</p>
-            <p className="text-sm text-gray-400 mt-2">{(error as Error).message}</p>
+            <p className="text-sm text-gray-400 mt-2">
+              {(error as Error).message}
+            </p>
             <Button
               variant="outline"
               size="sm"
@@ -377,12 +388,15 @@ export function VariableMonitor({
                   onClick={toggleRefresh}
                   className="gap-2"
                 >
-                  <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-                  {isRefreshing ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
+                  <RefreshCw
+                    className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
+                  />
+                  {isRefreshing ? "Auto-refresh ON" : "Auto-refresh OFF"}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {isRefreshing ? 'Disable' : 'Enable'} auto-refresh ({refreshInterval}ms)
+                {isRefreshing ? "Disable" : "Enable"} auto-refresh (
+                {refreshInterval}ms)
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -397,7 +411,9 @@ export function VariableMonitor({
                   onClick={() => refetch()}
                   disabled={isFetching}
                 >
-                  <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+                  <RefreshCw
+                    className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
+                  />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Refresh now</TooltipContent>
@@ -420,7 +436,11 @@ export function VariableMonitor({
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1">
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as any)}
+        className="flex-1"
+      >
         <div className="border-b border-gray-800 px-6">
           <TabsList className="bg-transparent p-0 h-auto gap-1">
             <TabsTrigger
@@ -469,17 +489,19 @@ export function VariableMonitor({
 
             {/* Scope filter */}
             <div className="flex gap-2">
-              {(['all', 'execution', 'workflow', 'global'] as const).map((scope) => (
-                <Button
-                  key={scope}
-                  variant={scopeFilter === scope ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setScopeFilter(scope)}
-                  className="capitalize"
-                >
-                  {scope === 'all' ? 'All' : scope}
-                </Button>
-              ))}
+              {(["all", "execution", "workflow", "global"] as const).map(
+                (scope) => (
+                  <Button
+                    key={scope}
+                    variant={scopeFilter === scope ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setScopeFilter(scope)}
+                    className="capitalize"
+                  >
+                    {scope === "all" ? "All" : scope}
+                  </Button>
+                )
+              )}
             </div>
           </div>
 
@@ -489,12 +511,12 @@ export function VariableMonitor({
               <div className="text-center py-12">
                 <Database className="w-16 h-16 mx-auto text-gray-600 mb-4" />
                 <h3 className="text-xl font-semibold text-gray-300 mb-2">
-                  {searchTerm ? 'No matching variables' : 'No variables'}
+                  {searchTerm ? "No matching variables" : "No variables"}
                 </h3>
                 <p className="text-gray-400">
                   {searchTerm
-                    ? 'Try a different search term'
-                    : 'Variables will appear here during workflow execution'}
+                    ? "Try a different search term"
+                    : "Variables will appear here during workflow execution"}
                 </p>
               </div>
             ) : (
@@ -512,7 +534,10 @@ export function VariableMonitor({
                 </TableHeader>
                 <TableBody>
                   {filteredVariables.map((variable) => (
-                    <VariableRow key={`${variable.scope}-${variable.name}`} variable={variable} />
+                    <VariableRow
+                      key={`${variable.scope}-${variable.name}`}
+                      variable={variable}
+                    />
                   ))}
                 </TableBody>
               </Table>
@@ -522,7 +547,10 @@ export function VariableMonitor({
 
         {/* Change History Tab */}
         <TabsContent value="history" className="p-6">
-          <VariableHistory runId={runId} refreshInterval={isRefreshing ? refreshInterval : 0} />
+          <VariableHistory
+            runId={runId}
+            refreshInterval={isRefreshing ? refreshInterval : 0}
+          />
         </TabsContent>
 
         {/* Global Variables Tab */}

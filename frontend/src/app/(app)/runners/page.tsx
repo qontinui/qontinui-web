@@ -1,44 +1,59 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Loader2, Monitor, History, Key, Plus } from "lucide-react"
-import { CreateTokenDialog } from "@/components/runners/CreateTokenDialog"
-import { RunnerTokenCard } from "@/components/runners/RunnerTokenCard"
-import { ActiveConnectionsList } from "@/components/runners/ActiveConnectionsList"
-import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTable"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import {
+  ArrowLeft,
+  Loader2,
+  Monitor,
+  History,
+  Key,
+  Plus,
+  WifiOff,
+  RefreshCw,
+} from "lucide-react";
+import { CreateTokenDialog } from "@/components/runners/CreateTokenDialog";
+import { RunnerTokenCard } from "@/components/runners/RunnerTokenCard";
+import { ActiveConnectionsList } from "@/components/runners/ActiveConnectionsList";
+import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTable";
 import {
   useRunnerTokens,
-  useActiveConnections,
   useRevokeRunnerToken,
   useDeleteRunnerToken,
-} from "@/hooks/useRunners"
-import { toast } from "sonner"
+} from "@/hooks/useRunners";
+import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
+import { toast } from "sonner";
 
 export default function RunnersPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("active");
 
-  const { data: tokens, isLoading: tokensLoading } = useRunnerTokens();
-  const { data: activeConnections } = useActiveConnections(5000);
+  const {
+    data: tokens,
+    isLoading: tokensLoading,
+    error: tokensError,
+    refetch: refetchTokens,
+    isRefetching: isRefetchingTokens,
+  } = useRunnerTokens();
+  const { connections: activeConnections } = useRealtimeConnections();
   const revokeMutation = useRevokeRunnerToken();
   const deleteMutation = useDeleteRunnerToken();
 
   const handleBackToDashboard = () => {
-    router.push('/dashboard');
+    router.push("/dashboard");
   };
 
   const handleRevokeToken = async (tokenId: string) => {
     try {
       await revokeMutation.mutateAsync(tokenId);
     } catch (error) {
-      console.error('Failed to revoke token:', error);
+      console.error("Failed to revoke token:", error);
     }
   };
 
@@ -46,11 +61,11 @@ export default function RunnersPage() {
     try {
       await deleteMutation.mutateAsync(tokenId);
     } catch (error) {
-      console.error('Failed to delete token:', error);
+      console.error("Failed to delete token:", error);
     }
   };
 
-  const handleViewConnections = (tokenId: string) => {
+  const handleViewConnections = (_tokenId: string) => {
     // Switch to history tab and filter by token
     setActiveTab("history");
     toast.info("Viewing connections for selected token");
@@ -70,7 +85,7 @@ export default function RunnersPage() {
 
   // Don't render anything if no user (will redirect)
   if (!user) {
-    router.push('/');
+    router.push("/");
     return null;
   }
 
@@ -97,7 +112,10 @@ export default function RunnersPage() {
               Runner Management
             </h1>
             {activeConnectionCount > 0 && (
-              <Badge variant="outline" className="border-green-500/50 text-green-500">
+              <Badge
+                variant="outline"
+                className="border-green-500/50 text-green-500"
+              >
                 {activeConnectionCount} Active
               </Badge>
             )}
@@ -110,18 +128,26 @@ export default function RunnersPage() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Manage Desktop Runners</h2>
           <p className="text-gray-400">
-            Create tokens, monitor connections, and view connection history for your desktop runners
+            Create tokens, monitor connections, and view connection history for
+            your desktop runners
           </p>
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-6"
+        >
           <TabsList className="bg-[#1A1A1B] border border-gray-800">
             <TabsTrigger value="active" className="gap-2">
               <Monitor className="w-4 h-4" />
               Active Connections
               {activeConnectionCount > 0 && (
-                <Badge variant="outline" className="ml-1 border-green-500/50 text-green-500 text-xs">
+                <Badge
+                  variant="outline"
+                  className="ml-1 border-green-500/50 text-green-500 text-xs"
+                >
                   {activeConnectionCount}
                 </Badge>
               )}
@@ -134,7 +160,10 @@ export default function RunnersPage() {
               <Key className="w-4 h-4" />
               Runner Tokens
               {tokens && (
-                <Badge variant="outline" className="ml-1 border-[#00D9FF]/50 text-[#00D9FF] text-xs">
+                <Badge
+                  variant="outline"
+                  className="ml-1 border-[#00D9FF]/50 text-[#00D9FF] text-xs"
+                >
                   {tokens.length}
                 </Badge>
               )}
@@ -147,7 +176,7 @@ export default function RunnersPage() {
               <div>
                 <h3 className="text-xl font-semibold">Active Connections</h3>
                 <p className="text-sm text-gray-400">
-                  Real-time view of currently connected runners (auto-refreshes every 5 seconds)
+                  Real-time view of currently connected runners
                 </p>
               </div>
             </div>
@@ -184,6 +213,39 @@ export default function RunnersPage() {
                 <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF]" />
                 <span className="ml-3 text-gray-400">Loading tokens...</span>
               </div>
+            ) : tokensError ? (
+              <Card className="bg-[#1A1A1B] border-gray-800 p-12">
+                <div className="text-center">
+                  <WifiOff className="w-16 h-16 mx-auto text-gray-600 mb-4" />
+                  <h3 className="text-xl font-semibold text-gray-300 mb-2">
+                    Unable to Load Tokens
+                  </h3>
+                  <p className="text-gray-400 mb-6 max-w-md mx-auto">
+                    {tokensError.message?.includes("fetch failed") ||
+                    tokensError.message?.includes("proxy")
+                      ? "The backend server appears to be offline or unreachable. Please ensure the server is running and try again."
+                      : tokensError.message ||
+                        "An unexpected error occurred while loading tokens."}
+                  </p>
+                  <Button
+                    onClick={() => refetchTokens()}
+                    disabled={isRefetchingTokens}
+                    className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+                  >
+                    {isRefetchingTokens ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Retrying...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Try Again
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </Card>
             ) : !tokens || tokens.length === 0 ? (
               <Card className="bg-[#1A1A1B] border-gray-800 p-12">
                 <div className="text-center">

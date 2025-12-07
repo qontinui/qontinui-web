@@ -1,17 +1,17 @@
-'use client'
+"use client";
 
-import React, { useState, useEffect } from 'react'
-import { Search, X, SlidersHorizontal } from 'lucide-react'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import React, { useState, useEffect } from "react";
+import { Search, X, SlidersHorizontal } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,59 +19,63 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { cn } from '@/lib/utils'
-import type { SearchFilters, PackageCategory } from '@/types/code-packages'
-import { getCategoryLabel } from '@/types/code-packages'
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import type { SearchFilters, PackageCategory } from "@/types/code-packages";
+import { getCategoryLabel } from "@/types/code-packages";
 
 interface PackageSearchBarProps {
-  onSearch: (filters: SearchFilters) => void
-  initialFilters?: SearchFilters
-  className?: string
+  onSearch: (filters: SearchFilters) => void;
+  initialFilters?: SearchFilters;
+  className?: string;
 }
 
 const CATEGORIES: PackageCategory[] = [
-  'automation',
-  'utilities',
-  'integrations',
-  'patterns',
-  'workflows',
-  'testing',
-  'data-processing',
-  'ai-ml',
-  'web-scraping',
-  'other',
-]
+  "automation",
+  "utilities",
+  "integrations",
+  "patterns",
+  "workflows",
+  "testing",
+  "data-processing",
+  "ai-ml",
+  "web-scraping",
+  "other",
+];
 
 const SORT_OPTIONS = [
-  { value: 'popular', label: 'Most Popular' },
-  { value: 'recent', label: 'Recently Updated' },
-  { value: 'rating', label: 'Highest Rated' },
-  { value: 'downloads', label: 'Most Downloads' },
-  { value: 'name', label: 'Name (A-Z)' },
-] as const
+  { value: "popular", label: "Most Popular" },
+  { value: "recent", label: "Recently Updated" },
+  { value: "rating", label: "Highest Rated" },
+  { value: "downloads", label: "Most Downloads" },
+  { value: "name", label: "Name (A-Z)" },
+] as const;
 
 export function PackageSearchBar({
   onSearch,
   initialFilters,
   className,
 }: PackageSearchBarProps) {
-  const [query, setQuery] = useState(initialFilters?.query || '')
-  const [selectedCategory, setSelectedCategory] = useState<PackageCategory | undefined>(
-    initialFilters?.category
-  )
-  const [verifiedOnly, setVerifiedOnly] = useState(initialFilters?.verified_only || false)
-  const [sortBy, setSortBy] = useState<SearchFilters['sort_by']>(initialFilters?.sort_by || 'popular')
-  const [debouncedQuery, setDebouncedQuery] = useState(query)
+  const [query, setQuery] = useState(initialFilters?.query || "");
+  const [selectedCategory, setSelectedCategory] = useState<
+    PackageCategory | undefined
+  >(initialFilters?.category);
+  const [verifiedOnly, setVerifiedOnly] = useState(
+    initialFilters?.verified_only || false
+  );
+  const [sortBy, setSortBy] = useState<SearchFilters["sort_by"]>(
+    initialFilters?.sort_by || "popular"
+  );
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
 
   // Debounce search query
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedQuery(query)
-    }, 300)
+      setDebouncedQuery(query);
+    }, 300);
 
-    return () => clearTimeout(timer)
-  }, [query])
+    return () => clearTimeout(timer);
+  }, [query]);
 
   // Trigger search when filters change
   useEffect(() => {
@@ -80,29 +84,29 @@ export function PackageSearchBar({
       category: selectedCategory,
       verified_only: verifiedOnly,
       sort_by: sortBy,
-    }
-    onSearch(filters)
-  }, [debouncedQuery, selectedCategory, verifiedOnly, sortBy, onSearch])
+    };
+    onSearch(filters);
+  }, [debouncedQuery, selectedCategory, verifiedOnly, sortBy, onSearch]);
 
   const handleClearSearch = () => {
-    setQuery('')
-  }
+    setQuery("");
+  };
 
   const handleClearFilters = () => {
-    setSelectedCategory(undefined)
-    setVerifiedOnly(false)
-    setSortBy('popular')
-    setQuery('')
-  }
+    setSelectedCategory(undefined);
+    setVerifiedOnly(false);
+    setSortBy("popular");
+    setQuery("");
+  };
 
   const activeFiltersCount = [
     selectedCategory,
     verifiedOnly,
-    sortBy !== 'popular',
-  ].filter(Boolean).length
+    sortBy !== "popular",
+  ].filter(Boolean).length;
 
   return (
-    <div className={cn('space-y-3', className)}>
+    <div className={cn("space-y-3", className)}>
       {/* Main Search Bar */}
       <div className="flex gap-2">
         {/* Search Input */}
@@ -126,7 +130,12 @@ export function PackageSearchBar({
         </div>
 
         {/* Sort Dropdown */}
-        <Select value={sortBy} onValueChange={(value) => setSortBy(value as SearchFilters['sort_by'])}>
+        <Select
+          value={sortBy}
+          onValueChange={(value) =>
+            setSortBy(value as SearchFilters["sort_by"])
+          }
+        >
           <SelectTrigger className="w-[180px] bg-gray-900/50 border-gray-700">
             <SelectValue placeholder="Sort by..." />
           </SelectTrigger>
@@ -142,7 +151,10 @@ export function PackageSearchBar({
         {/* Filters Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="relative bg-gray-900/50 border-gray-700">
+            <Button
+              variant="outline"
+              className="relative bg-gray-900/50 border-gray-700"
+            >
               <SlidersHorizontal className="w-4 h-4 mr-2" />
               Filters
               {activeFiltersCount > 0 && (
@@ -176,7 +188,7 @@ export function PackageSearchBar({
                 key={category}
                 checked={selectedCategory === category}
                 onCheckedChange={(checked) => {
-                  setSelectedCategory(checked ? category : undefined)
+                  setSelectedCategory(checked ? category : undefined);
                 }}
               >
                 {getCategoryLabel(category)}
@@ -225,5 +237,5 @@ export function PackageSearchBar({
         </div>
       )}
     </div>
-  )
+  );
 }

@@ -1,9 +1,9 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import {
   Dialog,
   DialogContent,
@@ -11,23 +11,16 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertTriangle, Copy, Download, Plus } from "lucide-react"
-import { useCreateRunnerToken } from "@/hooks/useRunners"
-import type { RunnerTokenWithSecret } from "@/types/runner"
-import { ConnectionString } from "./ConnectionString"
-import { toast } from "sonner"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+// Removed unused Select components - using native select instead
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle, Copy, Download, Plus } from "lucide-react";
+import { useCreateRunnerToken } from "@/hooks/useRunners";
+import type { RunnerTokenWithSecret } from "@/types/runner";
+import { toast } from "sonner";
 
 const formSchema = z.object({
   name: z.string().min(1, "Token name is required").max(100, "Name too long"),
@@ -41,9 +34,13 @@ interface CreateTokenDialogProps {
   onSuccess?: (token: RunnerTokenWithSecret) => void;
 }
 
-export function CreateTokenDialog({ children, onSuccess }: CreateTokenDialogProps) {
+export function CreateTokenDialog({
+  children,
+  onSuccess,
+}: CreateTokenDialogProps) {
   const [open, setOpen] = useState(false);
-  const [createdToken, setCreatedToken] = useState<RunnerTokenWithSecret | null>(null);
+  const [createdToken, setCreatedToken] =
+    useState<RunnerTokenWithSecret | null>(null);
   const createMutation = useCreateRunnerToken();
 
   const {
@@ -64,7 +61,8 @@ export function CreateTokenDialog({ children, onSuccess }: CreateTokenDialogProp
   const expiresInDays = watch("expiresInDays");
 
   const onSubmit = async (data: FormData) => {
-    const expiryDays = data.expiresInDays === "never" ? null : parseInt(data.expiresInDays, 10);
+    const expiryDays =
+      data.expiresInDays === "never" ? null : parseInt(data.expiresInDays, 10);
 
     try {
       const token = await createMutation.mutateAsync({
@@ -124,7 +122,9 @@ export function CreateTokenDialog({ children, onSuccess }: CreateTokenDialogProp
       <DialogContent className="bg-[#1A1A1B] border-gray-800 max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-2xl">
-            {createdToken ? "Token Created Successfully" : "Create Runner Token"}
+            {createdToken
+              ? "Token Created Successfully"
+              : "Create Runner Token"}
           </DialogTitle>
           <DialogDescription>
             {createdToken
@@ -139,7 +139,8 @@ export function CreateTokenDialog({ children, onSuccess }: CreateTokenDialogProp
             <Alert className="bg-amber-500/10 border-amber-500/50">
               <AlertTriangle className="h-4 w-4 text-amber-500" />
               <AlertDescription className="text-amber-200">
-                The token will only be shown once after creation. Make sure to save it securely.
+                The token will only be shown once after creation. Make sure to
+                save it securely.
               </AlertDescription>
             </Alert>
 
@@ -203,7 +204,8 @@ export function CreateTokenDialog({ children, onSuccess }: CreateTokenDialogProp
             {/* Success Alert */}
             <Alert className="bg-green-500/10 border-green-500/50">
               <AlertDescription className="text-green-200">
-                Token created successfully! Make sure to copy it now - it won't be shown again.
+                Token created successfully! Make sure to copy it now - it won't
+                be shown again.
               </AlertDescription>
             </Alert>
 
@@ -241,7 +243,9 @@ export function CreateTokenDialog({ children, onSuccess }: CreateTokenDialogProp
             <div className="bg-[#0A0A0B] border border-gray-700 rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-400">Name:</span>
-                <span className="text-white font-medium">{createdToken.name}</span>
+                <span className="text-white font-medium">
+                  {createdToken.name}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-400">Expires:</span>
@@ -261,7 +265,10 @@ export function CreateTokenDialog({ children, onSuccess }: CreateTokenDialogProp
 
             {/* Close Button */}
             <div className="flex justify-end">
-              <Button onClick={handleClose} className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black">
+              <Button
+                onClick={handleClose}
+                className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+              >
                 Done
               </Button>
             </div>

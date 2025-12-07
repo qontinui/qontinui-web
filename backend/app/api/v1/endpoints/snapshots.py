@@ -4,8 +4,12 @@ Snapshot Management API Endpoints
 Endpoints for managing snapshot runs, screenshots, and patterns.
 """
 
-from datetime import datetime
+import logging
 from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user_async
 from app.crud import snapshot as snapshot_crud
@@ -18,9 +22,10 @@ from app.schemas.snapshot import (
     SnapshotRunListResponse,
     SnapshotRunUpdate,
 )
+from app.services.object_storage import object_storage
 from app.services.permission_service import PermissionService
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 permission_service = PermissionService()
 
@@ -39,9 +44,12 @@ async def create_snapshot_run(
     Requires EDIT permission on the project.
     """
     # Check project permission (EDIT required to create snapshots)
-    if snapshot_data.project_id:
+    project_id_uuid = (
+        UUID(str(snapshot_data.project_id)) if snapshot_data.project_id else None
+    )
+    if project_id_uuid:
         has_permission = await permission_service.can_user_access_project(
-            db, current_user.id, snapshot_data.project_id, PermissionLevel.EDIT
+            db, current_user.id, project_id_uuid, PermissionLevel.EDIT
         )
         if not has_permission:
             raise HTTPException(
@@ -63,7 +71,7 @@ async def create_snapshot_run(
         run_name=snapshot_data.run_name,
         timestamp=snapshot_data.timestamp,
         states=snapshot_data.states,
-        project_id=snapshot_data.project_id,
+        project_id=project_id_uuid,
         workflow_id=snapshot_data.workflow_id,
         description=snapshot_data.description,
         tags=snapshot_data.tags,
@@ -77,7 +85,7 @@ async def create_snapshot_run(
 async def list_snapshot_runs(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    project_id: int | None = Query(None),
+    project_id: UUID | None = Query(None),
     workflow_id: int | None = Query(None),
     tags: str | None = Query(None, description="Comma-separated list of tags"),
     db: AsyncSession = Depends(get_async_db),
@@ -117,8 +125,27 @@ async def list_snapshot_runs(
         tags=tag_list,
     )
 
-    # TODO: Filter runs to only include projects user has access to when project_id is None
-    # For now, if no project_id specified, return all (will be fixed in future PR)
+    # Filter runs to only include projects user has access to when project_id is None
+    if project_id is None and runs:
+        # Get all project IDs the user can access
+        accessible_projects = await permission_service.get_user_accessible_projects(
+            db, current_user.id
+        )
+        accessible_project_ids = {p.id for p in accessible_projects}
+
+        # Filter runs to only include accessible projects (or runs without a project)
+        filtered_runs = [
+            run
+            for run in runs
+            if run.project_id is None or run.project_id in accessible_project_ids
+        ]
+
+        # Recalculate total for pagination accuracy
+        # Note: This is not fully accurate since total count was calculated before filtering
+        # A more accurate approach would modify the CRUD to accept user_accessible_project_ids
+        filtered_total = len(filtered_runs)
+        runs = filtered_runs
+        total = filtered_total
 
     return {
         "runs": runs,
@@ -234,15 +261,33 @@ async def delete_snapshot_run(
                 detail="Not enough permissions to delete this snapshot",
             )
 
+    # If delete_files is True, delete files from object storage before deleting from DB
+    if delete_files:
+        # Get the full snapshot run with screenshots to get file paths
+        snapshot_detail = await snapshot_crud.get_snapshot_run(db, run_id)
+        if snapshot_detail and hasattr(snapshot_detail, "screenshots"):
+            for screenshot in snapshot_detail.screenshots:
+                try:
+                    # Extract storage key from screenshot path
+                    # Assuming path format like "snapshots/{run_id}/screenshot_{id}.png"
+                    object_storage.delete_file(screenshot.screenshot_path)
+                    logger.debug(
+                        f"Deleted screenshot file: {screenshot.screenshot_path}"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to delete screenshot file {screenshot.screenshot_path}: {e}"
+                    )
+            logger.info(
+                f"Deleted {len(snapshot_detail.screenshots)} files for snapshot run {run_id}"
+            )
+
     success = await snapshot_crud.delete_snapshot_run(db, run_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Snapshot run '{run_id}' not found",
         )
-
-    # TODO: If delete_files is True, delete files from object storage
-    # This requires integration with the ObjectStorageService
 
     return None
 

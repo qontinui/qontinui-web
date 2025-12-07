@@ -8,20 +8,20 @@
  * - Auto-closes on blur
  */
 
-'use client';
+"use client";
 
-import React, { useEffect, useRef, useState } from 'react';
-import { usePropertyAdapter } from './property-adapter';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
+import React, { useEffect, useRef } from "react";
+import { usePropertyAdapter } from "./property-adapter";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@/components/ui/popover';
-import { Badge } from '@/components/ui/badge';
-import { Check, X } from 'lucide-react';
+} from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
+import { Check, X } from "lucide-react";
 
 export interface QuickEditPopoverProps {
   actionId: string;
@@ -38,8 +38,13 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
   trigger,
   position,
 }) => {
-  const { action, updateConfig, saveChanges, discardChanges, hasUnsavedChanges } =
-    usePropertyAdapter(actionId);
+  const {
+    action,
+    updateConfig,
+    saveChanges,
+    discardChanges,
+    hasUnsavedChanges,
+  } = usePropertyAdapter(actionId);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,10 +65,10 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       e.preventDefault();
       handleSave();
-    } else if (e.key === 'Escape') {
+    } else if (e.key === "Escape") {
       e.preventDefault();
       handleCancel();
     }
@@ -73,16 +78,16 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
 
   // Render appropriate quick edit fields based on action type
   const renderQuickEditFields = () => {
-    switch (action.type) {
-      case 'CLICK':
+    switch (action.type as string) {
+      case "CLICK":
         return (
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Target</Label>
               <Input
                 ref={inputRef}
-                value={action.config.target || ''}
-                onChange={(e) => updateConfig('target', e.target.value)}
+                value={action.config.target || ""}
+                onChange={(e) => updateConfig("target", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
                 placeholder="Click target..."
@@ -93,7 +98,9 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               <Input
                 type="number"
                 value={action.config.numberOfClicks || 1}
-                onChange={(e) => updateConfig('numberOfClicks', Number(e.target.value))}
+                onChange={(e) =>
+                  updateConfig("numberOfClicks", Number(e.target.value))
+                }
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
                 min="1"
@@ -102,15 +109,15 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           </div>
         );
 
-      case 'TYPE':
+      case "TYPE":
         return (
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Text to Type</Label>
               <Input
                 ref={inputRef}
-                value={action.config.text || ''}
-                onChange={(e) => updateConfig('text', e.target.value)}
+                value={action.config.text || ""}
+                onChange={(e) => updateConfig("text", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
                 placeholder="Enter text..."
@@ -121,7 +128,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               <Input
                 type="number"
                 value={action.config.delay || 0}
-                onChange={(e) => updateConfig('delay', Number(e.target.value))}
+                onChange={(e) => updateConfig("delay", Number(e.target.value))}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
                 min="0"
@@ -130,7 +137,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           </div>
         );
 
-      case 'WAIT':
+      case "WAIT":
         return (
           <div className="space-y-1.5">
             <Label className="text-xs">Duration (ms)</Label>
@@ -138,7 +145,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               ref={inputRef}
               type="number"
               value={action.config.duration || 1000}
-              onChange={(e) => updateConfig('duration', Number(e.target.value))}
+              onChange={(e) => updateConfig("duration", Number(e.target.value))}
               onKeyDown={handleKeyDown}
               className="h-8 text-sm"
               min="0"
@@ -146,14 +153,14 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           </div>
         );
 
-      case 'IF':
+      case "IF":
         return (
           <div className="space-y-1.5">
             <Label className="text-xs">Condition</Label>
             <Input
               ref={inputRef}
-              value={action.config.condition || ''}
-              onChange={(e) => updateConfig('condition', e.target.value)}
+              value={action.config.condition || ""}
+              onChange={(e) => updateConfig("condition", e.target.value)}
               onKeyDown={handleKeyDown}
               className="h-8 text-sm"
               placeholder="Enter condition..."
@@ -161,15 +168,15 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           </div>
         );
 
-      case 'SET_VARIABLE':
+      case "SET_VARIABLE":
         return (
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Variable Name</Label>
               <Input
                 ref={inputRef}
-                value={action.config.variableName || ''}
-                onChange={(e) => updateConfig('variableName', e.target.value)}
+                value={action.config.variableName || ""}
+                onChange={(e) => updateConfig("variableName", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm font-mono"
                 placeholder="variableName"
@@ -178,8 +185,8 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
             <div className="space-y-1.5">
               <Label className="text-xs">Value</Label>
               <Input
-                value={action.config.value || ''}
-                onChange={(e) => updateConfig('value', e.target.value)}
+                value={action.config.value || ""}
+                onChange={(e) => updateConfig("value", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
                 placeholder="Value..."
@@ -188,26 +195,28 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           </div>
         );
 
-      case 'LOOP':
+      case "LOOP":
         return (
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Loop Type</Label>
               <Input
                 ref={inputRef}
-                value={action.config.loopType || 'count'}
-                onChange={(e) => updateConfig('loopType', e.target.value)}
+                value={action.config.loopType || "count"}
+                onChange={(e) => updateConfig("loopType", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
               />
             </div>
-            {action.config.loopType === 'count' && (
+            {action.config.loopType === "count" && (
               <div className="space-y-1.5">
                 <Label className="text-xs">Count</Label>
                 <Input
                   type="number"
                   value={action.config.count || 1}
-                  onChange={(e) => updateConfig('count', Number(e.target.value))}
+                  onChange={(e) =>
+                    updateConfig("count", Number(e.target.value))
+                  }
                   onKeyDown={handleKeyDown}
                   className="h-8 text-sm"
                   min="1"
@@ -220,7 +229,8 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
       default:
         return (
           <div className="text-xs text-gray-400">
-            Quick edit not available for {action.type}. Use the full properties panel.
+            Quick edit not available for {action.type}. Use the full properties
+            panel.
           </div>
         );
     }
@@ -233,19 +243,30 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
         className="w-80 bg-[#1e1e1e] border-gray-700"
         side="right"
         align="start"
-        style={position ? { position: 'fixed', top: position.y, left: position.x } : undefined}
+        {...(position && {
+          style: {
+            position: "fixed",
+            top: position.y,
+            left: position.x,
+          } as React.CSSProperties,
+        })}
       >
         <div className="space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h4 className="text-sm font-semibold text-gray-200">Quick Edit</h4>
+              <h4 className="text-sm font-semibold text-gray-200">
+                Quick Edit
+              </h4>
               <Badge variant="secondary" className="text-xs mt-1">
                 {action.type}
               </Badge>
             </div>
             {hasUnsavedChanges && (
-              <div className="w-2 h-2 rounded-full bg-yellow-400" title="Unsaved changes" />
+              <div
+                className="w-2 h-2 rounded-full bg-yellow-400"
+                title="Unsaved changes"
+              />
             )}
           </div>
 
@@ -275,8 +296,9 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
 
           {/* Keyboard shortcuts hint */}
           <div className="text-xs text-gray-500 text-center pt-1 border-t border-gray-800">
-            Press <kbd className="px-1 py-0.5 bg-gray-800 rounded">Enter</kbd> to save,{' '}
-            <kbd className="px-1 py-0.5 bg-gray-800 rounded">Esc</kbd> to cancel
+            Press <kbd className="px-1 py-0.5 bg-gray-800 rounded">Enter</kbd>{" "}
+            to save, <kbd className="px-1 py-0.5 bg-gray-800 rounded">Esc</kbd>{" "}
+            to cancel
           </div>
         </div>
       </PopoverContent>

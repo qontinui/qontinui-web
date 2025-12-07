@@ -8,10 +8,11 @@
  * - Automatic cleanup
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Lock, ResourceType } from '@/types/collaboration';
-import { lockService } from '@/services/lock-service';
-import { websocketCollaborationService } from '@/services/websocket-collaboration-service';
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { Lock, ResourceType } from "@/types/collaboration";
+import { lockService } from "@/services/lock-service";
+import { websocketCollaborationService } from "@/services/websocket-collaboration-service";
+import { useAuth } from "@/contexts/auth-context";
 
 // ============================================================================
 // Hook Return Type
@@ -43,6 +44,7 @@ export function useEditLock(
   resourceId: string,
   autoAcquire: boolean = false
 ): UseEditLockReturn {
+  const { user } = useAuth();
   const [lock, setLock] = useState<Lock | null>(null);
   const [isLocked, setIsLocked] = useState(false);
   const [lockedByMe, setLockedByMe] = useState(false);
@@ -67,8 +69,8 @@ export function useEditLock(
    * Setup WebSocket listeners for lock updates
    */
   useEffect(() => {
-    const unsubscribeLockAcquired = websocketCollaborationService.onLockAcquired(
-      (acquiredLock) => {
+    const unsubscribeLockAcquired =
+      websocketCollaborationService.onLockAcquired((acquiredLock) => {
         if (
           acquiredLock.project_id === projectId &&
           acquiredLock.resource_type === resourceType &&
@@ -77,11 +79,10 @@ export function useEditLock(
           setLock(acquiredLock);
           setIsLocked(true);
         }
-      }
-    );
+      });
 
-    const unsubscribeLockReleased = websocketCollaborationService.onLockReleased(
-      (releasedLock) => {
+    const unsubscribeLockReleased =
+      websocketCollaborationService.onLockReleased((releasedLock) => {
         if (
           releasedLock.project_id === projectId &&
           releasedLock.resource_type === resourceType &&
@@ -91,8 +92,7 @@ export function useEditLock(
           setIsLocked(false);
           setLockedByMe(false);
         }
-      }
-    );
+      });
 
     return () => {
       unsubscribeLockAcquired();
@@ -112,7 +112,10 @@ export function useEditLock(
       if (lockedByMe && lock) {
         // Release lock when component unmounts
         lockService.releaseLock(lock.id).catch((err) => {
-          console.error('[useEditLock] Failed to release lock on unmount:', err);
+          console.error(
+            "[useEditLock] Failed to release lock on unmount:",
+            err
+          );
         });
       }
     };
@@ -133,12 +136,12 @@ export function useEditLock(
       );
 
       if (isMounted.current) {
-        setIsLocked(status.is_locked);
-        setLockedByMe(status.locked_by_me);
-        setLock(status.lock || null);
+        setIsLocked(!!status);
+        setLockedByMe(status?.user_id === user?.id);
+        setLock(status);
       }
     } catch (err) {
-      console.error('[useEditLock] Failed to check lock status:', err);
+      console.error("[useEditLock] Failed to check lock status:", err);
       if (isMounted.current) {
         setError(err as Error);
       }
@@ -154,7 +157,7 @@ export function useEditLock(
    */
   const acquireLock = useCallback(async () => {
     if (lockedByMe) {
-      console.warn('[useEditLock] Lock already acquired');
+      console.warn("[useEditLock] Lock already acquired");
       return;
     }
 
@@ -175,7 +178,7 @@ export function useEditLock(
         setLockedByMe(true);
       }
     } catch (err) {
-      console.error('[useEditLock] Failed to acquire lock:', err);
+      console.error("[useEditLock] Failed to acquire lock:", err);
       if (isMounted.current) {
         setError(err as Error);
       }
@@ -192,7 +195,7 @@ export function useEditLock(
    */
   const releaseLock = useCallback(async () => {
     if (!lock || !lockedByMe) {
-      console.warn('[useEditLock] No lock to release');
+      console.warn("[useEditLock] No lock to release");
       return;
     }
 
@@ -208,7 +211,7 @@ export function useEditLock(
         setLockedByMe(false);
       }
     } catch (err) {
-      console.error('[useEditLock] Failed to release lock:', err);
+      console.error("[useEditLock] Failed to release lock:", err);
       if (isMounted.current) {
         setError(err as Error);
       }
@@ -225,7 +228,7 @@ export function useEditLock(
    */
   const forceRelease = useCallback(async () => {
     if (!lock) {
-      console.warn('[useEditLock] No lock to force release');
+      console.warn("[useEditLock] No lock to force release");
       return;
     }
 
@@ -241,7 +244,7 @@ export function useEditLock(
         setLockedByMe(false);
       }
     } catch (err) {
-      console.error('[useEditLock] Failed to force release lock:', err);
+      console.error("[useEditLock] Failed to force release lock:", err);
       if (isMounted.current) {
         setError(err as Error);
       }

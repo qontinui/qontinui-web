@@ -10,6 +10,9 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.project import Project
 from app.models.runner_connection import RunnerConnection
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
@@ -20,8 +23,6 @@ from app.models.test_deficiency import (
     TestDeficiency,
 )
 from app.models.user import User
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .conftest import create_test_deficiencies, create_test_runs
 
@@ -103,7 +104,7 @@ class TestSoftwareTestRunModel:
     ):
         """Test querying test runs by project."""
         # Create multiple runs
-        runs = await create_test_runs(
+        await create_test_runs(
             db_session, test_project, test_runner_connection, count=5
         )
 

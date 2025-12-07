@@ -5,7 +5,7 @@ Lightweight model (< 5M parameters) for button detection and classification.
 Supports pretrained backbones from ImageNet.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -24,7 +24,7 @@ class ConvBlock(nn.Module):
         stride: int = 1,
         padding: int = 1,
     ):
-        super(ConvBlock, self).__init__()
+        super().__init__()
         self.conv = nn.Conv2d(
             in_channels,
             out_channels,
@@ -72,7 +72,7 @@ class ButtonCNN(nn.Module):
             pretrained: Use pretrained ImageNet weights (for backbone)
             dropout: Dropout rate for regularization
         """
-        super(ButtonCNN, self).__init__()
+        super().__init__()
 
         self.num_button_types = num_button_types
         self.architecture = architecture
@@ -204,7 +204,7 @@ class ButtonCNN(nn.Module):
             nn.Sigmoid(),
         )
 
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """
         Forward pass
 
@@ -238,7 +238,7 @@ class ButtonCNN(nn.Module):
             "confidence": confidence,
         }
 
-    def predict(self, x: torch.Tensor, threshold: float = 0.5) -> Dict[str, Any]:
+    def predict(self, x: torch.Tensor, threshold: float = 0.5) -> dict[str, Any]:
         """
         Make predictions with post-processing
 
@@ -289,7 +289,7 @@ class ButtonCNN(nn.Module):
             param.requires_grad = True
 
 
-def create_button_cnn(config: Dict[str, Any]) -> ButtonCNN:
+def create_button_cnn(config: dict[str, Any]) -> ButtonCNN:
     """
     Factory function to create ButtonCNN from configuration
 

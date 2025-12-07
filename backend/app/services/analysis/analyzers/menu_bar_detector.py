@@ -11,7 +11,7 @@ Characteristics:
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -57,7 +57,7 @@ class MenuBarDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "top_region_height": 100,  # Search in top N pixels
             "min_menu_height": 20,
@@ -84,7 +84,7 @@ class MenuBarDetector(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, (img_color, img_gray) in enumerate(
-            zip(images_color, images_gray)
+            zip(images_color, images_gray, strict=False)
         ):
             elements = await self._analyze_screenshot(
                 img_color, img_gray, screenshot_idx, params
@@ -105,7 +105,7 @@ class MenuBarDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
@@ -113,7 +113,7 @@ class MenuBarDetector(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -126,10 +126,10 @@ class MenuBarDetector(BaseAnalyzer):
         img_color: np.ndarray,
         img_gray: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot for menu bars"""
-        elements = []
+        elements: list[DetectedElement] = []
 
         height, width = img_gray.shape
 
@@ -220,8 +220,8 @@ class MenuBarDetector(BaseAnalyzer):
         return elements
 
     def _group_consecutive_rows(
-        self, rows: np.ndarray, params: Dict[str, Any]
-    ) -> List[tuple]:
+        self, rows: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple]:
         """Group consecutive row indices into regions"""
         if len(rows) == 0:
             return []
@@ -239,7 +239,7 @@ class MenuBarDetector(BaseAnalyzer):
         regions.append((start, prev + 1))
         return regions
 
-    def _detect_text_items(self, menu_region: np.ndarray) -> List[int]:
+    def _detect_text_items(self, menu_region: np.ndarray) -> list[int]:
         """Detect text items in menu region by finding vertical gaps"""
         # Find vertical projection (sum across height)
         vertical_projection = np.sum(menu_region < 200, axis=0)  # Dark pixels
@@ -259,7 +259,7 @@ class MenuBarDetector(BaseAnalyzer):
 
         return list(starts)
 
-    def _check_even_spacing(self, text_items: List[int], tolerance: float) -> bool:
+    def _check_even_spacing(self, text_items: list[int], tolerance: float) -> bool:
         """Check if text items are somewhat evenly spaced"""
         if len(text_items) < 3:
             return True  # Not enough items to check
@@ -275,7 +275,7 @@ class MenuBarDetector(BaseAnalyzer):
         std_gap = np.std(gaps)
 
         # Check if variation is within tolerance
-        return (std_gap / mean_gap) <= tolerance if mean_gap > 0 else False
+        return (std_gap / mean_gap) <= tolerance if mean_gap > 0 else False  # type: ignore[return-value]
 
     def _calculate_confidence(
         self,

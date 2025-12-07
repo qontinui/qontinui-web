@@ -4,37 +4,50 @@
  * Allows users to select region analyzers, configure parameters, and run region analysis on annotation sets
  */
 
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-import { Slider } from '@/components/ui/slider'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import { Play, Settings2, ChevronDown, Loader2, Zap, Grid3x3 } from 'lucide-react'
-import { toast } from 'sonner'
+} from "@/components/ui/collapsible";
+import {
+  Play,
+  Settings2,
+  ChevronDown,
+  Loader2,
+  Zap,
+  Grid3x3,
+} from "lucide-react";
+import { toast } from "sonner";
 import {
   listRegionAnalyzers,
   runRegionAnalysis,
   runQuickRegionAnalysis,
   type RegionAnalyzerInfo,
   type RegionAnalysisResponse,
-} from '@/services/regionAnalysis'
+} from "@/services/regionAnalysis";
 
 interface RegionAnalysisPanelProps {
-  annotationSetId: string
-  token: string
-  onAnalysisComplete?: (results: RegionAnalysisResponse) => void
+  annotationSetId: string;
+  token: string;
+  onAnalysisComplete?: (results: RegionAnalysisResponse) => void;
 }
 
 export function RegionAnalysisPanel({
@@ -42,74 +55,82 @@ export function RegionAnalysisPanel({
   token,
   onAnalysisComplete,
 }: RegionAnalysisPanelProps) {
-  const [analyzers, setAnalyzers] = useState<RegionAnalyzerInfo[]>([])
-  const [selectedAnalyzers, setSelectedAnalyzers] = useState<Set<string>>(new Set())
-  const [analyzerConfigs, setAnalyzerConfigs] = useState<Record<string, Record<string, any>>>({})
-  const [isLoadingAnalyzers, setIsLoadingAnalyzers] = useState(true)
-  const [isRunning, setIsRunning] = useState(false)
+  const [analyzers, setAnalyzers] = useState<RegionAnalyzerInfo[]>([]);
+  const [selectedAnalyzers, setSelectedAnalyzers] = useState<Set<string>>(
+    new Set()
+  );
+  const [analyzerConfigs, setAnalyzerConfigs] = useState<
+    Record<string, Record<string, any>>
+  >({});
+  const [isLoadingAnalyzers, setIsLoadingAnalyzers] = useState(true);
+  const [isRunning, setIsRunning] = useState(false);
 
   // Analysis options
-  const [fuseResults, setFuseResults] = useState(true)
-  const [saveToDatabase, setSaveToDatabase] = useState(true)
-  const [overlapThreshold, setOverlapThreshold] = useState(0.5)
-  const [runInParallel, setRunInParallel] = useState(true)
+  const [fuseResults, setFuseResults] = useState(true);
+  const [saveToDatabase, setSaveToDatabase] = useState(true);
+  const [overlapThreshold, setOverlapThreshold] = useState(0.5);
+  const [runInParallel, setRunInParallel] = useState(true);
 
   // Load available analyzers
   useEffect(() => {
-    loadAnalyzers()
-  }, [token])
+    loadAnalyzers();
+  }, [token]);
 
   const loadAnalyzers = async () => {
     try {
-      setIsLoadingAnalyzers(true)
-      const data = await listRegionAnalyzers(token)
-      setAnalyzers(data)
+      setIsLoadingAnalyzers(true);
+      const data = await listRegionAnalyzers(token);
+      setAnalyzers(data);
 
       // Select all analyzers by default
-      setSelectedAnalyzers(new Set(data.map(a => a.name)))
+      setSelectedAnalyzers(new Set(data.map((a) => a.name)));
 
       // Initialize configs with default parameters
-      const configs: Record<string, Record<string, any>> = {}
-      data.forEach(analyzer => {
-        configs[analyzer.name] = { ...analyzer.default_parameters }
-      })
-      setAnalyzerConfigs(configs)
+      const configs: Record<string, Record<string, any>> = {};
+      data.forEach((analyzer) => {
+        configs[analyzer.name] = { ...analyzer.default_parameters };
+      });
+      setAnalyzerConfigs(configs);
     } catch (error) {
-      console.error('Error loading region analyzers:', error)
-      toast.error('Failed to load region analyzers')
+      console.error("Error loading region analyzers:", error);
+      toast.error("Failed to load region analyzers");
     } finally {
-      setIsLoadingAnalyzers(false)
+      setIsLoadingAnalyzers(false);
     }
-  }
+  };
 
   const toggleAnalyzer = (name: string) => {
-    const newSelected = new Set(selectedAnalyzers)
+    const newSelected = new Set(selectedAnalyzers);
     if (newSelected.has(name)) {
-      newSelected.delete(name)
+      newSelected.delete(name);
     } else {
-      newSelected.add(name)
+      newSelected.add(name);
     }
-    setSelectedAnalyzers(newSelected)
-  }
+    setSelectedAnalyzers(newSelected);
+  };
 
-  const updateAnalyzerConfig = (analyzerName: string, param: string, value: any) => {
-    setAnalyzerConfigs(prev => ({
+  const updateAnalyzerConfig = (
+    analyzerName: string,
+    param: string,
+    value: any
+  ) => {
+    setAnalyzerConfigs((prev) => ({
       ...prev,
       [analyzerName]: {
         ...prev[analyzerName],
         [param]: value,
-      }
-    }))
-  }
+      },
+    }));
+  };
 
   const handleRunAnalysis = async () => {
     if (selectedAnalyzers.size === 0) {
-      toast.error('Please select at least one analyzer')
-      return
+      toast.error("Please select at least one analyzer");
+      return;
     }
 
     try {
-      setIsRunning(true)
+      setIsRunning(true);
 
       const results = await runRegionAnalysis(
         {
@@ -122,36 +143,36 @@ export function RegionAnalysisPanel({
           save_to_database: saveToDatabase,
         },
         token
-      )
+      );
 
-      const regionCount = results.fused_regions?.length || 0
-      const gridCellCount = results.fusion_stats?.total_grid_cells || 0
+      const regionCount = results.fused_regions?.length || 0;
+      const gridCellCount = results.fusion_stats?.total_grid_cells || 0;
 
-      let message = `Analysis complete! Found ${regionCount} region${regionCount !== 1 ? 's' : ''}`
+      let message = `Analysis complete! Found ${regionCount} region${regionCount !== 1 ? "s" : ""}`;
       if (gridCellCount > 0) {
-        message += ` with ${gridCellCount} grid cell${gridCellCount !== 1 ? 's' : ''}`
+        message += ` with ${gridCellCount} grid cell${gridCellCount !== 1 ? "s" : ""}`;
       }
-      toast.success(message)
+      toast.success(message);
 
       if (onAnalysisComplete) {
-        onAnalysisComplete(results)
+        onAnalysisComplete(results);
       }
     } catch (error) {
-      console.error('Error running region analysis:', error)
-      toast.error('Region analysis failed: ' + (error as Error).message)
+      console.error("Error running region analysis:", error);
+      toast.error("Region analysis failed: " + (error as Error).message);
     } finally {
-      setIsRunning(false)
+      setIsRunning(false);
     }
-  }
+  };
 
   const handleQuickAnalysis = async () => {
     if (selectedAnalyzers.size === 0) {
-      toast.error('Please select at least one analyzer')
-      return
+      toast.error("Please select at least one analyzer");
+      return;
     }
 
     try {
-      setIsRunning(true)
+      setIsRunning(true);
 
       const results = await runQuickRegionAnalysis(
         {
@@ -160,20 +181,20 @@ export function RegionAnalysisPanel({
           fuse_results: fuseResults,
         },
         token
-      )
+      );
 
-      toast.success(`Quick region analysis complete!`)
+      toast.success(`Quick region analysis complete!`);
 
       if (onAnalysisComplete) {
-        onAnalysisComplete(results)
+        onAnalysisComplete(results);
       }
     } catch (error) {
-      console.error('Error running quick region analysis:', error)
-      toast.error('Quick region analysis failed')
+      console.error("Error running quick region analysis:", error);
+      toast.error("Quick region analysis failed");
     } finally {
-      setIsRunning(false)
+      setIsRunning(false);
     }
-  }
+  };
 
   if (isLoadingAnalyzers) {
     return (
@@ -184,17 +205,20 @@ export function RegionAnalysisPanel({
           </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   // Group analyzers by type
-  const analyzersByType = analyzers.reduce((acc, analyzer) => {
-    if (!acc[analyzer.type]) {
-      acc[analyzer.type] = []
-    }
-    acc[analyzer.type].push(analyzer)
-    return acc
-  }, {} as Record<string, RegionAnalyzerInfo[]>)
+  const analyzersByType = analyzers.reduce(
+    (acc, analyzer) => {
+      if (!acc[analyzer.type]) {
+        acc[analyzer.type] = [];
+      }
+      acc[analyzer.type]!.push(analyzer);
+      return acc;
+    },
+    {} as Record<string, RegionAnalyzerInfo[]>
+  );
 
   return (
     <Card>
@@ -204,7 +228,8 @@ export function RegionAnalysisPanel({
           Region Analysis Configuration
         </CardTitle>
         <CardDescription>
-          Select region analyzers and configure parameters to detect UI regions and grids
+          Select region analyzers and configure parameters to detect UI regions
+          and grids
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -216,7 +241,9 @@ export function RegionAnalysisPanel({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSelectedAnalyzers(new Set(analyzers.map(a => a.name)))}
+                onClick={() =>
+                  setSelectedAnalyzers(new Set(analyzers.map((a) => a.name)))
+                }
               >
                 Select All
               </Button>
@@ -236,20 +263,21 @@ export function RegionAnalysisPanel({
                 <div key={type} className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="font-medium">
-                      {type.replace('_', ' ').toUpperCase()}
+                      {type.replace("_", " ").toUpperCase()}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
-                      {typeAnalyzers.length} analyzer{typeAnalyzers.length > 1 ? 's' : ''}
+                      {typeAnalyzers.length} analyzer
+                      {typeAnalyzers.length > 1 ? "s" : ""}
                     </span>
                   </div>
 
-                  {typeAnalyzers.map(analyzer => (
+                  {typeAnalyzers.map((analyzer) => (
                     <Collapsible key={analyzer.name}>
                       <div
                         className={`border rounded-lg p-3 transition-colors ${
                           selectedAnalyzers.has(analyzer.name)
-                            ? 'border-primary bg-accent'
-                            : 'border-border'
+                            ? "border-primary bg-accent"
+                            : "border-border"
                         }`}
                       >
                         <div className="flex items-start justify-between">
@@ -257,13 +285,18 @@ export function RegionAnalysisPanel({
                             <div className="flex items-center gap-2">
                               <Switch
                                 checked={selectedAnalyzers.has(analyzer.name)}
-                                onCheckedChange={() => toggleAnalyzer(analyzer.name)}
+                                onCheckedChange={() =>
+                                  toggleAnalyzer(analyzer.name)
+                                }
                               />
                               <div>
                                 <div className="font-medium flex items-center gap-2">
                                   {analyzer.name}
                                   {analyzer.detects_grids && (
-                                    <Badge variant="secondary" className="text-xs">
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-xs"
+                                    >
                                       <Grid3x3 className="h-3 w-3 mr-1" />
                                       Grid Detection
                                     </Badge>
@@ -271,7 +304,8 @@ export function RegionAnalysisPanel({
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   v{analyzer.version}
-                                  {analyzer.supports_multi_screenshot && ' • Multi-screenshot'}
+                                  {analyzer.supports_multi_screenshot &&
+                                    " • Multi-screenshot"}
                                   {analyzer.required_screenshots > 1 &&
                                     ` • Requires ${analyzer.required_screenshots}+ screenshots`}
                                 </div>
@@ -280,59 +314,84 @@ export function RegionAnalysisPanel({
                           </div>
 
                           {selectedAnalyzers.has(analyzer.name) &&
-                            Object.keys(analyzer.default_parameters).length > 0 && (
-                            <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <Settings2 className="h-4 w-4 mr-2" />
-                                Configure
-                                <ChevronDown className="h-4 w-4 ml-2" />
-                              </Button>
-                            </CollapsibleTrigger>
-                          )}
+                            Object.keys(analyzer.default_parameters).length >
+                              0 && (
+                              <CollapsibleTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <Settings2 className="h-4 w-4 mr-2" />
+                                  Configure
+                                  <ChevronDown className="h-4 w-4 ml-2" />
+                                </Button>
+                              </CollapsibleTrigger>
+                            )}
                         </div>
 
                         <CollapsibleContent className="mt-3">
                           <Separator className="mb-3" />
                           <div className="space-y-3 pl-8">
-                            {Object.entries(analyzer.default_parameters).map(([param, defaultValue]) => (
-                              <div key={param} className="space-y-2">
-                                <Label className="text-sm">{param.replace(/_/g, ' ')}</Label>
-                                {typeof defaultValue === 'boolean' ? (
-                                  <Switch
-                                    checked={analyzerConfigs[analyzer.name]?.[param] ?? defaultValue}
-                                    onCheckedChange={(checked) =>
-                                      updateAnalyzerConfig(analyzer.name, param, checked)
-                                    }
-                                  />
-                                ) : typeof defaultValue === 'number' ? (
-                                  <div className="flex items-center gap-2">
+                            {Object.entries(analyzer.default_parameters).map(
+                              ([param, defaultValue]) => (
+                                <div key={param} className="space-y-2">
+                                  <Label className="text-sm">
+                                    {param.replace(/_/g, " ")}
+                                  </Label>
+                                  {typeof defaultValue === "boolean" ? (
+                                    <Switch
+                                      checked={
+                                        analyzerConfigs[analyzer.name]?.[
+                                          param
+                                        ] ?? defaultValue
+                                      }
+                                      onCheckedChange={(checked) =>
+                                        updateAnalyzerConfig(
+                                          analyzer.name,
+                                          param,
+                                          checked
+                                        )
+                                      }
+                                    />
+                                  ) : typeof defaultValue === "number" ? (
+                                    <div className="flex items-center gap-2">
+                                      <Input
+                                        type="number"
+                                        value={
+                                          analyzerConfigs[analyzer.name]?.[
+                                            param
+                                          ] ?? defaultValue
+                                        }
+                                        onChange={(e) =>
+                                          updateAnalyzerConfig(
+                                            analyzer.name,
+                                            param,
+                                            parseFloat(e.target.value)
+                                          )
+                                        }
+                                        className="w-24"
+                                      />
+                                      <span className="text-xs text-muted-foreground">
+                                        Default: {defaultValue}
+                                      </span>
+                                    </div>
+                                  ) : (
                                     <Input
-                                      type="number"
-                                      value={analyzerConfigs[analyzer.name]?.[param] ?? defaultValue}
+                                      type="text"
+                                      value={
+                                        analyzerConfigs[analyzer.name]?.[
+                                          param
+                                        ] ?? defaultValue
+                                      }
                                       onChange={(e) =>
                                         updateAnalyzerConfig(
                                           analyzer.name,
                                           param,
-                                          parseFloat(e.target.value)
+                                          e.target.value
                                         )
                                       }
-                                      className="w-24"
                                     />
-                                    <span className="text-xs text-muted-foreground">
-                                      Default: {defaultValue}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <Input
-                                    type="text"
-                                    value={analyzerConfigs[analyzer.name]?.[param] ?? defaultValue}
-                                    onChange={(e) =>
-                                      updateAnalyzerConfig(analyzer.name, param, e.target.value)
-                                    }
-                                  />
-                                )}
-                              </div>
-                            ))}
+                                  )}
+                                </div>
+                              )
+                            )}
                           </div>
                         </CollapsibleContent>
                       </div>
@@ -371,7 +430,9 @@ export function RegionAnalysisPanel({
                   <Label htmlFor="overlap-threshold" className="text-sm">
                     Overlap Threshold
                   </Label>
-                  <span className="text-sm text-muted-foreground">{overlapThreshold}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {overlapThreshold}
+                  </span>
                 </div>
                 <Slider
                   id="overlap-threshold"
@@ -379,7 +440,9 @@ export function RegionAnalysisPanel({
                   max={1}
                   step={0.05}
                   value={[overlapThreshold]}
-                  onValueChange={(value) => setOverlapThreshold(value[0])}
+                  onValueChange={(value) =>
+                    setOverlapThreshold(value[0] ?? 0.5)
+                  }
                 />
                 <p className="text-xs text-muted-foreground">
                   IoU threshold for grouping overlapping regions
@@ -461,11 +524,12 @@ export function RegionAnalysisPanel({
 
           {selectedAnalyzers.size > 0 && (
             <p className="text-xs text-muted-foreground text-center">
-              {selectedAnalyzers.size} analyzer{selectedAnalyzers.size > 1 ? 's' : ''} selected
+              {selectedAnalyzers.size} analyzer
+              {selectedAnalyzers.size > 1 ? "s" : ""} selected
             </p>
           )}
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }

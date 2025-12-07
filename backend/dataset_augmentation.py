@@ -8,7 +8,6 @@ Includes rotation, scaling, color jitter, noise, blur, and resolution simulation
 import json
 import random
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -37,25 +36,25 @@ class DatasetAugmenter:
         self.image_id_offset = 1000000
         self.annotation_id_offset = 1000000
 
-    def load_dataset(self, split: str) -> Dict:
+    def load_dataset(self, split: str) -> dict:
         """Load COCO format dataset."""
         annotation_file = self.input_dir / "annotations" / f"{split}.json"
 
         if not annotation_file.exists():
             return None
 
-        with open(annotation_file, "r") as f:
+        with open(annotation_file) as f:
             return json.load(f)
 
-    def save_dataset(self, dataset: Dict, split: str):
+    def save_dataset(self, dataset: dict, split: str):
         """Save COCO format dataset."""
         annotation_file = self.output_dir / "annotations" / f"{split}.json"
         with open(annotation_file, "w") as f:
             json.dump(dataset, f, indent=2)
 
     def rotate_image(
-        self, image: Image.Image, angle: float, annotations: List[Dict]
-    ) -> Tuple[Image.Image, List[Dict]]:
+        self, image: Image.Image, angle: float, annotations: list[dict]
+    ) -> tuple[Image.Image, list[dict]]:
         """
         Rotate image and update bounding boxes.
 
@@ -130,8 +129,8 @@ class DatasetAugmenter:
         return rotated_pil, new_annotations
 
     def scale_image(
-        self, image: Image.Image, scale_factor: float, annotations: List[Dict]
-    ) -> Tuple[Image.Image, List[Dict]]:
+        self, image: Image.Image, scale_factor: float, annotations: list[dict]
+    ) -> tuple[Image.Image, list[dict]]:
         """
         Scale image and update bounding boxes.
 
@@ -265,8 +264,8 @@ class DatasetAugmenter:
         return upscaled
 
     def flip_horizontal(
-        self, image: Image.Image, annotations: List[Dict]
-    ) -> Tuple[Image.Image, List[Dict]]:
+        self, image: Image.Image, annotations: list[dict]
+    ) -> tuple[Image.Image, list[dict]]:
         """
         Flip image horizontally and update bounding boxes.
 
@@ -292,8 +291,8 @@ class DatasetAugmenter:
         return flipped, new_annotations
 
     def augment_image(
-        self, image_path: str, annotations: List[Dict], augmentation_config: Dict
-    ) -> List[Tuple[Image.Image, List[Dict], str]]:
+        self, image_path: str, annotations: list[dict], augmentation_config: dict
+    ) -> list[tuple[Image.Image, list[dict], str]]:
         """
         Apply augmentation pipeline to a single image.
 
@@ -362,9 +361,9 @@ class DatasetAugmenter:
     def augment_dataset(
         self,
         split: str = "train",
-        augmentation_config: Optional[Dict] = None,
+        augmentation_config: dict | None = None,
         max_augmentations_per_image: int = None,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """
         Augment entire dataset.
 

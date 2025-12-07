@@ -4,6 +4,7 @@ Models package for qontinui-web backend.
 This package contains all SQLAlchemy models for the application.
 """
 
+from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.analysis_result import (
     AnalysisJob,
     AnalyzerResult,
@@ -46,6 +47,7 @@ from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
 from app.models.device_session import DeviceSession
 from app.models.edit_command import EditCommand
+from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.notification import (
     Notification,
     NotificationPreferences,
@@ -69,6 +71,7 @@ from app.models.region_result import (
     RegionAnalyzerResult,
 )
 from app.models.runner_connection import RunnerConnection
+from app.models.runner_device import RunnerDevice
 from app.models.runner_token import RunnerToken
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
@@ -81,6 +84,18 @@ from app.models.test_deficiency import (
     DeficiencyStatus,
     DeficiencyType,
     TestDeficiency,
+)
+from app.models.training_dataset import (
+    AnnotationSource,
+    DatasetSource,
+    ElementType,
+    ExportFormat,
+    ExportJobStatus,
+    ReviewStatus,
+    TrainingDataset,
+    TrainingDatasetAnnotation,
+    TrainingDatasetExportJob,
+    TrainingDatasetImage,
 )
 from app.models.transition_execution import (
     TransitionExecution,
@@ -117,9 +132,14 @@ __all__ = [
     "Notification",
     "NotificationPreferences",
     "NotificationType",
+    # Admin Notifications
+    "AdminNotificationSettings",
     # Annotations
     "Annotation",
     "AnnotationSet",
+    # Web Extraction
+    "ExtractionSession",
+    "ExtractionAnnotation",
     # Subscriptions
     "Subscription",
     "SubscriptionStatus",
@@ -157,6 +177,7 @@ __all__ = [
     # Runner Tokens
     "RunnerToken",
     "RunnerConnection",
+    "RunnerDevice",
     # Version History & Event Sourcing
     "ProjectVersion",
     "EditCommand",
@@ -193,4 +214,15 @@ __all__ = [
     "CoverageSnapshot",
     "PathDiscovery",
     "TransitionReliability",
+    # Training Datasets
+    "TrainingDataset",
+    "TrainingDatasetImage",
+    "TrainingDatasetAnnotation",
+    "TrainingDatasetExportJob",
+    "DatasetSource",
+    "AnnotationSource",
+    "ElementType",
+    "ReviewStatus",
+    "ExportFormat",
+    "ExportJobStatus",
 ]

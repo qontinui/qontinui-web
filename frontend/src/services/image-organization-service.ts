@@ -77,7 +77,7 @@ export interface ImageSearchFilter {
   query?: string; // Text search in name, description, tags
   folderIds?: string[]; // Filter by folders
   tags?: string[]; // Filter by tags (AND/OR based on matchMode)
-  tagMatchMode?: 'all' | 'any'; // Default: 'any'
+  tagMatchMode?: "all" | "any"; // Default: 'any'
   dateRange?: {
     start: Date;
     end: Date;
@@ -89,9 +89,11 @@ export interface ImageSearchFilter {
     minHeight?: number;
     maxHeight?: number;
   };
-  usageStatus?: 'used' | 'unused' | 'all'; // Default: 'all'
+  usageStatus?: "used" | "unused" | "all"; // Default: 'all'
   collectionIds?: string[]; // Filter by collections
-  source?: Array<'uploaded' | 'pattern_optimization' | 'image_extraction' | 'state_discovery'>;
+  source?: Array<
+    "uploaded" | "pattern_optimization" | "image_extraction" | "state_discovery"
+  >;
 }
 
 /**
@@ -100,7 +102,7 @@ export interface ImageSearchFilter {
 export interface ImageUsageRecord {
   imageId: string;
   usedIn: {
-    type: 'workflow' | 'state' | 'pattern' | 'other';
+    type: "workflow" | "state" | "pattern" | "other";
     id: string;
     name: string;
     location?: string; // Additional context
@@ -202,11 +204,7 @@ export interface ImportExportData {
 // ============================================================================
 
 const STORAGE_VERSION = 1;
-const STORAGE_KEY = 'qontinui_image_organization';
-const METADATA_STORAGE_KEY = 'qontinui_image_metadata';
-const COLLECTIONS_STORAGE_KEY = 'qontinui_image_collections';
-const USAGE_STORAGE_KEY = 'qontinui_image_usage';
-const VERSIONS_STORAGE_KEY = 'qontinui_image_versions';
+const STORAGE_KEY = "qontinui_image_organization";
 
 const MAX_FOLDER_DEPTH = 10;
 const MAX_FOLDER_NAME_LENGTH = 100;
@@ -261,7 +259,7 @@ export class ImageOrganizationService {
       // Validate folder name
       const nameValidation = this.validateFolderName(name, parentId);
       if (!nameValidation.success) {
-        return nameValidation;
+        return nameValidation as OperationResult<ImageFolder>;
       }
 
       // Validate parent exists
@@ -283,7 +281,7 @@ export class ImageOrganizationService {
 
       // Create folder
       const folder: ImageFolder = {
-        id: this.generateId('folder'),
+        id: this.generateId("folder"),
         name: name.trim(),
         parentId: parentId || null,
         color: color,
@@ -308,7 +306,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to create folder: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -318,7 +316,9 @@ export class ImageOrganizationService {
    */
   updateImageFolder(
     id: string,
-    updates: Partial<Pick<ImageFolder, 'name' | 'color' | 'icon' | 'description' | 'order'>>
+    updates: Partial<
+      Pick<ImageFolder, "name" | "color" | "icon" | "description" | "order">
+    >
   ): OperationResult<ImageFolder> {
     try {
       const folder = this.folders.get(id);
@@ -331,9 +331,13 @@ export class ImageOrganizationService {
 
       // Validate name if changing
       if (updates.name && updates.name !== folder.name) {
-        const nameValidation = this.validateFolderName(updates.name, folder.parentId, id);
+        const nameValidation = this.validateFolderName(
+          updates.name,
+          folder.parentId,
+          id
+        );
         if (!nameValidation.success) {
-          return nameValidation;
+          return nameValidation as OperationResult<ImageFolder>;
         }
       }
 
@@ -358,7 +362,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to update folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to update folder: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -396,7 +400,7 @@ export class ImageOrganizationService {
       if (imagesInFolder.length > 0) {
         if (options?.moveImagesToParent) {
           // Move images to parent folder
-          imagesInFolder.forEach(imageId => {
+          imagesInFolder.forEach((imageId) => {
             const meta = this.metadata.get(imageId);
             if (meta) {
               meta.folderId = folder.parentId;
@@ -405,7 +409,7 @@ export class ImageOrganizationService {
           });
         } else {
           // Unassign images from folder
-          imagesInFolder.forEach(imageId => {
+          imagesInFolder.forEach((imageId) => {
             const meta = this.metadata.get(imageId);
             if (meta) {
               meta.folderId = null;
@@ -417,7 +421,7 @@ export class ImageOrganizationService {
 
       // Delete subfolders if recursive
       if (options?.recursive) {
-        subfolders.forEach(subfolder => {
+        subfolders.forEach((subfolder) => {
           this.deleteImageFolder(subfolder.id, options);
         });
       }
@@ -431,7 +435,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to delete folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to delete folder: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -469,18 +473,22 @@ export class ImageOrganizationService {
   getImageFolderTree(): OperationResult<FolderTreeNode[]> {
     try {
       const rootFolders = Array.from(this.folders.values())
-        .filter(f => f.parentId === null)
+        .filter((f) => f.parentId === null)
         .sort((a, b) => a.order - b.order);
 
-      const buildTree = (folder: ImageFolder, depth: number, path: string[]): FolderTreeNode => {
+      const buildTree = (
+        folder: ImageFolder,
+        depth: number,
+        path: string[]
+      ): FolderTreeNode => {
         const images = Array.from(this.metadata.values())
-          .filter(m => m.folderId === folder.id)
-          .map(m => m.imageId);
+          .filter((m) => m.folderId === folder.id)
+          .map((m) => m.imageId);
 
         const children = Array.from(this.folders.values())
-          .filter(f => f.parentId === folder.id)
+          .filter((f) => f.parentId === folder.id)
           .sort((a, b) => a.order - b.order)
-          .map(f => buildTree(f, depth + 1, [...path, folder.name]));
+          .map((f) => buildTree(f, depth + 1, [...path, folder.name]));
 
         return {
           folder,
@@ -491,7 +499,7 @@ export class ImageOrganizationService {
         };
       };
 
-      const tree = rootFolders.map(f => buildTree(f, 0, [f.name]));
+      const tree = rootFolders.map((f) => buildTree(f, 0, [f.name]));
 
       return {
         success: true,
@@ -500,7 +508,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to build folder tree: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to build folder tree: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -508,7 +516,10 @@ export class ImageOrganizationService {
   /**
    * Move an image to a folder
    */
-  moveImageToFolder(imageId: string, folderId: string | null): OperationResult<void> {
+  moveImageToFolder(
+    imageId: string,
+    folderId: string | null
+  ): OperationResult<void> {
     try {
       // Validate folder exists if not null
       if (folderId !== null && !this.folders.has(folderId)) {
@@ -542,7 +553,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to move image: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to move image: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -550,7 +561,10 @@ export class ImageOrganizationService {
   /**
    * Get images in a folder
    */
-  getImagesInFolder(folderId: string, recursive = false): OperationResult<string[]> {
+  getImagesInFolder(
+    folderId: string,
+    recursive = false
+  ): OperationResult<string[]> {
     try {
       if (!this.folders.has(folderId)) {
         return {
@@ -559,19 +573,19 @@ export class ImageOrganizationService {
         };
       }
 
-      let imageIds: string[] = [];
+      const imageIds: string[] = [];
 
       // Get direct images
       const directImages = Array.from(this.metadata.values())
-        .filter(m => m.folderId === folderId)
-        .map(m => m.imageId);
+        .filter((m) => m.folderId === folderId)
+        .map((m) => m.imageId);
 
       imageIds.push(...directImages);
 
       // Get images from subfolders if recursive
       if (recursive) {
         const subfolders = this.getSubfolders(folderId);
-        subfolders.forEach(subfolder => {
+        subfolders.forEach((subfolder) => {
           const subImages = this.getImagesInFolder(subfolder.id, true);
           if (subImages.success && subImages.data) {
             imageIds.push(...subImages.data);
@@ -586,7 +600,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to get images: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to get images: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -605,7 +619,7 @@ export class ImageOrganizationService {
       if (!normalizedTag) {
         return {
           success: false,
-          error: 'Invalid tag',
+          error: "Invalid tag",
         };
       }
 
@@ -632,7 +646,7 @@ export class ImageOrganizationService {
       if (meta.tags.includes(normalizedTag)) {
         return {
           success: true,
-          warnings: ['Tag already exists on image'],
+          warnings: ["Tag already exists on image"],
         };
       }
 
@@ -646,7 +660,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to add tag: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to add tag: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -662,7 +676,7 @@ export class ImageOrganizationService {
       if (!meta) {
         return {
           success: false,
-          error: 'Image metadata not found',
+          error: "Image metadata not found",
         };
       }
 
@@ -670,7 +684,7 @@ export class ImageOrganizationService {
       if (index === -1) {
         return {
           success: true,
-          warnings: ['Tag not found on image'],
+          warnings: ["Tag not found on image"],
         };
       }
 
@@ -684,7 +698,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to remove tag: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to remove tag: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -696,8 +710,8 @@ export class ImageOrganizationService {
     try {
       const normalizedTag = this.normalizeTag(tag);
       const imageIds = Array.from(this.metadata.values())
-        .filter(m => m.tags.includes(normalizedTag))
-        .map(m => m.imageId);
+        .filter((m) => m.tags.includes(normalizedTag))
+        .map((m) => m.imageId);
 
       return {
         success: true,
@@ -706,7 +720,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to get images by tag: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to get images by tag: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -718,8 +732,8 @@ export class ImageOrganizationService {
     try {
       const tagsSet = new Set<string>();
 
-      this.metadata.forEach(meta => {
-        meta.tags.forEach(tag => tagsSet.add(tag));
+      this.metadata.forEach((meta) => {
+        meta.tags.forEach((tag) => tagsSet.add(tag));
       });
 
       const tags = Array.from(tagsSet).sort();
@@ -731,7 +745,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to get all tags: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to get all tags: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -741,7 +755,7 @@ export class ImageOrganizationService {
    */
   updateImageMetadata(
     imageId: string,
-    metadata: Partial<Omit<ImageMetadata, 'imageId' | 'lastModified'>>
+    metadata: Partial<Omit<ImageMetadata, "imageId" | "lastModified">>
   ): OperationResult<ImageMetadata> {
     try {
       let meta = this.metadata.get(imageId);
@@ -767,7 +781,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to update metadata: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to update metadata: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -809,7 +823,7 @@ export class ImageOrganizationService {
       if (!name || name.trim().length === 0) {
         return {
           success: false,
-          error: 'Collection name is required',
+          error: "Collection name is required",
         };
       }
 
@@ -821,7 +835,7 @@ export class ImageOrganizationService {
       }
 
       const collection: ImageCollection = {
-        id: this.generateId('collection'),
+        id: this.generateId("collection"),
         name: name.trim(),
         description: description?.trim(),
         imageIds: [...new Set(imageIds)], // Remove duplicates
@@ -839,7 +853,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to create collection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to create collection: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -847,7 +861,10 @@ export class ImageOrganizationService {
   /**
    * Add images to a collection
    */
-  addToCollection(collectionId: string, imageIds: string[]): OperationResult<ImageCollection> {
+  addToCollection(
+    collectionId: string,
+    imageIds: string[]
+  ): OperationResult<ImageCollection> {
     try {
       const collection = this.collections.get(collectionId);
 
@@ -859,7 +876,7 @@ export class ImageOrganizationService {
       }
 
       const currentSet = new Set(collection.imageIds);
-      imageIds.forEach(id => currentSet.add(id));
+      imageIds.forEach((id) => currentSet.add(id));
 
       if (currentSet.size > MAX_COLLECTION_SIZE) {
         return {
@@ -884,7 +901,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to add to collection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to add to collection: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -892,7 +909,10 @@ export class ImageOrganizationService {
   /**
    * Remove images from a collection
    */
-  removeFromCollection(collectionId: string, imageIds: string[]): OperationResult<ImageCollection> {
+  removeFromCollection(
+    collectionId: string,
+    imageIds: string[]
+  ): OperationResult<ImageCollection> {
     try {
       const collection = this.collections.get(collectionId);
 
@@ -904,7 +924,9 @@ export class ImageOrganizationService {
       }
 
       const idsToRemove = new Set(imageIds);
-      const updatedImageIds = collection.imageIds.filter(id => !idsToRemove.has(id));
+      const updatedImageIds = collection.imageIds.filter(
+        (id) => !idsToRemove.has(id)
+      );
 
       const updatedCollection: ImageCollection = {
         ...collection,
@@ -922,7 +944,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to remove from collection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to remove from collection: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -975,7 +997,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to delete collection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to delete collection: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -987,7 +1009,10 @@ export class ImageOrganizationService {
   /**
    * Search images with advanced filters
    */
-  searchImages(query?: string, filters?: ImageSearchFilter): OperationResult<ImageSearchResult> {
+  searchImages(
+    query?: string,
+    filters?: ImageSearchFilter
+  ): OperationResult<ImageSearchResult> {
     try {
       let results = Array.from(this.metadata.values());
       const highlightedFields: Record<string, string[]> = {};
@@ -995,22 +1020,22 @@ export class ImageOrganizationService {
       // Text search
       if (query && query.trim().length > 0) {
         const searchTerm = query.toLowerCase().trim();
-        results = results.filter(meta => {
+        results = results.filter((meta) => {
           const matches: string[] = [];
 
           // Search in tags
-          if (meta.tags.some(tag => tag.toLowerCase().includes(searchTerm))) {
-            matches.push('tags');
+          if (meta.tags.some((tag) => tag.toLowerCase().includes(searchTerm))) {
+            matches.push("tags");
           }
 
           // Search in description
           if (meta.description?.toLowerCase().includes(searchTerm)) {
-            matches.push('description');
+            matches.push("description");
           }
 
           // Search in original filename
           if (meta.originalFileName?.toLowerCase().includes(searchTerm)) {
-            matches.push('originalFileName');
+            matches.push("originalFileName");
           }
 
           if (matches.length > 0) {
@@ -1025,21 +1050,21 @@ export class ImageOrganizationService {
       // Folder filter
       if (filters?.folderIds && filters.folderIds.length > 0) {
         const folderSet = new Set(filters.folderIds);
-        results = results.filter(meta =>
-          meta.folderId !== null && folderSet.has(meta.folderId)
+        results = results.filter(
+          (meta) => meta.folderId !== null && folderSet.has(meta.folderId)
         );
       }
 
       // Tag filter
       if (filters?.tags && filters.tags.length > 0) {
-        const matchMode = filters.tagMatchMode || 'any';
-        results = results.filter(meta => {
-          if (matchMode === 'all') {
-            return filters.tags!.every(tag =>
+        const matchMode = filters.tagMatchMode || "any";
+        results = results.filter((meta) => {
+          if (matchMode === "all") {
+            return filters.tags!.every((tag) =>
               meta.tags.includes(this.normalizeTag(tag))
             );
           } else {
-            return filters.tags!.some(tag =>
+            return filters.tags!.some((tag) =>
               meta.tags.includes(this.normalizeTag(tag))
             );
           }
@@ -1050,7 +1075,7 @@ export class ImageOrganizationService {
       if (filters?.dateRange) {
         const start = filters.dateRange.start.getTime();
         const end = filters.dateRange.end.getTime();
-        results = results.filter(meta => {
+        results = results.filter((meta) => {
           const lastMod = new Date(meta.lastModified).getTime();
           return lastMod >= start && lastMod <= end;
         });
@@ -1058,16 +1083,16 @@ export class ImageOrganizationService {
 
       // File type filter
       if (filters?.fileTypes && filters.fileTypes.length > 0) {
-        const typeSet = new Set(filters.fileTypes.map(t => t.toLowerCase()));
-        results = results.filter(meta =>
-          meta.fileType && typeSet.has(meta.fileType.toLowerCase())
+        const typeSet = new Set(filters.fileTypes.map((t) => t.toLowerCase()));
+        results = results.filter(
+          (meta) => meta.fileType && typeSet.has(meta.fileType.toLowerCase())
         );
       }
 
       // Dimensions filter
       if (filters?.dimensions) {
         const { minWidth, maxWidth, minHeight, maxHeight } = filters.dimensions;
-        results = results.filter(meta => {
+        results = results.filter((meta) => {
           if (!meta.dimensions) return false;
 
           if (minWidth && meta.dimensions.width < minWidth) return false;
@@ -1080,31 +1105,33 @@ export class ImageOrganizationService {
       }
 
       // Usage status filter
-      if (filters?.usageStatus && filters.usageStatus !== 'all') {
-        results = results.filter(meta => {
+      if (filters?.usageStatus && filters.usageStatus !== "all") {
+        results = results.filter((meta) => {
           const usage = this.usageRecords.get(meta.imageId);
           const isUsed = usage && usage.totalUsageCount > 0;
 
-          return filters.usageStatus === 'used' ? isUsed : !isUsed;
+          return filters.usageStatus === "used" ? isUsed : !isUsed;
         });
       }
 
       // Collection filter
       if (filters?.collectionIds && filters.collectionIds.length > 0) {
         const imageIdsInCollections = new Set<string>();
-        filters.collectionIds.forEach(collId => {
+        filters.collectionIds.forEach((collId) => {
           const collection = this.collections.get(collId);
           if (collection) {
-            collection.imageIds.forEach(id => imageIdsInCollections.add(id));
+            collection.imageIds.forEach((id) => imageIdsInCollections.add(id));
           }
         });
-        results = results.filter(meta => imageIdsInCollections.has(meta.imageId));
+        results = results.filter((meta) =>
+          imageIdsInCollections.has(meta.imageId)
+        );
       }
 
       // Source filter
       if (filters?.source && filters.source.length > 0) {
         const sourceSet = new Set(filters.source);
-        results = results.filter(meta => {
+        results = results.filter((meta) => {
           // Get image source from customFields if available
           const source = meta.customFields?.source;
           return source && sourceSet.has(source);
@@ -1113,23 +1140,26 @@ export class ImageOrganizationService {
 
       // Build result
       const metadataMap: Record<string, ImageMetadata> = {};
-      results.forEach(meta => {
+      results.forEach((meta) => {
         metadataMap[meta.imageId] = meta;
       });
 
       return {
         success: true,
         data: {
-          imageIds: results.map(m => m.imageId),
+          imageIds: results.map((m) => m.imageId),
           totalCount: results.length,
           metadata: metadataMap,
-          highlightedFields: Object.keys(highlightedFields).length > 0 ? highlightedFields : undefined,
+          highlightedFields:
+            Object.keys(highlightedFields).length > 0
+              ? highlightedFields
+              : undefined,
         },
       };
     } catch (error) {
       return {
         success: false,
-        error: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1137,19 +1167,27 @@ export class ImageOrganizationService {
   /**
    * Filter images by usage in specific workflows or states
    */
-  filterByUsage(workflowIds?: string[], stateIds?: string[]): OperationResult<string[]> {
+  filterByUsage(
+    workflowIds?: string[],
+    stateIds?: string[]
+  ): OperationResult<string[]> {
     try {
       const results: string[] = [];
 
       this.usageRecords.forEach((record, imageId) => {
-        const matchesWorkflow = !workflowIds || workflowIds.length === 0 ||
-          record.usedIn.some(usage =>
-            usage.type === 'workflow' && workflowIds.includes(usage.id)
+        const matchesWorkflow =
+          !workflowIds ||
+          workflowIds.length === 0 ||
+          record.usedIn.some(
+            (usage) =>
+              usage.type === "workflow" && workflowIds.includes(usage.id)
           );
 
-        const matchesState = !stateIds || stateIds.length === 0 ||
-          record.usedIn.some(usage =>
-            usage.type === 'state' && stateIds.includes(usage.id)
+        const matchesState =
+          !stateIds ||
+          stateIds.length === 0 ||
+          record.usedIn.some(
+            (usage) => usage.type === "state" && stateIds.includes(usage.id)
           );
 
         if (matchesWorkflow && matchesState) {
@@ -1164,7 +1202,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Filter by usage failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Filter by usage failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1180,14 +1218,14 @@ export class ImageOrganizationService {
     const errors: Array<{ imageId: string; error: string }> = [];
     let successCount = 0;
 
-    imageIds.forEach(imageId => {
+    imageIds.forEach((imageId) => {
       let allTagsAdded = true;
 
-      tags.forEach(tag => {
+      tags.forEach((tag) => {
         const result = this.addImageTag(imageId, tag);
         if (!result.success) {
           allTagsAdded = false;
-          errors.push({ imageId, error: result.error || 'Unknown error' });
+          errors.push({ imageId, error: result.error || "Unknown error" });
         }
       });
 
@@ -1211,12 +1249,12 @@ export class ImageOrganizationService {
     const errors: Array<{ imageId: string; error: string }> = [];
     let successCount = 0;
 
-    imageIds.forEach(imageId => {
+    imageIds.forEach((imageId) => {
       const result = this.moveImageToFolder(imageId, folderId);
       if (result.success) {
         successCount++;
       } else {
-        errors.push({ imageId, error: result.error || 'Unknown error' });
+        errors.push({ imageId, error: result.error || "Unknown error" });
       }
     });
 
@@ -1235,14 +1273,16 @@ export class ImageOrganizationService {
     const errors: Array<{ imageId: string; error: string }> = [];
     let successCount = 0;
 
-    imageIds.forEach(imageId => {
+    imageIds.forEach((imageId) => {
       try {
         // Remove from metadata
         this.metadata.delete(imageId);
 
         // Remove from collections
-        this.collections.forEach(collection => {
-          collection.imageIds = collection.imageIds.filter(id => id !== imageId);
+        this.collections.forEach((collection) => {
+          collection.imageIds = collection.imageIds.filter(
+            (id) => id !== imageId
+          );
         });
 
         // Remove usage records
@@ -1255,7 +1295,7 @@ export class ImageOrganizationService {
       } catch (error) {
         errors.push({
           imageId,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : "Unknown error",
         });
       }
     });
@@ -1291,7 +1331,7 @@ export class ImageOrganizationService {
 
       let totalSize = 0;
 
-      imageIds.forEach(imageId => {
+      imageIds.forEach((imageId) => {
         const meta = this.metadata.get(imageId);
         if (meta) {
           const filename = meta.originalFileName || `image-${imageId}.png`;
@@ -1318,7 +1358,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to prepare download: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to prepare download: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1333,7 +1373,7 @@ export class ImageOrganizationService {
   trackImageUsage(
     imageId: string,
     usedIn: {
-      type: 'workflow' | 'state' | 'pattern' | 'other';
+      type: "workflow" | "state" | "pattern" | "other";
       id: string;
       name: string;
       location?: string;
@@ -1352,7 +1392,7 @@ export class ImageOrganizationService {
 
       // Check if already tracked
       const existingIndex = record.usedIn.findIndex(
-        u => u.type === usedIn.type && u.id === usedIn.id
+        (u) => u.type === usedIn.type && u.id === usedIn.id
       );
 
       if (existingIndex >= 0) {
@@ -1373,7 +1413,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to track usage: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to track usage: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1381,21 +1421,18 @@ export class ImageOrganizationService {
   /**
    * Remove usage tracking for an image from a specific location
    */
-  removeImageUsage(
-    imageId: string,
-    usageId: string
-  ): OperationResult<void> {
+  removeImageUsage(imageId: string, usageId: string): OperationResult<void> {
     try {
       const record = this.usageRecords.get(imageId);
 
       if (!record) {
         return {
           success: true,
-          warnings: ['No usage record found for image'],
+          warnings: ["No usage record found for image"],
         };
       }
 
-      record.usedIn = record.usedIn.filter(u => u.id !== usageId);
+      record.usedIn = record.usedIn.filter((u) => u.id !== usageId);
       record.totalUsageCount = record.usedIn.length;
 
       if (record.usedIn.length === 0) {
@@ -1410,7 +1447,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to remove usage: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to remove usage: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1444,7 +1481,7 @@ export class ImageOrganizationService {
   findUnusedImages(): OperationResult<string[]> {
     try {
       const allImageIds = Array.from(this.metadata.keys());
-      const unusedIds = allImageIds.filter(imageId => {
+      const unusedIds = allImageIds.filter((imageId) => {
         const record = this.usageRecords.get(imageId);
         return !record || record.totalUsageCount === 0;
       });
@@ -1456,7 +1493,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to find unused images: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to find unused images: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1464,14 +1501,16 @@ export class ImageOrganizationService {
   /**
    * Find most used images
    */
-  findMostUsedImages(limit = 10): OperationResult<Array<{
-    imageId: string;
-    usageCount: number;
-    metadata?: ImageMetadata;
-  }>> {
+  findMostUsedImages(limit = 10): OperationResult<
+    Array<{
+      imageId: string;
+      usageCount: number;
+      metadata?: ImageMetadata;
+    }>
+  > {
     try {
       const usageArray = Array.from(this.usageRecords.values())
-        .map(record => ({
+        .map((record) => ({
           imageId: record.imageId,
           usageCount: record.totalUsageCount,
           metadata: this.metadata.get(record.imageId),
@@ -1486,7 +1525,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to find most used images: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to find most used images: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1506,15 +1545,15 @@ export class ImageOrganizationService {
     s3_key?: string
   ): OperationResult<ImageVersion> {
     try {
-      let versions = this.versions.get(imageId) || [];
+      const versions = this.versions.get(imageId) || [];
 
       // Set all existing versions to non-primary
-      versions.forEach(v => {
+      versions.forEach((v) => {
         v.isPrimary = false;
       });
 
       const newVersion: ImageVersion = {
-        id: this.generateId('version'),
+        id: this.generateId("version"),
         imageId,
         versionNumber: versions.length + 1,
         url,
@@ -1536,7 +1575,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to create version: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to create version: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1556,28 +1595,31 @@ export class ImageOrganizationService {
   /**
    * Rollback to a specific version
    */
-  rollbackToVersion(imageId: string, versionId: string): OperationResult<ImageVersion> {
+  rollbackToVersion(
+    imageId: string,
+    versionId: string
+  ): OperationResult<ImageVersion> {
     try {
       const versions = this.versions.get(imageId);
 
       if (!versions) {
         return {
           success: false,
-          error: 'No versions found for image',
+          error: "No versions found for image",
         };
       }
 
-      const targetVersion = versions.find(v => v.id === versionId);
+      const targetVersion = versions.find((v) => v.id === versionId);
 
       if (!targetVersion) {
         return {
           success: false,
-          error: 'Version not found',
+          error: "Version not found",
         };
       }
 
       // Set all versions to non-primary
-      versions.forEach(v => {
+      versions.forEach((v) => {
         v.isPrimary = false;
       });
 
@@ -1594,7 +1636,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to rollback: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to rollback: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1602,32 +1644,43 @@ export class ImageOrganizationService {
   /**
    * Delete a specific version
    */
-  deleteImageVersion(imageId: string, versionId: string): OperationResult<void> {
+  deleteImageVersion(
+    imageId: string,
+    versionId: string
+  ): OperationResult<void> {
     try {
       const versions = this.versions.get(imageId);
 
       if (!versions) {
         return {
           success: false,
-          error: 'No versions found for image',
+          error: "No versions found for image",
         };
       }
 
-      const versionIndex = versions.findIndex(v => v.id === versionId);
+      const versionIndex = versions.findIndex((v) => v.id === versionId);
 
       if (versionIndex === -1) {
         return {
           success: false,
-          error: 'Version not found',
+          error: "Version not found",
         };
       }
 
       const version = versions[versionIndex];
 
+      if (!version) {
+        return {
+          success: false,
+          error: "Version not found",
+        };
+      }
+
       if (version.isPrimary && versions.length > 1) {
         return {
           success: false,
-          error: 'Cannot delete primary version. Make another version primary first.',
+          error:
+            "Cannot delete primary version. Make another version primary first.",
         };
       }
 
@@ -1645,7 +1698,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to delete version: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to delete version: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1670,7 +1723,7 @@ export class ImageOrganizationService {
       };
 
       // Export metadata for selected images
-      imageIds.forEach(imageId => {
+      imageIds.forEach((imageId) => {
         const meta = this.metadata.get(imageId);
         if (meta) {
           exportData.metadata!.push(meta);
@@ -1682,7 +1735,7 @@ export class ImageOrganizationService {
         const folderIds = new Set<string>();
 
         // Collect all folders used by the images
-        exportData.metadata!.forEach(meta => {
+        exportData.metadata!.forEach((meta) => {
           if (meta.folderId) {
             folderIds.add(meta.folderId);
 
@@ -1696,19 +1749,19 @@ export class ImageOrganizationService {
         });
 
         exportData.folders = Array.from(folderIds)
-          .map(id => this.folders.get(id))
+          .map((id) => this.folders.get(id))
           .filter((f): f is ImageFolder => f !== undefined);
       }
 
       // Export collections that contain any of the selected images
       const imageIdSet = new Set(imageIds);
-      this.collections.forEach(collection => {
-        const hasImages = collection.imageIds.some(id => imageIdSet.has(id));
+      this.collections.forEach((collection) => {
+        const hasImages = collection.imageIds.some((id) => imageIdSet.has(id));
         if (hasImages) {
           // Only include images that are in the export
           const filteredCollection = {
             ...collection,
-            imageIds: collection.imageIds.filter(id => imageIdSet.has(id)),
+            imageIds: collection.imageIds.filter((id) => imageIdSet.has(id)),
           };
           exportData.collections!.push(filteredCollection);
         }
@@ -1721,7 +1774,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1750,12 +1803,14 @@ export class ImageOrganizationService {
           return depthA - depthB;
         });
 
-        sortedFolders.forEach(folder => {
+        sortedFolders.forEach((folder) => {
           const oldId = folder.id;
           const newFolder = {
             ...folder,
-            id: this.generateId('folder'),
-            parentId: folder.parentId ? (folderIdMap.get(folder.parentId) || null) : null,
+            id: this.generateId("folder"),
+            parentId: folder.parentId
+              ? folderIdMap.get(folder.parentId) || null
+              : null,
           };
 
           this.folders.set(newFolder.id, newFolder);
@@ -1765,7 +1820,7 @@ export class ImageOrganizationService {
 
         // Update metadata with new folder IDs
         if (data.metadata) {
-          data.metadata.forEach(meta => {
+          data.metadata.forEach((meta) => {
             if (meta.folderId && folderIdMap.has(meta.folderId)) {
               meta.folderId = folderIdMap.get(meta.folderId)!;
             }
@@ -1775,11 +1830,11 @@ export class ImageOrganizationService {
 
       // Import metadata
       if (data.metadata) {
-        data.metadata.forEach(meta => {
+        data.metadata.forEach((meta) => {
           // Generate new ID if already exists
           let newId = meta.imageId;
           if (this.metadata.has(newId)) {
-            newId = this.generateId('image');
+            newId = this.generateId("image");
           }
 
           const newMeta = {
@@ -1795,10 +1850,10 @@ export class ImageOrganizationService {
 
       // Import collections
       if (data.collections) {
-        data.collections.forEach(collection => {
+        data.collections.forEach((collection) => {
           const newCollection = {
             ...collection,
-            id: this.generateId('collection'),
+            id: this.generateId("collection"),
             updated: new Date().toISOString(),
           };
 
@@ -1820,7 +1875,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Import failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1836,7 +1891,9 @@ export class ImageOrganizationService {
         metadata: Array.from(this.metadata.values()),
         collections: Array.from(this.collections.values()),
         usageRecords: Array.from(this.usageRecords.values()),
-        versions: Array.from(this.versions.entries()).flatMap(([imageId, versions]) => versions),
+        versions: Array.from(this.versions.entries()).flatMap(
+          ([, versions]) => versions
+        ),
         lastUpdated: new Date().toISOString(),
       };
 
@@ -1847,7 +1904,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Export all failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Export all failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1865,27 +1922,27 @@ export class ImageOrganizationService {
       this.versions.clear();
 
       // Import folders
-      data.folders.forEach(folder => {
+      data.folders.forEach((folder) => {
         this.folders.set(folder.id, folder);
       });
 
       // Import metadata
-      data.metadata.forEach(meta => {
+      data.metadata.forEach((meta) => {
         this.metadata.set(meta.imageId, meta);
       });
 
       // Import collections
-      data.collections.forEach(collection => {
+      data.collections.forEach((collection) => {
         this.collections.set(collection.id, collection);
       });
 
       // Import usage records
-      data.usageRecords.forEach(record => {
+      data.usageRecords.forEach((record) => {
         this.usageRecords.set(record.imageId, record);
       });
 
       // Import versions
-      data.versions.forEach(version => {
+      data.versions.forEach((version) => {
         const imageVersions = this.versions.get(version.imageId) || [];
         imageVersions.push(version);
         this.versions.set(version.imageId, imageVersions);
@@ -1897,7 +1954,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Import all failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Import all failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -1945,7 +2002,7 @@ export class ImageOrganizationService {
     if (!name || name.trim().length === 0) {
       return {
         success: false,
-        error: 'Folder name is required',
+        error: "Folder name is required",
       };
     }
 
@@ -1958,13 +2015,15 @@ export class ImageOrganizationService {
 
     // Check for duplicate names in same parent
     const siblings = Array.from(this.folders.values()).filter(
-      f => f.parentId === (parentId || null) && f.id !== excludeId
+      (f) => f.parentId === (parentId || null) && f.id !== excludeId
     );
 
-    if (siblings.some(f => f.name.toLowerCase() === name.trim().toLowerCase())) {
+    if (
+      siblings.some((f) => f.name.toLowerCase() === name.trim().toLowerCase())
+    ) {
       return {
         success: false,
-        error: 'A folder with this name already exists in the same location',
+        error: "A folder with this name already exists in the same location",
       };
     }
 
@@ -2004,7 +2063,7 @@ export class ImageOrganizationService {
 
     while (currentFolder?.parentId) {
       depth++;
-      currentFolder = allFolders.find(f => f.id === currentFolder!.parentId);
+      currentFolder = allFolders.find((f) => f.id === currentFolder!.parentId);
 
       // Prevent infinite loops
       if (depth > MAX_FOLDER_DEPTH) break;
@@ -2018,19 +2077,21 @@ export class ImageOrganizationService {
    */
   private getNextFolderOrder(parentId?: string | null): number {
     const siblings = Array.from(this.folders.values()).filter(
-      f => f.parentId === (parentId || null)
+      (f) => f.parentId === (parentId || null)
     );
 
     if (siblings.length === 0) return 0;
 
-    return Math.max(...siblings.map(f => f.order)) + 1;
+    return Math.max(...siblings.map((f) => f.order)) + 1;
   }
 
   /**
    * Get subfolders of a folder
    */
   private getSubfolders(folderId: string): ImageFolder[] {
-    return Array.from(this.folders.values()).filter(f => f.parentId === folderId);
+    return Array.from(this.folders.values()).filter(
+      (f) => f.parentId === folderId
+    );
   }
 
   /**
@@ -2044,14 +2105,14 @@ export class ImageOrganizationService {
 
     // Count direct images
     const imageCount = Array.from(this.metadata.values()).filter(
-      m => m.folderId === folderId
+      (m) => m.folderId === folderId
     ).length;
 
     // Count descendant images
     const subfolders = this.getSubfolders(folderId);
     let descendantCount = imageCount;
 
-    subfolders.forEach(subfolder => {
+    subfolders.forEach((subfolder) => {
       this.updateFolderCounts(subfolder.id);
       const sub = this.folders.get(subfolder.id);
       if (sub) {
@@ -2091,7 +2152,7 @@ export class ImageOrganizationService {
    */
   private saveToStorage(): void {
     try {
-      if (typeof window === 'undefined') return;
+      if (typeof window === "undefined") return;
 
       const data: ImageOrganizationData = {
         version: STORAGE_VERSION,
@@ -2099,13 +2160,15 @@ export class ImageOrganizationService {
         metadata: Array.from(this.metadata.values()),
         collections: Array.from(this.collections.values()),
         usageRecords: Array.from(this.usageRecords.values()),
-        versions: Array.from(this.versions.entries()).flatMap(([_, versions]) => versions),
+        versions: Array.from(this.versions.entries()).flatMap(
+          ([_, versions]) => versions
+        ),
         lastUpdated: new Date().toISOString(),
       };
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (error) {
-      console.error('Failed to save image organization data:', error);
+      console.error("Failed to save image organization data:", error);
     }
   }
 
@@ -2114,7 +2177,7 @@ export class ImageOrganizationService {
    */
   private loadFromStorage(): void {
     try {
-      if (typeof window === 'undefined') return;
+      if (typeof window === "undefined") return;
 
       const stored = localStorage.getItem(STORAGE_KEY);
       if (!stored) return;
@@ -2123,37 +2186,37 @@ export class ImageOrganizationService {
 
       // Load folders
       this.folders.clear();
-      data.folders.forEach(folder => {
+      data.folders.forEach((folder) => {
         this.folders.set(folder.id, folder);
       });
 
       // Load metadata
       this.metadata.clear();
-      data.metadata.forEach(meta => {
+      data.metadata.forEach((meta) => {
         this.metadata.set(meta.imageId, meta);
       });
 
       // Load collections
       this.collections.clear();
-      data.collections.forEach(collection => {
+      data.collections.forEach((collection) => {
         this.collections.set(collection.id, collection);
       });
 
       // Load usage records
       this.usageRecords.clear();
-      data.usageRecords.forEach(record => {
+      data.usageRecords.forEach((record) => {
         this.usageRecords.set(record.imageId, record);
       });
 
       // Load versions
       this.versions.clear();
-      data.versions.forEach(version => {
+      data.versions.forEach((version) => {
         const imageVersions = this.versions.get(version.imageId) || [];
         imageVersions.push(version);
         this.versions.set(version.imageId, imageVersions);
       });
     } catch (error) {
-      console.error('Failed to load image organization data:', error);
+      console.error("Failed to load image organization data:", error);
     }
   }
 
@@ -2174,7 +2237,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to clear data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to clear data: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -2215,7 +2278,7 @@ export class ImageOrganizationService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to get statistics: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to get statistics: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }

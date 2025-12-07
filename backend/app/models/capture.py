@@ -11,19 +11,18 @@ This module handles the capture-to-workflow pipeline:
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from app.db.base_class import Base
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.db.base_class import Base
+
 if TYPE_CHECKING:
     from app.models.project import Project
-    from app.models.state import State
     from app.models.user import User
-    from app.models.workflow import Workflow
 
 
 class CaptureSession(Base):
@@ -39,8 +38,8 @@ class CaptureSession(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE")
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE")
@@ -65,7 +64,7 @@ class CaptureSession(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -116,7 +115,7 @@ class CaptureScreenshot(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
 
     # Additional metadata (using extra_metadata to avoid SQLAlchemy reserved name)
@@ -196,7 +195,7 @@ class CaptureAction(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
 
     # Additional metadata (using extra_metadata to avoid SQLAlchemy reserved name)
@@ -339,7 +338,7 @@ class ScreenshotStateMatch(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
 
     # Relationships
@@ -364,8 +363,8 @@ class LearnedWorkflow(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("capture_sessions.id", ondelete="CASCADE")
     )
-    project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE")
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -398,7 +397,7 @@ class LearnedWorkflow(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

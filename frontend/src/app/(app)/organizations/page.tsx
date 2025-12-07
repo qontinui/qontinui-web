@@ -1,53 +1,67 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { useOrganization } from "@/hooks/useOrganization"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Plus, Users, Building2, Settings, ArrowRight, Loader2 } from "lucide-react"
-import { toast } from "sonner"
-import type { Organization } from "@/types/collaboration"
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { useOrganization } from "@/hooks/useOrganization";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Plus,
+  Users,
+  Building2,
+  Settings,
+  ArrowRight,
+  Loader2,
+} from "lucide-react";
+import type { Organization } from "@/types/collaboration";
 
 export default function OrganizationsPage() {
-  const router = useRouter()
-  const { user, loading: authLoading } = useAuth()
-  const { organizations, loading, error, refresh } = useOrganization()
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const { organizations, loading, error, refresh } = useOrganization();
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
+      router.push("/");
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   const getRoleBadgeColor = (org: Organization, userId: string) => {
     if (org.owner_id === userId) {
-      return 'bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30'
+      return "bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30";
     }
     // Default for members
-    return 'bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30'
-  }
+    return "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30";
+  };
 
   const getUserRole = (org: Organization, userId: string): string => {
     if (org.owner_id === userId) {
-      return 'Owner'
+      return "Owner";
     }
-    return 'Member'
-  }
+    return "Member";
+  };
 
   const getRelativeTime = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+    );
 
-    if (diffInHours < 1) return 'Just now'
-    if (diffInHours < 24) return `${diffInHours} hours ago`
-    const diffInDays = Math.floor(diffInHours / 24)
-    if (diffInDays === 1) return '1 day ago'
-    return `${diffInDays} days ago`
-  }
+    if (diffInHours < 1) return "Just now";
+    if (diffInHours < 24) return `${diffInHours} hours ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays === 1) return "1 day ago";
+    return `${diffInDays} days ago`;
+  };
 
   if (authLoading || !user) {
     return (
@@ -57,7 +71,7 @@ export default function OrganizationsPage() {
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -68,11 +82,13 @@ export default function OrganizationsPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold mb-2">Organizations</h1>
-              <p className="text-gray-400">Manage your organizations and teams</p>
+              <p className="text-gray-400">
+                Manage your organizations and teams
+              </p>
             </div>
 
             <Button
-              onClick={() => router.push('/organizations/new')}
+              onClick={() => router.push("/organizations/new")}
               className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -90,7 +106,9 @@ export default function OrganizationsPage() {
                   </div>
                   <div>
                     <p className="text-sm text-gray-400">Total Organizations</p>
-                    <p className="text-2xl font-bold text-[#00D9FF]">{organizations.length}</p>
+                    <p className="text-2xl font-bold text-[#00D9FF]">
+                      {organizations.length}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -105,7 +123,10 @@ export default function OrganizationsPage() {
                   <div>
                     <p className="text-sm text-gray-400">Total Members</p>
                     <p className="text-2xl font-bold text-[#BD00FF]">
-                      {organizations.reduce((sum, org) => sum + org.member_count, 0)}
+                      {organizations.reduce(
+                        (sum, org) => sum + org.member_count,
+                        0
+                      )}
                     </p>
                   </div>
                 </div>
@@ -121,7 +142,10 @@ export default function OrganizationsPage() {
                   <div>
                     <p className="text-sm text-gray-400">Owned by You</p>
                     <p className="text-2xl font-bold text-[#00FF88]">
-                      {organizations.filter(org => org.owner_id === user.id).length}
+                      {
+                        organizations.filter((org) => org.owner_id === user.id)
+                          .length
+                      }
                     </p>
                   </div>
                 </div>
@@ -142,7 +166,9 @@ export default function OrganizationsPage() {
           ) : error ? (
             <Card className="bg-[#1A1A1B]/50 border-red-500/50 backdrop-blur-sm">
               <CardContent className="p-8 text-center">
-                <p className="text-red-400 mb-4">Failed to load organizations</p>
+                <p className="text-red-400 mb-4">
+                  Failed to load organizations
+                </p>
                 <Button
                   onClick={() => refresh()}
                   variant="outline"
@@ -158,10 +184,14 @@ export default function OrganizationsPage() {
                 <div className="w-16 h-16 bg-[#00D9FF]/10 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Building2 className="w-8 h-8 text-[#00D9FF]" />
                 </div>
-                <h4 className="text-xl font-semibold mb-2 text-gray-300">No organizations yet</h4>
-                <p className="text-gray-500 mb-6">Create your first organization to collaborate with your team</p>
+                <h4 className="text-xl font-semibold mb-2 text-gray-300">
+                  No organizations yet
+                </h4>
+                <p className="text-gray-500 mb-6">
+                  Create your first organization to collaborate with your team
+                </p>
                 <Button
-                  onClick={() => router.push('/organizations/new')}
+                  onClick={() => router.push("/organizations/new")}
                   className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -189,7 +219,9 @@ export default function OrganizationsPage() {
                           </CardDescription>
                         )}
                       </div>
-                      <Badge className={`${getRoleBadgeColor(org, user.id)} text-xs ml-2 flex-shrink-0`}>
+                      <Badge
+                        className={`${getRoleBadgeColor(org, user.id)} text-xs ml-2 flex-shrink-0`}
+                      >
                         {getUserRole(org, user.id)}
                       </Badge>
                     </div>
@@ -201,11 +233,17 @@ export default function OrganizationsPage() {
                       <div className="flex items-center gap-4 text-sm">
                         <div className="flex items-center gap-1 text-gray-400">
                           <Users className="w-4 h-4" />
-                          <span>{org.member_count} {org.member_count === 1 ? 'member' : 'members'}</span>
+                          <span>
+                            {org.member_count}{" "}
+                            {org.member_count === 1 ? "member" : "members"}
+                          </span>
                         </div>
                         <div className="flex items-center gap-1 text-gray-400">
                           <Building2 className="w-4 h-4" />
-                          <span>{org.project_count} {org.project_count === 1 ? 'project' : 'projects'}</span>
+                          <span>
+                            {org.project_count}{" "}
+                            {org.project_count === 1 ? "project" : "projects"}
+                          </span>
                         </div>
                       </div>
 
@@ -220,8 +258,8 @@ export default function OrganizationsPage() {
                           size="sm"
                           className="flex-1 bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30 hover:border-[#00D9FF]/50"
                           onClick={(e) => {
-                            e.stopPropagation()
-                            router.push(`/organizations/${org.id}`)
+                            e.stopPropagation();
+                            router.push(`/organizations/${org.id}`);
                           }}
                         >
                           View Details
@@ -233,8 +271,8 @@ export default function OrganizationsPage() {
                             variant="outline"
                             className="border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF] bg-transparent"
                             onClick={(e) => {
-                              e.stopPropagation()
-                              router.push(`/organizations/${org.id}/settings`)
+                              e.stopPropagation();
+                              router.push(`/organizations/${org.id}/settings`);
                             }}
                           >
                             <Settings className="w-4 h-4" />
@@ -250,5 +288,5 @@ export default function OrganizationsPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

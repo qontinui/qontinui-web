@@ -1,8 +1,8 @@
 // hooks/useSnapshotList.ts
 
-import { useState, useEffect } from 'react';
-import { listSnapshots } from '@/lib/api/snapshots';
-import type { SnapshotRun } from '@/types/snapshots';
+import { useState, useEffect } from "react";
+import { listSnapshots } from "@/lib/api/snapshots";
+import type { SnapshotRun } from "@/types/snapshots";
 
 interface UseSnapshotListParams {
   limit?: number;
@@ -31,7 +31,7 @@ export function useSnapshotList(params?: UseSnapshotListParams) {
       setSnapshots(response.snapshots);
       setTotal(response.total);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error');
+      const error = err instanceof Error ? err : new Error("Unknown error");
       setError(error);
     } finally {
       setLoading(false);

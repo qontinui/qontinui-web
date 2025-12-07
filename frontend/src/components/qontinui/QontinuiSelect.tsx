@@ -6,7 +6,6 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -66,7 +65,10 @@ export function QontinuiSelect({
   return (
     <div className="flex flex-col gap-1.5">
       {label && (
-        <label htmlFor={selectId} className={cn(styles.text.primary, "text-sm font-medium")}>
+        <label
+          htmlFor={selectId}
+          className={cn(styles.text.primary, "text-sm font-medium")}
+        >
           {label}
         </label>
       )}
@@ -92,7 +94,9 @@ export function QontinuiSelect({
           </SelectGroup>
         </SelectContent>
       </Select>
-      {error && <span className="text-red-500 text-xs font-medium">{error}</span>}
+      {error && (
+        <span className="text-red-500 text-xs font-medium">{error}</span>
+      )}
     </div>
   );
 }

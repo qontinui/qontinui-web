@@ -12,13 +12,14 @@ and old data is automatically cleaned up according to retention policies.
 
 import time
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, TypedDict, cast
 
 import structlog
 
 from app.core.config import settings
 from app.db.partition_manager import (
     PARTITION_CONFIG,
+    PartitionTable,
     create_monthly_partition,
     create_weekly_partition,
     drop_old_partitions,
@@ -26,6 +27,68 @@ from app.db.partition_manager import (
 )
 
 logger = structlog.get_logger(__name__)
+
+
+# TypedDict definitions for type safety
+class PartitionResult(TypedDict):
+    """Result from creating a single partition"""
+
+    status: str
+    partition_name: str
+    table_name: str
+    start_date: str
+    end_date: str
+
+
+class TableResults(TypedDict, total=False):
+    """Results for partition operations on a single table"""
+
+    created: int
+    already_existed: int
+    errors: int
+    partitions: list[dict[str, Any]]
+    error_message: str
+    retention_months: int
+    partitions_deleted: int
+    rows_deleted: int
+    cutoff_date: str
+    total_partitions: int
+    total_size_mb: float
+    total_rows: int
+
+
+class AutoCreateResults(TypedDict, total=False):
+    """Results from auto_create_partitions task"""
+
+    status: str
+    tables: dict[str, TableResults]
+    total_created: int
+    total_already_existed: int
+    execution_time_seconds: float
+    timestamp: str
+    error: str
+
+
+class CleanupResults(TypedDict, total=False):
+    """Results from cleanup_old_partitions task"""
+
+    status: str
+    tables: dict[str, TableResults]
+    total_partitions_deleted: int
+    total_rows_deleted: int
+    execution_time_seconds: float
+    timestamp: str
+    error: str
+
+
+class StatisticsResults(TypedDict, total=False):
+    """Results from get_partition_statistics task"""
+
+    status: str
+    tables: dict[str, TableResults]
+    execution_time_seconds: float
+    timestamp: str
+    error: str
 
 
 async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -68,7 +131,7 @@ async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         from app.db.session import AsyncSessionLocal
 
-        results = {
+        results: AutoCreateResults = {
             "status": "success",
             "tables": {},
             "total_created": 0,
@@ -80,7 +143,7 @@ async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
 
             # Process each table according to its configuration
             for table_name, config in PARTITION_CONFIG.items():
-                table_results = {
+                table_results: TableResults = {
                     "created": 0,
                     "already_existed": 0,
                     "errors": 0,
@@ -93,12 +156,14 @@ async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
                     if granularity == "monthly":
                         # Create partitions for current month + next 3 months
                         for months_ahead in range(4):
-                            target_date = current_date + timedelta(days=months_ahead * 30)
+                            target_date = current_date + timedelta(
+                                days=months_ahead * 30
+                            )
                             year = target_date.year
                             month = target_date.month
 
                             result = await create_monthly_partition(
-                                db, table_name, year, month
+                                db, cast(PartitionTable, table_name), year, month
                             )
                             table_results["partitions"].append(result)
 
@@ -113,7 +178,7 @@ async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
                             target_date = current_date + timedelta(weeks=weeks_ahead)
 
                             result = await create_weekly_partition(
-                                db, table_name, target_date
+                                db, cast(PartitionTable, table_name), target_date
                             )
                             table_results["partitions"].append(result)
 
@@ -151,7 +216,7 @@ async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
         results["execution_time_seconds"] = round(execution_time, 2)
         results["timestamp"] = datetime.utcnow().isoformat()
 
-        return results
+        return cast(dict[str, Any], results)
 
     except Exception as e:
         execution_time = time.time() - start_time
@@ -161,12 +226,13 @@ async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
             error_type=type(e).__name__,
             execution_time_seconds=round(execution_time, 2),
         )
-        return {
+        error_result: AutoCreateResults = {
             "status": "error",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
             "timestamp": datetime.utcnow().isoformat(),
         }
+        return cast(dict[str, Any], error_result)
 
 
 async def cleanup_old_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -208,7 +274,7 @@ async def cleanup_old_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         from app.db.session import AsyncSessionLocal
 
-        results = {
+        results: CleanupResults = {
             "status": "success",
             "tables": {},
             "total_partitions_deleted": 0,
@@ -221,18 +287,20 @@ async def cleanup_old_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
                 try:
                     # Execute cleanup (dry_run=False for actual deletion)
                     cleanup_result = await drop_old_partitions(
-                        db, table_name, dry_run=False
+                        db, cast(PartitionTable, table_name), dry_run=False
                     )
 
-                    table_results = {
-                        "retention_months": config["retention_months"],
+                    table_results: TableResults = {
+                        "retention_months": cast(int, config["retention_months"]),
                         "partitions_deleted": len(cleanup_result["partitions_deleted"]),
                         "rows_deleted": cleanup_result["total_rows_to_delete"],
                         "cutoff_date": cleanup_result["cutoff_date"],
                         "partitions": cleanup_result["partitions_deleted"],
                     }
 
-                    results["total_partitions_deleted"] += table_results["partitions_deleted"]
+                    results["total_partitions_deleted"] += table_results[
+                        "partitions_deleted"
+                    ]
                     results["total_rows_deleted"] += table_results["rows_deleted"]
                     results["tables"][table_name] = table_results
 
@@ -243,10 +311,14 @@ async def cleanup_old_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
                         error=str(e),
                         error_type=type(e).__name__,
                     )
-                    results["tables"][table_name] = {
-                        "status": "error",
-                        "error": str(e),
+                    error_table_results: TableResults = {
+                        "errors": 1,
+                        "error_message": str(e),
+                        "created": 0,
+                        "already_existed": 0,
+                        "partitions": [],
                     }
+                    results["tables"][table_name] = error_table_results
                     results["status"] = "partial_success"
 
         execution_time = time.time() - start_time
@@ -262,7 +334,7 @@ async def cleanup_old_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
         results["execution_time_seconds"] = round(execution_time, 2)
         results["timestamp"] = datetime.utcnow().isoformat()
 
-        return results
+        return cast(dict[str, Any], results)
 
     except Exception as e:
         execution_time = time.time() - start_time
@@ -272,12 +344,13 @@ async def cleanup_old_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
             error_type=type(e).__name__,
             execution_time_seconds=round(execution_time, 2),
         )
-        return {
+        error_result: CleanupResults = {
             "status": "error",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
             "timestamp": datetime.utcnow().isoformat(),
         }
+        return cast(dict[str, Any], error_result)
 
 
 async def get_partition_statistics(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -313,7 +386,7 @@ async def get_partition_statistics(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         from app.db.session import AsyncSessionLocal
 
-        results = {
+        results: StatisticsResults = {
             "status": "success",
             "tables": {},
         }
@@ -321,17 +394,23 @@ async def get_partition_statistics(ctx: dict[str, Any]) -> dict[str, Any]:
         async with AsyncSessionLocal() as db:
             for table_name in PARTITION_CONFIG.keys():
                 try:
-                    partitions = await list_partitions(db, table_name)
+                    partitions = await list_partitions(
+                        db, cast(PartitionTable, table_name)
+                    )
 
-                    total_size_mb = sum(p["size_mb"] for p in partitions)
-                    total_rows = sum(p["row_count"] for p in partitions)
+                    total_size_mb = sum(cast(float, p["size_mb"]) for p in partitions)
+                    total_rows = sum(cast(int, p["row_count"]) for p in partitions)
 
-                    results["tables"][table_name] = {
+                    table_stats: TableResults = {
                         "total_partitions": len(partitions),
                         "total_size_mb": round(total_size_mb, 2),
                         "total_rows": total_rows,
                         "partitions": partitions,
+                        "created": 0,
+                        "already_existed": 0,
+                        "errors": 0,
                     }
+                    results["tables"][table_name] = table_stats
 
                 except Exception as e:
                     logger.exception(
@@ -339,10 +418,14 @@ async def get_partition_statistics(ctx: dict[str, Any]) -> dict[str, Any]:
                         table_name=table_name,
                         error=str(e),
                     )
-                    results["tables"][table_name] = {
-                        "status": "error",
-                        "error": str(e),
+                    error_stats: TableResults = {
+                        "errors": 1,
+                        "error_message": str(e),
+                        "created": 0,
+                        "already_existed": 0,
+                        "partitions": [],
                     }
+                    results["tables"][table_name] = error_stats
 
         execution_time = time.time() - start_time
 
@@ -354,7 +437,7 @@ async def get_partition_statistics(ctx: dict[str, Any]) -> dict[str, Any]:
         results["execution_time_seconds"] = round(execution_time, 2)
         results["timestamp"] = datetime.utcnow().isoformat()
 
-        return results
+        return cast(dict[str, Any], results)
 
     except Exception as e:
         execution_time = time.time() - start_time
@@ -363,12 +446,13 @@ async def get_partition_statistics(ctx: dict[str, Any]) -> dict[str, Any]:
             error=str(e),
             error_type=type(e).__name__,
         )
-        return {
+        error_result: StatisticsResults = {
             "status": "error",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
             "timestamp": datetime.utcnow().isoformat(),
         }
+        return cast(dict[str, Any], error_result)
 
 
 def get_partition_cron_jobs() -> list[dict[str, Any]]:

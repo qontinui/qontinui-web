@@ -14,19 +14,17 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from fastapi import Depends, Query
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import current_active_user, get_async_db
 from app.models.automation_log import AutomationLog
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.user import User
-from app.schemas.automation import (
-    AutomationSessionListResponse,
-    AutomationSessionWithStats,
-)
+from app.schemas.automation import AutomationSessionWithStats
 from app.services.permission_service import permission_service
-from fastapi import Depends, Query
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

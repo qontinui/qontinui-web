@@ -10,20 +10,20 @@
  * - Show/hide toggle
  */
 
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { MiniMap } from '@xyflow/react';
-import { CanvasNode } from './canvas-types';
-import { getActionCategory, ActionCategory } from './canvas-types';
-import { getCategoryColor, COLORS } from './canvas-config';
+import React, { useState } from "react";
+import { MiniMap } from "@xyflow/react";
+import { CanvasNode } from "./canvas-types";
+import { getActionCategory } from "./canvas-types";
+import { getCategoryColor, COLORS } from "./canvas-config";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface MinimapEnhancedProps {
-  position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  position?: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   showToggle?: boolean;
   defaultVisible?: boolean;
 }
@@ -33,7 +33,7 @@ export interface MinimapEnhancedProps {
 // ============================================================================
 
 export function MinimapEnhanced({
-  position = 'bottom-right',
+  position = "bottom-right",
   showToggle = true,
   defaultVisible = true,
 }: MinimapEnhancedProps) {
@@ -45,13 +45,13 @@ export function MinimapEnhanced({
     // Color by execution state if available
     if (canvasNode.data?.executionState) {
       switch (canvasNode.data.executionState) {
-        case 'running':
+        case "running":
           return COLORS.running;
-        case 'success':
+        case "success":
           return COLORS.successState;
-        case 'error':
+        case "error":
           return COLORS.errorState;
-        case 'warning':
+        case "warning":
           return COLORS.warning;
         default:
           return COLORS.idle;
@@ -74,8 +74,18 @@ export function MinimapEnhanced({
         className="fixed bottom-4 right-4 z-[1000] px-3 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg shadow-xl text-white text-sm transition-colors"
         title="Show Minimap"
       >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
+          />
         </svg>
       </button>
     );
@@ -91,9 +101,9 @@ export function MinimapEnhanced({
         maskColor="rgba(0, 217, 255, 0.1)"
         position={position}
         style={{
-          backgroundColor: 'rgba(24, 24, 27, 0.95)',
-          border: '1px solid #3F3F46',
-          borderRadius: '8px',
+          backgroundColor: "rgba(24, 24, 27, 0.95)",
+          border: "1px solid #3F3F46",
+          borderRadius: "8px",
         }}
       />
 
@@ -104,8 +114,18 @@ export function MinimapEnhanced({
           className="absolute top-2 right-2 p-1 bg-gray-900/50 hover:bg-gray-900/80 rounded text-gray-400 hover:text-white transition-colors"
           title="Hide Minimap"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       )}
@@ -115,15 +135,24 @@ export function MinimapEnhanced({
         <div className="bg-gray-900/80 rounded px-2 py-1 space-y-1">
           <div className="text-gray-400 font-semibold mb-1">State</div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.running }} />
+            <div
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: COLORS.running }}
+            />
             <span className="text-gray-400">Running</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.successState }} />
+            <div
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: COLORS.successState }}
+            />
             <span className="text-gray-400">Success</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.errorState }} />
+            <div
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: COLORS.errorState }}
+            />
             <span className="text-gray-400">Error</span>
           </div>
         </div>

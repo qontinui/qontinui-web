@@ -11,13 +11,13 @@
  * - Version migration
  */
 
-import { Workflow } from '../lib/action-schema/action-types';
+import { Workflow } from "../lib/action-schema/action-types";
 import {
   validateWorkflow,
   ValidationResult,
   ValidationError,
-} from '../lib/action-schema/workflow-validation';
-import { migrateWorkflow, detectWorkflowVersion } from './workflow-migration';
+} from "../lib/action-schema/workflow-validation";
+import { migrateWorkflow, detectWorkflowVersion } from "./workflow-migration";
 
 // ============================================================================
 // Types
@@ -60,8 +60,8 @@ export interface AutoFixResult {
 // Constants
 // ============================================================================
 
-const CURRENT_WORKFLOW_VERSION = '1.0.0';
-const WORKFLOW_FILE_EXTENSION = '.qontinui.json';
+const CURRENT_WORKFLOW_VERSION = "1.0.0";
+const WORKFLOW_FILE_EXTENSION = ".qontinui.json";
 
 // ============================================================================
 // WorkflowFileManager Class
@@ -89,12 +89,11 @@ export class WorkflowFileManager {
   /**
    * Load workflow from File object
    */
-  async loadWorkflow(file: File, options: ImportOptions = {}): Promise<LoadResult> {
-    const {
-      validate = true,
-      autoFix = true,
-      migrate = true,
-    } = options;
+  async loadWorkflow(
+    file: File,
+    options: ImportOptions = {}
+  ): Promise<LoadResult> {
+    const { validate = true, autoFix = true, migrate = true } = options;
 
     const result: LoadResult = {
       success: false,
@@ -113,8 +112,8 @@ export class WorkflowFileManager {
         data = JSON.parse(content);
       } catch (parseError) {
         result.errors.push({
-          type: 'missing_action',
-          message: `Invalid JSON: ${parseError instanceof Error ? parseError.message : 'Parse error'}`,
+          type: "missing_action",
+          message: `Invalid JSON: ${parseError instanceof Error ? parseError.message : "Parse error"}`,
         });
         return result;
       }
@@ -134,8 +133,8 @@ export class WorkflowFileManager {
           );
         } catch (migrateError) {
           result.errors.push({
-            type: 'missing_action',
-            message: `Migration failed: ${migrateError instanceof Error ? migrateError.message : 'Unknown error'}`,
+            type: "missing_action",
+            message: `Migration failed: ${migrateError instanceof Error ? migrateError.message : "Unknown error"}`,
           });
           return result;
         }
@@ -151,7 +150,9 @@ export class WorkflowFileManager {
           const fixResult = this.autoFixWorkflow(workflow);
           if (fixResult.fixed) {
             workflow = fixResult.workflow;
-            result.warnings.push(...fixResult.changes.map((c) => `Auto-fixed: ${c}`));
+            result.warnings.push(
+              ...fixResult.changes.map((c) => `Auto-fixed: ${c}`)
+            );
 
             // Re-validate after fixing
             const revalidation = validateWorkflow(workflow);
@@ -167,8 +168,8 @@ export class WorkflowFileManager {
       return result;
     } catch (error) {
       result.errors.push({
-        type: 'missing_action',
-        message: `Failed to load workflow: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        type: "missing_action",
+        message: `Failed to load workflow: ${error instanceof Error ? error.message : "Unknown error"}`,
       });
       return result;
     }
@@ -182,15 +183,20 @@ export class WorkflowFileManager {
     options: ImportOptions = {}
   ): Promise<LoadResult> {
     // Create a virtual File object
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const file = new File([blob], 'workflow.json', { type: 'application/json' });
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const file = new File([blob], "workflow.json", {
+      type: "application/json",
+    });
     return this.loadWorkflow(file, options);
   }
 
   /**
    * Load workflow from URL
    */
-  async loadWorkflowFromUrl(url: string, options: ImportOptions = {}): Promise<LoadResult> {
+  async loadWorkflowFromUrl(
+    url: string,
+    options: ImportOptions = {}
+  ): Promise<LoadResult> {
     try {
       const response = await fetch(url);
       if (!response.ok) {
@@ -198,7 +204,7 @@ export class WorkflowFileManager {
           success: false,
           errors: [
             {
-              type: 'missing_action',
+              type: "missing_action",
               message: `Failed to fetch workflow: ${response.statusText}`,
             },
           ],
@@ -214,8 +220,8 @@ export class WorkflowFileManager {
         success: false,
         errors: [
           {
-            type: 'missing_action',
-            message: `Failed to load workflow from URL: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            type: "missing_action",
+            message: `Failed to load workflow from URL: ${error instanceof Error ? error.message : "Unknown error"}`,
           },
         ],
         warnings: [],
@@ -238,7 +244,7 @@ export class WorkflowFileManager {
       if (!validation.valid) {
         return {
           success: false,
-          error: `Workflow validation failed: ${validation.errors.map((e) => e.message).join(', ')}`,
+          error: `Workflow validation failed: ${validation.errors.map((e) => e.message).join(", ")}`,
         };
       }
 
@@ -263,7 +269,7 @@ export class WorkflowFileManager {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to save workflow: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to save workflow: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -279,7 +285,7 @@ export class WorkflowFileManager {
           success: false,
           errors: [
             {
-              type: 'missing_action',
+              type: "missing_action",
               message: `Workflow not found in storage: ${key}`,
             },
           ],
@@ -294,8 +300,8 @@ export class WorkflowFileManager {
         success: false,
         errors: [
           {
-            type: 'missing_action',
-            message: `Failed to load workflow from storage: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            type: "missing_action",
+            message: `Failed to load workflow from storage: ${error instanceof Error ? error.message : "Unknown error"}`,
           },
         ],
         warnings: [],
@@ -314,7 +320,7 @@ export class WorkflowFileManager {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to delete workflow: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to delete workflow: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -326,7 +332,7 @@ export class WorkflowFileManager {
     const keys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('workflow:')) {
+      if (key && key.startsWith("workflow:")) {
         keys.push(key);
       }
     }
@@ -343,9 +349,9 @@ export class WorkflowFileManager {
   async importWorkflow(options: ImportOptions = {}): Promise<LoadResult> {
     return new Promise((resolve) => {
       // Create file input
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = '.json,.qontinui.json';
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,.qontinui.json";
       input.multiple = false;
 
       input.onchange = async (e) => {
@@ -355,7 +361,7 @@ export class WorkflowFileManager {
         if (!file) {
           resolve({
             success: false,
-            errors: [{ type: 'missing_action', message: 'No file selected' }],
+            errors: [{ type: "missing_action", message: "No file selected" }],
             warnings: [],
             migrated: false,
           });
@@ -369,7 +375,7 @@ export class WorkflowFileManager {
       input.oncancel = () => {
         resolve({
           success: false,
-          errors: [{ type: 'missing_action', message: 'Import cancelled' }],
+          errors: [{ type: "missing_action", message: "Import cancelled" }],
           warnings: [],
           migrated: false,
         });
@@ -392,8 +398,8 @@ export class WorkflowFileManager {
         success: false,
         errors: [
           {
-            type: 'missing_action',
-            message: `Failed to read from clipboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            type: "missing_action",
+            message: `Failed to read from clipboard: ${error instanceof Error ? error.message : "Unknown error"}`,
           },
         ],
         warnings: [],
@@ -405,13 +411,18 @@ export class WorkflowFileManager {
   /**
    * Import workflow from drag-and-drop
    */
-  async importFromDrop(event: DragEvent, options: ImportOptions = {}): Promise<LoadResult> {
+  async importFromDrop(
+    event: DragEvent,
+    options: ImportOptions = {}
+  ): Promise<LoadResult> {
     try {
       const file = event.dataTransfer?.files[0];
       if (!file) {
         return {
           success: false,
-          errors: [{ type: 'missing_action', message: 'No file in drop event' }],
+          errors: [
+            { type: "missing_action", message: "No file in drop event" },
+          ],
           warnings: [],
           migrated: false,
         };
@@ -423,8 +434,8 @@ export class WorkflowFileManager {
         success: false,
         errors: [
           {
-            type: 'missing_action',
-            message: `Failed to import from drop: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            type: "missing_action",
+            message: `Failed to import from drop: ${error instanceof Error ? error.message : "Unknown error"}`,
           },
         ],
         warnings: [],
@@ -441,27 +452,25 @@ export class WorkflowFileManager {
    * Export workflow as JSON download
    */
   exportWorkflow(workflow: Workflow, options: ExportOptions = {}): void {
-    console.log('[WorkflowFileManager] exportWorkflow called', {
+    console.log("[WorkflowFileManager] exportWorkflow called", {
       hasWorkflow: !!workflow,
       workflowType: typeof workflow,
       workflowKeys: workflow ? Object.keys(workflow) : [],
       workflowName: workflow?.name,
       workflowId: workflow?.id,
-      options
+      options,
     });
 
-    const {
-      filename,
-      pretty = true,
-      includeMetadata = true,
-    } = options;
+    const { filename, pretty = true, includeMetadata = true } = options;
 
     if (!workflow) {
-      throw new Error('Workflow is undefined - cannot export');
+      throw new Error("Workflow is undefined - cannot export");
     }
 
     if (!workflow.name) {
-      throw new Error('Workflow has no name property - cannot generate filename');
+      throw new Error(
+        "Workflow has no name property - cannot generate filename"
+      );
     }
 
     // Prepare workflow for export
@@ -471,14 +480,14 @@ export class WorkflowFileManager {
           metadata: {
             ...workflow.metadata,
             exported: new Date().toISOString(),
-            exportedBy: 'Qontinui',
+            exportedBy: "Qontinui",
           },
         }
       : workflow;
 
-    console.log('[WorkflowFileManager] Prepared export workflow', {
+    console.log("[WorkflowFileManager] Prepared export workflow", {
       hasMetadata: !!exportWorkflow.metadata,
-      actionsCount: exportWorkflow.actions?.length
+      actionsCount: exportWorkflow.actions?.length,
     });
 
     // Convert to JSON
@@ -486,26 +495,26 @@ export class WorkflowFileManager {
       ? JSON.stringify(exportWorkflow, null, 2)
       : JSON.stringify(exportWorkflow);
 
-    console.log('[WorkflowFileManager] JSON stringified', {
-      jsonLength: json.length
+    console.log("[WorkflowFileManager] JSON stringified", {
+      jsonLength: json.length,
     });
 
     // Generate filename
     const finalFilename =
       filename ||
-      `${workflow.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}${WORKFLOW_FILE_EXTENSION}`;
+      `${workflow.name.replace(/[^a-z0-9]/gi, "_").toLowerCase()}${WORKFLOW_FILE_EXTENSION}`;
 
-    console.log('[WorkflowFileManager] Generated filename', { finalFilename });
+    console.log("[WorkflowFileManager] Generated filename", { finalFilename });
 
     // Create download
-    const blob = new Blob([json], { type: 'application/json' });
+    const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
     link.download = finalFilename;
     link.click();
 
-    console.log('[WorkflowFileManager] Download triggered');
+    console.log("[WorkflowFileManager] Download triggered");
 
     // Cleanup
     setTimeout(() => URL.revokeObjectURL(url), 100);
@@ -516,11 +525,13 @@ export class WorkflowFileManager {
    */
   async exportToClipboard(workflow: Workflow, pretty = true): Promise<boolean> {
     try {
-      const json = pretty ? JSON.stringify(workflow, null, 2) : JSON.stringify(workflow);
+      const json = pretty
+        ? JSON.stringify(workflow, null, 2)
+        : JSON.stringify(workflow);
       await navigator.clipboard.writeText(json);
       return true;
     } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
+      console.error("Failed to copy to clipboard:", error);
       return false;
     }
   }
@@ -529,7 +540,9 @@ export class WorkflowFileManager {
    * Export workflow as string
    */
   exportToString(workflow: Workflow, pretty = true): string {
-    return pretty ? JSON.stringify(workflow, null, 2) : JSON.stringify(workflow);
+    return pretty
+      ? JSON.stringify(workflow, null, 2)
+      : JSON.stringify(workflow);
   }
 
   // ==========================================================================
@@ -548,8 +561,8 @@ export class WorkflowFileManager {
         valid: false,
         errors: [
           {
-            type: 'missing_action',
-            message: `Validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            type: "missing_action",
+            message: `Validation error: ${error instanceof Error ? error.message : "Unknown error"}`,
           },
         ],
       };
@@ -566,49 +579,52 @@ export class WorkflowFileManager {
   autoFixWorkflow(workflow: Workflow): AutoFixResult {
     const changes: string[] = [];
     let fixed = false;
-    let fixedWorkflow = { ...workflow };
+    const fixedWorkflow = { ...workflow };
 
     // Fix 1: Ensure workflow has required fields
     if (!fixedWorkflow.id) {
       fixedWorkflow.id = `workflow-${Date.now()}`;
-      changes.push('Generated missing workflow ID');
+      changes.push("Generated missing workflow ID");
       fixed = true;
     }
 
     if (!fixedWorkflow.name) {
-      fixedWorkflow.name = 'Untitled Workflow';
-      changes.push('Set default workflow name');
+      fixedWorkflow.name = "Untitled Workflow";
+      changes.push("Set default workflow name");
       fixed = true;
     }
 
     if (!fixedWorkflow.version) {
       fixedWorkflow.version = CURRENT_WORKFLOW_VERSION;
-      changes.push('Set default workflow version');
+      changes.push("Set default workflow version");
       fixed = true;
     }
 
     // Fix 2: Ensure format is set
     if (!fixedWorkflow.format) {
       // Detect format based on presence of connections
-      if (fixedWorkflow.connections && Object.keys(fixedWorkflow.connections).length > 0) {
-        fixedWorkflow.format = 'graph';
-        changes.push('Set format to graph based on connections');
+      if (
+        fixedWorkflow.connections &&
+        Object.keys(fixedWorkflow.connections).length > 0
+      ) {
+        fixedWorkflow.format = "graph";
+        changes.push("Set format to graph based on connections");
       } else {
-        fixedWorkflow.format = 'graph';
-        changes.push('Set default format to graph');
+        fixedWorkflow.format = "graph";
+        changes.push("Set default format to graph");
       }
       fixed = true;
     }
 
     // Fix 3: Ensure connections exist for graph format
-    if (fixedWorkflow.format === 'graph' && !fixedWorkflow.connections) {
+    if (fixedWorkflow.format === "graph" && !fixedWorkflow.connections) {
       fixedWorkflow.connections = {};
-      changes.push('Added missing connections object');
+      changes.push("Added missing connections object");
       fixed = true;
     }
 
     // Fix 4: Ensure actions have positions for graph format
-    if (fixedWorkflow.format === 'graph') {
+    if (fixedWorkflow.format === "graph") {
       fixedWorkflow.actions = fixedWorkflow.actions.map((action, index) => {
         if (!action.position) {
           const x = 100 + (index % 3) * 300;
@@ -626,44 +642,50 @@ export class WorkflowFileManager {
       const actionIds = new Set(fixedWorkflow.actions.map((a) => a.id));
       const cleanedConnections: typeof fixedWorkflow.connections = {};
 
-      Object.entries(fixedWorkflow.connections).forEach(([sourceId, outputs]) => {
-        if (!actionIds.has(sourceId)) {
-          changes.push(`Removed connections from non-existent action ${sourceId}`);
-          fixed = true;
-          return;
-        }
-
-        cleanedConnections[sourceId] = {};
-
-        ['main', 'error', 'success', 'parallel'].forEach((type) => {
-          const connections = outputs[type as keyof typeof outputs];
-          if (connections) {
-            const cleanedOutputs = connections.map((outputConnections) =>
-              outputConnections.filter((conn) => {
-                if (!actionIds.has(conn.action)) {
-                  changes.push(
-                    `Removed invalid connection from ${sourceId} to ${conn.action}`
-                  );
-                  fixed = true;
-                  return false;
-                }
-                return true;
-              })
+      Object.entries(fixedWorkflow.connections).forEach(
+        ([sourceId, outputs]) => {
+          if (!actionIds.has(sourceId)) {
+            changes.push(
+              `Removed connections from non-existent action ${sourceId}`
             );
-
-            // Only include non-empty output arrays
-            const nonEmptyOutputs = cleanedOutputs.filter((arr) => arr.length > 0);
-            if (nonEmptyOutputs.length > 0) {
-              (cleanedConnections[sourceId] as any)[type] = nonEmptyOutputs;
-            }
+            fixed = true;
+            return;
           }
-        });
 
-        // Only include source if it has connections
-        if (Object.keys(cleanedConnections[sourceId]).length === 0) {
-          delete cleanedConnections[sourceId];
+          cleanedConnections[sourceId] = {};
+
+          ["main", "error", "success", "parallel"].forEach((type) => {
+            const connections = outputs[type as keyof typeof outputs];
+            if (connections) {
+              const cleanedOutputs = connections.map((outputConnections) =>
+                outputConnections.filter((conn) => {
+                  if (!actionIds.has(conn.action)) {
+                    changes.push(
+                      `Removed invalid connection from ${sourceId} to ${conn.action}`
+                    );
+                    fixed = true;
+                    return false;
+                  }
+                  return true;
+                })
+              );
+
+              // Only include non-empty output arrays
+              const nonEmptyOutputs = cleanedOutputs.filter(
+                (arr) => arr.length > 0
+              );
+              if (nonEmptyOutputs.length > 0) {
+                (cleanedConnections[sourceId] as any)[type] = nonEmptyOutputs;
+              }
+            }
+          });
+
+          // Only include source if it has connections
+          if (Object.keys(cleanedConnections[sourceId]).length === 0) {
+            delete cleanedConnections[sourceId];
+          }
         }
-      });
+      );
 
       fixedWorkflow.connections = cleanedConnections;
     }
@@ -674,14 +696,14 @@ export class WorkflowFileManager {
         created: new Date().toISOString(),
         updated: new Date().toISOString(),
       };
-      changes.push('Added missing metadata');
+      changes.push("Added missing metadata");
       fixed = true;
     }
 
     // Fix 7: Ensure actions array exists
     if (!fixedWorkflow.actions) {
       fixedWorkflow.actions = [];
-      changes.push('Added missing actions array');
+      changes.push("Added missing actions array");
       fixed = true;
     }
 
@@ -703,7 +725,7 @@ export class WorkflowFileManager {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve(e.target?.result as string);
-      reader.onerror = (e) => reject(new Error('Failed to read file'));
+      reader.onerror = () => reject(new Error("Failed to read file"));
       reader.readAsText(file);
     });
   }

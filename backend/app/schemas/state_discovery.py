@@ -7,8 +7,9 @@ Provides Pydantic models for state discovery API responses.
 from typing import Any
 from uuid import UUID
 
-from app.schemas.base import BaseORMSchema, IsoDatetime
 from pydantic import BaseModel, Field
+
+from app.schemas.base import IsoDatetime
 
 
 class StateTransition(BaseModel):
@@ -33,10 +34,10 @@ class DiscoveredState(BaseModel):
     """Represents a discovered state in the automation session."""
 
     state_id: str = Field(..., description="Unique state identifier")
-    screenshot_ids: list[int] = Field(
+    screenshot_ids: list[UUID] = Field(
         default_factory=list, description="Screenshots associated with this state"
     )
-    representative_screenshot_id: int | None = Field(
+    representative_screenshot_id: UUID | None = Field(
         None, description="Primary screenshot representing this state"
     )
     timestamp_first_seen: IsoDatetime = Field(

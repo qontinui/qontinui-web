@@ -1,22 +1,24 @@
-import { TokenStorage } from './auth/token-storage';
-import { TokenValidator } from './auth/token-validator';
-import { TokenManager } from './auth/token-manager';
-import { TokenRefreshService } from './auth/token-refresh-service';
-import { AuthService } from './auth/auth-service';
-import { HttpClient } from './http-client';
-import { ProjectService } from './project-service';
-import { FileUploadService } from './file-upload-service';
-import { ProfileService } from './profile-service';
-import { AnalyticsService } from './analytics-service';
-import { BillingService } from './billing-service';
-import { RunnerService } from './runner-service';
-import { ApiConfig } from './api-config';
-import { OrganizationService } from './collaboration/organization-service';
-import { ProjectCollaborationService } from './collaboration/project-collaboration-service';
-import { LockService } from './collaboration/lock-service';
-import { CommentService } from './collaboration/comment-service';
-import { ActivityService } from './collaboration/activity-service';
-import { TestingService } from './testing-service';
+import { TokenStorage } from "./auth/token-storage";
+import { TokenValidator } from "./auth/token-validator";
+import { TokenManager } from "./auth/token-manager";
+import { TokenRefreshService } from "./auth/token-refresh-service";
+import { AuthService } from "./auth/auth-service";
+import { HttpClient } from "./http-client";
+import { ProjectService } from "./project-service";
+import { FileUploadService } from "./file-upload-service";
+import { ProfileService } from "./profile-service";
+import { AnalyticsService } from "./analytics-service";
+import { BillingService } from "./billing-service";
+import { RunnerService } from "./runner-service";
+import { OrganizationService } from "./collaboration/organization-service";
+import { ProjectCollaborationService } from "./collaboration/project-collaboration-service";
+import { LockService } from "./collaboration/lock-service";
+import { CommentService } from "./collaboration/comment-service";
+import { ActivityService } from "./collaboration/activity-service";
+import { TestingService } from "./testing-service";
+import { RecordingService } from "./recording-service";
+import { CaptureService } from "./capture-service";
+import { CodePackageService } from "./code-package-service";
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -43,14 +45,23 @@ export class ServiceFactory {
   public readonly commentService: CommentService;
   public readonly activityService: ActivityService;
   public readonly testingService: TestingService;
+  public readonly recordingService: RecordingService;
+  public readonly captureService: CaptureService;
+  public readonly codePackageService: CodePackageService;
 
   private constructor() {
     // Initialize auth services in dependency order
     this.tokenStorage = new TokenStorage();
     this.tokenValidator = new TokenValidator();
-    this.tokenManager = new TokenManager(this.tokenStorage, this.tokenValidator);
+    this.tokenManager = new TokenManager(
+      this.tokenStorage,
+      this.tokenValidator
+    );
     this.tokenRefreshService = new TokenRefreshService(this.tokenManager);
-    this.authService = new AuthService(this.tokenManager, this.tokenRefreshService);
+    this.authService = new AuthService(
+      this.tokenManager,
+      this.tokenRefreshService
+    );
 
     // Initialize other services
     this.httpClient = new HttpClient(this.tokenManager);
@@ -63,7 +74,9 @@ export class ServiceFactory {
 
     // Initialize collaboration services
     this.organizationService = new OrganizationService(this.httpClient);
-    this.projectCollaborationService = new ProjectCollaborationService(this.httpClient);
+    this.projectCollaborationService = new ProjectCollaborationService(
+      this.httpClient
+    );
     this.lockService = new LockService(this.httpClient);
     this.commentService = new CommentService(this.httpClient);
     this.activityService = new ActivityService(this.httpClient);
@@ -71,11 +84,20 @@ export class ServiceFactory {
     // Initialize testing service
     this.testingService = new TestingService(this.httpClient);
 
+    // Initialize recording service
+    this.recordingService = new RecordingService(this.httpClient);
+
+    // Initialize capture service
+    this.captureService = new CaptureService(this.httpClient);
+
+    // Initialize code package service
+    this.codePackageService = new CodePackageService(this.httpClient);
+
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
       this.authService.logout();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('session-expired'));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("session-expired"));
       }
     });
   }
@@ -109,3 +131,6 @@ export const lockService = factory.lockService;
 export const commentService = factory.commentService;
 export const activityService = factory.activityService;
 export const testingService = factory.testingService;
+export const recordingService = factory.recordingService;
+export const captureService = factory.captureService;
+export const codePackageService = factory.codePackageService;

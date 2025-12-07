@@ -1,31 +1,33 @@
 // components/integration-testing/ExecutionVisualization.tsx
 
-'use client';
+"use client";
 
-import { Card } from '@/components/ui/card';
-import { Timeline } from './Timeline';
-import { ActionDetails } from './ActionDetails';
-import { ActiveStatesBadges } from './ActiveStatesBadges';
-import { FindVisualization } from './visualizations/FindVisualization';
-import { ClickVisualization } from './visualizations/ClickVisualization';
-import { TypeVisualization } from './visualizations/TypeVisualization';
-import { MoveMouseVisualization } from './visualizations/MoveMouseVisualization';
-import { HighlightVisualization } from './visualizations/HighlightVisualization';
-import { ScrollVisualization } from './visualizations/ScrollVisualization';
-import { WaitVisualization } from './visualizations/WaitVisualization';
-import { DefineVisualization } from './visualizations/DefineVisualization';
-import { VanishVisualization } from './visualizations/VanishVisualization';
-import { useExecutionPlayback } from '@/hooks/useExecutionPlayback';
-import { getScreenshotUrl } from '@/lib/api/integration-testing';
-import type { MockExecutionResponse } from '@/types/integration-testing';
-import { VideoExportButton } from './VideoExportButton';
-import { ReportExportButton } from './ReportExportButton';
+import { Card } from "@/components/ui/card";
+import { Timeline } from "./Timeline";
+import { ActionDetails } from "./ActionDetails";
+import { ActiveStatesBadges } from "./ActiveStatesBadges";
+import { FindVisualization } from "./visualizations/FindVisualization";
+import { ClickVisualization } from "./visualizations/ClickVisualization";
+import { TypeVisualization } from "./visualizations/TypeVisualization";
+import { MoveMouseVisualization } from "./visualizations/MoveMouseVisualization";
+import { HighlightVisualization } from "./visualizations/HighlightVisualization";
+import { ScrollVisualization } from "./visualizations/ScrollVisualization";
+import { WaitVisualization } from "./visualizations/WaitVisualization";
+import { DefineVisualization } from "./visualizations/DefineVisualization";
+import { VanishVisualization } from "./visualizations/VanishVisualization";
+import { useExecutionPlayback } from "@/hooks/useExecutionPlayback";
+import { getScreenshotUrl } from "@/lib/api/integration-testing";
+import type { MockExecutionResponse } from "@/types/integration-testing";
+import { VideoExportButton } from "./VideoExportButton";
+import { ReportExportButton } from "./ReportExportButton";
 
 interface ExecutionVisualizationProps {
   result: MockExecutionResponse;
 }
 
-export function ExecutionVisualization({ result }: ExecutionVisualizationProps) {
+export function ExecutionVisualization({
+  result,
+}: ExecutionVisualizationProps) {
   const {
     currentAction,
     currentIndex,
@@ -41,6 +43,10 @@ export function ExecutionVisualization({ result }: ExecutionVisualizationProps) 
     autoPlay: false,
     playbackSpeed: 1500,
   });
+
+  if (!currentAction) {
+    return <div>No action data available</div>;
+  }
 
   const screenshotUrl = getScreenshotUrl(
     result.process_id,
@@ -104,47 +110,48 @@ export function ExecutionVisualization({ result }: ExecutionVisualizationProps) 
             <span
               className={`
                 px-3 py-1 rounded-full text-sm font-semibold
-                ${currentAction.success
-                  ? 'bg-green-500 text-white'
-                  : 'bg-red-500 text-white'
+                ${
+                  currentAction.success
+                    ? "bg-green-500 text-white"
+                    : "bg-red-500 text-white"
                 }
               `}
             >
-              {currentAction.success ? '✓ Success' : '✗ Failed'}
+              {currentAction.success ? "✓ Success" : "✗ Failed"}
             </span>
           </div>
 
           {/* Action Visualizations */}
-          {currentAction.action_type === 'FIND' && (
+          {currentAction.action_type === "FIND" && (
             <FindVisualization
               matches={currentAction.matches || []}
               actionRegion={currentAction.action_region}
             />
           )}
 
-          {currentAction.action_type === 'CLICK' && (
+          {currentAction.action_type === "CLICK" && (
             <ClickVisualization location={currentAction.action_location} />
           )}
 
-          {currentAction.action_type === 'TYPE' && (
+          {currentAction.action_type === "TYPE" && (
             <TypeVisualization
               location={currentAction.action_location}
-              text={currentAction.text || ''}
+              text={currentAction.text || ""}
             />
           )}
 
-          {currentAction.action_type === 'MOVE_MOUSE' && (
+          {currentAction.action_type === "MOVE_MOUSE" && (
             <MoveMouseVisualization location={currentAction.action_location} />
           )}
 
-          {currentAction.action_type === 'HIGHLIGHT' && (
+          {currentAction.action_type === "HIGHLIGHT" && (
             <HighlightVisualization
               actionRegion={currentAction.action_region}
               location={currentAction.action_location}
             />
           )}
 
-          {currentAction.action_type === 'SCROLL' && (
+          {currentAction.action_type === "SCROLL" && (
             <ScrollVisualization
               actionRegion={currentAction.action_region}
               location={currentAction.action_location}
@@ -153,7 +160,7 @@ export function ExecutionVisualization({ result }: ExecutionVisualizationProps) 
             />
           )}
 
-          {currentAction.action_type === 'WAIT' && (
+          {currentAction.action_type === "WAIT" && (
             <WaitVisualization
               actionRegion={currentAction.action_region}
               location={currentAction.action_location}
@@ -161,7 +168,7 @@ export function ExecutionVisualization({ result }: ExecutionVisualizationProps) 
             />
           )}
 
-          {currentAction.action_type === 'DEFINE' && (
+          {currentAction.action_type === "DEFINE" && (
             <DefineVisualization
               actionRegion={currentAction.action_region}
               location={currentAction.action_location}
@@ -169,7 +176,7 @@ export function ExecutionVisualization({ result }: ExecutionVisualizationProps) 
             />
           )}
 
-          {currentAction.action_type === 'VANISH' && (
+          {currentAction.action_type === "VANISH" && (
             <VanishVisualization
               actionRegion={currentAction.action_region}
               location={currentAction.action_location}

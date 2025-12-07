@@ -14,9 +14,9 @@
  * - Set as default
  */
 
-import React, { useState, useEffect } from 'react';
-import { LayoutStyle } from '@/lib/workflow-layout/auto-layout';
-import type { LayoutOptions } from '@/services/layout-service';
+import React, { useState, useEffect } from "react";
+import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
+import type { LayoutOptions } from "@/services/layout-service";
 
 // ============================================================================
 // Types
@@ -32,7 +32,7 @@ export interface LayoutPreset {
   id: string;
   name: string;
   description: string;
-  category: 'compact' | 'spacious' | 'balanced' | 'custom';
+  category: "compact" | "spacious" | "balanced" | "custom";
   style: LayoutStyle;
   options: LayoutOptions;
   builtin: boolean;
@@ -42,12 +42,19 @@ export interface LayoutPreset {
 // Preset Manager Dialog Component
 // ============================================================================
 
-export function PresetManagerDialog({ open, onClose, onSelectPreset }: PresetManagerDialogProps) {
+export function PresetManagerDialog({
+  open,
+  onClose,
+  onSelectPreset,
+}: PresetManagerDialogProps) {
   const [presets, setPresets] = useState<LayoutPreset[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<'all' | 'compact' | 'spacious' | 'balanced' | 'custom'>('all');
-  const [selectedPreset, setSelectedPreset] = useState<LayoutPreset | null>(null);
-  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<
+    "all" | "compact" | "spacious" | "balanced" | "custom"
+  >("all");
+  const [selectedPreset, setSelectedPreset] = useState<LayoutPreset | null>(
+    null
+  );
 
   useEffect(() => {
     if (open) {
@@ -57,44 +64,50 @@ export function PresetManagerDialog({ open, onClose, onSelectPreset }: PresetMan
 
   const loadPresets = () => {
     try {
-      const saved = localStorage.getItem('auto-layout-custom-presets');
+      const saved = localStorage.getItem("auto-layout-custom-presets");
       const customPresets = saved ? JSON.parse(saved) : [];
       setPresets([...BUILTIN_PRESETS, ...customPresets]);
     } catch (err) {
-      console.error('Failed to load presets:', err);
+      console.error("Failed to load presets:", err);
       setPresets([...BUILTIN_PRESETS]);
     }
   };
 
-  const filteredPresets = presets.filter(preset => {
-    if (selectedCategory !== 'all' && preset.category !== selectedCategory) {
+  const filteredPresets = presets.filter((preset) => {
+    if (selectedCategory !== "all" && preset.category !== selectedCategory) {
       return false;
     }
-    if (searchQuery && !preset.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+    if (
+      searchQuery &&
+      !preset.name.toLowerCase().includes(searchQuery.toLowerCase())
+    ) {
       return false;
     }
     return true;
   });
 
   const handleDelete = (presetId: string) => {
-    if (!confirm('Delete this preset?')) return;
+    if (!confirm("Delete this preset?")) return;
 
-    const updated = presets.filter(p => p.id !== presetId && p.builtin);
-    const customPresets = updated.filter(p => !p.builtin);
+    const updated = presets.filter((p) => p.id !== presetId && p.builtin);
+    const customPresets = updated.filter((p) => !p.builtin);
 
     try {
-      localStorage.setItem('auto-layout-custom-presets', JSON.stringify(customPresets));
+      localStorage.setItem(
+        "auto-layout-custom-presets",
+        JSON.stringify(customPresets)
+      );
       setPresets(updated);
     } catch (err) {
-      console.error('Failed to delete preset:', err);
+      console.error("Failed to delete preset:", err);
     }
   };
 
   const handleExport = (preset: LayoutPreset) => {
     const json = JSON.stringify(preset, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
+    const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `layout-preset-${preset.id}.json`;
     a.click();
@@ -102,9 +115,9 @@ export function PresetManagerDialog({ open, onClose, onSelectPreset }: PresetMan
   };
 
   const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
     input.onchange = (e: any) => {
       const file = e.target?.files?.[0];
       if (!file) return;
@@ -112,18 +125,23 @@ export function PresetManagerDialog({ open, onClose, onSelectPreset }: PresetMan
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
-          const preset = JSON.parse(event.target?.result as string) as LayoutPreset;
+          const preset = JSON.parse(
+            event.target?.result as string
+          ) as LayoutPreset;
           preset.id = `custom-${Date.now()}`;
           preset.builtin = false;
-          preset.category = 'custom';
+          preset.category = "custom";
 
-          const customPresets = presets.filter(p => !p.builtin);
+          const customPresets = presets.filter((p) => !p.builtin);
           customPresets.push(preset);
 
-          localStorage.setItem('auto-layout-custom-presets', JSON.stringify(customPresets));
+          localStorage.setItem(
+            "auto-layout-custom-presets",
+            JSON.stringify(customPresets)
+          );
           loadPresets();
         } catch (err) {
-          alert('Failed to import preset: Invalid file format');
+          alert("Failed to import preset: Invalid file format");
         }
       };
       reader.readAsText(file);
@@ -138,7 +156,9 @@ export function PresetManagerDialog({ open, onClose, onSelectPreset }: PresetMan
       <div className="preset-manager-dialog">
         <div className="dialog-header">
           <h2>Manage Layout Presets</h2>
-          <button className="close-button" onClick={onClose}>×</button>
+          <button className="close-button" onClick={onClose}>
+            ×
+          </button>
         </div>
 
         <div className="dialog-toolbar">
@@ -155,31 +175,37 @@ export function PresetManagerDialog({ open, onClose, onSelectPreset }: PresetMan
         </div>
 
         <div className="category-filter">
-          {(['all', 'compact', 'spacious', 'balanced', 'custom'] as const).map(cat => (
-            <button
-              key={cat}
-              className={selectedCategory === cat ? 'active' : ''}
-              onClick={() => setSelectedCategory(cat)}
-            >
-              {cat.charAt(0).toUpperCase() + cat.slice(1)}
-            </button>
-          ))}
+          {(["all", "compact", "spacious", "balanced", "custom"] as const).map(
+            (cat) => (
+              <button
+                key={cat}
+                className={selectedCategory === cat ? "active" : ""}
+                onClick={() => setSelectedCategory(cat)}
+              >
+                {cat.charAt(0).toUpperCase() + cat.slice(1)}
+              </button>
+            )
+          )}
         </div>
 
         <div className="presets-list">
-          {filteredPresets.map(preset => (
+          {filteredPresets.map((preset) => (
             <div
               key={preset.id}
-              className={`preset-item ${selectedPreset?.id === preset.id ? 'selected' : ''}`}
+              className={`preset-item ${selectedPreset?.id === preset.id ? "selected" : ""}`}
               onClick={() => setSelectedPreset(preset)}
             >
               <div className="preset-info">
                 <h4>{preset.name}</h4>
                 <p>{preset.description}</p>
                 <div className="preset-meta">
-                  <span className={`category-badge ${preset.category}`}>{preset.category}</span>
+                  <span className={`category-badge ${preset.category}`}>
+                    {preset.category}
+                  </span>
                   <span className="style-badge">{preset.style}</span>
-                  {preset.builtin && <span className="builtin-badge">Built-in</span>}
+                  {preset.builtin && (
+                    <span className="builtin-badge">Built-in</span>
+                  )}
                 </div>
               </div>
 
@@ -210,7 +236,8 @@ export function PresetManagerDialog({ open, onClose, onSelectPreset }: PresetMan
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedPreset(preset);
-                        setShowEditDialog(true);
+                        // TODO: implement edit dialog
+                        // setShowEditDialog(true);
                       }}
                     >
                       ✎
@@ -247,10 +274,10 @@ export function PresetManagerDialog({ open, onClose, onSelectPreset }: PresetMan
 
 const BUILTIN_PRESETS: LayoutPreset[] = [
   {
-    id: 'balanced-hierarchical',
-    name: 'Balanced Hierarchical',
-    description: 'Standard top-to-bottom layout',
-    category: 'balanced',
+    id: "balanced-hierarchical",
+    name: "Balanced Hierarchical",
+    description: "Standard top-to-bottom layout",
+    category: "balanced",
     style: LayoutStyle.HIERARCHICAL,
     options: {
       nodeWidth: 180,
@@ -258,8 +285,8 @@ const BUILTIN_PRESETS: LayoutPreset[] = [
       horizontalSpacing: 200,
       verticalSpacing: 120,
       branchOffset: 150,
-      minNodeSpacing: 20
+      minNodeSpacing: 20,
     },
-    builtin: true
-  }
+    builtin: true,
+  },
 ];

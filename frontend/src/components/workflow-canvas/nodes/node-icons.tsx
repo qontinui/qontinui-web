@@ -5,10 +5,9 @@
  * Provides consistent sizing and styling across all node types.
  */
 
-import React from 'react';
+import React from "react";
 import {
   MousePointer,
-  MousePointer2,
   MousePointerClick,
   Keyboard,
   Type,
@@ -24,7 +23,6 @@ import {
   GitBranch,
   Repeat,
   SkipForward,
-  SkipBack,
   GitMerge,
   AlertTriangle,
   Variable,
@@ -33,29 +31,21 @@ import {
   Map,
   Shuffle,
   ArrowUpDown,
-  Plus,
-  Minus,
-  X,
-  Divide,
   Calculator,
   TextCursor,
-  Scissors,
   Circle,
-  Square,
   Play,
   StopCircle,
   MessageSquare,
   Folder,
-  Image as ImageIcon,
-  FileText,
   Settings,
   Zap,
   Box,
   Code,
   FileCode,
   LucideIcon,
-} from 'lucide-react';
-import { ActionType } from '@/lib/action-schema/action-types';
+} from "lucide-react";
+import { ActionType } from "@/lib/action-schema/action-types";
 
 /**
  * Icon component props
@@ -71,15 +61,12 @@ export interface NodeIconProps {
 const ACTION_ICONS: Record<ActionType, LucideIcon> = {
   // Find Actions
   FIND: Search,
-  FIND_STATE_IMAGE: ImageIcon,
   VANISH: EyeOff,
   EXISTS: Eye,
   WAIT: Clock,
 
   // Mouse Actions
   CLICK: MousePointerClick,
-  DOUBLE_CLICK: MousePointer2,
-  RIGHT_CLICK: MousePointer,
   MOUSE_MOVE: Move,
   MOUSE_DOWN: ArrowDown,
   MOUSE_UP: ArrowUp,
@@ -133,7 +120,7 @@ export function getNodeIcon(actionType: ActionType): LucideIcon {
  */
 export function NodeIcon({
   actionType,
-  className = '',
+  className = "",
   size = 16,
 }: {
   actionType: ActionType;
@@ -182,13 +169,13 @@ export const IconSizes = {
  */
 export function getCategoryIcon(
   category:
-    | 'find'
-    | 'mouse'
-    | 'keyboard'
-    | 'controlFlow'
-    | 'data'
-    | 'state'
-    | 'special'
+    | "find"
+    | "mouse"
+    | "keyboard"
+    | "controlFlow"
+    | "data"
+    | "state"
+    | "special"
 ): LucideIcon {
   return CategoryIcons[category];
 }
@@ -208,7 +195,7 @@ export const ExecutionStateIcons = {
  * Get execution state icon
  */
 export function getExecutionStateIcon(
-  state: 'running' | 'completed' | 'failed' | 'skipped' | 'idle'
+  state: "running" | "completed" | "failed" | "skipped" | "idle"
 ): LucideIcon {
   return ExecutionStateIcons[state];
 }

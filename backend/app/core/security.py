@@ -1,12 +1,12 @@
-import hashlib
 import secrets
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
+
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.services.auth.token_blacklist_service import token_blacklist_service
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
@@ -36,8 +36,9 @@ def create_access_token(
         to_encode.update(additional_claims)
 
     # Use ACCESS_SECRET_KEY to match fastapi-users JWT strategy
+    # ACCESS_SECRET_KEY is guaranteed to be str by the config validator
     encoded_jwt = jwt.encode(
-        to_encode, settings.ACCESS_SECRET_KEY, algorithm=settings.ALGORITHM
+        to_encode, cast(str, settings.ACCESS_SECRET_KEY), algorithm=settings.ALGORITHM
     )
     return encoded_jwt
 
@@ -80,7 +81,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def decode_token(token: str) -> dict:
+def decode_token(token: str) -> dict[Any, Any]:
     """
     Decode a JWT token without checking blacklist.
 
@@ -92,10 +93,13 @@ def decode_token(token: str) -> dict:
     """
     try:
         # Try decoding with ACCESS_SECRET_KEY first (for access tokens)
+        # ACCESS_SECRET_KEY is guaranteed to be str by the config validator
         payload = jwt.decode(
-            token, settings.ACCESS_SECRET_KEY, algorithms=[settings.ALGORITHM]
+            token,
+            cast(str, settings.ACCESS_SECRET_KEY),
+            algorithms=[settings.ALGORITHM],
         )
-        return payload
+        return cast(dict[Any, Any], payload)
     except JWTError:
         return {}
 
@@ -174,12 +178,13 @@ def verify_password_reset_token(token: str) -> str | None:
         )
         if payload.get("type") != "password_reset":
             return None
-        return payload.get("sub")
+        sub = payload.get("sub")
+        return cast(str, sub) if sub is not None else None
     except JWTError:
         return None
 
 
-def decode_refresh_token(token: str) -> dict:
+def decode_refresh_token(token: str) -> dict[Any, Any]:
     """
     Decode a refresh token specifically (uses SECRET_KEY).
 
@@ -199,7 +204,7 @@ def decode_refresh_token(token: str) -> dict:
         if payload.get("type") != "refresh":
             return {}
 
-        return payload
+        return cast(dict[Any, Any], payload)
     except JWTError:
         return {}
 
@@ -275,20 +280,26 @@ def generate_runner_token() -> str:
 
 def hash_runner_token(token: str) -> str:
     """
-    Hash a runner token for secure storage using SHA-256.
+    Hash a runner token for secure storage using Argon2/bcrypt.
+
+    Runner tokens are API credentials and should be treated with the same
+    security as passwords - using slow, salted hashing algorithms that are
+    resistant to rainbow table and brute force attacks.
 
     Args:
         token: The plain text token to hash
 
     Returns:
-        The SHA-256 hash of the token as a hex string (64 characters)
+        The secure hash of the token (Argon2/bcrypt format)
     """
-    return hashlib.sha256(token.encode()).hexdigest()
+    return pwd_context.hash(token)
 
 
 def verify_runner_token(token: str, token_hash: str) -> bool:
     """
     Verify a runner token against its stored hash.
+
+    Uses constant-time comparison to prevent timing attacks.
 
     Args:
         token: The plain text token to verify
@@ -297,4 +308,8 @@ def verify_runner_token(token: str, token_hash: str) -> bool:
     Returns:
         True if the token matches the hash, False otherwise
     """
-    return hash_runner_token(token) == token_hash
+    try:
+        return pwd_context.verify(token, token_hash)
+    except Exception:
+        # Handle malformed hashes gracefully
+        return False

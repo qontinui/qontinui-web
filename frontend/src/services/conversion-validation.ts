@@ -5,15 +5,15 @@
  * maintain equivalent execution behavior.
  */
 
-import type { Workflow, Action, Connections } from '../lib/action-schema/action-types';
-import { getNextActions, getPreviousActions } from '../lib/action-schema/workflow-utils';
+import type { Workflow, Action } from "../lib/action-schema/action-types";
+import { getNextActions } from "../lib/action-schema/workflow-utils";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface ValidationIssue {
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
   type: string;
   message: string;
   actionId?: string;
@@ -96,9 +96,9 @@ export function validateConversion(
   issues.push(...metadataResult.issues);
 
   // Categorize issues
-  const errors = issues.filter((i) => i.severity === 'error');
-  const warnings = issues.filter((i) => i.severity === 'warning');
-  const info = issues.filter((i) => i.severity === 'info');
+  const errors = issues.filter((i) => i.severity === "error");
+  const warnings = issues.filter((i) => i.severity === "warning");
+  const info = issues.filter((i) => i.severity === "info");
 
   return {
     valid: errors.length === 0,
@@ -130,7 +130,9 @@ export function validateConversion(
 export function validateActionPreservation(
   original: Workflow,
   converted: Workflow
-): ConversionValidationResult['actionPreservation'] & { issues: ValidationIssue[] } {
+): ConversionValidationResult["actionPreservation"] & {
+  issues: ValidationIssue[];
+} {
   const issues: ValidationIssue[] = [];
   const originalActions = new Map(original.actions.map((a) => [a.id, a]));
   const convertedActions = new Map(converted.actions.map((a) => [a.id, a]));
@@ -144,8 +146,8 @@ export function validateActionPreservation(
     if (!convertedActions.has(id)) {
       removed++;
       issues.push({
-        severity: 'error',
-        type: 'action_removed',
+        severity: "error",
+        type: "action_removed",
         message: `Action ${id} (${action.type}) was removed during conversion`,
         actionId: id,
       });
@@ -157,8 +159,8 @@ export function validateActionPreservation(
     if (!originalActions.has(id)) {
       added++;
       issues.push({
-        severity: 'info',
-        type: 'action_added',
+        severity: "info",
+        type: "action_added",
         message: `Action ${id} (${action.type}) was added during conversion`,
         actionId: id,
       });
@@ -174,21 +176,26 @@ export function validateActionPreservation(
     if (originalAction.type !== convertedAction.type) {
       modified++;
       issues.push({
-        severity: 'error',
-        type: 'action_type_changed',
+        severity: "error",
+        type: "action_type_changed",
         message: `Action ${id} type changed from ${originalAction.type} to ${convertedAction.type}`,
         actionId: id,
       });
     }
 
     // Check if config changed significantly
-    if (JSON.stringify(originalAction.config) !== JSON.stringify(convertedAction.config)) {
+    if (
+      JSON.stringify(originalAction.config) !==
+      JSON.stringify(convertedAction.config)
+    ) {
       // Only warn if it's not a control flow action (those configs are expected to change)
-      if (!['IF', 'LOOP', 'SWITCH', 'TRY_CATCH'].includes(originalAction.type)) {
+      if (
+        !["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(originalAction.type)
+      ) {
         modified++;
         issues.push({
-          severity: 'warning',
-          type: 'action_config_changed',
+          severity: "warning",
+          type: "action_config_changed",
           message: `Action ${id} configuration changed during conversion`,
           actionId: id,
         });
@@ -219,7 +226,9 @@ export function validateActionPreservation(
 export function validateConnectionEquivalence(
   original: Workflow,
   converted: Workflow
-): ConversionValidationResult['connectionEquivalence'] & { issues: ValidationIssue[] } {
+): ConversionValidationResult["connectionEquivalence"] & {
+  issues: ValidationIssue[];
+} {
   const issues: ValidationIssue[] = [];
 
   // For each action in original, check that it connects to the same next actions
@@ -235,8 +244,8 @@ export function validateConnectionEquivalence(
     for (const nextId of originalNextSet) {
       if (!convertedNextSet.has(nextId)) {
         issues.push({
-          severity: 'error',
-          type: 'connection_removed',
+          severity: "error",
+          type: "connection_removed",
           message: `Connection from ${action.id} to ${nextId} was removed`,
           actionId: action.id,
         });
@@ -247,8 +256,8 @@ export function validateConnectionEquivalence(
     for (const nextId of convertedNextSet) {
       if (!originalNextSet.has(nextId)) {
         issues.push({
-          severity: 'warning',
-          type: 'connection_added',
+          severity: "warning",
+          type: "connection_added",
           message: `Connection from ${action.id} to ${nextId} was added`,
           actionId: action.id,
         });
@@ -256,13 +265,13 @@ export function validateConnectionEquivalence(
     }
   }
 
-  const passed = issues.filter((i) => i.severity === 'error').length === 0;
+  const passed = issues.filter((i) => i.severity === "error").length === 0;
 
   return {
     passed,
     details: passed
-      ? 'All connections preserved'
-      : `${issues.filter((i) => i.severity === 'error').length} connection issues found`,
+      ? "All connections preserved"
+      : `${issues.filter((i) => i.severity === "error").length} connection issues found`,
     issues,
   };
 }
@@ -277,15 +286,13 @@ export function validateConnectionEquivalence(
 export function validateControlFlowIntegrity(
   original: Workflow,
   converted: Workflow
-): ConversionValidationResult['controlFlowIntegrity'] & { issues: ValidationIssue[] } {
+): ConversionValidationResult["controlFlowIntegrity"] & {
+  issues: ValidationIssue[];
+} {
   const issues: ValidationIssue[] = [];
 
   const originalControlFlow = original.actions.filter((a) =>
-    ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH'].includes(a.type)
-  );
-
-  const convertedControlFlow = converted.actions.filter((a) =>
-    ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH'].includes(a.type)
+    ["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(a.type)
   );
 
   // Check that control flow actions are preserved
@@ -293,8 +300,8 @@ export function validateControlFlowIntegrity(
     const convertedAction = converted.actions.find((a) => a.id === action.id);
     if (!convertedAction) {
       issues.push({
-        severity: 'error',
-        type: 'control_flow_removed',
+        severity: "error",
+        type: "control_flow_removed",
         message: `Control flow action ${action.id} (${action.type}) was removed`,
         actionId: action.id,
       });
@@ -302,33 +309,33 @@ export function validateControlFlowIntegrity(
     }
 
     // Validate IF actions
-    if (action.type === 'IF') {
-      validateIfAction(action, convertedAction, original, converted, issues);
+    if (action.type === "IF") {
+      validateIfAction(action, convertedAction, issues);
     }
 
     // Validate LOOP actions
-    if (action.type === 'LOOP') {
-      validateLoopAction(action, convertedAction, original, converted, issues);
+    if (action.type === "LOOP") {
+      validateLoopAction(action, convertedAction, issues);
     }
 
     // Validate SWITCH actions
-    if (action.type === 'SWITCH') {
-      validateSwitchAction(action, convertedAction, original, converted, issues);
+    if (action.type === "SWITCH") {
+      validateSwitchAction(action, convertedAction, issues);
     }
 
     // Validate TRY_CATCH actions
-    if (action.type === 'TRY_CATCH') {
-      validateTryCatchAction(action, convertedAction, original, converted, issues);
+    if (action.type === "TRY_CATCH") {
+      validateTryCatchAction(action, convertedAction, issues);
     }
   }
 
-  const passed = issues.filter((i) => i.severity === 'error').length === 0;
+  const passed = issues.filter((i) => i.severity === "error").length === 0;
 
   return {
     passed,
     details: passed
-      ? 'All control flow structures preserved'
-      : `${issues.filter((i) => i.severity === 'error').length} control flow issues found`,
+      ? "All control flow structures preserved"
+      : `${issues.filter((i) => i.severity === "error").length} control flow issues found`,
     issues,
   };
 }
@@ -339,18 +346,19 @@ export function validateControlFlowIntegrity(
 function validateIfAction(
   original: Action,
   converted: Action,
-  originalWorkflow: Workflow,
-  convertedWorkflow: Workflow,
   issues: ValidationIssue[]
 ): void {
   const originalConfig = original.config as any;
   const convertedConfig = converted.config as any;
 
   // Check condition preservation
-  if (JSON.stringify(originalConfig.condition) !== JSON.stringify(convertedConfig.condition)) {
+  if (
+    JSON.stringify(originalConfig.condition) !==
+    JSON.stringify(convertedConfig.condition)
+  ) {
     issues.push({
-      severity: 'error',
-      type: 'if_condition_changed',
+      severity: "error",
+      type: "if_condition_changed",
       message: `IF action ${original.id} condition was modified`,
       actionId: original.id,
     });
@@ -359,13 +367,17 @@ function validateIfAction(
   // Branches may be represented differently between formats
   // (inline actions in sequential vs action IDs in graph)
   // Just check that branches exist
-  const hasThen = originalConfig.thenActions?.length > 0 || convertedConfig.thenActions?.length > 0;
-  const hasElse = originalConfig.elseActions?.length > 0 || convertedConfig.elseActions?.length > 0;
+  const hasThen =
+    originalConfig.thenActions?.length > 0 ||
+    convertedConfig.thenActions?.length > 0;
+  const hasElse =
+    originalConfig.elseActions?.length > 0 ||
+    convertedConfig.elseActions?.length > 0;
 
   if (!hasThen && !hasElse) {
     issues.push({
-      severity: 'warning',
-      type: 'if_empty_branches',
+      severity: "warning",
+      type: "if_empty_branches",
       message: `IF action ${original.id} has no branches`,
       actionId: original.id,
     });
@@ -378,18 +390,19 @@ function validateIfAction(
 function validateLoopAction(
   original: Action,
   converted: Action,
-  originalWorkflow: Workflow,
-  convertedWorkflow: Workflow,
   issues: ValidationIssue[]
 ): void {
   const originalConfig = original.config as any;
   const convertedConfig = converted.config as any;
 
   // Check condition preservation
-  if (JSON.stringify(originalConfig.condition) !== JSON.stringify(convertedConfig.condition)) {
+  if (
+    JSON.stringify(originalConfig.condition) !==
+    JSON.stringify(convertedConfig.condition)
+  ) {
     issues.push({
-      severity: 'error',
-      type: 'loop_condition_changed',
+      severity: "error",
+      type: "loop_condition_changed",
       message: `LOOP action ${original.id} condition was modified`,
       actionId: original.id,
     });
@@ -398,8 +411,8 @@ function validateLoopAction(
   // Check loop type preservation
   if (originalConfig.loopType !== convertedConfig.loopType) {
     issues.push({
-      severity: 'error',
-      type: 'loop_type_changed',
+      severity: "error",
+      type: "loop_type_changed",
       message: `LOOP action ${original.id} type changed from ${originalConfig.loopType} to ${convertedConfig.loopType}`,
       actionId: original.id,
     });
@@ -412,8 +425,6 @@ function validateLoopAction(
 function validateSwitchAction(
   original: Action,
   converted: Action,
-  originalWorkflow: Workflow,
-  convertedWorkflow: Workflow,
   issues: ValidationIssue[]
 ): void {
   const originalConfig = original.config as any;
@@ -422,8 +433,8 @@ function validateSwitchAction(
   // Check case count preservation
   if (originalConfig.cases?.length !== convertedConfig.cases?.length) {
     issues.push({
-      severity: 'error',
-      type: 'switch_cases_changed',
+      severity: "error",
+      type: "switch_cases_changed",
       message: `SWITCH action ${original.id} case count changed`,
       actionId: original.id,
     });
@@ -436,22 +447,23 @@ function validateSwitchAction(
 function validateTryCatchAction(
   original: Action,
   converted: Action,
-  originalWorkflow: Workflow,
-  convertedWorkflow: Workflow,
   issues: ValidationIssue[]
 ): void {
   const originalConfig = original.config as any;
   const convertedConfig = converted.config as any;
 
   // Check that try/catch blocks exist
-  const hasTry = originalConfig.tryActions?.length > 0 || convertedConfig.tryActions?.length > 0;
+  const hasTry =
+    originalConfig.tryActions?.length > 0 ||
+    convertedConfig.tryActions?.length > 0;
   const hasCatch =
-    originalConfig.catchActions?.length > 0 || convertedConfig.catchActions?.length > 0;
+    originalConfig.catchActions?.length > 0 ||
+    convertedConfig.catchActions?.length > 0;
 
   if (!hasTry) {
     issues.push({
-      severity: 'warning',
-      type: 'try_catch_empty_try',
+      severity: "warning",
+      type: "try_catch_empty_try",
       message: `TRY_CATCH action ${original.id} has no try actions`,
       actionId: original.id,
     });
@@ -459,8 +471,8 @@ function validateTryCatchAction(
 
   if (!hasCatch) {
     issues.push({
-      severity: 'warning',
-      type: 'try_catch_empty_catch',
+      severity: "warning",
+      type: "try_catch_empty_catch",
       message: `TRY_CATCH action ${original.id} has no catch actions`,
       actionId: original.id,
     });
@@ -477,7 +489,9 @@ function validateTryCatchAction(
 export function validateVariablePreservation(
   original: Workflow,
   converted: Workflow
-): ConversionValidationResult['variablePreservation'] & { issues: ValidationIssue[] } {
+): ConversionValidationResult["variablePreservation"] & {
+  issues: ValidationIssue[];
+} {
   const issues: ValidationIssue[] = [];
 
   // Check local variables
@@ -487,8 +501,8 @@ export function validateVariablePreservation(
   for (const varName of originalLocal) {
     if (!convertedLocal.includes(varName)) {
       issues.push({
-        severity: 'warning',
-        type: 'variable_removed',
+        severity: "warning",
+        type: "variable_removed",
         message: `Local variable "${varName}" was removed`,
       });
     }
@@ -501,8 +515,8 @@ export function validateVariablePreservation(
   for (const varName of originalProcess) {
     if (!convertedProcess.includes(varName)) {
       issues.push({
-        severity: 'warning',
-        type: 'variable_removed',
+        severity: "warning",
+        type: "variable_removed",
         message: `Process variable "${varName}" was removed`,
       });
     }
@@ -515,18 +529,20 @@ export function validateVariablePreservation(
   for (const varName of originalGlobal) {
     if (!convertedGlobal.includes(varName)) {
       issues.push({
-        severity: 'warning',
-        type: 'variable_removed',
+        severity: "warning",
+        type: "variable_removed",
         message: `Global variable "${varName}" was removed`,
       });
     }
   }
 
-  const passed = issues.filter((i) => i.severity === 'error').length === 0;
+  const passed = issues.filter((i) => i.severity === "error").length === 0;
 
   return {
     passed,
-    details: passed ? 'All variables preserved' : `${issues.length} variable issues found`,
+    details: passed
+      ? "All variables preserved"
+      : `${issues.length} variable issues found`,
     issues,
   };
 }
@@ -541,14 +557,16 @@ export function validateVariablePreservation(
 export function validateMetadataPreservation(
   original: Workflow,
   converted: Workflow
-): ConversionValidationResult['metadataPreservation'] & { issues: ValidationIssue[] } {
+): ConversionValidationResult["metadataPreservation"] & {
+  issues: ValidationIssue[];
+} {
   const issues: ValidationIssue[] = [];
 
   // Check name preservation
   if (original.name !== converted.name) {
     issues.push({
-      severity: 'warning',
-      type: 'metadata_name_changed',
+      severity: "warning",
+      type: "metadata_name_changed",
       message: `Workflow name changed from "${original.name}" to "${converted.name}"`,
     });
   }
@@ -556,8 +574,8 @@ export function validateMetadataPreservation(
   // Check version preservation
   if (original.version !== converted.version) {
     issues.push({
-      severity: 'info',
-      type: 'metadata_version_changed',
+      severity: "info",
+      type: "metadata_version_changed",
       message: `Workflow version changed from "${original.version}" to "${converted.version}"`,
     });
   }
@@ -568,17 +586,19 @@ export function validateMetadataPreservation(
 
   if (JSON.stringify(originalTags) !== JSON.stringify(convertedTags)) {
     issues.push({
-      severity: 'info',
-      type: 'metadata_tags_changed',
-      message: 'Workflow tags were modified',
+      severity: "info",
+      type: "metadata_tags_changed",
+      message: "Workflow tags were modified",
     });
   }
 
-  const passed = issues.filter((i) => i.severity === 'error').length === 0;
+  const passed = issues.filter((i) => i.severity === "error").length === 0;
 
   return {
     passed,
-    details: passed ? 'All metadata preserved' : `${issues.length} metadata issues found`,
+    details: passed
+      ? "All metadata preserved"
+      : `${issues.length} metadata issues found`,
     issues,
   };
 }
@@ -592,24 +612,30 @@ export function validateMetadataPreservation(
  */
 export function getValidationSummary(result: ValidationResult): string {
   if (result.valid) {
-    return 'Conversion validation passed with no errors.';
+    return "Conversion validation passed with no errors.";
   }
 
   const parts: string[] = [];
 
   if (result.errors.length > 0) {
-    parts.push(`${result.errors.length} error${result.errors.length !== 1 ? 's' : ''}`);
+    parts.push(
+      `${result.errors.length} error${result.errors.length !== 1 ? "s" : ""}`
+    );
   }
 
   if (result.warnings.length > 0) {
-    parts.push(`${result.warnings.length} warning${result.warnings.length !== 1 ? 's' : ''}`);
+    parts.push(
+      `${result.warnings.length} warning${result.warnings.length !== 1 ? "s" : ""}`
+    );
   }
 
   if (result.info.length > 0) {
-    parts.push(`${result.info.length} info message${result.info.length !== 1 ? 's' : ''}`);
+    parts.push(
+      `${result.info.length} info message${result.info.length !== 1 ? "s" : ""}`
+    );
   }
 
-  return `Conversion validation found ${parts.join(', ')}.`;
+  return `Conversion validation found ${parts.join(", ")}.`;
 }
 
 /**
@@ -622,19 +648,25 @@ export function isConversionSafe(result: ConversionValidationResult): boolean {
 /**
  * Get critical issues that should block conversion
  */
-export function getCriticalIssues(result: ConversionValidationResult): ValidationIssue[] {
+export function getCriticalIssues(
+  result: ConversionValidationResult
+): ValidationIssue[] {
   return result.errors;
 }
 
 /**
  * Get all issues sorted by severity
  */
-export function getIssuesSortedBySeverity(result: ValidationResult): ValidationIssue[] {
-  const severityOrder: Record<ValidationIssue['severity'], number> = {
+export function getIssuesSortedBySeverity(
+  result: ValidationResult
+): ValidationIssue[] {
+  const severityOrder: Record<ValidationIssue["severity"], number> = {
     error: 0,
     warning: 1,
     info: 2,
   };
 
-  return [...result.issues].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+  return [...result.issues].sort(
+    (a, b) => severityOrder[a.severity] - severityOrder[b.severity]
+  );
 }

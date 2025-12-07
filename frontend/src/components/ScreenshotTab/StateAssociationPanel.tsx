@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Link2, Plus, X } from 'lucide-react';
-import { Screenshot } from '../../types/Screenshot';
+import React, { useState } from "react";
+import { Link2, Plus, X } from "lucide-react";
+import { Screenshot } from "../../types/Screenshot";
 
 interface StateAssociationPanelProps {
   screenshot: Screenshot;
@@ -11,18 +11,18 @@ interface StateAssociationPanelProps {
 const StateAssociationPanel: React.FC<StateAssociationPanelProps> = ({
   screenshot,
   states,
-  onStateAssociation
+  onStateAssociation,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const filteredStates = states.filter(state =>
+  const filteredStates = states.filter((state) =>
     state.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleToggleState = (stateId: string) => {
     const newAssociations = screenshot.associatedStates.includes(stateId)
-      ? screenshot.associatedStates.filter(id => id !== stateId)
+      ? screenshot.associatedStates.filter((id) => id !== stateId)
       : [...screenshot.associatedStates, stateId];
 
     onStateAssociation(newAssociations);
@@ -30,9 +30,9 @@ const StateAssociationPanel: React.FC<StateAssociationPanelProps> = ({
 
   const getAssociatedStateNames = () => {
     return screenshot.associatedStates
-      .map(stateId => states.find(s => s.id === stateId))
+      .map((stateId) => states.find((s) => s.id === stateId))
       .filter(Boolean)
-      .map(state => state.name);
+      .map((state) => state.name);
   };
 
   if (!isExpanded) {
@@ -107,7 +107,7 @@ const StateAssociationPanel: React.FC<StateAssociationPanelProps> = ({
         {/* States List */}
         <div className="max-h-48 overflow-y-auto space-y-1">
           {filteredStates.length > 0 ? (
-            filteredStates.map(state => (
+            filteredStates.map((state) => (
               <label
                 key={state.id}
                 className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
@@ -126,7 +126,9 @@ const StateAssociationPanel: React.FC<StateAssociationPanelProps> = ({
             ))
           ) : (
             <div className="text-center py-4 text-sm text-gray-500">
-              {searchTerm ? 'No states found matching your search' : 'No states available'}
+              {searchTerm
+                ? "No states found matching your search"
+                : "No states available"}
             </div>
           )}
         </div>
@@ -135,10 +137,12 @@ const StateAssociationPanel: React.FC<StateAssociationPanelProps> = ({
         {screenshot.associatedStates.length > 0 && (
           <div className="mt-3 pt-3 border-t">
             <div className="text-xs text-gray-600">
-              {screenshot.associatedStates.length} state{screenshot.associatedStates.length !== 1 ? 's' : ''} associated
+              {screenshot.associatedStates.length} state
+              {screenshot.associatedStates.length !== 1 ? "s" : ""} associated
             </div>
             <div className="mt-1 text-xs text-gray-500">
-              Regions and locations created on this screenshot will be linked to these states
+              Regions and locations created on this screenshot will be linked to
+              these states
             </div>
           </div>
         )}

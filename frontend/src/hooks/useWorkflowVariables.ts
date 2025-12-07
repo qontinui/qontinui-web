@@ -29,25 +29,27 @@
  * ```
  */
 
-import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+import { useQuery } from "@tanstack/react-query";
 import type {
   VariablesResponse,
   VariableChangesResponse,
   WorkflowVariable,
-  VariableSnapshot,
-  VariableChange,
-} from '@/types/workflow-variables';
+} from "@/types/workflow-variables";
+
+// Use empty string for relative URLs that go through Next.js proxy
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 /**
  * Query keys for organizing cache
  */
 export const workflowVariableKeys = {
-  all: ['workflow-variables'] as const,
-  runs: () => [...workflowVariableKeys.all, 'runs'] as const,
+  all: ["workflow-variables"] as const,
+  runs: () => [...workflowVariableKeys.all, "runs"] as const,
   run: (runId: string) => [...workflowVariableKeys.runs(), runId] as const,
-  variables: (runId: string) => [...workflowVariableKeys.run(runId), 'variables'] as const,
-  history: (runId: string) => [...workflowVariableKeys.run(runId), 'history'] as const,
+  variables: (runId: string) =>
+    [...workflowVariableKeys.run(runId), "variables"] as const,
+  history: (runId: string) =>
+    [...workflowVariableKeys.run(runId), "history"] as const,
 };
 
 /**
@@ -55,11 +57,11 @@ export const workflowVariableKeys = {
  */
 async function fetchVariables(runId: string): Promise<VariablesResponse> {
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL}/api/v1/workflow-runs/${runId}/variables`,
+    `${API_BASE_URL}/api/v1/workflow-runs/${runId}/variables`,
     {
-      credentials: 'include',
+      credentials: "include",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     }
   );
@@ -74,13 +76,15 @@ async function fetchVariables(runId: string): Promise<VariablesResponse> {
 /**
  * Fetch variable change history for a workflow run
  */
-async function fetchVariableHistory(runId: string): Promise<VariableChangesResponse> {
+async function fetchVariableHistory(
+  runId: string
+): Promise<VariableChangesResponse> {
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL}/api/v1/workflow-runs/${runId}/variable-changes`,
+    `${API_BASE_URL}/api/v1/workflow-runs/${runId}/variable-changes`,
     {
-      credentials: 'include',
+      credentials: "include",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     }
   );
@@ -136,7 +140,7 @@ export function useWorkflowVariables(
       flattenedVariables.push({
         name,
         value,
-        scope: 'execution',
+        scope: "execution",
         last_updated: variablesQuery.data.fetched_at,
         type: getValueType(value),
       });
@@ -147,7 +151,7 @@ export function useWorkflowVariables(
       flattenedVariables.push({
         name,
         value,
-        scope: 'workflow',
+        scope: "workflow",
         last_updated: variablesQuery.data.fetched_at,
         type: getValueType(value),
       });
@@ -158,7 +162,7 @@ export function useWorkflowVariables(
       flattenedVariables.push({
         name,
         value,
-        scope: 'global',
+        scope: "global",
         last_updated: variablesQuery.data.fetched_at,
         type: getValueType(value),
       });
@@ -224,8 +228,8 @@ export function useVariableHistory(
  * Helper function to determine the type of a variable value
  */
 function getValueType(value: any): string {
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return 'array';
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
   return typeof value;
 }
 
@@ -233,25 +237,29 @@ function getValueType(value: any): string {
  * Helper function to format variable values for display
  */
 export function formatVariableValue(value: any, maxLength = 100): string {
-  if (value === null) return 'null';
-  if (value === undefined) return 'undefined';
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
 
   const type = getValueType(value);
 
-  if (type === 'string') {
-    return value.length > maxLength ? `${value.substring(0, maxLength)}...` : value;
+  if (type === "string") {
+    return value.length > maxLength
+      ? `${value.substring(0, maxLength)}...`
+      : value;
   }
 
-  if (type === 'number' || type === 'boolean') {
+  if (type === "number" || type === "boolean") {
     return String(value);
   }
 
   // For objects and arrays, use JSON
   try {
     const json = JSON.stringify(value, null, 2);
-    return json.length > maxLength ? `${json.substring(0, maxLength)}...` : json;
+    return json.length > maxLength
+      ? `${json.substring(0, maxLength)}...`
+      : json;
   } catch {
-    return '[Complex Object]';
+    return "[Complex Object]";
   }
 }
 
@@ -268,7 +276,7 @@ export function hasValueChanged(oldValue: any, newValue: any): boolean {
   }
 
   // For primitives, use direct comparison
-  if (typeof oldValue !== 'object') {
+  if (typeof oldValue !== "object") {
     return oldValue !== newValue;
   }
 

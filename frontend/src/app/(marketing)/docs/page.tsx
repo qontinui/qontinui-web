@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Book, Rocket, Globe, Terminal, FileCode, Zap } from "lucide-react";
+import { Rocket, Globe, Terminal, FileCode, Zap } from "lucide-react";
 
 export const metadata = {
   title: "Qontinui Documentation - Get Started with GUI Automation",
@@ -13,9 +13,7 @@ export default function DocsHomePage() {
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-5xl font-bold mb-6">
-            Qontinui Documentation
-          </h1>
+          <h1 className="text-5xl font-bold mb-6">Qontinui Documentation</h1>
           <p className="text-xl text-muted-foreground mb-8">
             Everything you need to build intelligent GUI automation workflows
           </p>
@@ -29,11 +27,10 @@ export default function DocsHomePage() {
             <div className="flex items-start gap-4">
               <Rocket className="w-8 h-8 text-primary flex-shrink-0 mt-1" />
               <div>
-                <h2 className="text-2xl font-bold mb-3">
-                  New to Qontinui?
-                </h2>
+                <h2 className="text-2xl font-bold mb-3">New to Qontinui?</h2>
                 <p className="text-muted-foreground mb-4">
-                  Start with our getting started guide to build your first automation in minutes.
+                  Start with our getting started guide to build your first
+                  automation in minutes.
                 </p>
                 <Link
                   href="/docs/getting-started"
@@ -73,10 +70,19 @@ export default function DocsHomePage() {
               description="Desktop application for executing automation workflows on your system"
               links={[
                 { href: "/docs/runner/installation", label: "Installation" },
-                { href: "/docs/runner/execution", label: "Running Automations" },
+                {
+                  href: "/docs/runner/execution",
+                  label: "Running Automations",
+                },
                 { href: "/docs/runner/monitoring", label: "Monitoring & Logs" },
-                { href: "/docs/runner/multi-monitor", label: "Multi-Monitor Setup" },
-                { href: "/docs/runner/troubleshooting", label: "Troubleshooting" },
+                {
+                  href: "/docs/runner/multi-monitor",
+                  label: "Multi-Monitor Setup",
+                },
+                {
+                  href: "/docs/runner/troubleshooting",
+                  label: "Troubleshooting",
+                },
               ]}
             />
 
@@ -85,7 +91,11 @@ export default function DocsHomePage() {
               title="Python API"
               description="Use Qontinui programmatically in your Python projects"
               links={[
-                { href: "https://qontinui.com/api-docs", label: "API Reference", external: true },
+                {
+                  href: "https://qontinui.com/api-docs",
+                  label: "API Reference",
+                  external: true,
+                },
                 { href: "/docs/python/installation", label: "Installation" },
                 { href: "/docs/python/quickstart", label: "Quick Start" },
                 { href: "/docs/python/examples", label: "Examples" },
@@ -97,11 +107,20 @@ export default function DocsHomePage() {
               title="Core Concepts"
               description="Understand the model-based architecture behind Qontinui"
               links={[
-                { href: "/docs/concepts/model-based", label: "Model-Based Automation" },
+                {
+                  href: "/docs/concepts/model-based",
+                  label: "Model-Based Automation",
+                },
                 { href: "/docs/concepts/states", label: "State Machines" },
-                { href: "/docs/concepts/transitions", label: "Transitions & Pathfinding" },
+                {
+                  href: "/docs/concepts/transitions",
+                  label: "Transitions & Pathfinding",
+                },
                 { href: "/docs/concepts/actions", label: "Action System" },
-                { href: "/docs/concepts/image-recognition", label: "Visual Recognition" },
+                {
+                  href: "/docs/concepts/image-recognition",
+                  label: "Visual Recognition",
+                },
               ]}
             />
           </div>
@@ -162,7 +181,9 @@ function DocSection({ icon, title, description, links }: DocSectionProps) {
             <Link
               href={link.href}
               className="text-primary hover:underline text-sm flex items-center gap-1"
-              {...(link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+              {...(link.external
+                ? { target: "_blank", rel: "noopener noreferrer" }
+                : {})}
             >
               {link.label}
               {link.external && <span className="text-xs">↗</span>}

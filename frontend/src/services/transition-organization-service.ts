@@ -24,7 +24,7 @@ import {
   OutgoingTransition,
   IncomingTransition,
   State,
-} from '@/contexts/automation-context/types';
+} from "@/contexts/automation-context/types";
 
 // ============================================================================
 // Types
@@ -44,7 +44,13 @@ export interface TransitionTemplate {
   description: string;
 
   /** Template category */
-  category: 'interaction' | 'navigation' | 'conditional' | 'error-handling' | 'automation' | 'custom';
+  category:
+    | "interaction"
+    | "navigation"
+    | "conditional"
+    | "error-handling"
+    | "automation"
+    | "custom";
 
   /** Template icon */
   icon?: string;
@@ -55,7 +61,7 @@ export interface TransitionTemplate {
   /** Template configuration */
   config: {
     /** Transition type */
-    type: 'OutgoingTransition' | 'IncomingTransition';
+    type: "OutgoingTransition" | "IncomingTransition";
 
     /** Default workflow IDs */
     workflows: string[];
@@ -131,7 +137,7 @@ export interface TransitionFilter {
   toState?: string;
 
   /** Filter by transition type */
-  type?: 'OutgoingTransition' | 'IncomingTransition';
+  type?: "OutgoingTransition" | "IncomingTransition";
 
   /** Filter by workflow ID */
   hasWorkflow?: string;
@@ -163,10 +169,18 @@ export interface TransitionFilter {
  */
 export interface ValidationIssue {
   /** Issue severity */
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
 
   /** Issue type */
-  type: 'broken-reference' | 'circular-path' | 'unreachable' | 'duplicate' | 'conflict' | 'missing-workflow' | 'timeout' | 'configuration';
+  type:
+    | "broken-reference"
+    | "circular-path"
+    | "unreachable"
+    | "duplicate"
+    | "conflict"
+    | "missing-workflow"
+    | "timeout"
+    | "configuration";
 
   /** Issue message */
   message: string;
@@ -235,7 +249,11 @@ export interface TransitionStatistics {
   topWorkflows: Array<{ workflowId: string; count: number }>;
 
   /** Most connected states */
-  topStates: Array<{ stateId: string; incomingCount: number; outgoingCount: number }>;
+  topStates: Array<{
+    stateId: string;
+    incomingCount: number;
+    outgoingCount: number;
+  }>;
 
   /** Circular paths detected */
   circularPaths: number;
@@ -293,7 +311,12 @@ export interface TransitionPattern {
   name: string;
 
   /** Pattern type */
-  type: 'workflow-sequence' | 'timeout-pattern' | 'state-activation' | 'error-handling' | 'custom';
+  type:
+    | "workflow-sequence"
+    | "timeout-pattern"
+    | "state-activation"
+    | "error-handling"
+    | "custom";
 
   /** Matching criteria */
   criteria: {
@@ -319,7 +342,7 @@ export interface RedundantTransition {
   duplicateIds: string[];
 
   /** Reason for redundancy */
-  reason: 'exact-duplicate' | 'similar-config' | 'same-path' | 'subsumes';
+  reason: "exact-duplicate" | "similar-config" | "same-path" | "subsumes";
 
   /** Confidence score (0-1) */
   confidence: number;
@@ -330,7 +353,13 @@ export interface RedundantTransition {
  */
 export interface OptimizationSuggestion {
   /** Suggestion type */
-  type: 'merge' | 'remove' | 'reorder' | 'simplify' | 'add-group' | 'timeout-adjustment';
+  type:
+    | "merge"
+    | "remove"
+    | "reorder"
+    | "simplify"
+    | "add-group"
+    | "timeout-adjustment";
 
   /** Suggestion description */
   description: string;
@@ -339,7 +368,7 @@ export interface OptimizationSuggestion {
   transitionIds: string[];
 
   /** Expected impact */
-  impact: 'high' | 'medium' | 'low';
+  impact: "high" | "medium" | "low";
 
   /** Suggested action */
   action: string;
@@ -391,7 +420,7 @@ export interface ImportExportOptions {
   skipDuplicates?: boolean;
 
   /** Merge strategy for conflicts */
-  mergeStrategy?: 'replace' | 'skip' | 'rename';
+  mergeStrategy?: "replace" | "skip" | "rename";
 }
 
 // ============================================================================
@@ -416,7 +445,8 @@ export class TransitionOrganizationService {
    */
   static getInstance(): TransitionOrganizationService {
     if (!TransitionOrganizationService.instance) {
-      TransitionOrganizationService.instance = new TransitionOrganizationService();
+      TransitionOrganizationService.instance =
+        new TransitionOrganizationService();
     }
     return TransitionOrganizationService.instance;
   }
@@ -430,10 +460,10 @@ export class TransitionOrganizationService {
    */
   createTransitionTemplate(
     name: string,
-    config: TransitionTemplate['config'],
+    config: TransitionTemplate["config"],
     options: {
       description?: string;
-      category?: TransitionTemplate['category'];
+      category?: TransitionTemplate["category"];
       tags?: string[];
       icon?: string;
     } = {}
@@ -441,8 +471,8 @@ export class TransitionOrganizationService {
     const template: TransitionTemplate = {
       id: `template-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name,
-      description: options.description || '',
-      category: options.category || 'custom',
+      description: options.description || "",
+      category: options.category || "custom",
       icon: options.icon,
       builtin: false,
       config,
@@ -477,8 +507,12 @@ export class TransitionOrganizationService {
   /**
    * Get templates by category
    */
-  getTemplatesByCategory(category: TransitionTemplate['category']): TransitionTemplate[] {
-    return Array.from(this.templates.values()).filter((t) => t.category === category);
+  getTemplatesByCategory(
+    category: TransitionTemplate["category"]
+  ): TransitionTemplate[] {
+    return Array.from(this.templates.values()).filter(
+      (t) => t.category === category
+    );
   }
 
   /**
@@ -488,7 +522,7 @@ export class TransitionOrganizationService {
     templateId: string,
     fromStateId: string,
     toStateId?: string,
-    customConfig?: Partial<TransitionTemplate['config']>
+    customConfig?: Partial<TransitionTemplate["config"]>
   ): Transition | null {
     const template = this.templates.get(templateId);
     if (!template) {
@@ -507,15 +541,17 @@ export class TransitionOrganizationService {
       workflows: config.workflows || [],
       timeout: config.timeout,
       retryCount: config.retryCount,
-      ...(config.type === 'OutgoingTransition' ? {
-        fromState: fromStateId,
-        toState: toStateId || '',
-        staysVisible: config.staysVisible || false,
-        activateStates: config.activateStates || [],
-        deactivateStates: config.deactivateStates || [],
-      } : {
-        toState: toStateId || fromStateId,
-      }),
+      ...(config.type === "OutgoingTransition"
+        ? {
+            fromState: fromStateId,
+            toState: toStateId || "",
+            staysVisible: config.staysVisible || false,
+            activateStates: config.activateStates || [],
+            deactivateStates: config.deactivateStates || [],
+          }
+        : {
+            toState: toStateId || fromStateId,
+          }),
     } as Transition;
 
     return transition;
@@ -545,7 +581,7 @@ export class TransitionOrganizationService {
   bulkCreateTransitions(
     fromStateIds: string[],
     toStateId: string,
-    template: string | TransitionTemplate['config']
+    template: string | TransitionTemplate["config"]
   ): BulkOperationResult {
     const result: BulkOperationResult = {
       success: 0,
@@ -555,24 +591,26 @@ export class TransitionOrganizationService {
       timestamp: new Date().toISOString(),
     };
 
-    const config = typeof template === 'string'
-      ? this.templates.get(template)?.config
-      : template;
+    const config =
+      typeof template === "string"
+        ? this.templates.get(template)?.config
+        : template;
 
     if (!config) {
       result.failed = fromStateIds.length;
       result.failures = fromStateIds.map((id) => ({
         id,
-        reason: 'Invalid template or configuration',
+        reason: "Invalid template or configuration",
       }));
       return result;
     }
 
     for (const fromStateId of fromStateIds) {
       try {
-        const transition = typeof template === 'string'
-          ? this.createFromTemplate(template, fromStateId, toStateId)
-          : this.createFromTemplate('custom', fromStateId, toStateId, config);
+        const transition =
+          typeof template === "string"
+            ? this.createFromTemplate(template, fromStateId, toStateId)
+            : this.createFromTemplate("custom", fromStateId, toStateId, config);
 
         if (transition) {
           result.success++;
@@ -581,14 +619,14 @@ export class TransitionOrganizationService {
           result.failed++;
           result.failures.push({
             id: fromStateId,
-            reason: 'Failed to create transition',
+            reason: "Failed to create transition",
           });
         }
       } catch (error) {
         result.failed++;
         result.failures.push({
           id: fromStateId,
-          reason: error instanceof Error ? error.message : 'Unknown error',
+          reason: error instanceof Error ? error.message : "Unknown error",
         });
       }
     }
@@ -607,11 +645,11 @@ export class TransitionOrganizationService {
       /** Exclude self-loops */
       excludeSelfLoops?: boolean;
       /** Only create connections matching pattern */
-      pattern?: 'linear' | 'circular' | 'star' | 'custom';
+      pattern?: "linear" | "circular" | "star" | "custom";
       /** Custom connection rules */
       customRules?: Array<{ from: string; to: string }>;
       /** Template to use for connections */
-      template: string | TransitionTemplate['config'];
+      template: string | TransitionTemplate["config"];
     }
   ): BulkOperationResult {
     const result: BulkOperationResult = {
@@ -632,23 +670,23 @@ export class TransitionOrganizationService {
           connections.push({ from, to });
         }
       }
-    } else if (rules.pattern === 'linear') {
+    } else if (rules.pattern === "linear") {
       for (let i = 0; i < stateIds.length - 1; i++) {
-        connections.push({ from: stateIds[i], to: stateIds[i + 1] });
+        connections.push({ from: stateIds[i]!, to: stateIds[i + 1]! });
       }
-    } else if (rules.pattern === 'circular') {
+    } else if (rules.pattern === "circular") {
       for (let i = 0; i < stateIds.length; i++) {
         connections.push({
-          from: stateIds[i],
-          to: stateIds[(i + 1) % stateIds.length],
+          from: stateIds[i]!,
+          to: stateIds[(i + 1) % stateIds.length]!,
         });
       }
-    } else if (rules.pattern === 'star') {
+    } else if (rules.pattern === "star") {
       // First state is the hub
-      const hub = stateIds[0];
+      const hub = stateIds[0]!;
       for (let i = 1; i < stateIds.length; i++) {
-        connections.push({ from: hub, to: stateIds[i] });
-        connections.push({ from: stateIds[i], to: hub });
+        connections.push({ from: hub, to: stateIds[i]! });
+        connections.push({ from: stateIds[i]!, to: hub });
       }
     } else if (rules.customRules) {
       connections.push(...rules.customRules);
@@ -686,7 +724,7 @@ export class TransitionOrganizationService {
       const transition = transitions.find((t) => t.id === id);
       if (!transition) {
         result.failed++;
-        result.failures.push({ id, reason: 'Transition not found' });
+        result.failures.push({ id, reason: "Transition not found" });
         continue;
       }
 
@@ -698,7 +736,7 @@ export class TransitionOrganizationService {
         result.failed++;
         result.failures.push({
           id,
-          reason: error instanceof Error ? error.message : 'Unknown error',
+          reason: error instanceof Error ? error.message : "Unknown error",
         });
       }
     }
@@ -725,7 +763,7 @@ export class TransitionOrganizationService {
       const index = transitions.findIndex((t) => t.id === id);
       if (index === -1) {
         result.failed++;
-        result.failures.push({ id, reason: 'Transition not found' });
+        result.failures.push({ id, reason: "Transition not found" });
         continue;
       }
 
@@ -737,7 +775,7 @@ export class TransitionOrganizationService {
         result.failed++;
         result.failures.push({
           id,
-          reason: error instanceof Error ? error.message : 'Unknown error',
+          reason: error instanceof Error ? error.message : "Unknown error",
         });
       }
     }
@@ -766,39 +804,40 @@ export class TransitionOrganizationService {
       for (const workflowId of transition.workflows) {
         if (!workflowIds.has(workflowId)) {
           issues.push({
-            severity: 'error',
-            type: 'missing-workflow',
+            severity: "error",
+            type: "missing-workflow",
             message: `Transition references non-existent workflow: ${workflowId}`,
             transitionId: transition.id,
             relatedIds: [workflowId],
-            suggestion: 'Remove the workflow reference or create the missing workflow',
+            suggestion:
+              "Remove the workflow reference or create the missing workflow",
           });
         }
       }
 
       // Check state references
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         const outgoing = transition as OutgoingTransition;
 
         if (!stateIds.has(outgoing.fromState)) {
           issues.push({
-            severity: 'error',
-            type: 'broken-reference',
+            severity: "error",
+            type: "broken-reference",
             message: `Transition references non-existent source state: ${outgoing.fromState}`,
             transitionId: transition.id,
             relatedIds: [outgoing.fromState],
-            suggestion: 'Update the fromState or delete this transition',
+            suggestion: "Update the fromState or delete this transition",
           });
         }
 
         if (outgoing.toState && !stateIds.has(outgoing.toState)) {
           issues.push({
-            severity: 'error',
-            type: 'broken-reference',
+            severity: "error",
+            type: "broken-reference",
             message: `Transition references non-existent target state: ${outgoing.toState}`,
             transitionId: transition.id,
             relatedIds: [outgoing.toState],
-            suggestion: 'Update the toState or delete this transition',
+            suggestion: "Update the toState or delete this transition",
           });
         }
 
@@ -806,12 +845,12 @@ export class TransitionOrganizationService {
         for (const stateId of outgoing.activateStates) {
           if (!stateIds.has(stateId)) {
             issues.push({
-              severity: 'warning',
-              type: 'broken-reference',
+              severity: "warning",
+              type: "broken-reference",
               message: `Transition activates non-existent state: ${stateId}`,
               transitionId: transition.id,
               relatedIds: [stateId],
-              suggestion: 'Remove the state from activateStates',
+              suggestion: "Remove the state from activateStates",
             });
           }
         }
@@ -820,12 +859,12 @@ export class TransitionOrganizationService {
         for (const stateId of outgoing.deactivateStates) {
           if (!stateIds.has(stateId)) {
             issues.push({
-              severity: 'warning',
-              type: 'broken-reference',
+              severity: "warning",
+              type: "broken-reference",
               message: `Transition deactivates non-existent state: ${stateId}`,
               transitionId: transition.id,
               relatedIds: [stateId],
-              suggestion: 'Remove the state from deactivateStates',
+              suggestion: "Remove the state from deactivateStates",
             });
           }
         }
@@ -834,12 +873,12 @@ export class TransitionOrganizationService {
 
         if (!stateIds.has(incoming.toState)) {
           issues.push({
-            severity: 'error',
-            type: 'broken-reference',
+            severity: "error",
+            type: "broken-reference",
             message: `Transition references non-existent target state: ${incoming.toState}`,
             transitionId: transition.id,
             relatedIds: [incoming.toState],
-            suggestion: 'Update the toState or delete this transition',
+            suggestion: "Update the toState or delete this transition",
           });
         }
       }
@@ -847,33 +886,34 @@ export class TransitionOrganizationService {
       // Check timeout configuration
       if (transition.timeout < 0) {
         issues.push({
-          severity: 'warning',
-          type: 'timeout',
+          severity: "warning",
+          type: "timeout",
           message: `Transition has negative timeout: ${transition.timeout}`,
           transitionId: transition.id,
-          suggestion: 'Set timeout to a positive value or 0 for no timeout',
+          suggestion: "Set timeout to a positive value or 0 for no timeout",
         });
       }
 
       // Check for missing workflows
       if (transition.workflows.length === 0) {
         issues.push({
-          severity: 'info',
-          type: 'configuration',
-          message: 'Transition has no workflows configured',
+          severity: "info",
+          type: "configuration",
+          message: "Transition has no workflows configured",
           transitionId: transition.id,
-          suggestion: 'Add workflows to define the transition behavior',
+          suggestion: "Add workflows to define the transition behavior",
         });
       }
     }
 
-    const errorCount = issues.filter((i) => i.severity === 'error').length;
-    const warningCount = issues.filter((i) => i.severity === 'warning').length;
-    const infoCount = issues.filter((i) => i.severity === 'info').length;
+    const errorCount = issues.filter((i) => i.severity === "error").length;
+    const warningCount = issues.filter((i) => i.severity === "warning").length;
+    const infoCount = issues.filter((i) => i.severity === "info").length;
 
     return {
       totalTransitions: transitions.length,
-      validTransitions: transitions.length - new Set(issues.map((i) => i.transitionId)).size,
+      validTransitions:
+        transitions.length - new Set(issues.map((i) => i.transitionId)).size,
       transitionsWithIssues: new Set(issues.map((i) => i.transitionId)).size,
       issues,
       errorCount,
@@ -929,7 +969,7 @@ export class TransitionOrganizationService {
 
     // Run DFS from each unvisited state
     for (const transition of transitions) {
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         const outgoing = transition as OutgoingTransition;
         if (!visited.has(outgoing.fromState)) {
           dfs(outgoing.fromState);
@@ -953,7 +993,7 @@ export class TransitionOrganizationService {
 
     // Mark states with incoming transitions
     for (const transition of transitions) {
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         const outgoing = transition as OutgoingTransition;
         if (outgoing.toState) {
           statesWithIncoming.add(outgoing.toState);
@@ -994,20 +1034,32 @@ export class TransitionOrganizationService {
     transitions: Transition[],
     states: State[]
   ): TransitionStatistics {
-    const outgoingCount = transitions.filter((t) => t.type === 'OutgoingTransition').length;
-    const incomingCount = transitions.filter((t) => t.type === 'IncomingTransition').length;
+    const outgoingCount = transitions.filter(
+      (t) => t.type === "OutgoingTransition"
+    ).length;
+    const incomingCount = transitions.filter(
+      (t) => t.type === "IncomingTransition"
+    ).length;
 
     const totalTimeout = transitions.reduce((sum, t) => sum + t.timeout, 0);
-    const totalRetryCount = transitions.reduce((sum, t) => sum + t.retryCount, 0);
+    const totalRetryCount = transitions.reduce(
+      (sum, t) => sum + t.retryCount,
+      0
+    );
 
-    const withWorkflows = transitions.filter((t) => t.workflows.length > 0).length;
+    const withWorkflows = transitions.filter(
+      (t) => t.workflows.length > 0
+    ).length;
     const withoutWorkflows = transitions.length - withWorkflows;
 
     // Count workflow usage
     const workflowCounts = new Map<string, number>();
     for (const transition of transitions) {
       for (const workflowId of transition.workflows) {
-        workflowCounts.set(workflowId, (workflowCounts.get(workflowId) || 0) + 1);
+        workflowCounts.set(
+          workflowId,
+          (workflowCounts.get(workflowId) || 0) + 1
+        );
       }
     }
 
@@ -1017,13 +1069,16 @@ export class TransitionOrganizationService {
       .slice(0, 10);
 
     // Count state connections
-    const stateCounts = new Map<string, { incomingCount: number; outgoingCount: number }>();
+    const stateCounts = new Map<
+      string,
+      { incomingCount: number; outgoingCount: number }
+    >();
     for (const state of states) {
       stateCounts.set(state.id, { incomingCount: 0, outgoingCount: 0 });
     }
 
     for (const transition of transitions) {
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         const outgoing = transition as OutgoingTransition;
         const fromCount = stateCounts.get(outgoing.fromState);
         if (fromCount) fromCount.outgoingCount++;
@@ -1041,7 +1096,12 @@ export class TransitionOrganizationService {
 
     const topStates = Array.from(stateCounts.entries())
       .map(([stateId, counts]) => ({ stateId, ...counts }))
-      .sort((a, b) => (b.incomingCount + b.outgoingCount) - (a.incomingCount + a.outgoingCount))
+      .sort(
+        (a, b) =>
+          b.incomingCount +
+          b.outgoingCount -
+          (a.incomingCount + a.outgoingCount)
+      )
       .slice(0, 10);
 
     const circularPaths = this.findCircularTransitions(transitions);
@@ -1050,9 +1110,12 @@ export class TransitionOrganizationService {
     // Count orphaned transitions
     const stateIds = new Set(states.map((s) => s.id));
     const orphanedTransitions = transitions.filter((t) => {
-      if (t.type === 'OutgoingTransition') {
+      if (t.type === "OutgoingTransition") {
         const outgoing = t as OutgoingTransition;
-        return !stateIds.has(outgoing.fromState) || (outgoing.toState && !stateIds.has(outgoing.toState));
+        return (
+          !stateIds.has(outgoing.fromState) ||
+          (outgoing.toState && !stateIds.has(outgoing.toState))
+        );
       } else {
         const incoming = t as IncomingTransition;
         return !stateIds.has(incoming.toState);
@@ -1061,9 +1124,11 @@ export class TransitionOrganizationService {
 
     const allGroups = Array.from(this.groups.values());
     const totalGroups = allGroups.length;
-    const avgTransitionsPerGroup = totalGroups > 0
-      ? allGroups.reduce((sum, g) => sum + g.transitionIds.length, 0) / totalGroups
-      : 0;
+    const avgTransitionsPerGroup =
+      totalGroups > 0
+        ? allGroups.reduce((sum, g) => sum + g.transitionIds.length, 0) /
+          totalGroups
+        : 0;
 
     return {
       total: transitions.length,
@@ -1071,8 +1136,10 @@ export class TransitionOrganizationService {
         outgoing: outgoingCount,
         incoming: incomingCount,
       },
-      avgTimeout: transitions.length > 0 ? totalTimeout / transitions.length : 0,
-      avgRetryCount: transitions.length > 0 ? totalRetryCount / transitions.length : 0,
+      avgTimeout:
+        transitions.length > 0 ? totalTimeout / transitions.length : 0,
+      avgRetryCount:
+        transitions.length > 0 ? totalRetryCount / transitions.length : 0,
       withWorkflows,
       withoutWorkflows,
       topWorkflows,
@@ -1107,10 +1174,12 @@ export class TransitionOrganizationService {
       results = results.filter((t) => {
         const searchableText = [
           t.id,
-          t.workflows.join(' '),
-          this.getTransitionMetadata(t.id)?.name || '',
-          this.getTransitionMetadata(t.id)?.description || '',
-        ].join(' ').toLowerCase();
+          t.workflows.join(" "),
+          this.getTransitionMetadata(t.id)?.name || "",
+          this.getTransitionMetadata(t.id)?.description || "",
+        ]
+          .join(" ")
+          .toLowerCase();
 
         return searchableText.includes(lowerQuery);
       });
@@ -1123,15 +1192,16 @@ export class TransitionOrganizationService {
       }
 
       if (filters.fromState) {
-        results = results.filter((t) =>
-          t.type === 'OutgoingTransition' &&
-          (t as OutgoingTransition).fromState === filters.fromState
+        results = results.filter(
+          (t) =>
+            t.type === "OutgoingTransition" &&
+            (t as OutgoingTransition).fromState === filters.fromState
         );
       }
 
       if (filters.toState) {
         results = results.filter((t) => {
-          if (t.type === 'OutgoingTransition') {
+          if (t.type === "OutgoingTransition") {
             return (t as OutgoingTransition).toState === filters.toState;
           } else {
             return (t as IncomingTransition).toState === filters.toState;
@@ -1140,41 +1210,52 @@ export class TransitionOrganizationService {
       }
 
       if (filters.hasWorkflow) {
-        results = results.filter((t) => t.workflows.includes(filters.hasWorkflow!));
+        results = results.filter((t) =>
+          t.workflows.includes(filters.hasWorkflow!)
+        );
       }
 
       if (filters.timeoutRange) {
-        results = results.filter((t) =>
-          t.timeout >= filters.timeoutRange!.min &&
-          t.timeout <= filters.timeoutRange!.max
+        results = results.filter(
+          (t) =>
+            t.timeout >= filters.timeoutRange!.min &&
+            t.timeout <= filters.timeoutRange!.max
         );
       }
 
       if (filters.retryCountRange) {
-        results = results.filter((t) =>
-          t.retryCount >= filters.retryCountRange!.min &&
-          t.retryCount <= filters.retryCountRange!.max
+        results = results.filter(
+          (t) =>
+            t.retryCount >= filters.retryCountRange!.min &&
+            t.retryCount <= filters.retryCountRange!.max
         );
       }
 
       if (filters.staysVisible !== undefined) {
-        results = results.filter((t) =>
-          t.type === 'OutgoingTransition' &&
-          (t as OutgoingTransition).staysVisible === filters.staysVisible
+        results = results.filter(
+          (t) =>
+            t.type === "OutgoingTransition" &&
+            (t as OutgoingTransition).staysVisible === filters.staysVisible
         );
       }
 
       if (filters.activatesState) {
-        results = results.filter((t) =>
-          t.type === 'OutgoingTransition' &&
-          (t as OutgoingTransition).activateStates.includes(filters.activatesState!)
+        results = results.filter(
+          (t) =>
+            t.type === "OutgoingTransition" &&
+            (t as OutgoingTransition).activateStates.includes(
+              filters.activatesState!
+            )
         );
       }
 
       if (filters.deactivatesState) {
-        results = results.filter((t) =>
-          t.type === 'OutgoingTransition' &&
-          (t as OutgoingTransition).deactivateStates.includes(filters.deactivatesState!)
+        results = results.filter(
+          (t) =>
+            t.type === "OutgoingTransition" &&
+            (t as OutgoingTransition).deactivateStates.includes(
+              filters.deactivatesState!
+            )
         );
       }
 
@@ -1202,20 +1283,29 @@ export class TransitionOrganizationService {
   getTransitionsForState(
     transitions: Transition[],
     stateId: string,
-    direction: 'incoming' | 'outgoing' | 'both' = 'both'
+    direction: "incoming" | "outgoing" | "both" = "both"
   ): Transition[] {
     return transitions.filter((t) => {
-      if (direction === 'incoming' || direction === 'both') {
-        if (t.type === 'OutgoingTransition' && (t as OutgoingTransition).toState === stateId) {
+      if (direction === "incoming" || direction === "both") {
+        if (
+          t.type === "OutgoingTransition" &&
+          (t as OutgoingTransition).toState === stateId
+        ) {
           return true;
         }
-        if (t.type === 'IncomingTransition' && (t as IncomingTransition).toState === stateId) {
+        if (
+          t.type === "IncomingTransition" &&
+          (t as IncomingTransition).toState === stateId
+        ) {
           return true;
         }
       }
 
-      if (direction === 'outgoing' || direction === 'both') {
-        if (t.type === 'OutgoingTransition' && (t as OutgoingTransition).fromState === stateId) {
+      if (direction === "outgoing" || direction === "both") {
+        if (
+          t.type === "OutgoingTransition" &&
+          (t as OutgoingTransition).fromState === stateId
+        ) {
           return true;
         }
       }
@@ -1255,7 +1345,7 @@ export class TransitionOrganizationService {
         if (t.retryCount === pattern.criteria.retryCount) matches++;
       }
 
-      if (t.type === 'OutgoingTransition') {
+      if (t.type === "OutgoingTransition") {
         const outgoing = t as OutgoingTransition;
 
         if (pattern.criteria.activateStates) {
@@ -1268,14 +1358,14 @@ export class TransitionOrganizationService {
 
         if (pattern.criteria.deactivateStates) {
           checks++;
-          const deactivateMatch = pattern.criteria.deactivateStates.every((sid) =>
-            outgoing.deactivateStates.includes(sid)
+          const deactivateMatch = pattern.criteria.deactivateStates.every(
+            (sid) => outgoing.deactivateStates.includes(sid)
           );
           if (deactivateMatch) matches++;
         }
       }
 
-      return checks > 0 && (matches / checks) >= tolerance;
+      return checks > 0 && matches / checks >= tolerance;
     });
   }
 
@@ -1310,25 +1400,29 @@ export class TransitionOrganizationService {
       // Check for exact duplicates
       if (
         transition.type === existing.type &&
-        JSON.stringify(transition.workflows) === JSON.stringify(existing.workflows)
+        JSON.stringify(transition.workflows) ===
+          JSON.stringify(existing.workflows)
       ) {
-        if (transition.type === 'OutgoingTransition') {
+        if (transition.type === "OutgoingTransition") {
           const t1 = transition as OutgoingTransition;
           const t2 = existing as OutgoingTransition;
 
           if (
             t1.fromState === t2.fromState &&
             t1.toState === t2.toState &&
-            JSON.stringify(t1.activateStates) === JSON.stringify(t2.activateStates) &&
-            JSON.stringify(t1.deactivateStates) === JSON.stringify(t2.deactivateStates)
+            JSON.stringify(t1.activateStates) ===
+              JSON.stringify(t2.activateStates) &&
+            JSON.stringify(t1.deactivateStates) ===
+              JSON.stringify(t2.deactivateStates)
           ) {
             issues.push({
-              severity: 'warning',
-              type: 'duplicate',
-              message: 'Duplicate transition detected',
+              severity: "warning",
+              type: "duplicate",
+              message: "Duplicate transition detected",
               transitionId: transition.id,
               relatedIds: [existing.id],
-              suggestion: 'Consider merging or removing one of the duplicate transitions',
+              suggestion:
+                "Consider merging or removing one of the duplicate transitions",
             });
           }
         } else {
@@ -1337,19 +1431,23 @@ export class TransitionOrganizationService {
 
           if (t1.toState === t2.toState) {
             issues.push({
-              severity: 'warning',
-              type: 'duplicate',
-              message: 'Duplicate incoming transition detected',
+              severity: "warning",
+              type: "duplicate",
+              message: "Duplicate incoming transition detected",
               transitionId: transition.id,
               relatedIds: [existing.id],
-              suggestion: 'Consider merging or removing one of the duplicate transitions',
+              suggestion:
+                "Consider merging or removing one of the duplicate transitions",
             });
           }
         }
       }
 
       // Check for conflicting configurations
-      if (transition.type === 'OutgoingTransition' && existing.type === 'OutgoingTransition') {
+      if (
+        transition.type === "OutgoingTransition" &&
+        existing.type === "OutgoingTransition"
+      ) {
         const t1 = transition as OutgoingTransition;
         const t2 = existing as OutgoingTransition;
 
@@ -1361,12 +1459,12 @@ export class TransitionOrganizationService {
 
           if (conflictingActivations.length > 0) {
             issues.push({
-              severity: 'warning',
-              type: 'conflict',
-              message: 'Conflicting state activation/deactivation detected',
+              severity: "warning",
+              type: "conflict",
+              message: "Conflicting state activation/deactivation detected",
               transitionId: transition.id,
               relatedIds: [existing.id, ...conflictingActivations],
-              suggestion: 'Review state activation/deactivation logic',
+              suggestion: "Review state activation/deactivation logic",
             });
           }
         }
@@ -1391,12 +1489,12 @@ export class TransitionOrganizationService {
     for (const path of circularPaths) {
       for (const transitionId of path.transitions) {
         report.issues.push({
-          severity: 'warning',
-          type: 'circular-path',
-          message: `Transition is part of a circular path: ${path.path.join(' -> ')}`,
+          severity: "warning",
+          type: "circular-path",
+          message: `Transition is part of a circular path: ${path.path.join(" -> ")}`,
           transitionId,
           relatedIds: path.transitions,
-          suggestion: 'Add exit conditions to prevent infinite loops',
+          suggestion: "Add exit conditions to prevent infinite loops",
         });
       }
     }
@@ -1405,16 +1503,20 @@ export class TransitionOrganizationService {
     if (unreachableStates.length > 0) {
       // Find transitions leading to unreachable states
       for (const transition of transitions) {
-        if (transition.type === 'OutgoingTransition') {
+        if (transition.type === "OutgoingTransition") {
           const outgoing = transition as OutgoingTransition;
-          if (outgoing.toState && unreachableStates.includes(outgoing.toState)) {
+          if (
+            outgoing.toState &&
+            unreachableStates.includes(outgoing.toState)
+          ) {
             report.issues.push({
-              severity: 'info',
-              type: 'unreachable',
+              severity: "info",
+              type: "unreachable",
               message: `Transition leads to an unreachable state: ${outgoing.toState}`,
               transitionId: transition.id,
               relatedIds: [outgoing.toState],
-              suggestion: 'Add incoming transitions to make the state reachable from initial states',
+              suggestion:
+                "Add incoming transitions to make the state reachable from initial states",
             });
           }
         }
@@ -1422,9 +1524,15 @@ export class TransitionOrganizationService {
     }
 
     // Recalculate counts
-    report.errorCount = report.issues.filter((i) => i.severity === 'error').length;
-    report.warningCount = report.issues.filter((i) => i.severity === 'warning').length;
-    report.infoCount = report.issues.filter((i) => i.severity === 'info').length;
+    report.errorCount = report.issues.filter(
+      (i) => i.severity === "error"
+    ).length;
+    report.warningCount = report.issues.filter(
+      (i) => i.severity === "warning"
+    ).length;
+    report.infoCount = report.issues.filter(
+      (i) => i.severity === "info"
+    ).length;
 
     return report;
   }
@@ -1460,7 +1568,7 @@ export class TransitionOrganizationService {
     const group: TransitionGroup = {
       id: `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name,
-      description: options.description || '',
+      description: options.description || "",
       color: options.color,
       transitionIds,
       enabled: options.enabled !== false,
@@ -1526,7 +1634,9 @@ export class TransitionOrganizationService {
     const group = this.groups.get(groupId);
     if (!group) return false;
 
-    group.transitionIds = [...new Set([...group.transitionIds, ...transitionIds])];
+    group.transitionIds = [
+      ...new Set([...group.transitionIds, ...transitionIds]),
+    ];
     group.metadata = {
       ...group.metadata,
       updated: new Date().toISOString(),
@@ -1595,7 +1705,7 @@ export class TransitionOrganizationService {
     );
 
     const exportData: any = {
-      version: '1.0.0',
+      version: "1.0.0",
       timestamp: new Date().toISOString(),
       transitions: selectedTransitions,
     };
@@ -1603,7 +1713,7 @@ export class TransitionOrganizationService {
     if (options.includeStates) {
       const stateIds = new Set<string>();
       for (const transition of selectedTransitions) {
-        if (transition.type === 'OutgoingTransition') {
+        if (transition.type === "OutgoingTransition") {
           const outgoing = transition as OutgoingTransition;
           stateIds.add(outgoing.fromState);
           if (outgoing.toState) stateIds.add(outgoing.toState);
@@ -1648,13 +1758,17 @@ export class TransitionOrganizationService {
   importTransitions(
     data: string,
     options: ImportExportOptions = {}
-  ): { transitions: Transition[]; states?: State[]; groups?: TransitionGroup[] } | null {
+  ): {
+    transitions: Transition[];
+    states?: State[];
+    groups?: TransitionGroup[];
+  } | null {
     try {
       const importData = JSON.parse(data);
 
       if (options.validate) {
         if (!importData.transitions || !Array.isArray(importData.transitions)) {
-          console.error('Invalid import data: missing transitions array');
+          console.error("Invalid import data: missing transitions array");
           return null;
         }
       }
@@ -1672,9 +1786,9 @@ export class TransitionOrganizationService {
         if (existingIndex !== -1) {
           if (options.skipDuplicates) {
             continue;
-          } else if (options.mergeStrategy === 'replace') {
+          } else if (options.mergeStrategy === "replace") {
             result.transitions[existingIndex] = transition;
-          } else if (options.mergeStrategy === 'rename') {
+          } else if (options.mergeStrategy === "rename") {
             transition.id = `${transition.id}-imported-${Date.now()}`;
             result.transitions.push(transition);
           }
@@ -1707,7 +1821,7 @@ export class TransitionOrganizationService {
 
       return result;
     } catch (error) {
-      console.error('Failed to import transitions:', error);
+      console.error("Failed to import transitions:", error);
       return null;
     }
   }
@@ -1715,27 +1829,24 @@ export class TransitionOrganizationService {
   /**
    * Export transition matrix as CSV
    */
-  exportTransitionMatrix(
-    transitions: Transition[],
-    states: State[]
-  ): string {
+  exportTransitionMatrix(transitions: Transition[], states: State[]): string {
     const matrix = this.generateTransitionMatrix(transitions, states);
     const lines: string[] = [];
 
     // Header row
-    lines.push(['State', ...matrix.states].join(','));
+    lines.push(["State", ...matrix.states].join(","));
 
     // Data rows
     for (let i = 0; i < matrix.states.length; i++) {
       const row = [matrix.states[i]];
       for (let j = 0; j < matrix.states.length; j++) {
-        const transitionIds = matrix.matrix[i][j];
-        row.push(transitionIds ? transitionIds.length.toString() : '0');
+        const transitionIds = matrix.matrix[i]?.[j];
+        row.push(transitionIds ? transitionIds.length.toString() : "0");
       }
-      lines.push(row.join(','));
+      lines.push(row.join(","));
     }
 
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   /**
@@ -1756,24 +1867,32 @@ export class TransitionOrganizationService {
     // Populate matrix
     let totalTransitions = 0;
     for (const transition of transitions) {
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         const outgoing = transition as OutgoingTransition;
         const fromIndex = stateIndexMap.get(outgoing.fromState);
-        const toIndex = outgoing.toState ? stateIndexMap.get(outgoing.toState) : undefined;
+        const toIndex = outgoing.toState
+          ? stateIndexMap.get(outgoing.toState)
+          : undefined;
 
         if (fromIndex !== undefined && toIndex !== undefined) {
-          if (!matrix[fromIndex][toIndex]) {
-            matrix[fromIndex][toIndex] = [];
+          const row = matrix[fromIndex];
+          if (row) {
+            if (!row[toIndex]) {
+              row[toIndex] = [];
+            }
+            row[toIndex]?.push(transition.id);
+            totalTransitions++;
           }
-          matrix[fromIndex][toIndex]!.push(transition.id);
-          totalTransitions++;
         }
       }
     }
 
     const possibleConnections = stateIds.length * stateIds.length;
-    const actualConnections = matrix.flat().filter((cell) => cell !== null).length;
-    const coverage = possibleConnections > 0 ? actualConnections / possibleConnections : 0;
+    const actualConnections = matrix
+      .flat()
+      .filter((cell) => cell !== null).length;
+    const coverage =
+      possibleConnections > 0 ? actualConnections / possibleConnections : 0;
 
     return {
       states: stateIds,
@@ -1798,10 +1917,13 @@ export class TransitionOrganizationService {
 
     for (let i = 0; i < transitions.length; i++) {
       const t1 = transitions[i];
+      if (!t1) continue;
+
       const duplicates: string[] = [];
 
       for (let j = i + 1; j < transitions.length; j++) {
         const t2 = transitions[j];
+        if (!t2) continue;
 
         // Check for exact duplicates
         if (this.areTransitionsIdentical(t1, t2)) {
@@ -1813,7 +1935,7 @@ export class TransitionOrganizationService {
         redundant.push({
           transitionId: t1.id,
           duplicateIds: duplicates,
-          reason: 'exact-duplicate',
+          reason: "exact-duplicate",
           confidence: 1.0,
         });
       }
@@ -1822,10 +1944,13 @@ export class TransitionOrganizationService {
     // Find similar configurations
     for (let i = 0; i < transitions.length; i++) {
       const t1 = transitions[i];
+      if (!t1) continue;
+
       const similar: string[] = [];
 
       for (let j = i + 1; j < transitions.length; j++) {
         const t2 = transitions[j];
+        if (!t2) continue;
 
         const similarity = this.calculateTransitionSimilarity(t1, t2);
         if (similarity > 0.8 && similarity < 1.0) {
@@ -1837,7 +1962,7 @@ export class TransitionOrganizationService {
         redundant.push({
           transitionId: t1.id,
           duplicateIds: similar,
-          reason: 'similar-config',
+          reason: "similar-config",
           confidence: 0.8,
         });
       }
@@ -1849,14 +1974,16 @@ export class TransitionOrganizationService {
   /**
    * Suggest transitions that could be merged
    */
-  suggestMergableTransitions(transitions: Transition[]): OptimizationSuggestion[] {
+  suggestMergableTransitions(
+    transitions: Transition[]
+  ): OptimizationSuggestion[] {
     const suggestions: OptimizationSuggestion[] = [];
 
     // Group transitions by similar paths
     const pathGroups = new Map<string, string[]>();
 
     for (const transition of transitions) {
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         const outgoing = transition as OutgoingTransition;
         const pathKey = `${outgoing.fromState}->${outgoing.toState}`;
         const group = pathGroups.get(pathKey) || [];
@@ -1869,11 +1996,11 @@ export class TransitionOrganizationService {
     for (const [path, transitionIds] of pathGroups.entries()) {
       if (transitionIds.length > 1) {
         suggestions.push({
-          type: 'merge',
+          type: "merge",
           description: `Multiple transitions found for path ${path}`,
           transitionIds,
-          impact: 'medium',
-          action: 'Merge workflows into a single transition',
+          impact: "medium",
+          action: "Merge workflows into a single transition",
           autoApplicable: false,
         });
       }
@@ -1882,13 +2009,13 @@ export class TransitionOrganizationService {
     // Find redundant transitions
     const redundant = this.findRedundantTransitions(transitions);
     for (const r of redundant) {
-      if (r.reason === 'exact-duplicate') {
+      if (r.reason === "exact-duplicate") {
         suggestions.push({
-          type: 'remove',
-          description: 'Exact duplicate transition detected',
+          type: "remove",
+          description: "Exact duplicate transition detected",
           transitionIds: [r.transitionId, ...r.duplicateIds],
-          impact: 'high',
-          action: 'Remove duplicate transitions',
+          impact: "high",
+          action: "Remove duplicate transitions",
           autoApplicable: true,
         });
       }
@@ -1902,7 +2029,7 @@ export class TransitionOrganizationService {
    */
   optimizeTransitionOrder(
     transitions: Transition[],
-    states: State[]
+    _states: State[]
   ): OptimizationSuggestion[] {
     const suggestions: OptimizationSuggestion[] = [];
 
@@ -1917,11 +2044,11 @@ export class TransitionOrganizationService {
     // Suggest standardizing timeouts
     if (timeoutGroups.size > 5) {
       suggestions.push({
-        type: 'timeout-adjustment',
-        description: 'Many different timeout values detected',
+        type: "timeout-adjustment",
+        description: "Many different timeout values detected",
         transitionIds: transitions.map((t) => t.id),
-        impact: 'low',
-        action: 'Consider standardizing timeout values',
+        impact: "low",
+        action: "Consider standardizing timeout values",
         autoApplicable: false,
       });
     }
@@ -1934,11 +2061,11 @@ export class TransitionOrganizationService {
 
     if (ungroupedTransitions.length > 10) {
       suggestions.push({
-        type: 'add-group',
+        type: "add-group",
         description: `${ungroupedTransitions.length} transitions are not organized in groups`,
         transitionIds: ungroupedTransitions.map((t) => t.id),
-        impact: 'medium',
-        action: 'Organize transitions into logical groups',
+        impact: "medium",
+        action: "Organize transitions into logical groups",
         autoApplicable: false,
       });
     }
@@ -1956,10 +2083,13 @@ export class TransitionOrganizationService {
   private buildTransitionGraph(
     transitions: Transition[]
   ): Map<string, Array<{ toState: string; transitionId: string }>> {
-    const graph = new Map<string, Array<{ toState: string; transitionId: string }>>();
+    const graph = new Map<
+      string,
+      Array<{ toState: string; transitionId: string }>
+    >();
 
     for (const transition of transitions) {
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         const outgoing = transition as OutgoingTransition;
         if (!outgoing.toState) continue;
 
@@ -1986,7 +2116,7 @@ export class TransitionOrganizationService {
       return false;
     }
 
-    if (t1.type === 'OutgoingTransition' && t2.type === 'OutgoingTransition') {
+    if (t1.type === "OutgoingTransition" && t2.type === "OutgoingTransition") {
       const o1 = t1 as OutgoingTransition;
       const o2 = t2 as OutgoingTransition;
 
@@ -1994,10 +2124,15 @@ export class TransitionOrganizationService {
         o1.fromState === o2.fromState &&
         o1.toState === o2.toState &&
         o1.staysVisible === o2.staysVisible &&
-        JSON.stringify(o1.activateStates) === JSON.stringify(o2.activateStates) &&
-        JSON.stringify(o1.deactivateStates) === JSON.stringify(o2.deactivateStates)
+        JSON.stringify(o1.activateStates) ===
+          JSON.stringify(o2.activateStates) &&
+        JSON.stringify(o1.deactivateStates) ===
+          JSON.stringify(o2.deactivateStates)
       );
-    } else if (t1.type === 'IncomingTransition' && t2.type === 'IncomingTransition') {
+    } else if (
+      t1.type === "IncomingTransition" &&
+      t2.type === "IncomingTransition"
+    ) {
       const i1 = t1 as IncomingTransition;
       const i2 = t2 as IncomingTransition;
 
@@ -2010,7 +2145,10 @@ export class TransitionOrganizationService {
   /**
    * Calculate similarity score between two transitions (0-1)
    */
-  private calculateTransitionSimilarity(t1: Transition, t2: Transition): number {
+  private calculateTransitionSimilarity(
+    t1: Transition,
+    t2: Transition
+  ): number {
     if (t1.type !== t2.type) return 0;
 
     let score = 0;
@@ -2018,7 +2156,10 @@ export class TransitionOrganizationService {
 
     // Compare workflows
     factors++;
-    const workflowSimilarity = this.calculateArraySimilarity(t1.workflows, t2.workflows);
+    const workflowSimilarity = this.calculateArraySimilarity(
+      t1.workflows,
+      t2.workflows
+    );
     score += workflowSimilarity;
 
     // Compare timeout
@@ -2029,13 +2170,14 @@ export class TransitionOrganizationService {
     factors++;
     if (t1.retryCount === t2.retryCount) score += 1;
 
-    if (t1.type === 'OutgoingTransition' && t2.type === 'OutgoingTransition') {
+    if (t1.type === "OutgoingTransition" && t2.type === "OutgoingTransition") {
       const o1 = t1 as OutgoingTransition;
       const o2 = t2 as OutgoingTransition;
 
       // Compare states
       factors++;
-      if (o1.fromState === o2.fromState && o1.toState === o2.toState) score += 1;
+      if (o1.fromState === o2.fromState && o1.toState === o2.toState)
+        score += 1;
 
       // Compare state activations
       factors++;
@@ -2056,7 +2198,10 @@ export class TransitionOrganizationService {
       // Compare staysVisible
       factors++;
       if (o1.staysVisible === o2.staysVisible) score += 1;
-    } else if (t1.type === 'IncomingTransition' && t2.type === 'IncomingTransition') {
+    } else if (
+      t1.type === "IncomingTransition" &&
+      t2.type === "IncomingTransition"
+    ) {
       const i1 = t1 as IncomingTransition;
       const i2 = t2 as IncomingTransition;
 
@@ -2104,13 +2249,13 @@ export class TransitionOrganizationService {
    */
   private loadTemplates(): void {
     try {
-      const json = localStorage.getItem('transition-templates');
+      const json = localStorage.getItem("transition-templates");
       if (json) {
         const templates = JSON.parse(json) as TransitionTemplate[];
         templates.forEach((t) => this.templates.set(t.id, t));
       }
     } catch (error) {
-      console.error('Failed to load transition templates:', error);
+      console.error("Failed to load transition templates:", error);
     }
   }
 
@@ -2120,9 +2265,9 @@ export class TransitionOrganizationService {
   private saveTemplates(): void {
     try {
       const templates = Array.from(this.templates.values());
-      localStorage.setItem('transition-templates', JSON.stringify(templates));
+      localStorage.setItem("transition-templates", JSON.stringify(templates));
     } catch (error) {
-      console.error('Failed to save transition templates:', error);
+      console.error("Failed to save transition templates:", error);
     }
   }
 
@@ -2131,13 +2276,13 @@ export class TransitionOrganizationService {
    */
   private loadGroups(): void {
     try {
-      const json = localStorage.getItem('transition-groups');
+      const json = localStorage.getItem("transition-groups");
       if (json) {
         const groups = JSON.parse(json) as TransitionGroup[];
         groups.forEach((g) => this.groups.set(g.id, g));
       }
     } catch (error) {
-      console.error('Failed to load transition groups:', error);
+      console.error("Failed to load transition groups:", error);
     }
   }
 
@@ -2147,9 +2292,9 @@ export class TransitionOrganizationService {
   private saveGroups(): void {
     try {
       const groups = Array.from(this.groups.values());
-      localStorage.setItem('transition-groups', JSON.stringify(groups));
+      localStorage.setItem("transition-groups", JSON.stringify(groups));
     } catch (error) {
-      console.error('Failed to save transition groups:', error);
+      console.error("Failed to save transition groups:", error);
     }
   }
 
@@ -2158,7 +2303,7 @@ export class TransitionOrganizationService {
    */
   private loadMetadata(): void {
     try {
-      const json = localStorage.getItem('transition-metadata');
+      const json = localStorage.getItem("transition-metadata");
       if (json) {
         const data = JSON.parse(json);
         Object.entries(data).forEach(([id, metadata]) => {
@@ -2166,7 +2311,7 @@ export class TransitionOrganizationService {
         });
       }
     } catch (error) {
-      console.error('Failed to load transition metadata:', error);
+      console.error("Failed to load transition metadata:", error);
     }
   }
 
@@ -2179,9 +2324,9 @@ export class TransitionOrganizationService {
       this.transitionMetadata.forEach((metadata, id) => {
         data[id] = metadata;
       });
-      localStorage.setItem('transition-metadata', JSON.stringify(data));
+      localStorage.setItem("transition-metadata", JSON.stringify(data));
     } catch (error) {
-      console.error('Failed to save transition metadata:', error);
+      console.error("Failed to save transition metadata:", error);
     }
   }
 
@@ -2194,7 +2339,9 @@ export class TransitionOrganizationService {
    */
   private initializeBuiltinTemplates(): void {
     // Only initialize if not already loaded
-    const hasBuiltins = Array.from(this.templates.values()).some((t) => t.builtin);
+    const hasBuiltins = Array.from(this.templates.values()).some(
+      (t) => t.builtin
+    );
     if (hasBuiltins) {
       return;
     }
@@ -2214,14 +2361,14 @@ export class TransitionOrganizationService {
    */
   private createBuiltinClickButtonTemplate(): void {
     const template: TransitionTemplate = {
-      id: 'builtin-click-button',
-      name: 'Click Button',
-      description: 'Standard button click transition with default timeout',
-      category: 'interaction',
-      icon: '🖱️',
+      id: "builtin-click-button",
+      name: "Click Button",
+      description: "Standard button click transition with default timeout",
+      category: "interaction",
+      icon: "🖱️",
       builtin: true,
       config: {
-        type: 'OutgoingTransition',
+        type: "OutgoingTransition",
         workflows: [],
         timeout: 5000,
         retryCount: 3,
@@ -2229,7 +2376,7 @@ export class TransitionOrganizationService {
         activateStates: [],
         deactivateStates: [],
       },
-      tags: ['click', 'button', 'interaction'],
+      tags: ["click", "button", "interaction"],
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -2244,14 +2391,14 @@ export class TransitionOrganizationService {
    */
   private createBuiltinFormSubmitTemplate(): void {
     const template: TransitionTemplate = {
-      id: 'builtin-form-submit',
-      name: 'Form Submit',
-      description: 'Form submission with validation and longer timeout',
-      category: 'interaction',
-      icon: '📝',
+      id: "builtin-form-submit",
+      name: "Form Submit",
+      description: "Form submission with validation and longer timeout",
+      category: "interaction",
+      icon: "📝",
       builtin: true,
       config: {
-        type: 'OutgoingTransition',
+        type: "OutgoingTransition",
         workflows: [],
         timeout: 10000,
         retryCount: 2,
@@ -2259,7 +2406,7 @@ export class TransitionOrganizationService {
         activateStates: [],
         deactivateStates: [],
       },
-      tags: ['form', 'submit', 'validation'],
+      tags: ["form", "submit", "validation"],
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -2274,14 +2421,14 @@ export class TransitionOrganizationService {
    */
   private createBuiltinNavigationTemplate(): void {
     const template: TransitionTemplate = {
-      id: 'builtin-navigation',
-      name: 'Navigation',
-      description: 'Menu or link click navigation with page load timeout',
-      category: 'navigation',
-      icon: '🧭',
+      id: "builtin-navigation",
+      name: "Navigation",
+      description: "Menu or link click navigation with page load timeout",
+      category: "navigation",
+      icon: "🧭",
       builtin: true,
       config: {
-        type: 'OutgoingTransition',
+        type: "OutgoingTransition",
         workflows: [],
         timeout: 15000,
         retryCount: 2,
@@ -2289,7 +2436,7 @@ export class TransitionOrganizationService {
         activateStates: [],
         deactivateStates: [],
       },
-      tags: ['navigation', 'menu', 'link'],
+      tags: ["navigation", "menu", "link"],
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -2304,14 +2451,14 @@ export class TransitionOrganizationService {
    */
   private createBuiltinTimeoutAutoTemplate(): void {
     const template: TransitionTemplate = {
-      id: 'builtin-timeout-auto',
-      name: 'Timeout/Auto',
-      description: 'Automatic transition after delay with no interaction',
-      category: 'automation',
-      icon: '⏱️',
+      id: "builtin-timeout-auto",
+      name: "Timeout/Auto",
+      description: "Automatic transition after delay with no interaction",
+      category: "automation",
+      icon: "⏱️",
       builtin: true,
       config: {
-        type: 'OutgoingTransition',
+        type: "OutgoingTransition",
         workflows: [],
         timeout: 3000,
         retryCount: 0,
@@ -2319,7 +2466,7 @@ export class TransitionOrganizationService {
         activateStates: [],
         deactivateStates: [],
       },
-      tags: ['timeout', 'automatic', 'delay'],
+      tags: ["timeout", "automatic", "delay"],
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -2334,14 +2481,14 @@ export class TransitionOrganizationService {
    */
   private createBuiltinConditionalTemplate(): void {
     const template: TransitionTemplate = {
-      id: 'builtin-conditional',
-      name: 'Conditional',
-      description: 'IF-based transition with multiple possible outcomes',
-      category: 'conditional',
-      icon: '❓',
+      id: "builtin-conditional",
+      name: "Conditional",
+      description: "IF-based transition with multiple possible outcomes",
+      category: "conditional",
+      icon: "❓",
       builtin: true,
       config: {
-        type: 'OutgoingTransition',
+        type: "OutgoingTransition",
         workflows: [],
         timeout: 5000,
         retryCount: 1,
@@ -2349,7 +2496,7 @@ export class TransitionOrganizationService {
         activateStates: [],
         deactivateStates: [],
       },
-      tags: ['conditional', 'if', 'branching'],
+      tags: ["conditional", "if", "branching"],
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -2364,14 +2511,14 @@ export class TransitionOrganizationService {
    */
   private createBuiltinErrorHandlerTemplate(): void {
     const template: TransitionTemplate = {
-      id: 'builtin-error-handler',
-      name: 'Error Handler',
-      description: 'Error state transition with recovery workflow',
-      category: 'error-handling',
-      icon: '⚠️',
+      id: "builtin-error-handler",
+      name: "Error Handler",
+      description: "Error state transition with recovery workflow",
+      category: "error-handling",
+      icon: "⚠️",
       builtin: true,
       config: {
-        type: 'OutgoingTransition',
+        type: "OutgoingTransition",
         workflows: [],
         timeout: 10000,
         retryCount: 5,
@@ -2379,7 +2526,7 @@ export class TransitionOrganizationService {
         activateStates: [],
         deactivateStates: [],
       },
-      tags: ['error', 'recovery', 'fallback'],
+      tags: ["error", "recovery", "fallback"],
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -2394,7 +2541,9 @@ export class TransitionOrganizationService {
    */
   clearCustomData(): void {
     // Keep built-in templates
-    const builtins = Array.from(this.templates.values()).filter((t) => t.builtin);
+    const builtins = Array.from(this.templates.values()).filter(
+      (t) => t.builtin
+    );
     this.templates.clear();
     builtins.forEach((t) => this.templates.set(t.id, t));
 
@@ -2414,4 +2563,5 @@ export class TransitionOrganizationService {
 // Exports
 // ============================================================================
 
-export const transitionOrganization = TransitionOrganizationService.getInstance();
+export const transitionOrganization =
+  TransitionOrganizationService.getInstance();

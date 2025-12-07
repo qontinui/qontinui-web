@@ -1,38 +1,30 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  Workflow,
-  Action,
-} from '@/lib/action-schema/action-types';
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { Workflow } from "@/lib/action-schema/action-types";
 import {
   WorkflowDocumentation,
   WorkflowDocumentationService,
-  DocumentationTemplate,
-} from '@/services/workflow-documentation-service';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from "@/services/workflow-documentation-service";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-} from '@/components/ui/dropdown-menu';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+} from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Bold,
   Italic,
@@ -49,7 +41,6 @@ import {
   Sparkles,
   Save,
   X,
-  History,
   Download,
   Search,
   Eye,
@@ -59,8 +50,8 @@ import {
   FileText,
   GitBranch,
   Calculator,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Props
@@ -87,13 +78,15 @@ export function DocumentationEditor({
   onGenerateAuto,
   className,
 }: DocumentationEditorProps) {
-  const [content, setContent] = useState(documentation?.content || '');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [content, setContent] = useState(documentation?.content || "");
+  const [searchQuery, setSearchQuery] = useState("");
   const [showPreview, setShowPreview] = useState(true);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [autoSaveStatus, setAutoSaveStatus] = useState<
+    "saved" | "saving" | "unsaved"
+  >("saved");
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout>();
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const docService = WorkflowDocumentationService.getInstance();
   const templates = docService.getTemplates();
@@ -101,17 +94,17 @@ export function DocumentationEditor({
   // Auto-save functionality
   useEffect(() => {
     if (content !== documentation?.content) {
-      setAutoSaveStatus('unsaved');
+      setAutoSaveStatus("unsaved");
 
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
       }
 
       autoSaveTimeoutRef.current = setTimeout(() => {
-        setAutoSaveStatus('saving');
+        setAutoSaveStatus("saving");
         // Save to localStorage as draft
         localStorage.setItem(`doc-draft-${workflow.id}`, content);
-        setTimeout(() => setAutoSaveStatus('saved'), 500);
+        setTimeout(() => setAutoSaveStatus("saved"), 500);
       }, 2000);
     }
 
@@ -131,71 +124,81 @@ export function DocumentationEditor({
   }, [workflow.id, documentation]);
 
   // Insert text at cursor position
-  const insertAtCursor = useCallback((text: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+  const insertAtCursor = useCallback(
+    (text: string) => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
 
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const before = content.substring(0, start);
-    const after = content.substring(end);
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const before = content.substring(0, start);
+      const after = content.substring(end);
 
-    setContent(before + text + after);
+      setContent(before + text + after);
 
-    // Set cursor position after inserted text
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(start + text.length, start + text.length);
-    }, 0);
-  }, [content]);
+      // Set cursor position after inserted text
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + text.length, start + text.length);
+      }, 0);
+    },
+    [content]
+  );
 
   // Wrap selected text with formatting
-  const wrapSelection = useCallback((prefix: string, suffix: string = prefix) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+  const wrapSelection = useCallback(
+    (prefix: string, suffix: string = prefix) => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
 
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = content.substring(start, end);
-    const before = content.substring(0, start);
-    const after = content.substring(end);
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selectedText = content.substring(start, end);
+      const before = content.substring(0, start);
+      const after = content.substring(end);
 
-    const newText = `${before}${prefix}${selectedText}${suffix}${after}`;
-    setContent(newText);
+      const newText = `${before}${prefix}${selectedText}${suffix}${after}`;
+      setContent(newText);
 
-    // Restore selection
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(
-        start + prefix.length,
-        end + prefix.length
-      );
-    }, 0);
-  }, [content]);
+      // Restore selection
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + prefix.length, end + prefix.length);
+      }, 0);
+    },
+    [content]
+  );
 
   // Markdown toolbar actions
   const toolbarActions = {
-    bold: () => wrapSelection('**'),
-    italic: () => wrapSelection('*'),
-    code: () => wrapSelection('`'),
-    h1: () => insertAtCursor('# '),
-    h2: () => insertAtCursor('## '),
-    h3: () => insertAtCursor('### '),
-    unorderedList: () => insertAtCursor('- '),
-    orderedList: () => insertAtCursor('1. '),
-    link: () => wrapSelection('[', '](url)'),
-    image: () => insertAtCursor('![alt text](image-url)'),
-    table: () => insertAtCursor('\n| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n| Cell 1   | Cell 2   | Cell 3   |\n'),
-    codeBlock: () => insertAtCursor('\n```\ncode here\n```\n'),
-    mermaidDiagram: () => insertAtCursor('\n```mermaid\ngraph TD\n    A[Start] --> B[End]\n```\n'),
+    bold: () => wrapSelection("**"),
+    italic: () => wrapSelection("*"),
+    code: () => wrapSelection("`"),
+    h1: () => insertAtCursor("# "),
+    h2: () => insertAtCursor("## "),
+    h3: () => insertAtCursor("### "),
+    unorderedList: () => insertAtCursor("- "),
+    orderedList: () => insertAtCursor("1. "),
+    link: () => wrapSelection("[", "](url)"),
+    image: () => insertAtCursor("![alt text](image-url)"),
+    table: () =>
+      insertAtCursor(
+        "\n| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n| Cell 1   | Cell 2   | Cell 3   |\n"
+      ),
+    codeBlock: () => insertAtCursor("\n```\ncode here\n```\n"),
+    mermaidDiagram: () =>
+      insertAtCursor("\n```mermaid\ngraph TD\n    A[Start] --> B[End]\n```\n"),
   };
 
   // Insert workflow elements
   const insertWorkflowElement = {
     actionsList: () => {
       const list = workflow.actions
-        .map((action, idx) => `${idx + 1}. **${action.name || action.id}** (\`${action.type}\`)`)
-        .join('\n');
+        .map(
+          (action, idx) =>
+            `${idx + 1}. **${action.name || action.id}** (\`${action.type}\`)`
+        )
+        .join("\n");
       insertAtCursor(`\n## Actions\n\n${list}\n`);
     },
     variablesTable: () => {
@@ -218,35 +221,43 @@ export function DocumentationEditor({
 
   // Apply template
   const applyTemplate = (templateName: string) => {
-    const template = templates.find(t => t.name === templateName);
+    const template = templates.find((t) => t.name === templateName);
     if (template) {
       let templateContent = template.content;
-      templateContent = templateContent.replace(/{workflow\.name}/g, workflow.name);
-      templateContent = templateContent.replace(/{workflow\.description}/g, workflow.description || '');
-      templateContent = templateContent.replace(/{workflow\.version}/g, workflow.version);
+      templateContent = templateContent.replace(
+        /{workflow\.name}/g,
+        workflow.name
+      );
+      templateContent = templateContent.replace(
+        /{workflow\.description}/g,
+        workflow.description || ""
+      );
+      templateContent = templateContent.replace(
+        /{workflow\.version}/g,
+        workflow.version
+      );
       setContent(templateContent);
       setSelectedTemplate(templateName);
     }
   };
 
   // Export functionality
-  const handleExport = (format: 'markdown' | 'html') => {
-    const blob = new Blob([content], { type: format === 'html' ? 'text/html' : 'text/markdown' });
+  const handleExport = (format: "markdown" | "html") => {
+    const blob = new Blob([content], {
+      type: format === "html" ? "text/html" : "text/markdown",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `${workflow.name}-docs.${format === 'html' ? 'html' : 'md'}`;
+    a.download = `${workflow.name}-docs.${format === "html" ? "html" : "md"}`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  // Search in documentation
-  const highlightedContent = searchQuery
-    ? content.replace(
-        new RegExp(searchQuery, 'gi'),
-        match => `**${match}**`
-      )
-    : content;
+  // Search in documentation (currently unused but kept for future implementation)
+  // const highlightedContent = searchQuery
+  //   ? content.replace(new RegExp(searchQuery, "gi"), (match) => `**${match}**`)
+  //   : content;
 
   // Generate preview content (simplified - in real implementation would use react-markdown)
   const generatePreview = () => {
@@ -254,53 +265,74 @@ export function DocumentationEditor({
     // - remark-gfm for GitHub Flavored Markdown
     // - rehype-highlight for syntax highlighting
     // - rehype-mermaid for Mermaid diagrams
-    return content
-      .split('\n')
-      .map((line, idx) => {
-        // Headers
-        if (line.startsWith('### ')) {
-          return <h3 key={idx} className="text-lg font-semibold mt-4 mb-2">{line.slice(4)}</h3>;
-        }
-        if (line.startsWith('## ')) {
-          return <h2 key={idx} className="text-xl font-semibold mt-6 mb-3">{line.slice(3)}</h2>;
-        }
-        if (line.startsWith('# ')) {
-          return <h1 key={idx} className="text-2xl font-bold mt-8 mb-4">{line.slice(2)}</h1>;
-        }
+    return content.split("\n").map((line, idx) => {
+      // Headers
+      if (line.startsWith("### ")) {
+        return (
+          <h3 key={idx} className="text-lg font-semibold mt-4 mb-2">
+            {line.slice(4)}
+          </h3>
+        );
+      }
+      if (line.startsWith("## ")) {
+        return (
+          <h2 key={idx} className="text-xl font-semibold mt-6 mb-3">
+            {line.slice(3)}
+          </h2>
+        );
+      }
+      if (line.startsWith("# ")) {
+        return (
+          <h1 key={idx} className="text-2xl font-bold mt-8 mb-4">
+            {line.slice(2)}
+          </h1>
+        );
+      }
 
-        // Lists
-        if (line.startsWith('- ')) {
-          return (
-            <li key={idx} className="ml-4 list-disc">
-              {line.slice(2)}
-            </li>
-          );
-        }
+      // Lists
+      if (line.startsWith("- ")) {
+        return (
+          <li key={idx} className="ml-4 list-disc">
+            {line.slice(2)}
+          </li>
+        );
+      }
 
-        // Code blocks
-        if (line.startsWith('```')) {
-          return <div key={idx} className="bg-muted p-2 rounded my-2 font-mono text-sm">{line}</div>;
-        }
+      // Code blocks
+      if (line.startsWith("```")) {
+        return (
+          <div
+            key={idx}
+            className="bg-muted p-2 rounded my-2 font-mono text-sm"
+          >
+            {line}
+          </div>
+        );
+      }
 
-        // Regular paragraph
-        if (line.trim()) {
-          return <p key={idx} className="mb-2">{line}</p>;
-        }
+      // Regular paragraph
+      if (line.trim()) {
+        return (
+          <p key={idx} className="mb-2">
+            {line}
+          </p>
+        );
+      }
 
-        return <br key={idx} />;
-      });
+      return <br key={idx} />;
+    });
   };
 
   // Extract table of contents from content
   const extractTOC = () => {
-    const lines = content.split('\n');
+    const lines = content.split("\n");
     const headers: Array<{ level: number; text: string; id: string }> = [];
 
     lines.forEach((line, idx) => {
       const match = line.match(/^(#{1,6})\s+(.+)$/);
       if (match) {
-        const level = match[1].length;
-        const text = match[2].trim();
+        const level = match[1]!.length;
+        const text = match[2]!.trim();
         const id = `heading-${idx}`;
         headers.push({ level, text, id });
       }
@@ -314,11 +346,11 @@ export function DocumentationEditor({
   const handleSave = () => {
     onSave(content);
     localStorage.removeItem(`doc-draft-${workflow.id}`);
-    setAutoSaveStatus('saved');
+    setAutoSaveStatus("saved");
   };
 
   return (
-    <div className={cn('flex flex-col h-full bg-background', className)}>
+    <div className={cn("flex flex-col h-full bg-background", className)}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-4 flex-1">
@@ -343,19 +375,19 @@ export function DocumentationEditor({
 
           {/* Auto-save indicator */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {autoSaveStatus === 'saved' && (
+            {autoSaveStatus === "saved" && (
               <>
                 <CheckCircle2 className="size-4 text-green-500" />
                 <span>Saved</span>
               </>
             )}
-            {autoSaveStatus === 'saving' && (
+            {autoSaveStatus === "saving" && (
               <>
                 <Clock className="size-4 animate-spin" />
                 <span>Saving...</span>
               </>
             )}
-            {autoSaveStatus === 'unsaved' && (
+            {autoSaveStatus === "unsaved" && (
               <>
                 <Clock className="size-4" />
                 <span>Unsaved changes</span>
@@ -365,11 +397,7 @@ export function DocumentationEditor({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onGenerateAuto}
-          >
+          <Button variant="outline" size="sm" onClick={onGenerateAuto}>
             <Sparkles className="size-4" />
             Auto-generate
           </Button>
@@ -380,7 +408,7 @@ export function DocumentationEditor({
             onClick={() => setShowPreview(!showPreview)}
           >
             <Eye className="size-4" />
-            {showPreview ? 'Hide' : 'Show'} Preview
+            {showPreview ? "Hide" : "Show"} Preview
           </Button>
 
           <DropdownMenu>
@@ -391,10 +419,10 @@ export function DocumentationEditor({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => handleExport('markdown')}>
+              <DropdownMenuItem onClick={() => handleExport("markdown")}>
                 Export as Markdown
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExport('html')}>
+              <DropdownMenuItem onClick={() => handleExport("html")}>
                 Export as HTML
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -608,11 +636,11 @@ export function DocumentationEditor({
                   <button
                     key={idx}
                     className={cn(
-                      'w-full text-left text-sm px-2 py-1 rounded hover:bg-accent transition-colors',
-                      item.level === 1 && 'font-semibold',
-                      item.level === 2 && 'pl-4',
-                      item.level === 3 && 'pl-6 text-muted-foreground',
-                      item.level > 3 && 'pl-8 text-muted-foreground text-xs'
+                      "w-full text-left text-sm px-2 py-1 rounded hover:bg-accent transition-colors",
+                      item.level === 1 && "font-semibold",
+                      item.level === 2 && "pl-4",
+                      item.level === 3 && "pl-6 text-muted-foreground",
+                      item.level > 3 && "pl-8 text-muted-foreground text-xs"
                     )}
                     onClick={() => {
                       // Scroll to heading in editor
@@ -643,7 +671,7 @@ export function DocumentationEditor({
               onChange={(e) => setContent(e.target.value)}
               placeholder="Start writing your documentation in Markdown..."
               className="min-h-full w-full border-0 rounded-none resize-none font-mono text-sm p-4 focus-visible:ring-0"
-              style={{ minHeight: '100%' }}
+              style={{ minHeight: "100%" }}
             />
           </ScrollArea>
         </div>

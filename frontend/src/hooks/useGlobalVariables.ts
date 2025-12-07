@@ -5,16 +5,17 @@
  * caching, and optimistic updates.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
-import { toast } from 'sonner';
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { httpClient } from "@/services/service-factory";
 import type {
   GlobalVariable,
   CreateVariableRequest,
   UpdateVariableRequest,
-} from '@/types/variables';
+} from "@/types/variables";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use empty string for relative URLs through Next.js proxy for proper cookie forwarding
+const API_BASE_URL = "";
 
 interface UseGlobalVariablesOptions {
   projectId: string | number;
@@ -38,10 +39,15 @@ interface UseGlobalVariablesReturn {
 const fetchGlobalVariables = async (
   projectId: string | number
 ): Promise<GlobalVariable[]> => {
-  const response = await axios.get(
-    `${API_BASE_URL}/api/v1/projects/${projectId}/variables/global`
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/variables/global?project_id=${projectId}`
   );
-  return response.data;
+  if (!response.ok) {
+    throw new Error(`Failed to fetch variables: ${response.status}`);
+  }
+  const data = await response.json();
+  // The API returns { variables: [...], total: number }
+  return data.variables || data;
 };
 
 /**
@@ -51,11 +57,17 @@ const createGlobalVariable = async (
   projectId: string | number,
   data: CreateVariableRequest
 ): Promise<GlobalVariable> => {
-  const response = await axios.post(
-    `${API_BASE_URL}/api/v1/projects/${projectId}/variables/global`,
-    data
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/variables/global?project_id=${projectId}`,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
   );
-  return response.data;
+  if (!response.ok) {
+    throw new Error(`Failed to create variable: ${response.status}`);
+  }
+  return response.json();
 };
 
 /**
@@ -66,11 +78,17 @@ const updateGlobalVariable = async (
   name: string,
   data: UpdateVariableRequest
 ): Promise<GlobalVariable> => {
-  const response = await axios.put(
-    `${API_BASE_URL}/api/v1/projects/${projectId}/variables/global/${encodeURIComponent(name)}`,
-    data
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/variables/global/${encodeURIComponent(name)}?project_id=${projectId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }
   );
-  return response.data;
+  if (!response.ok) {
+    throw new Error(`Failed to update variable: ${response.status}`);
+  }
+  return response.json();
 };
 
 /**
@@ -80,9 +98,15 @@ const deleteGlobalVariable = async (
   projectId: string | number,
   name: string
 ): Promise<void> => {
-  await axios.delete(
-    `${API_BASE_URL}/api/v1/projects/${projectId}/variables/global/${encodeURIComponent(name)}`
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/variables/global/${encodeURIComponent(name)}?project_id=${projectId}`,
+    {
+      method: "DELETE",
+    }
   );
+  if (!response.ok) {
+    throw new Error(`Failed to delete variable: ${response.status}`);
+  }
 };
 
 /**
@@ -93,15 +117,17 @@ export function useGlobalVariables({
   enabled = true,
 }: UseGlobalVariablesOptions): UseGlobalVariablesReturn {
   const queryClient = useQueryClient();
-  const queryKey = ['globalVariables', projectId];
+  const queryKey = ["globalVariables", projectId];
 
   // Fetch variables
-  const { data, isLoading, error, refetch } = useQuery<GlobalVariable[], Error>({
-    queryKey,
-    queryFn: () => fetchGlobalVariables(projectId),
-    enabled: enabled && !!projectId,
-    staleTime: 30000, // 30 seconds
-  });
+  const { data, isLoading, error, refetch } = useQuery<GlobalVariable[], Error>(
+    {
+      queryKey,
+      queryFn: () => fetchGlobalVariables(projectId),
+      enabled: enabled && !!projectId,
+      staleTime: 30000, // 30 seconds
+    }
+  );
 
   // Create variable mutation
   const createMutation = useMutation({
@@ -112,7 +138,8 @@ export function useGlobalVariables({
       await queryClient.cancelQueries({ queryKey });
 
       // Snapshot previous value
-      const previousVariables = queryClient.getQueryData<GlobalVariable[]>(queryKey);
+      const previousVariables =
+        queryClient.getQueryData<GlobalVariable[]>(queryKey);
 
       // Optimistically update
       queryClient.setQueryData<GlobalVariable[]>(queryKey, (old = []) => [
@@ -135,7 +162,7 @@ export function useGlobalVariables({
       toast.error(`Failed to create variable: ${error.message}`);
     },
     onSuccess: () => {
-      toast.success('Variable created successfully');
+      toast.success("Variable created successfully");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -144,12 +171,18 @@ export function useGlobalVariables({
 
   // Update variable mutation
   const updateMutation = useMutation({
-    mutationFn: ({ name, data }: { name: string; data: UpdateVariableRequest }) =>
-      updateGlobalVariable(projectId, name, data),
+    mutationFn: ({
+      name,
+      data,
+    }: {
+      name: string;
+      data: UpdateVariableRequest;
+    }) => updateGlobalVariable(projectId, name, data),
     onMutate: async ({ name, data }) => {
       await queryClient.cancelQueries({ queryKey });
 
-      const previousVariables = queryClient.getQueryData<GlobalVariable[]>(queryKey);
+      const previousVariables =
+        queryClient.getQueryData<GlobalVariable[]>(queryKey);
 
       queryClient.setQueryData<GlobalVariable[]>(queryKey, (old = []) =>
         old.map((v) =>
@@ -174,7 +207,7 @@ export function useGlobalVariables({
       toast.error(`Failed to update variable: ${error.message}`);
     },
     onSuccess: () => {
-      toast.success('Variable updated successfully');
+      toast.success("Variable updated successfully");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -187,7 +220,8 @@ export function useGlobalVariables({
     onMutate: async (name) => {
       await queryClient.cancelQueries({ queryKey });
 
-      const previousVariables = queryClient.getQueryData<GlobalVariable[]>(queryKey);
+      const previousVariables =
+        queryClient.getQueryData<GlobalVariable[]>(queryKey);
 
       queryClient.setQueryData<GlobalVariable[]>(queryKey, (old = []) =>
         old.filter((v) => v.name !== name)
@@ -202,7 +236,7 @@ export function useGlobalVariables({
       toast.error(`Failed to delete variable: ${error.message}`);
     },
     onSuccess: () => {
-      toast.success('Variable deleted successfully');
+      toast.success("Variable deleted successfully");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -212,12 +246,15 @@ export function useGlobalVariables({
   // Delete multiple variables
   const deleteMultipleMutation = useMutation({
     mutationFn: async (names: string[]) => {
-      await Promise.all(names.map((name) => deleteGlobalVariable(projectId, name)));
+      await Promise.all(
+        names.map((name) => deleteGlobalVariable(projectId, name))
+      );
     },
     onMutate: async (names) => {
       await queryClient.cancelQueries({ queryKey });
 
-      const previousVariables = queryClient.getQueryData<GlobalVariable[]>(queryKey);
+      const previousVariables =
+        queryClient.getQueryData<GlobalVariable[]>(queryKey);
 
       queryClient.setQueryData<GlobalVariable[]>(queryKey, (old = []) =>
         old.filter((v) => !names.includes(v.name))
@@ -243,8 +280,12 @@ export function useGlobalVariables({
     variables: data || [],
     isLoading,
     error: error as Error | null,
-    createVariable: (data) => createMutation.mutateAsync(data),
-    updateVariable: (name, data) => updateMutation.mutateAsync({ name, data }),
+    createVariable: async (data) => {
+      await createMutation.mutateAsync(data);
+    },
+    updateVariable: async (name, data) => {
+      await updateMutation.mutateAsync({ name, data });
+    },
     deleteVariable: (name) => deleteMutation.mutateAsync(name),
     deleteMultiple: (names) => deleteMultipleMutation.mutateAsync(names),
     refetch: () => {
@@ -256,12 +297,14 @@ export function useGlobalVariables({
 /**
  * Detect variable type from value
  */
-function detectVariableType(value: unknown): 'string' | 'number' | 'boolean' | 'object' | 'array' {
-  if (Array.isArray(value)) return 'array';
-  if (value === null) return 'object';
+function detectVariableType(
+  value: unknown
+): "string" | "number" | "boolean" | "object" | "array" {
+  if (Array.isArray(value)) return "array";
+  if (value === null) return "object";
   const type = typeof value;
-  if (type === 'object') return 'object';
-  if (type === 'number') return 'number';
-  if (type === 'boolean') return 'boolean';
-  return 'string';
+  if (type === "object") return "object";
+  if (type === "number") return "number";
+  if (type === "boolean") return "boolean";
+  return "string";
 }

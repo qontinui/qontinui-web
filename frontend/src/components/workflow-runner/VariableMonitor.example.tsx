@@ -5,14 +5,14 @@
  * for real-time workflow variable monitoring.
  */
 
-"use client"
+"use client";
 
-import { useState } from "react"
-import { VariableMonitor } from "./VariableMonitor"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { useState } from "react";
+import { VariableMonitor } from "./VariableMonitor";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 /**
  * Example 1: Basic Usage
@@ -102,7 +102,9 @@ export function WorkflowRunnerDashboard() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white">Workflow Execution</h1>
+            <h1 className="text-3xl font-bold text-white">
+              Workflow Execution
+            </h1>
             <p className="text-gray-400 mt-1">Run ID: {runId}</p>
           </div>
 
@@ -124,7 +126,9 @@ export function WorkflowRunnerDashboard() {
               <div className="space-y-4">
                 <div>
                   <div className="text-sm text-gray-400">Status</div>
-                  <div className="text-lg text-green-500 font-semibold">Running</div>
+                  <div className="text-lg text-green-500 font-semibold">
+                    Running
+                  </div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-400">Progress</div>
@@ -169,10 +173,14 @@ export function WorkflowRunnerDashboard() {
             <div>[2025-11-23 10:15:23] Workflow started</div>
             <div>[2025-11-23 10:15:24] Initializing variables...</div>
             <div>[2025-11-23 10:15:25] Action 'Data Fetch' started</div>
-            <div className="text-[#00D9FF]">[2025-11-23 10:15:26] Variable 'data' created</div>
+            <div className="text-[#00D9FF]">
+              [2025-11-23 10:15:26] Variable 'data' created
+            </div>
             <div>[2025-11-23 10:15:27] Action 'Data Fetch' completed</div>
             <div>[2025-11-23 10:15:28] Action 'Data Processing' started</div>
-            <div className="text-[#00D9FF]">[2025-11-23 10:15:29] Variable 'processed_data' created</div>
+            <div className="text-[#00D9FF]">
+              [2025-11-23 10:15:29] Variable 'processed_data' created
+            </div>
           </div>
         </Card>
       </div>
@@ -204,8 +212,6 @@ export function SplitViewExample() {
  * Use the VariableHistory component independently
  */
 export function StandaloneHistoryExample() {
-  const runId = "workflow-run-123";
-
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold mb-4">Variable Change Timeline</h1>
@@ -272,14 +278,31 @@ export default function VariableMonitorExamples() {
     { id: "basic", name: "Basic Usage", component: BasicExample },
     { id: "refresh", name: "Custom Refresh", component: CustomRefreshExample },
     { id: "dynamic", name: "Dynamic Run ID", component: DynamicRunIdExample },
-    { id: "dashboard", name: "Full Dashboard", component: WorkflowRunnerDashboard },
+    {
+      id: "dashboard",
+      name: "Full Dashboard",
+      component: WorkflowRunnerDashboard,
+    },
     { id: "split", name: "Split View", component: SplitViewExample },
-    { id: "history", name: "Standalone History", component: StandaloneHistoryExample },
-    { id: "disabled", name: "Disabled Refresh", component: DisableRefreshExample },
-    { id: "global", name: "Global Variables", component: GlobalVariablesExample },
+    {
+      id: "history",
+      name: "Standalone History",
+      component: StandaloneHistoryExample,
+    },
+    {
+      id: "disabled",
+      name: "Disabled Refresh",
+      component: DisableRefreshExample,
+    },
+    {
+      id: "global",
+      name: "Global Variables",
+      component: GlobalVariablesExample,
+    },
   ];
 
-  const ActiveComponent = examples.find((ex) => ex.id === activeExample)?.component || BasicExample;
+  const ActiveComponent =
+    examples.find((ex) => ex.id === activeExample)?.component || BasicExample;
 
   return (
     <div className="min-h-screen bg-[#0F0F10]">
@@ -294,8 +317,8 @@ export default function VariableMonitorExamples() {
                 onClick={() => setActiveExample(example.id)}
                 className={`w-full text-left px-3 py-2 rounded transition-colors ${
                   activeExample === example.id
-                    ? 'bg-[#00D9FF]/10 text-[#00D9FF]'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    ? "bg-[#00D9FF]/10 text-[#00D9FF]"
+                    : "text-gray-400 hover:bg-gray-800 hover:text-white"
                 }`}
               >
                 {example.name}

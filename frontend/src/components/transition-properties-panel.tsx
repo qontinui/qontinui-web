@@ -1,14 +1,19 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Badge } from "@/components/ui/badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Trash2, X, ChevronUp, ChevronDown } from "lucide-react"
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, Trash2, X, ChevronUp, ChevronDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,51 +21,45 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-
-interface Process {
-  id: string
-  name: string
-  description: string
-  category?: string
-}
+} from "@/components/ui/dialog";
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 interface State {
-  id: string
-  name: string
-  description: string
+  id: string;
+  name: string;
+  description: string;
 }
 
 interface OutgoingTransition {
-  id: string
-  type: "OutgoingTransition"
-  fromState: string
-  toState?: string
-  activateStates: string[]
-  staysVisible: boolean
-  deactivateStates: string[]
-  workflows: string[]
-  timeout?: number
-  retryCount?: number
+  id: string;
+  type: "OutgoingTransition";
+  fromState: string;
+  toState?: string;
+  activateStates: string[];
+  staysVisible: boolean;
+  deactivateStates: string[];
+  workflows: string[];
+  timeout?: number;
+  retryCount?: number;
 }
 
 interface IncomingTransition {
-  id: string
-  type: "IncomingTransition"
-  toState: string
-  workflows: string[]
-  timeout?: number
-  retryCount?: number
+  id: string;
+  type: "IncomingTransition";
+  toState: string;
+  workflows: string[];
+  timeout?: number;
+  retryCount?: number;
 }
 
-type Transition = OutgoingTransition | IncomingTransition
+type Transition = OutgoingTransition | IncomingTransition;
 
 interface TransitionPropertiesPanelProps {
-  transition: Transition
-  states: State[]
-  processes: Process[]
-  updateTransition: (updates: Partial<Transition>) => void
-  deleteTransition: (transitionId: string) => void
+  transition: Transition;
+  states: State[];
+  processes: Workflow[];
+  updateTransition: (updates: Partial<Transition>) => void;
+  deleteTransition: (transitionId: string) => void;
 }
 
 export function TransitionPropertiesPanel({
@@ -70,102 +69,124 @@ export function TransitionPropertiesPanel({
   updateTransition,
   deleteTransition,
 }: TransitionPropertiesPanelProps) {
-  const [stateDialogOpen, setStateDialogOpen] = useState(false)
-  const [selectedStateType, setSelectedStateType] = useState<"activate" | "deactivate">("activate")
-  const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false)
-  const [workflowCategoryFilter, setWorkflowCategoryFilter] = useState<string>("Transitions")
+  const [stateDialogOpen, setStateDialogOpen] = useState(false);
+  const [selectedStateType, setSelectedStateType] = useState<
+    "activate" | "deactivate"
+  >("activate");
+  const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
+  const [workflowCategoryFilter, setWorkflowCategoryFilter] =
+    useState<string>("Transitions");
 
   const handleAddState = (stateId: string, type: "activate" | "deactivate") => {
-    if (transition.type !== "OutgoingTransition") return
+    if (transition.type !== "OutgoingTransition") return;
 
-    const key = type === "activate" ? "activateStates" : "deactivateStates"
-    const currentStates = Array.isArray(transition[key]) ? transition[key] : []
+    const key = type === "activate" ? "activateStates" : "deactivateStates";
+    const currentStates = Array.isArray(transition[key]) ? transition[key] : [];
 
     if (!currentStates.includes(stateId)) {
       updateTransition({
         [key]: [...currentStates, stateId],
-      } as Partial<OutgoingTransition>)
+      } as Partial<OutgoingTransition>);
     }
-    setStateDialogOpen(false)
-  }
+    setStateDialogOpen(false);
+  };
 
-  const handleRemoveState = (stateId: string, type: "activate" | "deactivate") => {
-    if (transition.type !== "OutgoingTransition") return
+  const handleRemoveState = (
+    stateId: string,
+    type: "activate" | "deactivate"
+  ) => {
+    if (transition.type !== "OutgoingTransition") return;
 
-    const key = type === "activate" ? "activateStates" : "deactivateStates"
-    const currentStates = Array.isArray(transition[key]) ? transition[key] : []
+    const key = type === "activate" ? "activateStates" : "deactivateStates";
+    const currentStates = Array.isArray(transition[key]) ? transition[key] : [];
     updateTransition({
       [key]: currentStates.filter((id) => id !== stateId),
-    } as Partial<OutgoingTransition>)
-  }
+    } as Partial<OutgoingTransition>);
+  };
 
   const handleAddWorkflow = (workflowId: string) => {
-    const currentWorkflows = transition.workflows || []
+    const currentWorkflows = transition.workflows || [];
     // Check if workflow is already added
-    const alreadyAdded = currentWorkflows.includes(workflowId)
+    const alreadyAdded = currentWorkflows.includes(workflowId);
 
     if (!alreadyAdded) {
       updateTransition({
         workflows: [...currentWorkflows, workflowId],
-      })
+      });
     }
-    setWorkflowDialogOpen(false)
-  }
+    setWorkflowDialogOpen(false);
+  };
 
   const handleRemoveWorkflow = (workflowId: string) => {
-    const currentWorkflows = transition.workflows || []
+    const currentWorkflows = transition.workflows || [];
     updateTransition({
-      workflows: currentWorkflows.filter(id => id !== workflowId),
-    })
-  }
+      workflows: currentWorkflows.filter((id) => id !== workflowId),
+    });
+  };
 
   const handleMoveWorkflowUp = (index: number) => {
-    if (index === 0) return
-    const currentWorkflows = [...(transition.workflows || [])]
-    ;[currentWorkflows[index], currentWorkflows[index - 1]] = [currentWorkflows[index - 1], currentWorkflows[index]]
-    updateTransition({ workflows: currentWorkflows })
-  }
+    if (index === 0) return;
+    const currentWorkflows = [...(transition.workflows || [])];
+    const temp = currentWorkflows[index];
+    currentWorkflows[index] = currentWorkflows[index - 1]!;
+    currentWorkflows[index - 1] = temp!;
+    updateTransition({ workflows: currentWorkflows });
+  };
 
   const handleMoveWorkflowDown = (index: number) => {
-    const currentWorkflows = transition.workflows || []
-    if (index === currentWorkflows.length - 1) return
-    const newWorkflows = [...currentWorkflows]
-    ;[newWorkflows[index], newWorkflows[index + 1]] = [newWorkflows[index + 1], newWorkflows[index]]
-    updateTransition({ workflows: newWorkflows })
-  }
+    const currentWorkflows = transition.workflows || [];
+    if (index === currentWorkflows.length - 1) return;
+    const newWorkflows = [...currentWorkflows];
+    const temp = newWorkflows[index];
+    newWorkflows[index] = newWorkflows[index + 1]!;
+    newWorkflows[index + 1] = temp!;
+    updateTransition({ workflows: newWorkflows });
+  };
 
   const availableStates = states.filter((state) => {
-    if (transition.type !== "OutgoingTransition") return false
-    if (state.id === transition.fromState) return false
+    if (transition.type !== "OutgoingTransition") return false;
+    if (state.id === transition.fromState) return false;
 
-    const activateStates = Array.isArray(transition.activateStates) ? transition.activateStates : []
-    const deactivateStates = Array.isArray(transition.deactivateStates) ? transition.deactivateStates : []
+    const activateStates = Array.isArray(transition.activateStates)
+      ? transition.activateStates
+      : [];
+    const deactivateStates = Array.isArray(transition.deactivateStates)
+      ? transition.deactivateStates
+      : [];
 
     return selectedStateType === "activate"
-      ? !activateStates.includes(state.id) && !deactivateStates.includes(state.id)
-      : !deactivateStates.includes(state.id) && !activateStates.includes(state.id)
-  })
+      ? !activateStates.includes(state.id) &&
+          !deactivateStates.includes(state.id)
+      : !deactivateStates.includes(state.id) &&
+          !activateStates.includes(state.id);
+  });
 
   // Get unique categories from workflows
-  const workflowCategories = Array.from(new Set(processes.map(p => p.category || "Main")))
+  const workflowCategories = Array.from(
+    new Set(processes.map((p) => p.category || "Main"))
+  );
 
   // Filter workflows by category
-  const filteredWorkflows = processes.filter(p => {
-    const category = p.category || "Main"
-    return workflowCategoryFilter === "All" || category === workflowCategoryFilter
-  })
+  const filteredWorkflows = processes.filter((p) => {
+    const category = p.category || "Main";
+    return (
+      workflowCategoryFilter === "All" || category === workflowCategoryFilter
+    );
+  });
 
   // Filter out already selected workflows
-  const availableWorkflows = filteredWorkflows.filter(p => {
-    const currentWorkflows = transition.workflows || []
-    return !currentWorkflows.includes(p.id)
-  })
+  const availableWorkflows = filteredWorkflows.filter((p) => {
+    const currentWorkflows = transition.workflows || [];
+    return !currentWorkflows.includes(p.id);
+  });
 
   return (
     <Card className="border-gray-700 bg-[#27272A] h-full flex flex-col">
       <CardHeader className="pb-3 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium text-[#BD00FF]">Transition Properties</CardTitle>
+          <CardTitle className="text-sm font-medium text-[#BD00FF]">
+            Transition Properties
+          </CardTitle>
           <Button
             variant="ghost"
             size="sm"
@@ -194,22 +215,28 @@ export function TransitionPropertiesPanel({
             <div className="space-y-2">
               <Label className="text-xs text-gray-400">From State</Label>
               <div className="p-2 bg-gray-800 rounded text-sm">
-                {states.find((s) => s.id === transition.fromState)?.name || "Unknown State"}
+                {states.find((s) => s.id === transition.fromState)?.name ||
+                  "Unknown State"}
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-gray-400">States to Activate</Label>
-                <Dialog open={stateDialogOpen && selectedStateType === "activate"} onOpenChange={setStateDialogOpen}>
+                <Label className="text-xs text-gray-400">
+                  States to Activate
+                </Label>
+                <Dialog
+                  open={stateDialogOpen && selectedStateType === "activate"}
+                  onOpenChange={setStateDialogOpen}
+                >
                   <DialogTrigger asChild>
                     <Button
                       variant="ghost"
                       size="sm"
                       className="h-6 text-gray-400 hover:text-gray-300"
                       onClick={() => {
-                        setSelectedStateType("activate")
-                        setStateDialogOpen(true)
+                        setSelectedStateType("activate");
+                        setStateDialogOpen(true);
                       }}
                     >
                       <Plus className="w-3 h-3" />
@@ -226,7 +253,9 @@ export function TransitionPropertiesPanel({
                     </DialogHeader>
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {availableStates.length === 0 ? (
-                        <p className="text-sm text-gray-400 text-center py-4">No available states</p>
+                        <p className="text-sm text-gray-400 text-center py-4">
+                          No available states
+                        </p>
                       ) : (
                         availableStates.map((state) => (
                           <Button
@@ -243,7 +272,8 @@ export function TransitionPropertiesPanel({
                   </DialogContent>
                 </Dialog>
               </div>
-              {(!Array.isArray(transition.activateStates) || transition.activateStates.length === 0) ? (
+              {!Array.isArray(transition.activateStates) ||
+              transition.activateStates.length === 0 ? (
                 <div className="p-2 bg-gray-800 rounded text-sm text-gray-500 text-center">
                   No states to activate
                 </div>
@@ -255,7 +285,8 @@ export function TransitionPropertiesPanel({
                       className="flex items-center justify-between p-2 bg-gray-800 rounded"
                     >
                       <span className="text-sm">
-                        {states.find((s) => s.id === stateId)?.name || "Unknown State"}
+                        {states.find((s) => s.id === stateId)?.name ||
+                          "Unknown State"}
                       </span>
                       <Button
                         variant="ghost"
@@ -276,7 +307,9 @@ export function TransitionPropertiesPanel({
                 id="stays_visible"
                 checked={transition.staysVisible}
                 onCheckedChange={(checked) =>
-                  updateTransition({ staysVisible: !!checked } as Partial<OutgoingTransition>)
+                  updateTransition({
+                    staysVisible: !!checked,
+                  } as Partial<OutgoingTransition>)
                 }
               />
               <Label htmlFor="stays_visible" className="text-xs text-gray-400">
@@ -286,16 +319,21 @@ export function TransitionPropertiesPanel({
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-gray-400">States to Deactivate</Label>
-                <Dialog open={stateDialogOpen && selectedStateType === "deactivate"} onOpenChange={setStateDialogOpen}>
+                <Label className="text-xs text-gray-400">
+                  States to Deactivate
+                </Label>
+                <Dialog
+                  open={stateDialogOpen && selectedStateType === "deactivate"}
+                  onOpenChange={setStateDialogOpen}
+                >
                   <DialogTrigger asChild>
                     <Button
                       variant="ghost"
                       size="sm"
                       className="h-6 text-gray-400 hover:text-gray-300"
                       onClick={() => {
-                        setSelectedStateType("deactivate")
-                        setStateDialogOpen(true)
+                        setSelectedStateType("deactivate");
+                        setStateDialogOpen(true);
                       }}
                     >
                       <Plus className="w-3 h-3" />
@@ -312,14 +350,18 @@ export function TransitionPropertiesPanel({
                     </DialogHeader>
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {availableStates.length === 0 ? (
-                        <p className="text-sm text-gray-400 text-center py-4">No available states</p>
+                        <p className="text-sm text-gray-400 text-center py-4">
+                          No available states
+                        </p>
                       ) : (
                         availableStates.map((state) => (
                           <Button
                             key={state.id}
                             variant="outline"
                             className="w-full justify-start bg-transparent border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
-                            onClick={() => handleAddState(state.id, "deactivate")}
+                            onClick={() =>
+                              handleAddState(state.id, "deactivate")
+                            }
                           >
                             {state.name}
                           </Button>
@@ -329,7 +371,8 @@ export function TransitionPropertiesPanel({
                   </DialogContent>
                 </Dialog>
               </div>
-              {(!Array.isArray(transition.deactivateStates) || transition.deactivateStates.length === 0) ? (
+              {!Array.isArray(transition.deactivateStates) ||
+              transition.deactivateStates.length === 0 ? (
                 <div className="p-2 bg-gray-800 rounded text-sm text-gray-500 text-center">
                   No states to deactivate
                 </div>
@@ -341,7 +384,8 @@ export function TransitionPropertiesPanel({
                       className="flex items-center justify-between p-2 bg-gray-800 rounded"
                     >
                       <span className="text-sm">
-                        {states.find((s) => s.id === stateId)?.name || "Unknown State"}
+                        {states.find((s) => s.id === stateId)?.name ||
+                          "Unknown State"}
                       </span>
                       <Button
                         variant="ghost"
@@ -359,17 +403,25 @@ export function TransitionPropertiesPanel({
           </>
         ) : (
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">State (executes when entering)</Label>
+            <Label className="text-xs text-gray-400">
+              State (executes when entering)
+            </Label>
             <div className="p-2 bg-gray-800 rounded text-sm">
-              {states.find((s) => s.id === transition.toState)?.name || "Unknown State"}
+              {states.find((s) => s.id === transition.toState)?.name ||
+                "Unknown State"}
             </div>
           </div>
         )}
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">Workflows to Execute</Label>
-            <Dialog open={workflowDialogOpen} onOpenChange={setWorkflowDialogOpen}>
+            <Label className="text-xs text-gray-400">
+              Workflows to Execute
+            </Label>
+            <Dialog
+              open={workflowDialogOpen}
+              onOpenChange={setWorkflowDialogOpen}
+            >
               <DialogTrigger asChild>
                 <Button
                   variant="ghost"
@@ -392,8 +444,13 @@ export function TransitionPropertiesPanel({
 
                 {/* Category Filter */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-gray-400">Filter by Category</Label>
-                  <Select value={workflowCategoryFilter} onValueChange={setWorkflowCategoryFilter}>
+                  <Label className="text-xs text-gray-400">
+                    Filter by Category
+                  </Label>
+                  <Select
+                    value={workflowCategoryFilter}
+                    onValueChange={setWorkflowCategoryFilter}
+                  >
                     <SelectTrigger className="bg-transparent border-gray-700">
                       <SelectValue />
                     </SelectTrigger>
@@ -432,7 +489,9 @@ export function TransitionPropertiesPanel({
                             </Badge>
                           </div>
                           {workflow.description && (
-                            <span className="text-xs text-gray-400">{workflow.description}</span>
+                            <span className="text-xs text-gray-400">
+                              {workflow.description}
+                            </span>
                           )}
                         </div>
                       </Button>
@@ -444,14 +503,14 @@ export function TransitionPropertiesPanel({
           </div>
 
           {/* Selected Workflows List */}
-          {(!transition.workflows || transition.workflows.length === 0) ? (
+          {!transition.workflows || transition.workflows.length === 0 ? (
             <div className="p-2 bg-gray-800 rounded text-sm text-gray-500 text-center">
               No workflows selected
             </div>
           ) : (
             <div className="space-y-1">
               {transition.workflows.map((workflowId, index) => {
-                const workflow = processes.find(p => p.id === workflowId)
+                const workflow = processes.find((p) => p.id === workflowId);
                 return (
                   <div
                     key={workflowId}
@@ -459,7 +518,10 @@ export function TransitionPropertiesPanel({
                   >
                     <div className="flex flex-col gap-1 flex-1">
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/50">
+                        <Badge
+                          variant="outline"
+                          className="text-xs bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/50"
+                        >
                           {index + 1}
                         </Badge>
                         <span className="text-sm">
@@ -472,7 +534,9 @@ export function TransitionPropertiesPanel({
                         )}
                       </div>
                       {workflow?.description && (
-                        <span className="text-xs text-gray-400 ml-6">{workflow.description}</span>
+                        <span className="text-xs text-gray-400 ml-6">
+                          {workflow.description}
+                        </span>
                       )}
                     </div>
 
@@ -506,14 +570,12 @@ export function TransitionPropertiesPanel({
                       </Button>
                     </div>
                   </div>
-                )
+                );
               })}
             </div>
           )}
         </div>
-
-
       </CardContent>
     </Card>
-  )
+  );
 }

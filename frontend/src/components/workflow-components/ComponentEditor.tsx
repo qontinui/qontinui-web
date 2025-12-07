@@ -18,15 +18,23 @@ import {
   Settings,
   Code,
   Eye,
-  Copy,
 } from "lucide-react";
-import { SubflowComponent, ComponentParameter } from "@/lib/workflow-organization/types";
+import {
+  SubflowComponent,
+  ComponentParameter,
+} from "@/lib/workflow-organization/types";
 import { Action, ActionType } from "@/lib/action-schema/action-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -50,7 +58,10 @@ export interface ComponentEditorProps {
   component?: SubflowComponent;
   onSave: (component: SubflowComponent) => void;
   onCancel: () => void;
-  onTest?: (component: SubflowComponent, parameters: Record<string, any>) => void;
+  onTest?: (
+    component: SubflowComponent,
+    parameters: Record<string, any>
+  ) => void;
   className?: string;
 }
 
@@ -59,7 +70,13 @@ interface ValidationError {
   message: string;
 }
 
-type ParameterType = "string" | "number" | "boolean" | "object" | "array" | "any";
+type ParameterType =
+  | "string"
+  | "number"
+  | "boolean"
+  | "object"
+  | "array"
+  | "any";
 
 // ============================================================================
 // Component
@@ -73,7 +90,9 @@ export function ComponentEditor({
   className,
 }: ComponentEditorProps) {
   const [name, setName] = React.useState(component?.name || "");
-  const [description, setDescription] = React.useState(component?.description || "");
+  const [description, setDescription] = React.useState(
+    component?.description || ""
+  );
   const [category, setCategory] = React.useState(component?.category || "");
   const [icon, setIcon] = React.useState(component?.icon || "");
   const [tags, setTags] = React.useState<string[]>(component?.tags || []);
@@ -81,12 +100,13 @@ export function ComponentEditor({
   const [parameters, setParameters] = React.useState<ComponentParameter[]>(
     component?.parameters || []
   );
-  const [actions, setActions] = React.useState<Action[]>(component?.actions || []);
-  const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
-  const [activeTab, setActiveTab] = React.useState("metadata");
-  const [expandedSections, setExpandedSections] = React.useState<Set<string>>(
-    new Set(["parameters", "actions"])
+  const [actions, setActions] = React.useState<Action[]>(
+    component?.actions || []
   );
+  const [validationErrors, setValidationErrors] = React.useState<
+    ValidationError[]
+  >([]);
+  const [activeTab, setActiveTab] = React.useState("metadata");
 
   // Validation
   const validate = React.useCallback((): boolean => {
@@ -108,7 +128,10 @@ export function ComponentEditor({
     }
 
     if (actions.length === 0) {
-      errors.push({ field: "actions", message: "At least one action is required" });
+      errors.push({
+        field: "actions",
+        message: "At least one action is required",
+      });
     }
 
     setValidationErrors(errors);
@@ -190,9 +213,12 @@ export function ComponentEditor({
     ]);
   };
 
-  const handleUpdateParameter = (index: number, updates: Partial<ComponentParameter>) => {
+  const handleUpdateParameter = (
+    index: number,
+    updates: Partial<ComponentParameter>
+  ) => {
     const updated = [...parameters];
-    updated[index] = { ...updated[index], ...updates };
+    updated[index] = { ...updated[index], ...updates } as ComponentParameter;
     setParameters(updated);
   };
 
@@ -205,25 +231,13 @@ export function ComponentEditor({
       id: crypto.randomUUID(),
       type: "WAIT" as ActionType,
       name: "New Action",
-      position: { x: 0, y: 0 },
+      position: [0, 0],
     };
     setActions([...actions, newAction as Action]);
   };
 
   const handleRemoveAction = (index: number) => {
     setActions(actions.filter((_, i) => i !== index));
-  };
-
-  const toggleSection = (section: string) => {
-    setExpandedSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(section)) {
-        next.delete(section);
-      } else {
-        next.add(section);
-      }
-      return next;
-    });
   };
 
   const getErrorForField = (field: string): string | undefined => {
@@ -238,9 +252,7 @@ export function ComponentEditor({
           <h2 className="text-xl font-semibold">
             {component ? "Edit Component" : "Create Component"}
           </h2>
-          {component && (
-            <Badge variant="secondary">v{component.version}</Badge>
-          )}
+          {component && <Badge variant="secondary">v{component.version}</Badge>}
         </div>
 
         <div className="flex items-center gap-2">
@@ -266,7 +278,9 @@ export function ComponentEditor({
         <Alert variant="destructive">
           <AlertCircle className="size-4" />
           <AlertDescription>
-            <div className="font-medium mb-1">Please fix the following errors:</div>
+            <div className="font-medium mb-1">
+              Please fix the following errors:
+            </div>
             <ul className="list-disc list-inside text-sm space-y-0.5">
               {validationErrors.map((error, i) => (
                 <li key={i}>{error.message}</li>
@@ -277,7 +291,11 @@ export function ComponentEditor({
       )}
 
       {/* Content */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="flex-1 flex flex-col"
+      >
         <TabsList>
           <TabsTrigger value="metadata">
             <Settings className="size-4" />
@@ -321,7 +339,9 @@ export function ComponentEditor({
                     aria-invalid={!!getErrorForField("name")}
                   />
                   {getErrorForField("name") && (
-                    <p className="text-xs text-destructive">{getErrorForField("name")}</p>
+                    <p className="text-xs text-destructive">
+                      {getErrorForField("name")}
+                    </p>
                   )}
                 </div>
 
@@ -431,7 +451,9 @@ export function ComponentEditor({
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                     <Code className="size-12 mb-4" />
                     <p className="font-medium">No parameters defined</p>
-                    <p className="text-sm">Add parameters to make your component configurable</p>
+                    <p className="text-sm">
+                      Add parameters to make your component configurable
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -441,7 +463,9 @@ export function ComponentEditor({
                         parameter={param}
                         index={index}
                         error={getErrorForField(`parameter-${index}`)}
-                        onUpdate={(updates) => handleUpdateParameter(index, updates)}
+                        onUpdate={(updates) =>
+                          handleUpdateParameter(index, updates)
+                        }
                         onRemove={() => handleRemoveParameter(index)}
                       />
                     ))}
@@ -473,7 +497,9 @@ export function ComponentEditor({
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                     <FileText className="size-12 mb-4" />
                     <p className="font-medium">No actions defined</p>
-                    <p className="text-sm">Add actions to define the component's behavior</p>
+                    <p className="text-sm">
+                      Add actions to define the component's behavior
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -490,7 +516,9 @@ export function ComponentEditor({
                 {getErrorForField("actions") && (
                   <Alert variant="destructive" className="mt-4">
                     <AlertCircle className="size-4" />
-                    <AlertDescription>{getErrorForField("actions")}</AlertDescription>
+                    <AlertDescription>
+                      {getErrorForField("actions")}
+                    </AlertDescription>
                   </Alert>
                 )}
               </CardContent>
@@ -517,16 +545,22 @@ export function ComponentEditor({
                         </div>
                       )}
                       <div>
-                        <h3 className="font-semibold text-lg">{name || "Untitled Component"}</h3>
+                        <h3 className="font-semibold text-lg">
+                          {name || "Untitled Component"}
+                        </h3>
                         {category && (
-                          <p className="text-xs text-muted-foreground">{category}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {category}
+                          </p>
                         )}
                       </div>
                     </div>
                   </div>
 
                   {description && (
-                    <p className="text-sm text-muted-foreground mb-3">{description}</p>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      {description}
+                    </p>
                   )}
 
                   <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
@@ -537,7 +571,11 @@ export function ComponentEditor({
                   {tags.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {tags.map((tag) => (
-                        <Badge key={tag} variant="secondary" className="text-xs">
+                        <Badge
+                          key={tag}
+                          variant="secondary"
+                          className="text-xs"
+                        >
                           {tag}
                         </Badge>
                       ))}
@@ -557,11 +595,15 @@ export function ComponentEditor({
                     </div>
                     <div>
                       <span className="text-muted-foreground">Category:</span>
-                      <span className="ml-2 font-medium">{category || "-"}</span>
+                      <span className="ml-2 font-medium">
+                        {category || "-"}
+                      </span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Parameters:</span>
-                      <span className="ml-2 font-medium">{parameters.length}</span>
+                      <span className="ml-2 font-medium">
+                        {parameters.length}
+                      </span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Actions:</span>
@@ -594,7 +636,13 @@ interface ParameterEditorProps {
   onRemove: () => void;
 }
 
-function ParameterEditor({ parameter, index, error, onUpdate, onRemove }: ParameterEditorProps) {
+function ParameterEditor({
+  parameter,
+  index,
+  error,
+  onUpdate,
+  onRemove,
+}: ParameterEditorProps) {
   const [isExpanded, setIsExpanded] = React.useState(false);
 
   return (
@@ -608,19 +656,26 @@ function ParameterEditor({ parameter, index, error, onUpdate, onRemove }: Parame
             onClick={() => setIsExpanded(!isExpanded)}
           >
             <GripVertical className="size-4 text-muted-foreground" />
-            {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+            {isExpanded ? (
+              <ChevronDown className="size-4" />
+            ) : (
+              <ChevronRight className="size-4" />
+            )}
             <span className="font-medium">
               {parameter.name || `Parameter ${index + 1}`}
             </span>
             <Badge variant="outline" className="ml-2">
               {parameter.type}
             </Badge>
-            {parameter.required && (
-              <Badge variant="secondary">Required</Badge>
-            )}
+            {parameter.required && <Badge variant="secondary">Required</Badge>}
           </Button>
 
-          <Button variant="ghost" size="icon" className="size-8" onClick={onRemove}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={onRemove}
+          >
             <Trash2 className="size-4 text-destructive" />
           </Button>
         </div>
@@ -697,7 +752,9 @@ function ParameterEditor({ parameter, index, error, onUpdate, onRemove }: Parame
             <Checkbox
               id={`required-${index}`}
               checked={parameter.required}
-              onCheckedChange={(checked) => onUpdate({ required: checked as boolean })}
+              onCheckedChange={(checked) =>
+                onUpdate({ required: checked as boolean })
+              }
             />
             <Label htmlFor={`required-${index}`}>Required parameter</Label>
           </div>
@@ -717,14 +774,20 @@ interface ActionListItemProps {
   onRemove: () => void;
 }
 
-function ActionListItem({ action, index, onRemove }: ActionListItemProps) {
+function ActionListItem({
+  action,
+  index: _index,
+  onRemove,
+}: ActionListItemProps) {
   return (
     <div className="flex items-center gap-2 p-3 rounded-lg border bg-card hover:bg-accent/50">
       <GripVertical className="size-4 text-muted-foreground cursor-grab" />
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium truncate">{action.name || action.type}</span>
+          <span className="font-medium truncate">
+            {action.name || action.type}
+          </span>
           <Badge variant="outline" className="text-xs">
             {action.type}
           </Badge>
@@ -735,7 +798,12 @@ function ActionListItem({ action, index, onRemove }: ActionListItemProps) {
         <Button variant="ghost" size="icon" className="size-8">
           <Edit className="size-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="size-8" onClick={onRemove}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          onClick={onRemove}
+        >
           <Trash2 className="size-4 text-destructive" />
         </Button>
       </div>

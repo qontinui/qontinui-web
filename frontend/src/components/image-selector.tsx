@@ -1,53 +1,74 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { ImageIcon, Search, X, Filter, CheckCircle2, Circle } from "lucide-react"
-import { useImageStats } from "@/hooks/use-image-stats"
-import { useAutomation } from "@/contexts/automation-context"
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import {
+  ImageIcon,
+  Search,
+  X,
+  Filter,
+  CheckCircle2,
+  Circle,
+} from "lucide-react";
+import { useImageStats } from "@/hooks/use-image-stats";
+import { useAutomation } from "@/contexts/automation-context";
+import type { Pattern } from "@/contexts/automation-context/types";
 
 interface ImageAsset {
-  id: string
-  name: string
-  url: string
-  size?: number
-  uploadedAt?: Date
-  usageCount?: number
+  id: string;
+  name: string;
+  url: string;
+  size?: number;
+  uploadedAt?: Date;
+  usageCount?: number;
 }
 
 interface StateImage {
-  id: string
-  name: string
-  patterns?: Array<{ image: string }>
+  id: string;
+  name: string;
+  patterns?: Pattern[];
 }
 
 interface State {
-  id: string
-  name: string
-  stateImages?: StateImage[]
+  id: string;
+  name: string;
+  stateImages?: StateImage[];
 }
 
 interface ImageSelectorProps {
   // Single-select mode
-  selectedImage?: string | null
-  onSelectImage?: (imageId: string | null) => void
+  selectedImage?: string | null;
+  onSelectImage?: (imageId: string | null) => void;
   // Multi-select mode
-  selectedImages?: string[]
-  onSelectImages?: (imageIds: string[]) => void
-  multiSelect?: boolean
-  images: ImageAsset[]
-  states?: State[]
-  placeholder?: string
-  initialOpen?: boolean
-  showStateFilter?: boolean
-  open?: boolean
-  onOpenChange?: (open: boolean) => void
-  hideTrigger?: boolean
+  selectedImages?: string[];
+  onSelectImages?: (imageIds: string[]) => void;
+  multiSelect?: boolean;
+  images: ImageAsset[];
+  states?: State[];
+  placeholder?: string;
+  initialOpen?: boolean;
+  showStateFilter?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }
 
 export function ImageSelector({
@@ -65,93 +86,107 @@ export function ImageSelector({
   onOpenChange,
   hideTrigger = false,
 }: ImageSelectorProps) {
-  const { resolvePatternImage } = useAutomation()
-  const [internalOpen, setInternalOpen] = useState(initialOpen)
+  const { resolvePatternImage } = useAutomation();
+  const [internalOpen, setInternalOpen] = useState(initialOpen);
 
   // Temporary multi-select state (used during dialog interaction)
-  const [tempSelectedImages, setTempSelectedImages] = useState<string[]>(selectedImages || [])
+  const [tempSelectedImages, setTempSelectedImages] = useState<string[]>(
+    selectedImages || []
+  );
 
   // Use controlled open if provided, otherwise use internal state
-  const open = controlledOpen !== undefined ? controlledOpen : internalOpen
-  const setOpen = onOpenChange || setInternalOpen
-  const [searchQuery, setSearchQuery] = useState("")
-  const [selectedStateFilter, setSelectedStateFilter] = useState<string>("all")
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen = onOpenChange || setInternalOpen;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedStateFilter, setSelectedStateFilter] = useState<string>("all");
 
   // Update temp selection when dialog opens
   const handleOpenChange = (newOpen: boolean) => {
     if (newOpen && multiSelect) {
-      setTempSelectedImages(selectedImages || [])
+      setTempSelectedImages(selectedImages || []);
     }
-    setOpen(newOpen)
-  }
+    setOpen(newOpen);
+  };
 
   // Get images to display based on filter
   const getAvailableImages = (): ImageAsset[] => {
     // If not using state filter, show library images (ImageAssets)
     if (!showStateFilter) {
-      return images
+      return images;
     }
 
     // Using state filter - show StateImages (resolve pattern images from library)
     if (selectedStateFilter === "all") {
       // "All Images" - show all StateImages from all states
-      return states.flatMap(state =>
-        (state.stateImages || []).map(si => {
-          const imageData = si.patterns?.[0] ? resolvePatternImage(si.patterns[0]) : null
+      return states.flatMap((state) =>
+        (state.stateImages || []).map((si) => {
+          const imageData = si.patterns?.[0]
+            ? resolvePatternImage(si.patterns[0])
+            : null;
           return {
             id: si.id,
             name: si.name,
-            url: imageData?.url || '', // Resolve pattern's image from library
-          }
+            url: imageData?.url || "", // Resolve pattern's image from library
+          };
         })
-      )
+      );
     }
 
     // Specific state selected - show only that state's StateImages
-    const selectedState = states.find(s => s.id === selectedStateFilter)
+    const selectedState = states.find((s) => s.id === selectedStateFilter);
     return selectedState
-      ? (selectedState.stateImages || []).map(si => {
-          const imageData = si.patterns?.[0] ? resolvePatternImage(si.patterns[0]) : null
+      ? (selectedState.stateImages || []).map((si) => {
+          const imageData = si.patterns?.[0]
+            ? resolvePatternImage(si.patterns[0])
+            : null;
           return {
             id: si.id,
             name: si.name,
-            url: imageData?.url || '', // Resolve pattern's image from library
-          }
+            url: imageData?.url || "", // Resolve pattern's image from library
+          };
         })
-      : []
-  }
+      : [];
+  };
 
-  const availableImages = getAvailableImages()
-  const filteredImages = availableImages.filter((image) => image.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const availableImages = getAvailableImages();
+  const filteredImages = availableImages.filter((image) =>
+    image.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Find which state contains a StateImage for badge display
   const findStateImageInStates = (imageId: string) => {
     for (const state of states) {
-      const stateImage = state.stateImages?.find(si => si.id === imageId)
-      if (stateImage) return stateImage
+      const stateImage = state.stateImages?.find((si) => si.id === imageId);
+      if (stateImage) return stateImage;
     }
-    return null
-  }
+    return null;
+  };
 
   // Check if selectedImage is base64 data or an ID
-  const isBase64 = selectedImage && (selectedImage.startsWith('data:') || selectedImage.length > 100)
+  const isBase64 =
+    selectedImage &&
+    (selectedImage.startsWith("data:") || selectedImage.length > 100);
 
   // Look for selected image in StateImages first, then fall back to library
-  const selectedStateImage = selectedImage && !isBase64 ? findStateImageInStates(selectedImage) : null
-  const selectedImageData = selectedImage && !isBase64 && !selectedStateImage
-    ? images.find((img) => img.id === selectedImage)
-    : selectedStateImage
-      ? (() => {
-          const imageData = selectedStateImage.patterns?.[0] ? resolvePatternImage(selectedStateImage.patterns[0]) : null
-          return {
-            id: selectedStateImage.id || selectedImage,
-            name: selectedStateImage.name,
-            url: imageData?.url || '',
-          }
-        })()
-      : null
+  const selectedStateImage =
+    selectedImage && !isBase64 ? findStateImageInStates(selectedImage) : null;
+  const selectedImageData =
+    selectedImage && !isBase64 && !selectedStateImage
+      ? images.find((img) => img.id === selectedImage)
+      : selectedStateImage
+        ? (() => {
+            const imageData = selectedStateImage.patterns?.[0]
+              ? resolvePatternImage(selectedStateImage.patterns[0])
+              : null;
+            return {
+              id: selectedStateImage.id || selectedImage,
+              name: selectedStateImage.name,
+              url: imageData?.url || "",
+            };
+          })()
+        : null;
 
-  const stats = useImageStats(isBase64 ? selectedImage : null)
+  const stats = useImageStats(isBase64 ? selectedImage : null);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -166,7 +201,10 @@ export function ImageSelector({
               selectedImages && selectedImages.length > 0 ? (
                 <div className="flex items-center gap-2 w-full">
                   <ImageIcon className="w-4 h-4" />
-                  <span className="truncate">{selectedImages.length} image{selectedImages.length > 1 ? 's' : ''} selected</span>
+                  <span className="truncate">
+                    {selectedImages.length} image
+                    {selectedImages.length > 1 ? "s" : ""} selected
+                  </span>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-gray-400">
@@ -174,36 +212,42 @@ export function ImageSelector({
                   <span>{placeholder}</span>
                 </div>
               )
-            ) : (
-              // Single-select display
-              selectedImageData || isBase64 ? (
-                <div className="flex items-center gap-2 w-full">
-                  <div className="w-8 h-8 bg-gray-800 rounded flex items-center justify-center flex-shrink-0">
-                    <img
-                      src={isBase64 ? selectedImage : (selectedImageData?.url || "/placeholder.svg")}
-                      alt={selectedImageData?.name || "Selected Image"}
-                      className="max-w-full max-h-full object-contain"
-                    />
+            ) : // Single-select display
+            selectedImageData || isBase64 ? (
+              <div className="flex items-center gap-2 w-full">
+                <div className="w-8 h-8 bg-gray-800 rounded flex items-center justify-center flex-shrink-0">
+                  <img
+                    src={
+                      isBase64
+                        ? selectedImage
+                        : selectedImageData?.url || "/placeholder.svg"
+                    }
+                    alt={selectedImageData?.name || "Selected Image"}
+                    className="max-w-full max-h-full object-contain"
+                  />
+                </div>
+                {selectedImageData ? (
+                  <span className="truncate">{selectedImageData.name}</span>
+                ) : stats && !stats.isLoading ? (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-mono text-gray-300">
+                      {stats.width}×{stats.height}
+                    </span>
+                    {stats.transparencyPercent > 0 && (
+                      <span className="text-[#00D9FF]">
+                        {stats.transparencyPercent}% trans
+                      </span>
+                    )}
                   </div>
-                  {selectedImageData ? (
-                    <span className="truncate">{selectedImageData.name}</span>
-                  ) : stats && !stats.isLoading ? (
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="font-mono text-gray-300">{stats.width}×{stats.height}</span>
-                      {stats.transparencyPercent > 0 && (
-                        <span className="text-[#00D9FF]">{stats.transparencyPercent}% trans</span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-gray-400 text-xs">Loading...</span>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-gray-400">
-                  <ImageIcon className="w-4 h-4" />
-                  <span>{placeholder}</span>
-                </div>
-              )
+                ) : (
+                  <span className="text-gray-400 text-xs">Loading...</span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-gray-400">
+                <ImageIcon className="w-4 h-4" />
+                <span>{placeholder}</span>
+              </div>
             )}
           </Button>
         </DialogTrigger>
@@ -222,7 +266,10 @@ export function ImageSelector({
           {showStateFilter && states.length > 0 && (
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-gray-400" />
-              <Select value={selectedStateFilter} onValueChange={setSelectedStateFilter}>
+              <Select
+                value={selectedStateFilter}
+                onValueChange={setSelectedStateFilter}
+              >
                 <SelectTrigger className="w-48 bg-transparent border-gray-700">
                   <SelectValue placeholder="Filter by state" />
                 </SelectTrigger>
@@ -263,14 +310,15 @@ export function ImageSelector({
           {multiSelect && (
             <div className="flex justify-between items-center">
               <div className="text-sm text-gray-400">
-                {tempSelectedImages.length} image{tempSelectedImages.length !== 1 ? 's' : ''} selected
+                {tempSelectedImages.length} image
+                {tempSelectedImages.length !== 1 ? "s" : ""} selected
               </div>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    setTempSelectedImages([])
+                    setTempSelectedImages([]);
                   }}
                   className="border-gray-600 text-gray-400 hover:text-white"
                 >
@@ -280,7 +328,7 @@ export function ImageSelector({
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    setOpen(false)
+                    setOpen(false);
                   }}
                   className="text-gray-400 hover:text-white"
                 >
@@ -289,8 +337,8 @@ export function ImageSelector({
                 <Button
                   size="sm"
                   onClick={() => {
-                    onSelectImages?.(tempSelectedImages)
-                    setOpen(false)
+                    onSelectImages?.(tempSelectedImages);
+                    setOpen(false);
                   }}
                   className="bg-[#00D9FF] hover:bg-[#00B8D4] text-black"
                 >
@@ -308,7 +356,12 @@ export function ImageSelector({
                 {selectedImageData ? (
                   <span className="text-white">{selectedImageData.name}</span>
                 ) : isBase64 && stats && !stats.isLoading ? (
-                  <span className="text-white font-mono">{stats.width}×{stats.height}{stats.transparencyPercent > 0 ? `, ${stats.transparencyPercent}% transparent` : ''}</span>
+                  <span className="text-white font-mono">
+                    {stats.width}×{stats.height}
+                    {stats.transparencyPercent > 0
+                      ? `, ${stats.transparencyPercent}% transparent`
+                      : ""}
+                  </span>
                 ) : (
                   <span className="text-white">Loading...</span>
                 )}
@@ -317,8 +370,8 @@ export function ImageSelector({
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  onSelectImage?.(null)
-                  setOpen(false)
+                  onSelectImage?.(null);
+                  setOpen(false);
                 }}
                 className="border-gray-600 text-gray-400 hover:text-white"
               >
@@ -341,7 +394,9 @@ export function ImageSelector({
                   <>
                     <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
                     <p>No images available</p>
-                    <p className="text-sm">Upload images in the Images tab first</p>
+                    <p className="text-sm">
+                      Upload images in the Images tab first
+                    </p>
                   </>
                 )}
               </div>
@@ -349,12 +404,12 @@ export function ImageSelector({
               <div className="grid grid-cols-3 md:grid-cols-4 gap-4">
                 {filteredImages.map((image) => {
                   // Find the StateImage to get pattern count
-                  const stateImage = findStateImageInStates(image.id)
+                  const stateImage = findStateImageInStates(image.id);
 
                   // Check if image is selected (single or multi-select)
                   const isSelected = multiSelect
                     ? tempSelectedImages.includes(image.id)
-                    : selectedImage === image.id
+                    : selectedImage === image.id;
 
                   return (
                     <Card
@@ -367,15 +422,15 @@ export function ImageSelector({
                       onClick={() => {
                         if (multiSelect) {
                           // Toggle selection
-                          setTempSelectedImages(prev =>
+                          setTempSelectedImages((prev) =>
                             prev.includes(image.id)
-                              ? prev.filter(id => id !== image.id)
+                              ? prev.filter((id) => id !== image.id)
                               : [...prev, image.id]
-                          )
+                          );
                         } else {
                           // Single select
-                          onSelectImage?.(image.id)
-                          setOpen(false)
+                          onSelectImage?.(image.id);
+                          setOpen(false);
                         }
                       }}
                     >
@@ -398,19 +453,30 @@ export function ImageSelector({
                             />
                           </div>
                           <div className="space-y-1">
-                            <p className="text-sm font-medium truncate" title={image.name}>
+                            <p
+                              className="text-sm font-medium truncate"
+                              title={image.name}
+                            >
                               {image.name}
                             </p>
-                            {stateImage && stateImage.patterns && stateImage.patterns.length > 0 && (
-                              <Badge variant="secondary" className="text-xs w-full justify-center">
-                                {stateImage.patterns.length} {stateImage.patterns.length === 1 ? 'pattern' : 'patterns'}
-                              </Badge>
-                            )}
+                            {stateImage &&
+                              stateImage.patterns &&
+                              stateImage.patterns.length > 0 && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs w-full justify-center"
+                                >
+                                  {stateImage.patterns.length}{" "}
+                                  {stateImage.patterns.length === 1
+                                    ? "pattern"
+                                    : "patterns"}
+                                </Badge>
+                              )}
                           </div>
                         </div>
                       </CardContent>
                     </Card>
-                  )
+                  );
                 })}
               </div>
             )}
@@ -418,5 +484,5 @@ export function ImageSelector({
         </div>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

@@ -10,13 +10,13 @@
  * - Normalizes action config structures
  */
 
-import type { Migration, MigrationContext } from '../migration-types';
-import { validateConfig, validateWorkflows } from '../validation-schemas';
+import type { Migration, MigrationContext } from "../migration-types";
+import { validateConfig, validateWorkflows } from "../validation-schemas";
 
 export const migrationV1ToV2: Migration = {
-  fromVersion: '1.0.0',
-  toVersion: '2.0.0',
-  description: 'Migrate legacy formats to modern v2.0.0 graph format',
+  fromVersion: "1.0.0",
+  toVersion: "2.0.0",
+  description: "Migrate legacy formats to modern v2.0.0 graph format",
 
   migrate(config: any, context: MigrationContext): any {
     const migrated = structuredClone(config);
@@ -29,8 +29,8 @@ export const migrationV1ToV2: Migration = {
     // Migrate each workflow
     for (const workflow of migrated.workflows) {
       // Ensure format is 'graph'
-      if (!workflow.format || workflow.format !== 'graph') {
-        workflow.format = 'graph';
+      if (!workflow.format || workflow.format !== "graph") {
+        workflow.format = "graph";
         context.warnings.push(
           `Workflow ${workflow.id}: Updated format to 'graph'`
         );
@@ -54,7 +54,11 @@ export const migrationV1ToV2: Migration = {
       for (let i = 0; i < workflow.actions.length; i++) {
         const action = workflow.actions[i];
 
-        if (!action.position || !Array.isArray(action.position) || action.position.length !== 2) {
+        if (
+          !action.position ||
+          !Array.isArray(action.position) ||
+          action.position.length !== 2
+        ) {
           // Auto-generate position in a grid layout
           const col = i % 4;
           const row = Math.floor(i / 4);
@@ -71,12 +75,12 @@ export const migrationV1ToV2: Migration = {
 
       // Ensure workflow version field exists
       if (!workflow.version) {
-        workflow.version = '1.0.0';
+        workflow.version = "1.0.0";
       }
     }
 
     // Update config version
-    migrated.version = '2.0.0';
+    migrated.version = "2.0.0";
 
     return migrated;
   },
@@ -85,7 +89,7 @@ export const migrationV1ToV2: Migration = {
     // Check if any workflows need migration
     for (const workflow of config.workflows || []) {
       // Check for missing format or non-graph format
-      if (!workflow.format || workflow.format !== 'graph') {
+      if (!workflow.format || workflow.format !== "graph") {
         return true;
       }
       // Check for missing connections
@@ -104,16 +108,16 @@ export const migrationV1ToV2: Migration = {
 
   validate(config: any): boolean {
     // Use Zod schema validation for strict type checking
-    const schemaResult = validateConfig(config, '2.0.0');
+    const schemaResult = validateConfig(config, "2.0.0");
     if (!schemaResult.success) {
-      console.error('v1→v2 migration validation errors:', schemaResult.errors);
+      console.error("v1→v2 migration validation errors:", schemaResult.errors);
       return false;
     }
 
     // Additional workflow-specific validation
     const workflowResult = validateWorkflows(config);
     if (!workflowResult.success) {
-      console.error('v1→v2 workflow validation errors:', workflowResult.errors);
+      console.error("v1→v2 workflow validation errors:", workflowResult.errors);
       return false;
     }
 

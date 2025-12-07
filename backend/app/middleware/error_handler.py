@@ -1,13 +1,15 @@
 import time
 import traceback
+from typing import Any
 
 import structlog
-from app.core.config import settings
-from app.core.error_codes import ErrorCode, get_default_error_code
 from fastapi import HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.core.config import settings
+from app.core.error_codes import ErrorCode, get_default_error_code
 
 logger = structlog.get_logger(__name__)
 
@@ -80,11 +82,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle HTTP exceptions with standardized format"""
     # If detail is a dict with error code, use it; otherwise infer from status
-    if isinstance(exc.detail, dict) and "error" in exc.detail:
-        error_code = exc.detail["error"]
-        message = exc.detail.get("message", str(exc.detail))
-        metadata = {
-            k: v for k, v in exc.detail.items() if k not in ["error", "message"]
+    # Note: exc.detail is typed as str | None but can be dict at runtime
+    detail_value: Any = exc.detail
+    if isinstance(detail_value, dict) and "error" in detail_value:
+        error_code = detail_value["error"]
+        message = detail_value.get("message", str(detail_value))
+        metadata: dict[str, Any] = {
+            k: v for k, v in detail_value.items() if k not in ["error", "message"]
         }
     else:
         error_code = get_default_error_code(exc.status_code).value
@@ -378,7 +382,10 @@ def rate_limit_error(
     Example:
         raise rate_limit_error("Rate limit exceeded", retry_after=60)
     """
-    detail = {"error": ErrorCode.RATE_LIMIT_EXCEEDED.value, "message": message}
+    detail: dict[str, Any] = {
+        "error": ErrorCode.RATE_LIMIT_EXCEEDED.value,
+        "message": message,
+    }
     if retry_after:
         detail["retry_after"] = retry_after
 
@@ -406,7 +413,7 @@ def quota_exceeded_error(
     Example:
         raise quota_exceeded_error("storage", 10000000, 5000000, ErrorCode.STORAGE_QUOTA_EXCEEDED)
     """
-    detail = {
+    detail: dict[str, Any] = {
         "error": error_code.value,
         "message": f"{resource.capitalize()} quota exceeded",
     }

@@ -1,48 +1,73 @@
-"use client"
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu"
-import { Plus, GripVertical, Trash2, Copy, GitBranch, RotateCw } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { useAutomation } from "@/contexts/automation-context"
+"use client";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+} from "@/components/ui/dropdown-menu";
+import { Plus, GripVertical, Trash2, Copy } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { useAutomation } from "@/contexts/automation-context";
 
 interface Process {
-  id: string
-  name: string
-  description: string
-  actions: Action[]
+  id: string;
+  name: string;
+  description: string;
+  actions: Action[];
 }
 
 interface Action {
-  id: string
-  type:
-    // Pure mouse actions
-    | "MOUSE_MOVE" | "MOUSE_DOWN" | "MOUSE_UP" | "MOUSE_SCROLL"
+  id: string;
+  type: // Pure mouse actions
+    | "MOUSE_MOVE"
+    | "MOUSE_DOWN"
+    | "MOUSE_UP"
+    | "MOUSE_SCROLL"
     // Pure keyboard actions
-    | "KEY_DOWN" | "KEY_UP" | "KEY_PRESS"
+    | "KEY_DOWN"
+    | "KEY_UP"
+    | "KEY_PRESS"
     // Combined mouse actions
-    | "CLICK" | "DOUBLE_CLICK" | "RIGHT_CLICK" | "DRAG" | "SCROLL"
+    | "CLICK"
+    | "DOUBLE_CLICK"
+    | "RIGHT_CLICK"
+    | "DRAG"
+    | "SCROLL"
     // Combined keyboard actions
     | "TYPE"
     // Control flow actions
-    | "IF" | "LOOP"
+    | "IF"
+    | "LOOP"
     // Other actions
-    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_WORKFLOW"
-  config: Record<string, any>
+    | "FIND"
+    | "VANISH"
+    | "GO_TO_STATE"
+    | "RUN_WORKFLOW";
+  config: Record<string, any>;
 }
 
 interface ActionEditorProps {
-  process: Process
-  selectedAction: Action | null
-  onSelectAction: (action: Action) => void
-  onUpdateProcess: (process: Process) => void
+  process: Process;
+  selectedAction: Action | null;
+  onSelectAction: (action: Action) => void;
+  onUpdateProcess: (process: Process) => void;
 }
 
 const ACTION_GROUPS = {
   Find: [
     { type: "FIND", label: "Find Element", color: "bg-blue-500" },
-    { type: "FIND_STATE_IMAGE", label: "Find State Image", color: "bg-cyan-500" },
+    {
+      type: "FIND",
+      label: "Find State",
+      color: "bg-cyan-500",
+      preset: "stateImage",
+    },
   ],
   Mouse: [
     { type: "CLICK", label: "Click", color: "bg-green-500" },
@@ -69,88 +94,95 @@ const ACTION_GROUPS = {
   Verification: [
     { type: "VANISH", label: "Wait for Vanish", color: "bg-red-500" },
   ],
-} as const
+} as const;
 
 // Flat list for finding action types by type
-const ACTION_TYPES = Object.values(ACTION_GROUPS).flat()
+const ACTION_TYPES = Object.values(ACTION_GROUPS).flat();
 
-export function ActionEditor({ process, selectedAction, onSelectAction, onUpdateProcess }: ActionEditorProps) {
-  const { states, processes, images } = useAutomation()
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+export function ActionEditor({
+  process,
+  selectedAction,
+  onSelectAction,
+  onUpdateProcess,
+}: ActionEditorProps) {
+  const { states, workflows, images } = useAutomation();
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   const addAction = (type: Action["type"]) => {
     const newAction: Action = {
       id: `action-${Date.now()}`,
       type,
       config: getDefaultConfig(type),
-    }
+    };
 
     const updatedProcess = {
       ...process,
       actions: [...process.actions, newAction],
-    }
+    };
 
-    onUpdateProcess(updatedProcess)
-    onSelectAction(newAction)
-  }
+    onUpdateProcess(updatedProcess);
+    onSelectAction(newAction);
+  };
 
   const deleteAction = (actionId: string) => {
     const updatedProcess = {
       ...process,
       actions: process.actions.filter((a) => a.id !== actionId),
+    };
+    onUpdateProcess(updatedProcess);
+    if (selectedAction?.id === actionId && process.actions[0]) {
+      onSelectAction(process.actions[0]);
     }
-    onUpdateProcess(updatedProcess)
-    if (selectedAction?.id === actionId) {
-      onSelectAction(process.actions[0] || null)
-    }
-  }
+  };
 
   const duplicateAction = (action: Action) => {
     const newAction: Action = {
       ...action,
       id: `action-${Date.now()}`,
-    }
+    };
 
-    const actionIndex = process.actions.findIndex((a) => a.id === action.id)
-    const updatedActions = [...process.actions]
-    updatedActions.splice(actionIndex + 1, 0, newAction)
+    const actionIndex = process.actions.findIndex((a) => a.id === action.id);
+    const updatedActions = [...process.actions];
+    updatedActions.splice(actionIndex + 1, 0, newAction);
 
     const updatedProcess = {
       ...process,
       actions: updatedActions,
-    }
+    };
 
-    onUpdateProcess(updatedProcess)
-  }
+    onUpdateProcess(updatedProcess);
+  };
 
   const handleDragStart = (index: number) => {
-    setDraggedIndex(index)
-  }
+    setDraggedIndex(index);
+  };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault()
+    e.preventDefault();
 
-    if (draggedIndex === null || draggedIndex === index) return
+    if (draggedIndex === null || draggedIndex === index) return;
 
-    const updatedActions = [...process.actions]
-    const draggedAction = updatedActions[draggedIndex]
+    const updatedActions = [...process.actions];
+    const draggedAction = updatedActions[draggedIndex];
+
+    if (!draggedAction) return;
 
     // Remove from old position
-    updatedActions.splice(draggedIndex, 1)
+    updatedActions.splice(draggedIndex, 1);
     // Insert at new position
-    updatedActions.splice(index, 0, draggedAction)
+    updatedActions.splice(index, 0, draggedAction);
 
     onUpdateProcess({
       ...process,
       actions: updatedActions,
-    })
+    });
 
-    setDraggedIndex(index)
-  }
+    setDraggedIndex(index);
+  };
 
   const handleDragEnd = () => {
-    setDraggedIndex(null)
-  }
+    setDraggedIndex(null);
+  };
 
   return (
     <div className="space-y-4">
@@ -196,7 +228,7 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
           </div>
         ) : (
           process.actions.map((action, index) => {
-            const actionType = ACTION_TYPES.find((t) => t.type === action.type)
+            const actionType = ACTION_TYPES.find((t) => t.type === action.type);
             return (
               <Card
                 key={action.id}
@@ -205,7 +237,9 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
                 onDragOver={(e) => handleDragOver(e, index)}
                 onDragEnd={handleDragEnd}
                 className={`cursor-move transition-all hover:border-[#BD00FF]/50 ${
-                  selectedAction?.id === action.id ? "border-[#BD00FF] bg-[#BD00FF]/10" : "border-gray-700 bg-[#27272A]"
+                  selectedAction?.id === action.id
+                    ? "border-[#BD00FF] bg-[#BD00FF]/10"
+                    : "border-gray-700 bg-[#27272A]"
                 } ${draggedIndex === index ? "opacity-50" : ""}`}
                 onClick={() => onSelectAction(action)}
               >
@@ -213,19 +247,24 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2">
                       <GripVertical className="w-4 h-4 text-gray-400 cursor-grab active:cursor-grabbing" />
-                      <Badge className={`${actionType?.color} text-white text-xs`}>{index + 1}</Badge>
+                      <Badge
+                        className={`${actionType?.color} text-white text-xs`}
+                      >
+                        {index + 1}
+                      </Badge>
                     </div>
 
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{actionType?.label}</span>
-                        {action.type !== "GO_TO_STATE" && action.type !== "RUN_WORKFLOW" && (
-                          <Badge variant="outline" className="text-xs">
-                            {action.type}
-                          </Badge>
-                        )}
+                        {action.type !== "GO_TO_STATE" &&
+                          action.type !== "RUN_WORKFLOW" && (
+                            <Badge variant="outline" className="text-xs">
+                              {action.type}
+                            </Badge>
+                          )}
                       </div>
-                      {renderActionSummary(action, states, processes, images)}
+                      {renderActionSummary(action, states, workflows, images)}
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -234,8 +273,8 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
                         size="sm"
                         className="h-6 w-6 p-0 text-gray-400 hover:text-[#00D9FF]"
                         onClick={(e) => {
-                          e.stopPropagation()
-                          duplicateAction(action)
+                          e.stopPropagation();
+                          duplicateAction(action);
                         }}
                       >
                         <Copy className="w-3 h-3" />
@@ -245,8 +284,8 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
                         size="sm"
                         className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
                         onClick={(e) => {
-                          e.stopPropagation()
-                          deleteAction(action.id)
+                          e.stopPropagation();
+                          deleteAction(action.id);
                         }}
                       >
                         <Trash2 className="w-3 h-3" />
@@ -255,12 +294,12 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
                   </div>
                 </CardContent>
               </Card>
-            )
+            );
           })
         )}
       </div>
     </div>
-  )
+  );
 }
 
 function getDefaultConfig(type: Action["type"]): Record<string, any> {
@@ -269,15 +308,10 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
       return {
         target: {
           type: "image",
-          imageId: null
-        }
+          imageId: null,
+        },
         // similarity, strategy, pause_before_begin, pause_after_end are optional overrides
-      }
-    case "FIND_STATE_IMAGE":
-      return {
-        state: null,
-        // similarity, strategy, pause_before_begin, pause_after_end are optional overrides
-      }
+      };
     case "CLICK":
       return {
         target: "Last Find Result",
@@ -285,7 +319,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         numberOfClicks: 1,
         hold_duration: 0,
         // pause_before_begin, pause_after_end are optional overrides
-      }
+      };
     case "TYPE":
       return {
         text: "",
@@ -296,7 +330,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         clear_before: false,
         press_enter: false,
         // pause_before_begin, pause_after_end are optional overrides
-      }
+      };
     case "DRAG":
       return {
         from: "Last Find Result",
@@ -304,7 +338,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         drag_duration: 1000,
         smooth_movement: true,
         // pause_before_begin, pause_after_end are optional overrides
-      }
+      };
     case "SCROLL":
       return {
         direction: "down",
@@ -312,27 +346,27 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         scroll_duration: 500,
         smooth_scroll: true,
         // pause_before_begin, pause_after_end are optional overrides
-      }
+      };
     case "VANISH":
       return {
         target: {
           type: "image",
-          imageId: null
+          imageId: null,
         },
         maxWaitTime: 5000,
         pollInterval: 500,
         // pause_before_begin, pause_after_end are optional overrides
-      }
+      };
     case "GO_TO_STATE":
       return {
-        states: [],  // Array of state IDs for multi-target pathfinding
+        states: [], // Array of state IDs for multi-target pathfinding
         // pause_before_begin, pause_after_end are optional overrides
-      }
+      };
     case "RUN_WORKFLOW":
       return {
         process: null,
         // pause_before_begin, pause_after_end are optional overrides
-      }
+      };
     case "IF":
       return {
         condition: {
@@ -343,7 +377,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         },
         thenActions: [],
         // elseActions is optional
-      }
+      };
     case "LOOP":
       return {
         loopType: "FOR",
@@ -351,7 +385,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         actions: [],
         maxIterations: 1000,
         breakOnError: false,
-      }
+      };
 
     // Pure mouse actions
     case "MOUSE_MOVE":
@@ -361,19 +395,19 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         y: 0,
         duration: 0,
         // Optional timing overrides: move_default_duration
-      }
+      };
     case "MOUSE_DOWN":
       return {
         button: "left",
-        target: null,  // Optional - can press at current position
+        target: null, // Optional - can press at current position
         // No timing overrides needed (instantaneous)
-      }
+      };
     case "MOUSE_UP":
       return {
         button: "left",
-        target: null,  // Optional - can release at current position
+        target: null, // Optional - can release at current position
         // No timing overrides needed (instantaneous)
-      }
+      };
 
     // Combined actions with timing overrides
     case "DOUBLE_CLICK":
@@ -381,231 +415,275 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         target: "Last Find Result",
         mouseButton: "LEFT",
         // Optional timing overrides: click_hold_duration, double_click_interval, etc.
-      }
+      };
     case "RIGHT_CLICK":
       return {
         target: "Last Find Result",
         // Optional timing overrides: click_hold_duration, click_release_delay, etc.
-      }
+      };
 
     // Pure keyboard actions
     case "KEY_PRESS":
       return {
         key: "",
         // Optional timing overrides: key_hold_duration, key_release_delay
-      }
+      };
     case "KEY_DOWN":
       return {
         key: "",
         // No timing overrides needed (instantaneous press)
-      }
+      };
     case "KEY_UP":
       return {
         key: "",
         // No timing overrides needed (instantaneous release)
-      }
+      };
 
     default:
-      return {}
+      return {};
   }
 }
 
-function renderActionSummary(action: Action, states: any[], processes: any[], images: any[]) {
-  const summary = getActionSummary(action, states, processes, images)
-  const hasRemovedImage = summary.includes('[REMOVED:')
+function renderActionSummary(
+  action: Action,
+  states: any[],
+  workflows: any[],
+  images: any[]
+) {
+  const summary = getActionSummary(action, states, workflows, images);
+  const hasRemovedImage = summary.includes("[REMOVED:");
 
   if (hasRemovedImage) {
     // Parse the summary to highlight removed image parts in red
-    const parts = summary.split(/(\[REMOVED:[^\]]+\])/)
+    const parts = summary.split(/(\[REMOVED:[^\]]+\])/);
     return (
       <p className="text-xs mt-1">
         {parts.map((part, index) => {
-          if (part.startsWith('[REMOVED:')) {
+          if (part.startsWith("[REMOVED:")) {
             return (
               <span key={index} className="text-red-400 font-medium">
                 {part}
               </span>
-            )
+            );
           }
           return (
             <span key={index} className="text-gray-400">
               {part}
             </span>
-          )
+          );
         })}
       </p>
-    )
+    );
   }
 
-  return <p className="text-xs text-gray-400 mt-1">{summary}</p>
+  return <p className="text-xs text-gray-400 mt-1">{summary}</p>;
 }
 
-function getActionSummary(action: Action, states: any[], processes: any[], images: any[]): string {
+function getActionSummary(
+  action: Action,
+  states: any[],
+  workflows: any[],
+  images: any[]
+): string {
   switch (action.type) {
     case "FIND":
       if (action.config.removedImage) {
-        return `[REMOVED: ${action.config.removedImage}]`
+        return `[REMOVED: ${action.config.removedImage}]`;
       }
+
+      // Handle stateImage target type (Find State)
+      if (action.config.target?.type === "stateImage") {
+        const stateId = action.config.target.stateId;
+        if (stateId) {
+          const state = states.find((s: any) => s.id === stateId);
+          return state
+            ? `Find any image from ${state.name}`
+            : "State not found";
+        }
+        return "No state selected";
+      }
+
       // Handle new target structure
-      const imageId = action.config.target?.type === 'image' ? action.config.target.imageId : action.config.image
+      const imageId =
+        action.config.target?.type === "image"
+          ? action.config.target.imageId
+          : action.config.image;
       if (imageId) {
         // First look for StateImage across all states
-        let stateImageName = null
+        let stateImageName = null;
         for (const state of states) {
-          const stateImage = state.stateImages?.find((si: any) => si.id === imageId)
+          const stateImage = state.stateImages?.find(
+            (si: any) => si.id === imageId
+          );
           if (stateImage) {
-            stateImageName = stateImage.name
-            break
+            stateImageName = stateImage.name;
+            break;
           }
         }
 
         if (stateImageName) {
           // Remove file extension from StateImage name
-          const nameWithoutExtension = stateImageName.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, '')
-          return `Find ${nameWithoutExtension}`
+          const nameWithoutExtension = stateImageName.replace(
+            /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+            ""
+          );
+          return `Find ${nameWithoutExtension}`;
         }
 
         // Fall back to image library
-        const image = images.find(img => img.id === imageId)
+        const image = images.find((img) => img.id === imageId);
         if (image) {
           // Remove file extension from image name
-          const nameWithoutExtension = image.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, '')
-          return `Find ${nameWithoutExtension}`
+          const nameWithoutExtension = image.name.replace(
+            /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+            ""
+          );
+          return `Find ${nameWithoutExtension}`;
         }
-        return "Image not found"
+        return "Image not found";
       }
-      return "No image selected"
-    case "FIND_STATE_IMAGE":
-      if (action.config.state) {
-        const state = states.find(s => s.id === action.config.state)
-        return state ? `Find any image from ${state.name}` : "State not found"
-      }
-      return "No state selected"
+      return "No image selected";
     case "CLICK":
-      return `${action.config.mouseButton?.toLowerCase() || 'left'} click on ${action.config.target}`
+      return `${action.config.mouseButton?.toLowerCase() || "left"} click on ${action.config.target}`;
     case "DOUBLE_CLICK":
-      return `Double click on ${action.config.target || "Last Find Result"}`
+      return `Double click on ${action.config.target || "Last Find Result"}`;
     case "RIGHT_CLICK":
-      return `Right click on ${action.config.target || "Last Find Result"}`
+      return `Right click on ${action.config.target || "Last Find Result"}`;
     case "MOUSE_MOVE":
       if (action.config.target === "Coordinates") {
-        return `Move mouse to (${action.config.x}, ${action.config.y})`
+        return `Move mouse to (${action.config.x}, ${action.config.y})`;
       }
-      return `Move mouse to ${action.config.target}`
+      return `Move mouse to ${action.config.target}`;
     case "MOUSE_DOWN":
       if (action.config.target === "Coordinates") {
-        return `Press ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`
+        return `Press ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`;
       }
-      return `Press ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`
+      return `Press ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`;
     case "MOUSE_UP":
       if (action.config.target === "Coordinates") {
-        return `Release ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`
+        return `Release ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`;
       }
-      return `Release ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`
+      return `Release ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`;
     case "KEY_PRESS":
-      return action.config.key ? `Press key: ${action.config.key}` : "No key selected"
+      return action.config.key
+        ? `Press key: ${action.config.key}`
+        : "No key selected";
     case "KEY_DOWN":
-      return action.config.key ? `Hold key down: ${action.config.key}` : "No key selected"
+      return action.config.key
+        ? `Hold key down: ${action.config.key}`
+        : "No key selected";
     case "KEY_UP":
-      return action.config.key ? `Release key: ${action.config.key}` : "No key selected"
+      return action.config.key
+        ? `Release key: ${action.config.key}`
+        : "No key selected";
     case "TYPE":
       if (action.config.textSource === "stateString") {
-        if (!action.config.selectedState) return "No state selected"
-        const state = states.find(s => s.id === action.config.selectedState)
-        if (!state) return "Invalid state"
+        if (!action.config.selectedState) return "No state selected";
+        const state = states.find((s) => s.id === action.config.selectedState);
+        if (!state) return "Invalid state";
 
         if (action.config.selectedStateStrings?.length > 0 && state.strings) {
           // Get the actual string values
           const selectedStrings = state.strings
-            .filter(s => action.config.selectedStateStrings.includes(s.id))
-            .map(s => s.value)
-            .filter(v => v) // Remove empty values
+            .filter((s: any) =>
+              action.config.selectedStateStrings.includes(s.id)
+            )
+            .map((s: any) => s.value)
+            .filter((v: any) => v); // Remove empty values
 
           if (selectedStrings.length === 0) {
-            return `No strings selected from ${state.name || state.id}`
+            return `No strings selected from ${state.name || state.id}`;
           }
 
           // Join multiple strings with " | " and truncate if too long
-          const combinedText = selectedStrings.join(" | ")
-          const displayText = combinedText.length > 40
-            ? combinedText.substring(0, 40) + "..."
-            : combinedText
+          const combinedText = selectedStrings.join(" | ");
+          const displayText =
+            combinedText.length > 40
+              ? combinedText.substring(0, 40) + "..."
+              : combinedText;
 
-          return `Type "${displayText.replace(/\n/g, '↵').replace(/\t/g, '→')}" (${state.name || state.id})`
+          return `Type "${displayText.replace(/\n/g, "↵").replace(/\t/g, "→")}" (${state.name || state.id})`;
         } else {
-          return `No strings selected from ${state.name || state.id}`
+          return `No strings selected from ${state.name || state.id}`;
         }
       } else {
-        if (!action.config.text) return "No text specified"
+        if (!action.config.text) return "No text specified";
         // Truncate long text and show special keys
-        const displayText = action.config.text.length > 30
-          ? action.config.text.substring(0, 30) + "..."
-          : action.config.text
-        return `Type "${displayText.replace(/\n/g, '↵').replace(/\t/g, '→')}"`
+        const displayText =
+          action.config.text.length > 30
+            ? action.config.text.substring(0, 30) + "..."
+            : action.config.text;
+        return `Type "${displayText.replace(/\n/g, "↵").replace(/\t/g, "→")}"`;
       }
     case "DRAG":
       if (action.config.removedImageTo) {
-        return `Drag from ${action.config.from} to [REMOVED: ${action.config.removedImageTo}]`
+        return `Drag from ${action.config.from} to [REMOVED: ${action.config.removedImageTo}]`;
       }
-      return `Drag from ${action.config.from} to ${action.config.to || "target"}`
+      return `Drag from ${action.config.from} to ${action.config.to || "target"}`;
     case "SCROLL":
-      return `Scroll ${action.config.direction} ${action.config.amount} units`
+      return `Scroll ${action.config.direction} ${action.config.amount} units`;
     case "VANISH":
       if (action.config.removedImage) {
-        return `Wait for [REMOVED: ${action.config.removedImage}] to vanish`
+        return `Wait for [REMOVED: ${action.config.removedImage}] to vanish`;
       }
       // Handle new target structure
-      const vanishImageId = action.config.target?.type === 'image' ? action.config.target.imageId : action.config.image
+      const vanishImageId =
+        action.config.target?.type === "image"
+          ? action.config.target.imageId
+          : action.config.image;
       if (vanishImageId) {
-        const vanishImage = images.find(img => img.id === vanishImageId)
+        const vanishImage = images.find((img) => img.id === vanishImageId);
         if (vanishImage) {
-          const nameWithoutExtension = vanishImage.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, '')
-          return `Wait for ${nameWithoutExtension} to vanish`
+          const nameWithoutExtension = vanishImage.name.replace(
+            /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+            ""
+          );
+          return `Wait for ${nameWithoutExtension} to vanish`;
         }
-        return `Wait for ${vanishImageId} to vanish`
+        return `Wait for ${vanishImageId} to vanish`;
       }
-      return "No image selected"
+      return "No image selected";
     case "GO_TO_STATE":
       const targetStates = (action.config.states as string[]) || [];
       if (targetStates.length > 0) {
         const stateNames = targetStates.map((stateId: string) => {
-          const state = states.find(s => s.id === stateId);
+          const state = states.find((s) => s.id === stateId);
           return state ? state.name : stateId;
         });
         if (stateNames.length === 1) {
           return `Target: ${stateNames[0]}`;
         } else {
-          return `Targets: ${stateNames.join(', ')} (${stateNames.length} states)`;
+          return `Targets: ${stateNames.join(", ")} (${stateNames.length} states)`;
         }
       }
-      return "No states selected"
+      return "No states selected";
     case "RUN_WORKFLOW":
       if (action.config.process) {
-        const proc = processes.find(p => p.id === action.config.process)
-        return proc ? proc.name : action.config.process
+        const proc = workflows.find((p) => p.id === action.config.process);
+        return proc ? proc.name : action.config.process;
       }
-      return "No process selected"
+      return "No process selected";
     case "IF":
-      const thenCount = action.config.thenActions?.length || 0
-      const elseCount = action.config.elseActions?.length || 0
-      const conditionType = action.config.condition?.type || "not configured"
+      const thenCount = action.config.thenActions?.length || 0;
+      const elseCount = action.config.elseActions?.length || 0;
+      const conditionType = action.config.condition?.type || "not configured";
       if (elseCount > 0) {
-        return `${conditionType} condition: ${thenCount} then-actions, ${elseCount} else-actions`
+        return `${conditionType} condition: ${thenCount} then-actions, ${elseCount} else-actions`;
       } else {
-        return `${conditionType} condition: ${thenCount} then-actions`
+        return `${conditionType} condition: ${thenCount} then-actions`;
       }
     case "LOOP":
-      const loopType = action.config.loopType || "FOR"
-      const actionCount = action.config.actions?.length || 0
+      const loopType = action.config.loopType || "FOR";
+      const actionCount = action.config.actions?.length || 0;
       if (loopType === "FOR") {
-        const iterations = action.config.iterations || 0
-        return `FOR loop: ${iterations} iterations, ${actionCount} actions`
+        const iterations = action.config.iterations || 0;
+        return `FOR loop: ${iterations} iterations, ${actionCount} actions`;
       } else if (loopType === "WHILE") {
-        return `WHILE loop: ${actionCount} actions`
+        return `WHILE loop: ${actionCount} actions`;
       } else {
-        return `FOREACH loop: ${actionCount} actions`
+        return `FOREACH loop: ${actionCount} actions`;
       }
     default:
-      return "Configure action"
+      return "Configure action";
   }
 }

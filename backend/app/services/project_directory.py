@@ -12,7 +12,8 @@ Manages project directory structure for user files, including:
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any
+from uuid import UUID
 
 import structlog
 
@@ -208,7 +209,7 @@ def transform_data(text: str, variables: dict) -> dict:
 class ProjectDirectoryManager:
     """Manages project directory structure for user files."""
 
-    def __init__(self, base_dir: Optional[Path] = None):
+    def __init__(self, base_dir: Path | None = None):
         """
         Initialize the project directory manager.
 
@@ -218,7 +219,10 @@ class ProjectDirectoryManager:
         self.base_dir = base_dir or USER_PROJECTS_ROOT
 
     def create_project_directory(
-        self, project_id: int, project_name: str = "", description: str = ""
+        self,
+        project_id: int | str | UUID,
+        project_name: str = "",
+        description: str = "",
     ) -> Path:
         """
         Create project directory structure.
@@ -298,7 +302,7 @@ class ProjectDirectoryManager:
             )
             raise
 
-    def get_project_root(self, project_id: int) -> Path:
+    def get_project_root(self, project_id: int | str | UUID) -> Path:
         """
         Get project root directory path.
 
@@ -310,7 +314,7 @@ class ProjectDirectoryManager:
         """
         return self.base_dir / str(project_id)
 
-    def validate_project_directory(self, project_id: int) -> bool:
+    def validate_project_directory(self, project_id: int | str | UUID) -> bool:
         """
         Check if project directory exists and is valid.
 
@@ -338,7 +342,7 @@ class ProjectDirectoryManager:
 
         return True
 
-    def delete_project_directory(self, project_id: int) -> bool:
+    def delete_project_directory(self, project_id: int | str | UUID) -> bool:
         """
         Delete project directory and all contents.
 
@@ -378,7 +382,7 @@ class ProjectDirectoryManager:
             )
             raise
 
-    def get_project_size(self, project_id: int) -> int:
+    def get_project_size(self, project_id: int | str | UUID) -> int:
         """
         Calculate total size of project directory in bytes.
 
@@ -394,7 +398,7 @@ class ProjectDirectoryManager:
             return 0
 
         total_size = 0
-        for dirpath, dirnames, filenames in os.walk(project_root):
+        for dirpath, _dirnames, filenames in os.walk(project_root):
             for filename in filenames:
                 filepath = Path(dirpath) / filename
                 try:
@@ -405,7 +409,7 @@ class ProjectDirectoryManager:
 
         return total_size
 
-    def get_file_count(self, project_id: int) -> int:
+    def get_file_count(self, project_id: int | str | UUID) -> int:
         """
         Count total number of files in project directory.
 
@@ -421,12 +425,12 @@ class ProjectDirectoryManager:
             return 0
 
         file_count = 0
-        for dirpath, dirnames, filenames in os.walk(project_root):
+        for _dirpath, _dirnames, filenames in os.walk(project_root):
             file_count += len(filenames)
 
         return file_count
 
-    def check_project_limits(self, project_id: int) -> Dict[str, any]:
+    def check_project_limits(self, project_id: int | str | UUID) -> dict[str, Any]:
         """
         Check if project is within size and file count limits.
 
@@ -460,10 +464,10 @@ class ProjectDirectoryManager:
 
     def list_files(
         self,
-        project_id: int,
+        project_id: int | str | UUID,
         directory: str = ".",
-        extensions: Optional[List[str]] = None,
-    ) -> List[str]:
+        extensions: list[str] | None = None,
+    ) -> list[str]:
         """
         List all files in project directory.
 
@@ -511,7 +515,7 @@ class ProjectDirectoryManager:
 
         return sorted(files)
 
-    def ensure_project_directory(self, project_id: int) -> Path:
+    def ensure_project_directory(self, project_id: int | str | UUID) -> Path:
         """
         Ensure project directory exists, create if it doesn't.
 

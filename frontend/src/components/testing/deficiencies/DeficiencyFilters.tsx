@@ -1,24 +1,24 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
+} from "@/components/ui/card";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
+} from "@/components/ui/collapsible";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Filter,
   Search,
@@ -28,7 +28,7 @@ import {
   Calendar,
   Tag,
   User,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   DeficiencyFilters as Filters,
   DeficiencySeverity,
@@ -36,8 +36,8 @@ import {
   DeficiencyStatus,
   SEVERITY_CONFIG,
   STATUS_CONFIG,
-} from '@/types/deficiency';
-import { cn } from '@/lib/utils';
+} from "@/types/deficiency";
+import { cn } from "@/lib/utils";
 
 interface DeficiencyFiltersProps {
   filters: Filters;
@@ -148,7 +148,7 @@ export function DeficiencyFilters({
     onFiltersChange(updated);
   };
 
-  const handleDateChange = (field: 'date_from' | 'date_to', value: string) => {
+  const handleDateChange = (field: "date_from" | "date_to", value: string) => {
     const updated = { ...localFilters, [field]: value || undefined };
     setLocalFilters(updated);
     onFiltersChange(updated);
@@ -164,9 +164,11 @@ export function DeficiencyFilters({
     let count = 0;
     if (localFilters.search) count++;
     if (localFilters.severity?.length) count += localFilters.severity.length;
-    if (localFilters.deficiency_type?.length) count += localFilters.deficiency_type.length;
+    if (localFilters.deficiency_type?.length)
+      count += localFilters.deficiency_type.length;
     if (localFilters.status?.length) count += localFilters.status.length;
-    if (localFilters.assigned_to?.length) count += localFilters.assigned_to.length;
+    if (localFilters.assigned_to?.length)
+      count += localFilters.assigned_to.length;
     if (localFilters.tags?.length) count += localFilters.tags.length;
     if (localFilters.date_from) count++;
     if (localFilters.date_to) count++;
@@ -176,7 +178,7 @@ export function DeficiencyFilters({
   const activeCount = getActiveFilterCount();
 
   return (
-    <Card className={cn('w-full', className)}>
+    <Card className={cn("w-full", className)}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -189,16 +191,10 @@ export function DeficiencyFilters({
                 </Badge>
               )}
             </CardTitle>
-            <CardDescription>
-              Filter and search deficiencies
-            </CardDescription>
+            <CardDescription>Filter and search deficiencies</CardDescription>
           </div>
           {activeCount > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={clearFilters}
-            >
+            <Button variant="outline" size="sm" onClick={clearFilters}>
               <X className="h-4 w-4 mr-2" />
               Clear
             </Button>
@@ -215,7 +211,7 @@ export function DeficiencyFilters({
           <Input
             id="search"
             placeholder="Search title, description..."
-            value={localFilters.search || ''}
+            value={localFilters.search || ""}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
         </div>
@@ -247,7 +243,12 @@ export function DeficiencyFilters({
                     className="flex-1 cursor-pointer"
                   >
                     <Badge
-                      className={cn('text-xs', config.bgColor, config.color, 'border')}
+                      className={cn(
+                        "text-xs",
+                        config.bgColor,
+                        config.color,
+                        "border"
+                      )}
                     >
                       {config.label}
                     </Badge>
@@ -275,14 +276,16 @@ export function DeficiencyFilters({
               <div key={type} className="flex items-center gap-2">
                 <Checkbox
                   id={`type-${type}`}
-                  checked={localFilters.deficiency_type?.includes(type) || false}
+                  checked={
+                    localFilters.deficiency_type?.includes(type) || false
+                  }
                   onCheckedChange={() => toggleType(type)}
                 />
                 <Label
                   htmlFor={`type-${type}`}
                   className="flex-1 cursor-pointer capitalize"
                 >
-                  {type.replace(/_/g, ' ')}
+                  {type.replace(/_/g, " ")}
                 </Label>
               </div>
             ))}
@@ -316,7 +319,12 @@ export function DeficiencyFilters({
                     className="flex-1 cursor-pointer"
                   >
                     <Badge
-                      className={cn('text-xs', config.bgColor, config.color, 'border')}
+                      className={cn(
+                        "text-xs",
+                        config.bgColor,
+                        config.color,
+                        "border"
+                      )}
                     >
                       {config.label}
                     </Badge>
@@ -348,7 +356,9 @@ export function DeficiencyFilters({
                   <div key={user.id} className="flex items-center gap-2">
                     <Checkbox
                       id={`user-${user.id}`}
-                      checked={localFilters.assigned_to?.includes(user.id) || false}
+                      checked={
+                        localFilters.assigned_to?.includes(user.id) || false
+                      }
                       onCheckedChange={() => toggleAssignee(user.id)}
                     />
                     <Label
@@ -421,8 +431,8 @@ export function DeficiencyFilters({
               <Input
                 id="date-from"
                 type="date"
-                value={localFilters.date_from || ''}
-                onChange={(e) => handleDateChange('date_from', e.target.value)}
+                value={localFilters.date_from || ""}
+                onChange={(e) => handleDateChange("date_from", e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -430,8 +440,8 @@ export function DeficiencyFilters({
               <Input
                 id="date-to"
                 type="date"
-                value={localFilters.date_to || ''}
-                onChange={(e) => handleDateChange('date_to', e.target.value)}
+                value={localFilters.date_to || ""}
+                onChange={(e) => handleDateChange("date_to", e.target.value)}
               />
             </div>
           </CollapsibleContent>

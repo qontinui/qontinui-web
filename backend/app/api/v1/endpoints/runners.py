@@ -5,17 +5,27 @@ Provides REST API for creating, listing, revoking, and managing
 desktop runner authentication tokens and viewing connection history.
 """
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_active_user_async
+from app.api.deps import (
+    authenticate_runner,
+    current_superuser,
+    get_async_db,
+    get_current_active_user_async,
+)
+from app.config.redis_config import get_redis
 from app.crud import runner as runner_crud
-from app.models.runner_token import RunnerToken
 from app.models.user import User as UserModel
 from app.schemas.runner import (
+    ConnectionCleanupResponse,
+    ExecuteWorkflowRequest,
+    ExecuteWorkflowResponse,
     RunnerConnectionHistory,
     RunnerConnectionResponse,
     RunnerTokenCreate,
@@ -23,12 +33,18 @@ from app.schemas.runner import (
     RunnerTokenStats,
     RunnerTokenUpdate,
     RunnerTokenWithSecret,
+    TestConnectionResponse,
 )
+from app.services.runner_connection_manager import get_runner_connection_manager
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
 
-@router.post("/tokens", response_model=RunnerTokenWithSecret, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/tokens", response_model=RunnerTokenWithSecret, status_code=status.HTTP_201_CREATED
+)
 async def create_runner_token(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -152,8 +168,7 @@ async def get_runner_token(
         include_revoked=True,
     )
     connection_count = next(
-        (count for t, count in tokens_with_counts if t.id == token_id),
-        0
+        (count for t, count in tokens_with_counts if t.id == token_id), 0
     )
 
     return RunnerTokenResponse(
@@ -215,8 +230,7 @@ async def update_runner_token(
         include_revoked=True,
     )
     connection_count = next(
-        (count for t, count in tokens_with_counts if t.id == token_id),
-        0
+        (count for t, count in tokens_with_counts if t.id == token_id), 0
     )
 
     return RunnerTokenResponse(
@@ -341,12 +355,20 @@ async def get_connection_history(
             RunnerConnectionResponse(
                 id=conn.id,
                 runner_token_id=conn.runner_token_id,
-                runner_name=token_names.get(conn.runner_token_id, "Unknown"),
+                runner_name=(
+                    # Priority: custom runner_name > token name > fallback
+                    conn.runner_name
+                    or (
+                        token_names.get(conn.runner_token_id, "Unknown")
+                        if conn.runner_token_id
+                        else "Browser Session"
+                    )
+                ),
                 connected_at=conn.connected_at,
                 disconnected_at=conn.disconnected_at,
                 duration_seconds=conn.duration_seconds,
                 ip_address=conn.ip_address,
-                project_id=conn.project_id,
+                project_id=conn.project_id,  # type: ignore[arg-type]
             )
             for conn in connections
         ],
@@ -367,7 +389,7 @@ async def get_active_connections(
     Get currently active runner connections.
 
     Returns:
-        List of active connections
+        List of active connections with WebSocket connection status
     """
     active_connections = await runner_crud.get_active_connections(
         db=db,
@@ -382,16 +404,31 @@ async def get_active_connections(
     )
     token_names = {token.id: token.name for token, _ in tokens_with_counts}
 
+    # Get WebSocket connection status from runner connection manager
+    # Use Redis-backed method to get connections across all processes
+    redis_client = await get_redis()
+    runner_manager = await get_runner_connection_manager(redis_client)
+    ws_connected_ids = set(await runner_manager.get_all_connected_runner_ids_redis())
+
     return [
         RunnerConnectionResponse(
             id=conn.id,
             runner_token_id=conn.runner_token_id,
-            runner_name=token_names.get(conn.runner_token_id, "Unknown"),
+            runner_name=(
+                # Priority: custom runner_name > token name > fallback
+                conn.runner_name
+                or (
+                    token_names.get(conn.runner_token_id, "Unknown")
+                    if conn.runner_token_id
+                    else "Browser Session"
+                )
+            ),
             connected_at=conn.connected_at,
             disconnected_at=conn.disconnected_at,
             duration_seconds=conn.duration_seconds,
             ip_address=conn.ip_address,
-            project_id=conn.project_id,
+            project_id=conn.project_id,  # type: ignore[arg-type]
+            ws_connected=conn.id in ws_connected_ids,
         )
         for conn in active_connections
     ]
@@ -415,3 +452,238 @@ async def get_runner_stats(
     )
 
     return RunnerTokenStats(**stats)
+
+
+@router.post("/test-connection", response_model=TestConnectionResponse)
+async def test_runner_connection(
+    request: Request,
+    token: str,
+    db: AsyncSession = Depends(get_async_db),
+) -> Any:
+    """
+    Test a runner connection and verify authentication.
+
+    This endpoint is called by the desktop runner when Quick Connect
+    saves settings. It validates the token and creates a test connection
+    record to confirm the connection is working.
+
+    Args:
+        token: JWT access token or runner token to test
+
+    Returns:
+        Test connection response with user info and connection ID
+
+    Raises:
+        401: If authentication fails
+    """
+    # Authenticate using the provided token
+    try:
+        user, runner_token = await authenticate_runner(token)
+    except Exception as e:
+        logger.error("test_connection_auth_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed. Please check your token.",
+        )
+
+    # Get client IP
+    client_ip = request.client.host if request.client else None
+
+    # Create a test connection record
+    connection = await runner_crud.create_test_connection(
+        db=db,
+        user_id=user.id,
+        token_id=runner_token.id if runner_token else None,
+        ip_address=client_ip,
+    )
+
+    auth_method = "runner_token" if runner_token else "jwt"
+    token_name = runner_token.name if runner_token else None
+
+    logger.info(
+        "test_connection_successful",
+        user_id=str(user.id),
+        username=user.username,
+        auth_method=auth_method,
+        token_name=token_name,
+        connection_id=connection.id,
+        ip_address=client_ip,
+    )
+
+    return TestConnectionResponse(
+        success=True,
+        message="Connection test successful! Your runner is configured correctly.",
+        user_id=str(user.id),
+        username=user.username,
+        auth_method=auth_method,
+        token_name=token_name,
+        connection_id=connection.id,
+        tested_at=datetime.utcnow(),
+    )
+
+
+@router.post("/connections/cleanup", response_model=ConnectionCleanupResponse)
+async def cleanup_stale_connections(
+    *,
+    current_user: UserModel = Depends(current_superuser),
+) -> Any:
+    """
+    Manually trigger cleanup of stale runner connections.
+
+    This endpoint allows administrators to manually trigger the cleanup process
+    that normally runs automatically every 60 seconds in the background.
+
+    The cleanup process:
+    1. Queries all connections where disconnected_at IS NULL
+    2. Checks if each connection_id is in the RunnerConnectionManager (WebSocket connected)
+    3. If NOT in memory but in DB as "active", marks it as disconnected
+
+    **Admin only**: This endpoint requires superuser privileges.
+
+    Returns:
+        Cleanup statistics including total active connections, stale found, and cleaned
+    """
+    from app.tasks.connection_cleanup import cleanup_stale_connections
+
+    logger.info(
+        "manual_cleanup_triggered",
+        user_id=str(current_user.id),
+        username=current_user.username,
+    )
+
+    try:
+        stats = await cleanup_stale_connections()
+
+        message = (
+            f"Cleanup completed successfully. "
+            f"Found {stats['total_active']} active connections, "
+            f"identified {stats['stale_found']} stale connections, "
+            f"cleaned up {stats['cleaned']} connections."
+        )
+
+        logger.info(
+            "manual_cleanup_completed",
+            user_id=str(current_user.id),
+            stats=stats,
+        )
+
+        return ConnectionCleanupResponse(
+            total_active=stats["total_active"],
+            stale_found=stats["stale_found"],
+            cleaned=stats["cleaned"],
+            message=message,
+        )
+    except Exception as e:
+        logger.error(
+            "manual_cleanup_error",
+            user_id=str(current_user.id),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Cleanup failed: {str(e)}",
+        )
+
+
+@router.post(
+    "/connections/{connection_id}/execute",
+    response_model=ExecuteWorkflowResponse,
+)
+async def execute_workflow_on_runner(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    connection_id: int,
+    request: ExecuteWorkflowRequest,
+) -> Any:
+    """
+    Send a workflow configuration to a connected runner for execution.
+
+    This endpoint sends the workflow configuration to the specified runner
+    via WebSocket command. The runner will receive the configuration and
+    begin execution.
+
+    Args:
+        connection_id: The runner connection ID to send the workflow to
+        request: The workflow execution request containing the configuration
+
+    Returns:
+        ExecuteWorkflowResponse with execution_id and status
+
+    Raises:
+        404: If connection not found or not owned by user
+        400: If runner is not currently connected
+    """
+    from sqlalchemy import select
+
+    from app.models.runner_connection import RunnerConnection
+
+    # Verify connection exists and belongs to user
+    query = select(RunnerConnection).where(
+        RunnerConnection.id == connection_id,
+        RunnerConnection.user_id == current_user.id,
+        RunnerConnection.disconnected_at.is_(None),
+    )
+    result = await db.execute(query)
+    connection = result.scalar_one_or_none()
+
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Runner connection not found or not owned by you",
+        )
+
+    # Get runner connection manager and verify runner is connected
+    redis_client = await get_redis()
+    runner_manager = await get_runner_connection_manager(redis_client)
+
+    if not runner_manager.is_runner_connected(connection_id):
+        # Also check Redis for cross-process connections
+        is_connected = await runner_manager.is_runner_connected_redis(connection_id)
+        if not is_connected:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Runner is not currently connected. Please ensure the runner is running and connected.",
+            )
+
+    # Generate execution ID
+    import uuid
+
+    execution_id = str(uuid.uuid4())
+
+    # Build the execute_workflow command
+    command_msg = {
+        "type": "command",
+        "command": "execute_workflow",
+        "params": {
+            "execution_id": execution_id,
+            "workflow": request.workflow,
+            "variables": request.variables or {},
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+    # Send command to runner
+    sent = await runner_manager.send_command_to_runner(connection_id, command_msg)
+
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send workflow to runner. Please try again.",
+        )
+
+    logger.info(
+        "workflow_execution_sent",
+        connection_id=connection_id,
+        user_id=str(current_user.id),
+        execution_id=execution_id,
+        workflow_name=request.workflow.get("name", "Unknown"),
+    )
+
+    return ExecuteWorkflowResponse(
+        execution_id=execution_id,
+        status="sent",
+        message=f"Workflow sent to runner. Execution ID: {execution_id}",
+        connection_id=connection_id,
+    )

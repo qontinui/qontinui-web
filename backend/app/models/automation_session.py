@@ -8,9 +8,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.db.base import Base
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, text
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.automation import AutomationInputEvent
@@ -29,13 +31,12 @@ class AutomationSession(Base):
     __tablename__ = "automation_sessions"
 
     id: Mapped[UUID] = mapped_column(
-        primary_key=True, server_default="gen_random_uuid()"
+        primary_key=True, server_default=text("gen_random_uuid()")
     )
 
     # Optional project association (nullable for now)
-    # Note: projects.id is Integer, not UUID
-    project_id: Mapped[int | None] = mapped_column(
-        Integer,
+    project_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="SET NULL"),
         nullable=True,
         index=True,

@@ -8,9 +8,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.db.base import Base
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.automation_log import AutomationLog
@@ -28,7 +29,7 @@ class ScreenshotInputAssociation(Base):
     __tablename__ = "screenshot_input_associations"
 
     id: Mapped[UUID] = mapped_column(
-        primary_key=True, server_default="gen_random_uuid()"
+        primary_key=True, server_default=text("gen_random_uuid()")
     )
 
     # Foreign keys

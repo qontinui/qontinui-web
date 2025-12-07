@@ -5,8 +5,11 @@ Handles creating, managing, and analyzing screenshot capture sessions
 for the workflow learning pipeline.
 """
 
-from typing import Annotated
 from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
@@ -22,8 +25,6 @@ from app.schemas.capture import (
     ScreenshotStateMatchResponse,
 )
 from app.services.capture_session_service import CaptureSessionService
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -39,7 +40,7 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
 )
 async def create_capture_session(
-    project_id: int,
+    project_id: UUID,
     session_data: CaptureSessionCreate,
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
@@ -122,7 +123,7 @@ async def get_capture_session(
 async def list_capture_sessions(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
-    project_id: int | None = Query(None, description="Filter by project ID"),
+    project_id: UUID | None = Query(None, description="Filter by project ID"),
     status_filter: str | None = Query(None, description="Filter by status"),
     limit: int = Query(50, ge=1, le=100, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),

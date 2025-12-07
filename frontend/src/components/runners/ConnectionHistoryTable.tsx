@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import { useState } from "react"
+import { useState } from "react";
 import {
   Table,
   TableBody,
@@ -8,11 +8,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Card } from "@/components/ui/card"
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import {
   ChevronLeft,
   ChevronRight,
@@ -20,12 +20,13 @@ import {
   Download,
   Loader2,
   Calendar,
-  Filter
-} from "lucide-react"
-import { useConnectionHistory } from "@/hooks/useRunners"
-import { formatDuration, formatRelativeTime } from "@/utils/formatDuration"
-import { exportConnectionHistoryCSV } from "@/utils/exportCSV"
-import type { ConnectionHistoryParams } from "@/types/runner"
+  WifiOff,
+  RefreshCw,
+} from "lucide-react";
+import { useConnectionHistory } from "@/hooks/useRunners";
+import { formatDuration, formatRelativeTime } from "@/utils/formatDuration";
+import { exportConnectionHistoryCSV } from "@/utils/exportCSV";
+import type { ConnectionHistoryParams } from "@/types/runner";
 
 export function ConnectionHistoryTable() {
   const [params, setParams] = useState<ConnectionHistoryParams>({
@@ -37,14 +38,15 @@ export function ConnectionHistoryTable() {
   const [searchInput, setSearchInput] = useState("");
   const [pageSize, setPageSize] = useState(25);
 
-  const { data, isLoading, error } = useConnectionHistory(params);
+  const { data, isLoading, error, refetch, isRefetching } =
+    useConnectionHistory(params);
 
   const handleSearch = () => {
     setParams({ ...params, search: searchInput, offset: 0 });
   };
 
   const handleSearchKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleSearch();
     }
   };
@@ -55,32 +57,74 @@ export function ConnectionHistoryTable() {
   };
 
   const handleNextPage = () => {
-    if (data && params.offset + params.limit! < data.total) {
-      setParams({ ...params, offset: params.offset + params.limit! });
+    const limit = params.limit ?? 25;
+    const offset = params.offset ?? 0;
+    if (data && offset + limit < data.total) {
+      setParams({ ...params, offset: offset + limit });
     }
   };
 
   const handlePrevPage = () => {
-    if (params.offset > 0) {
-      setParams({ ...params, offset: Math.max(0, params.offset - params.limit!) });
+    const limit = params.limit ?? 25;
+    const offset = params.offset ?? 0;
+    if (offset > 0) {
+      setParams({
+        ...params,
+        offset: Math.max(0, offset - limit),
+      });
     }
   };
 
   const handleExport = () => {
     if (data && data.connections) {
-      exportConnectionHistoryCSV(data.connections, 'connection-history.csv');
+      exportConnectionHistoryCSV(data.connections, "connection-history.csv");
     }
   };
 
-  const currentPage = Math.floor(params.offset / params.limit!) + 1;
-  const totalPages = data ? Math.ceil(data.total / params.limit!) : 0;
+  const limit = params.limit ?? 25;
+  const offset = params.offset ?? 0;
+  const currentPage = Math.floor(offset / limit) + 1;
+  const totalPages = data ? Math.ceil(data.total / limit) : 0;
 
   if (error) {
+    const isConnectionError =
+      error.message?.includes("fetch failed") ||
+      error.message?.includes("proxy") ||
+      error.message?.includes("network");
     return (
-      <div className="text-center py-12">
-        <p className="text-red-500">Failed to load connection history</p>
-        <p className="text-sm text-gray-400 mt-2">{error.message}</p>
-      </div>
+      <Card className="bg-[#1A1A1B] border-gray-800 p-12">
+        <div className="text-center">
+          <WifiOff className="w-16 h-16 mx-auto text-gray-600 mb-4" />
+          <h3 className="text-xl font-semibold text-gray-300 mb-2">
+            {isConnectionError
+              ? "Unable to Connect to Server"
+              : "Failed to Load History"}
+          </h3>
+          <p className="text-gray-400 mb-6 max-w-md mx-auto">
+            {isConnectionError
+              ? "The backend server appears to be offline or unreachable. Please ensure the server is running and try again."
+              : error.message ||
+                "An unexpected error occurred while loading connection history."}
+          </p>
+          <Button
+            onClick={() => refetch()}
+            disabled={isRefetching}
+            className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+          >
+            {isRefetching ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Retrying...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Try Again
+              </>
+            )}
+          </Button>
+        </div>
+      </Card>
     );
   }
 
@@ -142,7 +186,9 @@ export function ConnectionHistoryTable() {
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-12">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto text-[#00D9FF]" />
-                    <p className="text-gray-400 mt-2">Loading connection history...</p>
+                    <p className="text-gray-400 mt-2">
+                      Loading connection history...
+                    </p>
                   </TableCell>
                 </TableRow>
               ) : !data || data.connections.length === 0 ? (
@@ -163,8 +209,8 @@ export function ConnectionHistoryTable() {
                   const duration = connection.duration_seconds
                     ? formatDuration(connection.duration_seconds)
                     : isActive
-                    ? 'Active'
-                    : 'Unknown';
+                      ? "Active"
+                      : "Unknown";
 
                   return (
                     <TableRow
@@ -172,7 +218,7 @@ export function ConnectionHistoryTable() {
                       className="border-gray-800 hover:bg-[#0A0A0B]"
                     >
                       <TableCell className="font-medium text-white">
-                        {connection.runner_name || 'Unknown'}
+                        {connection.runner_name || "Unknown"}
                       </TableCell>
                       <TableCell className="text-gray-300">
                         {formatRelativeTime(connection.connected_at)}
@@ -180,14 +226,16 @@ export function ConnectionHistoryTable() {
                       <TableCell className="text-gray-300">
                         {connection.disconnected_at
                           ? formatRelativeTime(connection.disconnected_at)
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="text-gray-300">{duration}</TableCell>
-                      <TableCell className="text-gray-300 font-mono text-xs">
-                        {connection.ip_address || 'Unknown'}
+                          : "-"}
                       </TableCell>
                       <TableCell className="text-gray-300">
-                        {connection.project_name || '-'}
+                        {duration}
+                      </TableCell>
+                      <TableCell className="text-gray-300 font-mono text-xs">
+                        {connection.ip_address || "Unknown"}
+                      </TableCell>
+                      <TableCell className="text-gray-300">
+                        {connection.project_name || "-"}
                       </TableCell>
                       <TableCell>
                         {isActive ? (
@@ -219,8 +267,8 @@ export function ConnectionHistoryTable() {
           <div className="border-t border-gray-800 p-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-400">
-                Showing {params.offset + 1} to{' '}
-                {Math.min(params.offset + params.limit!, data.total)} of {data.total} results
+                Showing {offset + 1} to {Math.min(offset + limit, data.total)}{" "}
+                of {data.total} results
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-400">Rows per page:</span>
@@ -245,7 +293,7 @@ export function ConnectionHistoryTable() {
                 variant="outline"
                 size="sm"
                 onClick={handlePrevPage}
-                disabled={params.offset === 0}
+                disabled={offset === 0}
                 className="border-gray-700"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -254,7 +302,7 @@ export function ConnectionHistoryTable() {
                 variant="outline"
                 size="sm"
                 onClick={handleNextPage}
-                disabled={params.offset + params.limit! >= data.total}
+                disabled={offset + limit >= data.total}
                 className="border-gray-700"
               >
                 <ChevronRight className="w-4 h-4" />

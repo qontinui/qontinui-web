@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import {
   ChevronDown,
   ChevronRight,
@@ -12,9 +12,9 @@ import {
   Circle,
   Play,
   Copy,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface ReproductionPathViewerProps {
   steps: string[];
@@ -75,9 +75,9 @@ export function ReproductionPathViewer({
   };
 
   const copyAllSteps = () => {
-    const text = steps.map((step, i) => `${i + 1}. ${step}`).join('\n');
+    const text = steps.map((step, i) => `${i + 1}. ${step}`).join("\n");
     navigator.clipboard.writeText(text);
-    toast.success('Steps copied to clipboard');
+    toast.success("Steps copied to clipboard");
   };
 
   const completionPercentage = Math.round(
@@ -94,17 +94,15 @@ export function ReproductionPathViewer({
   }
 
   return (
-    <div className={cn('space-y-4', className)}>
+    <div className={cn("space-y-4", className)}>
       {/* Header Controls */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <Badge variant="secondary">
-            {steps.length} {steps.length === 1 ? 'Step' : 'Steps'}
+            {steps.length} {steps.length === 1 ? "Step" : "Steps"}
           </Badge>
           {completedSteps.size > 0 && (
-            <Badge variant="outline">
-              {completionPercentage}% Verified
-            </Badge>
+            <Badge variant="outline">{completionPercentage}% Verified</Badge>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -150,8 +148,9 @@ export function ReproductionPathViewer({
             <div key={index} className="relative">
               <Card
                 className={cn(
-                  'transition-all duration-200',
-                  isCompleted && 'bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-900'
+                  "transition-all duration-200",
+                  isCompleted &&
+                    "bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-900"
                 )}
               >
                 <CardContent className="p-0">
@@ -181,8 +180,8 @@ export function ReproductionPathViewer({
                     <div className="flex-1 min-w-0">
                       <p
                         className={cn(
-                          'text-sm font-medium',
-                          isCompleted && 'line-through text-muted-foreground'
+                          "text-sm font-medium",
+                          isCompleted && "line-through text-muted-foreground"
                         )}
                       >
                         {step}
@@ -204,7 +203,9 @@ export function ReproductionPathViewer({
                     <div className="px-4 pb-4 space-y-3">
                       <Separator />
                       <div className="text-xs text-muted-foreground">
-                        <p className="font-medium mb-2">Step {index + 1} Details:</p>
+                        <p className="font-medium mb-2">
+                          Step {index + 1} Details:
+                        </p>
                         <p className="whitespace-pre-wrap">{step}</p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -234,7 +235,7 @@ export function ReproductionPathViewer({
                           onClick={(e) => {
                             e.stopPropagation();
                             navigator.clipboard.writeText(step);
-                            toast.success('Step copied to clipboard');
+                            toast.success("Step copied to clipboard");
                           }}
                         >
                           <Copy className="h-3 w-3 mr-2" />
@@ -251,10 +252,10 @@ export function ReproductionPathViewer({
                 <div className="flex items-center justify-center my-1">
                   <div
                     className={cn(
-                      'w-0.5 h-4 transition-colors',
+                      "w-0.5 h-4 transition-colors",
                       isCompleted && completedSteps.has(index + 1)
-                        ? 'bg-green-500'
-                        : 'bg-border'
+                        ? "bg-green-500"
+                        : "bg-border"
                     )}
                   />
                 </div>
@@ -268,11 +269,12 @@ export function ReproductionPathViewer({
       <Separator />
       <div className="text-xs text-muted-foreground space-y-1">
         <p>
-          <strong>Tip:</strong> Click the checkmark to mark steps as verified during
-          reproduction testing
+          <strong>Tip:</strong> Click the checkmark to mark steps as verified
+          during reproduction testing
         </p>
         <p>
-          <strong>Navigation:</strong> Click step headers to expand/collapse details
+          <strong>Navigation:</strong> Click step headers to expand/collapse
+          details
         </p>
       </div>
     </div>

@@ -1,4 +1,12 @@
+import asyncio
 import time
+
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.api import api_router
 from app.config.logging_config import configure_logging, get_logger
@@ -21,13 +29,6 @@ from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.sliding_window_session import SlidingWindowSessionMiddleware
-from fastapi import FastAPI
-from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.staticfiles import StaticFiles
-from slowapi.errors import RateLimitExceeded
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -43,37 +44,50 @@ app = FastAPI(
     ),
     docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
     redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
+    redirect_slashes=False,  # Prevent 307 redirects that break proxy
 )
 
 # Add exception handlers
-app.add_exception_handler(AppError, app_exception_handler)
-app.add_exception_handler(RequestValidationError, validation_exception_handler)
-app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(AppError, app_exception_handler)  # type: ignore
+app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore
 if settings.ENVIRONMENT == "development":
     app.add_exception_handler(Exception, general_exception_handler)
 
 # Add rate limiting
 if settings.RATE_LIMIT_ENABLED:
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore
 
 # Add trusted host middleware for production
-# TEMPORARILY DISABLED: TrustedHostMiddleware blocks ELB health checks from internal IPs
-# TODO: Re-enable with proper configuration after fixing health check Host headers
-# if settings.ENVIRONMENT == "production":
-#     app.add_middleware(
-#         TrustedHostMiddleware,
-#         allowed_hosts=[
-#             "qontinui.io",
-#             "www.qontinui.io",
-#             "api.qontinui.io",  # API subdomain for backend
-#             "qontinui.com",
-#             "www.qontinui.com",
-#             "app.qontinui.com",
-#             "qontinui-prod-py.eba-km2u4s23.eu-central-1.elasticbeanstalk.com",  # ELB hostname
-#             "*.elasticbeanstalk.com",  # ELB health checks
-#         ],
-#     )
+# Custom implementation that exempts health check endpoints from host validation
+# This allows AWS ELB health checks (which use internal IPs) to pass while still
+# protecting against Host header injection attacks on all other endpoints
+if settings.ENVIRONMENT == "production":
+    from app.middleware.trusted_host import TrustedHostMiddleware
+
+    # Default production hosts if not configured via environment variable
+    allowed_hosts = settings.ALLOWED_HOSTS or [
+        "qontinui.io",
+        "www.qontinui.io",
+        "api.qontinui.io",
+        "qontinui.com",
+        "www.qontinui.com",
+        "app.qontinui.com",
+        "qontinui-prod-py.eba-km2u4s23.eu-central-1.elasticbeanstalk.com",
+        "*.elasticbeanstalk.com",
+    ]
+
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=allowed_hosts,
+        exempt_paths=["/health"],  # Allow health checks without host validation
+    )
+    logger.info(
+        "trusted_host_middleware_enabled",
+        allowed_hosts=allowed_hosts,
+        exempt_paths=["/health"],
+    )
 
 # Set up CORS
 # TEMPORARY FIX: Hardcode for production while debugging env var parsing
@@ -171,6 +185,9 @@ uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
+# Background task handle for cleanup
+_cleanup_task: asyncio.Task | None = None
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -252,10 +269,42 @@ async def startup_event():
     else:
         logger.info("arq_pool_disabled", note="Task queue disabled (Redis not enabled)")
 
+    # Start background cleanup task for stale runner connections
+    if settings.REDIS_ENABLED:
+        try:
+            from app.tasks.connection_cleanup import run_cleanup_loop
+
+            global _cleanup_task
+            _cleanup_task = asyncio.create_task(run_cleanup_loop(interval_seconds=60))
+            logger.info(
+                "connection_cleanup_task_started",
+                interval_seconds=60,
+            )
+        except Exception as e:
+            logger.warning(
+                "connection_cleanup_task_failed",
+                error=str(e),
+                note="Continuing without cleanup task",
+            )
+    else:
+        logger.info(
+            "connection_cleanup_disabled",
+            note="Cleanup task disabled (Redis not enabled)",
+        )
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("application_shutting_down")
+
+    # Cancel background cleanup task
+    global _cleanup_task
+    if _cleanup_task is not None:
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            logger.info("connection_cleanup_task_cancelled")
 
     # Close Redis connection
     if settings.REDIS_ENABLED:
@@ -306,8 +355,9 @@ async def health_check():
 
     # Check async database connectivity
     try:
-        from app.db.session import AsyncSessionLocal
         from sqlalchemy import text
+
+        from app.db.session import AsyncSessionLocal
 
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))

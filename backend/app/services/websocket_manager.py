@@ -9,7 +9,7 @@ import asyncio
 import json
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict, Optional, Set
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -39,11 +39,11 @@ class WebSocketManager:
         """
         self.redis = redis_client
         # session_id -> set of WebSocket connections
-        self.connections: Dict[str, Set[WebSocket]] = defaultdict(set)
+        self.connections: dict[str, set[WebSocket]] = defaultdict(set)
         # session_id -> asyncio.Task (listener task)
-        self.listeners: Dict[str, asyncio.Task] = {}
+        self.listeners: dict[str, asyncio.Task] = {}
         # Track active listeners to prevent duplicates
-        self._active_channels: Set[str] = set()
+        self._active_channels: set[str] = set()
 
         logger.info("websocket_manager_initialized")
 
@@ -112,7 +112,7 @@ class WebSocketManager:
                         session_id=session_id,
                     )
 
-    async def broadcast(self, session_id: str, message: Dict[str, Any]) -> int:
+    async def broadcast(self, session_id: str, message: dict[str, Any]) -> int:
         """
         Broadcast a message to all WebSocket clients for a session across all instances.
 
@@ -156,7 +156,9 @@ class WebSocketManager:
             )
             return 0
 
-    async def broadcast_notification(self, user_id: UUID, notification_data: Dict[str, Any]) -> int:
+    async def broadcast_notification(
+        self, user_id: UUID, notification_data: dict[str, Any]
+    ) -> int:
         """
         Broadcast a notification to a specific user across all instances.
 
@@ -174,7 +176,7 @@ class WebSocketManager:
         return await self.broadcast(session_id, notification_data)
 
     async def _send_to_local_connections(
-        self, session_id: str, message: Dict[str, Any]
+        self, session_id: str, message: dict[str, Any]
     ) -> int:
         """
         Send message to all local WebSocket connections for a session.
@@ -345,7 +347,7 @@ class WebSocketManager:
         logger.info("websocket_manager_shutdown_started")
 
         # Cancel all listener tasks
-        for session_id, task in list(self.listeners.items()):
+        for _session_id, task in list(self.listeners.items()):
             task.cancel()
             try:
                 await task
@@ -354,7 +356,7 @@ class WebSocketManager:
 
         # Close all WebSocket connections
         total_closed = 0
-        for session_id, connections in list(self.connections.items()):
+        for _session_id, connections in list(self.connections.items()):
             for websocket in list(connections):
                 try:
                     await websocket.close(code=1001, reason="Server shutdown")
@@ -374,7 +376,7 @@ class WebSocketManager:
 
 
 # Global WebSocket manager instance (initialized in main.py)
-_websocket_manager: Optional[WebSocketManager] = None
+_websocket_manager: WebSocketManager | None = None
 
 
 class WebSocketManagerProxy:
@@ -383,6 +385,7 @@ class WebSocketManagerProxy:
 
     Provides a module-level connection_manager that delegates to the global instance.
     """
+
     def __getattr__(self, name):
         if _websocket_manager is None:
             raise RuntimeError(

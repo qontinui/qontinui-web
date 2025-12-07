@@ -1,6 +1,6 @@
 from datetime import datetime
+from uuid import uuid4
 
-from app.db.base import Base
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -10,15 +10,24 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class Project(Base):
     __tablename__ = "projects"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+        index=True,
+    )
     name = Column(String, nullable=False)
     description = Column(Text)
     configuration = Column(JSON, nullable=False, default={})

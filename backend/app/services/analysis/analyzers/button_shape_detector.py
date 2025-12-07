@@ -10,7 +10,7 @@ Detects buttons using shape-based analysis:
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -57,7 +57,7 @@ class ButtonShapeDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Size constraints (typical button dimensions)
             "min_width": 80,
@@ -94,7 +94,7 @@ class ButtonShapeDetector(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, (img_gray, img_color) in enumerate(
-            zip(images_gray, images_color)
+            zip(images_gray, images_color, strict=False)
         ):
             elements = await self._analyze_screenshot(
                 img_gray, img_color, screenshot_idx, params
@@ -118,7 +118,7 @@ class ButtonShapeDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -126,7 +126,7 @@ class ButtonShapeDetector(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color (BGR for OpenCV)"""
         images = []
         for data in screenshot_data:
@@ -142,8 +142,8 @@ class ButtonShapeDetector(BaseAnalyzer):
         img_gray: np.ndarray,
         img_color: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot for button shapes"""
         elements = []
 
@@ -257,7 +257,9 @@ class ButtonShapeDetector(BaseAnalyzer):
 
         # Harris corner detection
         corners = cv2.cornerHarris(region, blockSize=2, ksize=3, k=0.04)
-        corners = cv2.dilate(corners, None)
+        # Dilate with a 3x3 kernel to expand corner regions
+        kernel = np.ones((3, 3), dtype=np.uint8)
+        corners = cv2.dilate(corners, kernel)
 
         # Threshold to get strong corners
         corner_threshold = 0.01 * corners.max() if corners.max() > 0 else 0
@@ -270,7 +272,7 @@ class ButtonShapeDetector(BaseAnalyzer):
         edge_margin = min(radius_threshold, min(h, w) // 4)
         corners_near_edges = 0
 
-        for y_corner, x_corner in zip(corner_points[0], corner_points[1]):
+        for y_corner, x_corner in zip(corner_points[0], corner_points[1], strict=False):
             # Check if corner is near any edge but not exactly on it
             near_top = 0 < y_corner < edge_margin
             near_bottom = h - edge_margin < y_corner < h
@@ -294,7 +296,7 @@ class ButtonShapeDetector(BaseAnalyzer):
         rectangularity: float,
         has_rounded_corners: bool,
         corner_score: float,
-        params: Dict[str, Any],
+        params: dict[str, Any],
     ) -> float:
         """
         Calculate confidence score for button detection

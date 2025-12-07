@@ -13,6 +13,9 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.project import Project
 from app.models.runner_connection import RunnerConnection
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
@@ -22,14 +25,8 @@ from app.models.test_deficiency import (
     DeficiencyType,
     TestDeficiency,
 )
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from .conftest import (
-    create_test_runs,
-    generate_mock_deficiency_data,
-    generate_mock_transition_data,
-)
+from .conftest import create_test_runs
 
 
 @pytest.mark.asyncio
@@ -513,7 +510,7 @@ class TestReliabilityStatisticsWorkflow:
     ):
         """Test calculating transition success rate across runs."""
         # Create multiple runs with transition data
-        runs = await create_test_runs(
+        await create_test_runs(
             db_session,
             test_project,
             test_runner_connection,

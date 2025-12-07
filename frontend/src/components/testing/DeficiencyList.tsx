@@ -1,14 +1,20 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useDeficiencies, useExportDeficiencies } from '@/hooks/useTesting';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ChevronLeft, ChevronRight, Download, Search } from 'lucide-react';
-import { DeficiencyCard } from './DeficiencyCard';
-import type { DeficiencyFilters } from '@/services/testing-service';
+import { useState } from "react";
+import { useDeficiencies, useExportDeficiencies } from "@/hooks/useTesting";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
+import { DeficiencyCard } from "./DeficiencyCard";
+import type { DeficiencyFilters } from "@/services/testing-service";
 
 interface DeficiencyListProps {
   projectId?: string;
@@ -21,26 +27,30 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
     test_run_id: testRunId,
     page: 1,
     page_size: 20,
-    sort_by: 'created_at',
-    sort_order: 'desc',
+    sort_by: "created_at",
+    sort_order: "desc",
   });
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [severityFilter, setSeverityFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [severityFilter, setSeverityFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const { data, isLoading, error } = useDeficiencies(filters);
   const exportDeficiencies = useExportDeficiencies();
 
   const handleSearch = () => {
-    setFilters((prev) => ({ ...prev, search: searchQuery || undefined, page: 1 }));
+    setFilters((prev) => ({
+      ...prev,
+      search: searchQuery || undefined,
+      page: 1,
+    }));
   };
 
   const handleSeverityChange = (value: string) => {
     setSeverityFilter(value);
     setFilters((prev) => ({
       ...prev,
-      severity: value === 'all' ? undefined : (value as any),
+      severity: value === "all" ? undefined : (value as any),
       page: 1,
     }));
   };
@@ -49,7 +59,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
     setStatusFilter(value);
     setFilters((prev) => ({
       ...prev,
-      status: value === 'all' ? undefined : (value as any),
+      status: value === "all" ? undefined : (value as any),
       page: 1,
     }));
   };
@@ -58,11 +68,11 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
     setFilters((prev) => ({ ...prev, page: newPage }));
   };
 
-  const handleExport = async (format: 'json' | 'csv') => {
+  const handleExport = async (format: "json" | "csv") => {
     try {
       await exportDeficiencies.mutateAsync({ filters, format });
     } catch (error) {
-      console.error('Export failed:', error);
+      console.error("Export failed:", error);
     }
   };
 
@@ -80,7 +90,9 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
     return (
       <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
         <CardContent className="p-12 text-center">
-          <div className="text-red-400">Error loading deficiencies: {error.message}</div>
+          <div className="text-red-400">
+            Error loading deficiencies: {error.message}
+          </div>
         </CardContent>
       </Card>
     );
@@ -99,7 +111,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => handleExport('csv')}
+              onClick={() => handleExport("csv")}
               className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
             >
               <Download className="w-4 h-4 mr-2" />
@@ -117,7 +129,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
                 placeholder="Search deficiencies..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 className="bg-[#0A0A0B]/50 border-gray-700 focus:border-[#00D9FF]"
               />
               <Button
@@ -171,7 +183,8 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-6">
                 <div className="text-sm text-gray-400">
-                  Page {currentPage} of {totalPages} • {data?.total || 0} total deficiencies
+                  Page {currentPage} of {totalPages} • {data?.total || 0} total
+                  deficiencies
                 </div>
                 <div className="flex items-center gap-2">
                   <Button

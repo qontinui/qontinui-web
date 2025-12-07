@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { useOnboardingStore } from '@/stores/onboarding-store';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, X, Check } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { useOnboardingStore } from "@/stores/onboarding-store";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { ArrowLeft, ArrowRight, X, Check } from "lucide-react";
 
 // ============================================================================
 // Types
@@ -15,7 +15,7 @@ export interface TutorialStep {
   target: string; // CSS selector with data-tour attribute
   title: string;
   description: string;
-  placement?: 'top' | 'bottom' | 'left' | 'right' | 'auto';
+  placement?: "top" | "bottom" | "left" | "right" | "auto";
 }
 
 interface SpotlightPosition {
@@ -28,7 +28,7 @@ interface SpotlightPosition {
 interface TooltipPosition {
   top: number;
   left: number;
-  placement: 'top' | 'bottom' | 'left' | 'right';
+  placement: "top" | "bottom" | "left" | "right";
 }
 
 // ============================================================================
@@ -38,33 +38,34 @@ interface TooltipPosition {
 const TUTORIAL_STEPS: TutorialStep[] = [
   {
     target: '[data-tour="projects"]',
-    title: 'Your Projects',
-    description: 'All your automation projects live here. Click to open or create new ones.',
-    placement: 'bottom',
+    title: "Your Projects",
+    description:
+      "All your automation projects live here. Click to open or create new ones.",
+    placement: "bottom",
   },
   {
     target: '[data-tour="new-project"]',
-    title: 'Create Project',
-    description: 'Start by creating your first automation project.',
-    placement: 'bottom',
+    title: "Create Project",
+    description: "Start by creating your first automation project.",
+    placement: "bottom",
   },
   {
     target: '[data-tour="quick-start"]',
-    title: 'Quick Start Guide',
-    description: 'Follow this checklist to build your first automation.',
-    placement: 'left',
+    title: "Quick Start Guide",
+    description: "Follow this checklist to build your first automation.",
+    placement: "left",
   },
   {
     target: '[data-tour="documentation"]',
-    title: 'Documentation',
-    description: 'Need help? Access docs and tutorials anytime.',
-    placement: 'bottom',
+    title: "Documentation",
+    description: "Need help? Access docs and tutorials anytime.",
+    placement: "bottom",
   },
   {
     target: '[data-tour="profile"]',
-    title: 'Your Profile',
-    description: 'Manage settings, subscription, and account info.',
-    placement: 'bottom',
+    title: "Your Profile",
+    description: "Manage settings, subscription, and account info.",
+    placement: "bottom",
   },
 ];
 
@@ -90,7 +91,9 @@ export function TutorialOverlay() {
   } = useOnboardingStore();
 
   const [mounted, setMounted] = useState(false);
-  const [spotlightPos, setSpotlightPos] = useState<SpotlightPosition | null>(null);
+  const [spotlightPos, setSpotlightPos] = useState<SpotlightPosition | null>(
+    null
+  );
   const [tooltipPos, setTooltipPos] = useState<TooltipPosition | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -130,7 +133,7 @@ export function TutorialOverlay() {
       targetRect: DOMRect,
       tooltipWidth: number,
       tooltipHeight: number,
-      preferredPlacement: TutorialStep['placement'] = 'auto'
+      preferredPlacement: TutorialStep["placement"] = "auto"
     ): TooltipPosition => {
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
@@ -143,24 +146,24 @@ export function TutorialOverlay() {
       const spaceLeft = targetRect.left;
       const spaceRight = viewportWidth - targetRect.right;
 
-      let placement: 'top' | 'bottom' | 'left' | 'right' = 'bottom';
+      let placement: "top" | "bottom" | "left" | "right" = "bottom";
       let top = 0;
       let left = 0;
 
       // Determine best placement
-      if (preferredPlacement === 'auto') {
+      if (preferredPlacement === "auto") {
         // Auto-detect best placement based on available space
         if (spaceBottom >= tooltipHeight + TOOLTIP_OFFSET) {
-          placement = 'bottom';
+          placement = "bottom";
         } else if (spaceTop >= tooltipHeight + TOOLTIP_OFFSET) {
-          placement = 'top';
+          placement = "top";
         } else if (spaceRight >= tooltipWidth + TOOLTIP_OFFSET) {
-          placement = 'right';
+          placement = "right";
         } else if (spaceLeft >= tooltipWidth + TOOLTIP_OFFSET) {
-          placement = 'left';
+          placement = "left";
         } else {
           // Not enough space anywhere, default to bottom with scrolling
-          placement = 'bottom';
+          placement = "bottom";
         }
       } else {
         placement = preferredPlacement;
@@ -168,25 +171,19 @@ export function TutorialOverlay() {
 
       // Calculate position based on placement
       switch (placement) {
-        case 'top':
+        case "top":
           top = targetRect.top + scrollY - tooltipHeight - TOOLTIP_OFFSET;
           left =
-            targetRect.left +
-            scrollX +
-            targetRect.width / 2 -
-            tooltipWidth / 2;
+            targetRect.left + scrollX + targetRect.width / 2 - tooltipWidth / 2;
           break;
 
-        case 'bottom':
+        case "bottom":
           top = targetRect.bottom + scrollY + TOOLTIP_OFFSET;
           left =
-            targetRect.left +
-            scrollX +
-            targetRect.width / 2 -
-            tooltipWidth / 2;
+            targetRect.left + scrollX + targetRect.width / 2 - tooltipWidth / 2;
           break;
 
-        case 'left':
+        case "left":
           top =
             targetRect.top +
             scrollY +
@@ -195,7 +192,7 @@ export function TutorialOverlay() {
           left = targetRect.left + scrollX - tooltipWidth - TOOLTIP_OFFSET;
           break;
 
-        case 'right':
+        case "right":
           top =
             targetRect.top +
             scrollY +
@@ -235,9 +232,9 @@ export function TutorialOverlay() {
 
     // Scroll target into view if needed
     targetElement.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center',
-      inline: 'center',
+      behavior: "smooth",
+      block: "center",
+      inline: "center",
     });
 
     // Wait a bit for scroll to settle
@@ -305,26 +302,26 @@ export function TutorialOverlay() {
       if (!showTutorialOverlay) return;
 
       switch (e.key) {
-        case 'ArrowRight':
-        case 'Enter':
+        case "ArrowRight":
+        case "Enter":
           e.preventDefault();
           goToNextStep();
           break;
 
-        case 'ArrowLeft':
+        case "ArrowLeft":
           e.preventDefault();
           goToPreviousStep();
           break;
 
-        case 'Escape':
+        case "Escape":
           e.preventDefault();
           handleSkip();
           break;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showTutorialOverlay, goToNextStep, goToPreviousStep, handleSkip]);
 
   /**
@@ -339,12 +336,12 @@ export function TutorialOverlay() {
       updatePositions();
     };
 
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('scroll', handleResize);
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("scroll", handleResize);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('scroll', handleResize);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleResize);
     };
   }, [showTutorialOverlay, currentTourStep, updatePositions]);
 
@@ -357,8 +354,8 @@ export function TutorialOverlay() {
     const targetElement = document.querySelector(currentStep.target);
     if (!targetElement) return;
 
-    targetElement.addEventListener('click', handleTargetClick);
-    return () => targetElement.removeEventListener('click', handleTargetClick);
+    targetElement.addEventListener("click", handleTargetClick);
+    return () => targetElement.removeEventListener("click", handleTargetClick);
   }, [showTutorialOverlay, currentStep, handleTargetClick]);
 
   // Don't render on server or when not active
@@ -370,7 +367,7 @@ export function TutorialOverlay() {
     <div
       ref={overlayRef}
       className="fixed inset-0 z-[9999] transition-opacity duration-300"
-      style={{ pointerEvents: 'auto' }}
+      style={{ pointerEvents: "auto" }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="tutorial-title"
@@ -387,7 +384,7 @@ export function TutorialOverlay() {
       {spotlightPos && (
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ mixBlendMode: 'hard-light' }}
+          style={{ mixBlendMode: "hard-light" }}
         >
           <defs>
             <mask id="spotlight-mask">
@@ -428,7 +425,7 @@ export function TutorialOverlay() {
               0 0 40px rgba(0, 217, 255, 0.4),
               inset 0 0 0 2px rgba(0, 217, 255, 0.2)
             `,
-            animation: 'pulse-glow 2s ease-in-out infinite',
+            animation: "pulse-glow 2s ease-in-out infinite",
           }}
         />
       )}
@@ -440,12 +437,12 @@ export function TutorialOverlay() {
           className={`
             fixed bg-[#1A1A1B]/95 border-gray-800/50 backdrop-blur-xl
             shadow-2xl transition-all duration-300 ease-out
-            ${isAnimating ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}
+            ${isAnimating ? "opacity-0 scale-95" : "opacity-100 scale-100"}
           `}
           style={{
             top: `${tooltipPos.top}px`,
             left: `${tooltipPos.left}px`,
-            maxWidth: '360px',
+            maxWidth: "360px",
             zIndex: 10001,
           }}
         >
@@ -492,8 +489,8 @@ export function TutorialOverlay() {
                       h-1 flex-1 rounded-full transition-all duration-300
                       ${
                         index <= currentTourStep
-                          ? 'bg-[#00D9FF]'
-                          : 'bg-gray-700'
+                          ? "bg-[#00D9FF]"
+                          : "bg-gray-700"
                       }
                     `}
                   />
@@ -524,8 +521,8 @@ export function TutorialOverlay() {
                   flex-1 font-medium
                   ${
                     isLastStep
-                      ? 'bg-[#00FF88] hover:bg-[#00FF88]/80 text-black'
-                      : 'bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black'
+                      ? "bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+                      : "bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
                   }
                 `}
               >
@@ -566,13 +563,15 @@ export function TutorialOverlay() {
         @keyframes pulse-glow {
           0%,
           100% {
-            box-shadow: 0 0 0 4px rgba(0, 217, 255, 0.3),
+            box-shadow:
+              0 0 0 4px rgba(0, 217, 255, 0.3),
               0 0 0 1px rgba(0, 217, 255, 0.5),
               0 0 40px rgba(0, 217, 255, 0.4),
               inset 0 0 0 2px rgba(0, 217, 255, 0.2);
           }
           50% {
-            box-shadow: 0 0 0 4px rgba(0, 217, 255, 0.5),
+            box-shadow:
+              0 0 0 4px rgba(0, 217, 255, 0.5),
               0 0 0 1px rgba(0, 217, 255, 0.7),
               0 0 60px rgba(0, 217, 255, 0.6),
               inset 0 0 0 2px rgba(0, 217, 255, 0.3);

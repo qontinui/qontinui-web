@@ -1,4 +1,4 @@
-import { Tutorial } from '@/types/tutorial';
+import { Tutorial } from "@/types/tutorial";
 
 /**
  * Civ 6 Early Game Tutorial
@@ -12,39 +12,40 @@ import { Tutorial } from '@/types/tutorial';
  * building and testing a complete automation sequence.
  */
 export const civ6EarlyGameTutorial: Tutorial = {
-  id: 'civ6-early-game',
-  title: 'Automate Your Civ 6 Early Game',
+  id: "civ6-early-game",
+  title: "Automate Your Civ 6 Early Game",
   description:
-    'Master your opening moves while Qontinui handles the micro-management. Learn to automate unit selection, settler movement, and city founding in Civilization VI.',
-  duration: '15 minutes',
-  difficulty: 'beginner',
-  category: 'Gaming',
-  tags: ['civ6', 'strategy', 'automation', 'gaming', 'turn-based'],
+    "Master your opening moves while Qontinui handles the micro-management. Learn to automate unit selection, settler movement, and city founding in Civilization VI.",
+  duration: "15 minutes",
+  difficulty: "beginner",
+  mode: "overlay",
+  category: "Gaming",
+  tags: ["civ6", "strategy", "automation", "gaming", "turn-based"],
 
   learningObjectives: [
-    'Understand the value of automating repetitive early game tasks',
-    'Identify key UI elements in Civ 6 that enable automation',
-    'Create actions that interact with game UI',
-    'Test and verify automation sequences work correctly',
-    'Troubleshoot automation failures and adapt to game state changes',
+    "Understand the value of automating repetitive early game tasks",
+    "Identify key UI elements in Civ 6 that enable automation",
+    "Create actions that interact with game UI",
+    "Test and verify automation sequences work correctly",
+    "Troubleshoot automation failures and adapt to game state changes",
   ],
 
   author: {
-    name: 'Qontinui Team',
+    name: "Qontinui Team",
   },
 
   metadata: {
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    version: '1.0.0',
+    version: "1.0.0",
   },
 
   isPublished: true,
 
   steps: [
     {
-      id: 'step-1-introduction',
-      title: 'Why Automate Early Game?',
+      id: "step-1-introduction",
+      title: "Why Automate Early Game?",
       content: `
 # The Civ 6 Early Game Challenge
 
@@ -79,34 +80,34 @@ In this tutorial, you'll:
 **Let's automate your way to a stronger opening!**
 `,
       estimatedDuration: 2,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand the problem automation solves',
-        'See how model-based automation differs from traditional approaches',
-        'Understand the workflow for creating game automation',
+        "Understand the problem automation solves",
+        "See how model-based automation differs from traditional approaches",
+        "Understand the workflow for creating game automation",
       ],
       tips: [
-        'Think about which early game tasks are most tedious for you',
-        'Consider edge cases: What if a settler dies? What if you need to adjust strategy mid-automation?',
-        'Civ 6 automation is ideal because the game pauses while you think—no reaction time pressure',
+        "Think about which early game tasks are most tedious for you",
+        "Consider edge cases: What if a settler dies? What if you need to adjust strategy mid-automation?",
+        "Civ 6 automation is ideal because the game pauses while you think—no reaction time pressure",
       ],
       resources: [
         {
-          title: 'Qontinui Documentation',
-          url: 'https://docs.qontinui.io',
-          type: 'documentation',
+          title: "Qontinui Documentation",
+          url: "https://docs.qontinui.io",
+          type: "documentation",
         },
         {
-          title: 'Model-Based Automation Explained',
-          url: 'https://docs.qontinui.io/concepts/model-based',
-          type: 'article',
+          title: "Model-Based Automation Explained",
+          url: "https://docs.qontinui.io/concepts/model-based",
+          type: "article",
         },
       ],
     },
 
     {
-      id: 'step-2-upload-screenshots',
-      title: 'Upload Your Game Screenshots',
+      id: "step-2-upload-screenshots",
+      title: "Upload Your Game Screenshots",
       content: `
 # Capturing Your Game State
 
@@ -147,38 +148,39 @@ You'll need screenshots of key game states:
 **Pro tip**: Take screenshots at different resolutions and window sizes—Qontinui can learn patterns even when the UI layout varies slightly.
 `,
       estimatedDuration: 3,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand what makes a good screenshot for automation',
-        'Know how to capture game state effectively',
-        'Organize screenshots for model training',
+        "Understand what makes a good screenshot for automation",
+        "Know how to capture game state effectively",
+        "Organize screenshots for model training",
       ],
       tryIt: {
-        type: 'upload-screenshots',
-        component: 'ScreenshotUploader',
+        type: "upload-screenshots",
+        component: "ScreenshotUploader",
         hints: [
-          'Start with a settler that has been selected',
-          'Include both normal and strategic views',
+          "Start with a settler that has been selected",
+          "Include both normal and strategic views",
           'Make sure the "!" indicator is visible on selected units',
         ],
         successCriteria: {
-          description: 'Upload at least 2 relevant Civ 6 screenshots showing different game states',
+          description:
+            "Upload at least 2 relevant Civ 6 screenshots showing different game states",
           validation: {
             minScreenshots: 2,
-            format: 'png or jpg',
+            format: "png or jpg",
           },
         },
       },
       tips: [
-        'If you don\'t have a Civ 6 game in progress, you can download sample screenshots from our gallery',
-        'The more diverse your screenshots (different units, map zoom levels, UI states), the better Qontinui can adapt',
-        'You can always add more screenshots later to improve accuracy',
+        "If you don't have a Civ 6 game in progress, you can download sample screenshots from our gallery",
+        "The more diverse your screenshots (different units, map zoom levels, UI states), the better Qontinui can adapt",
+        "You can always add more screenshots later to improve accuracy",
       ],
     },
 
     {
-      id: 'step-3-find-unit-toggle',
-      title: 'Find the Unit Toggle Button',
+      id: "step-3-find-unit-toggle",
+      title: "Find the Unit Toggle Button",
       content: `
 # Understanding the "!" Button
 
@@ -214,10 +216,10 @@ Identify where the "!" appears in your screenshots:
 
 **In the next step, we'll click this button to select units with pending actions.**
 `,
-      screenshot: '/tutorials/civ6/step3-unit-toggle.png',
+      screenshot: "/tutorials/civ6/step3-unit-toggle.png",
       annotations: [
         {
-          type: 'highlight',
+          type: "highlight",
           x: 30,
           y: 650,
           width: 100,
@@ -225,13 +227,13 @@ Identify where the "!" appears in your screenshots:
           label: 'Unit portrait area\nLook for "!" indicator here',
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 50,
           y: 680,
-          label: 'Click to cycle units',
+          label: "Click to cycle units",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 100,
           y: 200,
           width: 50,
@@ -240,43 +242,44 @@ Identify where the "!" appears in your screenshots:
         },
       ],
       estimatedDuration: 2,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
         'Understand how Civ 6 uses the "!" to mark pending units',
-        'Locate the unit cycling UI',
-        'Learn how to identify unit selection states',
+        "Locate the unit cycling UI",
+        "Learn how to identify unit selection states",
       ],
       tryIt: {
-        type: 'identify-element',
-        component: 'ElementHighlighter',
+        type: "identify-element",
+        component: "ElementHighlighter",
         preloadedData: {
           elementName: 'Unit Toggle Button ("!")',
           elementDescription:
             'The button or icon that shows pending units (marked with "!")',
         },
         hints: [
-          'Look at the unit portraits in your screenshot',
+          "Look at the unit portraits in your screenshot",
           'The "!" usually appears as a small exclamation mark overlay',
-          'It\'s often near the unit\'s portrait or in the unit list',
-          'Try looking at the bottom-left corner where unit info typically displays',
+          "It's often near the unit's portrait or in the unit list",
+          "Try looking at the bottom-left corner where unit info typically displays",
         ],
         successCriteria: {
-          description: 'Successfully highlight the UI element representing unit selection state',
+          description:
+            "Successfully highlight the UI element representing unit selection state",
           validation: {
             minAnnotations: 1,
-            annotationTypes: ['highlight', 'arrow'],
+            annotationTypes: ["highlight", "arrow"],
           },
         },
       },
       tips: [
         'In some UI layouts, the "!" might be subtle—look for a badge or number',
-        'If you\'re unsure, zoom in on your screenshot to see details better',
-        'Civ 6\'s UI can vary based on settings, so look for the most prominent unit indicator',
+        "If you're unsure, zoom in on your screenshot to see details better",
+        "Civ 6's UI can vary based on settings, so look for the most prominent unit indicator",
       ],
     },
 
     {
-      id: 'step-4-select-settler',
+      id: "step-4-select-settler",
       title: 'Create Action: Select Settler with "!"',
       content: `
 # Automating Unit Selection
@@ -326,28 +329,28 @@ This is the *first step* in every turn:
 **This is where Qontinui's model-based approach shines**—it understands *intent* (find settler), not just pixel coordinates.
 `,
       estimatedDuration: 3,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand how to create actions in Qontinui',
-        'Learn the difference between coordinate-based and pattern-based automation',
-        'Practice describing automation goals clearly',
-        'See how actions can be composed into larger workflows',
+        "Understand how to create actions in Qontinui",
+        "Learn the difference between coordinate-based and pattern-based automation",
+        "Practice describing automation goals clearly",
+        "See how actions can be composed into larger workflows",
       ],
       tryIt: {
-        type: 'create-action',
-        component: 'ActionBuilder',
+        type: "create-action",
+        component: "ActionBuilder",
         preloadedData: {
-          actionName: 'Select Settler with Pending Action',
+          actionName: "Select Settler with Pending Action",
           actionDescription:
             'Find and select a settler that has the "!" indicator (not yet moved this turn)',
           goalScreenshots: [],
-          actionType: 'unit-selection',
+          actionType: "unit-selection",
         },
         hints: [
           'Think about what "success" looks like: settler is selected and visible',
-          'Consider the stopping condition: when should this action stop trying?',
-          'What if all settlers have been moved? (This is an edge case to handle)',
-          'Use your uploaded screenshots to show before/after states',
+          "Consider the stopping condition: when should this action stop trying?",
+          "What if all settlers have been moved? (This is an edge case to handle)",
+          "Use your uploaded screenshots to show before/after states",
         ],
         successCriteria: {
           description:
@@ -360,15 +363,15 @@ This is the *first step* in every turn:
         },
       },
       tips: [
-        'Keep your action focused: just select the settler, nothing else',
+        "Keep your action focused: just select the settler, nothing else",
         'Consider renaming this action to "Select Next Settler" for clarity',
-        'Think about what should happen if all settlers are already moved—add error handling',
+        "Think about what should happen if all settlers are already moved—add error handling",
       ],
     },
 
     {
-      id: 'step-5-toggle-map-view',
-      title: 'Toggle Map View & Find Settlement Site',
+      id: "step-5-toggle-map-view",
+      title: "Toggle Map View & Find Settlement Site",
       content: `
 # Switching to Strategic View
 
@@ -407,52 +410,54 @@ Create an action that:
 
 **This is preparation for the next step—moving the settler.**
 `,
-      screenshot: '/tutorials/civ6/step5-strategic-view.png',
+      screenshot: "/tutorials/civ6/step5-strategic-view.png",
       annotations: [
         {
-          type: 'highlight',
+          type: "highlight",
           x: 100,
           y: 100,
           width: 800,
           height: 600,
-          label: 'Strategic view\nSimplified terrain, easier to read',
+          label: "Strategic view\nSimplified terrain, easier to read",
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 50,
           y: 50,
-          label: 'Normal view icon',
+          label: "Normal view icon",
         },
         {
-          type: 'label',
+          type: "label",
           x: 400,
           y: 400,
-          label: 'Good settlement location: river + production',
+          label: "Good settlement location: river + production",
         },
       ],
       estimatedDuration: 2,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand when to use different game views',
-        'Learn how to create view-switching actions',
-        'Practice visual identification of good settlement sites',
+        "Understand when to use different game views",
+        "Learn how to create view-switching actions",
+        "Practice visual identification of good settlement sites",
       ],
       tryIt: {
-        type: 'create-action',
-        component: 'ActionBuilder',
+        type: "create-action",
+        component: "ActionBuilder",
         preloadedData: {
-          actionName: 'Toggle Strategic View',
-          actionDescription: 'Switch to strategic view for better settlement planning',
-          actionType: 'view-toggle',
+          actionName: "Toggle Strategic View",
+          actionDescription:
+            "Switch to strategic view for better settlement planning",
+          actionType: "view-toggle",
         },
         hints: [
           'In Civ 6, "V" key toggles between normal and strategic view',
-          'The action should wait briefly after toggling (UI transition)',
+          "The action should wait briefly after toggling (UI transition)",
           'Consider what "success" looks like—how do you confirm strategic view is active?',
-          'Look for visual indicators: simplified unit graphics, different terrain coloring',
+          "Look for visual indicators: simplified unit graphics, different terrain coloring",
         ],
         successCriteria: {
-          description: 'Create a working view toggle action that switches to strategic view',
+          description:
+            "Create a working view toggle action that switches to strategic view",
           validation: {
             hasActionName: true,
             handlesTransition: true,
@@ -460,15 +465,15 @@ Create an action that:
         },
       },
       tips: [
-        'Some players prefer normal view—you can adjust this action to use either',
+        "Some players prefer normal view—you can adjust this action to use either",
         'The view toggle is reversible, so you can add a "Switch back" action later if needed',
         'Consider creating both "Enter Strategic View" and "Exit Strategic View" actions for reusability',
       ],
     },
 
     {
-      id: 'step-6-move-settler',
-      title: 'Move Settler to Settlement Site',
+      id: "step-6-move-settler",
+      title: "Move Settler to Settlement Site",
       content: `
 # Creating the Movement Action
 
@@ -527,56 +532,58 @@ Create the movement action:
 3. Create the action to move settler there
 4. Make it robust to variations
 `,
-      screenshot: '/tutorials/civ6/step6-settler-movement.png',
+      screenshot: "/tutorials/civ6/step6-settler-movement.png",
       annotations: [
         {
-          type: 'highlight',
+          type: "highlight",
           x: 200,
           y: 250,
           width: 40,
           height: 40,
-          label: 'Settler starting position',
+          label: "Settler starting position",
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 200,
           y: 300,
-          label: 'Movement path',
+          label: "Movement path",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 250,
           y: 350,
           width: 40,
           height: 40,
-          label: 'Destination: good settlement site',
+          label: "Destination: good settlement site",
         },
       ],
       estimatedDuration: 4,
-      difficulty: 'intermediate',
+      difficulty: "intermediate",
       learningObjectives: [
-        'Create complex actions with multiple steps',
-        'Handle spatial reasoning and coordinate identification',
-        'Test actions for robustness and adaptability',
-        'Deal with movement mechanics and animations',
+        "Create complex actions with multiple steps",
+        "Handle spatial reasoning and coordinate identification",
+        "Test actions for robustness and adaptability",
+        "Deal with movement mechanics and animations",
       ],
       tryIt: {
-        type: 'create-action',
-        component: 'ActionBuilder',
+        type: "create-action",
+        component: "ActionBuilder",
         preloadedData: {
-          actionName: 'Move Settler to Settlement Site',
-          actionDescription: 'Move the selected settler to a good location for founding a city',
-          actionType: 'unit-movement',
+          actionName: "Move Settler to Settlement Site",
+          actionDescription:
+            "Move the selected settler to a good location for founding a city",
+          actionType: "unit-movement",
         },
         hints: [
-          'Look for terrain features: rivers, hills, resources',
-          'Consider distance: not too close, not too far from capital',
+          "Look for terrain features: rivers, hills, resources",
+          "Consider distance: not too close, not too far from capital",
           'What makes a "good" settlement site? Think about production, science, culture',
-          'Right-click movement vs. click-and-drag—either can work in Civ 6',
-          'Allow time for animation to complete before next action',
+          "Right-click movement vs. click-and-drag—either can work in Civ 6",
+          "Allow time for animation to complete before next action",
         ],
         successCriteria: {
-          description: 'Create an action that moves a settler to an appropriate settlement location',
+          description:
+            "Create an action that moves a settler to an appropriate settlement location",
           validation: {
             hasActionName: true,
             hasDestinationLogic: true,
@@ -585,15 +592,15 @@ Create the movement action:
         },
       },
       tips: [
-        'Test your movement action with different settlers and different destination types',
-        'Consider creating separate actions for different settlement strategies (aggressive expansion vs. defensive)',
-        'You can reuse this action for multiple settlers in your automation',
+        "Test your movement action with different settlers and different destination types",
+        "Consider creating separate actions for different settlement strategies (aggressive expansion vs. defensive)",
+        "You can reuse this action for multiple settlers in your automation",
       ],
     },
 
     {
-      id: 'step-7-move-warrior-end-turn',
-      title: 'Position Warrior & End Turn',
+      id: "step-7-move-warrior-end-turn",
+      title: "Position Warrior & End Turn",
       content: `
 # Completing the Turn
 
@@ -643,56 +650,57 @@ Create two actions:
 
 **Tip**: End Turn is simple but crucial—it's the trigger for your next turn's automation to begin.
 `,
-      screenshot: '/tutorials/civ6/step7-end-turn.png',
+      screenshot: "/tutorials/civ6/step7-end-turn.png",
       annotations: [
         {
-          type: 'highlight',
+          type: "highlight",
           x: 300,
           y: 250,
           width: 40,
           height: 40,
-          label: 'Warrior unit',
+          label: "Warrior unit",
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 300,
           y: 200,
-          label: 'Defensive position',
+          label: "Defensive position",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 50,
           y: 650,
           width: 100,
           height: 40,
-          label: 'End Turn button',
+          label: "End Turn button",
         },
       ],
       estimatedDuration: 3,
-      difficulty: 'intermediate',
+      difficulty: "intermediate",
       learningObjectives: [
-        'Create actions for military unit positioning',
-        'Understand turn-based game mechanics automation',
-        'Learn how to detect turn completion',
-        'Chain multiple actions into a sequence',
+        "Create actions for military unit positioning",
+        "Understand turn-based game mechanics automation",
+        "Learn how to detect turn completion",
+        "Chain multiple actions into a sequence",
       ],
       tryIt: {
-        type: 'create-action',
-        component: 'ActionBuilder',
+        type: "create-action",
+        component: "ActionBuilder",
         preloadedData: {
-          actionName: 'Position Warrior & End Turn',
+          actionName: "Position Warrior & End Turn",
           actionDescription:
-            'Position the warrior appropriately and end the turn to advance to next turn',
-          actionType: 'end-of-turn',
+            "Position the warrior appropriately and end the turn to advance to next turn",
+          actionType: "end-of-turn",
         },
         hints: [
-          'Where should the warrior go? Consider defense vs. exploration',
-          'How do you identify the End Turn button? Look for button text or icons',
-          'Should you wait after clicking End Turn? (Yes—animations and server updates)',
-          'Consider making warrior positioning configurable: different actions for different strategies',
+          "Where should the warrior go? Consider defense vs. exploration",
+          "How do you identify the End Turn button? Look for button text or icons",
+          "Should you wait after clicking End Turn? (Yes—animations and server updates)",
+          "Consider making warrior positioning configurable: different actions for different strategies",
         ],
         successCriteria: {
-          description: 'Create a complete end-of-turn action that positions units and progresses the game',
+          description:
+            "Create a complete end-of-turn action that positions units and progresses the game",
           validation: {
             hasActionName: true,
             handlesTurnEnd: true,
@@ -700,15 +708,15 @@ Create two actions:
         },
       },
       tips: [
-        'The End Turn button might be disabled if units still have moves—ensure all units are handled',
-        'Different game difficulties might affect AI unit behavior—your action should be robust',
+        "The End Turn button might be disabled if units still have moves—ensure all units are handled",
+        "Different game difficulties might affect AI unit behavior—your action should be robust",
         'Consider adding a "Wait for turn completion" step to account for animation/server sync',
       ],
     },
 
     {
-      id: 'step-8-test-automation',
-      title: 'Test Your Complete Automation',
+      id: "step-8-test-automation",
+      title: "Test Your Complete Automation",
       content: `
 # Bringing It All Together
 
@@ -718,7 +726,7 @@ You've created individual actions. Now it's time to **combine them into a comple
 
 Your automation should:
 
-\`\`\`
+\`\`\`text
 REPEAT FOR EACH EARLY GAME TURN:
 ├─ Select Settler with "!" (step 4)
 ├─ Toggle Strategic View (step 5)
@@ -726,7 +734,7 @@ REPEAT FOR EACH EARLY GAME TURN:
 ├─ Select Warrior (step 4 variant)
 ├─ Position Warrior (step 7 variant)
 └─ End Turn (step 7)
-```
+\`\`\`
 
 ## Testing Strategy
 
@@ -780,50 +788,50 @@ Once your automation works:
 **Welcome to automated Civ 6!**
 `,
       estimatedDuration: 5,
-      difficulty: 'intermediate',
+      difficulty: "intermediate",
       learningObjectives: [
-        'Integrate multiple actions into a complete workflow',
-        'Test automation against real game scenarios',
-        'Debug and refine automation based on results',
-        'Handle edge cases and game state variations',
-        'Understand the iterative nature of automation development',
+        "Integrate multiple actions into a complete workflow",
+        "Test automation against real game scenarios",
+        "Debug and refine automation based on results",
+        "Handle edge cases and game state variations",
+        "Understand the iterative nature of automation development",
       ],
       tryIt: {
-        type: 'test-automation',
-        component: 'AutomationTester',
+        type: "test-automation",
+        component: "AutomationTester",
         preloadedData: {
-          automationName: 'Civ 6 Early Game Automation',
+          automationName: "Civ 6 Early Game Automation",
           actions: [
-            'Select Settler with Pending Action',
-            'Toggle Strategic View',
-            'Move Settler to Settlement Site',
-            'Position Warrior & End Turn',
+            "Select Settler with Pending Action",
+            "Toggle Strategic View",
+            "Move Settler to Settlement Site",
+            "Position Warrior & End Turn",
           ],
           testScenarios: [
             {
-              name: 'Basic Turn',
-              description: 'Automate a standard turn with settler and warrior',
+              name: "Basic Turn",
+              description: "Automate a standard turn with settler and warrior",
             },
             {
-              name: 'Multiple Turns',
-              description: 'Run automation for 3-5 consecutive turns',
+              name: "Multiple Turns",
+              description: "Run automation for 3-5 consecutive turns",
             },
             {
-              name: 'Pause and Resume',
-              description: 'Pause automation, manually adjust, then resume',
+              name: "Pause and Resume",
+              description: "Pause automation, manually adjust, then resume",
             },
           ],
         },
         hints: [
-          'Start with a single turn to verify each action works',
-          'Watch the first run carefully—where does it struggle?',
-          'Use pause/resume to handle unexpected situations',
-          'Save your successful automation configuration',
-          'Note which actions need refinement for next iteration',
+          "Start with a single turn to verify each action works",
+          "Watch the first run carefully—where does it struggle?",
+          "Use pause/resume to handle unexpected situations",
+          "Save your successful automation configuration",
+          "Note which actions need refinement for next iteration",
         ],
         successCriteria: {
           description:
-            'Successfully test and validate a multi-step automation sequence in actual gameplay',
+            "Successfully test and validate a multi-step automation sequence in actual gameplay",
           validation: {
             minTurnsCompleted: 2,
             noGameCrashes: true,
@@ -833,46 +841,46 @@ Once your automation works:
         },
       },
       tips: [
-        'First successful run might be rough—expect a few iterations',
-        'The most valuable data comes from failures—each failure teaches you something',
-        'Consider recording your test runs to analyze what went wrong',
-        'Different game seeds and difficulties are good tests of generalization',
-        'Keep notes on action accuracy—identify patterns in what works and what fails',
+        "First successful run might be rough—expect a few iterations",
+        "The most valuable data comes from failures—each failure teaches you something",
+        "Consider recording your test runs to analyze what went wrong",
+        "Different game seeds and difficulties are good tests of generalization",
+        "Keep notes on action accuracy—identify patterns in what works and what fails",
       ],
 
       resources: [
         {
-          title: 'Automation Debugging Guide',
-          url: 'https://docs.qontinui.io/guides/debugging',
-          type: 'documentation',
+          title: "Automation Debugging Guide",
+          url: "https://docs.qontinui.io/guides/debugging",
+          type: "documentation",
         },
         {
-          title: 'Action Composition Patterns',
-          url: 'https://docs.qontinui.io/patterns/action-composition',
-          type: 'documentation',
+          title: "Action Composition Patterns",
+          url: "https://docs.qontinui.io/patterns/action-composition",
+          type: "documentation",
         },
         {
-          title: 'Civ 6 Community Automations',
-          url: 'https://github.com/qontinui/community-automations',
-          type: 'article',
+          title: "Civ 6 Community Automations",
+          url: "https://github.com/qontinui/community-automations",
+          type: "article",
         },
       ],
     },
   ],
 
   finalProject: {
-    name: 'Civ 6 Early Game Automation',
+    name: "Civ 6 Early Game Automation",
     description:
-      'A complete automation sequence for the first 10-15 turns of a Civilization VI game',
+      "A complete automation sequence for the first 10-15 turns of a Civilization VI game",
     components: [
-      'Select Settler with Pending Action',
-      'Toggle Strategic View',
-      'Move Settler to Settlement Site',
-      'Position Warrior & End Turn',
+      "Select Settler with Pending Action",
+      "Toggle Strategic View",
+      "Move Settler to Settlement Site",
+      "Position Warrior & End Turn",
     ],
     expectedOutcome:
-      'Fully automated early game unit management while you focus on strategic decisions',
-    timeToAutomate: '15 minutes per game',
+      "Fully automated early game unit management while you focus on strategic decisions",
+    timeToAutomate: "15 minutes per game",
   },
 
   prerequisites: [],

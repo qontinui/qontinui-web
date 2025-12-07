@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,29 +8,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Separator } from '@/components/ui/separator';
-import {
-  Download,
-  FileText,
-  Table,
-  Code,
-  CheckCircle,
-} from 'lucide-react';
-import { DeficiencyExportOptions } from '@/types/deficiency';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+} from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Separator } from "@/components/ui/separator";
+import { Download, FileText, Table, Code, CheckCircle } from "lucide-react";
+import { DeficiencyExportOptions } from "@/types/deficiency";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface DeficiencyExportProps {
   open: boolean;
@@ -54,14 +48,14 @@ export function DeficiencyExport({
   open,
   onOpenChange,
   onExport,
-  availableTemplates = ['Standard', 'Detailed', 'Executive Summary'],
+  availableTemplates = ["Standard", "Detailed", "Executive Summary"],
 }: DeficiencyExportProps) {
   const [isExporting, setIsExporting] = useState(false);
-  const [format, setFormat] = useState<'pdf' | 'csv' | 'json'>('pdf');
+  const [format, setFormat] = useState<"pdf" | "csv" | "json">("pdf");
   const [includeComments, setIncludeComments] = useState(true);
   const [includeActivity, setIncludeActivity] = useState(true);
   const [includeScreenshots, setIncludeScreenshots] = useState(true);
-  const [template, setTemplate] = useState(availableTemplates[0] || 'Standard');
+  const [template, setTemplate] = useState(availableTemplates[0] || "Standard");
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -71,15 +65,15 @@ export function DeficiencyExport({
         include_comments: includeComments,
         include_activity: includeActivity,
         include_screenshots: includeScreenshots,
-        template: format === 'pdf' ? template : undefined,
+        template: format === "pdf" ? template : undefined,
       };
 
       await onExport(options);
       toast.success(`Export completed as ${format.toUpperCase()}`);
       onOpenChange(false);
     } catch (error) {
-      toast.error('Export failed. Please try again.');
-      console.error('Export error:', error);
+      toast.error("Export failed. Please try again.");
+      console.error("Export error:", error);
     } finally {
       setIsExporting(false);
     }
@@ -92,9 +86,9 @@ export function DeficiencyExport({
   };
 
   const formatDescriptions = {
-    pdf: 'Formatted document with images and styling',
-    csv: 'Spreadsheet-compatible data (no images)',
-    json: 'Raw data for integration and automation',
+    pdf: "Formatted document with images and styling",
+    csv: "Spreadsheet-compatible data (no images)",
+    json: "Raw data for integration and automation",
   };
 
   const FormatIcon = formatIcons[format];
@@ -116,17 +110,20 @@ export function DeficiencyExport({
           {/* Format Selection */}
           <div className="space-y-3">
             <Label>Export Format</Label>
-            <RadioGroup value={format} onValueChange={(v) => setFormat(v as any)}>
-              {(['pdf', 'csv', 'json'] as const).map((formatOption) => {
+            <RadioGroup
+              value={format}
+              onValueChange={(v) => setFormat(v as any)}
+            >
+              {(["pdf", "csv", "json"] as const).map((formatOption) => {
                 const Icon = formatIcons[formatOption];
                 return (
                   <div
                     key={formatOption}
                     className={cn(
-                      'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                      "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
                       format === formatOption
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
                     )}
                     onClick={() => setFormat(formatOption)}
                   >
@@ -156,7 +153,7 @@ export function DeficiencyExport({
           <Separator />
 
           {/* Template Selection (PDF only) */}
-          {format === 'pdf' && (
+          {format === "pdf" && (
             <>
               <div className="space-y-3">
                 <Label htmlFor="template">PDF Template</Label>
@@ -173,12 +170,12 @@ export function DeficiencyExport({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {template === 'Standard' &&
-                    'Balanced format with all key information'}
-                  {template === 'Detailed' &&
-                    'Comprehensive report with full details and screenshots'}
-                  {template === 'Executive Summary' &&
-                    'High-level overview for stakeholders'}
+                  {template === "Standard" &&
+                    "Balanced format with all key information"}
+                  {template === "Detailed" &&
+                    "Comprehensive report with full details and screenshots"}
+                  {template === "Executive Summary" &&
+                    "High-level overview for stakeholders"}
                 </p>
               </div>
               <Separator />
@@ -194,7 +191,9 @@ export function DeficiencyExport({
                 <Checkbox
                   id="include-comments"
                   checked={includeComments}
-                  onCheckedChange={(checked) => setIncludeComments(checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    setIncludeComments(checked as boolean)
+                  }
                 />
                 <div className="flex-1">
                   <Label
@@ -214,7 +213,9 @@ export function DeficiencyExport({
                 <Checkbox
                   id="include-activity"
                   checked={includeActivity}
-                  onCheckedChange={(checked) => setIncludeActivity(checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    setIncludeActivity(checked as boolean)
+                  }
                 />
                 <div className="flex-1">
                   <Label
@@ -237,19 +238,19 @@ export function DeficiencyExport({
                   onCheckedChange={(checked) =>
                     setIncludeScreenshots(checked as boolean)
                   }
-                  disabled={format === 'csv' || format === 'json'}
+                  disabled={format === "csv" || format === "json"}
                 />
                 <div className="flex-1">
                   <Label
                     htmlFor="include-screenshots"
                     className={cn(
-                      'cursor-pointer font-medium',
-                      (format === 'csv' || format === 'json') &&
-                        'text-muted-foreground'
+                      "cursor-pointer font-medium",
+                      (format === "csv" || format === "json") &&
+                        "text-muted-foreground"
                     )}
                   >
                     Screenshots
-                    {(format === 'csv' || format === 'json') && (
+                    {(format === "csv" || format === "json") && (
                       <span className="ml-2 text-xs">(PDF only)</span>
                     )}
                   </Label>
@@ -274,7 +275,7 @@ export function DeficiencyExport({
                 <CheckCircle className="h-3 w-3" />
                 Format: {format.toUpperCase()}
               </div>
-              {format === 'pdf' && (
+              {format === "pdf" && (
                 <div className="flex items-center gap-2">
                   <CheckCircle className="h-3 w-3" />
                   Template: {template}
@@ -292,7 +293,7 @@ export function DeficiencyExport({
                   Including activity log
                 </div>
               )}
-              {includeScreenshots && format === 'pdf' && (
+              {includeScreenshots && format === "pdf" && (
                 <div className="flex items-center gap-2">
                   <CheckCircle className="h-3 w-3" />
                   Including screenshots
@@ -312,7 +313,7 @@ export function DeficiencyExport({
           </Button>
           <Button onClick={handleExport} disabled={isExporting}>
             {isExporting ? (
-              'Exporting...'
+              "Exporting..."
             ) : (
               <>
                 <Download className="h-4 w-4 mr-2" />

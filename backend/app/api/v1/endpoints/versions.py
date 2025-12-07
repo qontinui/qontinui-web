@@ -10,6 +10,7 @@ Provides REST API for:
 """
 
 from typing import Any
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -40,7 +41,7 @@ router = APIRouter()
 async def list_project_versions(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     current_user: User = Depends(get_current_active_user_async),
@@ -60,7 +61,7 @@ async def list_project_versions(
     )
 
     # Check if project exists
-    project = await get_project(db, str(project_id))
+    project = await get_project(db, project_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -91,11 +92,13 @@ async def list_project_versions(
     return versions
 
 
-@router.get("/{project_id}/versions/{version_number}", response_model=ProjectVersionResponse)
+@router.get(
+    "/{project_id}/versions/{version_number}", response_model=ProjectVersionResponse
+)
 async def get_project_version(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     version_number: int,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
@@ -112,7 +115,7 @@ async def get_project_version(
     )
 
     # Check if project exists
-    project = await get_project(db, str(project_id))
+    project = await get_project(db, project_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -146,11 +149,14 @@ async def get_project_version(
     return version
 
 
-@router.post("/{project_id}/versions/{version_number}/restore", response_model=VersionRestoreResponse)
+@router.post(
+    "/{project_id}/versions/{version_number}/restore",
+    response_model=VersionRestoreResponse,
+)
 async def restore_project_version(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     version_number: int,
     restore_request: VersionRestoreRequest,
     current_user: User = Depends(get_current_active_user_async),
@@ -169,7 +175,7 @@ async def restore_project_version(
     )
 
     # Check if project exists
-    project = await get_project(db, str(project_id))
+    project = await get_project(db, project_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -205,7 +211,7 @@ async def restore_project_version(
 
         return VersionRestoreResponse(
             success=True,
-            new_version_number=new_version.version_number,
+            new_version_number=new_version.version_number,  # type: ignore[arg-type]
             restored_from_version=version_number,
             message=f"Successfully restored project to version {version_number}",
         )
@@ -223,11 +229,14 @@ async def restore_project_version(
         )
 
 
-@router.get("/{project_id}/versions/{version_from}/compare/{version_to}", response_model=VersionComparisonResponse)
+@router.get(
+    "/{project_id}/versions/{version_from}/compare/{version_to}",
+    response_model=VersionComparisonResponse,
+)
 async def compare_project_versions(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     version_from: int,
     version_to: int,
     current_user: User = Depends(get_current_active_user_async),
@@ -246,7 +255,7 @@ async def compare_project_versions(
     )
 
     # Check if project exists
-    project = await get_project(db, str(project_id))
+    project = await get_project(db, project_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -296,7 +305,7 @@ async def compare_project_versions(
 async def get_project_command_history(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     current_user: User = Depends(get_current_active_user_async),
@@ -316,7 +325,7 @@ async def get_project_command_history(
     )
 
     # Check if project exists
-    project = await get_project(db, str(project_id))
+    project = await get_project(db, project_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

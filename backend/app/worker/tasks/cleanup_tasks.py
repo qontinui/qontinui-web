@@ -5,10 +5,9 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+import pandas as pd  # type: ignore[import-untyped]
 import structlog
+
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -30,9 +29,10 @@ async def cleanup_expired_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
     logger.info("cleanup_expired_sessions_started")
 
     try:
+        from sqlalchemy import delete
+
         from app.db.session import AsyncSessionLocal
         from app.models.session_activity import SessionActivity
-        from sqlalchemy import delete
 
         async with AsyncSessionLocal() as db:
             # Delete sessions that have passed their absolute expiry
@@ -41,7 +41,7 @@ async def cleanup_expired_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
                 SessionActivity.absolute_expiry_at < now
             )
             result = await db.execute(delete_stmt)
-            deleted_count = result.rowcount
+            deleted_count = result.rowcount or 0  # type: ignore[attr-defined]
 
             await db.commit()
 
@@ -92,9 +92,10 @@ async def cleanup_expired_device_sessions(ctx: dict[str, Any]) -> dict[str, Any]
     logger.info("cleanup_expired_device_sessions_started")
 
     try:
+        from sqlalchemy import delete
+
         from app.db.session import AsyncSessionLocal
         from app.models.device_session import DeviceSession
-        from sqlalchemy import delete
 
         # Use configured cleanup days
         days_to_keep = settings.CLEANUP_SESSION_DAYS
@@ -106,7 +107,7 @@ async def cleanup_expired_device_sessions(ctx: dict[str, Any]) -> dict[str, Any]
                 DeviceSession.last_seen < cutoff_date
             )
             result = await db.execute(delete_stmt)
-            deleted_count = result.rowcount
+            deleted_count = result.rowcount or 0  # type: ignore[attr-defined]
 
             await db.commit()
 
@@ -149,10 +150,6 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> dict[str, Any]:
     """
     Clean up old analytics events older than configured days.
 
-    Note: Since AnalyticsEvent model doesn't exist yet, this is a placeholder
-    that will return success with 0 deletions. Update this function when the
-    AnalyticsEvent model is implemented.
-
     Args:
         ctx: ARQ context
 
@@ -163,28 +160,31 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> dict[str, Any]:
     logger.info("cleanup_old_analytics_events_started")
 
     try:
-        # TODO: Implement when AnalyticsEvent model exists
-        # from sqlalchemy import delete
-        # from app.models.analytics_event import AnalyticsEvent
-        #
-        # days_to_keep = settings.CLEANUP_ANALYTICS_DAYS
-        # cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
-        #
-        # async with AsyncSessionLocal() as db:
-        #     delete_stmt = delete(AnalyticsEvent).where(
-        #         AnalyticsEvent.created_at < cutoff_date
-        #     )
-        #     result = await db.execute(delete_stmt)
-        #     deleted_count = result.rowcount
-        #     await db.commit()
+        from sqlalchemy import delete
 
-        deleted_count = 0
+        from app.db.session import AsyncSessionLocal
+        from app.models.analytics_event import AnalyticsEvent
+
+        # Use configured cleanup days
+        days_to_keep = settings.CLEANUP_ANALYTICS_DAYS
+        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+
+        async with AsyncSessionLocal() as db:
+            # Delete analytics events older than cutoff date
+            delete_stmt = delete(AnalyticsEvent).where(
+                AnalyticsEvent.timestamp < cutoff_date
+            )
+            result = await db.execute(delete_stmt)
+            deleted_count = result.rowcount or 0  # type: ignore[attr-defined]
+
+            await db.commit()
+
         execution_time = time.time() - start_time
 
         logger.info(
             "cleanup_old_analytics_events_completed",
             deleted_count=deleted_count,
-            note="AnalyticsEvent model not yet implemented",
+            days_to_keep=days_to_keep,
             execution_time_seconds=round(execution_time, 2),
         )
 
@@ -192,7 +192,7 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> dict[str, Any]:
             "status": "success",
             "task": "cleanup_old_analytics_events",
             "deleted_count": deleted_count,
-            "note": "AnalyticsEvent model not yet implemented",
+            "days_to_keep": days_to_keep,
             "execution_time_seconds": round(execution_time, 2),
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -296,14 +296,15 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
     logger.info("cleanup_old_automation_data_started")
 
     try:
+        from sqlalchemy import delete, select
+        from sqlalchemy.orm import selectinload
+
         from app.db.session import AsyncSessionLocal
         from app.models.automation import AutomationInputEvent
         from app.models.automation_log import AutomationLog
         from app.models.automation_screenshot import AutomationScreenshot
         from app.models.automation_session import AutomationSession
         from app.services.object_storage import object_storage
-        from sqlalchemy import delete, select
-        from sqlalchemy.orm import selectinload
 
         # Archive sessions older than 180 days
         days_to_keep = 180
@@ -498,7 +499,6 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
                 parquet_buffer.seek(0)
 
                 # Upload with retry
-                uploaded = False
                 for attempt in range(max_retries):
                     try:
                         object_storage.backend.upload_file(
@@ -523,7 +523,6 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
                             record_count=len(df),
                             attempt=attempt + 1,
                         )
-                        uploaded = True
                         break
                     except Exception as e:
                         logger.warning(
@@ -556,28 +555,28 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
                     AutomationInputEvent.session_id.in_(session_ids)
                 )
                 events_result = await db.execute(delete_events_stmt)
-                input_events_archived = events_result.rowcount
+                input_events_archived = events_result.rowcount or 0  # type: ignore[attr-defined]
 
                 # Delete screenshots
                 delete_screenshots_stmt = delete(AutomationScreenshot).where(
                     AutomationScreenshot.session_id.in_(session_ids)
                 )
                 screenshots_result = await db.execute(delete_screenshots_stmt)
-                screenshots_archived = screenshots_result.rowcount
+                screenshots_archived = screenshots_result.rowcount or 0  # type: ignore[attr-defined]
 
                 # Delete logs
                 delete_logs_stmt = delete(AutomationLog).where(
                     AutomationLog.session_id.in_(session_ids)
                 )
                 logs_result = await db.execute(delete_logs_stmt)
-                logs_archived = logs_result.rowcount
+                logs_archived = logs_result.rowcount or 0  # type: ignore[attr-defined]
 
                 # Delete sessions
                 delete_sessions_stmt = delete(AutomationSession).where(
                     AutomationSession.id.in_(session_ids)
                 )
                 sessions_result = await db.execute(delete_sessions_stmt)
-                sessions_archived = sessions_result.rowcount
+                sessions_archived = sessions_result.rowcount or 0  # type: ignore[attr-defined]
 
                 await db.commit()
 
@@ -673,10 +672,11 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
     logger.info("archive_old_analytics_to_s3_started")
 
     try:
+        from sqlalchemy import delete, select
+
         from app.db.session import AsyncSessionLocal
         from app.models.analytics_event import AnalyticsEvent
         from app.services.object_storage import object_storage
-        from sqlalchemy import delete, func, select
 
         # Archive events older than 90 days
         days_to_keep = settings.CLEANUP_ANALYTICS_DAYS
@@ -781,7 +781,6 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
                 parquet_buffer.seek(0)
 
                 # Upload with retry
-                uploaded = False
                 for attempt in range(max_retries):
                     try:
                         object_storage.backend.upload_file(
@@ -806,7 +805,6 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
                             record_count=len(df),
                             attempt=attempt + 1,
                         )
-                        uploaded = True
                         break
                     except Exception as e:
                         logger.warning(
@@ -835,8 +833,8 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
                 delete_stmt = delete(AnalyticsEvent).where(
                     AnalyticsEvent.id.in_(event_ids)
                 )
-                result = await db.execute(delete_stmt)
-                events_deleted = result.rowcount
+                delete_result = await db.execute(delete_stmt)
+                events_deleted = delete_result.rowcount or 0  # type: ignore[attr-defined]
                 events_archived = len(old_events)
 
                 await db.commit()
@@ -915,9 +913,10 @@ async def cleanup_orphaned_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
     logger.info("cleanup_orphaned_sessions_started")
 
     try:
+        from sqlalchemy import and_, select
+
         from app.db.session import AsyncSessionLocal
         from app.models.automation_session import AutomationSession
-        from sqlalchemy import and_, select, update
 
         # Find sessions active for more than 1 hour
         orphan_threshold_minutes = 60
@@ -1031,15 +1030,20 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> dict[str, Any]:
     logger.info("cleanup_old_screenshots_started")
 
     try:
+        from sqlalchemy import and_, select
+        from sqlalchemy.orm import selectinload
+
         from app.db.session import AsyncSessionLocal
         from app.models.automation_screenshot import AutomationScreenshot
         from app.models.user import User
         from app.services.object_storage import object_storage
-        from sqlalchemy import and_, delete, select
-        from sqlalchemy.orm import selectinload
 
         # Get retention period from settings (default 30 days for free tier)
-        retention_days_free = settings.SCREENSHOT_RETENTION_DAYS_FREE if hasattr(settings, 'SCREENSHOT_RETENTION_DAYS_FREE') else 30
+        retention_days_free = (
+            settings.SCREENSHOT_RETENTION_DAYS_FREE
+            if hasattr(settings, "SCREENSHOT_RETENTION_DAYS_FREE")
+            else 30
+        )
         cutoff_date = datetime.utcnow() - timedelta(days=retention_days_free)
 
         deleted_count = 0
@@ -1053,7 +1057,10 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> dict[str, Any]:
 
             query = (
                 select(AutomationScreenshot)
-                .join(AutomationSession, AutomationScreenshot.session_id == AutomationSession.id)
+                .join(
+                    AutomationSession,
+                    AutomationScreenshot.session_id == AutomationSession.id,
+                )
                 .join(User, AutomationSession.user_id == User.id)
                 .where(
                     and_(
@@ -1152,7 +1159,11 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> dict[str, Any]:
         )
 
         return {
-            "status": "success" if (s3_delete_errors == 0 and db_delete_errors == 0) else "partial_success",
+            "status": (
+                "success"
+                if (s3_delete_errors == 0 and db_delete_errors == 0)
+                else "partial_success"
+            ),
             "task": "cleanup_old_screenshots",
             "deleted_count": deleted_count,
             "s3_errors": s3_delete_errors,

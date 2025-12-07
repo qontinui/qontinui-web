@@ -7,20 +7,23 @@ from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 # ProjectVersion Schemas
 class ProjectVersionBase(BaseSchema):
     """Base schema for project versions"""
+
     comment: str | None = None
 
 
 class ProjectVersionCreate(ProjectVersionBase):
     """Schema for creating a new version snapshot"""
+
     snapshot: dict[str, Any]
-    project_id: int
+    project_id: UUID
     version_number: int
 
 
 class ProjectVersionResponse(ProjectVersionBase, BaseORMSchema):
     """Schema for version history response"""
+
     id: UUID
-    project_id: int
+    project_id: UUID
     version_number: int
     snapshot: dict[str, Any]
     created_by: UUID | None
@@ -29,8 +32,9 @@ class ProjectVersionResponse(ProjectVersionBase, BaseORMSchema):
 
 class ProjectVersionListItem(BaseORMSchema):
     """Lightweight schema for version list (without full snapshot)"""
+
     id: UUID
-    project_id: int
+    project_id: UUID
     version_number: int
     created_by: UUID | None
     created_at: IsoDatetime
@@ -39,6 +43,7 @@ class ProjectVersionListItem(BaseORMSchema):
 
 class VersionComparisonResponse(BaseSchema):
     """Schema for comparing two versions"""
+
     version_from: int
     version_to: int
     created_at_from: IsoDatetime
@@ -50,6 +55,7 @@ class VersionComparisonResponse(BaseSchema):
 # EditCommand Schemas
 class EditCommandBase(BaseSchema):
     """Base schema for edit commands"""
+
     command_type: str  # 'update', 'create', 'delete'
     entity_type: str  # 'workflow', 'state', 'action', 'project', etc.
     entity_id: str
@@ -58,13 +64,15 @@ class EditCommandBase(BaseSchema):
 
 class EditCommandCreate(EditCommandBase):
     """Schema for creating an edit command"""
-    project_id: int
+
+    project_id: UUID
 
 
 class EditCommandResponse(EditCommandBase, BaseORMSchema):
     """Schema for edit command response"""
+
     id: UUID
-    project_id: int
+    project_id: UUID
     user_id: UUID | None
     sequence_number: int
     applied_at: IsoDatetime
@@ -72,19 +80,22 @@ class EditCommandResponse(EditCommandBase, BaseORMSchema):
 
 class EditCommandHistoryResponse(BaseSchema):
     """Schema for command history list"""
+
     commands: list[EditCommandResponse]
     total_count: int
-    project_id: int
+    project_id: UUID
 
 
 # Version Restore Schemas
 class VersionRestoreRequest(BaseSchema):
     """Schema for restoring a version"""
+
     comment: str | None = None  # Optional comment for the restore action
 
 
 class VersionRestoreResponse(BaseSchema):
     """Schema for version restore response"""
+
     success: bool
     new_version_number: int
     restored_from_version: int

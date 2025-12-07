@@ -8,19 +8,16 @@
  * - Math operations: MATH_OPERATION (add, subtract, multiply, etc.)
  */
 
-import React from 'react';
-import { NodeProps } from '@xyflow/react';
-import { BaseNode, BaseNodeData, CompactNode } from './BaseNode';
-import type {
-  SetVariableActionConfig,
-  GetVariableActionConfig,
-  FilterActionConfig,
-  MapActionConfig,
-  ReduceActionConfig,
-  SortActionConfig,
-  StringOperationActionConfig,
-  MathOperationActionConfig,
-} from '@/lib/action-schema/configs/data-actions';
+import React from "react";
+import { NodeProps, Node as ReactFlowNode } from "@xyflow/react";
+import { BaseNode, BaseNodeData, CompactNode } from "./BaseNode";
+// MathOperationActionConfig is defined internally in action-types but not exported
+// Using a local interface for the type needed
+interface MathOperationConfig {
+  operation: string;
+  operands: unknown[];
+  variable?: string;
+}
 
 // =============================================================================
 // Variable Operation Nodes
@@ -29,11 +26,7 @@ import type {
 /**
  * SET_VARIABLE Node
  */
-export function SetVariableNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as SetVariableActionConfig;
-  const varName = config.variableName || 'variable';
-  const scope = config.scope || 'local';
-
+export function SetVariableNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -45,10 +38,7 @@ export function SetVariableNode(props: NodeProps<BaseNodeData>) {
 /**
  * GET_VARIABLE Node
  */
-export function GetVariableNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as GetVariableActionConfig;
-  const varName = config.variableName || 'variable';
-
+export function GetVariableNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -64,10 +54,7 @@ export function GetVariableNode(props: NodeProps<BaseNodeData>) {
 /**
  * FILTER Node
  */
-export function FilterNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as FilterActionConfig;
-  const varName = config.variableName || 'array';
-
+export function FilterNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -79,10 +66,7 @@ export function FilterNode(props: NodeProps<BaseNodeData>) {
 /**
  * MAP Node
  */
-export function MapNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as MapActionConfig;
-  const varName = config.variableName || 'array';
-
+export function MapNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -94,10 +78,7 @@ export function MapNode(props: NodeProps<BaseNodeData>) {
 /**
  * REDUCE Node
  */
-export function ReduceNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as ReduceActionConfig;
-  const varName = config.variableName || 'array';
-
+export function ReduceNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -109,11 +90,7 @@ export function ReduceNode(props: NodeProps<BaseNodeData>) {
 /**
  * SORT Node
  */
-export function SortNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as SortActionConfig;
-  const order = config.order === 'desc' ? 'desc' : 'asc';
-  const field = config.sortBy;
-
+export function SortNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -129,25 +106,9 @@ export function SortNode(props: NodeProps<BaseNodeData>) {
 /**
  * STRING_OPERATION Node
  */
-export function StringOperationNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as StringOperationActionConfig;
-  const operation = config.operation || 'concat';
-
-  // Map operation to display name
-  const operationNames: Record<string, string> = {
-    concat: 'Concatenate',
-    substring: 'Substring',
-    replace: 'Replace',
-    split: 'Split',
-    trim: 'Trim',
-    uppercase: 'Uppercase',
-    lowercase: 'Lowercase',
-    match: 'Match Pattern',
-    parse_json: 'Parse JSON',
-  };
-
-  const displayName = operationNames[operation] || operation;
-
+export function StringOperationNode(
+  props: NodeProps<ReactFlowNode<BaseNodeData>>
+) {
   return (
     <BaseNode
       {...props}
@@ -163,22 +124,24 @@ export function StringOperationNode(props: NodeProps<BaseNodeData>) {
 /**
  * MATH_OPERATION Node
  */
-export function MathOperationNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as MathOperationActionConfig;
-  const operation = config.operation || 'add';
+export function MathOperationNode(
+  props: NodeProps<ReactFlowNode<BaseNodeData>>
+) {
+  const config = props.data.action.config as MathOperationConfig;
+  const operation = config.operation || "add";
 
   // Map operation to symbol
   const operationSymbols: Record<string, string> = {
-    add: '+',
-    subtract: '-',
-    multiply: '×',
-    divide: '÷',
-    modulo: '%',
-    power: '^',
-    sqrt: '√',
-    abs: '|x|',
-    round: '⌊⌉',
-    custom: 'ƒ(x)',
+    add: "+",
+    subtract: "-",
+    multiply: "×",
+    divide: "÷",
+    modulo: "%",
+    power: "^",
+    sqrt: "√",
+    abs: "|x|",
+    round: "⌊⌉",
+    custom: "ƒ(x)",
   };
 
   const symbol = operationSymbols[operation] || operation;

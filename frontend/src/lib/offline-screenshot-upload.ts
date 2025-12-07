@@ -5,11 +5,10 @@
  * Works immediately offline, syncs when online.
  */
 
-import { syncQueue } from './sync-queue';
-import { syncProcessor } from './sync-processor';
-import { screenshotDB, StoredScreenshot } from './screenshot-db';
-import { serviceWorkerManager } from './service-worker';
-import { apiClient } from './api-client';
+import { syncQueue } from "./sync-queue";
+import { syncProcessor } from "./sync-processor";
+import { screenshotDB, StoredScreenshot } from "./screenshot-db";
+import { serviceWorkerManager } from "./service-worker";
 
 /**
  * Upload result (immediate, works offline)
@@ -77,11 +76,11 @@ export async function uploadScreenshotOffline(
   console.log(`[OfflineUpload] Saved screenshot locally: ${screenshotId}`);
 
   // Report initial progress
-  options.onProgress?.(0, 'Queued for upload');
+  options.onProgress?.(0, "Queued for upload");
 
   // Add to sync queue
   const syncItem = await syncQueue.enqueue(
-    'upload_screenshot',
+    "upload_screenshot",
     {
       file,
       projectId,
@@ -93,7 +92,7 @@ export async function uploadScreenshotOffline(
       priority: options.priority ?? 0,
       metadata: {
         screenshotId,
-        localUrl: screenshot.url.substring(0, 50) + '...', // Store preview
+        localUrl: screenshot.url.substring(0, 50) + "...", // Store preview
       },
     }
   );
@@ -102,8 +101,8 @@ export async function uploadScreenshotOffline(
 
   // Track upload progress
   if (options.onProgress) {
-    syncProcessor.onProgress(syncItem.id, (itemId, progress) => {
-      options.onProgress?.(progress, 'Uploading');
+    syncProcessor.onProgress(syncItem.id, (_itemId, progress) => {
+      options.onProgress?.(progress, "Uploading");
     });
   }
 
@@ -119,13 +118,13 @@ export async function uploadScreenshotOffline(
 
       if (!item) {
         clearInterval(checkInterval);
-        reject(new Error('Sync item not found'));
+        reject(new Error("Sync item not found"));
         return;
       }
 
-      if (item.status === 'completed') {
+      if (item.status === "completed") {
         clearInterval(checkInterval);
-        options.onProgress?.(100, 'Uploaded');
+        options.onProgress?.(100, "Uploaded");
 
         // Clean up progress callback
         syncProcessor.offProgress(syncItem.id);
@@ -137,14 +136,14 @@ export async function uploadScreenshotOffline(
         });
       }
 
-      if (item.status === 'failed' && item.retryCount >= item.maxRetries) {
+      if (item.status === "failed" && item.retryCount >= item.maxRetries) {
         clearInterval(checkInterval);
         options.onProgress?.(0, `Failed: ${item.lastError}`);
 
         // Clean up progress callback
         syncProcessor.offProgress(syncItem.id);
 
-        reject(new Error(item.lastError || 'Upload failed'));
+        reject(new Error(item.lastError || "Upload failed"));
       }
     }, 500); // Check every 500ms
   });
@@ -156,14 +155,14 @@ export async function uploadScreenshotOffline(
   if (isOnline) {
     // Process queue immediately
     syncProcessor.processQueue().catch((error) => {
-      console.error('[OfflineUpload] Immediate sync failed:', error);
+      console.error("[OfflineUpload] Immediate sync failed:", error);
     });
 
     queued = false;
   } else {
     // Request background sync when online
     serviceWorkerManager.requestBackgroundSync().catch((error) => {
-      console.error('[OfflineUpload] Background sync request failed:', error);
+      console.error("[OfflineUpload] Background sync request failed:", error);
     });
   }
 
@@ -197,12 +196,15 @@ export async function uploadScreenshotsOffline(
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
 
-    const result = await uploadScreenshotOffline(file, projectId, {
+    const result = await uploadScreenshotOffline(file!, projectId, {
       ...options,
       onProgress: (progress, status) => {
         // Calculate overall progress
         const overallProgress = ((i + progress / 100) / files.length) * 100;
-        options.onProgress?.(overallProgress, `${status} (${i + 1}/${files.length})`);
+        options.onProgress?.(
+          overallProgress,
+          `${status} (${i + 1}/${files.length})`
+        );
       },
     });
 
@@ -228,7 +230,7 @@ export async function deleteScreenshotOffline(
   console.log(`[OfflineUpload] Deleted screenshot locally: ${screenshotId}`);
 
   // Queue deletion for server sync
-  await syncQueue.enqueue('delete_screenshot', {
+  await syncQueue.enqueue("delete_screenshot", {
     screenshotId,
     projectId,
   });
@@ -236,7 +238,7 @@ export async function deleteScreenshotOffline(
   // Try to sync immediately if online
   if (navigator.onLine) {
     syncProcessor.processQueue().catch((error) => {
-      console.error('[OfflineUpload] Immediate delete sync failed:', error);
+      console.error("[OfflineUpload] Immediate delete sync failed:", error);
     });
   }
 }
@@ -247,9 +249,7 @@ export async function deleteScreenshotOffline(
  * @param screenshotId Screenshot ID
  * @returns Sync status or null if not in queue
  */
-export async function getScreenshotSyncStatus(
-  screenshotId: string
-): Promise<{
+export async function getScreenshotSyncStatus(screenshotId: string): Promise<{
   status: string;
   progress?: number;
   error?: string;
@@ -279,13 +279,13 @@ export async function retryScreenshotUpload(syncItemId: string): Promise<void> {
   const item = await syncQueue.get(syncItemId);
 
   if (!item) {
-    throw new Error('Sync item not found');
+    throw new Error("Sync item not found");
   }
 
   // Reset retry count and mark as pending
   await syncQueue.update({
     ...item,
-    status: 'pending',
+    status: "pending",
     retryCount: 0,
     lastError: undefined,
     nextRetryAt: undefined,
@@ -304,7 +304,9 @@ export async function retryScreenshotUpload(syncItemId: string): Promise<void> {
  *
  * @param syncItemId Sync queue item ID
  */
-export async function cancelScreenshotUpload(syncItemId: string): Promise<void> {
+export async function cancelScreenshotUpload(
+  syncItemId: string
+): Promise<void> {
   const item = await syncQueue.get(syncItemId);
 
   if (!item) {
@@ -314,7 +316,7 @@ export async function cancelScreenshotUpload(syncItemId: string): Promise<void> 
   // Mark as cancelled
   await syncQueue.update({
     ...item,
-    status: 'cancelled',
+    status: "cancelled",
   });
 
   console.log(`[OfflineUpload] Cancelled upload: ${syncItemId}`);
@@ -333,10 +335,10 @@ async function fileToDataURL(file: File): Promise<string> {
     const reader = new FileReader();
 
     reader.onload = () => {
-      if (typeof reader.result === 'string') {
+      if (typeof reader.result === "string") {
         resolve(reader.result);
       } else {
-        reject(new Error('Failed to read file'));
+        reject(new Error("Failed to read file"));
       }
     };
 

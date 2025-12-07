@@ -9,24 +9,24 @@
  * - Statistics
  */
 
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { useCanvasStore } from '@/stores/canvas-store';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import React, { useState } from "react";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import {
   FileText,
   Settings,
@@ -38,9 +38,8 @@ import {
   Info,
   GitBranch,
   Repeat,
-  Zap,
-} from 'lucide-react';
-import { hasConditionalLogic, hasLoops } from '@/lib/workflow-validator';
+} from "lucide-react";
+import { hasConditionalLogic, hasLoops } from "@/lib/workflow-validator";
 
 // ============================================================================
 // Workflow Properties Component
@@ -50,14 +49,17 @@ export interface WorkflowPropertiesProps {
   className?: string;
 }
 
-export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ className = '' }) => {
+export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
+  className = "",
+}) => {
   const workflow = useCanvasStore((state) => state.workflow);
-  const updateAction = useCanvasStore((state) => state.updateAction);
 
-  const [newTag, setNewTag] = useState('');
-  const [newVarName, setNewVarName] = useState('');
-  const [newVarValue, setNewVarValue] = useState('');
-  const [newVarScope, setNewVarScope] = useState<'local' | 'process' | 'global'>('local');
+  const [newTag, setNewTag] = useState("");
+  const [newVarName, setNewVarName] = useState("");
+  const [newVarValue, setNewVarValue] = useState("");
+  const [newVarScope, setNewVarScope] = useState<
+    "local" | "process" | "global"
+  >("local");
 
   if (!workflow) {
     return (
@@ -70,50 +72,55 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
   const updateMetadata = (key: string, value: any) => {
     // This would update workflow in canvas store
     // For now, we'll just log
-    console.log('Update metadata:', key, value);
+    console.log("Update metadata:", key, value);
   };
 
   const updateSettings = (key: string, value: any) => {
-    console.log('Update settings:', key, value);
+    console.log("Update settings:", key, value);
   };
 
   const updateVariable = (scope: string, name: string, value: any) => {
-    console.log('Update variable:', scope, name, value);
+    console.log("Update variable:", scope, name, value);
   };
 
   const addTag = () => {
     if (newTag.trim()) {
-      console.log('Add tag:', newTag);
-      setNewTag('');
+      console.log("Add tag:", newTag);
+      setNewTag("");
     }
   };
 
   const removeTag = (tag: string) => {
-    console.log('Remove tag:', tag);
+    console.log("Remove tag:", tag);
   };
 
   const addVariable = () => {
     if (newVarName.trim()) {
       updateVariable(newVarScope, newVarName, newVarValue);
-      setNewVarName('');
-      setNewVarValue('');
+      setNewVarName("");
+      setNewVarValue("");
     }
   };
 
   const removeVariable = (scope: string, name: string) => {
-    console.log('Remove variable:', scope, name);
+    console.log("Remove variable:", scope, name);
   };
 
   // Calculate statistics
   const actionCount = workflow.actions.length;
-  const connectionCount = Object.values(workflow.connections).reduce((sum, conn) => {
-    return (
-      sum +
-      Object.values(conn).reduce((s, outputs) => {
-        return s + (outputs?.reduce((ss, conns) => ss + conns.length, 0) || 0);
-      }, 0)
-    );
-  }, 0);
+  const connectionCount = Object.values(workflow.connections).reduce(
+    (sum, conn) => {
+      return (
+        sum +
+        Object.values(conn).reduce((s, outputs) => {
+          return (
+            s + (outputs?.reduce((ss, conns) => ss + conns.length, 0) || 0)
+          );
+        }, 0)
+      );
+    },
+    0
+  );
 
   return (
     <div className={`overflow-y-auto ${className}`}>
@@ -122,7 +129,9 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
         <section>
           <div className="flex items-center gap-2 mb-4">
             <FileText className="w-4 h-4 text-blue-400" />
-            <h3 className="text-sm font-semibold text-gray-200">Workflow Metadata</h3>
+            <h3 className="text-sm font-semibold text-gray-200">
+              Workflow Metadata
+            </h3>
           </div>
 
           <div className="space-y-4">
@@ -130,7 +139,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
               <Label className="text-xs text-gray-400">Name</Label>
               <Input
                 value={workflow.name}
-                onChange={(e) => updateMetadata('name', e.target.value)}
+                onChange={(e) => updateMetadata("name", e.target.value)}
                 className="bg-transparent border-gray-700 text-gray-200"
                 placeholder="My Workflow"
               />
@@ -140,7 +149,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
               <Label className="text-xs text-gray-400">Version</Label>
               <Input
                 value={workflow.version}
-                onChange={(e) => updateMetadata('version', e.target.value)}
+                onChange={(e) => updateMetadata("version", e.target.value)}
                 className="bg-transparent border-gray-700 text-gray-200"
                 placeholder="1.0.0"
               />
@@ -149,8 +158,8 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
             <div className="space-y-2">
               <Label className="text-xs text-gray-400">Description</Label>
               <Textarea
-                value={workflow.metadata?.description || ''}
-                onChange={(e) => updateMetadata('description', e.target.value)}
+                value={workflow.metadata?.description || ""}
+                onChange={(e) => updateMetadata("description", e.target.value)}
                 className="bg-transparent border-gray-700 text-gray-200 min-h-[80px]"
                 placeholder="Describe what this workflow does..."
               />
@@ -159,8 +168,8 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
             <div className="space-y-2">
               <Label className="text-xs text-gray-400">Author</Label>
               <Input
-                value={workflow.metadata?.author || ''}
-                onChange={(e) => updateMetadata('author', e.target.value)}
+                value={workflow.metadata?.author || ""}
+                onChange={(e) => updateMetadata("author", e.target.value)}
                 className="bg-transparent border-gray-700 text-gray-200"
                 placeholder="Your name"
               />
@@ -172,7 +181,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
                 <div className="text-sm text-gray-300">
                   {workflow.metadata?.created
                     ? new Date(workflow.metadata.created).toLocaleDateString()
-                    : 'Unknown'}
+                    : "Unknown"}
                 </div>
               </div>
 
@@ -181,7 +190,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
                 <div className="text-sm text-gray-300">
                   {workflow.metadata?.updated
                     ? new Date(workflow.metadata.updated).toLocaleDateString()
-                    : 'Unknown'}
+                    : "Unknown"}
                 </div>
               </div>
             </div>
@@ -194,7 +203,9 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
         <section>
           <div className="flex items-center gap-2 mb-4">
             <Settings className="w-4 h-4 text-green-400" />
-            <h3 className="text-sm font-semibold text-gray-200">Workflow Settings</h3>
+            <h3 className="text-sm font-semibold text-gray-200">
+              Workflow Settings
+            </h3>
           </div>
 
           <div className="space-y-4">
@@ -203,7 +214,9 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
               <Input
                 type="number"
                 value={workflow.settings?.timeout || 0}
-                onChange={(e) => updateSettings('timeout', Number(e.target.value))}
+                onChange={(e) =>
+                  updateSettings("timeout", Number(e.target.value))
+                }
                 className="bg-transparent border-gray-700 text-gray-200"
                 placeholder="0 (no timeout)"
               />
@@ -217,7 +230,9 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
               <Input
                 type="number"
                 value={workflow.settings?.maxRetries || 0}
-                onChange={(e) => updateSettings('maxRetries', Number(e.target.value))}
+                onChange={(e) =>
+                  updateSettings("maxRetries", Number(e.target.value))
+                }
                 className="bg-transparent border-gray-700 text-gray-200"
                 min="0"
               />
@@ -228,7 +243,9 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
               <Input
                 type="number"
                 value={workflow.settings?.retryDelay || 1000}
-                onChange={(e) => updateSettings('retryDelay', Number(e.target.value))}
+                onChange={(e) =>
+                  updateSettings("retryDelay", Number(e.target.value))
+                }
                 className="bg-transparent border-gray-700 text-gray-200"
                 min="0"
               />
@@ -237,8 +254,8 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
             <div className="space-y-2">
               <Label className="text-xs text-gray-400">Log Level</Label>
               <Select
-                value={workflow.settings?.logLevel || 'info'}
-                onValueChange={(value) => updateSettings('logLevel', value)}
+                value={workflow.settings?.logLevel || "info"}
+                onValueChange={(value) => updateSettings("logLevel", value)}
               >
                 <SelectTrigger className="bg-transparent border-gray-700 text-gray-200">
                   <SelectValue />
@@ -254,13 +271,17 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label className="text-xs text-gray-400">Parallel Execution</Label>
-                <p className="text-xs text-gray-500">Enable parallel branches</p>
+                <Label className="text-xs text-gray-400">
+                  Parallel Execution
+                </Label>
+                <p className="text-xs text-gray-500">
+                  Enable parallel branches
+                </p>
               </div>
               <Switch
                 checked={workflow.settings?.enableParallelExecution || false}
                 onCheckedChange={(checked) =>
-                  updateSettings('enableParallelExecution', checked)
+                  updateSettings("enableParallelExecution", checked)
                 }
               />
             </div>
@@ -280,7 +301,10 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
             {/* Add Variable Form */}
             <div className="space-y-2">
               <div className="flex gap-2">
-                <Select value={newVarScope} onValueChange={(v: any) => setNewVarScope(v)}>
+                <Select
+                  value={newVarScope}
+                  onValueChange={(v: any) => setNewVarScope(v)}
+                >
                   <SelectTrigger className="w-[120px] bg-transparent border-gray-700 text-gray-200">
                     <SelectValue />
                   </SelectTrigger>
@@ -316,13 +340,17 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
             </div>
 
             {/* Variable Lists */}
-            {['local', 'process', 'global'].map((scope) => {
-              const variables = workflow.variables?.[scope as keyof typeof workflow.variables];
-              if (!variables || Object.keys(variables).length === 0) return null;
+            {["local", "process", "global"].map((scope) => {
+              const variables =
+                workflow.variables?.[scope as keyof typeof workflow.variables];
+              if (!variables || Object.keys(variables).length === 0)
+                return null;
 
               return (
                 <div key={scope} className="space-y-2">
-                  <Label className="text-xs text-gray-400 capitalize">{scope} Variables</Label>
+                  <Label className="text-xs text-gray-400 capitalize">
+                    {scope} Variables
+                  </Label>
                   <div className="space-y-1">
                     {Object.entries(variables).map(([name, value]) => (
                       <div
@@ -330,7 +358,9 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
                         className="flex items-center justify-between p-2 rounded bg-gray-800/50 border border-gray-700"
                       >
                         <div className="flex-1">
-                          <div className="text-xs font-mono text-gray-300">{name}</div>
+                          <div className="text-xs font-mono text-gray-300">
+                            {name}
+                          </div>
                           <div className="text-xs text-gray-500 truncate">
                             {JSON.stringify(value)}
                           </div>
@@ -366,7 +396,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
               <Input
                 value={newTag}
                 onChange={(e) => setNewTag(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addTag()}
+                onKeyDown={(e) => e.key === "Enter" && addTag()}
                 placeholder="Add tag..."
                 className="flex-1 bg-transparent border-gray-700 text-gray-200"
               />
@@ -407,56 +437,75 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
         <Separator className="bg-gray-700" />
 
         {/* Graph Execution Features */}
-        {workflow.connections && Object.keys(workflow.connections).length > 0 && (
-          <>
-            <section>
-              <div className="flex items-center gap-2 mb-4">
-                <GitBranch className="w-4 h-4 text-orange-400" />
-                <h3 className="text-sm font-semibold text-gray-200">Graph Execution</h3>
-              </div>
-
-              <div className="space-y-3">
-                <div className="p-3 rounded bg-blue-900/20 border border-blue-700/30">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="secondary" className="bg-blue-600 text-white">
-                      Graph Execution Enabled
-                    </Badge>
-                    <span className="text-xs text-gray-400">
-                      {Object.keys(workflow.connections).length} actions with connections
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {hasConditionalLogic(workflow) && (
-                      <Badge variant="outline" className="border-green-600 text-green-400">
-                        <GitBranch className="w-3 h-3 mr-1" />
-                        Conditional Branching
-                      </Badge>
-                    )}
-
-                    {hasLoops(workflow) && (
-                      <Badge variant="outline" className="border-yellow-600 text-yellow-400">
-                        <Repeat className="w-3 h-3 mr-1" />
-                        Contains Loops
-                      </Badge>
-                    )}
-                  </div>
+        {workflow.connections &&
+          Object.keys(workflow.connections).length > 0 && (
+            <>
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <GitBranch className="w-4 h-4 text-orange-400" />
+                  <h3 className="text-sm font-semibold text-gray-200">
+                    Graph Execution
+                  </h3>
                 </div>
 
-                <div className="text-xs text-gray-400 space-y-1">
-                  <p>
-                    <strong>Conditional Branching:</strong> Uses success/error paths to control flow
-                  </p>
-                  <p>
-                    <strong>Loops:</strong> May contain cycles - ensure proper exit conditions
-                  </p>
-                </div>
-              </div>
-            </section>
+                <div className="space-y-3">
+                  <div className="p-3 rounded bg-blue-900/20 border border-blue-700/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge
+                        variant="secondary"
+                        className="bg-blue-600 text-white"
+                      >
+                        Graph Execution Enabled
+                      </Badge>
+                      <span className="text-xs text-gray-400">
+                        {Object.keys(workflow.connections).length} actions with
+                        connections
+                      </span>
+                    </div>
 
-            <Separator className="bg-gray-700" />
-          </>
-        )}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {hasConditionalLogic(
+                        workflow as import("@/lib/export-schema").Workflow
+                      ) && (
+                        <Badge
+                          variant="outline"
+                          className="border-green-600 text-green-400"
+                        >
+                          <GitBranch className="w-3 h-3 mr-1" />
+                          Conditional Branching
+                        </Badge>
+                      )}
+
+                      {hasLoops(
+                        workflow as import("@/lib/export-schema").Workflow
+                      ) && (
+                        <Badge
+                          variant="outline"
+                          className="border-yellow-600 text-yellow-400"
+                        >
+                          <Repeat className="w-3 h-3 mr-1" />
+                          Contains Loops
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-gray-400 space-y-1">
+                    <p>
+                      <strong>Conditional Branching:</strong> Uses success/error
+                      paths to control flow
+                    </p>
+                    <p>
+                      <strong>Loops:</strong> May contain cycles - ensure proper
+                      exit conditions
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <Separator className="bg-gray-700" />
+            </>
+          )}
 
         {/* Statistics Section */}
         <section>
@@ -467,12 +516,16 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
 
           <div className="grid grid-cols-2 gap-4">
             <div className="p-3 rounded bg-gray-800/50 border border-gray-700">
-              <div className="text-2xl font-bold text-blue-400">{actionCount}</div>
+              <div className="text-2xl font-bold text-blue-400">
+                {actionCount}
+              </div>
               <div className="text-xs text-gray-400">Actions</div>
             </div>
 
             <div className="p-3 rounded bg-gray-800/50 border border-gray-700">
-              <div className="text-2xl font-bold text-green-400">{connectionCount}</div>
+              <div className="text-2xl font-bold text-green-400">
+                {connectionCount}
+              </div>
               <div className="text-xs text-gray-400">Connections</div>
             </div>
 
@@ -495,8 +548,8 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
             <div className="flex items-start gap-2">
               <Info className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
               <div className="text-xs text-gray-300">
-                <strong>Estimated execution time:</strong> Varies based on conditions and retries.
-                Run validation for detailed analysis.
+                <strong>Estimated execution time:</strong> Varies based on
+                conditions and retries. Run validation for detailed analysis.
               </div>
             </div>
           </div>

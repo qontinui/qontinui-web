@@ -9,9 +9,9 @@
  * - Ability to resend or cancel invitations
  */
 
-'use client';
+"use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,18 +19,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,9 +40,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from "@/components/ui/alert-dialog";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Mail,
   Send,
@@ -53,15 +53,19 @@ import {
   XCircle,
   Loader2,
   AlertTriangle,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import type { Invitation, InvitationCreate, MemberRole } from '@/types/collaboration';
+} from "lucide-react";
+import { toast } from "sonner";
+import type {
+  Invitation,
+  InvitationCreate,
+  MemberRole,
+} from "@/types/collaboration";
 import {
   inviteMember,
   getInvitations,
   cancelInvitation,
   resendInvitation,
-} from '@/lib/api/organizations';
+} from "@/lib/api/organizations";
 
 // ============================================================================
 // Types
@@ -79,28 +83,30 @@ export interface InviteMemberDialogProps {
 // Helper Functions
 // ============================================================================
 
-function getRoleBadgeVariant(role: MemberRole): 'default' | 'secondary' | 'outline' {
+function getRoleBadgeVariant(
+  role: MemberRole
+): "default" | "secondary" | "outline" {
   switch (role) {
-    case 'admin':
-      return 'default';
-    case 'member':
-      return 'secondary';
-    case 'viewer':
-      return 'outline';
+    case "admin":
+      return "default";
+    case "member":
+      return "secondary";
+    case "viewer":
+      return "outline";
     default:
-      return 'secondary';
+      return "secondary";
   }
 }
 
-function getStatusIcon(status: Invitation['status']) {
+function getStatusIcon(status: Invitation["status"]) {
   switch (status) {
-    case 'pending':
+    case "pending":
       return <Clock className="h-4 w-4 text-yellow-500" />;
-    case 'accepted':
+    case "accepted":
       return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    case 'expired':
+    case "expired":
       return <XCircle className="h-4 w-4 text-red-500" />;
-    case 'revoked':
+    case "revoked":
       return <XCircle className="h-4 w-4 text-gray-500" />;
   }
 }
@@ -113,7 +119,7 @@ function formatDate(dateString: string): string {
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffMins < 1) return 'Just now';
+  if (diffMins < 1) return "Just now";
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
@@ -133,12 +139,13 @@ export function InviteMemberDialog({
   onInvitationSent,
 }: InviteMemberDialogProps) {
   // State
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<MemberRole>('member');
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<MemberRole>("member");
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [invitationToCancel, setInvitationToCancel] = useState<Invitation | null>(null);
+  const [invitationToCancel, setInvitationToCancel] =
+    useState<Invitation | null>(null);
 
   // Load invitations when dialog opens
   useEffect(() => {
@@ -152,10 +159,10 @@ export function InviteMemberDialog({
     setIsLoading(true);
     try {
       const data = await getInvitations(organizationId);
-      setInvitations(data.filter(inv => inv.status === 'pending'));
+      setInvitations(data.filter((inv) => inv.status === "pending"));
     } catch (error) {
-      console.error('Failed to load invitations:', error);
-      toast.error('Failed to load pending invitations');
+      console.error("Failed to load invitations:", error);
+      toast.error("Failed to load pending invitations");
     } finally {
       setIsLoading(false);
     }
@@ -164,14 +171,14 @@ export function InviteMemberDialog({
   // Send invitation
   const handleSendInvitation = useCallback(async () => {
     if (!email) {
-      toast.error('Please enter an email address');
+      toast.error("Please enter an email address");
       return;
     }
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      toast.error('Please enter a valid email address');
+      toast.error("Please enter a valid email address");
       return;
     }
 
@@ -185,15 +192,16 @@ export function InviteMemberDialog({
       const invitation = await inviteMember(organizationId, data);
 
       toast.success(`Invitation sent to ${email}`);
-      setEmail('');
-      setRole('member');
+      setEmail("");
+      setRole("member");
 
       // Refresh invitations list
       await loadInvitations();
 
       onInvitationSent?.(invitation);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to send invitation';
+      const message =
+        error instanceof Error ? error.message : "Failed to send invitation";
       toast.error(message);
     } finally {
       setIsSending(false);
@@ -201,15 +209,21 @@ export function InviteMemberDialog({
   }, [email, role, organizationId, loadInvitations, onInvitationSent]);
 
   // Resend invitation
-  const handleResendInvitation = useCallback(async (invitation: Invitation) => {
-    try {
-      await resendInvitation(organizationId, invitation.id);
-      toast.success(`Invitation resent to ${invitation.email}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to resend invitation';
-      toast.error(message);
-    }
-  }, [organizationId]);
+  const handleResendInvitation = useCallback(
+    async (invitation: Invitation) => {
+      try {
+        await resendInvitation(organizationId, invitation.id);
+        toast.success(`Invitation resent to ${invitation.email}`);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to resend invitation";
+        toast.error(message);
+      }
+    },
+    [organizationId]
+  );
 
   // Cancel invitation
   const handleCancelInvitation = useCallback(async () => {
@@ -217,21 +231,26 @@ export function InviteMemberDialog({
 
     try {
       await cancelInvitation(organizationId, invitationToCancel.id);
-      toast.success(`Invitation to ${invitationToCancel.email} has been cancelled`);
+      toast.success(
+        `Invitation to ${invitationToCancel.email} has been cancelled`
+      );
 
       // Remove from list
-      setInvitations(invitations.filter(inv => inv.id !== invitationToCancel.id));
+      setInvitations(
+        invitations.filter((inv) => inv.id !== invitationToCancel.id)
+      );
       setInvitationToCancel(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to cancel invitation';
+      const message =
+        error instanceof Error ? error.message : "Failed to cancel invitation";
       toast.error(message);
     }
   }, [organizationId, invitationToCancel, invitations]);
 
   // Handle dialog close
   const handleClose = useCallback(() => {
-    setEmail('');
-    setRole('member');
+    setEmail("");
+    setRole("member");
     onClose();
   }, [onClose]);
 
@@ -261,7 +280,7 @@ export function InviteMemberDialog({
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === "Enter") {
                           e.preventDefault();
                           handleSendInvitation();
                         }
@@ -275,7 +294,10 @@ export function InviteMemberDialog({
 
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
-                <Select value={role} onValueChange={(value) => setRole(value as MemberRole)}>
+                <Select
+                  value={role}
+                  onValueChange={(value) => setRole(value as MemberRole)}
+                >
                   <SelectTrigger id="role">
                     <SelectValue />
                   </SelectTrigger>
@@ -360,15 +382,22 @@ export function InviteMemberDialog({
                             <p className="font-medium text-sm truncate">
                               {invitation.email}
                             </p>
-                            <Badge variant={getRoleBadgeVariant(invitation.role)} className="text-xs">
+                            <Badge
+                              variant={getRoleBadgeVariant(invitation.role)}
+                              className="text-xs"
+                            >
                               {invitation.role}
                             </Badge>
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             {getStatusIcon(invitation.status)}
-                            <span>Invited {formatDate(invitation.invited_at)}</span>
+                            <span>
+                              Invited {formatDate(invitation.invited_at)}
+                            </span>
                             <span>•</span>
-                            <span>Expires {formatDate(invitation.expires_at)}</span>
+                            <span>
+                              Expires {formatDate(invitation.expires_at)}
+                            </span>
                           </div>
                         </div>
 
@@ -420,7 +449,7 @@ export function InviteMemberDialog({
               Cancel Invitation
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to cancel the invitation to{' '}
+              Are you sure you want to cancel the invitation to{" "}
               <span className="font-medium">{invitationToCancel?.email}</span>?
               They will no longer be able to accept this invitation.
             </AlertDialogDescription>

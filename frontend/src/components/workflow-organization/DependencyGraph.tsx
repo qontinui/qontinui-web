@@ -13,9 +13,9 @@
  * - Performance optimizations for large graphs
  */
 
-'use client';
+"use client";
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import {
   ReactFlow,
   Background,
@@ -29,12 +29,10 @@ import {
   useReactFlow,
   ReactFlowProvider,
   NodeMouseHandler,
-  EdgeMouseHandler,
   MarkerType,
-  Position,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import dagre from 'dagre';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import dagre from "dagre";
 import {
   Network,
   Search,
@@ -44,47 +42,44 @@ import {
   AlertCircle,
   TrendingUp,
   Link2,
-  Eye,
   EyeOff,
-  MoreVertical,
   FileText,
   GitBranch,
   Target,
   ZoomIn,
   ZoomOut,
   Maximize2,
-  RefreshCw,
-  ChevronRight,
-  ChevronDown,
   X,
-  Settings2,
   BarChart3,
   Layers,
-} from 'lucide-react';
-import { Workflow, Action } from '../../lib/action-schema/action-types';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Badge } from '../ui/badge';
-import { ScrollArea } from '../ui/scroll-area';
+} from "lucide-react";
+import { Workflow } from "../../lib/action-schema/action-types";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Badge } from "../ui/badge";
+import { ScrollArea } from "../ui/scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuLabel,
-  DropdownMenuCheckboxItem,
-} from '../ui/dropdown-menu';
+} from "../ui/dropdown-menu";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../ui/select';
-import { Separator } from '../ui/separator';
-import { cn } from '../../lib/utils';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+} from "../ui/select";
+import { Separator } from "../ui/separator";
+import { cn } from "../../lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../ui/tooltip";
 
 // ============================================================================
 // Types
@@ -120,7 +115,7 @@ interface DependencyEdge extends Edge {
   };
 }
 
-type LayoutType = 'hierarchical' | 'force' | 'circular' | 'tree';
+type LayoutType = "hierarchical" | "force" | "circular" | "tree";
 
 interface DependencyInfo {
   workflowId: string;
@@ -153,7 +148,7 @@ function getWorkflowDependencies(workflow: Workflow): string[] {
   const dependencies = new Set<string>();
 
   workflow.actions.forEach((action) => {
-    if (action.type === 'RUN_WORKFLOW') {
+    if (action.type === "RUN_WORKFLOW") {
       const config = action.config as any;
       if (config.workflowId) {
         dependencies.add(config.workflowId);
@@ -167,7 +162,9 @@ function getWorkflowDependencies(workflow: Workflow): string[] {
 /**
  * Build dependency map for all workflows
  */
-function buildDependencyMap(workflows: Workflow[]): Map<string, DependencyInfo> {
+function buildDependencyMap(
+  workflows: Workflow[]
+): Map<string, DependencyInfo> {
   const map = new Map<string, DependencyInfo>();
 
   // Initialize map
@@ -339,7 +336,8 @@ function analyzeGraph(
     (sum, info) => sum + info.dependencies.length,
     0
   );
-  const avgDependencies = workflows.length > 0 ? totalDependencies / workflows.length : 0;
+  const avgDependencies =
+    workflows.length > 0 ? totalDependencies / workflows.length : 0;
 
   return {
     circularDependencies: circular,
@@ -363,7 +361,7 @@ function applyHierarchicalLayout(
   edges: DependencyEdge[]
 ): WorkflowNode[] {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: 'TB', nodesep: 100, ranksep: 150 });
+  g.setGraph({ rankdir: "TB", nodesep: 100, ranksep: 150 });
   g.setDefaultEdgeLabel(() => ({}));
 
   nodes.forEach((node) => {
@@ -426,8 +424,10 @@ function applyForceLayout(
       for (let j = i + 1; j < nodes.length; j++) {
         const n1 = nodes[i];
         const n2 = nodes[j];
-        const p1 = positions.get(n1.id)!;
-        const p2 = positions.get(n2.id)!;
+        if (!n1 || !n2) continue;
+        const p1 = positions.get(n1.id);
+        const p2 = positions.get(n2.id);
+        if (!p1 || !p2) continue;
 
         const dx = p1.x - p2.x;
         const dy = p1.y - p2.y;
@@ -437,8 +437,9 @@ function applyForceLayout(
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
 
-        const f1 = forces.get(n1.id)!;
-        const f2 = forces.get(n2.id)!;
+        const f1 = forces.get(n1.id);
+        const f2 = forces.get(n2.id);
+        if (!f1 || !f2) continue;
         f1.x += fx;
         f1.y += fy;
         f2.x -= fx;
@@ -512,7 +513,12 @@ function applyTreeLayout(
 ): WorkflowNode[] {
   // Use dagre with tree settings
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: 'TB', nodesep: 80, ranksep: 100, ranker: 'tight-tree' });
+  g.setGraph({
+    rankdir: "TB",
+    nodesep: 80,
+    ranksep: 100,
+    ranker: "tight-tree",
+  });
   g.setDefaultEdgeLabel(() => ({}));
 
   nodes.forEach((node) => {
@@ -544,18 +550,23 @@ function applyTreeLayout(
 /**
  * Export graph as PNG
  */
-async function exportAsPNG(reactFlowInstance: any, filename: string = 'dependency-graph.png') {
-  const { getNodes } = reactFlowInstance;
-
+async function exportAsPNG(
+  _reactFlowInstance: any,
+  _filename: string = "dependency-graph.png"
+) {
   // Use html2canvas or similar - for now just alert
-  alert('PNG export would be implemented with html2canvas or similar library');
+  alert("PNG export would be implemented with html2canvas or similar library");
 }
 
 /**
  * Export graph as SVG
  */
-function exportAsSVG(nodes: WorkflowNode[], edges: DependencyEdge[], filename: string = 'dependency-graph.svg') {
-  alert('SVG export would generate an SVG representation of the graph');
+function exportAsSVG(
+  _nodes: WorkflowNode[],
+  _edges: DependencyEdge[],
+  _filename: string = "dependency-graph.svg"
+) {
+  alert("SVG export would generate an SVG representation of the graph");
 }
 
 /**
@@ -564,7 +575,7 @@ function exportAsSVG(nodes: WorkflowNode[], edges: DependencyEdge[], filename: s
 function exportAsJSON(
   workflows: Workflow[],
   dependencyMap: Map<string, DependencyInfo>,
-  filename: string = 'dependency-graph.json'
+  filename: string = "dependency-graph.json"
 ) {
   const data = {
     workflows: workflows.map((w) => ({
@@ -575,9 +586,11 @@ function exportAsJSON(
     })),
   };
 
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json",
+  });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
+  const link = document.createElement("a");
   link.href = url;
   link.download = filename;
   link.click();
@@ -590,7 +603,7 @@ function exportAsJSON(
 function exportAsGraphML(
   workflows: Workflow[],
   dependencyMap: Map<string, DependencyInfo>,
-  filename: string = 'dependency-graph.graphml'
+  filename: string = "dependency-graph.graphml"
 ) {
   let graphml = `<?xml version="1.0" encoding="UTF-8"?>
 <graphml xmlns="http://graphml.graphdrawing.org/xmlns">
@@ -608,7 +621,7 @@ function exportAsGraphML(
 
   // Edges
   dependencyMap.forEach((info, workflowId) => {
-    info.dependencies.forEach((depId, index) => {
+    info.dependencies.forEach((depId) => {
       graphml += `    <edge source="${workflowId}" target="${depId}"/>
 `;
     });
@@ -617,9 +630,9 @@ function exportAsGraphML(
   graphml += `  </graph>
 </graphml>`;
 
-  const blob = new Blob([graphml], { type: 'application/xml' });
+  const blob = new Blob([graphml], { type: "application/xml" });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
+  const link = document.createElement("a");
   link.href = url;
   link.download = filename;
   link.click();
@@ -633,7 +646,7 @@ function exportAsMarkdown(
   workflows: Workflow[],
   dependencyMap: Map<string, DependencyInfo>,
   analysis: GraphAnalysis,
-  filename: string = 'dependency-report.md'
+  filename: string = "dependency-report.md"
 ) {
   let markdown = `# Workflow Dependency Report
 
@@ -652,15 +665,15 @@ Generated: ${new Date().toLocaleString()}
 `;
 
   if (analysis.circularDependencies.length === 0) {
-    markdown += 'No circular dependencies detected.\n\n';
+    markdown += "No circular dependencies detected.\n\n";
   } else {
     analysis.circularDependencies.forEach((circ, index) => {
       markdown += `### Circular Dependency ${index + 1}\n\n`;
-      markdown += 'Chain: ';
+      markdown += "Chain: ";
       markdown += circ.chain
         .map((id) => workflows.find((w) => w.id === id)?.name || id)
-        .join(' → ');
-      markdown += '\n\n';
+        .join(" → ");
+      markdown += "\n\n";
     });
   }
 
@@ -684,8 +697,8 @@ Generated: ${new Date().toLocaleString()}
     markdown += `### Chain ${index + 1} (Length: ${item.length})\n\n`;
     markdown += item.chain
       .map((id) => workflows.find((w) => w.id === id)?.name || id)
-      .join(' → ');
-    markdown += '\n\n';
+      .join(" → ");
+    markdown += "\n\n";
   });
 
   markdown += `## All Workflows
@@ -699,9 +712,9 @@ Generated: ${new Date().toLocaleString()}
     markdown += `| ${w.name} | ${info?.dependencies.length || 0} | ${info?.dependents.length || 0} |\n`;
   });
 
-  const blob = new Blob([markdown], { type: 'text/markdown' });
+  const blob = new Blob([markdown], { type: "text/markdown" });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
+  const link = document.createElement("a");
   link.href = url;
   link.download = filename;
   link.click();
@@ -712,16 +725,17 @@ Generated: ${new Date().toLocaleString()}
 // Custom Node Component
 // ============================================================================
 
-function WorkflowNodeComponent({ data }: { data: WorkflowNode['data'] }) {
+function WorkflowNodeComponent({ data }: { data: WorkflowNode["data"] }) {
   const getNodeColor = () => {
-    if (data.isCircular) return 'border-red-500 bg-red-50 dark:bg-red-950';
-    if (data.isUnused) return 'border-gray-400 bg-gray-50 dark:bg-gray-900';
-    if (data.isLeaf) return 'border-green-500 bg-green-50 dark:bg-green-950';
-    return 'border-blue-500 bg-blue-50 dark:bg-blue-950';
+    if (data.isCircular) return "border-red-500 bg-red-50 dark:bg-red-950";
+    if (data.isUnused) return "border-gray-400 bg-gray-50 dark:bg-gray-900";
+    if (data.isLeaf) return "border-green-500 bg-green-50 dark:bg-green-950";
+    return "border-blue-500 bg-blue-50 dark:bg-blue-950";
   };
 
   const getStatusIcon = () => {
-    if (data.isCircular) return <AlertCircle className="h-3 w-3 text-red-600" />;
+    if (data.isCircular)
+      return <AlertCircle className="h-3 w-3 text-red-600" />;
     if (data.isUnused) return <EyeOff className="h-3 w-3 text-gray-500" />;
     if (data.isLeaf) return <Target className="h-3 w-3 text-green-600" />;
     return <Network className="h-3 w-3 text-blue-600" />;
@@ -730,14 +744,16 @@ function WorkflowNodeComponent({ data }: { data: WorkflowNode['data'] }) {
   return (
     <div
       className={cn(
-        'px-4 py-2 rounded-lg border-2 min-w-[180px] max-w-[250px] shadow-sm transition-all',
+        "px-4 py-2 rounded-lg border-2 min-w-[180px] max-w-[250px] shadow-sm transition-all",
         getNodeColor()
       )}
     >
       <div className="flex items-start gap-2 mb-1">
         {getStatusIcon()}
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate">{data.workflowName}</div>
+          <div className="font-medium text-sm truncate">
+            {data.workflowName}
+          </div>
           <div className="text-xs text-muted-foreground flex gap-2 mt-1">
             <span title="Dependencies">↓ {data.dependencyCount}</span>
             <span title="Dependents">↑ {data.dependentCount}</span>
@@ -776,14 +792,16 @@ function DependencyGraphInner({
   const reactFlowInstance = useReactFlow();
 
   // State
-  const [layout, setLayout] = useState<LayoutType>('hierarchical');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [layout, setLayout] = useState<LayoutType>("hierarchical");
+  const [searchQuery, setSearchQuery] = useState("");
   const [showAnalysis, setShowAnalysis] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState<
-    'all' | 'dependencies' | 'dependents' | 'unused' | 'critical'
-  >('all');
-  const [hideUnused, setHideUnused] = useState(false);
-  const [highlightedWorkflows, setHighlightedWorkflows] = useState<Set<string>>(new Set());
+    "all" | "dependencies" | "dependents" | "unused" | "critical"
+  >("all");
+  const [hideUnused] = useState(false);
+  const [highlightedWorkflows, setHighlightedWorkflows] = useState<Set<string>>(
+    new Set()
+  );
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -822,29 +840,35 @@ function DependencyGraphInner({
       );
     }
 
-    if (selectedFilter === 'dependencies' && selectedWorkflowId) {
+    if (selectedFilter === "dependencies" && selectedWorkflowId) {
       const info = dependencyMap.get(selectedWorkflowId);
       const relevantIds = new Set([
         selectedWorkflowId,
         ...(info?.dependencies || []),
       ]);
-      filteredWorkflows = filteredWorkflows.filter((w) => relevantIds.has(w.id));
-    } else if (selectedFilter === 'dependents' && selectedWorkflowId) {
+      filteredWorkflows = filteredWorkflows.filter((w) =>
+        relevantIds.has(w.id)
+      );
+    } else if (selectedFilter === "dependents" && selectedWorkflowId) {
       const info = dependencyMap.get(selectedWorkflowId);
       const relevantIds = new Set([
         selectedWorkflowId,
         ...(info?.dependents || []),
       ]);
-      filteredWorkflows = filteredWorkflows.filter((w) => relevantIds.has(w.id));
-    } else if (selectedFilter === 'unused') {
+      filteredWorkflows = filteredWorkflows.filter((w) =>
+        relevantIds.has(w.id)
+      );
+    } else if (selectedFilter === "unused") {
       filteredWorkflows = filteredWorkflows.filter((w) =>
         analysis.unusedWorkflows.includes(w.id)
       );
-    } else if (selectedFilter === 'critical') {
+    } else if (selectedFilter === "critical") {
       const criticalIds = new Set(
         analysis.mostDependedOn.slice(0, 10).map((item) => item.workflowId)
       );
-      filteredWorkflows = filteredWorkflows.filter((w) => criticalIds.has(w.id));
+      filteredWorkflows = filteredWorkflows.filter((w) =>
+        criticalIds.has(w.id)
+      );
     }
 
     // Search filter
@@ -859,11 +883,12 @@ function DependencyGraphInner({
       const info = dependencyMap.get(workflow.id)!;
       const isCircular = circularWorkflowIds.has(workflow.id);
       const isUnused = analysis.unusedWorkflows.includes(workflow.id);
-      const isLeaf = info.dependencies.length === 0 && info.dependents.length > 0;
+      const isLeaf =
+        info.dependencies.length === 0 && info.dependents.length > 0;
 
       return {
         id: workflow.id,
-        type: 'workflow',
+        type: "workflow",
         position: { x: 0, y: 0 }, // Will be set by layout
         data: {
           workflowId: workflow.id,
@@ -906,25 +931,28 @@ function DependencyGraphInner({
           // Find the action name
           const workflow = workflows.find((w) => w.id === node.id);
           const runWorkflowAction = workflow?.actions.find(
-            (a) => a.type === 'RUN_WORKFLOW' && (a.config as any).workflowId === depId
+            (a) =>
+              a.type === "RUN_WORKFLOW" &&
+              (a.config as any).workflowId === depId
           );
 
           const isHighlighted =
-            highlightedWorkflows.has(node.id) || highlightedWorkflows.has(depId);
+            highlightedWorkflows.has(node.id) ||
+            highlightedWorkflows.has(depId);
 
           edges.push({
             id: `${node.id}-${depId}`,
             source: node.id,
             target: depId,
-            type: 'smoothstep',
+            type: "smoothstep",
             animated: isHighlighted,
             style: {
-              stroke: isHighlighted ? '#3b82f6' : '#94a3b8',
+              stroke: isHighlighted ? "#3b82f6" : "#94a3b8",
               strokeWidth: isHighlighted ? 2 : 1,
             },
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: isHighlighted ? '#3b82f6' : '#94a3b8',
+              color: isHighlighted ? "#3b82f6" : "#94a3b8",
             },
             data: {
               actionName: runWorkflowAction?.name,
@@ -944,13 +972,13 @@ function DependencyGraphInner({
   const applyLayout = useCallback(
     (nodes: WorkflowNode[], edges: DependencyEdge[]): WorkflowNode[] => {
       switch (layout) {
-        case 'hierarchical':
+        case "hierarchical":
           return applyHierarchicalLayout(nodes, edges);
-        case 'force':
+        case "force":
           return applyForceLayout(nodes, edges);
-        case 'circular':
+        case "circular":
           return applyCircularLayout(nodes);
-        case 'tree':
+        case "tree":
           return applyTreeLayout(nodes, edges);
         default:
           return nodes;
@@ -994,30 +1022,27 @@ function DependencyGraphInner({
 
   // Handlers
   const handleNodeClick: NodeMouseHandler = useCallback(
-    (event, node) => {
+    (_event, node) => {
       onSelectWorkflow(node.id);
     },
     [onSelectWorkflow]
   );
 
   const handleNodeDoubleClick: NodeMouseHandler = useCallback(
-    (event, node) => {
+    (_event, node) => {
       onOpenWorkflow(node.id);
     },
     [onOpenWorkflow]
   );
 
-  const handleNodeContextMenu: NodeMouseHandler = useCallback(
-    (event, node) => {
-      event.preventDefault();
-      setContextMenu({
-        x: event.clientX,
-        y: event.clientY,
-        workflowId: node.id,
-      });
-    },
-    []
-  );
+  const handleNodeContextMenu: NodeMouseHandler = useCallback((event, node) => {
+    event.preventDefault();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      workflowId: node.id,
+    });
+  }, []);
 
   const handleFitView = useCallback(() => {
     reactFlowInstance.fitView({ padding: 0.2, duration: 300 });
@@ -1044,47 +1069,56 @@ function DependencyGraphInner({
     }
   }, [selectedWorkflowId, nodes, reactFlowInstance]);
 
-  const handleSearch = useCallback((query: string) => {
-    setSearchQuery(query);
-    if (query) {
-      const matchingWorkflow = workflows.find((w) =>
-        w.name.toLowerCase().includes(query.toLowerCase())
-      );
-      if (matchingWorkflow) {
-        onSelectWorkflow(matchingWorkflow.id);
-        setHighlightedWorkflows(new Set([matchingWorkflow.id]));
+  const handleSearch = useCallback(
+    (query: string) => {
+      setSearchQuery(query);
+      if (query) {
+        const matchingWorkflow = workflows.find((w) =>
+          w.name.toLowerCase().includes(query.toLowerCase())
+        );
+        if (matchingWorkflow) {
+          onSelectWorkflow(matchingWorkflow.id);
+          setHighlightedWorkflows(new Set([matchingWorkflow.id]));
+        }
+      } else {
+        setHighlightedWorkflows(new Set());
       }
-    } else {
-      setHighlightedWorkflows(new Set());
-    }
-  }, [workflows, onSelectWorkflow]);
+    },
+    [workflows, onSelectWorkflow]
+  );
 
-  const handleHighlightCircular = useCallback((index: number) => {
-    const circular = analysis.circularDependencies[index];
-    if (circular) {
-      setHighlightedWorkflows(circular.workflows);
-    }
-  }, [analysis.circularDependencies]);
+  const handleHighlightCircular = useCallback(
+    (index: number) => {
+      const circular = analysis.circularDependencies[index];
+      if (circular) {
+        setHighlightedWorkflows(circular.workflows);
+      }
+    },
+    [analysis.circularDependencies]
+  );
 
-  const handleExport = useCallback((format: string) => {
-    switch (format) {
-      case 'png':
-        exportAsPNG(reactFlowInstance);
-        break;
-      case 'svg':
-        exportAsSVG(nodes as WorkflowNode[], edges as DependencyEdge[]);
-        break;
-      case 'json':
-        exportAsJSON(workflows, dependencyMap);
-        break;
-      case 'graphml':
-        exportAsGraphML(workflows, dependencyMap);
-        break;
-      case 'markdown':
-        exportAsMarkdown(workflows, dependencyMap, analysis);
-        break;
-    }
-  }, [reactFlowInstance, nodes, edges, workflows, dependencyMap, analysis]);
+  const handleExport = useCallback(
+    (format: string) => {
+      switch (format) {
+        case "png":
+          exportAsPNG(reactFlowInstance);
+          break;
+        case "svg":
+          exportAsSVG(nodes as WorkflowNode[], edges as DependencyEdge[]);
+          break;
+        case "json":
+          exportAsJSON(workflows, dependencyMap);
+          break;
+        case "graphml":
+          exportAsGraphML(workflows, dependencyMap);
+          break;
+        case "markdown":
+          exportAsMarkdown(workflows, dependencyMap, analysis);
+          break;
+      }
+    },
+    [reactFlowInstance, nodes, edges, workflows, dependencyMap, analysis]
+  );
 
   // Custom node types
   const nodeTypes = useMemo(
@@ -1095,7 +1129,7 @@ function DependencyGraphInner({
   );
 
   return (
-    <div className={cn('flex h-full', className)}>
+    <div className={cn("flex h-full", className)}>
       {/* Main graph area */}
       <div className="flex-1 relative">
         <ReactFlow
@@ -1111,7 +1145,7 @@ function DependencyGraphInner({
           minZoom={0.1}
           maxZoom={2}
           defaultEdgeOptions={{
-            type: 'smoothstep',
+            type: "smoothstep",
             animated: false,
           }}
         >
@@ -1121,7 +1155,7 @@ function DependencyGraphInner({
             nodeStrokeWidth={3}
             zoomable
             pannable
-            style={{ backgroundColor: 'hsl(var(--muted))' }}
+            style={{ backgroundColor: "hsl(var(--muted))" }}
           />
 
           {/* Top panel */}
@@ -1139,7 +1173,10 @@ function DependencyGraphInner({
               </div>
 
               {/* Layout selector */}
-              <Select value={layout} onValueChange={(v) => setLayout(v as LayoutType)}>
+              <Select
+                value={layout}
+                onValueChange={(v) => setLayout(v as LayoutType)}
+              >
                 <SelectTrigger className="w-40">
                   <LayoutGrid className="h-4 w-4 mr-2" />
                   <SelectValue />
@@ -1179,20 +1216,20 @@ function DependencyGraphInner({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => handleExport('png')}>
+                  <DropdownMenuItem onClick={() => handleExport("png")}>
                     Export as PNG
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExport('svg')}>
+                  <DropdownMenuItem onClick={() => handleExport("svg")}>
                     Export as SVG
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => handleExport('json')}>
+                  <DropdownMenuItem onClick={() => handleExport("json")}>
                     Export as JSON
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExport('graphml')}>
+                  <DropdownMenuItem onClick={() => handleExport("graphml")}>
                     Export as GraphML
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExport('markdown')}>
+                  <DropdownMenuItem onClick={() => handleExport("markdown")}>
                     Export Report (MD)
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -1203,7 +1240,11 @@ function DependencyGraphInner({
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={handleZoomIn}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleZoomIn}
+                      >
                         <ZoomIn className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
@@ -1214,7 +1255,11 @@ function DependencyGraphInner({
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={handleZoomOut}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleZoomOut}
+                      >
                         <ZoomOut className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
@@ -1225,7 +1270,11 @@ function DependencyGraphInner({
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={handleFitView}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleFitView}
+                      >
                         <Maximize2 className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
@@ -1237,7 +1286,11 @@ function DependencyGraphInner({
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="sm" onClick={handleCenterOnSelected}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCenterOnSelected}
+                        >
                           <Target className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
@@ -1254,7 +1307,7 @@ function DependencyGraphInner({
                 onClick={() => setShowAnalysis(!showAnalysis)}
               >
                 <BarChart3 className="h-4 w-4 mr-2" />
-                {showAnalysis ? 'Hide' : 'Show'} Analysis
+                {showAnalysis ? "Hide" : "Show"} Analysis
               </Button>
             </div>
 
@@ -1425,8 +1478,8 @@ function DependencyGraphInner({
                                 workflows.find((w) => w.id === id)?.name || id
                             )
                             .slice(0, 3)
-                            .join(' → ')}
-                          {circ.chain.length > 3 && ' ...'}
+                            .join(" → ")}
+                          {circ.chain.length > 3 && " ..."}
                         </div>
                       </button>
                     ))}
@@ -1489,14 +1542,18 @@ function DependencyGraphInner({
                 ) : (
                   <div className="space-y-1">
                     {analysis.mostDependedOn.slice(0, 5).map((item) => {
-                      const workflow = workflows.find((w) => w.id === item.workflowId);
+                      const workflow = workflows.find(
+                        (w) => w.id === item.workflowId
+                      );
                       return (
                         <button
                           key={item.workflowId}
                           className="w-full text-left px-2 py-1 rounded text-xs hover:bg-accent flex items-center justify-between"
                           onClick={() => onSelectWorkflow(item.workflowId)}
                         >
-                          <span className="truncate">{workflow?.name || item.workflowId}</span>
+                          <span className="truncate">
+                            {workflow?.name || item.workflowId}
+                          </span>
                           <Badge variant="secondary" className="text-xs ml-2">
                             {item.count}
                           </Badge>
@@ -1536,8 +1593,8 @@ function DependencyGraphInner({
                                 workflows.find((w) => w.id === id)?.name || id
                             )
                             .slice(0, 3)
-                            .join(' → ')}
-                          {item.chain.length > 3 && ' ...'}
+                            .join(" → ")}
+                          {item.chain.length > 3 && " ..."}
                         </div>
                       </div>
                     ))}
@@ -1555,21 +1612,31 @@ function DependencyGraphInner({
                 </h4>
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total Workflows:</span>
+                    <span className="text-muted-foreground">
+                      Total Workflows:
+                    </span>
                     <span className="font-medium">{workflows.length}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total Dependencies:</span>
-                    <span className="font-medium">{analysis.totalDependencies}</span>
+                    <span className="text-muted-foreground">
+                      Total Dependencies:
+                    </span>
+                    <span className="font-medium">
+                      {analysis.totalDependencies}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Avg Dependencies:</span>
+                    <span className="text-muted-foreground">
+                      Avg Dependencies:
+                    </span>
                     <span className="font-medium">
                       {analysis.avgDependencies.toFixed(2)}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Circular Deps:</span>
+                    <span className="text-muted-foreground">
+                      Circular Deps:
+                    </span>
                     <span className="font-medium text-red-600">
                       {analysis.circularDependencies.length}
                     </span>

@@ -6,12 +6,14 @@ custom functions discovered from user code.
 """
 
 from datetime import datetime
+from uuid import UUID
 
 import structlog
-from app.models.custom_function import CustomFunction
-from app.schemas.custom_function import CustomFunctionCreate, CustomFunctionUpdate
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.custom_function import CustomFunction
+from app.schemas.custom_function import CustomFunctionCreate, CustomFunctionUpdate
 
 logger = structlog.get_logger(__name__)
 
@@ -20,7 +22,7 @@ logger = structlog.get_logger(__name__)
 
 
 async def create_custom_function(
-    db: AsyncSession, project_id: int, function_data: CustomFunctionCreate
+    db: AsyncSession, project_id: UUID, function_data: CustomFunctionCreate
 ) -> CustomFunction:
     """
     Create a new custom function record.
@@ -76,7 +78,7 @@ async def get_function_by_id(
 
 
 async def get_function_by_name(
-    db: AsyncSession, project_id: int, file_path: str, function_name: str
+    db: AsyncSession, project_id: UUID, file_path: str, function_name: str
 ) -> CustomFunction | None:
     """
     Get custom function by project, file, and name.
@@ -121,7 +123,7 @@ async def update_custom_function(
     for field, value in update_dict.items():
         setattr(function, field, value)
 
-    function.updated_at = datetime.utcnow()
+    function.updated_at = datetime.utcnow()  # type: ignore[assignment]
     await db.commit()
     await db.refresh(function)
 
@@ -153,7 +155,7 @@ async def delete_custom_function(db: AsyncSession, function: CustomFunction) -> 
 
 async def list_project_functions(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     skip: int = 0,
     limit: int = 100,
 ) -> tuple[list[CustomFunction], int]:
@@ -192,7 +194,7 @@ async def list_project_functions(
 
 async def search_functions(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     query: str | None = None,
     category: str | None = None,
     tags: list[str] | None = None,
@@ -262,7 +264,7 @@ async def search_functions(
     return functions, total
 
 
-async def get_project_categories(db: AsyncSession, project_id: int) -> list[str]:
+async def get_project_categories(db: AsyncSession, project_id: UUID) -> list[str]:
     """
     Get all unique categories used in a project.
 
@@ -287,7 +289,7 @@ async def get_project_categories(db: AsyncSession, project_id: int) -> list[str]
     return [cat for cat in result.scalars().all() if cat]
 
 
-async def get_project_tags(db: AsyncSession, project_id: int) -> list[str]:
+async def get_project_tags(db: AsyncSession, project_id: UUID) -> list[str]:
     """
     Get all unique tags used in a project.
 
@@ -310,11 +312,11 @@ async def get_project_tags(db: AsyncSession, project_id: int) -> list[str]:
         if tag_list:
             unique_tags.update(tag_list)
 
-    return sorted(list(unique_tags))
+    return sorted(unique_tags)
 
 
 async def get_functions_by_file(
-    db: AsyncSession, project_id: int, file_path: str
+    db: AsyncSession, project_id: UUID, file_path: str
 ) -> list[CustomFunction]:
     """
     Get all functions defined in a specific file.
@@ -341,7 +343,7 @@ async def get_functions_by_file(
 
 
 async def delete_functions_by_file(
-    db: AsyncSession, project_id: int, file_path: str
+    db: AsyncSession, project_id: UUID, file_path: str
 ) -> int:
     """
     Delete all functions from a specific file.
@@ -374,7 +376,7 @@ async def delete_functions_by_file(
     return count
 
 
-async def get_project_stats(db: AsyncSession, project_id: int) -> dict:
+async def get_project_stats(db: AsyncSession, project_id: UUID) -> dict:
     """
     Get statistics for custom functions in a project.
 
@@ -414,7 +416,7 @@ async def get_project_stats(db: AsyncSession, project_id: int) -> dict:
 
 
 async def upsert_custom_function(
-    db: AsyncSession, project_id: int, function_data: CustomFunctionCreate
+    db: AsyncSession, project_id: UUID, function_data: CustomFunctionCreate
 ) -> CustomFunction:
     """
     Create or update a custom function.
@@ -438,7 +440,7 @@ async def upsert_custom_function(
         for field, value in function_data.model_dump(exclude_unset=True).items():
             setattr(existing, field, value)
 
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = datetime.utcnow()  # type: ignore[assignment]
         await db.commit()
         await db.refresh(existing)
 

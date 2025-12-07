@@ -1,20 +1,21 @@
 from uuid import UUID
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.security import get_password_hash, verify_password
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def get_user(db: AsyncSession, user_id: UUID) -> User | None:
-    result = await db.execute(select(User).filter(User.id == user_id))
+    result = await db.execute(select(User).filter(User.id == user_id))  # type: ignore[arg-type]
     return result.scalar_one_or_none()
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
-    result = await db.execute(select(User).filter(User.email == email))
+    result = await db.execute(select(User).filter(User.email == email))  # type: ignore[arg-type]
     return result.scalar_one_or_none()
 
 

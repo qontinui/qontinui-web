@@ -4,8 +4,8 @@ Progress tracking for analysis jobs
 
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class ProgressTracker:
             redis_client: Redis client for storing progress (optional, falls back to in-memory)
         """
         self.redis = redis_client
-        self._in_memory_cache: Dict[str, Dict[str, Any]] = {}
+        self._in_memory_cache: dict[str, dict[str, Any]] = {}
         self.ttl = 3600  # 1 hour TTL for progress data
 
     def _make_key(self, job_id: UUID) -> str:
@@ -94,7 +94,7 @@ class ProgressTracker:
         job_id: UUID,
         analyzer_name: str,
         progress_percent: float,
-        message: Optional[str] = None,
+        message: str | None = None,
     ):
         """
         Update progress for a specific analyzer
@@ -273,7 +273,7 @@ class ProgressTracker:
         await self._set_progress(job_id, progress)
         logger.error(f"Job {job_id} failed: {error}")
 
-    async def get_progress(self, job_id: UUID) -> Optional[Dict[str, Any]]:
+    async def get_progress(self, job_id: UUID) -> dict[str, Any] | None:
         """
         Get current progress for a job
 
@@ -303,7 +303,7 @@ class ProgressTracker:
         if str(job_id) in self._in_memory_cache:
             del self._in_memory_cache[str(job_id)]
 
-    async def _get_progress(self, job_id: UUID) -> Optional[Dict[str, Any]]:
+    async def _get_progress(self, job_id: UUID) -> dict[str, Any] | None:
         """Get progress data from Redis or in-memory cache"""
         key = self._make_key(job_id)
 
@@ -311,14 +311,14 @@ class ProgressTracker:
             try:
                 data = await self.redis.get(key)
                 if data:
-                    return json.loads(data)
+                    return json.loads(data)  # type: ignore[no-any-return]
             except Exception as e:
                 logger.error(f"Failed to get progress from Redis: {e}")
 
         # Fall back to in-memory cache
         return self._in_memory_cache.get(str(job_id))
 
-    async def _set_progress(self, job_id: UUID, progress_data: Dict[str, Any]):
+    async def _set_progress(self, job_id: UUID, progress_data: dict[str, Any]):
         """Set progress data in Redis or in-memory cache"""
         key = self._make_key(job_id)
 
@@ -337,7 +337,7 @@ class ProgressTracker:
 
 
 # Global progress tracker (will be initialized with Redis client)
-progress_tracker: Optional[ProgressTracker] = None
+progress_tracker: ProgressTracker | None = None
 
 
 def get_progress_tracker() -> ProgressTracker:

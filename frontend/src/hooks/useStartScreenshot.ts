@@ -2,7 +2,7 @@
  * Hook for fetching start screenshot and initial states from a snapshot run
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 export interface StartScreenshot {
   runId: string;
@@ -19,8 +19,11 @@ export interface UseStartScreenshotResult {
   error: Error | null;
 }
 
-export function useStartScreenshot(runId: string | null): UseStartScreenshotResult {
-  const [startScreenshot, setStartScreenshot] = useState<StartScreenshot | null>(null);
+export function useStartScreenshot(
+  runId: string | null
+): UseStartScreenshotResult {
+  const [startScreenshot, setStartScreenshot] =
+    useState<StartScreenshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -42,7 +45,9 @@ export function useStartScreenshot(runId: string | null): UseStartScreenshotResu
         );
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch start screenshot: ${response.statusText}`);
+          throw new Error(
+            `Failed to fetch start screenshot: ${response.statusText}`
+          );
         }
 
         const data = await response.json();
@@ -55,7 +60,7 @@ export function useStartScreenshot(runId: string | null): UseStartScreenshotResu
           found: data.found,
         });
       } catch (err) {
-        setError(err instanceof Error ? err : new Error('Unknown error'));
+        setError(err instanceof Error ? err : new Error("Unknown error"));
         setStartScreenshot(null);
       } finally {
         setLoading(false);

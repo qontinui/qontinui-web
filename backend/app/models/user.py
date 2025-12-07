@@ -1,9 +1,10 @@
 from datetime import datetime
 
-from app.db.base import Base
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class User(SQLAlchemyBaseUserTableUUID, Base):
@@ -122,4 +123,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         "TestDeficiency",
         back_populates="assigned_to",
         foreign_keys="TestDeficiency.assigned_to_user_id",
+    )
+    runner_devices = relationship(
+        "RunnerDevice", back_populates="user", cascade="all, delete-orphan"
     )

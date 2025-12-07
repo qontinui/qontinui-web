@@ -6,13 +6,21 @@ background colors, then detects grid structure within segmented areas.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 
-from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
+from ..base import (
+    BaseRegionAnalyzer,
+    BoundingBox,
+    DetectedRegion,
+    RegionAnalysisInput,
+    RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +38,14 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
     """
 
     @property
+    def analysis_type(self) -> RegionAnalysisType:
+        return RegionAnalysisType.COLOR_CLUSTERING
+
+    @property
     def name(self) -> str:
         return "color_quantization_detector"
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "n_colors": 8,  # Number of color clusters
             "min_region_area": 2000,
@@ -44,10 +56,51 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
             "min_grid_cols": 2,
         }
 
-    def analyze(self, image: np.ndarray, **kwargs) -> List[DetectedRegion]:
+    async def analyze(self, input_data: RegionAnalysisInput) -> RegionAnalysisResult:
         """Detect inventory grids using color quantization"""
-        params = {**self.get_default_parameters(), **kwargs}
+        params = {**self.get_default_parameters(), **input_data.parameters}
 
+        # Process first screenshot (single screenshot analysis for now)
+        if not input_data.screenshot_data:
+            return RegionAnalysisResult(
+                analyzer_type=self.analysis_type,
+                analyzer_name=self.name,
+                regions=[],
+                confidence=0.0,
+            )
+
+        # Decode image from bytes
+        image_array = np.frombuffer(input_data.screenshot_data[0], dtype=np.uint8)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+
+        if image is None:
+            return RegionAnalysisResult(  # type: ignore[unreachable]
+                analyzer_type=self.analysis_type,
+                analyzer_name=self.name,
+                regions=[],
+                confidence=0.0,
+            )
+
+        # Process the image
+        grid_regions = self._analyze_image(image, params)
+
+        # Calculate overall confidence
+        overall_confidence = (
+            max(r.confidence for r in grid_regions) if grid_regions else 0.0
+        )
+
+        return RegionAnalysisResult(
+            analyzer_type=self.analysis_type,
+            analyzer_name=self.name,
+            regions=grid_regions,
+            confidence=overall_confidence,
+            metadata={"params": params},
+        )
+
+    def _analyze_image(
+        self, image: np.ndarray, params: dict[str, Any]
+    ) -> list[DetectedRegion]:
+        """Analyze a single image for inventory grids"""
         # Ensure color image
         if len(image.shape) == 2:
             color_img = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
@@ -69,8 +122,8 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         return grid_regions
 
     def _quantize_colors(
-        self, image: np.ndarray, params: Dict[str, Any]
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, image: np.ndarray, params: dict[str, Any]
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Perform color quantization using K-means
 
@@ -97,8 +150,8 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         return quantized, labels
 
     def _find_color_regions(
-        self, labels: np.ndarray, params: Dict[str, Any]
-    ) -> List[np.ndarray]:
+        self, labels: np.ndarray, params: dict[str, Any]
+    ) -> list[np.ndarray]:
         """
         Find contiguous regions for each color cluster
 
@@ -128,14 +181,14 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
                 if area >= params["min_region_area"]:
                     # Create mask for this region
                     region_mask = np.zeros_like(mask)
-                    cv2.drawContours(region_mask, [contour], -1, 255, -1)
+                    cv2.drawContours(region_mask, [contour], -1, (255,), -1)
                     regions.append(region_mask)
 
         return regions
 
     def _detect_grid_in_region(
-        self, image: np.ndarray, region_mask: np.ndarray, params: Dict[str, Any]
-    ) -> List[DetectedRegion]:
+        self, image: np.ndarray, region_mask: np.ndarray, params: dict[str, Any]
+    ) -> list[DetectedRegion]:
         """Detect grid structure within a color-segmented region"""
         # Apply mask to image
         masked_img = cv2.bitwise_and(image, image, mask=region_mask)
@@ -158,8 +211,8 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         return []
 
     def _find_rectangles_in_region(
-        self, gray: np.ndarray, mask: np.ndarray, params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, gray: np.ndarray, mask: np.ndarray, params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Find rectangular structures in the masked region"""
         # Edge detection on masked region
         edges = cv2.Canny(gray, 50, 150)
@@ -210,8 +263,8 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         return rectangles
 
     def _extract_grid_from_rectangles(
-        self, rectangles: List[Dict[str, Any]], params: Dict[str, Any]
-    ) -> Optional[DetectedRegion]:
+        self, rectangles: list[dict[str, Any]], params: dict[str, Any]
+    ) -> DetectedRegion | None:
         """Extract grid structure from rectangles"""
         if len(rectangles) < params["min_grid_rows"] * params["min_grid_cols"]:
             return None
@@ -221,8 +274,8 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         avg_height = int(np.mean([r["height"] for r in rectangles]))
 
         # Get unique positions
-        x_positions = sorted(set(r["x"] for r in rectangles))
-        y_positions = sorted(set(r["y"] for r in rectangles))
+        x_positions = sorted({r["x"] for r in rectangles})
+        y_positions = sorted({r["y"] for r in rectangles})
 
         # Check if we have enough positions for a grid
         if (

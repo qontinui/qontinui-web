@@ -1,21 +1,21 @@
-import dagre from 'dagre'
-import type { Node, Edge } from '@xyflow/react'
+import dagre from "dagre";
+import type { Node, Edge } from "@xyflow/react";
 
 export interface LayoutOptions {
-  direction?: 'TB' | 'LR' | 'BT' | 'RL' // Top-Bottom, Left-Right, Bottom-Top, Right-Left
-  nodeWidth?: number
-  nodeHeight?: number
-  nodeSep?: number // Separation between nodes
-  rankSep?: number // Separation between ranks/levels
+  direction?: "TB" | "LR" | "BT" | "RL"; // Top-Bottom, Left-Right, Bottom-Top, Right-Left
+  nodeWidth?: number;
+  nodeHeight?: number;
+  nodeSep?: number; // Separation between nodes
+  rankSep?: number; // Separation between ranks/levels
 }
 
 const defaultOptions: Required<LayoutOptions> = {
-  direction: 'TB',
+  direction: "TB",
   nodeWidth: 200,
   nodeHeight: 150,
   nodeSep: 50,
   rankSep: 100,
-}
+};
 
 /**
  * Apply hierarchical layout to nodes using dagre
@@ -25,49 +25,49 @@ export function getLayoutedElements(
   edges: Edge[],
   options: LayoutOptions = {}
 ): { nodes: Node[]; edges: Edge[] } {
-  const opts = { ...defaultOptions, ...options }
+  const opts = { ...defaultOptions, ...options };
 
-  const dagreGraph = new dagre.graphlib.Graph()
-  dagreGraph.setDefaultEdgeLabel(() => ({}))
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
   dagreGraph.setGraph({
     rankdir: opts.direction,
     nodesep: opts.nodeSep,
     ranksep: opts.rankSep,
-  })
+  });
 
   // Add nodes to dagre graph
   nodes.forEach((node) => {
     dagreGraph.setNode(node.id, {
       width: opts.nodeWidth,
       height: opts.nodeHeight,
-    })
-  })
+    });
+  });
 
   // Add edges to dagre graph
   edges.forEach((edge) => {
-    dagreGraph.setEdge(edge.source, edge.target)
-  })
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
 
   // Calculate layout
-  dagre.layout(dagreGraph)
+  dagre.layout(dagreGraph);
 
   // Apply calculated positions to nodes
   const layoutedNodes = nodes.map((node) => {
-    const nodeWithPosition = dagreGraph.node(node.id)
+    const nodeWithPosition = dagreGraph.node(node.id);
 
     return {
       ...node,
       position: {
-        x: nodeWithPosition.x - opts.nodeWidth / 2,
-        y: nodeWithPosition.y - opts.nodeHeight / 2,
+        x: Math.round(nodeWithPosition.x - opts.nodeWidth / 2),
+        y: Math.round(nodeWithPosition.y - opts.nodeHeight / 2),
       },
-    }
-  })
+    };
+  });
 
   return {
     nodes: layoutedNodes,
     edges,
-  }
+  };
 }
 
 /**
@@ -83,20 +83,20 @@ export function getGridLayoutedElements(
   spacingY: number = 50
 ): { nodes: Node[]; edges: Edge[] } {
   const layoutedNodes = nodes.map((node, index) => {
-    const col = index % columns
-    const row = Math.floor(index / columns)
+    const col = index % columns;
+    const row = Math.floor(index / columns);
 
     return {
       ...node,
       position: {
-        x: col * (nodeWidth + spacingX) + 100,
-        y: row * (nodeHeight + spacingY) + 100,
+        x: Math.round(col * (nodeWidth + spacingX) + 100),
+        y: Math.round(row * (nodeHeight + spacingY) + 100),
       },
-    }
-  })
+    };
+  });
 
   return {
     nodes: layoutedNodes,
     edges,
-  }
+  };
 }

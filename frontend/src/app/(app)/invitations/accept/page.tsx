@@ -6,14 +6,21 @@
  * Handles already-accepted and expired invitations.
  */
 
-'use client';
+"use client";
 
-import React, { useEffect, useState, useCallback, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import React, { useEffect, useState, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   CheckCircle2,
   XCircle,
@@ -24,20 +31,24 @@ import {
   Shield,
   AlertTriangle,
   ArrowRight,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import type { Invitation, Organization, MemberRole } from '@/types/collaboration';
+} from "lucide-react";
+import { toast } from "sonner";
+import type {
+  Invitation,
+  Organization,
+  MemberRole,
+} from "@/types/collaboration";
 import {
   acceptInvitation,
   declineInvitation,
   getInvitationDetails,
-} from '@/lib/api/organizations';
+} from "@/lib/api/organizations";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type InvitationStatus = 'loading' | 'valid' | 'accepted' | 'expired' | 'error';
+type InvitationStatus = "loading" | "valid" | "accepted" | "expired" | "error";
 
 interface InvitationData {
   invitation: Invitation;
@@ -50,26 +61,28 @@ interface InvitationData {
 
 function getRoleDescription(role: MemberRole): string {
   switch (role) {
-    case 'owner':
-      return 'Full access to manage the organization, members, and all projects';
-    case 'admin':
-      return 'Can manage members, settings, and all projects';
-    case 'member':
-      return 'Can create and edit projects and workflows';
-    case 'viewer':
-      return 'Can view projects but cannot make changes';
+    case "owner":
+      return "Full access to manage the organization, members, and all projects";
+    case "admin":
+      return "Can manage members, settings, and all projects";
+    case "member":
+      return "Can create and edit projects and workflows";
+    case "viewer":
+      return "Can view projects but cannot make changes";
   }
 }
 
-function getRoleBadgeVariant(role: MemberRole): 'default' | 'secondary' | 'outline' {
+function getRoleBadgeVariant(
+  role: MemberRole
+): "default" | "secondary" | "outline" {
   switch (role) {
-    case 'owner':
-    case 'admin':
-      return 'default';
-    case 'member':
-      return 'secondary';
-    case 'viewer':
-      return 'outline';
+    case "owner":
+    case "admin":
+      return "default";
+    case "member":
+      return "secondary";
+    case "viewer":
+      return "outline";
   }
 }
 
@@ -80,19 +93,21 @@ function getRoleBadgeVariant(role: MemberRole): 'default' | 'secondary' | 'outli
 function AcceptInvitationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = searchParams.get('token');
+  const token = searchParams.get("token");
 
-  const [status, setStatus] = useState<InvitationStatus>('loading');
-  const [invitationData, setInvitationData] = useState<InvitationData | null>(null);
+  const [status, setStatus] = useState<InvitationStatus>("loading");
+  const [invitationData, setInvitationData] = useState<InvitationData | null>(
+    null
+  );
   const [isAccepting, setIsAccepting] = useState(false);
   const [isDeclining, setIsDeclining] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState<string>("");
 
   // Load invitation details
   useEffect(() => {
     if (!token) {
-      setStatus('error');
-      setErrorMessage('No invitation token provided');
+      setStatus("error");
+      setErrorMessage("No invitation token provided");
       return;
     }
 
@@ -102,22 +117,26 @@ function AcceptInvitationContent() {
   const loadInvitationDetails = useCallback(async () => {
     if (!token) return;
 
-    setStatus('loading');
+    setStatus("loading");
     try {
       const data = await getInvitationDetails(token);
 
       // Check invitation status
-      if (data.status === 'accepted') {
-        setStatus('accepted');
-      } else if (data.status === 'expired' || data.status === 'revoked') {
-        setStatus('expired');
+      if (data.status === "accepted") {
+        setStatus("accepted");
+      } else if (data.status === "expired" || data.status === "revoked") {
+        setStatus("expired");
       } else {
-        setStatus('valid');
-        setInvitationData(data);
+        setStatus("valid");
+        setInvitationData({
+          invitation: data,
+          organization: data.organization,
+        });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to load invitation';
-      setStatus('error');
+      const message =
+        error instanceof Error ? error.message : "Failed to load invitation";
+      setStatus("error");
       setErrorMessage(message);
       toast.error(message);
     }
@@ -134,10 +153,11 @@ function AcceptInvitationContent() {
 
       // Redirect to organization dashboard or projects
       setTimeout(() => {
-        router.push('/dashboard');
+        router.push("/dashboard");
       }, 1500);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to accept invitation';
+      const message =
+        error instanceof Error ? error.message : "Failed to accept invitation";
       toast.error(message);
       setErrorMessage(message);
     } finally {
@@ -152,14 +172,15 @@ function AcceptInvitationContent() {
     setIsDeclining(true);
     try {
       await declineInvitation(token);
-      toast.success('Invitation declined');
+      toast.success("Invitation declined");
 
       // Redirect to dashboard
       setTimeout(() => {
-        router.push('/dashboard');
+        router.push("/dashboard");
       }, 1000);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to decline invitation';
+      const message =
+        error instanceof Error ? error.message : "Failed to decline invitation";
       toast.error(message);
     } finally {
       setIsDeclining(false);
@@ -167,7 +188,7 @@ function AcceptInvitationContent() {
   }, [token, router]);
 
   // Loading state
-  if (status === 'loading') {
+  if (status === "loading") {
     return (
       <div className="container max-w-2xl mx-auto px-4 py-16">
         <Card>
@@ -181,7 +202,7 @@ function AcceptInvitationContent() {
   }
 
   // Error state
-  if (status === 'error') {
+  if (status === "error") {
     return (
       <div className="container max-w-2xl mx-auto px-4 py-16">
         <Card>
@@ -196,11 +217,17 @@ function AcceptInvitationContent() {
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>Error</AlertTitle>
-              <AlertDescription>{errorMessage || 'Invalid invitation token'}</AlertDescription>
+              <AlertDescription>
+                {errorMessage || "Invalid invitation token"}
+              </AlertDescription>
             </Alert>
           </CardContent>
           <CardFooter>
-            <Button onClick={() => router.push('/dashboard')} variant="outline" className="w-full">
+            <Button
+              onClick={() => router.push("/dashboard")}
+              variant="outline"
+              className="w-full"
+            >
               Go to Dashboard
             </Button>
           </CardFooter>
@@ -210,7 +237,7 @@ function AcceptInvitationContent() {
   }
 
   // Already accepted state
-  if (status === 'accepted') {
+  if (status === "accepted") {
     return (
       <div className="container max-w-2xl mx-auto px-4 py-16">
         <Card>
@@ -219,20 +246,25 @@ function AcceptInvitationContent() {
               <CheckCircle2 className="h-6 w-6 text-green-500" />
               <CardTitle>Already Accepted</CardTitle>
             </div>
-            <CardDescription>You have already accepted this invitation</CardDescription>
+            <CardDescription>
+              You have already accepted this invitation
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Alert>
               <CheckCircle2 className="h-4 w-4" />
               <AlertTitle>Success</AlertTitle>
               <AlertDescription>
-                This invitation has already been accepted. You can access the organization from your
-                dashboard.
+                This invitation has already been accepted. You can access the
+                organization from your dashboard.
               </AlertDescription>
             </Alert>
           </CardContent>
           <CardFooter>
-            <Button onClick={() => router.push('/dashboard')} className="w-full">
+            <Button
+              onClick={() => router.push("/dashboard")}
+              className="w-full"
+            >
               Go to Dashboard
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
@@ -243,7 +275,7 @@ function AcceptInvitationContent() {
   }
 
   // Expired state
-  if (status === 'expired') {
+  if (status === "expired") {
     return (
       <div className="container max-w-2xl mx-auto px-4 py-16">
         <Card>
@@ -259,13 +291,17 @@ function AcceptInvitationContent() {
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>Expired</AlertTitle>
               <AlertDescription>
-                This invitation is no longer valid. Please contact the organization administrator
-                to request a new invitation.
+                This invitation is no longer valid. Please contact the
+                organization administrator to request a new invitation.
               </AlertDescription>
             </Alert>
           </CardContent>
           <CardFooter>
-            <Button onClick={() => router.push('/dashboard')} variant="outline" className="w-full">
+            <Button
+              onClick={() => router.push("/dashboard")}
+              variant="outline"
+              className="w-full"
+            >
               Go to Dashboard
             </Button>
           </CardFooter>
@@ -291,7 +327,9 @@ function AcceptInvitationContent() {
             </div>
             <div>
               <CardTitle>Organization Invitation</CardTitle>
-              <CardDescription>You've been invited to join an organization</CardDescription>
+              <CardDescription>
+                You've been invited to join an organization
+              </CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -309,7 +347,10 @@ function AcceptInvitationContent() {
                     </p>
                   )}
                 </div>
-                <Badge variant={getRoleBadgeVariant(invitation.role)} className="text-xs">
+                <Badge
+                  variant={getRoleBadgeVariant(invitation.role)}
+                  className="text-xs"
+                >
                   {invitation.role}
                 </Badge>
               </div>
@@ -330,7 +371,9 @@ function AcceptInvitationContent() {
             <div className="p-4 rounded-lg border bg-muted/50">
               <div className="flex items-center gap-2 mb-2">
                 <Shield className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium text-sm">Your Role: {invitation.role}</span>
+                <span className="font-medium text-sm">
+                  Your Role: {invitation.role}
+                </span>
               </div>
               <p className="text-sm text-muted-foreground">
                 {getRoleDescription(invitation.role)}
@@ -342,7 +385,8 @@ function AcceptInvitationContent() {
           {(() => {
             const expiresAt = new Date(invitation.expires_at);
             const now = new Date();
-            const hoursUntilExpiry = (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60);
+            const hoursUntilExpiry =
+              (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60);
 
             if (hoursUntilExpiry < 24 && hoursUntilExpiry > 0) {
               return (
@@ -350,8 +394,9 @@ function AcceptInvitationContent() {
                   <Clock className="h-4 w-4" />
                   <AlertTitle>Expires Soon</AlertTitle>
                   <AlertDescription>
-                    This invitation will expire on{' '}
-                    {expiresAt.toLocaleDateString()} at {expiresAt.toLocaleTimeString()}
+                    This invitation will expire on{" "}
+                    {expiresAt.toLocaleDateString()} at{" "}
+                    {expiresAt.toLocaleTimeString()}
                   </AlertDescription>
                 </Alert>
               );
@@ -373,7 +418,7 @@ function AcceptInvitationContent() {
                 Declining...
               </>
             ) : (
-              'Decline'
+              "Decline"
             )}
           </Button>
           <Button

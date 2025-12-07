@@ -8,17 +8,17 @@
  * - Individual override for specific properties
  */
 
-'use client';
+"use client";
 
-import React from 'react';
-import { useMultiPropertyAdapter } from './property-adapter';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Users, AlertCircle, Save, RotateCcw } from 'lucide-react';
+import React from "react";
+import { useMultiPropertyAdapter } from "./property-adapter";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Users, AlertCircle, Save, RotateCcw } from "lucide-react";
 
 export interface MultiSelectPropertiesProps {
   actionIds: string[];
@@ -27,7 +27,7 @@ export interface MultiSelectPropertiesProps {
 
 export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
   actionIds,
-  className = '',
+  className = "",
 }) => {
   const {
     actions,
@@ -47,9 +47,9 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
   }
 
   // Get common properties
-  const commonEnabled = getCommonValue('enabled');
-  const commonTimeout = getCommonValue('timeout');
-  const commonRetries = getCommonValue('maxRetries');
+  const commonEnabled = getCommonValue("enabled");
+  const commonTimeout = getCommonValue("timeout");
+  const commonRetries = getCommonValue("maxRetries");
 
   // Check for type consistency
   const actionTypes = new Set(actions.map((a) => a.type));
@@ -114,20 +114,26 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
 
         {/* Common Base Settings */}
         <section>
-          <h4 className="text-xs font-semibold text-gray-400 mb-3">Base Settings</h4>
+          <h4 className="text-xs font-semibold text-gray-400 mb-3">
+            Base Settings
+          </h4>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-xs text-gray-400">Enabled</Label>
-                <p className="text-xs text-gray-500">Enable/disable all selected actions</p>
+                <p className="text-xs text-gray-500">
+                  Enable/disable all selected actions
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                {isMixedValue('enabled') && (
+                {isMixedValue("enabled") && (
                   <span className="text-xs text-yellow-400">(mixed)</span>
                 )}
                 <Switch
                   checked={commonEnabled !== false}
-                  onCheckedChange={(checked) => updateCommonConfig('enabled', checked)}
+                  onCheckedChange={(checked) =>
+                    updateCommonConfig("enabled", checked)
+                  }
                 />
               </div>
             </div>
@@ -138,20 +144,24 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
 
         {/* Execution Settings */}
         <section>
-          <h4 className="text-xs font-semibold text-gray-400 mb-3">Execution Settings</h4>
+          <h4 className="text-xs font-semibold text-gray-400 mb-3">
+            Execution Settings
+          </h4>
           <div className="space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs text-gray-400">Timeout (ms)</Label>
-                {isMixedValue('timeout') && (
+                {isMixedValue("timeout") && (
                   <span className="text-xs text-yellow-400">(mixed)</span>
                 )}
               </div>
               <Input
                 type="number"
-                value={commonTimeout ?? ''}
-                onChange={(e) => updateCommonConfig('timeout', Number(e.target.value))}
-                placeholder={isMixedValue('timeout') ? 'Mixed values' : '0'}
+                value={commonTimeout ?? ""}
+                onChange={(e) =>
+                  updateCommonConfig("timeout", Number(e.target.value))
+                }
+                placeholder={isMixedValue("timeout") ? "Mixed values" : "0"}
                 className="bg-transparent border-gray-700 text-gray-200"
                 min="0"
               />
@@ -160,20 +170,21 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs text-gray-400">Max Retries</Label>
-                {isMixedValue('maxRetries') && (
+                {isMixedValue("maxRetries") && (
                   <span className="text-xs text-yellow-400">(mixed)</span>
                 )}
               </div>
               <Input
                 type="number"
-                value={commonRetries ?? ''}
-                onChange={(e) => updateCommonConfig('maxRetries', Number(e.target.value))}
-                placeholder={isMixedValue('maxRetries') ? 'Mixed values' : '0'}
+                value={commonRetries ?? ""}
+                onChange={(e) =>
+                  updateCommonConfig("maxRetries", Number(e.target.value))
+                }
+                placeholder={isMixedValue("maxRetries") ? "Mixed values" : "0"}
                 className="bg-transparent border-gray-700 text-gray-200"
                 min="0"
               />
             </div>
-
           </div>
         </section>
 
@@ -184,14 +195,15 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
           <h4 className="text-xs font-semibold text-gray-400 mb-3">Position</h4>
           <div className="space-y-3">
             <p className="text-xs text-gray-500">
-              Position properties cannot be batch edited. Use canvas drag or alignment tools.
+              Position properties cannot be batch edited. Use canvas drag or
+              alignment tools.
             </p>
             <div className="grid grid-cols-3 gap-2">
               <Button
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log('Align left')}
+                onClick={() => console.log("Align left")}
               >
                 Align Left
               </Button>
@@ -199,7 +211,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log('Align center')}
+                onClick={() => console.log("Align center")}
               >
                 Align Center
               </Button>
@@ -207,7 +219,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log('Align right')}
+                onClick={() => console.log("Align right")}
               >
                 Align Right
               </Button>
@@ -215,7 +227,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log('Align top')}
+                onClick={() => console.log("Align top")}
               >
                 Align Top
               </Button>
@@ -223,7 +235,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log('Align middle')}
+                onClick={() => console.log("Align middle")}
               >
                 Align Middle
               </Button>
@@ -231,7 +243,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log('Align bottom')}
+                onClick={() => console.log("Align bottom")}
               >
                 Align Bottom
               </Button>
@@ -239,7 +251,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="col-span-3 h-8 text-xs"
-                onClick={() => console.log('Distribute')}
+                onClick={() => console.log("Distribute")}
               >
                 Distribute Evenly
               </Button>
@@ -251,7 +263,9 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
 
         {/* Action List */}
         <section>
-          <h4 className="text-xs font-semibold text-gray-400 mb-3">Selected Actions</h4>
+          <h4 className="text-xs font-semibold text-gray-400 mb-3">
+            Selected Actions
+          </h4>
           <div className="space-y-1">
             {actions.map((action, index) => (
               <div
@@ -264,7 +278,10 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                   </div>
                   <div className="text-xs text-gray-500">{action.id}</div>
                 </div>
-                <Badge variant="secondary" className="text-xs bg-gray-700 text-gray-200">
+                <Badge
+                  variant="secondary"
+                  className="text-xs bg-gray-700 text-gray-200"
+                >
                   #{index + 1}
                 </Badge>
               </div>
@@ -275,8 +292,9 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
         {/* Info */}
         <div className="p-3 rounded bg-blue-900/20 border border-blue-700/30">
           <div className="text-xs text-gray-300">
-            <strong>Batch Editing:</strong> Changes apply to all selected actions. Properties with
-            different values show "(mixed)". Edit to override with common value.
+            <strong>Batch Editing:</strong> Changes apply to all selected
+            actions. Properties with different values show "(mixed)". Edit to
+            override with common value.
           </div>
         </div>
       </div>

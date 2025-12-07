@@ -1,9 +1,12 @@
-import type { StateImage, State, SearchRegion } from '@/contexts/automation-context/types';
+import type {
+  StateImage,
+  State,
+  SearchRegion,
+} from "@/contexts/automation-context/types";
 
 export interface StateImageCreationOptions {
   name: string;
-  image: string; // Base64 data URL
-  mask?: string; // Base64 data URL for mask (optional)
+  imageId: string; // ID of ImageAsset in the library (library is source of truth)
   source: string; // Source identifier (e.g., 'pattern-optimization', 'image-extraction')
   fixed?: boolean;
   searchRegion?: SearchRegion; // Optional search region to add to the pattern
@@ -12,23 +15,25 @@ export interface StateImageCreationOptions {
 export interface StateImageCreationResult {
   stateImage: StateImage;
   targetState?: State; // If creating/updating a state
-  action: 'create-state' | 'update-state' | 'stateimage-only';
+  action: "create-state" | "update-state" | "stateimage-only";
 }
 
 /**
  * Creates a StateImage object with proper pattern-based structure
+ * Patterns reference images in the library via imageId (library is source of truth)
  */
-export function createStateImage(options: StateImageCreationOptions): StateImage {
-  const { name, image, mask, source, fixed = false, searchRegion } = options;
+export function createStateImage(
+  options: StateImageCreationOptions
+): StateImage {
+  const { name, imageId, source, fixed = false, searchRegion } = options;
 
-  // Create the pattern with search regions
+  // Create the pattern with search regions - imageId references library
   const searchRegions = searchRegion ? [searchRegion] : [];
 
   const pattern = {
     id: `pattern_${Date.now()}`,
     name,
-    image,
-    mask,
+    imageId, // Reference to ImageAsset in library
     searchRegions,
     fixed,
   };
@@ -38,7 +43,7 @@ export function createStateImage(options: StateImageCreationOptions): StateImage
     name,
     patterns: [pattern],
     shared: false,
-    source,
+    source: source as "upload" | "pattern-optimization" | undefined,
   };
 }
 
@@ -80,31 +85,31 @@ export function addStateImageToState(
  */
 export function prepareStateImageCreation(
   options: StateImageCreationOptions,
-  targetStateId: string | 'new',
+  targetStateId: string | "new",
   existingStates: State[],
   newStateName: string | undefined
 ): StateImageCreationResult {
   const stateImage = createStateImage(options);
 
-  if (targetStateId === 'new') {
+  if (targetStateId === "new") {
     return {
       stateImage,
       targetState: createStateWithImage(stateImage, newStateName),
-      action: 'create-state',
+      action: "create-state",
     };
   } else if (targetStateId) {
-    const existingState = existingStates.find(s => s.id === targetStateId);
+    const existingState = existingStates.find((s) => s.id === targetStateId);
     if (existingState) {
       return {
         stateImage,
         targetState: addStateImageToState(existingState, stateImage),
-        action: 'update-state',
+        action: "update-state",
       };
     }
   }
 
   return {
     stateImage,
-    action: 'stateimage-only',
+    action: "stateimage-only",
   };
 }

@@ -1,6 +1,6 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Shield,
   Key,
@@ -13,8 +13,8 @@ import {
   Clock,
   RefreshCw,
   CheckCircle,
-  AlertTriangle
-} from 'lucide-react';
+  AlertTriangle,
+} from "lucide-react";
 
 /**
  * Comprehensive Authentication & Authorization Architecture Diagram
@@ -37,8 +37,8 @@ export default function AuthenticationArchitectureDiagram() {
           Authentication & Authorization Architecture
         </h2>
         <p className="text-sm text-muted-foreground max-w-3xl mx-auto">
-          Enterprise-grade security with JWT tokens, RBAC permissions, device fingerprinting,
-          and comprehensive session management
+          Enterprise-grade security with JWT tokens, RBAC permissions, device
+          fingerprinting, and comprehensive session management
         </p>
       </div>
 
@@ -100,13 +100,17 @@ export default function AuthenticationArchitectureDiagram() {
             {/* Login */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">1</div>
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
+                  1
+                </div>
                 <span className="font-semibold text-sm">User Login</span>
               </div>
               <div className="ml-8 text-xs space-y-1">
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Component:</span>
-                  <code className="text-xs bg-muted px-1 rounded">AuthDialog</code>
+                  <code className="text-xs bg-muted px-1 rounded">
+                    AuthDialog
+                  </code>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Validation:</span>
@@ -114,7 +118,9 @@ export default function AuthenticationArchitectureDiagram() {
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">API Call:</span>
-                  <code className="text-xs bg-muted px-1 rounded">POST /api/v1/auth/jwt/login</code>
+                  <code className="text-xs bg-muted px-1 rounded">
+                    POST /api/v1/auth/jwt/login
+                  </code>
                 </div>
               </div>
             </div>
@@ -122,13 +128,17 @@ export default function AuthenticationArchitectureDiagram() {
             {/* Token Storage */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">2</div>
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
+                  2
+                </div>
                 <span className="font-semibold text-sm">Token Storage</span>
               </div>
               <div className="ml-8 text-xs space-y-1">
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Storage:</span>
-                  <code className="text-xs bg-muted px-1 rounded">localStorage</code>
+                  <code className="text-xs bg-muted px-1 rounded">
+                    localStorage
+                  </code>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Tokens:</span>
@@ -140,7 +150,9 @@ export default function AuthenticationArchitectureDiagram() {
                 </div>
                 <div className="flex items-center gap-1 mt-2">
                   <AlertTriangle className="w-3 h-3 text-amber-600" />
-                  <span className="text-amber-700">Vulnerable to XSS attacks</span>
+                  <span className="text-amber-700">
+                    Vulnerable to XSS attacks
+                  </span>
                 </div>
               </div>
             </div>
@@ -148,8 +160,12 @@ export default function AuthenticationArchitectureDiagram() {
             {/* Auth Context */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">3</div>
-                <span className="font-semibold text-sm">Auth State Management</span>
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
+                  3
+                </div>
+                <span className="font-semibold text-sm">
+                  Auth State Management
+                </span>
               </div>
               <div className="ml-8 text-xs space-y-1">
                 <div className="flex items-start gap-2">
@@ -158,7 +174,9 @@ export default function AuthenticationArchitectureDiagram() {
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Hook:</span>
-                  <code className="text-xs bg-muted px-1 rounded">useAuth()</code>
+                  <code className="text-xs bg-muted px-1 rounded">
+                    useAuth()
+                  </code>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Features:</span>
@@ -170,7 +188,9 @@ export default function AuthenticationArchitectureDiagram() {
             {/* Protected Routes */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">4</div>
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
+                  4
+                </div>
                 <span className="font-semibold text-sm">Protected Routes</span>
               </div>
               <div className="ml-8 text-xs space-y-1">
@@ -180,7 +200,9 @@ export default function AuthenticationArchitectureDiagram() {
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Pattern:</span>
-                  <code className="text-xs bg-muted px-1 rounded">useEffect + redirect</code>
+                  <code className="text-xs bg-muted px-1 rounded">
+                    useEffect + redirect
+                  </code>
                 </div>
               </div>
             </div>
@@ -188,13 +210,19 @@ export default function AuthenticationArchitectureDiagram() {
             {/* API Requests */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">5</div>
-                <span className="font-semibold text-sm">Authenticated Requests</span>
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
+                  5
+                </div>
+                <span className="font-semibold text-sm">
+                  Authenticated Requests
+                </span>
               </div>
               <div className="ml-8 text-xs space-y-1">
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Header:</span>
-                  <code className="text-xs bg-muted px-1 rounded">Authorization: Bearer {'{token}'}</code>
+                  <code className="text-xs bg-muted px-1 rounded">
+                    Authorization: Bearer {"{token}"}
+                  </code>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Auto-refresh:</span>
@@ -221,13 +249,17 @@ export default function AuthenticationArchitectureDiagram() {
             {/* Login Endpoint */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">1</div>
+                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">
+                  1
+                </div>
                 <span className="font-semibold text-sm">Login Endpoint</span>
               </div>
               <div className="ml-8 text-xs space-y-1">
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Route:</span>
-                  <code className="text-xs bg-muted px-1 rounded">POST /jwt/login</code>
+                  <code className="text-xs bg-muted px-1 rounded">
+                    POST /jwt/login
+                  </code>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground">Auth:</span>
@@ -243,8 +275,12 @@ export default function AuthenticationArchitectureDiagram() {
             {/* Device Fingerprinting */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">2</div>
-                <span className="font-semibold text-sm">Device Fingerprinting</span>
+                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">
+                  2
+                </div>
+                <span className="font-semibold text-sm">
+                  Device Fingerprinting
+                </span>
               </div>
               <div className="ml-8 text-xs space-y-1">
                 <div className="flex items-start gap-2">
@@ -265,7 +301,9 @@ export default function AuthenticationArchitectureDiagram() {
             {/* Token Generation */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">3</div>
+                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">
+                  3
+                </div>
                 <span className="font-semibold text-sm">Token Generation</span>
               </div>
               <div className="ml-8 text-xs space-y-1">
@@ -287,7 +325,9 @@ export default function AuthenticationArchitectureDiagram() {
             {/* Session Tracking */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">4</div>
+                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">
+                  4
+                </div>
                 <span className="font-semibold text-sm">Session Activity</span>
               </div>
               <div className="ml-8 text-xs space-y-1">
@@ -309,7 +349,9 @@ export default function AuthenticationArchitectureDiagram() {
             {/* Analytics */}
             <div className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">5</div>
+                <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">
+                  5
+                </div>
                 <span className="font-semibold text-sm">Analytics & Audit</span>
               </div>
               <div className="ml-8 text-xs space-y-1">
@@ -423,43 +465,73 @@ export default function AuthenticationArchitectureDiagram() {
               </div>
               <div className="space-y-1 text-xs">
                 <div className="flex items-center gap-2">
-                  <Badge variant="default" className="text-xs">is_superuser</Badge>
-                  <span className="text-muted-foreground">Platform admin privileges</span>
+                  <Badge variant="default" className="text-xs">
+                    is_superuser
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Platform admin privileges
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs">is_active</Badge>
-                  <span className="text-muted-foreground">Account status control</span>
+                  <Badge variant="secondary" className="text-xs">
+                    is_active
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Account status control
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">is_verified</Badge>
-                  <span className="text-muted-foreground">Email verification</span>
+                  <Badge variant="outline" className="text-xs">
+                    is_verified
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Email verification
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">is_beta</Badge>
-                  <span className="text-muted-foreground">Beta feature access</span>
+                  <Badge variant="outline" className="text-xs">
+                    is_beta
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Beta feature access
+                  </span>
                 </div>
               </div>
             </div>
 
             {/* Organization Roles */}
             <div className="border rounded-lg p-3 space-y-2">
-              <div className="font-semibold text-sm">Organization Team Roles</div>
+              <div className="font-semibold text-sm">
+                Organization Team Roles
+              </div>
               <div className="space-y-1 text-xs">
                 <div className="flex items-center justify-between">
                   <Badge className="text-xs">OWNER</Badge>
                   <span className="text-muted-foreground">Full control</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <Badge variant="secondary" className="text-xs">ADMIN</Badge>
-                  <span className="text-muted-foreground">Manage members & settings</span>
+                  <Badge variant="secondary" className="text-xs">
+                    ADMIN
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Manage members & settings
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <Badge variant="outline" className="text-xs">MEMBER</Badge>
-                  <span className="text-muted-foreground">Collaborate on projects</span>
+                  <Badge variant="outline" className="text-xs">
+                    MEMBER
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Collaborate on projects
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <Badge variant="outline" className="text-xs">VIEWER</Badge>
-                  <span className="text-muted-foreground">Read-only access</span>
+                  <Badge variant="outline" className="text-xs">
+                    VIEWER
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Read-only access
+                  </span>
                 </div>
               </div>
               <div className="text-xs text-muted-foreground mt-2">
@@ -469,23 +541,39 @@ export default function AuthenticationArchitectureDiagram() {
 
             {/* Project Permissions */}
             <div className="border rounded-lg p-3 space-y-2">
-              <div className="font-semibold text-sm">Project Permission Levels</div>
+              <div className="font-semibold text-sm">
+                Project Permission Levels
+              </div>
               <div className="space-y-1 text-xs">
                 <div className="flex items-center justify-between">
-                  <Badge variant="outline" className="text-xs">VIEW</Badge>
-                  <span className="text-muted-foreground">Can view workflows</span>
+                  <Badge variant="outline" className="text-xs">
+                    VIEW
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Can view workflows
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <Badge variant="outline" className="text-xs">COMMENT</Badge>
-                  <span className="text-muted-foreground">Can add comments</span>
+                  <Badge variant="outline" className="text-xs">
+                    COMMENT
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Can add comments
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <Badge variant="secondary" className="text-xs">EDIT</Badge>
-                  <span className="text-muted-foreground">Can modify workflows</span>
+                  <Badge variant="secondary" className="text-xs">
+                    EDIT
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Can modify workflows
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <Badge className="text-xs">ADMIN</Badge>
-                  <span className="text-muted-foreground">Can manage settings</span>
+                  <span className="text-muted-foreground">
+                    Can manage settings
+                  </span>
                 </div>
               </div>
               <div className="text-xs text-muted-foreground mt-2">
@@ -506,10 +594,14 @@ export default function AuthenticationArchitectureDiagram() {
           <CardContent className="space-y-4">
             {/* Backend Permission Service */}
             <div className="border rounded-lg p-3 space-y-2">
-              <div className="font-semibold text-sm">Backend Permission Service</div>
+              <div className="font-semibold text-sm">
+                Backend Permission Service
+              </div>
               <div className="space-y-2 text-xs">
                 <div className="bg-muted p-2 rounded">
-                  <code className="text-xs">permission_service.can_user_access_project()</code>
+                  <code className="text-xs">
+                    permission_service.can_user_access_project()
+                  </code>
                 </div>
                 <div className="text-muted-foreground space-y-1">
                   <div className="font-medium">Resolution Order:</div>
@@ -526,7 +618,9 @@ export default function AuthenticationArchitectureDiagram() {
 
             {/* API Endpoint Protection */}
             <div className="border rounded-lg p-3 space-y-2">
-              <div className="font-semibold text-sm">API Endpoint Protection</div>
+              <div className="font-semibold text-sm">
+                API Endpoint Protection
+              </div>
               <div className="space-y-2 text-xs">
                 <div className="text-muted-foreground">
                   <div className="font-medium mb-1">Protection Pattern:</div>
@@ -539,16 +633,24 @@ export default function AuthenticationArchitectureDiagram() {
                 </div>
                 <div className="mt-2 space-y-1">
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">VIEW</Badge>
+                    <Badge variant="outline" className="text-xs">
+                      VIEW
+                    </Badge>
                     <span className="text-muted-foreground">GET endpoints</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-xs">EDIT</Badge>
-                    <span className="text-muted-foreground">PUT/PATCH endpoints</span>
+                    <Badge variant="secondary" className="text-xs">
+                      EDIT
+                    </Badge>
+                    <span className="text-muted-foreground">
+                      PUT/PATCH endpoints
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge className="text-xs">ADMIN</Badge>
-                    <span className="text-muted-foreground">DELETE endpoints</span>
+                    <span className="text-muted-foreground">
+                      DELETE endpoints
+                    </span>
                   </div>
                 </div>
               </div>
@@ -556,14 +658,34 @@ export default function AuthenticationArchitectureDiagram() {
 
             {/* Frontend Permission Checking */}
             <div className="border rounded-lg p-3 space-y-2">
-              <div className="font-semibold text-sm">Frontend Permission UI</div>
+              <div className="font-semibold text-sm">
+                Frontend Permission UI
+              </div>
               <div className="space-y-2 text-xs">
                 <div className="text-muted-foreground space-y-1">
                   <div className="font-medium">Components & Hooks:</div>
                   <ul className="space-y-0.5 ml-2">
-                    <li>• <code className="bg-muted px-1 rounded">PermissionGate</code> - Conditional rendering</li>
-                    <li>• <code className="bg-muted px-1 rounded">useProjectPermissions()</code> - Permission state</li>
-                    <li>• <code className="bg-muted px-1 rounded">lib/permissions.ts</code> - Utility functions</li>
+                    <li>
+                      •{" "}
+                      <code className="bg-muted px-1 rounded">
+                        PermissionGate
+                      </code>{" "}
+                      - Conditional rendering
+                    </li>
+                    <li>
+                      •{" "}
+                      <code className="bg-muted px-1 rounded">
+                        useProjectPermissions()
+                      </code>{" "}
+                      - Permission state
+                    </li>
+                    <li>
+                      •{" "}
+                      <code className="bg-muted px-1 rounded">
+                        lib/permissions.ts
+                      </code>{" "}
+                      - Utility functions
+                    </li>
                   </ul>
                 </div>
                 <div className="bg-amber-50 border border-amber-200 p-2 rounded">
@@ -595,7 +717,9 @@ export default function AuthenticationArchitectureDiagram() {
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Smartphone className="w-4 h-4 text-red-600" />
-                <span className="font-semibold text-sm">Device Fingerprinting</span>
+                <span className="font-semibold text-sm">
+                  Device Fingerprinting
+                </span>
               </div>
               <ul className="text-xs space-y-1 text-muted-foreground">
                 <li>• SHA-256 hash of device characteristics</li>
@@ -642,7 +766,9 @@ export default function AuthenticationArchitectureDiagram() {
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-red-600" />
-                <span className="font-semibold text-sm">Email Verification</span>
+                <span className="font-semibold text-sm">
+                  Email Verification
+                </span>
               </div>
               <ul className="text-xs space-y-1 text-muted-foreground">
                 <li>• JWT-based verification tokens (24h)</li>
@@ -737,7 +863,9 @@ export default function AuthenticationArchitectureDiagram() {
 
             {/* Project Access Control */}
             <div className="border rounded-lg p-3 space-y-2">
-              <div className="font-semibold text-sm">project_access_control</div>
+              <div className="font-semibold text-sm">
+                project_access_control
+              </div>
               <div className="text-xs space-y-1 text-muted-foreground">
                 <div>• id (UUID, PK)</div>
                 <div>• project_id, user_id, org_id</div>
@@ -788,38 +916,68 @@ export default function AuthenticationArchitectureDiagram() {
           <CardContent>
             <div className="space-y-3 text-xs">
               <div className="border-l-4 border-red-500 pl-3 py-2">
-                <div className="font-semibold text-red-700">CRITICAL: localStorage Token Storage</div>
-                <div className="text-muted-foreground">Tokens vulnerable to XSS attacks. Recommend HttpOnly cookies.</div>
+                <div className="font-semibold text-red-700">
+                  CRITICAL: localStorage Token Storage
+                </div>
+                <div className="text-muted-foreground">
+                  Tokens vulnerable to XSS attacks. Recommend HttpOnly cookies.
+                </div>
               </div>
 
               <div className="border-l-4 border-amber-500 pl-3 py-2">
-                <div className="font-semibold text-amber-700">HIGH: Missing Security Headers</div>
-                <div className="text-muted-foreground">No CSP, HSTS, X-Frame-Options. Add SecurityHeadersMiddleware.</div>
+                <div className="font-semibold text-amber-700">
+                  HIGH: Missing Security Headers
+                </div>
+                <div className="text-muted-foreground">
+                  No CSP, HSTS, X-Frame-Options. Add SecurityHeadersMiddleware.
+                </div>
               </div>
 
               <div className="border-l-4 border-amber-500 pl-3 py-2">
-                <div className="font-semibold text-amber-700">HIGH: Rate Limiting Not Scalable</div>
-                <div className="text-muted-foreground">In-memory storage won't work across instances. Migrate to Redis.</div>
+                <div className="font-semibold text-amber-700">
+                  HIGH: Rate Limiting Not Scalable
+                </div>
+                <div className="text-muted-foreground">
+                  In-memory storage won't work across instances. Migrate to
+                  Redis.
+                </div>
               </div>
 
               <div className="border-l-4 border-amber-500 pl-3 py-2">
-                <div className="font-semibold text-amber-700">HIGH: Missing Permission Checks</div>
-                <div className="text-muted-foreground">Snapshots endpoint has NO permission validation. Security risk.</div>
+                <div className="font-semibold text-amber-700">
+                  HIGH: Missing Permission Checks
+                </div>
+                <div className="text-muted-foreground">
+                  Snapshots endpoint has NO permission validation. Security
+                  risk.
+                </div>
               </div>
 
               <div className="border-l-4 border-orange-400 pl-3 py-2">
-                <div className="font-semibold text-orange-700">MEDIUM: No MFA/2FA</div>
-                <div className="text-muted-foreground">Single-factor auth vulnerable to password compromise.</div>
+                <div className="font-semibold text-orange-700">
+                  MEDIUM: No MFA/2FA
+                </div>
+                <div className="text-muted-foreground">
+                  Single-factor auth vulnerable to password compromise.
+                </div>
               </div>
 
               <div className="border-l-4 border-orange-400 pl-3 py-2">
-                <div className="font-semibold text-orange-700">MEDIUM: No Brute Force Protection</div>
-                <div className="text-muted-foreground">No account lockout after failed login attempts.</div>
+                <div className="font-semibold text-orange-700">
+                  MEDIUM: No Brute Force Protection
+                </div>
+                <div className="text-muted-foreground">
+                  No account lockout after failed login attempts.
+                </div>
               </div>
 
               <div className="border-l-4 border-orange-400 pl-3 py-2">
-                <div className="font-semibold text-orange-700">MEDIUM: Cross-Tab Session Sync</div>
-                <div className="text-muted-foreground">Logout in one tab doesn't affect others. Use BroadcastChannel.</div>
+                <div className="font-semibold text-orange-700">
+                  MEDIUM: Cross-Tab Session Sync
+                </div>
+                <div className="text-muted-foreground">
+                  Logout in one tab doesn't affect others. Use BroadcastChannel.
+                </div>
               </div>
             </div>
           </CardContent>
@@ -836,38 +994,68 @@ export default function AuthenticationArchitectureDiagram() {
           <CardContent>
             <div className="space-y-3 text-xs">
               <div className="border-l-4 border-green-600 pl-3 py-2">
-                <div className="font-semibold text-green-700">✓ Immediate: Move tokens to HttpOnly cookies</div>
-                <div className="text-muted-foreground">Eliminate XSS token theft vulnerability. Backend sets cookies.</div>
+                <div className="font-semibold text-green-700">
+                  ✓ Immediate: Move tokens to HttpOnly cookies
+                </div>
+                <div className="text-muted-foreground">
+                  Eliminate XSS token theft vulnerability. Backend sets cookies.
+                </div>
               </div>
 
               <div className="border-l-4 border-green-600 pl-3 py-2">
-                <div className="font-semibold text-green-700">✓ Immediate: Add security headers middleware</div>
-                <div className="text-muted-foreground">Implement CSP, HSTS, X-Frame-Options, X-Content-Type-Options.</div>
+                <div className="font-semibold text-green-700">
+                  ✓ Immediate: Add security headers middleware
+                </div>
+                <div className="text-muted-foreground">
+                  Implement CSP, HSTS, X-Frame-Options, X-Content-Type-Options.
+                </div>
               </div>
 
               <div className="border-l-4 border-green-600 pl-3 py-2">
-                <div className="font-semibold text-green-700">✓ Immediate: Fix snapshots endpoint permissions</div>
-                <div className="text-muted-foreground">Add project permission validation to prevent unauthorized access.</div>
+                <div className="font-semibold text-green-700">
+                  ✓ Immediate: Fix snapshots endpoint permissions
+                </div>
+                <div className="text-muted-foreground">
+                  Add project permission validation to prevent unauthorized
+                  access.
+                </div>
               </div>
 
               <div className="border-l-4 border-blue-500 pl-3 py-2">
-                <div className="font-semibold text-blue-700">Short-term: Implement MFA/2FA</div>
-                <div className="text-muted-foreground">Add TOTP authenticator support for enhanced security.</div>
+                <div className="font-semibold text-blue-700">
+                  Short-term: Implement MFA/2FA
+                </div>
+                <div className="text-muted-foreground">
+                  Add TOTP authenticator support for enhanced security.
+                </div>
               </div>
 
               <div className="border-l-4 border-blue-500 pl-3 py-2">
-                <div className="font-semibold text-blue-700">Short-term: Add brute force protection</div>
-                <div className="text-muted-foreground">Lock account after N failed attempts, require email unlock.</div>
+                <div className="font-semibold text-blue-700">
+                  Short-term: Add brute force protection
+                </div>
+                <div className="text-muted-foreground">
+                  Lock account after N failed attempts, require email unlock.
+                </div>
               </div>
 
               <div className="border-l-4 border-blue-500 pl-3 py-2">
-                <div className="font-semibold text-blue-700">Short-term: Migrate rate limiter to Redis</div>
-                <div className="text-muted-foreground">Enable distributed rate limiting across multiple instances.</div>
+                <div className="font-semibold text-blue-700">
+                  Short-term: Migrate rate limiter to Redis
+                </div>
+                <div className="text-muted-foreground">
+                  Enable distributed rate limiting across multiple instances.
+                </div>
               </div>
 
               <div className="border-l-4 border-blue-500 pl-3 py-2">
-                <div className="font-semibold text-blue-700">Short-term: Enable SessionTimeoutWarning</div>
-                <div className="text-muted-foreground">Prevent data loss from unexpected logout. Warn 5 min before expiry.</div>
+                <div className="font-semibold text-blue-700">
+                  Short-term: Enable SessionTimeoutWarning
+                </div>
+                <div className="text-muted-foreground">
+                  Prevent data loss from unexpected logout. Warn 5 min before
+                  expiry.
+                </div>
               </div>
             </div>
           </CardContent>

@@ -1,12 +1,12 @@
-import { formatDistanceToNow, formatDistance, parseISO } from 'date-fns';
+import { formatDistanceToNow, formatDistance, parseISO } from "date-fns";
 
 /**
  * Format seconds into human-readable duration
  * Examples: "2h 34m", "45m 12s", "3d 5h", "12s"
  */
 export function formatDuration(seconds: number): string {
-  if (seconds < 0) return '0s';
-  if (seconds === 0) return '0s';
+  if (seconds < 0) return "0s";
+  if (seconds === 0) return "0s";
 
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
@@ -19,20 +19,20 @@ export function formatDuration(seconds: number): string {
     parts.push(`${days}d`);
     if (hours > 0) parts.push(`${hours}h`);
     // Don't show minutes/seconds if we have days
-    return parts.join(' ');
+    return parts.join(" ");
   }
 
   if (hours > 0) {
     parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
     // Don't show seconds if we have hours
-    return parts.join(' ');
+    return parts.join(" ");
   }
 
   if (minutes > 0) {
     parts.push(`${minutes}m`);
     if (secs > 0) parts.push(`${secs}s`);
-    return parts.join(' ');
+    return parts.join(" ");
   }
 
   return `${secs}s`;
@@ -44,11 +44,11 @@ export function formatDuration(seconds: number): string {
  */
 export function formatRelativeTime(date: string | Date): string {
   try {
-    const dateObj = typeof date === 'string' ? parseISO(date) : date;
+    const dateObj = typeof date === "string" ? parseISO(date) : date;
     return formatDistanceToNow(dateObj, { addSuffix: true });
   } catch (error) {
-    console.error('Error formatting relative time:', error);
-    return 'Unknown';
+    console.error("Error formatting relative time:", error);
+    return "Unknown";
   }
 }
 
@@ -56,14 +56,17 @@ export function formatRelativeTime(date: string | Date): string {
  * Format the distance between two dates
  * Examples: "2 hours", "3 days", "45 minutes"
  */
-export function formatDistanceBetween(start: string | Date, end: string | Date): string {
+export function formatDistanceBetween(
+  start: string | Date,
+  end: string | Date
+): string {
   try {
-    const startDate = typeof start === 'string' ? parseISO(start) : start;
-    const endDate = typeof end === 'string' ? parseISO(end) : end;
+    const startDate = typeof start === "string" ? parseISO(start) : start;
+    const endDate = typeof end === "string" ? parseISO(end) : end;
     return formatDistance(startDate, endDate);
   } catch (error) {
-    console.error('Error formatting distance:', error);
-    return 'Unknown';
+    console.error("Error formatting distance:", error);
+    return "Unknown";
   }
 }
 
@@ -76,7 +79,7 @@ export function isExpired(expiresAt: string | null): boolean {
     const expiryDate = parseISO(expiresAt);
     return expiryDate < new Date();
   } catch (error) {
-    console.error('Error checking expiration:', error);
+    console.error("Error checking expiration:", error);
     return false;
   }
 }
@@ -93,7 +96,7 @@ export function isExpiringSoon(expiresAt: string | null): boolean {
     const now = new Date();
     return expiryDate > now && expiryDate <= sevenDaysFromNow;
   } catch (error) {
-    console.error('Error checking if expiring soon:', error);
+    console.error("Error checking if expiring soon:", error);
     return false;
   }
 }

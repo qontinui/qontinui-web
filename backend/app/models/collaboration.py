@@ -10,21 +10,24 @@ Includes:
 
 from datetime import datetime, timedelta
 from enum import Enum as PyEnum
+from uuid import UUID as PyUUID
 
-from app.db.base import Base
 from sqlalchemy import (
     JSON,
     Boolean,
     Column,
     DateTime,
-    Enum,
     ForeignKey,
     Integer,
     String,
     Text,
+    text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class ResourceType(str, PyEnum):
@@ -64,10 +67,10 @@ class ProjectLock(Base):
     __tablename__ = "project_locks"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -78,11 +81,25 @@ class ProjectLock(Base):
         nullable=False,
         index=True,
     )
-    resource_type = Column(Enum(ResourceType), nullable=False)
-    resource_id = Column(String, nullable=False, index=True)
-    acquired_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    auto_release = Column(Boolean, default=True, nullable=False)
+    resource_type: Mapped[str] = mapped_column(
+        PG_ENUM(
+            "workflow",
+            "state",
+            "image",
+            "transition",
+            "action",
+            "project",
+            name="resourcetype",
+            create_type=True,
+        ),
+        nullable=False,
+    )
+    resource_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    acquired_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    auto_release: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     lock_metadata: Mapped[dict] = mapped_column("metadata", JSON, nullable=True)
 
     # Relationships
@@ -117,18 +134,18 @@ class ProjectComment(Base):
     __tablename__ = "project_comments"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    workflow_id = Column(
+    workflow_id: Mapped[str | None] = mapped_column(
         String, nullable=True, index=True
     )  # Optional: specific workflow
-    action_id = Column(
+    action_id: Mapped[str | None] = mapped_column(
         String, nullable=True, index=True
     )  # Optional: specific action/state
     author_id = Column(
@@ -137,24 +154,28 @@ class ProjectComment(Base):
         nullable=False,
         index=True,
     )
-    content = Column(Text, nullable=False)
-    position = Column(
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[dict | None] = mapped_column(
         JSON, nullable=True
     )  # {x: number, y: number} for canvas positioning
-    mentions = Column(JSON, nullable=True)  # Array of user IDs mentioned in comment
-    resolved = Column(Boolean, default=False, nullable=False)
-    resolved_by = Column(
+    mentions: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Array of user IDs mentioned in comment
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    resolved_by: Mapped[PyUUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    resolved_at = Column(DateTime, nullable=True)
-    parent_comment_id = Column(
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    parent_comment_id: Mapped[PyUUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("project_comments.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
     comment_metadata: Mapped[dict] = mapped_column(
@@ -169,7 +190,7 @@ class ProjectComment(Base):
     )
     parent = relationship("ProjectComment", remote_side=[id], backref="replies")
 
-    def resolve(self, user_id: UUID) -> None:
+    def resolve(self, user_id: PyUUID) -> None:
         """Mark comment as resolved."""
         self.resolved = True
         self.resolved_by = user_id
@@ -193,10 +214,10 @@ class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -207,15 +228,50 @@ class ActivityLog(Base):
         nullable=False,
         index=True,
     )
-    action_type = Column(Enum(ActionType), nullable=False, index=True)
-    resource_type = Column(Enum(ResourceType), nullable=False)
-    resource_id = Column(String, nullable=False, index=True)
-    resource_name = Column(String, nullable=True)  # Human-readable resource name
-    changes = Column(JSON, nullable=True)  # Detailed change information
-    activity_metadata: Mapped[dict] = mapped_column(
+    action_type: Mapped[str] = mapped_column(
+        PG_ENUM(
+            "created",
+            "modified",
+            "deleted",
+            "shared",
+            "commented",
+            "locked",
+            "unlocked",
+            "viewed",
+            "exported",
+            "imported",
+            name="actiontype",
+            create_type=True,
+        ),
+        nullable=False,
+        index=True,
+    )
+    resource_type: Mapped[str] = mapped_column(
+        PG_ENUM(
+            "workflow",
+            "state",
+            "image",
+            "transition",
+            "action",
+            "project",
+            name="resourcetype",
+            create_type=True,
+        ),
+        nullable=False,
+    )
+    resource_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    resource_name: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # Human-readable resource name
+    changes: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Detailed change information
+    activity_metadata: Mapped[dict | None] = mapped_column(
         "metadata", JSON, nullable=True
     )  # Additional context
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
 
     # Relationships
     project = relationship("Project", backref="activities")
@@ -224,14 +280,14 @@ class ActivityLog(Base):
     @classmethod
     def create_activity(
         cls,
-        project_id: int,
-        user_id: UUID,
+        project_id: PyUUID,
+        user_id: PyUUID,
         action_type: ActionType,
         resource_type: ResourceType,
         resource_id: str,
-        resource_name: str = None,
-        changes: dict = None,
-        activity_metadata: dict = None,
+        resource_name: str | None = None,
+        changes: dict | None = None,
+        activity_metadata: dict | None = None,
     ) -> "ActivityLog":
         """
         Factory method to create activity log entry.
@@ -272,12 +328,12 @@ class ConflictLog(Base):
     __tablename__ = "conflict_logs"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    resource_type = Column(String, nullable=False)
-    resource_id = Column(String, nullable=False, index=True)
-    local_version = Column(Integer, nullable=False)
-    remote_version = Column(Integer, nullable=False)
+    resource_type: Mapped[str] = mapped_column(String, nullable=False)
+    resource_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    local_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    remote_version: Mapped[int] = mapped_column(Integer, nullable=False)
     local_user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -290,16 +346,32 @@ class ConflictLog(Base):
         nullable=False,
         index=True,
     )
-    base_data = Column(JSON, nullable=True)  # Data before both edits
-    local_data = Column(JSON, nullable=True)  # Local user's changes
-    remote_data = Column(JSON, nullable=True)  # Remote user's changes
-    changes = Column(JSON, nullable=True)  # Array of ConflictChange objects
-    detected_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    resolved = Column(Boolean, default=False, nullable=False)
-    resolved_at = Column(DateTime, nullable=True)
-    resolution_type = Column(String, nullable=True)  # 'local', 'remote', 'merge'
-    resolved_data = Column(JSON, nullable=True)  # Final merged data
-    conflict_metadata: Mapped[dict] = mapped_column("metadata", JSON, nullable=True)
+    base_data: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Data before both edits
+    local_data: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Local user's changes
+    remote_data: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Remote user's changes
+    changes: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Array of ConflictChange objects
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    resolution_type: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # 'local', 'remote', 'merge'
+    resolved_data: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Final merged data
+    conflict_metadata: Mapped[dict | None] = mapped_column(
+        "metadata", JSON, nullable=True
+    )
 
     # Relationships
     local_user = relationship(
@@ -332,13 +404,13 @@ class ConflictLog(Base):
         resource_id: str,
         local_version: int,
         remote_version: int,
-        local_user_id: UUID,
-        remote_user_id: UUID,
-        base_data: dict = None,
-        local_data: dict = None,
-        remote_data: dict = None,
-        changes: list = None,
-        metadata: dict = None,
+        local_user_id: PyUUID,
+        remote_user_id: PyUUID,
+        base_data: dict | None = None,
+        local_data: dict | None = None,
+        remote_data: dict | None = None,
+        changes: list | None = None,
+        metadata: dict | None = None,
     ) -> "ConflictLog":
         """
         Factory method to create conflict log entry.

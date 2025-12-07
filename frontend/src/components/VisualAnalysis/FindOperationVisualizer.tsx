@@ -1,22 +1,21 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search,
   ZoomIn,
   ZoomOut,
   Maximize2,
   Target,
-  Eye,
   Sliders,
   Download,
   Play,
   RefreshCw,
   Info,
   ChevronDown,
-  ChevronUp
-} from 'lucide-react';
-import { Screenshot } from '../../types/Screenshot';
-import { StateImage } from '../../contexts/automation-context';
-import { qontinuiAPI, testStateImage } from '../../lib/qontinui-api-client';
+  ChevronUp,
+} from "lucide-react";
+import { Screenshot } from "../../types/Screenshot";
+import { StateImage } from "../../contexts/automation-context";
+import { qontinuiAPI, testStateImage } from "../../lib/qontinui-api-client";
 
 interface FindMatch {
   region: { x: number; y: number; width: number; height: number };
@@ -31,11 +30,9 @@ interface FindOperationVisualizerProps {
   onMatchesFound?: (matches: FindMatch[]) => void;
 }
 
-export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = ({
-  screenshot,
-  stateImage,
-  onMatchesFound
-}) => {
+export const FindOperationVisualizer: React.FC<
+  FindOperationVisualizerProps
+> = ({ screenshot, stateImage, onMatchesFound }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -71,7 +68,7 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     // Set canvas size
@@ -101,19 +98,19 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
         const height = match.region.height * scale;
 
         // Determine color based on score
-        let color = '#00ff00'; // Default green
+        let color = "#00ff00"; // Default green
         if (match.score >= 0.9) {
-          color = '#00ff00'; // Green for excellent match
+          color = "#00ff00"; // Green for excellent match
         } else if (match.score >= 0.8) {
-          color = '#ffff00'; // Yellow for good match
+          color = "#ffff00"; // Yellow for good match
         } else if (match.score >= 0.7) {
-          color = '#ff8800'; // Orange for acceptable match
+          color = "#ff8800"; // Orange for acceptable match
         } else {
-          color = '#ff0000'; // Red for poor match
+          color = "#ff0000"; // Red for poor match
         }
 
-        if (isBest) color = '#00ffff'; // Cyan for best match
-        if (isSelected) color = '#ff00ff'; // Magenta for selected
+        if (isBest) color = "#00ffff"; // Cyan for best match
+        if (isSelected) color = "#ff00ff"; // Magenta for selected
 
         // Draw rectangle
         ctx.strokeStyle = color;
@@ -121,7 +118,7 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
         ctx.strokeRect(x, y, width, height);
 
         // Draw semi-transparent fill
-        ctx.fillStyle = color + '30'; // Add alpha
+        ctx.fillStyle = color + "30"; // Add alpha
         ctx.fillRect(x, y, width, height);
 
         // Draw score if enabled
@@ -132,7 +129,7 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
           const padding = 4 * scale;
 
           // Draw score background
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+          ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
           ctx.fillRect(
             x,
             y - 24 * scale,
@@ -149,20 +146,31 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
         if (matches.length > 1) {
           const matchNum = `#${index + 1}`;
           ctx.font = `${12 * scale}px sans-serif`;
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-          ctx.fillRect(x + width - 30 * scale, y + height - 20 * scale, 28 * scale, 18 * scale);
-          ctx.fillStyle = '#ffffff';
-          ctx.fillText(matchNum, x + width - 26 * scale, y + height - 6 * scale);
+          ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+          ctx.fillRect(
+            x + width - 30 * scale,
+            y + height - 20 * scale,
+            28 * scale,
+            18 * scale
+          );
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(
+            matchNum,
+            x + width - 26 * scale,
+            y + height - 6 * scale
+          );
         }
       });
 
       // Draw crosshair for selected match
       if (selectedMatch && showRegions) {
-        const centerX = (selectedMatch.region.x + selectedMatch.region.width / 2) * scale;
-        const centerY = (selectedMatch.region.y + selectedMatch.region.height / 2) * scale;
+        const centerX =
+          (selectedMatch.region.x + selectedMatch.region.width / 2) * scale;
+        const centerY =
+          (selectedMatch.region.y + selectedMatch.region.height / 2) * scale;
         const crosshairSize = 20 * scale;
 
-        ctx.strokeStyle = '#ffffff';
+        ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(centerX - crosshairSize, centerY);
@@ -173,29 +181,38 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
       }
     };
     img.src = screenshot.imageData;
-  }, [screenshot, matches, scale, selectedMatch, showRegions, highlightBest, showScores]);
+  }, [
+    screenshot,
+    matches,
+    scale,
+    selectedMatch,
+    showRegions,
+    highlightBest,
+    showScores,
+  ]);
 
   const performFind = async () => {
-    if (!stateImage || !stateImage.image || !apiConnected) return;
+    const imageId = stateImage?.patterns?.[0]?.imageId;
+    if (!stateImage || !imageId || !apiConnected) return;
 
     setIsSearching(true);
     const startTime = Date.now();
 
     try {
-      const result = await testStateImage(screenshot, stateImage.image, similarity);
+      const result = await testStateImage(screenshot, imageId, similarity);
 
       if (result.found && result.matches) {
         const foundMatches: FindMatch[] = result.matches.map((m: any) => ({
           region: m.region,
           score: m.score,
-          label: stateImage.name
+          label: stateImage.name,
         }));
 
         setMatches(foundMatches);
 
         // Calculate statistics
         if (foundMatches.length > 0) {
-          const scores = foundMatches.map(m => m.score);
+          const scores = foundMatches.map((m) => m.score);
           setBestScore(Math.max(...scores));
           setAvgScore(scores.reduce((a, b) => a + b, 0) / scores.length);
         }
@@ -211,7 +228,7 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
 
       setSearchTime(Date.now() - startTime);
     } catch (error) {
-      console.error('Find operation failed:', error);
+      console.error("Find operation failed:", error);
       setMatches([]);
     } finally {
       setIsSearching(false);
@@ -235,20 +252,22 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
       stateImage: stateImage?.name,
       similarity,
       searchTime,
-      matches: matches.map(m => ({
+      matches: matches.map((m) => ({
         region: m.region,
-        score: m.score
+        score: m.score,
       })),
       statistics: {
         totalMatches: matches.length,
         bestScore,
-        avgScore
-      }
+        avgScore,
+      },
     };
 
-    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(results, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `find-results-${Date.now()}.json`;
     a.click();
@@ -265,7 +284,9 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
             <div>
               <h3 className="font-semibold">Find Operation Visualizer</h3>
               <p className="text-xs text-gray-600">
-                {apiConnected ? 'Using real Qontinui pattern matching' : 'API not connected'}
+                {apiConnected
+                  ? "Using real Qontinui pattern matching"
+                  : "API not connected"}
               </p>
             </div>
           </div>
@@ -275,7 +296,11 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
               onClick={() => setShowControls(!showControls)}
               className="p-2 hover:bg-gray-100 rounded-lg"
             >
-              {showControls ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {showControls ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
             </button>
           </div>
         </div>
@@ -297,7 +322,9 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
               onChange={(e) => setSimilarity(parseFloat(e.target.value))}
               className="flex-1"
             />
-            <span className="text-sm font-mono w-12">{(similarity * 100).toFixed(0)}%</span>
+            <span className="text-sm font-mono w-12">
+              {(similarity * 100).toFixed(0)}%
+            </span>
           </div>
 
           {/* Action Buttons */}
@@ -307,8 +334,8 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
               disabled={!stateImage || !apiConnected || isSearching}
               className={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium ${
                 !stateImage || !apiConnected || isSearching
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
               }`}
             >
               {isSearching ? (
@@ -346,7 +373,9 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
-              <span className="text-xs font-mono px-2">{Math.round(scale * 100)}%</span>
+              <span className="text-xs font-mono px-2">
+                {Math.round(scale * 100)}%
+              </span>
             </div>
 
             <div className="flex items-center gap-2 border-l pl-2">
@@ -395,11 +424,22 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
             <div className="flex items-center gap-6 text-sm">
               <div className="flex items-center gap-2">
                 <Target className="w-4 h-4 text-gray-500" />
-                <span>Matches: <strong>{matches.length}</strong></span>
+                <span>
+                  Matches: <strong>{matches.length}</strong>
+                </span>
               </div>
-              <div>Best Score: <strong className="text-green-600">{(bestScore * 100).toFixed(1)}%</strong></div>
-              <div>Avg Score: <strong>{(avgScore * 100).toFixed(1)}%</strong></div>
-              <div>Search Time: <strong>{searchTime}ms</strong></div>
+              <div>
+                Best Score:{" "}
+                <strong className="text-green-600">
+                  {(bestScore * 100).toFixed(1)}%
+                </strong>
+              </div>
+              <div>
+                Avg Score: <strong>{(avgScore * 100).toFixed(1)}%</strong>
+              </div>
+              <div>
+                Search Time: <strong>{searchTime}ms</strong>
+              </div>
             </div>
           )}
         </div>
@@ -414,7 +454,7 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
           <canvas
             ref={canvasRef}
             className="border border-gray-300 shadow-lg"
-            style={{ cursor: 'crosshair' }}
+            style={{ cursor: "crosshair" }}
             onClick={(e) => {
               const rect = canvasRef.current?.getBoundingClientRect();
               if (!rect) return;
@@ -422,11 +462,12 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
               const y = (e.clientY - rect.top) / scale;
 
               // Find clicked match
-              const clicked = matches.find(m =>
-                x >= m.region.x &&
-                x <= m.region.x + m.region.width &&
-                y >= m.region.y &&
-                y <= m.region.y + m.region.height
+              const clicked = matches.find(
+                (m) =>
+                  x >= m.region.x &&
+                  x <= m.region.x + m.region.width &&
+                  y >= m.region.y &&
+                  y <= m.region.y + m.region.height
               );
 
               setSelectedMatch(clicked || null);
@@ -441,14 +482,28 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
                 <span className="font-medium">Match Details</span>
               </div>
               <div className="space-y-1 text-xs">
-                <div>Score: <strong>{(selectedMatch.score * 100).toFixed(2)}%</strong></div>
-                <div>Position: ({selectedMatch.region.x}, {selectedMatch.region.y})</div>
-                <div>Size: {selectedMatch.region.width} × {selectedMatch.region.height}</div>
-                <div>Center: ({
-                  Math.round(selectedMatch.region.x + selectedMatch.region.width / 2)
-                }, {
-                  Math.round(selectedMatch.region.y + selectedMatch.region.height / 2)
-                })</div>
+                <div>
+                  Score:{" "}
+                  <strong>{(selectedMatch.score * 100).toFixed(2)}%</strong>
+                </div>
+                <div>
+                  Position: ({selectedMatch.region.x}, {selectedMatch.region.y})
+                </div>
+                <div>
+                  Size: {selectedMatch.region.width} ×{" "}
+                  {selectedMatch.region.height}
+                </div>
+                <div>
+                  Center: (
+                  {Math.round(
+                    selectedMatch.region.x + selectedMatch.region.width / 2
+                  )}
+                  ,{" "}
+                  {Math.round(
+                    selectedMatch.region.y + selectedMatch.region.height / 2
+                  )}
+                  )
+                </div>
               </div>
             </div>
           )}
@@ -467,17 +522,21 @@ export const FindOperationVisualizer: React.FC<FindOperationVisualizerProps> = (
                   onClick={() => setSelectedMatch(match)}
                   className={`p-2 rounded-lg border text-xs transition-colors ${
                     selectedMatch === match
-                      ? 'bg-blue-50 border-blue-300'
-                      : 'hover:bg-gray-50 border-gray-200'
+                      ? "bg-blue-50 border-blue-300"
+                      : "hover:bg-gray-50 border-gray-200"
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-medium">Match #{index + 1}</span>
-                    <span className={`font-mono ${
-                      match.score >= 0.9 ? 'text-green-600' :
-                      match.score >= 0.8 ? 'text-yellow-600' :
-                      'text-red-600'
-                    }`}>
+                    <span
+                      className={`font-mono ${
+                        match.score >= 0.9
+                          ? "text-green-600"
+                          : match.score >= 0.8
+                            ? "text-yellow-600"
+                            : "text-red-600"
+                      }`}
+                    >
                       {(match.score * 100).toFixed(1)}%
                     </span>
                   </div>

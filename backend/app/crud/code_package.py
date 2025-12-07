@@ -10,6 +10,10 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.models.code_package import (
     CodePackage,
     PackageCategory,
@@ -19,9 +23,6 @@ from app.models.code_package import (
     SecurityScanStatus,
 )
 from app.schemas.code_package import PackageCreate, PackageUpdate, VersionCreate
-from sqlalchemy import and_, desc, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 
@@ -131,7 +132,7 @@ async def update_package(
     for field, value in update_dict.items():
         setattr(package, field, value)
 
-    package.updated_at = datetime.utcnow()
+    package.updated_at = datetime.utcnow()  # type: ignore[assignment]
     await db.commit()
     await db.refresh(package)
 
@@ -277,9 +278,8 @@ async def update_version_security_scan(
     Returns:
         Updated version instance
     """
-    version.security_scan_status = status
-    version.security_scan_result = scan_results
-    version.security_scan_at = datetime.utcnow()
+    version.security_scan_status = status  # type: ignore[assignment]
+    version.security_scan_result = scan_results  # type: ignore[assignment]
 
     await db.commit()
     await db.refresh(version)
@@ -428,7 +428,7 @@ async def get_trending_packages(
 
 
 async def install_package(
-    db: AsyncSession, project_id: int, package_id: int, version_id: int, user_id: UUID
+    db: AsyncSession, project_id: UUID, package_id: int, version_id: int, user_id: UUID
 ) -> PackageInstallation:
     """
     Install a package to a project.
@@ -456,9 +456,9 @@ async def install_package(
 
     if existing_installation:
         # Update to new version
-        existing_installation.version_id = version_id
-        existing_installation.updated_at = datetime.utcnow()
-        existing_installation.status = "active"
+        existing_installation.version_id = version_id  # type: ignore[assignment]
+        existing_installation.updated_at = datetime.utcnow()  # type: ignore[assignment]
+        existing_installation.status = "active"  # type: ignore[assignment]
         await db.commit()
         await db.refresh(existing_installation)
 
@@ -482,14 +482,13 @@ async def install_package(
 
     db.add(installation)
 
-    # Increment package total_downloads and total_installs
+    # Increment package total_downloads
     package_result = await db.execute(
         select(CodePackage).where(CodePackage.id == package_id)
     )
     package = package_result.scalar_one_or_none()
     if package:
-        package.total_downloads += 1
-        package.total_installs += 1
+        package.total_downloads += 1  # type: ignore[assignment]
 
     # Increment version download_count
     version_result = await db.execute(
@@ -497,7 +496,7 @@ async def install_package(
     )
     version = version_result.scalar_one_or_none()
     if version:
-        version.download_count += 1
+        version.download_count += 1  # type: ignore[assignment]
 
     await db.commit()
     await db.refresh(installation)
@@ -512,7 +511,9 @@ async def install_package(
     return installation
 
 
-async def uninstall_package(db: AsyncSession, project_id: int, package_id: int) -> bool:
+async def uninstall_package(
+    db: AsyncSession, project_id: UUID, package_id: int
+) -> bool:
     """
     Uninstall a package from a project.
 
@@ -538,15 +539,6 @@ async def uninstall_package(db: AsyncSession, project_id: int, package_id: int) 
         return False
 
     await db.delete(installation)
-
-    # Decrement package total_installs
-    package_result = await db.execute(
-        select(CodePackage).where(CodePackage.id == package_id)
-    )
-    package = package_result.scalar_one_or_none()
-    if package and package.total_installs > 0:
-        package.total_installs -= 1
-
     await db.commit()
 
     logger.info(
@@ -558,7 +550,7 @@ async def uninstall_package(db: AsyncSession, project_id: int, package_id: int) 
 
 
 async def get_project_packages(
-    db: AsyncSession, project_id: int
+    db: AsyncSession, project_id: UUID
 ) -> list[PackageInstallation]:
     """Get all packages installed in a project."""
     result = await db.execute(
@@ -605,9 +597,9 @@ async def rate_package(
 
     if existing_rating:
         # Update existing rating
-        existing_rating.rating = rating
-        existing_rating.review_text = review
-        existing_rating.updated_at = datetime.utcnow()
+        existing_rating.rating = rating  # type: ignore[assignment]
+        existing_rating.review_text = review  # type: ignore[assignment]
+        existing_rating.updated_at = datetime.utcnow()  # type: ignore[assignment]
         await db.commit()
         await db.refresh(existing_rating)
 
@@ -696,7 +688,7 @@ async def _update_package_average_rating(db: AsyncSession, package_id: int) -> N
     package = package_result.scalar_one_or_none()
 
     if package:
-        package.avg_rating = float(avg_rating) if avg_rating else None
+        package.avg_rating = float(avg_rating) if avg_rating else None  # type: ignore[assignment]
         await db.commit()
 
 

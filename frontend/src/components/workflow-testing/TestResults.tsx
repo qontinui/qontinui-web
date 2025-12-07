@@ -14,9 +14,9 @@
  * - Trend analysis
  */
 
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -35,9 +35,9 @@ import {
   Calendar,
   BarChart3,
   FileText,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -45,45 +45,45 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import type {
   TestCase,
   TestResult,
   TestStatistics,
   AssertionResult,
-} from "@/services/workflow-testing-service"
+} from "@/services/workflow-testing-service";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface TestResultsProps {
-  testCase: TestCase
-  results: TestResult[]
-  onRunTest: () => void
-  onClearResults: () => void
-  className?: string
+  testCase: TestCase;
+  results: TestResult[];
+  onRunTest: () => void;
+  onClearResults: () => void;
+  className?: string;
 }
 
-type SortField = "timestamp" | "duration" | "status"
-type SortOrder = "asc" | "desc"
-type FilterStatus = "all" | "passed" | "failed"
+type SortField = "timestamp" | "duration" | "status";
+type SortOrder = "asc" | "desc";
+type FilterStatus = "all" | "passed" | "failed";
 
 // ============================================================================
 // Component
@@ -100,22 +100,24 @@ export function TestResults({
   // State
   // ========================================================================
 
-  const [sortField, setSortField] = React.useState<SortField>("timestamp")
-  const [sortOrder, setSortOrder] = React.useState<SortOrder>("desc")
-  const [filterStatus, setFilterStatus] = React.useState<FilterStatus>("all")
-  const [selectedResult, setSelectedResult] = React.useState<TestResult | null>(null)
-  const [isRunning, setIsRunning] = React.useState(false)
+  const [sortField, setSortField] = React.useState<SortField>("timestamp");
+  const [sortOrder, setSortOrder] = React.useState<SortOrder>("desc");
+  const [filterStatus, setFilterStatus] = React.useState<FilterStatus>("all");
+  const [selectedResult, setSelectedResult] = React.useState<TestResult | null>(
+    null
+  );
+  const [isRunning, setIsRunning] = React.useState(false);
 
   // ========================================================================
   // Computed values
   // ========================================================================
 
   const statistics = React.useMemo((): TestStatistics | null => {
-    if (results.length === 0) return null
+    if (results.length === 0) return null;
 
-    const successfulRuns = results.filter((r) => r.passed).length
-    const failedRuns = results.length - successfulRuns
-    const durations = results.map((r) => r.duration)
+    const successfulRuns = results.filter((r) => r.passed).length;
+    const failedRuns = results.length - successfulRuns;
+    const durations = results.map((r) => r.duration);
 
     return {
       testCaseId: testCase.id,
@@ -128,91 +130,91 @@ export function TestResults({
       maxDuration: Math.max(...durations),
       lastRun: results[0]?.endTime,
       lastPassed: results[0]?.passed,
-    }
-  }, [results, testCase.id])
+    };
+  }, [results, testCase.id]);
 
   const trend = React.useMemo(() => {
-    if (results.length < 2) return "stable"
+    if (results.length < 2) return "stable";
 
-    const recent = results.slice(0, 5)
-    const older = results.slice(5, 10)
+    const recent = results.slice(0, 5);
+    const older = results.slice(5, 10);
 
-    if (recent.length === 0 || older.length === 0) return "stable"
+    if (recent.length === 0 || older.length === 0) return "stable";
 
     const recentPassRate =
-      recent.filter((r) => r.passed).length / recent.length
-    const olderPassRate =
-      older.filter((r) => r.passed).length / older.length
+      recent.filter((r) => r.passed).length / recent.length;
+    const olderPassRate = older.filter((r) => r.passed).length / older.length;
 
-    if (recentPassRate > olderPassRate + 0.2) return "improving"
-    if (recentPassRate < olderPassRate - 0.2) return "declining"
-    return "stable"
-  }, [results])
+    if (recentPassRate > olderPassRate + 0.2) return "improving";
+    if (recentPassRate < olderPassRate - 0.2) return "declining";
+    return "stable";
+  }, [results]);
 
   const filteredAndSortedResults = React.useMemo(() => {
-    let filtered = results
+    let filtered = results;
 
     // Apply status filter
     if (filterStatus === "passed") {
-      filtered = filtered.filter((r) => r.passed)
+      filtered = filtered.filter((r) => r.passed);
     } else if (filterStatus === "failed") {
-      filtered = filtered.filter((r) => !r.passed)
+      filtered = filtered.filter((r) => !r.passed);
     }
 
     // Apply sorting
     const sorted = [...filtered].sort((a, b) => {
-      let comparison = 0
+      let comparison = 0;
 
       switch (sortField) {
         case "timestamp":
           comparison =
-            new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-          break
+            new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+          break;
         case "duration":
-          comparison = a.duration - b.duration
-          break
+          comparison = a.duration - b.duration;
+          break;
         case "status":
-          comparison = (a.passed ? 1 : 0) - (b.passed ? 1 : 0)
-          break
+          comparison = (a.passed ? 1 : 0) - (b.passed ? 1 : 0);
+          break;
       }
 
-      return sortOrder === "asc" ? comparison : -comparison
-    })
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
 
-    return sorted
-  }, [results, filterStatus, sortField, sortOrder])
+    return sorted;
+  }, [results, filterStatus, sortField, sortOrder]);
 
   const passRateHistory = React.useMemo(() => {
     // Calculate pass rate for last 10 runs in groups of 5
-    const groups: { label: string; passRate: number }[] = []
-    const groupSize = 5
+    const groups: { label: string; passRate: number }[] = [];
+    const groupSize = 5;
 
     for (let i = 0; i < Math.min(results.length, 50); i += groupSize) {
-      const group = results.slice(i, i + groupSize)
-      if (group.length === 0) break
+      const group = results.slice(i, i + groupSize);
+      if (group.length === 0) break;
 
-      const passRate = (group.filter((r) => r.passed).length / group.length) * 100
+      const passRate =
+        (group.filter((r) => r.passed).length / group.length) * 100;
       groups.push({
         label: `${i + 1}-${i + group.length}`,
         passRate,
-      })
+      });
     }
 
-    return groups.reverse() // Show oldest to newest
-  }, [results])
+    return groups.reverse(); // Show oldest to newest
+  }, [results]);
 
   // ========================================================================
   // Handlers
   // ========================================================================
 
   const handleRunTest = React.useCallback(() => {
-    setIsRunning(true)
-    onRunTest()
+    setIsRunning(true);
+    onRunTest();
     // Simulate completion
     setTimeout(() => {
-      setIsRunning(false)
-    }, 2000)
-  }, [onRunTest])
+      setIsRunning(false);
+    }, 2000);
+  }, [onRunTest]);
 
   const handleClearResults = React.useCallback(() => {
     if (
@@ -220,9 +222,9 @@ export function TestResults({
         "Are you sure you want to clear all test results? This action cannot be undone."
       )
     ) {
-      onClearResults()
+      onClearResults();
     }
-  }, [onClearResults])
+  }, [onClearResults]);
 
   const handleExportResults = React.useCallback(() => {
     const data = JSON.stringify(
@@ -234,30 +236,30 @@ export function TestResults({
       },
       null,
       2
-    )
+    );
 
-    const blob = new Blob([data], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `test-results-${testCase.name}-${Date.now()}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }, [testCase, results, statistics])
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `test-results-${testCase.name}-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [testCase, results, statistics]);
 
   const toggleSort = React.useCallback((field: SortField) => {
     setSortField((current) => {
       if (current === field) {
-        setSortOrder((order) => (order === "asc" ? "desc" : "asc"))
-        return field
+        setSortOrder((order) => (order === "asc" ? "desc" : "asc"));
+        return field;
       } else {
-        setSortOrder("desc")
-        return field
+        setSortOrder("desc");
+        return field;
       }
-    })
-  }, [])
+    });
+  }, []);
 
   // ========================================================================
   // Render
@@ -339,7 +341,8 @@ export function TestResults({
             </CardHeader>
             <CardFooter>
               <div className="text-xs text-muted-foreground">
-                {statistics.successfulRuns} passed, {statistics.failedRuns} failed
+                {statistics.successfulRuns} passed, {statistics.failedRuns}{" "}
+                failed
               </div>
             </CardFooter>
           </Card>
@@ -403,7 +406,10 @@ export function TestResults({
           <CardContent>
             <div className="h-48 flex items-end gap-2">
               {passRateHistory.map((group, index) => (
-                <div key={index} className="flex-1 flex flex-col items-center gap-2">
+                <div
+                  key={index}
+                  className="flex-1 flex flex-col items-center gap-2"
+                >
                   <div className="w-full flex items-end justify-center h-full">
                     <div
                       className={cn(
@@ -411,13 +417,15 @@ export function TestResults({
                         group.passRate >= 80
                           ? "bg-green-500"
                           : group.passRate >= 50
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
                       )}
                       style={{ height: `${group.passRate}%` }}
                     />
                   </div>
-                  <div className="text-xs text-muted-foreground">{group.label}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {group.label}
+                  </div>
                 </div>
               ))}
             </div>
@@ -432,7 +440,10 @@ export function TestResults({
             {/* Filter */}
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">Filter:</span>
-              <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as FilterStatus)}>
+              <Select
+                value={filterStatus}
+                onValueChange={(v) => setFilterStatus(v as FilterStatus)}
+              >
                 <SelectTrigger className="w-32">
                   <SelectValue />
                 </SelectTrigger>
@@ -543,7 +554,9 @@ export function TestResults({
                   {/* Result info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <Badge variant={result.passed ? "default" : "destructive"}>
+                      <Badge
+                        variant={result.passed ? "default" : "destructive"}
+                      >
                         {result.passed ? "Passed" : "Failed"}
                       </Badge>
                       <span className="text-sm text-muted-foreground">
@@ -593,7 +606,7 @@ export function TestResults({
         />
       )}
     </div>
-  )
+  );
 }
 
 // ============================================================================
@@ -601,8 +614,8 @@ export function TestResults({
 // ============================================================================
 
 interface ResultDetailsDialogProps {
-  result: TestResult
-  onClose: () => void
+  result: TestResult;
+  onClose: () => void;
 }
 
 function ResultDetailsDialog({ result, onClose }: ResultDetailsDialogProps) {
@@ -619,7 +632,8 @@ function ResultDetailsDialog({ result, onClose }: ResultDetailsDialogProps) {
             <DialogTitle>Test Result Details</DialogTitle>
           </div>
           <DialogDescription>
-            {result.testCaseName} - {new Date(result.startTime).toLocaleString()}
+            {result.testCaseName} -{" "}
+            {new Date(result.startTime).toLocaleString()}
           </DialogDescription>
         </DialogHeader>
 
@@ -641,19 +655,25 @@ function ResultDetailsDialog({ result, onClose }: ResultDetailsDialogProps) {
                   </Badge>
                 </div>
                 <div>
-                  <span className="text-sm text-muted-foreground">Duration</span>
+                  <span className="text-sm text-muted-foreground">
+                    Duration
+                  </span>
                   <p className="font-medium">
                     {(result.duration / 1000).toFixed(2)}s
                   </p>
                 </div>
                 <div>
-                  <span className="text-sm text-muted-foreground">Start Time</span>
+                  <span className="text-sm text-muted-foreground">
+                    Start Time
+                  </span>
                   <p className="font-medium">
                     {new Date(result.startTime).toLocaleString()}
                   </p>
                 </div>
                 <div>
-                  <span className="text-sm text-muted-foreground">End Time</span>
+                  <span className="text-sm text-muted-foreground">
+                    End Time
+                  </span>
                   <p className="font-medium">
                     {new Date(result.endTime).toLocaleString()}
                   </p>
@@ -662,7 +682,9 @@ function ResultDetailsDialog({ result, onClose }: ResultDetailsDialogProps) {
 
               {result.error && (
                 <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                  <p className="text-sm font-medium text-destructive mb-1">Error</p>
+                  <p className="text-sm font-medium text-destructive mb-1">
+                    Error
+                  </p>
                   <p className="text-sm">{result.error}</p>
                 </div>
               )}
@@ -745,7 +767,7 @@ function ResultDetailsDialog({ result, onClose }: ResultDetailsDialogProps) {
         </div>
       </DialogContent>
     </Dialog>
-  )
+  );
 }
 
 // ============================================================================
@@ -753,7 +775,7 @@ function ResultDetailsDialog({ result, onClose }: ResultDetailsDialogProps) {
 // ============================================================================
 
 interface AssertionResultCardProps {
-  assertion: AssertionResult
+  assertion: AssertionResult;
 }
 
 function AssertionResultCard({ assertion }: AssertionResultCardProps) {
@@ -808,5 +830,5 @@ function AssertionResultCard({ assertion }: AssertionResultCardProps) {
         </div>
       </div>
     </div>
-  )
+  );
 }

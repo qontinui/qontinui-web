@@ -3,10 +3,10 @@
  * Stores large image data separately from session metadata
  */
 
-const DB_NAME = 'PatternOptimizationDB';
+const DB_NAME = "PatternOptimizationDB";
 const DB_VERSION = 1;
-const IMAGES_STORE = 'images';
-const SESSIONS_STORE = 'sessions';
+const IMAGES_STORE = "images";
+const SESSIONS_STORE = "sessions";
 
 class PatternOptimizationStorage {
   private db: IDBDatabase | null = null;
@@ -28,23 +28,37 @@ class PatternOptimizationStorage {
 
         // Create images store if it doesn't exist
         if (!db.objectStoreNames.contains(IMAGES_STORE)) {
-          db.createObjectStore(IMAGES_STORE, { keyPath: 'id' });
+          db.createObjectStore(IMAGES_STORE, { keyPath: "id" });
         }
 
         // Create sessions store if it doesn't exist
         if (!db.objectStoreNames.contains(SESSIONS_STORE)) {
-          db.createObjectStore(SESSIONS_STORE, { keyPath: 'id' });
+          db.createObjectStore(SESSIONS_STORE, { keyPath: "id" });
         }
       };
     });
   }
 
   async storeImage(id: string, imageData: string): Promise<void> {
+    // Validate inputs
+    if (!id) {
+      console.warn(
+        "[PatternOptimizationStorage] storeImage called with empty id"
+      );
+      return;
+    }
+    if (!imageData) {
+      console.warn(
+        "[PatternOptimizationStorage] storeImage called with empty imageData"
+      );
+      return;
+    }
+
     await this.init();
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new Error("Database not initialized");
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([IMAGES_STORE], 'readwrite');
+      const transaction = this.db!.transaction([IMAGES_STORE], "readwrite");
       const store = transaction.objectStore(IMAGES_STORE);
       const request = store.put({ id, data: imageData, timestamp: Date.now() });
 
@@ -54,11 +68,19 @@ class PatternOptimizationStorage {
   }
 
   async getImage(id: string): Promise<string | null> {
+    // Validate id before querying IndexedDB
+    if (!id) {
+      console.warn(
+        "[PatternOptimizationStorage] getImage called with empty id"
+      );
+      return null;
+    }
+
     await this.init();
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new Error("Database not initialized");
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([IMAGES_STORE], 'readonly');
+      const transaction = this.db!.transaction([IMAGES_STORE], "readonly");
       const store = transaction.objectStore(IMAGES_STORE);
       const request = store.get(id);
 
@@ -71,11 +93,19 @@ class PatternOptimizationStorage {
   }
 
   async deleteImage(id: string): Promise<void> {
+    // Validate id before querying IndexedDB
+    if (!id) {
+      console.warn(
+        "[PatternOptimizationStorage] deleteImage called with empty id"
+      );
+      return;
+    }
+
     await this.init();
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new Error("Database not initialized");
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([IMAGES_STORE], 'readwrite');
+      const transaction = this.db!.transaction([IMAGES_STORE], "readwrite");
       const store = transaction.objectStore(IMAGES_STORE);
       const request = store.delete(id);
 
@@ -86,10 +116,10 @@ class PatternOptimizationStorage {
 
   async clearImages(): Promise<void> {
     await this.init();
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new Error("Database not initialized");
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([IMAGES_STORE], 'readwrite');
+      const transaction = this.db!.transaction([IMAGES_STORE], "readwrite");
       const store = transaction.objectStore(IMAGES_STORE);
       const request = store.clear();
 
@@ -100,10 +130,10 @@ class PatternOptimizationStorage {
 
   async getAllImageIds(): Promise<string[]> {
     await this.init();
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new Error("Database not initialized");
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([IMAGES_STORE], 'readonly');
+      const transaction = this.db!.transaction([IMAGES_STORE], "readonly");
       const store = transaction.objectStore(IMAGES_STORE);
       const request = store.getAllKeys();
 
@@ -112,14 +142,16 @@ class PatternOptimizationStorage {
     });
   }
 
-  async cleanupOldImages(maxAgeMs: number = 24 * 60 * 60 * 1000): Promise<void> {
+  async cleanupOldImages(
+    maxAgeMs: number = 24 * 60 * 60 * 1000
+  ): Promise<void> {
     await this.init();
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new Error("Database not initialized");
 
     const cutoffTime = Date.now() - maxAgeMs;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([IMAGES_STORE], 'readwrite');
+      const transaction = this.db!.transaction([IMAGES_STORE], "readwrite");
       const store = transaction.objectStore(IMAGES_STORE);
       const request = store.openCursor();
 
@@ -139,7 +171,7 @@ class PatternOptimizationStorage {
   }
 
   async getStorageSize(): Promise<{ used: number; quota: number }> {
-    if ('storage' in navigator && 'estimate' in navigator.storage) {
+    if ("storage" in navigator && "estimate" in navigator.storage) {
       const estimate = await navigator.storage.estimate();
       return {
         used: estimate.usage || 0,

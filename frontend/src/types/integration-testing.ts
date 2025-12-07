@@ -102,7 +102,7 @@ export interface StateTransition {
 
 export interface CoverageGap {
   gap_type: string;
-  severity: 'high' | 'medium' | 'low';
+  severity: "high" | "medium" | "low";
   description: string;
   recommendation: string;
   affected_states: string[];

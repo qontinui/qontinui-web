@@ -1,7 +1,7 @@
-'use client'
+"use client";
 
-import React, { useState } from 'react'
-import { AlertTriangle, Check, X, Package, ChevronRight } from 'lucide-react'
+import React, { useState } from "react";
+import { AlertTriangle, Check, X, Package, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,31 +9,35 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { cn } from '@/lib/utils'
-import type { CodePackage, PackageDependency, InstallStatus } from '@/types/code-packages'
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
+import type {
+  CodePackage,
+  PackageDependency,
+  InstallStatus,
+} from "@/types/code-packages";
 
 interface InstallDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  package: CodePackage
-  projects: Array<{ id: string; name: string }>
-  selectedProjectId?: string
-  onInstall: (projectId: string, versionId?: string) => void
-  installStatus?: InstallStatus
-  installProgress?: number
-  error?: string
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  package: CodePackage;
+  projects: Array<{ id: string; name: string }>;
+  selectedProjectId?: string;
+  onInstall: (projectId: string, versionId?: string) => void;
+  installStatus?: InstallStatus;
+  installProgress?: number;
+  error?: string;
 }
 
 export function InstallDialog({
@@ -43,41 +47,49 @@ export function InstallDialog({
   projects,
   selectedProjectId: initialProjectId,
   onInstall,
-  installStatus = 'idle',
+  installStatus = "idle",
   installProgress = 0,
   error,
 }: InstallDialogProps) {
-  const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId || projects[0]?.id || '')
-  const [selectedVersionId, setSelectedVersionId] = useState(pkg.latest_version.id)
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    initialProjectId || projects[0]?.id || ""
+  );
+  const [selectedVersionId, setSelectedVersionId] = useState(
+    pkg.latest_version.id
+  );
 
-  const selectedVersion = pkg.versions.find((v) => v.id === selectedVersionId) || pkg.latest_version
-  const hasDependencies = selectedVersion.dependencies.length > 0
-  const hasSecurityIssues = selectedVersion.security_scan.scanned && !selectedVersion.security_scan.passed
+  const selectedVersion =
+    pkg.versions.find((v) => v.id === selectedVersionId) || pkg.latest_version;
+  const hasDependencies = selectedVersion.dependencies.length > 0;
+  const hasSecurityIssues =
+    selectedVersion.security_scan.scanned &&
+    !selectedVersion.security_scan.passed;
 
   const handleInstall = () => {
     if (selectedProjectId) {
-      onInstall(selectedProjectId, selectedVersionId)
+      onInstall(selectedProjectId, selectedVersionId);
     }
-  }
+  };
 
   const getStatusMessage = () => {
     switch (installStatus) {
-      case 'installing':
-        return 'Installing package...'
-      case 'installed':
-        return 'Package installed successfully!'
-      case 'failed':
-        return 'Installation failed'
-      case 'updating':
-        return 'Updating package...'
+      case "installing":
+        return "Installing package...";
+      case "installed":
+        return "Package installed successfully!";
+      case "failed":
+        return "Installation failed";
+      case "updating":
+        return "Updating package...";
       default:
-        return ''
+        return "";
     }
-  }
+  };
 
-  const isInstalling = installStatus === 'installing' || installStatus === 'updating'
-  const isComplete = installStatus === 'installed'
-  const isFailed = installStatus === 'failed'
+  const isInstalling =
+    installStatus === "installing" || installStatus === "updating";
+  const isComplete = installStatus === "installed";
+  const isFailed = installStatus === "failed";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -88,14 +100,18 @@ export function InstallDialog({
             Install Package
           </DialogTitle>
           <DialogDescription>
-            Configure installation settings for <span className="font-semibold">{pkg.name}</span>
+            Configure installation settings for{" "}
+            <span className="font-semibold">{pkg.name}</span>
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           {/* Project Selection */}
           <div className="space-y-2">
-            <label htmlFor="project" className="text-sm font-medium text-gray-300">
+            <label
+              htmlFor="project"
+              className="text-sm font-medium text-gray-300"
+            >
               Install to Project
             </label>
             <Select
@@ -103,7 +119,10 @@ export function InstallDialog({
               onValueChange={setSelectedProjectId}
               disabled={isInstalling || isComplete}
             >
-              <SelectTrigger id="project" className="bg-gray-900/50 border-gray-700">
+              <SelectTrigger
+                id="project"
+                className="bg-gray-900/50 border-gray-700"
+              >
                 <SelectValue placeholder="Select a project..." />
               </SelectTrigger>
               <SelectContent>
@@ -118,7 +137,10 @@ export function InstallDialog({
 
           {/* Version Selection */}
           <div className="space-y-2">
-            <label htmlFor="version" className="text-sm font-medium text-gray-300">
+            <label
+              htmlFor="version"
+              className="text-sm font-medium text-gray-300"
+            >
               Version
             </label>
             <Select
@@ -126,7 +148,10 @@ export function InstallDialog({
               onValueChange={setSelectedVersionId}
               disabled={isInstalling || isComplete}
             >
-              <SelectTrigger id="version" className="bg-gray-900/50 border-gray-700">
+              <SelectTrigger
+                id="version"
+                className="bg-gray-900/50 border-gray-700"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -161,9 +186,9 @@ export function InstallDialog({
           {/* Security Scan Results */}
           {selectedVersion.security_scan.scanned && (
             <Alert
-              variant={hasSecurityIssues ? 'destructive' : 'default'}
+              variant={hasSecurityIssues ? "destructive" : "default"}
               className={cn(
-                !hasSecurityIssues && 'border-green-500/50 bg-green-950/20'
+                !hasSecurityIssues && "border-green-500/50 bg-green-950/20"
               )}
             >
               <AlertDescription className="flex items-start gap-2">
@@ -171,25 +196,28 @@ export function InstallDialog({
                   <>
                     <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                     <div className="space-y-1 flex-1">
-                      <div className="font-medium">Security issues detected</div>
-                      {selectedVersion.security_scan.issues?.map((issue, index) => (
-                        <div key={index} className="text-xs">
-                          <Badge
-                            variant="destructive"
-                            className="mr-2"
-                          >
-                            {issue.severity}
-                          </Badge>
-                          {issue.description}
-                        </div>
-                      ))}
+                      <div className="font-medium">
+                        Security issues detected
+                      </div>
+                      {selectedVersion.security_scan.issues?.map(
+                        (issue, index) => (
+                          <div key={index} className="text-xs">
+                            <Badge variant="destructive" className="mr-2">
+                              {issue.severity}
+                            </Badge>
+                            {issue.description}
+                          </div>
+                        )
+                      )}
                     </div>
                   </>
                 ) : (
                   <>
                     <Check className="w-4 h-4 flex-shrink-0 mt-0.5 text-green-500" />
                     <div>
-                      <div className="font-medium text-green-500">Security scan passed</div>
+                      <div className="font-medium text-green-500">
+                        Security scan passed
+                      </div>
                       <div className="text-xs text-gray-400">
                         No security issues detected
                       </div>
@@ -243,7 +271,7 @@ export function InstallDialog({
             onClick={() => onOpenChange(false)}
             disabled={isInstalling}
           >
-            {isComplete ? 'Close' : 'Cancel'}
+            {isComplete ? "Close" : "Cancel"}
           </Button>
           {!isComplete && (
             <Button
@@ -257,14 +285,14 @@ export function InstallDialog({
                   Installing...
                 </>
               ) : (
-                'Install Package'
+                "Install Package"
               )}
             </Button>
           )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }
 
 function DependencyItem({ dependency }: { dependency: PackageDependency }) {
@@ -281,5 +309,5 @@ function DependencyItem({ dependency }: { dependency: PackageDependency }) {
         </Badge>
       )}
     </div>
-  )
+  );
 }

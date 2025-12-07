@@ -14,10 +14,13 @@ Key features:
 """
 
 from datetime import datetime
-from typing import List, Optional
 from uuid import UUID
 
 import structlog
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.models.organization import (
     Organization,
     PermissionLevel,
@@ -26,9 +29,6 @@ from app.models.organization import (
     TeamRole,
 )
 from app.models.project import Project
-from sqlalchemy import and_, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 
@@ -69,7 +69,7 @@ class PermissionService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         required_level: PermissionLevel,
     ) -> bool:
         """
@@ -141,8 +141,8 @@ class PermissionService:
             return False
 
     async def get_user_permission_level(
-        self, db: AsyncSession, user_id: UUID, project_id: int
-    ) -> Optional[PermissionLevel]:
+        self, db: AsyncSession, user_id: UUID, project_id: UUID
+    ) -> PermissionLevel | None:
         """
         Get the highest permission level a user has for a project.
 
@@ -259,7 +259,7 @@ class PermissionService:
 
     async def get_user_accessible_projects(
         self, db: AsyncSession, user_id: UUID
-    ) -> List[Project]:
+    ) -> list[Project]:
         """
         Get all projects a user has access to.
 
@@ -338,7 +338,10 @@ class PermissionService:
                             ),
                         )
                     )
-                    .distinct()
+                    # Use distinct on id only - full distinct fails because
+                    # json columns don't have equality operators in PostgreSQL
+                    .distinct(Project.id)
+                    .order_by(Project.id)  # Required for DISTINCT ON in PostgreSQL
                     .options(selectinload(Project.owner))
                 )
                 shared_projects = list(shared_result.scalars().all())
@@ -379,7 +382,7 @@ class PermissionService:
 
     async def get_personal_organization(
         self, db: AsyncSession, user_id: UUID
-    ) -> Optional[Organization]:
+    ) -> Organization | None:
         """
         Get user's personal organization.
 
@@ -441,7 +444,7 @@ class PermissionService:
         user_id: UUID,
         organization_id: UUID,
         required_role: str = "member",
-    ) -> Optional[TeamMember]:
+    ) -> TeamMember | None:
         """
         Check if user is a member of an organization with required role.
 
@@ -650,7 +653,7 @@ class PermissionService:
 
     async def get_user_organization_role(
         self, db: AsyncSession, user_id: UUID, org_id: UUID
-    ) -> Optional[TeamRole]:
+    ) -> TeamRole | None:
         """
         Get the user's role in an organization.
 

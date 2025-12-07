@@ -5,16 +5,19 @@
  * All workflows use connections and positions. No backward compatibility cruft.
  */
 
-import { BaseActionSettings, ExecutionSettings } from './shared/timing-config';
+import { BaseActionSettings, ExecutionSettings } from "./shared/timing-config";
+import type {
+  WorkflowExpectations,
+  ActionExpectations,
+} from "@/lib/expectations/types";
 
 // Import all action configs
 import {
   FindActionConfig,
-  FindStateImageActionConfig,
   VanishActionConfig,
   ExistsActionConfig,
   WaitActionConfig,
-} from './configs/find-actions';
+} from "./configs/find-actions";
 
 import {
   ClickActionConfig,
@@ -23,7 +26,7 @@ import {
   MouseUpActionConfig,
   DragActionConfig,
   ScrollActionConfig,
-} from './configs/mouse-actions';
+} from "./configs/mouse-actions";
 
 import {
   TypeActionConfig,
@@ -31,7 +34,7 @@ import {
   KeyDownActionConfig,
   KeyUpActionConfig,
   HotkeyActionConfig,
-} from './configs/keyboard-actions';
+} from "./configs/keyboard-actions";
 
 import {
   IfActionConfig,
@@ -40,7 +43,7 @@ import {
   ContinueActionConfig,
   SwitchActionConfig,
   TryCatchActionConfig,
-} from './configs/control-flow-actions';
+} from "./configs/control-flow-actions";
 
 import {
   SetVariableActionConfig,
@@ -51,50 +54,61 @@ import {
   ReduceActionConfig,
   StringOperationActionConfig,
   MathOperationActionConfig,
-} from './configs/data-actions';
+} from "./configs/data-actions";
 
 import {
   GoToStateActionConfig,
   RunWorkflowActionConfig,
   ScreenshotActionConfig,
-} from './configs/state-actions';
+} from "./configs/state-actions";
 
 import {
   CodeBlockActionConfig,
   CustomFunctionActionConfig,
-} from './configs/code-actions';
+} from "./configs/code-actions";
 
 // ============================================================================
 // Action Types
 // ============================================================================
 
-export type FindActionType = 'FIND' | 'FIND_STATE_IMAGE' | 'VANISH' | 'EXISTS' | 'WAIT';
+export type FindActionType = "FIND" | "VANISH" | "EXISTS" | "WAIT";
 
 export type MouseActionType =
-  | 'CLICK'
-  | 'MOUSE_MOVE'
-  | 'MOUSE_DOWN'
-  | 'MOUSE_UP'
-  | 'DRAG'
-  | 'SCROLL';
+  | "CLICK"
+  | "MOUSE_MOVE"
+  | "MOUSE_DOWN"
+  | "MOUSE_UP"
+  | "DRAG"
+  | "SCROLL";
 
-export type KeyboardActionType = 'TYPE' | 'KEY_PRESS' | 'KEY_DOWN' | 'KEY_UP' | 'HOTKEY';
+export type KeyboardActionType =
+  | "TYPE"
+  | "KEY_PRESS"
+  | "KEY_DOWN"
+  | "KEY_UP"
+  | "HOTKEY";
 
-export type ControlFlowActionType = 'IF' | 'LOOP' | 'BREAK' | 'CONTINUE' | 'SWITCH' | 'TRY_CATCH';
+export type ControlFlowActionType =
+  | "IF"
+  | "LOOP"
+  | "BREAK"
+  | "CONTINUE"
+  | "SWITCH"
+  | "TRY_CATCH";
 
 export type DataActionType =
-  | 'SET_VARIABLE'
-  | 'GET_VARIABLE'
-  | 'SORT'
-  | 'FILTER'
-  | 'MAP'
-  | 'REDUCE'
-  | 'STRING_OPERATION'
-  | 'MATH_OPERATION';
+  | "SET_VARIABLE"
+  | "GET_VARIABLE"
+  | "SORT"
+  | "FILTER"
+  | "MAP"
+  | "REDUCE"
+  | "STRING_OPERATION"
+  | "MATH_OPERATION";
 
-export type StateActionType = 'GO_TO_STATE' | 'RUN_WORKFLOW' | 'SCREENSHOT';
+export type StateActionType = "GO_TO_STATE" | "RUN_WORKFLOW" | "SCREENSHOT";
 
-export type CodeActionType = 'CODE_BLOCK' | 'CUSTOM_FUNCTION';
+export type CodeActionType = "CODE_BLOCK" | "CUSTOM_FUNCTION";
 
 export type ActionType =
   | FindActionType
@@ -112,7 +126,6 @@ export type ActionType =
 export interface ActionConfigMap {
   // Find actions
   FIND: FindActionConfig;
-  FIND_STATE_IMAGE: FindStateImageActionConfig;
   VANISH: VanishActionConfig;
   EXISTS: ExistsActionConfig;
   WAIT: WaitActionConfig;
@@ -193,6 +206,9 @@ export interface Action<T extends ActionType = ActionType> {
    * REQUIRED for all actions in graph format
    */
   position: [number, number];
+
+  /** Action-level expectations for checkpoint and failure behavior */
+  expectations?: ActionExpectations;
 }
 
 // ============================================================================
@@ -207,7 +223,7 @@ export interface Connection {
   action: string;
 
   /** Connection type - determines which output is used */
-  type: 'main' | 'error' | 'success' | 'parallel';
+  type: "main" | "error" | "success" | "parallel";
 
   /** Input index on the target action (usually 0) */
   index: number;
@@ -291,7 +307,7 @@ export interface WorkflowSettings {
   enableParallelExecution?: boolean;
 
   /** Log level for workflow execution */
-  logLevel?: 'debug' | 'info' | 'warning' | 'error';
+  logLevel?: "debug" | "info" | "warning" | "error";
 }
 
 // ============================================================================
@@ -323,7 +339,7 @@ export interface WorkflowMetadata {
    * - 'graph': Open in visual graph editor
    * This is just a UI hint - all workflows are stored in graph format
    */
-  viewMode?: 'sequential' | 'graph';
+  viewMode?: "sequential" | "graph";
 
   /** Additional custom metadata */
   [key: string]: any;
@@ -392,7 +408,7 @@ export interface Workflow {
   version: string;
 
   /** Workflow format - always 'graph' */
-  format: 'graph';
+  format: "graph";
 
   /** Actions that make up this workflow */
   actions: Action[];
@@ -452,6 +468,9 @@ export interface Workflow {
 
   /** Tags for categorization and search */
   tags?: string[];
+
+  /** Workflow-level expectations (success criteria, checkpoints, global settings) */
+  expectations?: WorkflowExpectations;
 }
 
 // ============================================================================
@@ -475,15 +494,12 @@ export const MULTI_OUTPUT_ACTIONS = {
 /**
  * Get the number of outputs for a given action type
  */
-export function getActionOutputCount(
-  actionType: string,
-  config?: any
-): number {
-  if (actionType === 'IF' || actionType === 'TRY_CATCH') {
+export function getActionOutputCount(actionType: string, config?: any): number {
+  if (actionType === "IF" || actionType === "TRY_CATCH") {
     return MULTI_OUTPUT_ACTIONS[actionType];
   }
 
-  if (actionType === 'SWITCH' && config?.cases) {
+  if (actionType === "SWITCH" && config?.cases) {
     return config.cases.length + 1;
   }
 
@@ -494,7 +510,7 @@ export function getActionOutputCount(
  * Get the number of inputs for a given action type
  * Currently all actions have exactly 1 input
  */
-export function getActionInputCount(actionType: string): number {
+export function getActionInputCount(): number {
   return 1;
 }
 
@@ -532,7 +548,9 @@ export function createAction<T extends ActionType>(
   }
 ): Action<T> {
   return {
-    id: options?.id || `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id:
+      options?.id ||
+      `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     type,
     name: options?.name,
     config,

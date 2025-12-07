@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collaboration import ConflictLog
@@ -60,9 +60,9 @@ class ConflictResolutionService:
 
     def detect_conflicts(
         self,
-        base_data: dict,
-        local_data: dict,
-        remote_data: dict,
+        base_data: dict | None,
+        local_data: dict | None,
+        remote_data: dict | None,
         path: str = "",
     ) -> list[ConflictChange]:
         """
@@ -94,7 +94,9 @@ class ConflictResolutionService:
             remote_data = {}
 
         # Get all keys from all versions
-        all_keys = set(base_data.keys()) | set(local_data.keys()) | set(remote_data.keys())
+        all_keys = (
+            set(base_data.keys()) | set(local_data.keys()) | set(remote_data.keys())
+        )
 
         for key in all_keys:
             field_path = f"{path}.{key}" if path else key
@@ -185,7 +187,9 @@ class ConflictResolutionService:
         if isinstance(val1, list) and isinstance(val2, list):
             if len(val1) != len(val2):
                 return False
-            return all(self._values_equal(a, b) for a, b in zip(val1, val2))
+            return all(
+                self._values_equal(a, b) for a, b in zip(val1, val2, strict=False)
+            )
 
         # Handle dict equality
         if isinstance(val1, dict) and isinstance(val2, dict):
@@ -194,7 +198,7 @@ class ConflictResolutionService:
             return all(self._values_equal(val1[k], val2[k]) for k in val1.keys())
 
         # Direct equality for primitives
-        return val1 == val2
+        return bool(val1 == val2)
 
     def _determine_conflict_type(
         self, base_value: Any, local_value: Any, remote_value: Any
@@ -233,7 +237,7 @@ class ConflictResolutionService:
         base_data: dict,
         local_data: dict,
         remote_data: dict,
-        metadata: dict = None,
+        metadata: dict | None = None,
     ) -> ConflictLog:
         """
         Create a conflict log entry.
@@ -334,7 +338,9 @@ class ConflictResolutionService:
             if resolution_type == "local":
                 final_data = conflict.local_data if merged_data is None else merged_data
             elif resolution_type == "remote":
-                final_data = conflict.remote_data if merged_data is None else merged_data
+                final_data = (
+                    conflict.remote_data if merged_data is None else merged_data
+                )
             elif resolution_type == "merge":
                 if merged_data is None:
                     raise ValueError("merged_data required for 'merge' resolution type")
@@ -359,16 +365,18 @@ class ConflictResolutionService:
             return conflict
 
         except Exception as e:
-            logger.error("conflict_resolution_failed", error=str(e), conflict_id=conflict_id)
+            logger.error(
+                "conflict_resolution_failed", error=str(e), conflict_id=conflict_id
+            )
             await db.rollback()
             raise
 
     async def get_unresolved_conflicts(
         self,
         db: AsyncSession,
-        resource_type: str = None,
-        resource_id: str = None,
-        user_id: UUID = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        user_id: UUID | None = None,
     ) -> list[ConflictLog]:
         """
         Get unresolved conflicts with optional filtering.
@@ -409,7 +417,7 @@ class ConflictResolutionService:
                 resource_id=resource_id,
             )
 
-            return conflicts
+            return list(conflicts)
 
         except Exception as e:
             logger.error("get_unresolved_conflicts_failed", error=str(e))
@@ -417,9 +425,9 @@ class ConflictResolutionService:
 
     def apply_merge_strategy(
         self,
-        base_data: dict,
-        local_data: dict,
-        remote_data: dict,
+        base_data: dict | None,
+        local_data: dict | None,
+        remote_data: dict | None,
         strategy: str = "recursive",
     ) -> dict:
         """
@@ -435,16 +443,19 @@ class ConflictResolutionService:
             Merged data dictionary
         """
         if strategy == "theirs":
-            return remote_data
+            return remote_data or {}
         elif strategy == "ours":
-            return local_data
+            return local_data or {}
         elif strategy == "recursive":
             return self._recursive_merge(base_data, local_data, remote_data)
         else:
             raise ValueError(f"Unknown merge strategy: {strategy}")
 
     def _recursive_merge(
-        self, base_data: dict, local_data: dict, remote_data: dict
+        self,
+        base_data: dict | None,
+        local_data: dict | None,
+        remote_data: dict | None,
     ) -> dict:
         """
         Recursively merge data, preferring non-conflicting changes.
@@ -459,7 +470,9 @@ class ConflictResolutionService:
             remote_data = {}
 
         merged = {}
-        all_keys = set(base_data.keys()) | set(local_data.keys()) | set(remote_data.keys())
+        all_keys = (
+            set(base_data.keys()) | set(local_data.keys()) | set(remote_data.keys())
+        )
 
         for key in all_keys:
             base_value = base_data.get(key)

@@ -1,9 +1,10 @@
 from datetime import datetime
 
-from app.db.base import Base
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class AutomationVideo(Base):
@@ -20,7 +21,9 @@ class AutomationVideo(Base):
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+    project_id = Column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True, index=True
+    )
 
     # S3 storage
     s3_key = Column(String, nullable=False, unique=True)

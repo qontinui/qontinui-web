@@ -5,9 +5,7 @@ Parses Python files to extract decorated functions and their metadata.
 """
 
 import ast
-import inspect
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -20,8 +18,8 @@ class FunctionParameter(BaseModel):
     """Parameter metadata for a function."""
 
     name: str
-    type_hint: Optional[str] = None
-    default: Optional[Any] = None
+    type_hint: str | None = None
+    default: Any | None = None
     required: bool = True
 
 
@@ -33,29 +31,29 @@ class FunctionMetadata(BaseModel):
     file_path: str
 
     # Display metadata
-    display_name: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    tags: List[str] = []
+    display_name: str | None = None
+    description: str | None = None
+    category: str | None = None
+    tags: list[str] = []
 
     # Function signature
-    parameters: List[FunctionParameter] = []
-    return_type: Optional[str] = None
+    parameters: list[FunctionParameter] = []
+    return_type: str | None = None
 
     # Decorator metadata
-    inputs: Dict[str, str] = {}  # {param_name: type_string}
-    outputs: Dict[str, str] = {}  # {output_name: type_string}
+    inputs: dict[str, str] = {}  # {param_name: type_string}
+    outputs: dict[str, str] = {}  # {output_name: type_string}
 
     # Observability (for RL/strategy agent)
-    observable_outputs: List[str] = []
+    observable_outputs: list[str] = []
 
     # Source code
-    source_code: Optional[str] = None
-    docstring: Optional[str] = None
+    source_code: str | None = None
+    docstring: str | None = None
 
     # Line numbers
-    line_start: Optional[int] = None
-    line_end: Optional[int] = None
+    line_start: int | None = None
+    line_end: int | None = None
 
 
 # ============================================================================
@@ -69,7 +67,7 @@ class FunctionScanner:
     DECORATOR_NAME = "automation_function"
 
     @staticmethod
-    def scan_file(file_content: str, file_path: str) -> List[FunctionMetadata]:
+    def scan_file(file_content: str, file_path: str) -> list[FunctionMetadata]:
         """
         Parse Python file and extract all @automation_function decorated functions.
 
@@ -164,7 +162,7 @@ class FunctionScanner:
         )
 
     @staticmethod
-    def _get_decorator_kwargs(func_node: ast.FunctionDef) -> Dict[str, Any]:
+    def _get_decorator_kwargs(func_node: ast.FunctionDef) -> dict[str, Any]:
         """Extract keyword arguments from @automation_function decorator."""
         kwargs = {}
 
@@ -183,7 +181,8 @@ class FunctionScanner:
             for keyword in decorator.keywords:
                 key = keyword.arg
                 value = FunctionScanner._ast_literal_to_python(keyword.value)
-                kwargs[key] = value
+                if key is not None:
+                    kwargs[key] = value
 
         return kwargs
 
@@ -199,7 +198,8 @@ class FunctionScanner:
                 FunctionScanner._ast_literal_to_python(
                     k
                 ): FunctionScanner._ast_literal_to_python(v)
-                for k, v in zip(node.keys, node.values)
+                for k, v in zip(node.keys, node.values, strict=False)
+                if k is not None
             }
         elif isinstance(node, ast.Name):
             # For type hints like ActionResult
@@ -208,7 +208,7 @@ class FunctionScanner:
             return None
 
     @staticmethod
-    def _extract_parameters(func_node: ast.FunctionDef) -> List[FunctionParameter]:
+    def _extract_parameters(func_node: ast.FunctionDef) -> list[FunctionParameter]:
         """Extract parameter information from function signature."""
         parameters = []
 
@@ -217,7 +217,7 @@ class FunctionScanner:
         # Get defaults (align with parameters from right)
         defaults = [None] * (len(args.args) - len(args.defaults)) + args.defaults
 
-        for arg, default in zip(args.args, defaults):
+        for arg, default in zip(args.args, defaults, strict=False):
             # Skip 'self' and 'context' parameters
             if arg.arg in ["self", "context"]:
                 continue
@@ -233,14 +233,14 @@ class FunctionScanner:
         return parameters
 
     @staticmethod
-    def _extract_return_type(func_node: ast.FunctionDef) -> Optional[str]:
+    def _extract_return_type(func_node: ast.FunctionDef) -> str | None:
         """Extract return type annotation."""
         if func_node.returns:
             return FunctionScanner._get_type_annotation(func_node.returns)
         return None
 
     @staticmethod
-    def _get_type_annotation(annotation: Optional[ast.AST]) -> Optional[str]:
+    def _get_type_annotation(annotation: ast.AST | None) -> str | None:
         """Convert AST type annotation to string."""
         if annotation is None:
             return None
@@ -257,7 +257,7 @@ class FunctionScanner:
                 return str(annotation)
 
     @staticmethod
-    def _get_default_value(default_node: Optional[ast.AST]) -> Optional[Any]:
+    def _get_default_value(default_node: ast.AST | None) -> Any | None:
         """Extract default value from AST node."""
         if default_node is None:
             return None
@@ -274,7 +274,7 @@ class FunctionValidator:
     """Validates that decorated functions meet requirements."""
 
     @staticmethod
-    def validate_function(metadata: FunctionMetadata) -> List[str]:
+    def validate_function(metadata: FunctionMetadata) -> list[str]:
         """
         Validate function metadata.
 

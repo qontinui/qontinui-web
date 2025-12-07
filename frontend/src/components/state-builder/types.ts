@@ -4,7 +4,7 @@
  * Types for enhanced state organization and management
  */
 
-import type { State } from '@/contexts/automation-context';
+import type { State } from "@/contexts/automation-context";
 
 /**
  * Group/folder for organizing states
@@ -113,7 +113,7 @@ export interface StateSearchFilter {
   tags?: string[];
 
   /** Tag matching mode */
-  tagOperator?: 'AND' | 'OR';
+  tagOperator?: "AND" | "OR";
 
   /** Has images filter */
   hasImages?: boolean | null;
@@ -177,7 +177,7 @@ export interface BulkOperationPayload {
   stateIds: string[];
 
   /** Operation type */
-  operation: 'move' | 'tag' | 'delete' | 'export' | 'duplicate' | 'archive';
+  operation: "move" | "tag" | "delete" | "export" | "duplicate" | "archive";
 
   /** Operation-specific data */
   data?: {
@@ -188,7 +188,7 @@ export interface BulkOperationPayload {
     tags?: string[];
 
     /** Export format */
-    format?: 'json' | 'yaml';
+    format?: "json" | "yaml";
 
     /** Archive state */
     archived?: boolean;
@@ -245,7 +245,7 @@ export interface StateComparison {
  */
 export interface StateValidationIssue {
   /** Issue type */
-  type: 'error' | 'warning' | 'info';
+  type: "error" | "warning" | "info";
 
   /** Issue code */
   code: string;
@@ -255,7 +255,7 @@ export interface StateValidationIssue {
 
   /** State element affected (if applicable) */
   element?: {
-    type: 'stateImage' | 'region' | 'location' | 'string';
+    type: "stateImage" | "region" | "location" | "string";
     id: string;
     name?: string;
   };
@@ -278,7 +278,7 @@ export interface StateUsageInfo {
   /** Transitions that reference this state */
   transitions: Array<{
     id: string;
-    type: 'incoming' | 'outgoing';
+    type: "incoming" | "outgoing";
   }>;
 
   /** Total usage count */
@@ -321,16 +321,16 @@ export interface StateAnalytics {
 /**
  * Complexity level
  */
-export type ComplexityLevel = 'low' | 'medium' | 'high' | 'very-high';
+export type ComplexityLevel = "low" | "medium" | "high" | "very-high";
 
 /**
  * Get complexity level from score
  */
 export function getComplexityLevel(score: number): ComplexityLevel {
-  if (score < 5) return 'low';
-  if (score < 15) return 'medium';
-  if (score < 30) return 'high';
-  return 'very-high';
+  if (score < 5) return "low";
+  if (score < 15) return "medium";
+  if (score < 30) return "high";
+  return "very-high";
 }
 
 /**
@@ -338,13 +338,13 @@ export function getComplexityLevel(score: number): ComplexityLevel {
  */
 export function getComplexityColor(level: ComplexityLevel): string {
   switch (level) {
-    case 'low':
-      return 'text-green-500 border-green-500';
-    case 'medium':
-      return 'text-yellow-500 border-yellow-500';
-    case 'high':
-      return 'text-orange-500 border-orange-500';
-    case 'very-high':
-      return 'text-red-500 border-red-500';
+    case "low":
+      return "text-green-500 border-green-500";
+    case "medium":
+      return "text-yellow-500 border-yellow-500";
+    case "high":
+      return "text-orange-500 border-orange-500";
+    case "very-high":
+      return "text-red-500 border-red-500";
   }
 }

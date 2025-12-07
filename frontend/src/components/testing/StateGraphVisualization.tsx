@@ -1,9 +1,8 @@
-'use client';
+"use client";
 
-import { useCallback, useMemo } from 'react';
-import { useStateGraph } from '@/hooks/useTesting';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useMemo } from "react";
+import { useStateGraph } from "@/hooks/useTesting";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ReactFlow,
   Node,
@@ -14,9 +13,9 @@ import {
   useNodesState,
   useEdgesState,
   MarkerType,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import dagre from 'dagre';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import dagre from "dagre";
 
 interface StateGraphVisualizationProps {
   projectId: string;
@@ -26,9 +25,9 @@ interface StateGraphVisualizationProps {
 // Custom node component for state nodes
 function StateNode({ data }: any) {
   const getSuccessRateColor = (rate: number) => {
-    if (rate >= 90) return 'border-green-500 bg-green-500/20';
-    if (rate >= 70) return 'border-yellow-500 bg-yellow-500/20';
-    return 'border-red-500 bg-red-500/20';
+    if (rate >= 90) return "border-green-500 bg-green-500/20";
+    if (rate >= 70) return "border-yellow-500 bg-yellow-500/20";
+    return "border-red-500 bg-red-500/20";
   };
 
   return (
@@ -41,10 +40,10 @@ function StateNode({ data }: any) {
         <span
           className={
             data.success_rate >= 90
-              ? 'text-green-500'
+              ? "text-green-500"
               : data.success_rate >= 70
-              ? 'text-yellow-500'
-              : 'text-red-500'
+                ? "text-yellow-500"
+                : "text-red-500"
           }
         >
           {data.success_rate.toFixed(0)}%
@@ -58,8 +57,15 @@ const nodeTypes = {
   stateNode: StateNode,
 };
 
-export function StateGraphVisualization({ projectId, workflowId }: StateGraphVisualizationProps) {
-  const { data: graphData, isLoading, error } = useStateGraph(projectId, workflowId);
+export function StateGraphVisualization({
+  projectId,
+  workflowId,
+}: StateGraphVisualizationProps) {
+  const {
+    data: graphData,
+    isLoading,
+    error,
+  } = useStateGraph(projectId, workflowId);
 
   // Convert graph data to ReactFlow format and apply layout
   const { initialNodes, initialEdges } = useMemo(() => {
@@ -70,7 +76,7 @@ export function StateGraphVisualization({ projectId, workflowId }: StateGraphVis
     // Create dagre graph for layout
     const dagreGraph = new dagre.graphlib.Graph();
     dagreGraph.setDefaultEdgeLabel(() => ({}));
-    dagreGraph.setGraph({ rankdir: 'LR', nodesep: 100, ranksep: 150 });
+    dagreGraph.setGraph({ rankdir: "LR", nodesep: 100, ranksep: 150 });
 
     // Add nodes to dagre
     graphData.nodes.forEach((node) => {
@@ -90,7 +96,7 @@ export function StateGraphVisualization({ projectId, workflowId }: StateGraphVis
       const nodeWithPosition = dagreGraph.node(node.id);
       return {
         id: node.id,
-        type: 'stateNode',
+        type: "stateNode",
         position: {
           x: nodeWithPosition.x - 100,
           y: nodeWithPosition.y - 40,
@@ -105,9 +111,9 @@ export function StateGraphVisualization({ projectId, workflowId }: StateGraphVis
 
     const edges: Edge[] = graphData.edges.map((edge) => {
       const getEdgeColor = (rate: number) => {
-        if (rate >= 90) return '#10b981'; // green-500
-        if (rate >= 70) return '#eab308'; // yellow-500
-        return '#ef4444'; // red-500
+        if (rate >= 90) return "#10b981"; // green-500
+        if (rate >= 70) return "#eab308"; // yellow-500
+        return "#ef4444"; // red-500
       };
 
       return {
@@ -121,11 +127,11 @@ export function StateGraphVisualization({ projectId, workflowId }: StateGraphVis
           strokeWidth: 2,
         },
         labelStyle: {
-          fill: '#fff',
+          fill: "#fff",
           fontSize: 12,
         },
         labelBgStyle: {
-          fill: '#1A1A1B',
+          fill: "#1A1A1B",
           fillOpacity: 0.8,
         },
         markerEnd: {
@@ -138,8 +144,8 @@ export function StateGraphVisualization({ projectId, workflowId }: StateGraphVis
     return { initialNodes: nodes, initialEdges: edges };
   }, [graphData]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
   if (isLoading) {
     return (
@@ -155,7 +161,9 @@ export function StateGraphVisualization({ projectId, workflowId }: StateGraphVis
     return (
       <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
         <CardContent className="p-12 text-center">
-          <div className="text-red-400">Error loading state graph: {error.message}</div>
+          <div className="text-red-400">
+            Error loading state graph: {error.message}
+          </div>
         </CardContent>
       </Card>
     );
@@ -196,7 +204,7 @@ export function StateGraphVisualization({ projectId, workflowId }: StateGraphVis
         </div>
       </CardHeader>
       <CardContent>
-        <div style={{ height: '600px', width: '100%' }}>
+        <div style={{ height: "600px", width: "100%" }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -212,10 +220,10 @@ export function StateGraphVisualization({ projectId, workflowId }: StateGraphVis
             <MiniMap
               className="bg-[#1A1A1B] border border-gray-700"
               nodeColor={(node) => {
-                const rate = node.data.success_rate;
-                if (rate >= 90) return '#10b981';
-                if (rate >= 70) return '#eab308';
-                return '#ef4444';
+                const rate = node.data.success_rate as number;
+                if (rate >= 90) return "#10b981";
+                if (rate >= 70) return "#eab308";
+                return "#ef4444";
               }}
             />
           </ReactFlow>
@@ -225,19 +233,26 @@ export function StateGraphVisualization({ projectId, workflowId }: StateGraphVis
         <div className="grid grid-cols-3 gap-4 mt-6">
           <div className="text-center p-3 bg-[#0A0A0B]/50 rounded-lg">
             <div className="text-sm text-gray-400 mb-1">Total States</div>
-            <div className="text-2xl font-bold text-[#00D9FF]">{graphData.nodes.length}</div>
+            <div className="text-2xl font-bold text-[#00D9FF]">
+              {graphData.nodes.length}
+            </div>
           </div>
           <div className="text-center p-3 bg-[#0A0A0B]/50 rounded-lg">
             <div className="text-sm text-gray-400 mb-1">Total Transitions</div>
-            <div className="text-2xl font-bold text-[#BD00FF]">{graphData.edges.length}</div>
+            <div className="text-2xl font-bold text-[#BD00FF]">
+              {graphData.edges.length}
+            </div>
           </div>
           <div className="text-center p-3 bg-[#0A0A0B]/50 rounded-lg">
             <div className="text-sm text-gray-400 mb-1">Avg Success Rate</div>
             <div className="text-2xl font-bold text-[#00FF88]">
               {(
-                graphData.edges.reduce((acc, edge) => acc + edge.success_rate, 0) /
-                graphData.edges.length
-              ).toFixed(1)}%
+                graphData.edges.reduce(
+                  (acc, edge) => acc + edge.success_rate,
+                  0
+                ) / graphData.edges.length
+              ).toFixed(1)}
+              %
             </div>
           </div>
         </div>

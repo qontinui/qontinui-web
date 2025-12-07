@@ -9,11 +9,11 @@
  * - Shows keyboard shortcuts
  */
 
-'use client';
+"use client";
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useCanvasStore } from '@/stores/canvas-store';
-import { ContextMenuIcons } from './ContextMenu';
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { ContextMenuIcons } from "./ContextMenu";
 
 // ============================================================================
 // Types
@@ -44,41 +44,41 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
   const [opacity, setOpacity] = useState(1);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
-  const { copy, duplicate, deleteActions, updateAction } = useCanvasStore();
+  const { copy, duplicate, deleteActions } = useCanvasStore();
 
   // Actions
   const actions: ToolbarAction[] = [
     {
-      id: 'copy',
-      label: 'Copy',
+      id: "copy",
+      label: "Copy",
       icon: ContextMenuIcons.copy,
-      shortcut: 'Ctrl+C',
+      shortcut: "Ctrl+C",
       onClick: copy,
     },
     {
-      id: 'duplicate',
-      label: 'Duplicate',
+      id: "duplicate",
+      label: "Duplicate",
       icon: ContextMenuIcons.duplicate,
-      shortcut: 'Ctrl+D',
+      shortcut: "Ctrl+D",
       onClick: duplicate,
     },
     {
-      id: 'disable',
-      label: 'Disable',
+      id: "disable",
+      label: "Disable",
       icon: ContextMenuIcons.disable,
       onClick: () => {
-        nodeIds.forEach(id => {
+        nodeIds.forEach((id) => {
           // Toggle disable state
           // Note: This would require updating the action in the store
-          console.log('Toggle disable', id);
+          console.log("Toggle disable", id);
         });
       },
     },
     {
-      id: 'delete',
-      label: 'Delete',
+      id: "delete",
+      label: "Delete",
       icon: ContextMenuIcons.delete,
-      shortcut: 'Del',
+      shortcut: "Del",
       onClick: () => deleteActions(nodeIds),
       danger: true,
     },
@@ -109,7 +109,7 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
         left: `${position.x}px`,
         top: `${position.y - 60}px`,
         opacity,
-        transition: 'opacity 200ms ease-in-out',
+        transition: "opacity 200ms ease-in-out",
       }}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
@@ -117,22 +117,23 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
       <div className="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-1">
         {/* Node count badge */}
         <div className="px-2 py-1 text-xs text-gray-400 border-r border-gray-700">
-          {nodeIds.length} {nodeIds.length === 1 ? 'node' : 'nodes'}
+          {nodeIds.length} {nodeIds.length === 1 ? "node" : "nodes"}
         </div>
 
         {/* Actions */}
-        {actions.map((action, index) => (
+        {actions.map((action) => (
           <button
             key={action.id}
             onClick={action.onClick}
             disabled={action.disabled}
             className={`
               group relative px-3 py-2 rounded transition-all duration-150
-              ${action.disabled
-                ? 'text-gray-500 cursor-not-allowed'
-                : action.danger
-                ? 'text-red-400 hover:bg-red-900/20'
-                : 'text-gray-200 hover:bg-gray-700'
+              ${
+                action.disabled
+                  ? "text-gray-500 cursor-not-allowed"
+                  : action.danger
+                    ? "text-red-400 hover:bg-red-900/20"
+                    : "text-gray-200 hover:bg-gray-700"
               }
             `}
             title={action.label}
@@ -155,8 +156,18 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
             onClick={onClose}
             className="px-2 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors ml-1 border-l border-gray-700"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         )}
@@ -175,16 +186,19 @@ export function useMiniToolbar() {
     position: { x: number; y: number };
   } | null>(null);
 
-  const showToolbar = useCallback((nodeIds: string[], position: { x: number; y: number }) => {
-    setToolbarState({ nodeIds, position });
-  }, []);
+  const showToolbar = useCallback(
+    (nodeIds: string[], position: { x: number; y: number }) => {
+      setToolbarState({ nodeIds, position });
+    },
+    []
+  );
 
   const hideToolbar = useCallback(() => {
     setToolbarState(null);
   }, []);
 
   const updatePosition = useCallback((position: { x: number; y: number }) => {
-    setToolbarState(prev => (prev ? { ...prev, position } : null));
+    setToolbarState((prev) => (prev ? { ...prev, position } : null));
   }, []);
 
   return {

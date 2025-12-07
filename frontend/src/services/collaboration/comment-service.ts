@@ -9,14 +9,14 @@
  * - Comment positioning on canvas
  */
 
-import { HttpClient } from '../http-client';
-import { ApiConfig } from '../api-config';
+import { HttpClient } from "../http-client";
+import { ApiConfig } from "../api-config";
 import type {
   Comment,
   CommentCreate,
   CommentUpdate,
   CommentPosition,
-} from '@/types/collaboration';
+} from "@/types/collaboration";
 
 export class CommentService {
   private httpClient: HttpClient;
@@ -51,14 +51,14 @@ export class CommentService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/projects/${projectId}/comments`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(data),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to add comment');
+      throw new Error(error.message || "Failed to add comment");
     }
 
     return response.json();
@@ -67,17 +67,20 @@ export class CommentService {
   /**
    * Get all comments for a project
    */
-  async getComments(projectId: string, workflowId?: string): Promise<Comment[]> {
+  async getComments(
+    projectId: string,
+    workflowId?: string
+  ): Promise<Comment[]> {
     const url = new URL(`${this.apiUrl}/api/v1/projects/${projectId}/comments`);
 
     if (workflowId) {
-      url.searchParams.set('workflow_id', workflowId);
+      url.searchParams.set("workflow_id", workflowId);
     }
 
     const response = await this.httpClient.fetch(url.toString());
 
     if (!response.ok) {
-      throw new Error('Failed to fetch comments');
+      throw new Error("Failed to fetch comments");
     }
 
     return response.json();
@@ -92,7 +95,7 @@ export class CommentService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch comment');
+      throw new Error("Failed to fetch comment");
     }
 
     return response.json();
@@ -107,14 +110,14 @@ export class CommentService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/comments/${commentId}`,
       {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(data),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to update comment');
+      throw new Error(error.message || "Failed to update comment");
     }
 
     return response.json();
@@ -127,13 +130,13 @@ export class CommentService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/comments/${commentId}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to delete comment');
+      throw new Error(error.message || "Failed to delete comment");
     }
   }
 
@@ -148,13 +151,13 @@ export class CommentService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/comments/${commentId}/resolve`,
       {
-        method: 'POST',
+        method: "POST",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to resolve comment');
+      throw new Error(error.message || "Failed to resolve comment");
     }
   }
 
@@ -165,13 +168,13 @@ export class CommentService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/comments/${commentId}/unresolve`,
       {
-        method: 'POST',
+        method: "POST",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to unresolve comment');
+      throw new Error(error.message || "Failed to unresolve comment");
     }
   }
 
@@ -199,14 +202,14 @@ export class CommentService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/projects/${comment.project_id}/comments`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(data),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to reply to comment');
+      throw new Error(error.message || "Failed to reply to comment");
     }
 
     return response.json();
@@ -221,7 +224,7 @@ export class CommentService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch replies');
+      throw new Error("Failed to fetch replies");
     }
 
     return response.json();
@@ -239,14 +242,14 @@ export class CommentService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/comments/${commentId}/mentions`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ user_id: userId }),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to add mention');
+      throw new Error(error.message || "Failed to add mention");
     }
   }
 
@@ -261,7 +264,7 @@ export class CommentService {
     const response = await this.httpClient.fetch(url);
 
     if (!response.ok) {
-      throw new Error('Failed to fetch mentions');
+      throw new Error("Failed to fetch mentions");
     }
 
     return response.json();
@@ -278,14 +281,14 @@ export class CommentService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/comments/${commentId}/reactions`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ emoji }),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to add reaction');
+      throw new Error(error.message || "Failed to add reaction");
     }
   }
 
@@ -296,13 +299,13 @@ export class CommentService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/comments/${commentId}/reactions/${emoji}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to remove reaction');
+      throw new Error(error.message || "Failed to remove reaction");
     }
   }
 
@@ -313,17 +316,22 @@ export class CommentService {
   /**
    * Get unresolved comments for a project
    */
-  async getUnresolvedComments(projectId: string, workflowId?: string): Promise<Comment[]> {
-    const url = new URL(`${this.apiUrl}/api/v1/projects/${projectId}/comments/unresolved`);
+  async getUnresolvedComments(
+    projectId: string,
+    workflowId?: string
+  ): Promise<Comment[]> {
+    const url = new URL(
+      `${this.apiUrl}/api/v1/projects/${projectId}/comments/unresolved`
+    );
 
     if (workflowId) {
-      url.searchParams.set('workflow_id', workflowId);
+      url.searchParams.set("workflow_id", workflowId);
     }
 
     const response = await this.httpClient.fetch(url.toString());
 
     if (!response.ok) {
-      throw new Error('Failed to fetch unresolved comments');
+      throw new Error("Failed to fetch unresolved comments");
     }
 
     return response.json();
@@ -341,7 +349,7 @@ export class CommentService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch comments by position');
+      throw new Error("Failed to fetch comments by position");
     }
 
     return response.json();

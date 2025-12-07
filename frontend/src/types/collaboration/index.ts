@@ -4,4 +4,4 @@
  * Export all collaboration-related types
  */
 
-export * from './conflict-types'
+export * from "./conflict-types";

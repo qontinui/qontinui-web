@@ -10,7 +10,7 @@ Accuracy: 70-80% for text with good contrast
 """
 
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -39,14 +39,14 @@ class GradientTextDetector(BaseRegionAnalyzer):
         return "gradient_text_detector"
 
     @property
-    def supported_region_types(self) -> List[RegionType]:
+    def supported_region_types(self) -> list[RegionType]:
         return [RegionType.TEXT_AREA]
 
     @property
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize Gradient text detector.
 
@@ -77,7 +77,7 @@ class GradientTextDetector(BaseRegionAnalyzer):
         self.min_aspect_ratio = params["min_aspect_ratio"]
         self.max_aspect_ratio = params["max_aspect_ratio"]
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "gradient_threshold": 30.0,
             "min_gradient_density": 0.15,
@@ -133,7 +133,7 @@ class GradientTextDetector(BaseRegionAnalyzer):
 
     def _detect_text_regions(
         self, gray: np.ndarray, screenshot_index: int
-    ) -> List[DetectedRegion]:
+    ) -> list[DetectedRegion]:
         """Detect text regions in a grayscale image."""
         # Apply Gaussian blur
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
@@ -146,9 +146,10 @@ class GradientTextDetector(BaseRegionAnalyzer):
         gradient_mag = np.sqrt(grad_x**2 + grad_y**2)
 
         # Normalize to 0-255
-        gradient_mag = cv2.normalize(
-            gradient_mag, None, 0, 255, cv2.NORM_MINMAX
-        ).astype(np.uint8)
+        gradient_mag_normalized: np.ndarray = cv2.normalize(
+            gradient_mag, None, 0, 255, cv2.NORM_MINMAX  # type: ignore[call-overload]
+        )
+        gradient_mag = gradient_mag_normalized.astype(np.uint8)
 
         # Threshold gradient magnitude
         _, gradient_binary = cv2.threshold(
@@ -248,7 +249,6 @@ class GradientTextDetector(BaseRegionAnalyzer):
                     "gradient_std": float(gradient_std),
                     "angle_consistency": float(angle_consistency),
                     "detection_method": "gradient",
-                    "total_text_regions": len(all_regions),
                 },
             )
             detected_regions.append(detected_region)

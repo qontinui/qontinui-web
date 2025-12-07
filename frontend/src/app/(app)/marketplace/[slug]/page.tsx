@@ -1,7 +1,7 @@
-'use client'
+"use client";
 
-import React, { useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import React, { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Download,
@@ -17,92 +17,104 @@ import {
   AlertTriangle,
   FileText,
   Code,
-} from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { PackageCodePreview } from '@/components/marketplace/PackageCodePreview'
-import { PackageRatings } from '@/components/marketplace/PackageRatings'
-import { InstallDialog } from '@/components/marketplace/InstallDialog'
+} from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { PackageCodePreview } from "@/components/marketplace/PackageCodePreview";
+import { PackageRatings } from "@/components/marketplace/PackageRatings";
+import { InstallDialog } from "@/components/marketplace/InstallDialog";
 import {
   usePackageDetails,
   usePackageRatings,
   useInstallPackage,
   useRatePackage,
-} from '@/hooks/useCodePackages'
-import { useProjects } from '@/hooks/use-projects'
-import { formatDownloads, formatRating, getCategoryLabel } from '@/types/code-packages'
-import type { InstallStatus } from '@/types/code-packages'
-import { formatDistanceToNow } from 'date-fns'
-import { cn } from '@/lib/utils'
+} from "@/hooks/useCodePackages";
+import { useProjects } from "@/hooks/use-projects";
+import {
+  formatDownloads,
+  formatRating,
+  getCategoryLabel,
+} from "@/types/code-packages";
+import type { InstallStatus } from "@/types/code-packages";
+import { formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export default function PackageDetailsPage() {
-  const params = useParams()
-  const router = useRouter()
-  const slug = params.slug as string
+  const params = useParams();
+  const router = useRouter();
+  const slug = params.slug as string;
 
-  const [installDialogOpen, setInstallDialogOpen] = useState(false)
-  const [installStatus, setInstallStatus] = useState<InstallStatus>('idle')
-  const [selectedTab, setSelectedTab] = useState<'readme' | 'code' | 'versions' | 'dependencies'>('readme')
+  const [installDialogOpen, setInstallDialogOpen] = useState(false);
+  const [installStatus, setInstallStatus] = useState<InstallStatus>("idle");
+  const [selectedTab, setSelectedTab] = useState<
+    "readme" | "code" | "versions" | "dependencies"
+  >("readme");
 
   // Queries
-  const { data: pkg, isLoading } = usePackageDetails(slug)
-  const { data: ratings } = usePackageRatings(pkg?.id || '', !!pkg?.id)
-  const { data: projects } = useProjects()
+  const { data: pkg, isLoading } = usePackageDetails(slug);
+  const { data: ratings } = usePackageRatings(pkg?.id || "", !!pkg?.id);
+  const { data: projects } = useProjects();
 
   // Mutations
-  const installPackageMutation = useInstallPackage()
-  const ratePackageMutation = useRatePackage()
+  const installPackageMutation = useInstallPackage();
+  const ratePackageMutation = useRatePackage();
 
   const handleBack = () => {
-    router.push('/marketplace')
-  }
+    router.push("/marketplace");
+  };
 
   const handleInstallClick = () => {
-    setInstallDialogOpen(true)
-    setInstallStatus('idle')
-  }
+    setInstallDialogOpen(true);
+    setInstallStatus("idle");
+  };
 
   const handleInstall = async (projectId: string, versionId?: string) => {
-    if (!pkg) return
+    if (!pkg) return;
 
-    setInstallStatus('installing')
+    setInstallStatus("installing");
 
     try {
       await installPackageMutation.mutateAsync({
         package_id: pkg.id,
         version_id: versionId,
         project_id: projectId,
-      })
-      setInstallStatus('installed')
+      });
+      setInstallStatus("installed");
       setTimeout(() => {
-        setInstallDialogOpen(false)
-        setInstallStatus('idle')
-      }, 2000)
+        setInstallDialogOpen(false);
+        setInstallStatus("idle");
+      }, 2000);
     } catch (error) {
-      console.error('[PackageDetailsPage] Failed to install package:', error)
-      setInstallStatus('failed')
+      console.error("[PackageDetailsPage] Failed to install package:", error);
+      setInstallStatus("failed");
     }
-  }
+  };
 
   const handleSubmitRating = async (rating: number, review?: string) => {
-    if (!pkg) return
+    if (!pkg) return;
 
     try {
       await ratePackageMutation.mutateAsync({
         package_id: pkg.id,
         rating,
         review,
-      })
+      });
     } catch (error) {
-      console.error('[PackageDetailsPage] Failed to submit rating:', error)
+      console.error("[PackageDetailsPage] Failed to submit rating:", error);
     }
-  }
+  };
 
   if (isLoading) {
     return (
@@ -112,7 +124,7 @@ export default function PackageDetailsPage() {
           <p className="text-gray-400">Loading package details...</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (!pkg) {
@@ -120,18 +132,24 @@ export default function PackageDetailsPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <Package className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-300 mb-2">Package not found</h2>
-          <p className="text-gray-500 mb-6">The package you're looking for doesn't exist.</p>
+          <h2 className="text-2xl font-bold text-gray-300 mb-2">
+            Package not found
+          </h2>
+          <p className="text-gray-500 mb-6">
+            The package you're looking for doesn't exist.
+          </p>
           <Button onClick={handleBack} variant="outline">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Marketplace
           </Button>
         </div>
       </div>
-    )
+    );
   }
 
-  const hasSecurityIssues = pkg.latest_version.security_scan.scanned && !pkg.latest_version.security_scan.passed
+  const hasSecurityIssues =
+    pkg.latest_version.security_scan.scanned &&
+    !pkg.latest_version.security_scan.passed;
 
   return (
     <div className="min-h-screen bg-background">
@@ -153,7 +171,9 @@ export default function PackageDetailsPage() {
               <div className="flex items-start gap-3 mb-3">
                 <h1 className="text-3xl font-bold text-gray-100">{pkg.name}</h1>
                 {pkg.verified && (
-                  <Shield className="w-6 h-6 text-cyan-500 flex-shrink-0 mt-1" title="Verified by staff" />
+                  <div title="Verified by staff">
+                    <Shield className="w-6 h-6 text-cyan-500 flex-shrink-0 mt-1" />
+                  </div>
                 )}
               </div>
 
@@ -161,7 +181,9 @@ export default function PackageDetailsPage() {
 
               {/* Tags */}
               <div className="flex flex-wrap gap-2 mb-4">
-                <Badge variant="outline">{getCategoryLabel(pkg.category)}</Badge>
+                <Badge variant="outline">
+                  {getCategoryLabel(pkg.category)}
+                </Badge>
                 {pkg.featured && (
                   <Badge className="bg-gradient-to-r from-cyan-500 to-purple-500 text-white">
                     Featured
@@ -178,8 +200,12 @@ export default function PackageDetailsPage() {
               <div className="flex items-center gap-2 text-gray-400">
                 <User className="w-4 h-4" />
                 <span>by</span>
-                <span className="font-medium text-gray-300">{pkg.author.username}</span>
-                {pkg.author.verified && <Shield className="w-3 h-3 text-cyan-500" />}
+                <span className="font-medium text-gray-300">
+                  {pkg.author.username}
+                </span>
+                {pkg.author.verified && (
+                  <Shield className="w-3 h-3 text-cyan-500" />
+                )}
               </div>
             </div>
 
@@ -224,7 +250,10 @@ export default function PackageDetailsPage() {
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
             {/* Tabs */}
-            <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as typeof selectedTab)}>
+            <Tabs
+              value={selectedTab}
+              onValueChange={(v) => setSelectedTab(v as typeof selectedTab)}
+            >
               <TabsList className="bg-gray-900/50 w-full">
                 <TabsTrigger value="readme" className="flex-1">
                   <FileText className="w-4 h-4 mr-2" />
@@ -296,10 +325,16 @@ export default function PackageDetailsPage() {
                               )}
                             </div>
                             <div className="text-sm text-gray-500">
-                              Released {formatDistanceToNow(new Date(version.created_at), { addSuffix: true })}
+                              Released{" "}
+                              {formatDistanceToNow(
+                                new Date(version.created_at),
+                                { addSuffix: true }
+                              )}
                             </div>
                             {version.changelog && (
-                              <p className="text-sm text-gray-400 mt-2">{version.changelog}</p>
+                              <p className="text-sm text-gray-400 mt-2">
+                                {version.changelog}
+                              </p>
                             )}
                           </div>
                           <div className="text-sm text-gray-500">
@@ -330,7 +365,9 @@ export default function PackageDetailsPage() {
                           >
                             <div className="flex items-center gap-2">
                               <Package className="w-4 h-4 text-gray-500" />
-                              <span className="font-medium text-gray-300">{dep.package_name}</span>
+                              <span className="font-medium text-gray-300">
+                                {dep.package_name}
+                              </span>
                             </div>
                             <div className="flex items-center gap-2">
                               <Badge variant="outline" className="text-xs">
@@ -417,7 +454,9 @@ export default function PackageDetailsPage() {
                     <span className="text-sm">Updated</span>
                   </div>
                   <span className="text-sm text-gray-200">
-                    {formatDistanceToNow(new Date(pkg.updated_at), { addSuffix: true })}
+                    {formatDistanceToNow(new Date(pkg.updated_at), {
+                      addSuffix: true,
+                    })}
                   </span>
                 </div>
               </CardContent>
@@ -436,7 +475,9 @@ export default function PackageDetailsPage() {
             </Card>
 
             {/* Links */}
-            {(pkg.repository_url || pkg.homepage_url || pkg.documentation_url) && (
+            {(pkg.repository_url ||
+              pkg.homepage_url ||
+              pkg.documentation_url) && (
               <Card className="bg-gray-900/30 border-gray-800">
                 <CardHeader>
                   <CardTitle className="text-base">Links</CardTitle>
@@ -481,12 +522,14 @@ export default function PackageDetailsPage() {
 
             {/* Security Scan */}
             {pkg.latest_version.security_scan.scanned && (
-              <Card className={cn(
-                'border-gray-800',
-                pkg.latest_version.security_scan.passed
-                  ? 'bg-green-950/20 border-green-500/50'
-                  : 'bg-red-950/20 border-red-500/50'
-              )}>
+              <Card
+                className={cn(
+                  "border-gray-800",
+                  pkg.latest_version.security_scan.passed
+                    ? "bg-green-950/20 border-green-500/50"
+                    : "bg-red-950/20 border-red-500/50"
+                )}
+              >
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     {pkg.latest_version.security_scan.passed ? (
@@ -502,18 +545,23 @@ export default function PackageDetailsPage() {
                     )}
                   </CardTitle>
                 </CardHeader>
-                {!pkg.latest_version.security_scan.passed && pkg.latest_version.security_scan.issues && (
-                  <CardContent className="space-y-2">
-                    {pkg.latest_version.security_scan.issues.map((issue, index) => (
-                      <div key={index} className="text-sm">
-                        <Badge variant="destructive" className="mr-2">
-                          {issue.severity}
-                        </Badge>
-                        <span className="text-gray-400">{issue.description}</span>
-                      </div>
-                    ))}
-                  </CardContent>
-                )}
+                {!pkg.latest_version.security_scan.passed &&
+                  pkg.latest_version.security_scan.issues && (
+                    <CardContent className="space-y-2">
+                      {pkg.latest_version.security_scan.issues.map(
+                        (issue, index) => (
+                          <div key={index} className="text-sm">
+                            <Badge variant="destructive" className="mr-2">
+                              {issue.severity}
+                            </Badge>
+                            <span className="text-gray-400">
+                              {issue.description}
+                            </span>
+                          </div>
+                        )
+                      )}
+                    </CardContent>
+                  )}
               </Card>
             )}
 
@@ -531,11 +579,17 @@ export default function PackageDetailsPage() {
         open={installDialogOpen}
         onOpenChange={setInstallDialogOpen}
         package={pkg}
-        projects={projects?.data?.map((p) => ({ id: p.id, name: p.name })) || []}
+        projects={projects?.map((p) => ({ id: p.id, name: p.name })) || []}
         onInstall={handleInstall}
         installStatus={installStatus}
-        installProgress={installStatus === 'installing' ? 50 : installStatus === 'installed' ? 100 : 0}
+        installProgress={
+          installStatus === "installing"
+            ? 50
+            : installStatus === "installed"
+              ? 100
+              : 0
+        }
       />
     </div>
-  )
+  );
 }

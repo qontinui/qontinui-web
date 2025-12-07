@@ -9,11 +9,10 @@
  * - Grid pattern (dots, lines, cross)
  */
 
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { useCanvasStore } from '@/stores/canvas-store';
-import { GRID_CONFIG } from './canvas-config';
+import React, { useState } from "react";
+import { useCanvasStore } from "@/stores/canvas-store";
 
 // ============================================================================
 // Types
@@ -24,14 +23,20 @@ export interface GridSettingsProps {
 }
 
 const GRID_SIZES = [5, 10, 15, 20, 25, 50];
-const GRID_PATTERNS = ['dots', 'lines', 'cross'] as const;
 
 // ============================================================================
 // Grid Settings Component
 // ============================================================================
 
 export function GridSettings({ onClose }: GridSettingsProps) {
-  const { showGrid, snapToGrid, gridSize, toggleGrid, toggleSnapToGrid, setGridSize } = useCanvasStore();
+  const {
+    showGrid,
+    snapToGrid,
+    gridSize,
+    toggleGrid,
+    toggleSnapToGrid,
+    setGridSize,
+  } = useCanvasStore();
 
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 min-w-[280px]">
@@ -43,8 +48,18 @@ export function GridSettings({ onClose }: GridSettingsProps) {
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         )}
@@ -59,13 +74,13 @@ export function GridSettings({ onClose }: GridSettingsProps) {
             onClick={toggleGrid}
             className={`
               relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-              ${showGrid ? 'bg-cyan-500' : 'bg-gray-600'}
+              ${showGrid ? "bg-cyan-500" : "bg-gray-600"}
             `}
           >
             <span
               className={`
                 inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-                ${showGrid ? 'translate-x-6' : 'translate-x-1'}
+                ${showGrid ? "translate-x-6" : "translate-x-1"}
               `}
             />
           </button>
@@ -78,13 +93,13 @@ export function GridSettings({ onClose }: GridSettingsProps) {
             onClick={toggleSnapToGrid}
             className={`
               relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-              ${snapToGrid ? 'bg-cyan-500' : 'bg-gray-600'}
+              ${snapToGrid ? "bg-cyan-500" : "bg-gray-600"}
             `}
           >
             <span
               className={`
                 inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-                ${snapToGrid ? 'translate-x-6' : 'translate-x-1'}
+                ${snapToGrid ? "translate-x-6" : "translate-x-1"}
               `}
             />
           </button>
@@ -92,17 +107,20 @@ export function GridSettings({ onClose }: GridSettingsProps) {
 
         {/* Grid Size */}
         <div>
-          <label className="text-sm text-gray-300 block mb-2">Grid Size: {gridSize}px</label>
+          <label className="text-sm text-gray-300 block mb-2">
+            Grid Size: {gridSize}px
+          </label>
           <div className="grid grid-cols-3 gap-2">
-            {GRID_SIZES.map(size => (
+            {GRID_SIZES.map((size) => (
               <button
                 key={size}
                 onClick={() => setGridSize(size)}
                 className={`
                   px-3 py-2 rounded text-sm transition-colors
-                  ${size === gridSize
-                    ? 'bg-cyan-500 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  ${
+                    size === gridSize
+                      ? "bg-cyan-500 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                   }
                 `}
               >
@@ -120,9 +138,9 @@ export function GridSettings({ onClose }: GridSettingsProps) {
             style={{
               backgroundImage: showGrid
                 ? `radial-gradient(circle, #3F3F46 2px, transparent 2px)`
-                : 'none',
+                : "none",
               backgroundSize: `${gridSize}px ${gridSize}px`,
-              backgroundColor: '#18181B',
+              backgroundColor: "#18181B",
             }}
           />
         </div>
@@ -145,8 +163,18 @@ export function GridSettingsButton() {
         className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-sm border border-gray-700 transition-colors"
         title="Grid Settings"
       >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z"
+          />
         </svg>
       </button>
 

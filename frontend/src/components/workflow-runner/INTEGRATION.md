@@ -5,17 +5,21 @@ This guide shows how to integrate the Variable Monitor component into existing w
 ## Files Created
 
 ### Components
+
 - `/src/components/workflow-runner/VariableMonitor.tsx` - Main variable monitoring component
 - `/src/components/workflow-runner/VariableHistory.tsx` - Timeline view of variable changes
 - `/src/components/workflow-runner/index.ts` - Exports for easy importing
 
 ### Hooks
+
 - `/src/hooks/useWorkflowVariables.ts` - Custom hook for fetching and managing variables
 
 ### Types
+
 - `/src/types/workflow-variables.ts` - TypeScript interfaces and types
 
 ### Documentation
+
 - `/src/components/workflow-runner/README.md` - Full documentation
 - `/src/components/workflow-runner/QUICK_START.md` - Quick start guide
 - `/src/components/workflow-runner/VariableMonitor.example.tsx` - Usage examples
@@ -31,12 +35,12 @@ If you don't have a dedicated workflow runner page yet:
 ```tsx
 // Create: app/(app)/workflows/[id]/run/page.tsx
 
-import { VariableMonitor } from '@/components/workflow-runner';
+import { VariableMonitor } from "@/components/workflow-runner";
 
 export default function WorkflowRunPage({
-  params
+  params,
 }: {
-  params: { id: string }
+  params: { id: string };
 }) {
   const runId = params.id;
 
@@ -74,9 +78,9 @@ If you have existing runner management (like `/src/components/runners/`):
 ```tsx
 // Add to: components/runners/WorkflowExecutionPanel.tsx (create if needed)
 
-import { VariableMonitor } from '@/components/workflow-runner';
-import { ActiveConnectionsList } from './ActiveConnectionsList';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { VariableMonitor } from "@/components/workflow-runner";
+import { ActiveConnectionsList } from "./ActiveConnectionsList";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function WorkflowExecutionPanel({ runId }: { runId: string }) {
   return (
@@ -110,8 +114,13 @@ If running workflows from the canvas (`/src/components/workflow-canvas/`):
 ```tsx
 // Modify: components/workflow-canvas/WorkflowCanvas.tsx
 
-import { VariableMonitor } from '@/components/workflow-runner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { VariableMonitor } from "@/components/workflow-runner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function WorkflowCanvas() {
   const [showVariables, setShowVariables] = useState(false);
@@ -127,9 +136,7 @@ export function WorkflowCanvas() {
   return (
     <>
       {/* Existing canvas */}
-      <ReactFlow>
-        {/* ... */}
-      </ReactFlow>
+      <ReactFlow>{/* ... */}</ReactFlow>
 
       {/* Variable monitor dialog */}
       <Dialog open={showVariables} onOpenChange={setShowVariables}>
@@ -152,7 +159,7 @@ If using the automation builder (`/src/components/automation-builder.tsx`):
 ```tsx
 // Modify: components/automation-builder.tsx
 
-import { VariableMonitor } from '@/components/workflow-runner';
+import { VariableMonitor } from "@/components/workflow-runner";
 
 export function AutomationBuilder() {
   const [isRunning, setIsRunning] = useState(false);
@@ -161,9 +168,7 @@ export function AutomationBuilder() {
   return (
     <div className="flex h-screen">
       {/* Left: Builder */}
-      <div className="flex-1">
-        {/* Existing builder UI */}
-      </div>
+      <div className="flex-1">{/* Existing builder UI */}</div>
 
       {/* Right: Variable monitor (when running) */}
       {isRunning && runId && (
@@ -392,6 +397,7 @@ export function MockVariableMonitor() {
 ## Support
 
 If you encounter issues:
+
 - Check browser console for errors
 - Verify API endpoints are working
 - Review TypeScript types match API responses

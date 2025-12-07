@@ -6,13 +6,23 @@ noise and missing/occluded slots.
 """
 
 import logging
+from io import BytesIO
 from random import sample
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
+from PIL import Image
 
-from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
+from ..base import (
+    BaseRegionAnalyzer,
+    BoundingBox,
+    DetectedRegion,
+    RegionAnalysisInput,
+    RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +40,18 @@ class RANSACGridDetector(BaseRegionAnalyzer):
     """
 
     @property
+    def analysis_type(self) -> RegionAnalysisType:
+        return RegionAnalysisType.PATTERN_ANALYSIS
+
+    @property
     def name(self) -> str:
         return "ransac_grid_detector"
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    @property
+    def supported_region_types(self) -> list[RegionType]:
+        return [RegionType.INVENTORY_GRID]
+
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_cell_size": 24,
             "max_cell_size": 150,
@@ -44,9 +62,40 @@ class RANSACGridDetector(BaseRegionAnalyzer):
             "min_grid_cols": 2,
         }
 
-    def analyze(self, image: np.ndarray, **kwargs) -> List[DetectedRegion]:
+    async def analyze(self, input_data: RegionAnalysisInput) -> RegionAnalysisResult:
         """Detect inventory grids using RANSAC"""
-        params = {**self.get_default_parameters(), **kwargs}
+        all_regions = []
+
+        # Process each screenshot
+        for idx, screenshot_bytes in enumerate(input_data.screenshot_data):
+            # Convert bytes to numpy array
+            image = Image.open(BytesIO(screenshot_bytes))
+            image_np = np.array(image)
+
+            # Detect regions in this screenshot
+            regions = self._analyze_image(image_np, idx, input_data.parameters)
+            all_regions.extend(regions)
+
+        # Calculate overall confidence
+        overall_confidence = (
+            sum(r.confidence for r in all_regions) / len(all_regions)
+            if all_regions
+            else 0.0
+        )
+
+        return RegionAnalysisResult(
+            analyzer_type=self.analysis_type,
+            analyzer_name=self.name,
+            regions=all_regions,
+            confidence=overall_confidence,
+            metadata={"total_grids_detected": len(all_regions)},
+        )
+
+    def _analyze_image(
+        self, image: np.ndarray, screenshot_index: int, params: dict[str, Any]
+    ) -> list[DetectedRegion]:
+        """Detect inventory grids using RANSAC"""
+        params = {**self.get_default_parameters(), **params}
 
         # Convert to grayscale
         if len(image.shape) == 3:
@@ -69,15 +118,15 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         # Convert models to detected regions
         regions = []
         for model in grid_models:
-            region = self._model_to_region(model, params)
+            region = self._model_to_region(model, params, screenshot_index)
             if region:
                 regions.append(region)
 
         return regions
 
     def _find_candidate_rectangles(
-        self, gray: np.ndarray, params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, gray: np.ndarray, params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Find candidate rectangular regions that could be grid cells"""
         # Edge detection
         edges = cv2.Canny(gray, 50, 150)
@@ -133,8 +182,8 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         return candidates
 
     def _ransac_grid_fitting(
-        self, candidates: List[Dict[str, Any]], params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, candidates: list[dict[str, Any]], params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """
         Use RANSAC to fit grid models to candidate rectangles
 
@@ -147,7 +196,7 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         # Try to find multiple grids
         while len(remaining_candidates) >= params["min_inliers"]:
             best_model = None
-            best_inliers = []
+            best_inliers: list[dict[str, Any]] = []
             best_score = 0
 
             # RANSAC iterations
@@ -187,7 +236,7 @@ class RANSACGridDetector(BaseRegionAnalyzer):
                 best_models.append(best_model)
 
                 # Remove inliers from remaining candidates
-                inlier_set = set(id(p) for p in best_inliers)
+                inlier_set = {id(p) for p in best_inliers}
                 remaining_candidates = [
                     c for c in remaining_candidates if id(c) not in inlier_set
                 ]
@@ -197,8 +246,8 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         return best_models
 
     def _fit_grid_model(
-        self, points: List[Dict[str, Any]], params: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        self, points: list[dict[str, Any]], params: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """
         Fit a grid model to a set of points
 
@@ -273,10 +322,10 @@ class RANSACGridDetector(BaseRegionAnalyzer):
 
     def _count_inliers(
         self,
-        candidates: List[Dict[str, Any]],
-        model: Dict[str, Any],
-        params: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
+        candidates: list[dict[str, Any]],
+        model: dict[str, Any],
+        params: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         """Count candidates that fit the grid model"""
         inliers = []
         origin = model["origin"]
@@ -306,8 +355,8 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         return inliers
 
     def _model_to_region(
-        self, model: Dict[str, Any], params: Dict[str, Any]
-    ) -> Optional[DetectedRegion]:
+        self, model: dict[str, Any], params: dict[str, Any], screenshot_index: int
+    ) -> DetectedRegion | None:
         """Convert grid model to DetectedRegion"""
         rows = model["rows"]
         cols = model["cols"]
@@ -350,6 +399,7 @@ class RANSACGridDetector(BaseRegionAnalyzer):
             confidence=confidence,
             region_type=RegionType.INVENTORY_GRID,
             label="Inventory Grid",
+            screenshot_index=screenshot_index,
             metadata={
                 "grid_rows": rows,
                 "grid_cols": cols,

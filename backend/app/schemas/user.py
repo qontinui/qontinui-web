@@ -1,8 +1,9 @@
 import uuid
 
-from app.schemas.base import IsoDatetime
 from fastapi_users import schemas
 from pydantic import BaseModel, ConfigDict, EmailStr
+
+from app.schemas.base import IsoDatetime
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -120,6 +121,8 @@ class RunnerConnectionInfo(BaseModel):
     projectId: int | None = None
     createdAt: IsoDatetime
     backendUrl: str  # HTTP(S) URL for REST API calls
+    runnerTokenId: str | None = None  # ID of dedicated runner token (if created)
+    tokenExpiresAt: IsoDatetime | None = None  # When the token expires (None = never)
 
     model_config = ConfigDict(
         from_attributes=True,

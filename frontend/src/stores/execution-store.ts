@@ -10,10 +10,10 @@
  * - Real-time updates from backend
  */
 
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
-import { toast } from 'sonner';
-import type { Workflow } from '@/lib/action-schema/action-types';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import { toast } from "sonner";
+import type { Workflow } from "@/lib/action-schema/action-types";
 import {
   backendAPI,
   type ExecutionHandle,
@@ -23,11 +23,11 @@ import {
   type ActionExecutionStatus,
   type ExecutionRecord,
   type ExecutionStatus,
-} from '@/services/backend-api';
+} from "@/services/backend-api";
 import {
   type ClassifiedError,
   WebSocketErrorCode,
-} from '@/services/execution-websocket';
+} from "@/services/execution-websocket";
 
 // ============================================================================
 // Types
@@ -128,7 +128,10 @@ export interface ExecutionState {
  */
 export interface ExecutionActions {
   // Execution control
-  startExecution: (workflow: Workflow, options?: ExecutionOptions) => Promise<void>;
+  startExecution: (
+    workflow: Workflow,
+    options?: ExecutionOptions
+  ) => Promise<void>;
   pauseExecution: () => Promise<void>;
   resumeExecution: () => Promise<void>;
   stepExecution: () => Promise<void>;
@@ -136,7 +139,10 @@ export interface ExecutionActions {
   clearExecution: () => void;
 
   // State updates
-  updateActionState: (actionId: string, state: Partial<ActionExecutionState>) => void;
+  updateActionState: (
+    actionId: string,
+    state: Partial<ActionExecutionState>
+  ) => void;
   addExecutionEvent: (event: ExecutionEvent) => void;
   setExecutionStatus: (status: ExecutionStatusDetail) => void;
   updateVariables: (variables: Record<string, any>) => void;
@@ -174,48 +180,67 @@ export type ExecutionStore = ExecutionState & ExecutionActions;
  */
 function handleWebSocketError(error: ClassifiedError | Error): void {
   // Check if error is already classified
-  if ('code' in error && 'retryable' in error) {
+  if ("code" in error && "retryable" in error) {
     const classified = error as ClassifiedError;
 
     // Show user-friendly toast based on error type
     switch (classified.code) {
       case WebSocketErrorCode.NETWORK_ERROR:
-        toast.warning(classified.userMessage || 'Network connection lost. Attempting to reconnect...', {
-          description: 'Check your internet connection',
-        });
+        toast.warning(
+          classified.userMessage ||
+            "Network connection lost. Attempting to reconnect...",
+          {
+            description: "Check your internet connection",
+          }
+        );
         break;
 
       case WebSocketErrorCode.AUTH_ERROR:
-        toast.error(classified.userMessage || 'Authentication failed. Please log in again.', {
-          description: 'Your session may have expired',
-          action: {
-            label: 'Log in',
-            onClick: () => window.location.href = '/login',
-          },
-        });
+        toast.error(
+          classified.userMessage ||
+            "Authentication failed. Please log in again.",
+          {
+            description: "Your session may have expired",
+            action: {
+              label: "Log in",
+              onClick: () => (window.location.href = "/login"),
+            },
+          }
+        );
         break;
 
       case WebSocketErrorCode.TIMEOUT_ERROR:
-        toast.warning(classified.userMessage || 'Connection timed out. Retrying...', {
-          description: 'Server is not responding',
-        });
+        toast.warning(
+          classified.userMessage || "Connection timed out. Retrying...",
+          {
+            description: "Server is not responding",
+          }
+        );
         break;
 
       case WebSocketErrorCode.PROTOCOL_ERROR:
-        toast.error(classified.userMessage || 'Protocol error. Attempting to reconnect...', {
-          description: 'Please refresh the page if issue persists',
-        });
+        toast.error(
+          classified.userMessage ||
+            "Protocol error. Attempting to reconnect...",
+          {
+            description: "Please refresh the page if issue persists",
+          }
+        );
         break;
 
       case WebSocketErrorCode.SERVER_ERROR:
       default:
         if (classified.retryable) {
-          toast.warning(classified.userMessage || 'Server error occurred. Attempting to reconnect...', {
-            description: 'Please wait while we reconnect',
-          });
+          toast.warning(
+            classified.userMessage ||
+              "Server error occurred. Attempting to reconnect...",
+            {
+              description: "Please wait while we reconnect",
+            }
+          );
         } else {
-          toast.error(classified.userMessage || 'Server error occurred', {
-            description: 'Please try again later',
+          toast.error(classified.userMessage || "Server error occurred", {
+            description: "Please try again later",
           });
         }
         break;
@@ -223,7 +248,7 @@ function handleWebSocketError(error: ClassifiedError | Error): void {
   } else {
     // Fallback for unclassified errors
     const rawError = error as Error;
-    toast.error('Execution stream error', {
+    toast.error("Execution stream error", {
       description: rawError.message,
     });
   }
@@ -268,7 +293,10 @@ export const useExecutionStore = create<ExecutionStore>()(
       // Execution Control
       // ========================================================================
 
-      startExecution: async (workflow: Workflow, options?: ExecutionOptions) => {
+      startExecution: async (
+        workflow: Workflow,
+        options?: ExecutionOptions
+      ) => {
         try {
           // Stop any existing execution
           get().cancelExecution();
@@ -289,7 +317,7 @@ export const useExecutionStore = create<ExecutionStore>()(
           const actionStates: Record<string, ActionExecutionState> = {};
           for (const action of workflow.actions) {
             actionStates[action.id] = {
-              status: 'idle',
+              status: "idle",
             };
           }
           set({ actionStates });
@@ -300,9 +328,12 @@ export const useExecutionStore = create<ExecutionStore>()(
           // Start polling status updates
           get().startPolling(handle.executionId);
 
-          console.log('[ExecutionStore] Execution started:', handle.executionId);
+          console.log(
+            "[ExecutionStore] Execution started:",
+            handle.executionId
+          );
         } catch (error) {
-          console.error('[ExecutionStore] Failed to start execution:', error);
+          console.error("[ExecutionStore] Failed to start execution:", error);
           set({
             lastError: error as Error,
             isExecuting: false,
@@ -314,14 +345,14 @@ export const useExecutionStore = create<ExecutionStore>()(
       pauseExecution: async () => {
         const { currentExecution } = get();
         if (!currentExecution) {
-          throw new Error('No execution in progress');
+          throw new Error("No execution in progress");
         }
 
         try {
           await backendAPI.pauseExecution(currentExecution.executionId);
-          console.log('[ExecutionStore] Execution paused');
+          console.log("[ExecutionStore] Execution paused");
         } catch (error) {
-          console.error('[ExecutionStore] Failed to pause execution:', error);
+          console.error("[ExecutionStore] Failed to pause execution:", error);
           set({ lastError: error as Error });
           throw error;
         }
@@ -330,14 +361,14 @@ export const useExecutionStore = create<ExecutionStore>()(
       resumeExecution: async () => {
         const { currentExecution } = get();
         if (!currentExecution) {
-          throw new Error('No execution to resume');
+          throw new Error("No execution to resume");
         }
 
         try {
           await backendAPI.resumeExecution(currentExecution.executionId);
-          console.log('[ExecutionStore] Execution resumed');
+          console.log("[ExecutionStore] Execution resumed");
         } catch (error) {
-          console.error('[ExecutionStore] Failed to resume execution:', error);
+          console.error("[ExecutionStore] Failed to resume execution:", error);
           set({ lastError: error as Error });
           throw error;
         }
@@ -346,14 +377,14 @@ export const useExecutionStore = create<ExecutionStore>()(
       stepExecution: async () => {
         const { currentExecution } = get();
         if (!currentExecution) {
-          throw new Error('No execution in progress');
+          throw new Error("No execution in progress");
         }
 
         try {
           await backendAPI.stepExecution(currentExecution.executionId);
-          console.log('[ExecutionStore] Execution stepped');
+          console.log("[ExecutionStore] Execution stepped");
         } catch (error) {
-          console.error('[ExecutionStore] Failed to step execution:', error);
+          console.error("[ExecutionStore] Failed to step execution:", error);
           set({ lastError: error as Error });
           throw error;
         }
@@ -387,9 +418,9 @@ export const useExecutionStore = create<ExecutionStore>()(
             pollTimeoutId: null,
           });
 
-          console.log('[ExecutionStore] Execution cancelled');
+          console.log("[ExecutionStore] Execution cancelled");
         } catch (error) {
-          console.error('[ExecutionStore] Failed to cancel execution:', error);
+          console.error("[ExecutionStore] Failed to cancel execution:", error);
           set({ lastError: error as Error });
           throw error;
         }
@@ -423,14 +454,20 @@ export const useExecutionStore = create<ExecutionStore>()(
       // State Updates
       // ========================================================================
 
-      updateActionState: (actionId: string, stateUpdate: Partial<ActionExecutionState>) => {
+      updateActionState: (
+        actionId: string,
+        stateUpdate: Partial<ActionExecutionState>
+      ) => {
         set((state) => {
-          const currentState = state.actionStates[actionId] || { status: 'idle' };
+          const currentState = state.actionStates[actionId] || {
+            status: "idle",
+          };
           const newState = { ...currentState, ...stateUpdate };
 
           // Calculate duration if both times available
           if (newState.startTime && newState.endTime) {
-            newState.duration = newState.endTime.getTime() - newState.startTime.getTime();
+            newState.duration =
+              newState.endTime.getTime() - newState.startTime.getTime();
           }
 
           return {
@@ -456,7 +493,9 @@ export const useExecutionStore = create<ExecutionStore>()(
 
         // Update action states from status
         const actionStates: Record<string, ActionExecutionState> = {};
-        for (const [actionId, actionStatus] of Object.entries(status.actionStates)) {
+        for (const [actionId, actionStatus] of Object.entries(
+          status.actionStates
+        )) {
           actionStates[actionId] = {
             status: actionStatus,
             ...(get().actionStates[actionId] || {}),
@@ -472,9 +511,9 @@ export const useExecutionStore = create<ExecutionStore>()(
 
         // Check if execution completed
         if (
-          status.status === 'completed' ||
-          status.status === 'failed' ||
-          status.status === 'cancelled'
+          status.status === "completed" ||
+          status.status === "failed" ||
+          status.status === "cancelled"
         ) {
           set({ isExecuting: false });
           get().stopStreaming();
@@ -485,7 +524,7 @@ export const useExecutionStore = create<ExecutionStore>()(
             get().addToHistory({
               executionId: status.executionId,
               workflowId: status.workflowId,
-              workflowName: '',
+              workflowName: "",
               startTime: status.startTime,
               endTime: status.endTime,
               status: status.status,
@@ -509,10 +548,13 @@ export const useExecutionStore = create<ExecutionStore>()(
 
       loadExecutionHistory: async (workflowId: string, limit?: number) => {
         try {
-          const history = await backendAPI.getExecutionHistory(workflowId, limit);
+          const history = await backendAPI.getExecutionHistory(
+            workflowId,
+            limit
+          );
           set({ executionHistory: history });
         } catch (error) {
-          console.error('[ExecutionStore] Failed to load history:', error);
+          console.error("[ExecutionStore] Failed to load history:", error);
           set({ lastError: error as Error });
         }
       },
@@ -550,15 +592,16 @@ export const useExecutionStore = create<ExecutionStore>()(
 
         const totalActions = Object.keys(actionStates).length;
         const completedActions = Object.values(actionStates).filter(
-          (s) => s.status === 'completed'
+          (s) => s.status === "completed"
         ).length;
         const failedActions = Object.values(actionStates).filter(
-          (s) => s.status === 'failed'
+          (s) => s.status === "failed"
         ).length;
         const skippedActions = Object.values(actionStates).filter(
-          (s) => s.status === 'skipped'
+          (s) => s.status === "skipped"
         ).length;
-        const pendingActions = totalActions - completedActions - failedActions - skippedActions;
+        const pendingActions =
+          totalActions - completedActions - failedActions - skippedActions;
 
         const durations = Object.values(actionStates)
           .filter((s) => s.duration !== undefined)
@@ -575,7 +618,8 @@ export const useExecutionStore = create<ExecutionStore>()(
 
         const duration = executionStatus
           ? executionStatus.endTime
-            ? executionStatus.endTime.getTime() - executionStatus.startTime.getTime()
+            ? executionStatus.endTime.getTime() -
+              executionStatus.startTime.getTime()
             : Date.now() - executionStatus.startTime.getTime()
           : 0;
 
@@ -610,13 +654,13 @@ export const useExecutionStore = create<ExecutionStore>()(
             get().addExecutionEvent(event);
           },
           (error) => {
-            console.error('[ExecutionStore] Stream error:', error);
+            console.error("[ExecutionStore] Stream error:", error);
             set({ lastError: error });
             // Show user-friendly error notification
             handleWebSocketError(error);
           },
           () => {
-            console.log('[ExecutionStore] Stream closed');
+            console.log("[ExecutionStore] Stream closed");
             set({ isStreaming: false, streamCleanup: null });
           }
         );
@@ -654,9 +698,9 @@ export const useExecutionStore = create<ExecutionStore>()(
 
             // Stop polling if execution completed
             if (
-              status.status === 'completed' ||
-              status.status === 'failed' ||
-              status.status === 'cancelled'
+              status.status === "completed" ||
+              status.status === "failed" ||
+              status.status === "cancelled"
             ) {
               get().stopPolling();
               return;
@@ -669,7 +713,7 @@ export const useExecutionStore = create<ExecutionStore>()(
             const timeoutId = setTimeout(poll, pollInterval);
             set({ pollTimeoutId: timeoutId });
           } catch (error) {
-            console.error('[ExecutionStore] Polling error:', error);
+            console.error("[ExecutionStore] Polling error:", error);
             // On error, backoff more aggressively (2x multiplier)
             pollInterval = Math.min(pollInterval * 2, maxInterval);
             const timeoutId = setTimeout(poll, pollInterval);
@@ -695,33 +739,33 @@ export const useExecutionStore = create<ExecutionStore>()(
 
       processExecutionEvent: (event: ExecutionEvent) => {
         switch (event.type) {
-          case 'workflow_start':
-            console.log('[ExecutionStore] Workflow started');
+          case "workflow_start":
+            console.log("[ExecutionStore] Workflow started");
             break;
 
-          case 'action_start':
+          case "action_start":
             if (event.actionId) {
               get().updateActionState(event.actionId, {
-                status: 'running',
+                status: "running",
                 startTime: event.timestamp,
               });
             }
             break;
 
-          case 'action_complete':
+          case "action_complete":
             if (event.actionId) {
               get().updateActionState(event.actionId, {
-                status: 'completed',
+                status: "completed",
                 endTime: event.timestamp,
                 result: event.data?.result,
               });
             }
             break;
 
-          case 'action_error':
+          case "action_error":
             if (event.actionId) {
               get().updateActionState(event.actionId, {
-                status: 'failed',
+                status: "failed",
                 endTime: event.timestamp,
                 error: event.data?.error,
                 stack: event.data?.stack,
@@ -729,44 +773,47 @@ export const useExecutionStore = create<ExecutionStore>()(
             }
             break;
 
-          case 'action_skip':
+          case "action_skip":
             if (event.actionId) {
               get().updateActionState(event.actionId, {
-                status: 'skipped',
+                status: "skipped",
               });
             }
             break;
 
-          case 'variable_update':
+          case "variable_update":
             if (event.data?.variables) {
               get().updateVariables(event.data.variables);
             }
             break;
 
-          case 'workflow_complete':
-            console.log('[ExecutionStore] Workflow completed');
+          case "workflow_complete":
+            console.log("[ExecutionStore] Workflow completed");
             set({ isExecuting: false });
             break;
 
-          case 'workflow_error':
-            console.error('[ExecutionStore] Workflow error:', event.data?.error);
+          case "workflow_error":
+            console.error(
+              "[ExecutionStore] Workflow error:",
+              event.data?.error
+            );
             set({
               isExecuting: false,
-              lastError: new Error(event.data?.error || 'Workflow error'),
+              lastError: new Error(event.data?.error || "Workflow error"),
             });
             break;
 
-          case 'breakpoint':
-            console.log('[ExecutionStore] Breakpoint hit:', event.actionId);
+          case "breakpoint":
+            console.log("[ExecutionStore] Breakpoint hit:", event.actionId);
             break;
 
-          case 'log':
+          case "log":
             console.log(`[Workflow] ${event.data?.message}`);
             break;
         }
       },
     }),
-    { name: 'ExecutionStore' }
+    { name: "ExecutionStore" }
   )
 );
 
@@ -777,8 +824,9 @@ export const useExecutionStore = create<ExecutionStore>()(
 /**
  * Get action state by ID
  */
-export const selectActionState = (actionId: string) => (state: ExecutionStore) =>
-  state.actionStates[actionId];
+export const selectActionState =
+  (actionId: string) => (state: ExecutionStore) =>
+    state.actionStates[actionId];
 
 /**
  * Get actions by status

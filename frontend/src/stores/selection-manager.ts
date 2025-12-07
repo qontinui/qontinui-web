@@ -11,7 +11,7 @@
  * - Selection groups
  */
 
-import type { Action } from '../lib/action-schema/action-types';
+import type { Action } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -42,7 +42,7 @@ export interface SelectionState {
   lastSelected: string | null;
 
   /** Selection mode */
-  mode: 'single' | 'multi' | 'range' | 'rect';
+  mode: "single" | "multi" | "range" | "rect";
 
   /** Rectangle selection bounds */
   selectionRect: SelectionRect | null;
@@ -70,7 +70,7 @@ export class SelectionManager {
       selectedNodes: new Set(),
       selectedEdges: new Set(),
       lastSelected: null,
-      mode: 'single',
+      mode: "single",
       selectionRect: null,
       groups: [],
       history: [],
@@ -99,7 +99,7 @@ export class SelectionManager {
 
     this.state.selectedEdges.clear();
     this.state.lastSelected = nodeId;
-    this.state.mode = multi ? 'multi' : 'single';
+    this.state.mode = multi ? "multi" : "single";
 
     this.recordHistory();
     this.notifyListeners();
@@ -113,11 +113,11 @@ export class SelectionManager {
       this.state.selectedNodes.clear();
     }
 
-    nodeIds.forEach(id => this.state.selectedNodes.add(id));
+    nodeIds.forEach((id) => this.state.selectedNodes.add(id));
 
     this.state.selectedEdges.clear();
     this.state.lastSelected = nodeIds[nodeIds.length - 1] || null;
-    this.state.mode = 'multi';
+    this.state.mode = "multi";
 
     this.recordHistory();
     this.notifyListeners();
@@ -133,26 +133,31 @@ export class SelectionManager {
     }
 
     // Find indices of start and end nodes
-    const startIndex = actions.findIndex(a => a.id === this.state.lastSelected);
-    const endIndex = actions.findIndex(a => a.id === nodeId);
+    const startIndex = actions.findIndex(
+      (a) => a.id === this.state.lastSelected
+    );
+    const endIndex = actions.findIndex((a) => a.id === nodeId);
 
     if (startIndex === -1 || endIndex === -1) {
       return;
     }
 
     // Select all nodes in range
-    const [min, max] = [Math.min(startIndex, endIndex), Math.max(startIndex, endIndex)];
-    const rangeNodeIds = actions.slice(min, max + 1).map(a => a.id);
+    const [min, max] = [
+      Math.min(startIndex, endIndex),
+      Math.max(startIndex, endIndex),
+    ];
+    const rangeNodeIds = actions.slice(min, max + 1).map((a) => a.id);
 
     this.selectNodes(rangeNodeIds, false);
-    this.state.mode = 'range';
+    this.state.mode = "range";
   }
 
   /**
    * Select nodes within a rectangle
    */
   selectInRect(rect: SelectionRect, actions: Action[], append = false): void {
-    const nodesInRect = actions.filter(action => {
+    const nodesInRect = actions.filter((action) => {
       const [x, y] = action.position;
       return (
         x >= rect.x &&
@@ -166,10 +171,10 @@ export class SelectionManager {
       this.state.selectedNodes.clear();
     }
 
-    nodesInRect.forEach(action => this.state.selectedNodes.add(action.id));
+    nodesInRect.forEach((action) => this.state.selectedNodes.add(action.id));
 
     this.state.selectedEdges.clear();
-    this.state.mode = 'rect';
+    this.state.mode = "rect";
     this.state.selectionRect = rect;
 
     this.recordHistory();
@@ -194,7 +199,7 @@ export class SelectionManager {
    * Deselect multiple nodes
    */
   deselectNodes(nodeIds: string[]): void {
-    nodeIds.forEach(id => this.state.selectedNodes.delete(id));
+    nodeIds.forEach((id) => this.state.selectedNodes.delete(id));
 
     this.recordHistory();
     this.notifyListeners();
@@ -234,7 +239,7 @@ export class SelectionManager {
       this.state.selectedEdges.clear();
     }
 
-    edgeIds.forEach(id => this.state.selectedEdges.add(id));
+    edgeIds.forEach((id) => this.state.selectedEdges.add(id));
 
     this.state.selectedNodes.clear();
     this.state.lastSelected = null;
@@ -264,9 +269,9 @@ export class SelectionManager {
     this.state.selectedNodes.clear();
     this.state.selectedEdges.clear();
 
-    actions.forEach(action => this.state.selectedNodes.add(action.id));
+    actions.forEach((action) => this.state.selectedNodes.add(action.id));
 
-    this.state.mode = 'multi';
+    this.state.mode = "multi";
 
     this.recordHistory();
     this.notifyListeners();
@@ -289,12 +294,12 @@ export class SelectionManager {
    * Invert selection
    */
   invertSelection(actions: Action[]): void {
-    const allNodeIds = new Set(actions.map(a => a.id));
+    const allNodeIds = new Set(actions.map((a) => a.id));
     const currentSelection = new Set(this.state.selectedNodes);
 
     this.state.selectedNodes.clear();
 
-    allNodeIds.forEach(id => {
+    allNodeIds.forEach((id) => {
       if (!currentSelection.has(id)) {
         this.state.selectedNodes.add(id);
       }
@@ -331,12 +336,12 @@ export class SelectionManager {
    * Load a selection group
    */
   loadGroup(groupId: string): boolean {
-    const group = this.state.groups.find(g => g.id === groupId);
+    const group = this.state.groups.find((g) => g.id === groupId);
     if (!group) return false;
 
     this.state.selectedNodes = new Set(group.nodeIds);
     this.state.selectedEdges.clear();
-    this.state.mode = 'multi';
+    this.state.mode = "multi";
 
     this.recordHistory();
     this.notifyListeners();
@@ -348,7 +353,7 @@ export class SelectionManager {
    * Delete a selection group
    */
   deleteGroup(groupId: string): boolean {
-    const index = this.state.groups.findIndex(g => g.id === groupId);
+    const index = this.state.groups.findIndex((g) => g.id === groupId);
     if (index === -1) return false;
 
     this.state.groups.splice(index, 1);
@@ -373,7 +378,10 @@ export class SelectionManager {
    */
   private recordHistory(): void {
     // Remove any history after current index
-    this.state.history = this.state.history.slice(0, this.state.historyIndex + 1);
+    this.state.history = this.state.history.slice(
+      0,
+      this.state.historyIndex + 1
+    );
 
     // Add current state
     this.state.history.push({
@@ -397,6 +405,7 @@ export class SelectionManager {
 
     this.state.historyIndex--;
     const historyState = this.state.history[this.state.historyIndex];
+    if (!historyState) return false;
 
     this.state.selectedNodes = new Set(historyState.nodes);
     this.state.selectedEdges = new Set(historyState.edges);
@@ -413,6 +422,7 @@ export class SelectionManager {
 
     this.state.historyIndex++;
     const historyState = this.state.history[this.state.historyIndex];
+    if (!historyState) return false;
 
     this.state.selectedNodes = new Set(historyState.nodes);
     this.state.selectedEdges = new Set(historyState.edges);
@@ -467,13 +477,15 @@ export class SelectionManager {
    * Check if there's any selection
    */
   hasSelection(): boolean {
-    return this.state.selectedNodes.size > 0 || this.state.selectedEdges.size > 0;
+    return (
+      this.state.selectedNodes.size > 0 || this.state.selectedEdges.size > 0
+    );
   }
 
   /**
    * Get current selection mode
    */
-  getMode(): SelectionState['mode'] {
+  getMode(): SelectionState["mode"] {
     return this.state.mode;
   }
 
@@ -526,7 +538,7 @@ export class SelectionManager {
       selectedNodes: new Set(),
       selectedEdges: new Set(),
       lastSelected: null,
-      mode: 'single',
+      mode: "single",
       selectionRect: null,
       groups: [],
       history: [],
@@ -541,7 +553,7 @@ export class SelectionManager {
   // ==========================================================================
 
   private notifyListeners(): void {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       listener(this.getState());
     });
   }

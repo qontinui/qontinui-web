@@ -10,7 +10,13 @@
  * - Nested component support
  */
 
-import { Workflow, Action, Connections, createAction, Connection } from '../lib/action-schema/action-types';
+import {
+  Workflow,
+  Action,
+  Connection,
+  Connections,
+  createAction,
+} from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -24,7 +30,7 @@ export interface ComponentParameter {
   name: string;
 
   /** Parameter type */
-  type: 'string' | 'number' | 'boolean' | 'image' | 'selector' | 'any';
+  type: "string" | "number" | "boolean" | "image" | "selector" | "any";
 
   /** Whether parameter is required */
   required: boolean;
@@ -47,13 +53,13 @@ export interface ComponentParameter {
  * Component category for organization
  */
 export type ComponentCategory =
-  | 'basic'
-  | 'control-flow'
-  | 'interaction'
-  | 'verification'
-  | 'error-handling'
-  | 'data'
-  | 'custom';
+  | "basic"
+  | "control-flow"
+  | "interaction"
+  | "verification"
+  | "error-handling"
+  | "data"
+  | "custom";
 
 /**
  * A reusable workflow component/subflow
@@ -209,9 +215,9 @@ export class WorkflowComponentsService {
     const component: WorkflowComponent = {
       id: `component-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name,
-      description: config.description || '',
-      category: config.category || 'custom',
-      version: '1.0.0',
+      description: config.description || "",
+      category: config.category || "custom",
+      version: "1.0.0",
       tags: config.tags || [],
       actions: this.cloneActions(actions),
       connections: config.connections || {},
@@ -327,10 +333,10 @@ export class WorkflowComponentsService {
    * Create a component from selected actions in a workflow
    */
   createComponentFromActions(
-    workflowId: string,
-    actionIds: string[],
-    name: string,
-    parameters?: ComponentParameter[]
+    _workflowId: string,
+    _actionIds: string[],
+    _name: string,
+    _parameters?: ComponentParameter[]
   ): WorkflowComponent | null {
     // Extract actions would need to get the workflow from somewhere
     // For now, accepting actions and connections directly
@@ -355,9 +361,11 @@ export class WorkflowComponentsService {
       const filteredConnections: any = {};
 
       Object.entries(sourceConnections).forEach(([type, outputs]) => {
-        const filteredOutputs = outputs?.map((output) =>
-          output.filter((conn) => actionIds.includes(conn.action))
-        ).filter((output) => output.length > 0);
+        const filteredOutputs = outputs
+          ?.map((output) =>
+            output.filter((conn) => actionIds.includes(conn.action))
+          )
+          .filter((output) => output.length > 0);
 
         if (filteredOutputs && filteredOutputs.length > 0) {
           filteredConnections[type] = filteredOutputs;
@@ -382,76 +390,76 @@ export class WorkflowComponentsService {
 
     actions.forEach((action) => {
       // Infer from TYPE actions
-      if (action.type === 'TYPE' && 'text' in action.config) {
+      if (action.type === "TYPE" && "text" in action.config) {
         const text = (action.config as any).text;
-        if (text && typeof text === 'string' && !seen.has('inputText')) {
+        if (text && typeof text === "string" && !seen.has("inputText")) {
           parameters.push({
-            name: 'inputText',
-            type: 'string',
+            name: "inputText",
+            type: "string",
             required: true,
-            description: 'Text to type',
+            description: "Text to type",
           });
-          seen.add('inputText');
+          seen.add("inputText");
         }
       }
 
       // Infer from FIND/CLICK actions with images
       if (
-        (action.type === 'FIND' ||
-          action.type === 'CLICK' ||
-          action.type === 'EXISTS') &&
-        'target' in action.config
+        (action.type === "FIND" ||
+          action.type === "CLICK" ||
+          action.type === "EXISTS") &&
+        "target" in action.config
       ) {
         const target = (action.config as any).target;
-        if (target?.image && !seen.has('targetImage')) {
+        if (target?.image && !seen.has("targetImage")) {
           parameters.push({
-            name: 'targetImage',
-            type: 'image',
+            name: "targetImage",
+            type: "image",
             required: true,
-            description: 'Target image to find',
+            description: "Target image to find",
           });
-          seen.add('targetImage');
+          seen.add("targetImage");
         }
-        if (target?.selector && !seen.has('targetSelector')) {
+        if (target?.selector && !seen.has("targetSelector")) {
           parameters.push({
-            name: 'targetSelector',
-            type: 'selector',
+            name: "targetSelector",
+            type: "selector",
             required: true,
-            description: 'CSS selector for target element',
+            description: "CSS selector for target element",
           });
-          seen.add('targetSelector');
+          seen.add("targetSelector");
         }
       }
 
       // Infer from WAIT actions
-      if (action.type === 'WAIT' && 'duration' in action.config) {
+      if (action.type === "WAIT" && "duration" in action.config) {
         const duration = (action.config as any).duration;
-        if (duration && !seen.has('waitDuration')) {
+        if (duration && !seen.has("waitDuration")) {
           parameters.push({
-            name: 'waitDuration',
-            type: 'number',
+            name: "waitDuration",
+            type: "number",
             required: false,
             defaultValue: duration,
-            description: 'Wait duration in milliseconds',
+            description: "Wait duration in milliseconds",
             min: 0,
           });
-          seen.add('waitDuration');
+          seen.add("waitDuration");
         }
       }
 
       // Infer from LOOP actions
-      if (action.type === 'LOOP' && 'iterations' in action.config) {
+      if (action.type === "LOOP" && "iterations" in action.config) {
         const iterations = (action.config as any).iterations;
-        if (iterations && !seen.has('iterations')) {
+        if (iterations && !seen.has("iterations")) {
           parameters.push({
-            name: 'iterations',
-            type: 'number',
+            name: "iterations",
+            type: "number",
             required: false,
             defaultValue: iterations,
-            description: 'Number of loop iterations',
+            description: "Number of loop iterations",
             min: 1,
           });
-          seen.add('iterations');
+          seen.add("iterations");
         }
       }
     });
@@ -477,7 +485,11 @@ export class WorkflowComponentsService {
       return null;
     }
 
-    const instance = this.instantiateComponent(component, parameterValues, position);
+    const instance = this.instantiateComponent(
+      component,
+      parameterValues,
+      position
+    );
 
     // Track usage
     this.trackUsage(workflowId, componentId, instance.id);
@@ -491,7 +503,7 @@ export class WorkflowComponentsService {
    */
   replaceActionsWithComponent(
     workflowId: string,
-    actionIds: string[],
+    _actionIds: string[],
     componentId: string
   ): ComponentInstance | null {
     const component = this.components.get(componentId);
@@ -527,8 +539,6 @@ export class WorkflowComponentsService {
       return false;
     }
 
-    const usages = this.usageData.get(componentId) || [];
-
     // In a real implementation, this would update all workflow instances
     // For now, just update the metadata
     component.metadata = {
@@ -543,7 +553,11 @@ export class WorkflowComponentsService {
   /**
    * Track usage of a component in a workflow
    */
-  private trackUsage(workflowId: string, componentId: string, instanceId: string): void {
+  private trackUsage(
+    workflowId: string,
+    componentId: string,
+    instanceId: string
+  ): void {
     const usages = this.usageData.get(componentId) || [];
     const existing = usages.find((u) => u.workflowId === workflowId);
 
@@ -571,7 +585,9 @@ export class WorkflowComponentsService {
    * Get components by category
    */
   getComponentsByCategory(category: ComponentCategory): WorkflowComponent[] {
-    return Array.from(this.components.values()).filter((c) => c.category === category);
+    return Array.from(this.components.values()).filter(
+      (c) => c.category === category
+    );
   }
 
   /**
@@ -641,7 +657,15 @@ export class WorkflowComponentsService {
    * Get component categories
    */
   getCategories(): ComponentCategory[] {
-    return ['basic', 'control-flow', 'interaction', 'verification', 'error-handling', 'data', 'custom'];
+    return [
+      "basic",
+      "control-flow",
+      "interaction",
+      "verification",
+      "error-handling",
+      "data",
+      "custom",
+    ];
   }
 
   // ==========================================================================
@@ -653,7 +677,7 @@ export class WorkflowComponentsService {
    */
   defineParameter(
     name: string,
-    type: ComponentParameter['type'],
+    type: ComponentParameter["type"],
     required: boolean,
     defaultValue?: any,
     description?: string
@@ -693,32 +717,38 @@ export class WorkflowComponentsService {
 
       // Type validation
       switch (param.type) {
-        case 'string':
-          if (typeof value !== 'string') {
+        case "string":
+          if (typeof value !== "string") {
             errors.push(`Parameter '${param.name}' must be a string`);
           } else if (param.validation) {
             const regex = new RegExp(param.validation);
             if (!regex.test(value)) {
-              errors.push(`Parameter '${param.name}' does not match validation pattern`);
+              errors.push(
+                `Parameter '${param.name}' does not match validation pattern`
+              );
             }
           }
           break;
 
-        case 'number':
-          if (typeof value !== 'number') {
+        case "number":
+          if (typeof value !== "number") {
             errors.push(`Parameter '${param.name}' must be a number`);
           } else {
             if (param.min !== undefined && value < param.min) {
-              errors.push(`Parameter '${param.name}' must be at least ${param.min}`);
+              errors.push(
+                `Parameter '${param.name}' must be at least ${param.min}`
+              );
             }
             if (param.max !== undefined && value > param.max) {
-              errors.push(`Parameter '${param.name}' must be at most ${param.max}`);
+              errors.push(
+                `Parameter '${param.name}' must be at most ${param.max}`
+              );
             }
           }
           break;
 
-        case 'boolean':
-          if (typeof value !== 'boolean') {
+        case "boolean":
+          if (typeof value !== "boolean") {
             errors.push(`Parameter '${param.name}' must be a boolean`);
           }
           break;
@@ -768,16 +798,19 @@ export class WorkflowComponentsService {
   /**
    * Replace parameter placeholders in action config
    */
-  private replaceParametersInConfig(config: any, values: Record<string, any>): void {
+  private replaceParametersInConfig(
+    config: any,
+    values: Record<string, any>
+  ): void {
     Object.keys(config).forEach((key) => {
       const value = config[key];
 
-      if (typeof value === 'string') {
+      if (typeof value === "string") {
         // Replace ${paramName} placeholders
         config[key] = value.replace(/\$\{(\w+)\}/g, (match, paramName) => {
           return values[paramName] !== undefined ? values[paramName] : match;
         });
-      } else if (typeof value === 'object' && value !== null) {
+      } else if (typeof value === "object" && value !== null) {
         this.replaceParametersInConfig(value, values);
       }
     });
@@ -795,12 +828,12 @@ export class WorkflowComponentsService {
     const warnings: string[] = [];
 
     // Basic validation
-    if (!component.name || component.name.trim() === '') {
-      errors.push('Component must have a name');
+    if (!component.name || component.name.trim() === "") {
+      errors.push("Component must have a name");
     }
 
     if (!component.actions || component.actions.length === 0) {
-      errors.push('Component must have at least one action');
+      errors.push("Component must have at least one action");
     }
 
     // Validate action IDs are unique
@@ -815,14 +848,18 @@ export class WorkflowComponentsService {
     // Validate connections reference existing actions
     Object.entries(component.connections).forEach(([sourceId, outputs]) => {
       if (!actionIds.has(sourceId)) {
-        errors.push(`Connection references non-existent source action: ${sourceId}`);
+        errors.push(
+          `Connection references non-existent source action: ${sourceId}`
+        );
       }
 
       Object.values(outputs).forEach((outputList) => {
         outputList?.forEach((output) => {
           output.forEach((conn) => {
             if (!actionIds.has(conn.action)) {
-              errors.push(`Connection references non-existent target action: ${conn.action}`);
+              errors.push(
+                `Connection references non-existent target action: ${conn.action}`
+              );
             }
           });
         });
@@ -837,12 +874,14 @@ export class WorkflowComponentsService {
       }
       paramNames.add(param.name);
 
-      if (!param.name || param.name.trim() === '') {
-        errors.push('Parameter must have a name');
+      if (!param.name || param.name.trim() === "") {
+        errors.push("Parameter must have a name");
       }
 
       if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(param.name)) {
-        errors.push(`Parameter name '${param.name}' must be a valid identifier`);
+        errors.push(
+          `Parameter name '${param.name}' must be a valid identifier`
+        );
       }
     });
 
@@ -856,11 +895,16 @@ export class WorkflowComponentsService {
   /**
    * Check for circular references in nested components
    */
-  checkCircularReferences(component: WorkflowComponent, visited: Set<string> = new Set()): ValidationResult {
+  checkCircularReferences(
+    component: WorkflowComponent,
+    visited: Set<string> = new Set()
+  ): ValidationResult {
     const errors: string[] = [];
 
     if (visited.has(component.id)) {
-      errors.push(`Circular reference detected for component: ${component.name}`);
+      errors.push(
+        `Circular reference detected for component: ${component.name}`
+      );
       return { valid: false, errors, warnings: [] };
     }
 
@@ -868,12 +912,15 @@ export class WorkflowComponentsService {
 
     // Check for RUN_WORKFLOW actions that reference other components
     component.actions.forEach((action) => {
-      if (action.type === 'RUN_WORKFLOW' && 'workflowId' in action.config) {
+      if (action.type === "RUN_WORKFLOW" && "workflowId" in action.config) {
         const workflowId = (action.config as any).workflowId;
         const referencedComponent = this.components.get(workflowId);
 
         if (referencedComponent) {
-          const result = this.checkCircularReferences(referencedComponent, new Set(visited));
+          const result = this.checkCircularReferences(
+            referencedComponent,
+            new Set(visited)
+          );
           errors.push(...result.errors);
         }
       }
@@ -922,7 +969,7 @@ export class WorkflowComponentsService {
       // Validate structure
       const validation = this.validateComponent(component);
       if (!validation.valid) {
-        console.error('Invalid component:', validation.errors);
+        console.error("Invalid component:", validation.errors);
         return null;
       }
 
@@ -939,7 +986,7 @@ export class WorkflowComponentsService {
 
       return component;
     } catch (error) {
-      console.error('Failed to import component:', error);
+      console.error("Failed to import component:", error);
       return null;
     }
   }
@@ -976,7 +1023,7 @@ export class WorkflowComponentsService {
 
       return imported;
     } catch (error) {
-      console.error('Failed to import library:', error);
+      console.error("Failed to import library:", error);
       return 0;
     }
   }
@@ -996,11 +1043,14 @@ export class WorkflowComponentsService {
     // Validate parameters
     const validation = this.validateParameters(component, parameterValues);
     if (!validation.valid) {
-      throw new Error(`Invalid parameters: ${validation.errors.join(', ')}`);
+      throw new Error(`Invalid parameters: ${validation.errors.join(", ")}`);
     }
 
     // Apply parameters to get actions with substituted values
-    const { actions, connections } = this.applyParameters(component, parameterValues);
+    const { actions, connections } = this.applyParameters(
+      component,
+      parameterValues
+    );
 
     // Generate unique IDs for all actions
     const idMap = this.generateUniqueIds(actions);
@@ -1047,7 +1097,10 @@ export class WorkflowComponentsService {
   /**
    * Update connections to use new action IDs
    */
-  private updateConnections(connections: Connections, idMap: Map<string, string>): Connections {
+  private updateConnections(
+    connections: Connections,
+    idMap: Map<string, string>
+  ): Connections {
     const updated: Connections = {};
 
     Object.entries(connections).forEach(([sourceId, outputs]) => {
@@ -1055,7 +1108,9 @@ export class WorkflowComponentsService {
       updated[newSourceId] = {};
 
       Object.entries(outputs).forEach(([type, outputList]) => {
-        updated[newSourceId][type] = outputList?.map((output) =>
+        (updated[newSourceId]![
+          type as keyof typeof outputs
+        ] as Connection[][]) = outputList?.map((output) =>
           output.map((conn) => ({
             ...conn,
             action: idMap.get(conn.action) || conn.action,
@@ -1094,13 +1149,13 @@ export class WorkflowComponentsService {
    */
   private loadComponents(): void {
     try {
-      const json = localStorage.getItem('workflow-components');
+      const json = localStorage.getItem("workflow-components");
       if (json) {
         const components = JSON.parse(json) as WorkflowComponent[];
         components.forEach((c) => this.components.set(c.id, c));
       }
     } catch (error) {
-      console.error('Failed to load components:', error);
+      console.error("Failed to load components:", error);
     }
   }
 
@@ -1110,9 +1165,9 @@ export class WorkflowComponentsService {
   private saveComponents(): void {
     try {
       const components = Array.from(this.components.values());
-      localStorage.setItem('workflow-components', JSON.stringify(components));
+      localStorage.setItem("workflow-components", JSON.stringify(components));
     } catch (error) {
-      console.error('Failed to save components:', error);
+      console.error("Failed to save components:", error);
     }
   }
 
@@ -1121,7 +1176,7 @@ export class WorkflowComponentsService {
    */
   private loadUsageData(): void {
     try {
-      const json = localStorage.getItem('workflow-component-usage');
+      const json = localStorage.getItem("workflow-component-usage");
       if (json) {
         const data = JSON.parse(json);
         Object.entries(data).forEach(([componentId, usages]) => {
@@ -1129,7 +1184,7 @@ export class WorkflowComponentsService {
         });
       }
     } catch (error) {
-      console.error('Failed to load usage data:', error);
+      console.error("Failed to load usage data:", error);
     }
   }
 
@@ -1142,9 +1197,9 @@ export class WorkflowComponentsService {
       this.usageData.forEach((usages, componentId) => {
         data[componentId] = usages;
       });
-      localStorage.setItem('workflow-component-usage', JSON.stringify(data));
+      localStorage.setItem("workflow-component-usage", JSON.stringify(data));
     } catch (error) {
-      console.error('Failed to save usage data:', error);
+      console.error("Failed to save usage data:", error);
     }
   }
 
@@ -1152,7 +1207,9 @@ export class WorkflowComponentsService {
    * Clear all components (except built-ins)
    */
   clearComponents(): void {
-    const builtins = Array.from(this.components.values()).filter((c) => c.builtin);
+    const builtins = Array.from(this.components.values()).filter(
+      (c) => c.builtin
+    );
     this.components.clear();
     builtins.forEach((c) => this.components.set(c.id, c));
     this.saveComponents();
@@ -1163,7 +1220,7 @@ export class WorkflowComponentsService {
    */
   clearUsageData(): void {
     this.usageData.clear();
-    localStorage.removeItem('workflow-component-usage');
+    localStorage.removeItem("workflow-component-usage");
   }
 
   // ==========================================================================
@@ -1175,7 +1232,9 @@ export class WorkflowComponentsService {
    */
   private initializeBuiltinComponents(): void {
     // Only initialize if not already loaded
-    const hasBuiltins = Array.from(this.components.values()).some((c) => c.builtin);
+    const hasBuiltins = Array.from(this.components.values()).some(
+      (c) => c.builtin
+    );
     if (hasBuiltins) {
       return;
     }
@@ -1196,43 +1255,44 @@ export class WorkflowComponentsService {
    */
   private createBuiltinErrorHandler(): void {
     const tryCatch = createAction(
-      'TRY_CATCH',
+      "TRY_CATCH",
       { tryActions: [], catchActions: [] },
       [100, 100],
-      { id: 'try-catch', name: 'Try-Catch Block' }
+      { id: "try-catch", name: "Try-Catch Block" }
     );
 
     const errorAction = createAction(
-      'SCREENSHOT',
-      { filename: 'error-${timestamp}.png' },
+      "SCREENSHOT",
+      { saveToFile: { enabled: true, filename: "error-${timestamp}.png" } },
       [300, 200],
-      { id: 'error-screenshot', name: 'Capture Error' }
+      { id: "error-screenshot", name: "Capture Error" }
     );
 
     const component: WorkflowComponent = {
-      id: 'builtin-error-handler',
-      name: 'Error Handler',
-      description: 'Wrap actions with try-catch error handling and automatic error screenshots',
-      category: 'error-handling',
-      version: '1.0.0',
-      tags: ['error', 'try-catch', 'exception', 'screenshot'],
+      id: "builtin-error-handler",
+      name: "Error Handler",
+      description:
+        "Wrap actions with try-catch error handling and automatic error screenshots",
+      category: "error-handling",
+      version: "1.0.0",
+      tags: ["error", "try-catch", "exception", "screenshot"],
       actions: [tryCatch, errorAction],
       connections: {
-        'try-catch': {
-          error: [[{ action: 'error-screenshot', type: 'error', index: 0 }]],
+        "try-catch": {
+          error: [[{ action: "error-screenshot", type: "error", index: 0 }]],
         },
       },
       parameters: [
         {
-          name: 'errorMessage',
-          type: 'string',
+          name: "errorMessage",
+          type: "string",
           required: false,
-          defaultValue: 'An error occurred',
-          description: 'Error message to log',
+          defaultValue: "An error occurred",
+          description: "Error message to log",
         },
       ],
       builtin: true,
-      icon: '⚠️',
+      icon: "⚠️",
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -1247,53 +1307,61 @@ export class WorkflowComponentsService {
    */
   private createBuiltinRetryLogic(): void {
     const loop = createAction(
-      'LOOP',
-      { iterations: 3, loopActions: [], variable: 'attempt' },
+      "LOOP",
+      {
+        loopType: "FOR",
+        iterations: 3,
+        actions: [],
+        iteratorVariable: "attempt",
+      },
       [100, 100],
-      { id: 'retry-loop', name: 'Retry Loop' }
+      { id: "retry-loop", name: "Retry Loop" }
     );
 
     const wait = createAction(
-      'WAIT',
-      { duration: 1000 },
+      "WAIT",
+      { waitFor: "time", duration: 1000 },
       [300, 100],
-      { id: 'retry-wait', name: 'Wait Between Retries' }
+      {
+        id: "retry-wait",
+        name: "Wait Between Retries",
+      }
     );
 
     const component: WorkflowComponent = {
-      id: 'builtin-retry-logic',
-      name: 'Retry Logic',
-      description: 'Retry an action multiple times with delay between attempts',
-      category: 'control-flow',
-      version: '1.0.0',
-      tags: ['retry', 'loop', 'resilience'],
+      id: "builtin-retry-logic",
+      name: "Retry Logic",
+      description: "Retry an action multiple times with delay between attempts",
+      category: "control-flow",
+      version: "1.0.0",
+      tags: ["retry", "loop", "resilience"],
       actions: [loop, wait],
       connections: {
-        'retry-loop': {
-          main: [[{ action: 'retry-wait', type: 'main', index: 0 }]],
+        "retry-loop": {
+          main: [[{ action: "retry-wait", type: "main", index: 0 }]],
         },
       },
       parameters: [
         {
-          name: 'maxAttempts',
-          type: 'number',
+          name: "maxAttempts",
+          type: "number",
           required: false,
           defaultValue: 3,
-          description: 'Maximum number of retry attempts',
+          description: "Maximum number of retry attempts",
           min: 1,
           max: 10,
         },
         {
-          name: 'retryDelay',
-          type: 'number',
+          name: "retryDelay",
+          type: "number",
           required: false,
           defaultValue: 1000,
-          description: 'Delay between retries in milliseconds',
+          description: "Delay between retries in milliseconds",
           min: 0,
         },
       ],
       builtin: true,
-      icon: '🔄',
+      icon: "🔄",
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -1308,39 +1376,43 @@ export class WorkflowComponentsService {
    */
   private createBuiltinWaitForElement(): void {
     const exists = createAction(
-      'EXISTS',
-      { target: { image: '${targetImage}' }, timeout: 10000 },
+      "EXISTS",
+      { target: { type: "image", imageId: "${targetImage}" } },
       [100, 100],
-      { id: 'wait-exists', name: 'Wait for Element' }
+      {
+        id: "wait-exists",
+        name: "Wait for Element",
+        execution: { timeout: 10000 },
+      }
     );
 
     const component: WorkflowComponent = {
-      id: 'builtin-wait-for-element',
-      name: 'Wait for Element',
-      description: 'Wait for an element to appear on screen with timeout',
-      category: 'verification',
-      version: '1.0.0',
-      tags: ['wait', 'find', 'exists', 'timeout'],
+      id: "builtin-wait-for-element",
+      name: "Wait for Element",
+      description: "Wait for an element to appear on screen with timeout",
+      category: "verification",
+      version: "1.0.0",
+      tags: ["wait", "find", "exists", "timeout"],
       actions: [exists],
       connections: {},
       parameters: [
         {
-          name: 'targetImage',
-          type: 'image',
+          name: "targetImage",
+          type: "image",
           required: true,
-          description: 'Image to wait for',
+          description: "Image to wait for",
         },
         {
-          name: 'timeout',
-          type: 'number',
+          name: "timeout",
+          type: "number",
           required: false,
           defaultValue: 10000,
-          description: 'Maximum wait time in milliseconds',
+          description: "Maximum wait time in milliseconds",
           min: 0,
         },
       ],
       builtin: true,
-      icon: '⏱️',
+      icon: "⏱️",
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -1355,50 +1427,53 @@ export class WorkflowComponentsService {
    */
   private createBuiltinClickAndWait(): void {
     const click = createAction(
-      'CLICK',
-      { target: { image: '${targetImage}' } },
+      "CLICK",
+      { target: "${targetImage}" as any },
       [100, 100],
-      { id: 'click', name: 'Click Element' }
+      { id: "click", name: "Click Element" }
     );
 
     const wait = createAction(
-      'WAIT',
-      { duration: 500 },
+      "WAIT",
+      { waitFor: "time", duration: 500 },
       [100, 250],
-      { id: 'wait', name: 'Wait After Click' }
+      {
+        id: "wait",
+        name: "Wait After Click",
+      }
     );
 
     const component: WorkflowComponent = {
-      id: 'builtin-click-and-wait',
-      name: 'Click and Wait',
-      description: 'Click an element and wait for the action to complete',
-      category: 'interaction',
-      version: '1.0.0',
-      tags: ['click', 'wait', 'interaction'],
+      id: "builtin-click-and-wait",
+      name: "Click and Wait",
+      description: "Click an element and wait for the action to complete",
+      category: "interaction",
+      version: "1.0.0",
+      tags: ["click", "wait", "interaction"],
       actions: [click, wait],
       connections: {
         click: {
-          main: [[{ action: 'wait', type: 'main', index: 0 }]],
+          main: [[{ action: "wait", type: "main", index: 0 }]],
         },
       },
       parameters: [
         {
-          name: 'targetImage',
-          type: 'image',
+          name: "targetImage",
+          type: "image",
           required: true,
-          description: 'Element to click',
+          description: "Element to click",
         },
         {
-          name: 'waitDuration',
-          type: 'number',
+          name: "waitDuration",
+          type: "number",
           required: false,
           defaultValue: 500,
-          description: 'Wait duration after click in milliseconds',
+          description: "Wait duration after click in milliseconds",
           min: 0,
         },
       ],
       builtin: true,
-      icon: '👆',
+      icon: "👆",
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -1413,80 +1488,80 @@ export class WorkflowComponentsService {
    */
   private createBuiltinFormFill(): void {
     const clickField1 = createAction(
-      'CLICK',
-      { target: { selector: '${field1Selector}' } },
+      "CLICK",
+      { target: "${field1Selector}" as any },
       [100, 100],
-      { id: 'click-field1', name: 'Click Field 1' }
+      { id: "click-field1", name: "Click Field 1" }
     );
 
     const typeField1 = createAction(
-      'TYPE',
-      { text: '${field1Value}', target: { selector: '${field1Selector}' } },
+      "TYPE",
+      { text: "${field1Value}" },
       [100, 250],
-      { id: 'type-field1', name: 'Type Field 1' }
+      { id: "type-field1", name: "Type Field 1" }
     );
 
     const clickField2 = createAction(
-      'CLICK',
-      { target: { selector: '${field2Selector}' } },
+      "CLICK",
+      { target: "${field2Selector}" as any },
       [100, 400],
-      { id: 'click-field2', name: 'Click Field 2' }
+      { id: "click-field2", name: "Click Field 2" }
     );
 
     const typeField2 = createAction(
-      'TYPE',
-      { text: '${field2Value}', target: { selector: '${field2Selector}' } },
+      "TYPE",
+      { text: "${field2Value}" },
       [100, 550],
-      { id: 'type-field2', name: 'Type Field 2' }
+      { id: "type-field2", name: "Type Field 2" }
     );
 
     const component: WorkflowComponent = {
-      id: 'builtin-form-fill',
-      name: 'Form Fill',
-      description: 'Fill multiple form fields with values',
-      category: 'interaction',
-      version: '1.0.0',
-      tags: ['form', 'type', 'input', 'fill'],
+      id: "builtin-form-fill",
+      name: "Form Fill",
+      description: "Fill multiple form fields with values",
+      category: "interaction",
+      version: "1.0.0",
+      tags: ["form", "type", "input", "fill"],
       actions: [clickField1, typeField1, clickField2, typeField2],
       connections: {
-        'click-field1': {
-          main: [[{ action: 'type-field1', type: 'main', index: 0 }]],
+        "click-field1": {
+          main: [[{ action: "type-field1", type: "main", index: 0 }]],
         },
-        'type-field1': {
-          main: [[{ action: 'click-field2', type: 'main', index: 0 }]],
+        "type-field1": {
+          main: [[{ action: "click-field2", type: "main", index: 0 }]],
         },
-        'click-field2': {
-          main: [[{ action: 'type-field2', type: 'main', index: 0 }]],
+        "click-field2": {
+          main: [[{ action: "type-field2", type: "main", index: 0 }]],
         },
       },
       parameters: [
         {
-          name: 'field1Selector',
-          type: 'selector',
+          name: "field1Selector",
+          type: "selector",
           required: true,
-          description: 'CSS selector for first field',
+          description: "CSS selector for first field",
         },
         {
-          name: 'field1Value',
-          type: 'string',
+          name: "field1Value",
+          type: "string",
           required: true,
-          description: 'Value for first field',
+          description: "Value for first field",
         },
         {
-          name: 'field2Selector',
-          type: 'selector',
+          name: "field2Selector",
+          type: "selector",
           required: true,
-          description: 'CSS selector for second field',
+          description: "CSS selector for second field",
         },
         {
-          name: 'field2Value',
-          type: 'string',
+          name: "field2Value",
+          type: "string",
           required: true,
-          description: 'Value for second field',
+          description: "Value for second field",
         },
       ],
       builtin: true,
-      icon: '📝',
+      icon: "📝",
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -1497,53 +1572,63 @@ export class WorkflowComponentsService {
   }
 
   /**
-   * Built-in: Screenshot and Verify (SCREENSHOT + FIND_STATE_IMAGE)
+   * Built-in: Screenshot and Verify (SCREENSHOT + FIND with stateImage target)
    */
   private createBuiltinScreenshotAndVerify(): void {
     const screenshot = createAction(
-      'SCREENSHOT',
-      { filename: 'verify-${timestamp}.png' },
+      "SCREENSHOT",
+      { saveToFile: { enabled: true, filename: "verify-${timestamp}.png" } },
       [100, 100],
-      { id: 'screenshot', name: 'Take Screenshot' }
+      { id: "screenshot", name: "Take Screenshot" }
     );
 
     const verify = createAction(
-      'FIND_STATE_IMAGE',
-      { target: { image: '${expectedImage}' }, timeout: 5000 },
+      "FIND",
+      {
+        target: {
+          type: "stateImage",
+          stateId: "${expectedStateId}",
+          imageIds: [],
+        },
+      },
       [100, 250],
-      { id: 'verify', name: 'Verify Expected State' }
+      {
+        id: "verify",
+        name: "Verify Expected State",
+        execution: { timeout: 5000 },
+      }
     );
 
     const component: WorkflowComponent = {
-      id: 'builtin-screenshot-verify',
-      name: 'Screenshot and Verify',
-      description: 'Take a screenshot and verify expected state is present',
-      category: 'verification',
-      version: '1.0.0',
-      tags: ['screenshot', 'verify', 'validation', 'state'],
+      id: "builtin-screenshot-verify",
+      name: "Screenshot and Verify",
+      description: "Take a screenshot and verify expected state is present",
+      category: "verification",
+      version: "1.0.0",
+      tags: ["screenshot", "verify", "validation", "state"],
       actions: [screenshot, verify],
       connections: {
         screenshot: {
-          main: [[{ action: 'verify', type: 'main', index: 0 }]],
+          main: [[{ action: "verify", type: "main", index: 0 }]],
         },
       },
       parameters: [
         {
-          name: 'expectedImage',
-          type: 'image',
+          name: "expectedImage",
+          type: "image",
           required: true,
-          description: 'Expected state image to verify',
+          description: "Expected state image to verify",
         },
         {
-          name: 'filename',
-          type: 'string',
+          name: "filename",
+          type: "string",
           required: false,
-          defaultValue: 'verify.png',
-          description: 'Screenshot filename',
+          defaultValue: "verify.png",
+          description: "Screenshot filename",
         },
       ],
       builtin: true,
-      icon: '📸',
+      icon: "📸",
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),
@@ -1558,60 +1643,72 @@ export class WorkflowComponentsService {
    */
   private createBuiltinSafeClick(): void {
     const exists = createAction(
-      'EXISTS',
-      { target: { image: '${targetImage}' }, timeout: 5000 },
+      "EXISTS",
+      { target: { type: "image", imageId: "${targetImage}" } },
       [100, 100],
-      { id: 'check-exists', name: 'Check Element Exists' }
+      {
+        id: "check-exists",
+        name: "Check Element Exists",
+        execution: { timeout: 5000 },
+      }
     );
 
     const ifAction = createAction(
-      'IF',
-      { condition: { type: 'found', variable: 'check-exists' }, thenActions: [], elseActions: [] },
+      "IF",
+      {
+        condition: {
+          type: "expression" as const,
+          expression: "check-exists.found",
+        },
+        thenActions: [],
+        elseActions: [],
+      },
       [100, 250],
-      { id: 'if-exists', name: 'If Element Exists' }
+      { id: "if-exists", name: "If Element Exists" }
     );
 
     const click = createAction(
-      'CLICK',
-      { target: { image: '${targetImage}' } },
+      "CLICK",
+      { target: "${targetImage}" as any },
       [300, 400],
-      { id: 'click-element', name: 'Click Element' }
+      { id: "click-element", name: "Click Element" }
     );
 
     const component: WorkflowComponent = {
-      id: 'builtin-safe-click',
-      name: 'Safe Click',
-      description: 'Safely click an element with existence check and verification',
-      category: 'interaction',
-      version: '1.0.0',
-      tags: ['click', 'safe', 'exists', 'verification'],
+      id: "builtin-safe-click",
+      name: "Safe Click",
+      description:
+        "Safely click an element with existence check and verification",
+      category: "interaction",
+      version: "1.0.0",
+      tags: ["click", "safe", "exists", "verification"],
       actions: [exists, ifAction, click],
       connections: {
-        'check-exists': {
-          main: [[{ action: 'if-exists', type: 'main', index: 0 }]],
+        "check-exists": {
+          main: [[{ action: "if-exists", type: "main", index: 0 }]],
         },
-        'if-exists': {
-          main: [[{ action: 'click-element', type: 'main', index: 0 }]],
+        "if-exists": {
+          main: [[{ action: "click-element", type: "main", index: 0 }]],
         },
       },
       parameters: [
         {
-          name: 'targetImage',
-          type: 'image',
+          name: "targetImage",
+          type: "image",
           required: true,
-          description: 'Element to click',
+          description: "Element to click",
         },
         {
-          name: 'timeout',
-          type: 'number',
+          name: "timeout",
+          type: "number",
           required: false,
           defaultValue: 5000,
-          description: 'Timeout for existence check in milliseconds',
+          description: "Timeout for existence check in milliseconds",
           min: 0,
         },
       ],
       builtin: true,
-      icon: '🛡️',
+      icon: "🛡️",
       usageCount: 0,
       metadata: {
         created: new Date().toISOString(),

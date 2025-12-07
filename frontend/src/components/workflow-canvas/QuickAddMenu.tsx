@@ -5,13 +5,12 @@
  * Appears on right-click on canvas with search and recent nodes.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { ActionType } from '@/lib/action-schema/action-types';
-import { searchNodes, NODE_METADATA } from './palette-config';
-import { useRecentNodeTypes } from '@/stores/recent-nodes';
-import { PaletteItem } from './PaletteItem';
-import { Search, Clock, Zap } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React, { useState, useEffect, useRef } from "react";
+import { ActionType } from "@/lib/action-schema/action-types";
+import { searchNodes, NODE_METADATA } from "./palette-config";
+import { useRecentNodeTypes } from "@/stores/recent-nodes";
+import { Search, Clock, Zap } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -36,9 +35,11 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
   onClose,
   className,
 }) => {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [results, setResults] = useState(Object.values(NODE_METADATA).slice(0, 8));
+  const [results, setResults] = useState(
+    Object.values(NODE_METADATA).slice(0, 8)
+  );
 
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -50,7 +51,7 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
   useEffect(() => {
     if (isOpen && inputRef.current) {
       inputRef.current.focus();
-      setQuery('');
+      setQuery("");
       setSelectedIndex(0);
     }
   }, [isOpen]);
@@ -78,29 +79,29 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key) {
-        case 'ArrowDown':
+        case "ArrowDown":
           e.preventDefault();
           setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
           break;
 
-        case 'ArrowUp':
+        case "ArrowUp":
           e.preventDefault();
           setSelectedIndex((prev) => Math.max(prev - 1, 0));
           break;
 
-        case 'Enter':
+        case "Enter":
           e.preventDefault();
           if (results[selectedIndex]) {
             handleSelect(results[selectedIndex].type);
           }
           break;
 
-        case 'Escape':
+        case "Escape":
           e.preventDefault();
           onClose();
           break;
 
-        case 'Tab':
+        case "Tab":
           e.preventDefault();
           if (e.shiftKey) {
             setSelectedIndex((prev) => Math.max(prev - 1, 0));
@@ -111,8 +112,8 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, results, selectedIndex, onClose]);
 
   // Click outside to close
@@ -125,8 +126,8 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen, onClose]);
 
   const handleSelect = (nodeType: ActionType) => {
@@ -139,9 +140,9 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className={cn('quick-add-menu', className)}
+      className={cn("quick-add-menu", className)}
       style={{
-        position: 'fixed',
+        position: "fixed",
         left: position.x,
         top: position.y,
         zIndex: 9999,
@@ -178,15 +179,14 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
         {results.length > 0 ? (
           <div className="quick-add-menu__list">
             {results.map((metadata, index) => {
-              const category = metadata.category;
               const IconComponent = metadata.icon;
 
               return (
                 <button
                   key={metadata.type}
                   className={cn(
-                    'quick-add-menu__item',
-                    selectedIndex === index && 'quick-add-menu__item--selected'
+                    "quick-add-menu__item",
+                    selectedIndex === index && "quick-add-menu__item--selected"
                   )}
                   onClick={() => handleSelect(metadata.type)}
                   onMouseEnter={() => setSelectedIndex(index)}
@@ -354,7 +354,7 @@ export const QuickActionsPanel: React.FC<QuickActionsPanelProps> = ({
         ].slice(0, maxItems);
 
   return (
-    <div className={cn('quick-actions-panel', className)}>
+    <div className={cn("quick-actions-panel", className)}>
       <div className="quick-actions-panel__header">
         <Zap className="h-4 w-4 text-yellow-500" />
         <span className="text-sm font-medium text-gray-700">Quick Add</span>

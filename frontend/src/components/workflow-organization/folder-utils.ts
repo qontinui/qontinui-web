@@ -4,8 +4,8 @@
  * Helper functions for folder operations
  */
 
-import { WorkflowFolder, FolderTreeNode } from './types';
-import { Workflow } from '../../lib/action-schema/action-types';
+import { WorkflowFolder } from "./types";
+import { Workflow } from "../../lib/action-schema/action-types";
 
 /**
  * Generate a unique folder ID
@@ -103,7 +103,7 @@ export function getWorkflowsInFolder(
     return workflows;
   }
 
-  if (folderId === 'uncategorized') {
+  if (folderId === "uncategorized") {
     return workflows.filter((w) => !(w as any).folderId);
   }
 
@@ -168,8 +168,8 @@ export function reorderFolders(
     insertIndex !== undefined
       ? insertIndex
       : siblings.length > 0
-      ? Math.max(...siblings.map((f) => f.order)) + 1
-      : 0;
+        ? Math.max(...siblings.map((f) => f.order)) + 1
+        : 0;
 
   // Update moved folder
   const updatedFolders = folders.map((f) => {
@@ -198,12 +198,15 @@ export function validateFolderName(
 ): { valid: boolean; error?: string } {
   // Check if name is empty
   if (!name.trim()) {
-    return { valid: false, error: 'Folder name cannot be empty' };
+    return { valid: false, error: "Folder name cannot be empty" };
   }
 
   // Check if name is too long
   if (name.length > 100) {
-    return { valid: false, error: 'Folder name is too long (max 100 characters)' };
+    return {
+      valid: false,
+      error: "Folder name is too long (max 100 characters)",
+    };
   }
 
   // Check for duplicate names in same parent
@@ -218,7 +221,7 @@ export function validateFolderName(
   if (duplicate) {
     return {
       valid: false,
-      error: 'A folder with this name already exists in this location',
+      error: "A folder with this name already exists in this location",
     };
   }
 
@@ -262,7 +265,7 @@ export function importFolders(json: string): WorkflowFolder[] {
   try {
     const parsed = JSON.parse(json);
     if (!Array.isArray(parsed)) {
-      throw new Error('Invalid folder data: expected array');
+      throw new Error("Invalid folder data: expected array");
     }
 
     return parsed.map((folder) => ({

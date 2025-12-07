@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { StateImage } from '../../types/stateDiscovery';
-import { toast } from 'sonner';
+import React, { useState, useRef, useEffect } from "react";
+import { StateImage } from "../../types/stateDiscovery";
+import { toast } from "sonner";
 
 interface MaskVisualizationProps {
   stateImage: StateImage;
@@ -13,13 +13,15 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
   stateImage,
   maskData: initialMaskData,
   onMaskUpdate,
-  readOnly = false
+  readOnly = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [maskData, setMaskData] = useState(initialMaskData);
   const [showMask, setShowMask] = useState(true);
   const [maskOpacity, setMaskOpacity] = useState(0.5);
-  const [maskType, setMaskType] = useState<'full' | 'stability' | 'edge' | 'saliency'>('full');
+  const [maskType, setMaskType] = useState<
+    "full" | "stability" | "edge" | "saliency"
+  >("full");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [maskMetadata, setMaskMetadata] = useState<any>(null);
@@ -41,19 +43,19 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Draw state image placeholder (in production, would draw actual image)
-    ctx.fillStyle = '#e0e0e0';
+    ctx.fillStyle = "#e0e0e0";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw StateImage info
-    ctx.fillStyle = '#666';
-    ctx.font = '12px sans-serif';
+    ctx.fillStyle = "#666";
+    ctx.font = "12px sans-serif";
     ctx.fillText(stateImage.name, 10, 20);
     ctx.fillText(`${stateImage.width}x${stateImage.height}`, 10, 35);
 
@@ -77,7 +79,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
     }
 
     // Draw border
-    ctx.strokeStyle = stateImage.hasMask ? '#4CAF50' : '#999';
+    ctx.strokeStyle = stateImage.hasMask ? "#4CAF50" : "#999";
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
   };
@@ -85,19 +87,21 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
   const fetchMask = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/state-discovery/state-image/${stateImage.id}/mask`);
+      const response = await fetch(
+        `/api/state-discovery/state-image/${stateImage.id}/mask`
+      );
       if (response.ok) {
         const data = await response.json();
         if (data.mask_data) {
           setMaskData(`data:image/png;base64,${data.mask_data}`);
           setMaskMetadata({
             density: data.mask_density,
-            type: data.mask_type
+            type: data.mask_type,
           });
         }
       }
     } catch (error) {
-      console.error('Failed to fetch mask:', error);
+      console.error("Failed to fetch mask:", error);
     } finally {
       setIsLoading(false);
     }
@@ -105,7 +109,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
 
   const generateMask = async () => {
     if (!stateImage.pixelHash) {
-      toast.error('Cannot generate mask: StateImage needs pixel data');
+      toast.error("Cannot generate mask: StateImage needs pixel data");
       return;
     }
 
@@ -115,19 +119,19 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
       // This would typically come from the screenshot or stored image
 
       // Generate mask through API
-      const response = await fetch('/api/masks/generate', {
-        method: 'POST',
+      const response = await fetch("/api/masks/generate", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          image_data: '', // Would need actual base64 image data
+          image_data: "", // Would need actual base64 image data
           mask_type: maskType,
           stability_threshold: 0.95,
           edge_low_threshold: 50,
           edge_high_threshold: 150,
-          saliency_threshold: 0.5
-        })
+          saliency_threshold: 0.5,
+        }),
       });
 
       if (response.ok) {
@@ -137,20 +141,20 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
         setMaskMetadata({
           density: data.density,
           activePixels: data.active_pixels,
-          totalPixels: data.total_pixels
+          totalPixels: data.total_pixels,
         });
 
         if (onMaskUpdate) {
           onMaskUpdate(newMaskData);
         }
 
-        toast.success('Mask generated successfully');
+        toast.success("Mask generated successfully");
       } else {
-        toast.error('Failed to generate mask');
+        toast.error("Failed to generate mask");
       }
     } catch (error) {
-      console.error('Failed to generate mask:', error);
-      toast.error('Error generating mask');
+      console.error("Failed to generate mask:", error);
+      toast.error("Error generating mask");
     } finally {
       setIsGenerating(false);
     }
@@ -159,13 +163,15 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
   return (
     <div className="mask-visualization">
       <div className="mask-header flex justify-between items-center mb-2">
-        <h3 className="text-sm font-semibold text-gray-700">Mask Visualization</h3>
+        <h3 className="text-sm font-semibold text-gray-700">
+          Mask Visualization
+        </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowMask(!showMask)}
             className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
           >
-            {showMask ? 'Hide' : 'Show'} Mask
+            {showMask ? "Hide" : "Show"} Mask
           </button>
           {!readOnly && (
             <button
@@ -173,7 +179,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
               disabled={isGenerating}
               className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded disabled:opacity-50"
             >
-              {isGenerating ? 'Generating...' : 'Generate'}
+              {isGenerating ? "Generating..." : "Generate"}
             </button>
           )}
         </div>
@@ -221,8 +227,22 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
 
         {(stateImage.hasMask || maskMetadata) && (
           <div className="mt-2 text-xs text-gray-600">
-            <div>Mask Density: {Math.round((maskMetadata?.density || stateImage.maskDensity || 1.0) * 100)}%</div>
-            <div>Active Pixels: {maskMetadata?.activePixels || Math.round((stateImage.maskDensity || 1.0) * stateImage.width * stateImage.height)}</div>
+            <div>
+              Mask Density:{" "}
+              {Math.round(
+                (maskMetadata?.density || stateImage.maskDensity || 1.0) * 100
+              )}
+              %
+            </div>
+            <div>
+              Active Pixels:{" "}
+              {maskMetadata?.activePixels ||
+                Math.round(
+                  (stateImage.maskDensity || 1.0) *
+                    stateImage.width *
+                    stateImage.height
+                )}
+            </div>
             {maskMetadata?.type && <div>Type: {maskMetadata.type}</div>}
           </div>
         )}

@@ -5,10 +5,10 @@
  * in different scenarios.
  */
 
-import React, { useState, useEffect } from 'react';
-import { ExecutionDebugger } from './ExecutionDebugger';
-import { useExecutionDebugger } from '../../stores/execution-debugger-store';
-import { Action, Process } from '../../contexts/automation-context/types';
+import React, { useState, useEffect } from "react";
+import { ExecutionDebugger } from "./ExecutionDebugger";
+import { useExecutionDebugger } from "../../stores/execution-debugger-store";
+import type { Action, Workflow } from "../../lib/action-schema/action-types";
 
 // ============================================================================
 // Example 1: Basic Usage with Simple Process
@@ -18,20 +18,64 @@ export function BasicDebuggerExample() {
   const [debuggerOpen, setDebuggerOpen] = useState(false);
   const { setDebugEnabled, initialize } = useExecutionDebugger();
 
-  const simpleProcess: Process = {
-    id: 'simple-1',
-    name: 'Simple Login Process',
-    description: 'Basic login flow',
+  const simpleProcess: Workflow = {
+    id: "simple-1",
+    name: "Simple Login Process",
+    version: "1.0.0",
+    format: "graph",
+    description: "Basic login flow",
     actions: [
-      { id: '1', type: 'FIND', config: { description: 'Find username field' } },
-      { id: '2', type: 'CLICK', config: { description: 'Click username field' } },
-      { id: '3', type: 'TYPE', config: { text: 'user@example.com', description: 'Type username' } },
-      { id: '4', type: 'FIND', config: { description: 'Find password field' } },
-      { id: '5', type: 'CLICK', config: { description: 'Click password field' } },
-      { id: '6', type: 'TYPE', config: { text: 'password123', description: 'Type password' } },
-      { id: '7', type: 'FIND', config: { description: 'Find login button' } },
-      { id: '8', type: 'CLICK', config: { description: 'Click login button' } },
+      {
+        id: "1",
+        type: "FIND",
+        config: { description: "Find username field" },
+        position: [0, 0],
+      },
+      {
+        id: "2",
+        type: "CLICK",
+        config: { description: "Click username field" },
+        position: [0, 0],
+      },
+      {
+        id: "3",
+        type: "TYPE",
+        config: { text: "user@example.com", description: "Type username" },
+        position: [0, 0],
+      },
+      {
+        id: "4",
+        type: "FIND",
+        config: { description: "Find password field" },
+        position: [0, 0],
+      },
+      {
+        id: "5",
+        type: "CLICK",
+        config: { description: "Click password field" },
+        position: [0, 0],
+      },
+      {
+        id: "6",
+        type: "TYPE",
+        config: { text: "password123", description: "Type password" },
+        position: [0, 0],
+      },
+      {
+        id: "7",
+        type: "FIND",
+        config: { description: "Find login button" },
+        position: [0, 0],
+      },
+      {
+        id: "8",
+        type: "CLICK",
+        config: { description: "Click login button" },
+        position: [0, 0],
+      },
     ],
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -41,16 +85,16 @@ export function BasicDebuggerExample() {
   }, []);
 
   const handleExecute = () => {
-    console.log('Starting execution...');
+    console.log("Starting execution...");
     // Your execution logic here
   };
 
   const handleStop = () => {
-    console.log('Stopping execution...');
+    console.log("Stopping execution...");
   };
 
   const handleStep = () => {
-    console.log('Step forward...');
+    console.log("Step forward...");
   };
 
   return (
@@ -83,33 +127,61 @@ export function ControlFlowDebuggerExample() {
     setVariable,
   } = useExecutionDebugger();
 
-  const controlFlowProcess: Process = {
-    id: 'control-1',
-    name: 'Control Flow Process',
-    description: 'Process with IF and LOOP actions',
+  const controlFlowProcess: Workflow = {
+    id: "control-1",
+    name: "Control Flow Process",
+    version: "1.0.0",
+    format: "graph",
+    description: "Process with IF and LOOP actions",
     actions: [
-      { id: '1', type: 'SET_VARIABLE', config: { variableName: 'counter', value: 0 } },
       {
-        id: '2',
-        type: 'LOOP',
-        config: {
-          description: 'Loop 5 times',
-          maxIterations: 5,
-          loopVariable: 'i',
-        },
+        id: "1",
+        type: "SET_VARIABLE",
+        config: { variableName: "counter", value: 0 },
+        position: [0, 0],
       },
-      { id: '3', type: 'SET_VARIABLE', config: { variableName: 'counter', value: '{{counter + 1}}' } },
       {
-        id: '4',
-        type: 'IF',
+        id: "2",
+        type: "LOOP",
         config: {
-          description: 'Check if counter > 3',
-          condition: '{{counter > 3}}',
+          loopType: "FOR",
+          iterations: 5,
+          actions: [],
+          iteratorVariable: "i",
         },
+        position: [0, 0],
       },
-      { id: '5', type: 'CLICK', config: { description: 'Click special button' } },
-      { id: '6', type: 'WAIT', config: { duration: 1000 } },
+      {
+        id: "3",
+        type: "SET_VARIABLE",
+        config: { variableName: "counter", value: "{{counter + 1}}" },
+        position: [0, 0],
+      },
+      {
+        id: "4",
+        type: "IF",
+        config: {
+          condition: { type: "expression", expression: "counter > 3" },
+          thenActions: ["5"],
+          elseActions: [],
+        },
+        position: [0, 0],
+      },
+      {
+        id: "5",
+        type: "CLICK",
+        config: { description: "Click special button" },
+        position: [0, 0],
+      },
+      {
+        id: "6",
+        type: "WAIT",
+        config: { waitFor: "time", duration: 1000 },
+        position: [0, 0],
+      },
     ],
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -119,32 +191,32 @@ export function ControlFlowDebuggerExample() {
 
   // Simulate loop execution
   const simulateLoopExecution = async () => {
-    const loopActionId = '2';
+    const loopActionId = "2";
     const maxIterations = 5;
 
     // Start loop
-    startLoop(loopActionId, maxIterations, 'i');
+    startLoop(loopActionId, maxIterations, "i");
 
     for (let i = 0; i < maxIterations; i++) {
       // Update iteration
       updateLoopIteration(loopActionId);
 
       // Update counter variable
-      setVariable('counter', i + 1, 2);
+      setVariable("counter", i + 1, 2);
 
       // Evaluate IF condition
       const conditionResult = i + 1 > 3;
       recordConditionEvaluation({
-        actionId: '4',
-        condition: 'counter > 3',
+        actionId: "4",
+        condition: "counter > 3",
         result: conditionResult,
         evaluatedAt: Date.now(),
         variables: { counter: i + 1 },
-        branch: conditionResult ? 'if' : 'else',
+        branch: conditionResult ? "if" : "else",
       });
 
       // Simulate delay
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
     // End loop
@@ -177,36 +249,54 @@ export function ControlFlowDebuggerExample() {
 export function VariableTrackingExample() {
   const { setDebugEnabled, initialize, setVariable } = useExecutionDebugger();
 
-  const variableProcess: Process = {
-    id: 'var-1',
-    name: 'Variable Processing',
-    description: 'Process demonstrating variable operations',
+  const variableProcess: Workflow = {
+    id: "var-1",
+    name: "Variable Processing",
+    version: "1.0.0",
+    format: "graph",
+    description: "Process demonstrating variable operations",
     actions: [
-      { id: '1', type: 'SET_VARIABLE', config: { variableName: 'username', value: 'john_doe' } },
-      { id: '2', type: 'SET_VARIABLE', config: { variableName: 'email', value: 'john@example.com' } },
       {
-        id: '3',
-        type: 'SET_VARIABLE',
-        config: {
-          variableName: 'user',
-          value: { name: 'John Doe', age: 30, active: true },
-        },
+        id: "1",
+        type: "SET_VARIABLE",
+        config: { variableName: "username", value: "john_doe" },
+        position: [0, 0],
       },
       {
-        id: '4',
-        type: 'SET_VARIABLE',
-        config: { variableName: 'scores', value: [95, 87, 92, 88] },
+        id: "2",
+        type: "SET_VARIABLE",
+        config: { variableName: "email", value: "john@example.com" },
+        position: [0, 0],
       },
       {
-        id: '5',
-        type: 'MATH_OPERATION',
+        id: "3",
+        type: "SET_VARIABLE",
         config: {
-          operation: 'average',
-          variableName: 'averageScore',
-          values: '{{scores}}',
+          variableName: "user",
+          value: { name: "John Doe", age: 30, active: true },
         },
+        position: [0, 0],
+      },
+      {
+        id: "4",
+        type: "SET_VARIABLE",
+        config: { variableName: "scores", value: [95, 87, 92, 88] },
+        position: [0, 0],
+      },
+      {
+        id: "5",
+        type: "MATH_OPERATION",
+        config: {
+          operation: "CUSTOM",
+          customExpression: "scores.reduce((a, b) => a + b, 0) / scores.length",
+          operands: [{ variableName: "scores" }],
+          outputVariable: "averageScore",
+        },
+        position: [0, 0],
       },
     ],
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -216,23 +306,23 @@ export function VariableTrackingExample() {
 
   const simulateVariableOperations = async () => {
     // Set simple variables
-    setVariable('username', 'john_doe', 0);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    setVariable("username", "john_doe", 0);
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    setVariable('email', 'john@example.com', 1);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    setVariable("email", "john@example.com", 1);
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Set complex object
-    setVariable('user', { name: 'John Doe', age: 30, active: true }, 2);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    setVariable("user", { name: "John Doe", age: 30, active: true }, 2);
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Set array
-    setVariable('scores', [95, 87, 92, 88], 3);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    setVariable("scores", [95, 87, 92, 88], 3);
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Calculate average
     const average = [95, 87, 92, 88].reduce((a, b) => a + b, 0) / 4;
-    setVariable('averageScore', average, 4);
+    setVariable("averageScore", average, 4);
   };
 
   return (
@@ -262,17 +352,46 @@ export function BreakpointExample() {
   const { setDebugEnabled, initialize, addBreakpoint, removeBreakpoint } =
     useExecutionDebugger();
 
-  const breakpointProcess: Process = {
-    id: 'bp-1',
-    name: 'Breakpoint Demo',
-    description: 'Demonstrating breakpoint usage',
+  const breakpointProcess: Workflow = {
+    id: "bp-1",
+    name: "Breakpoint Demo",
+    version: "1.0.0",
+    format: "graph",
+    description: "Demonstrating breakpoint usage",
     actions: [
-      { id: '1', type: 'FIND', config: { description: 'Action 1' } },
-      { id: '2', type: 'CLICK', config: { description: 'Action 2' } },
-      { id: '3', type: 'TYPE', config: { description: 'Action 3 - Breakpoint here' } },
-      { id: '4', type: 'FIND', config: { description: 'Action 4' } },
-      { id: '5', type: 'CLICK', config: { description: 'Action 5 - Another breakpoint' } },
+      {
+        id: "1",
+        type: "FIND",
+        config: { description: "Action 1" },
+        position: [0, 0],
+      },
+      {
+        id: "2",
+        type: "CLICK",
+        config: { description: "Action 2" },
+        position: [0, 0],
+      },
+      {
+        id: "3",
+        type: "TYPE",
+        config: { description: "Action 3 - Breakpoint here" },
+        position: [0, 0],
+      },
+      {
+        id: "4",
+        type: "FIND",
+        config: { description: "Action 4" },
+        position: [0, 0],
+      },
+      {
+        id: "5",
+        type: "CLICK",
+        config: { description: "Action 5 - Another breakpoint" },
+        position: [0, 0],
+      },
     ],
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -289,8 +408,9 @@ export function BreakpointExample() {
       <h1 className="text-2xl font-bold mb-4">Breakpoint Example</h1>
       <div className="mb-4 p-4 bg-blue-50 rounded-lg">
         <p className="text-sm text-blue-800">
-          Breakpoints are set at actions 3 and 5. Execution will pause before these
-          actions. Right-click on actions in the timeline to toggle breakpoints.
+          Breakpoints are set at actions 3 and 5. Execution will pause before
+          these actions. Right-click on actions in the timeline to toggle
+          breakpoints.
         </p>
       </div>
       <div className="flex gap-2 mb-4">
@@ -322,17 +442,22 @@ export function BreakpointExample() {
 // ============================================================================
 
 export function SpeedControlExample() {
-  const { setDebugEnabled, initialize, setSpeed, speed } = useExecutionDebugger();
+  const { setDebugEnabled, initialize, setSpeed, speed } =
+    useExecutionDebugger();
 
-  const speedProcess: Process = {
-    id: 'speed-1',
-    name: 'Speed Control Demo',
-    description: 'Demonstrating execution speed control',
+  const speedProcess: Workflow = {
+    id: "speed-1",
+    name: "Speed Control Demo",
+    version: "1.0.0",
+    format: "graph",
+    description: "Demonstrating execution speed control",
     actions: Array.from({ length: 10 }, (_, i) => ({
       id: String(i + 1),
-      type: 'WAIT',
+      type: "WAIT",
       config: { description: `Action ${i + 1}`, duration: 100 },
-    })) as Action[],
+    })) as unknown as Action[],
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -355,19 +480,19 @@ export function SpeedControlExample() {
       </div>
       <div className="flex gap-2 mb-4">
         <button
-          onClick={() => setSpeed('slow')}
+          onClick={() => setSpeed("slow")}
           className="px-4 py-2 bg-yellow-600 text-white rounded-lg"
         >
           Slow Speed
         </button>
         <button
-          onClick={() => setSpeed('normal')}
+          onClick={() => setSpeed("normal")}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg"
         >
           Normal Speed
         </button>
         <button
-          onClick={() => setSpeed('fast')}
+          onClick={() => setSpeed("fast")}
           className="px-4 py-2 bg-green-600 text-white rounded-lg"
         >
           Fast Speed
@@ -391,14 +516,28 @@ export function LogManagementExample() {
   const { setDebugEnabled, initialize, addLog, clearLogs, exportLogs } =
     useExecutionDebugger();
 
-  const logProcess: Process = {
-    id: 'log-1',
-    name: 'Log Management Demo',
-    description: 'Demonstrating log management features',
+  const logProcess: Workflow = {
+    id: "log-1",
+    name: "Log Management Demo",
+    version: "1.0.0",
+    format: "graph",
+    description: "Demonstrating log management features",
     actions: [
-      { id: '1', type: 'FIND', config: { description: 'Action 1' } },
-      { id: '2', type: 'CLICK', config: { description: 'Action 2' } },
+      {
+        id: "1",
+        type: "FIND",
+        config: { description: "Action 1" },
+        position: [0, 0],
+      },
+      {
+        id: "2",
+        type: "CLICK",
+        config: { description: "Action 2" },
+        position: [0, 0],
+      },
     ],
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -407,22 +546,24 @@ export function LogManagementExample() {
   }, []);
 
   const generateSampleLogs = () => {
-    addLog('info', 'system', 'System initialized successfully');
-    addLog('debug', 'action', 'Finding element on page', 0, { selector: '#username' });
-    addLog('info', 'action', 'Element found', 0, { x: 100, y: 200 });
-    addLog('warning', 'condition', 'Condition evaluated to false', undefined, {
-      condition: 'x > 10',
+    addLog("info", "system", "System initialized successfully");
+    addLog("debug", "action", "Finding element on page", 0, {
+      selector: "#username",
+    });
+    addLog("info", "action", "Element found", 0, { x: 100, y: 200 });
+    addLog("warning", "condition", "Condition evaluated to false", undefined, {
+      condition: "x > 10",
       result: false,
     });
-    addLog('error', 'action', 'Action failed: Element not found', 1, {
-      selector: '#password',
+    addLog("error", "action", "Action failed: Element not found", 1, {
+      selector: "#password",
       timeout: 5000,
     });
-    addLog('info', 'variable', 'Variable set: count = 5', 0, {
-      variableName: 'count',
+    addLog("info", "variable", "Variable set: count = 5", 0, {
+      variableName: "count",
       value: 5,
     });
-    addLog('debug', 'loop', 'Loop iteration 1/5 completed', undefined, {
+    addLog("debug", "loop", "Loop iteration 1/5 completed", undefined, {
       iteration: 1,
       maxIterations: 5,
     });
@@ -430,11 +571,11 @@ export function LogManagementExample() {
 
   const handleExportLogs = () => {
     const logs = exportLogs();
-    console.log('Exported logs:', logs);
+    console.log("Exported logs:", logs);
     // In a real app, you'd download this as a file
-    const blob = new Blob([logs], { type: 'application/json' });
+    const blob = new Blob([logs], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `execution-logs-${Date.now()}.json`;
     a.click();
@@ -487,38 +628,84 @@ export function CompleteIntegrationExample() {
     failAction,
     setVariable,
     play,
-    pause,
     stop,
     state: debuggerState,
   } = useExecutionDebugger();
 
-  const complexProcess: Process = {
-    id: 'complex-1',
-    name: 'E-Commerce Checkout',
-    description: 'Complete checkout process with error handling',
+  const complexProcess: Workflow = {
+    id: "complex-1",
+    name: "E-Commerce Checkout",
+    version: "1.0.0",
+    format: "graph",
+    description: "Complete checkout process with error handling",
     actions: [
-      { id: '1', type: 'SET_VARIABLE', config: { variableName: 'cart', value: [] } },
-      { id: '2', type: 'FIND', config: { description: 'Find product' } },
-      { id: '3', type: 'CLICK', config: { description: 'Add to cart' } },
       {
-        id: '4',
-        type: 'SET_VARIABLE',
-        config: { variableName: 'cart', value: '{{cart.push(product)}}' },
+        id: "1",
+        type: "SET_VARIABLE",
+        config: { variableName: "cart", value: [] },
+        position: [0, 0],
       },
-      { id: '5', type: 'FIND', config: { description: 'Find checkout button' } },
-      { id: '6', type: 'CLICK', config: { description: 'Go to checkout' } },
       {
-        id: '7',
-        type: 'IF',
+        id: "2",
+        type: "FIND",
+        config: { description: "Find product" },
+        position: [0, 0],
+      },
+      {
+        id: "3",
+        type: "CLICK",
+        config: { description: "Add to cart" },
+        position: [0, 0],
+      },
+      {
+        id: "4",
+        type: "SET_VARIABLE",
+        config: { variableName: "cart", value: "{{cart.push(product)}}" },
+        position: [0, 0],
+      },
+      {
+        id: "5",
+        type: "FIND",
+        config: { description: "Find checkout button" },
+        position: [0, 0],
+      },
+      {
+        id: "6",
+        type: "CLICK",
+        config: { description: "Go to checkout" },
+        position: [0, 0],
+      },
+      {
+        id: "7",
+        type: "IF",
         config: {
-          condition: '{{cart.length > 0}}',
-          description: 'Check if cart has items',
+          condition: { type: "expression", expression: "cart.length > 0" },
+          thenActions: [],
+          elseActions: [],
         },
+        position: [0, 0],
       },
-      { id: '8', type: 'FIND', config: { description: 'Find payment form' } },
-      { id: '9', type: 'TYPE', config: { description: 'Enter card details' } },
-      { id: '10', type: 'CLICK', config: { description: 'Submit payment' } },
+      {
+        id: "8",
+        type: "FIND",
+        config: { description: "Find payment form" },
+        position: [0, 0],
+      },
+      {
+        id: "9",
+        type: "TYPE",
+        config: { description: "Enter card details" },
+        position: [0, 0],
+      },
+      {
+        id: "10",
+        type: "CLICK",
+        config: { description: "Submit payment" },
+        position: [0, 0],
+      },
     ],
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -533,15 +720,16 @@ export function CompleteIntegrationExample() {
       const action = complexProcess.actions[i];
 
       // Start action
-      startAction(i, action);
+      startAction(i, action!);
 
       // Simulate action execution
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Simulate variable operations
-      if (action.type === 'SET_VARIABLE') {
-        const varName = action.config.variableName;
-        const value = action.config.value;
+      if (action?.type === "SET_VARIABLE") {
+        const setVarConfig = action.config as any;
+        const varName = setVarConfig.variableName;
+        const value = setVarConfig.value;
         setVariable(varName, value, i);
       }
 
@@ -551,7 +739,7 @@ export function CompleteIntegrationExample() {
       if (success) {
         completeAction(i, { success: true });
       } else {
-        failAction(i, 'Simulated failure for demonstration');
+        failAction(i, "Simulated failure for demonstration");
         break;
       }
     }
@@ -577,7 +765,7 @@ export function CompleteIntegrationExample() {
       </div>
       <button
         onClick={executeProcess}
-        disabled={debuggerState === 'running'}
+        disabled={debuggerState === "running"}
         className="px-4 py-2 bg-blue-600 text-white rounded-lg mb-4 disabled:opacity-50"
       >
         Execute Process

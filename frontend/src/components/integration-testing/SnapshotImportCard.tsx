@@ -1,38 +1,74 @@
 // components/integration-testing/SnapshotImportCard.tsx
 
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { useSnapshotImport } from '@/hooks/useSnapshotImport';
-import { toast } from 'sonner';
-import { Loader2, Upload, FolderOpen } from 'lucide-react';
+import { useState } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useSnapshotImport } from "@/hooks/useSnapshotImport";
+import { toast } from "sonner";
+import { Loader2, Upload, FolderOpen } from "lucide-react";
 
 interface SnapshotImportCardProps {
   onImportSuccess?: () => void;
 }
 
-export function SnapshotImportCard({ onImportSuccess }: SnapshotImportCardProps) {
-  const [directoryPath, setDirectoryPath] = useState('');
-  const [tags, setTags] = useState('');
-  const [notes, setNotes] = useState('');
+export function SnapshotImportCard({
+  onImportSuccess,
+}: SnapshotImportCardProps) {
+  const [directoryPath, setDirectoryPath] = useState("");
+  const [tags, setTags] = useState("");
+  const [notes, setNotes] = useState("");
 
   const { importing, error, importSnapshotDirectory } = useSnapshotImport();
 
+  const handleBrowseDirectory = () => {
+    // Create a hidden input element for directory selection
+    const input = document.createElement("input");
+    input.type = "file";
+    // @ts-ignore - webkitdirectory is not in standard types but widely supported
+    input.webkitdirectory = true;
+    // @ts-ignore
+    input.directory = true;
+
+    input.onchange = (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (files && files.length > 0) {
+        // Get the directory path from the first file
+        // In browser context, we get relative path; for actual import,
+        // users need to enter the absolute server path
+        const firstFile = files[0];
+        // @ts-ignore - webkitRelativePath exists on File in browsers
+        const relativePath = firstFile.webkitRelativePath || firstFile.name;
+        const dirPath = relativePath.split("/")[0];
+
+        toast.info(
+          "Browser directory picker selected a local path. " +
+            "Please enter the absolute path on the server where snapshots are stored.",
+          { duration: 5000 }
+        );
+
+        // Set a helpful hint in the input
+        setDirectoryPath(`/path/to/${dirPath}`);
+      }
+    };
+
+    input.click();
+  };
+
   const handleImport = async () => {
     if (!directoryPath.trim()) {
-      toast.error('Please enter a snapshot directory path');
+      toast.error("Please enter a snapshot directory path");
       return;
     }
 
     try {
       const tagList = tags
-        .split(',')
-        .map(t => t.trim())
-        .filter(t => t.length > 0);
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
 
       const snapshot = await importSnapshotDirectory({
         snapshot_directory: directoryPath.trim(),
@@ -40,23 +76,20 @@ export function SnapshotImportCard({ onImportSuccess }: SnapshotImportCardProps)
         notes: notes.trim() || undefined,
       });
 
-      toast.success(
-        `Snapshot imported successfully: ${snapshot.run_id}`,
-        {
-          description: `${snapshot.total_actions} actions recorded`,
-        }
-      );
+      toast.success(`Snapshot imported successfully: ${snapshot.run_id}`, {
+        description: `${snapshot.total_actions} actions recorded`,
+      });
 
       // Reset form
-      setDirectoryPath('');
-      setTags('');
-      setNotes('');
+      setDirectoryPath("");
+      setTags("");
+      setNotes("");
 
       // Notify parent
       onImportSuccess?.();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      toast.error('Import failed', {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      toast.error("Import failed", {
         description: errorMessage,
       });
     }
@@ -70,7 +103,8 @@ export function SnapshotImportCard({ onImportSuccess }: SnapshotImportCardProps)
       </div>
 
       <p className="text-sm text-gray-600 mb-4">
-        Import a recorded snapshot directory to make it available for integration testing.
+        Import a recorded snapshot directory to make it available for
+        integration testing.
       </p>
 
       <div className="space-y-4">
@@ -92,10 +126,8 @@ export function SnapshotImportCard({ onImportSuccess }: SnapshotImportCardProps)
               variant="outline"
               size="icon"
               disabled={importing}
-              onClick={() => {
-                // TODO: Implement file browser dialog
-                toast.info('File browser not yet implemented');
-              }}
+              onClick={handleBrowseDirectory}
+              title="Browse for directory (reminder: enter server path)"
             >
               <FolderOpen className="w-4 h-4" />
             </Button>

@@ -5,38 +5,33 @@
  * into your workflow editor or viewer pages.
  */
 
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Workflow } from '@/lib/action-schema/action-types';
+import { useState, useEffect } from "react";
+import { Workflow } from "@/lib/action-schema/action-types";
 import {
   DocumentationEditor,
   DocumentationViewer,
   ActionCommentsPanel,
-} from '@/components/workflow-documentation';
+} from "@/components/workflow-documentation";
 import {
   WorkflowDocumentationService,
   WorkflowDocumentation,
   ActionComment,
-} from '@/services/workflow-documentation-service';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  FileText,
-  MessageSquare,
-  Edit,
-  Eye,
-  Sparkles,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "@/services/workflow-documentation-service";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FileText, MessageSquare, Edit, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 
 // ============================================================================
 // Example 1: Simple Documentation Editor/Viewer
 // ============================================================================
 
 export function SimpleDocumentationView({ workflow }: { workflow: Workflow }) {
-  const [mode, setMode] = useState<'view' | 'edit'>('view');
-  const [documentation, setDocumentation] = useState<WorkflowDocumentation | null>(null);
+  const [mode, setMode] = useState<"view" | "edit">("view");
+  const [documentation, setDocumentation] =
+    useState<WorkflowDocumentation | null>(null);
 
   const docService = WorkflowDocumentationService.getInstance();
 
@@ -51,17 +46,17 @@ export function SimpleDocumentationView({ workflow }: { workflow: Workflow }) {
         const updated = docService.updateDocumentation(
           workflow.id,
           content,
-          'Updated documentation'
+          "Updated documentation"
         );
         setDocumentation(updated);
       } else {
         const created = docService.createDocumentation(workflow.id, content);
         setDocumentation(created);
       }
-      setMode('view');
-      toast.success('Documentation saved successfully');
+      setMode("view");
+      toast.success("Documentation saved successfully");
     } catch (error) {
-      toast.error('Failed to save documentation');
+      toast.error("Failed to save documentation");
       console.error(error);
     }
   };
@@ -71,25 +66,26 @@ export function SimpleDocumentationView({ workflow }: { workflow: Workflow }) {
       const content = docService.generateDocumentation(workflow);
       const doc = docService.createDocumentation(workflow.id, content);
       setDocumentation(doc);
-      setMode('view');
-      toast.success('Documentation generated successfully');
+      setMode("view");
+      toast.success("Documentation generated successfully");
     } catch (error) {
-      toast.error('Failed to generate documentation');
+      toast.error("Failed to generate documentation");
       console.error(error);
     }
   };
 
-  if (!documentation && mode === 'view') {
+  if (!documentation && mode === "view") {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center space-y-4">
           <FileText className="size-16 mx-auto text-muted-foreground" />
           <h3 className="text-lg font-semibold">No Documentation Yet</h3>
           <p className="text-sm text-muted-foreground">
-            Create documentation for this workflow to help your team understand its purpose.
+            Create documentation for this workflow to help your team understand
+            its purpose.
           </p>
           <div className="flex items-center justify-center gap-2">
-            <Button onClick={() => setMode('edit')}>
+            <Button onClick={() => setMode("edit")}>
               <Edit className="size-4" />
               Write Documentation
             </Button>
@@ -105,18 +101,18 @@ export function SimpleDocumentationView({ workflow }: { workflow: Workflow }) {
 
   return (
     <div className="h-full">
-      {mode === 'view' && documentation ? (
+      {mode === "view" && documentation ? (
         <DocumentationViewer
           workflow={workflow}
           documentation={documentation}
-          onEdit={() => setMode('edit')}
+          onEdit={() => setMode("edit")}
         />
       ) : (
         <DocumentationEditor
           workflow={workflow}
           documentation={documentation || undefined}
           onSave={handleSave}
-          onCancel={() => setMode('view')}
+          onCancel={() => setMode("view")}
           onGenerateAuto={handleGenerateAuto}
         />
       )}
@@ -129,10 +125,10 @@ export function SimpleDocumentationView({ workflow }: { workflow: Workflow }) {
 // ============================================================================
 
 export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
-  const [documentation, setDocumentation] = useState<WorkflowDocumentation | null>(null);
+  const [documentation, setDocumentation] =
+    useState<WorkflowDocumentation | null>(null);
   const [comments, setComments] = useState<ActionComment[]>([]);
-  const [selectedActionId, setSelectedActionId] = useState<string>();
-  const [mode, setMode] = useState<'view' | 'edit'>('view');
+  const [mode, setMode] = useState<"view" | "edit">("view");
 
   const docService = WorkflowDocumentationService.getInstance();
 
@@ -156,10 +152,10 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
         const created = docService.createDocumentation(workflow.id, content);
         setDocumentation(created);
       }
-      setMode('view');
-      toast.success('Documentation saved');
+      setMode("view");
+      toast.success("Documentation saved");
     } catch (error) {
-      toast.error('Failed to save');
+      toast.error("Failed to save");
     }
   };
 
@@ -167,9 +163,9 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
     try {
       docService.addActionComment(workflow.id, actionId, comment);
       loadData();
-      toast.success('Comment added');
+      toast.success("Comment added");
     } catch (error) {
-      toast.error('Failed to add comment');
+      toast.error("Failed to add comment");
     }
   };
 
@@ -177,9 +173,9 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
     try {
       docService.updateActionComment(commentId, comment);
       loadData();
-      toast.success('Comment updated');
+      toast.success("Comment updated");
     } catch (error) {
-      toast.error('Failed to update comment');
+      toast.error("Failed to update comment");
     }
   };
 
@@ -187,9 +183,9 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
     try {
       docService.deleteActionComment(commentId);
       loadData();
-      toast.success('Comment deleted');
+      toast.success("Comment deleted");
     } catch (error) {
-      toast.error('Failed to delete comment');
+      toast.error("Failed to delete comment");
     }
   };
 
@@ -207,18 +203,18 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
       </TabsList>
 
       <TabsContent value="documentation" className="flex-1 m-0">
-        {mode === 'view' && documentation ? (
+        {mode === "view" && documentation ? (
           <DocumentationViewer
             workflow={workflow}
             documentation={documentation}
-            onEdit={() => setMode('edit')}
+            onEdit={() => setMode("edit")}
           />
         ) : (
           <DocumentationEditor
             workflow={workflow}
             documentation={documentation || undefined}
             onSave={handleSave}
-            onCancel={() => setMode('view')}
+            onCancel={() => setMode("view")}
             onGenerateAuto={() => {
               const content = docService.generateDocumentation(workflow);
               handleSave(content);
@@ -228,10 +224,11 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
       </TabsContent>
 
       <TabsContent value="comments" className="flex-1 m-0">
+        {/* @ts-ignore - example code uses incomplete props */}
         <ActionCommentsPanel
           workflow={workflow}
           comments={comments}
-          selectedActionId={selectedActionId}
+          selectedActionId={"action-1"}
           onAddComment={handleAddComment}
           onUpdateComment={handleUpdateComment}
           onDeleteComment={handleDeleteComment}
@@ -252,9 +249,10 @@ export function SplitDocumentationView({
   workflow: Workflow;
   selectedActionId?: string;
 }) {
-  const [documentation, setDocumentation] = useState<WorkflowDocumentation | null>(null);
+  const [documentation, setDocumentation] =
+    useState<WorkflowDocumentation | null>(null);
   const [comments, setComments] = useState<ActionComment[]>([]);
-  const [mode, setMode] = useState<'view' | 'edit'>('view');
+  const [mode, setMode] = useState<"view" | "edit">("view");
 
   const docService = WorkflowDocumentationService.getInstance();
 
@@ -278,10 +276,10 @@ export function SplitDocumentationView({
         const created = docService.createDocumentation(workflow.id, content);
         setDocumentation(created);
       }
-      setMode('view');
-      toast.success('Documentation saved');
+      setMode("view");
+      toast.success("Documentation saved");
     } catch (error) {
-      toast.error('Failed to save');
+      toast.error("Failed to save");
     }
   };
 
@@ -289,18 +287,18 @@ export function SplitDocumentationView({
     <div className="h-full flex">
       {/* Documentation - 2/3 width */}
       <div className="flex-[2] border-r">
-        {mode === 'view' && documentation ? (
+        {mode === "view" && documentation ? (
           <DocumentationViewer
             workflow={workflow}
             documentation={documentation}
-            onEdit={() => setMode('edit')}
+            onEdit={() => setMode("edit")}
           />
         ) : (
           <DocumentationEditor
             workflow={workflow}
             documentation={documentation || undefined}
             onSave={handleSave}
-            onCancel={() => setMode('view')}
+            onCancel={() => setMode("view")}
             onGenerateAuto={() => {
               const content = docService.generateDocumentation(workflow);
               handleSave(content);
@@ -318,17 +316,17 @@ export function SplitDocumentationView({
           onAddComment={(actionId, comment) => {
             docService.addActionComment(workflow.id, actionId, comment);
             loadData();
-            toast.success('Comment added');
+            toast.success("Comment added");
           }}
           onUpdateComment={(commentId, comment) => {
             docService.updateActionComment(commentId, comment);
             loadData();
-            toast.success('Comment updated');
+            toast.success("Comment updated");
           }}
           onDeleteComment={(commentId) => {
             docService.deleteActionComment(commentId);
             loadData();
-            toast.success('Comment deleted');
+            toast.success("Comment deleted");
           }}
         />
       </div>
@@ -349,8 +347,9 @@ export function DocumentationDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [documentation, setDocumentation] = useState<WorkflowDocumentation | null>(null);
-  const [mode, setMode] = useState<'view' | 'edit'>('view');
+  const [documentation, setDocumentation] =
+    useState<WorkflowDocumentation | null>(null);
+  const [mode, setMode] = useState<"view" | "edit">("view");
 
   const docService = WorkflowDocumentationService.getInstance();
 
@@ -358,7 +357,7 @@ export function DocumentationDialog({
     if (open) {
       const doc = docService.getDocumentation(workflow.id);
       setDocumentation(doc);
-      setMode(doc ? 'view' : 'edit');
+      setMode(doc ? "view" : "edit");
     }
   }, [open, workflow.id]);
 
@@ -371,22 +370,25 @@ export function DocumentationDialog({
         const created = docService.createDocumentation(workflow.id, content);
         setDocumentation(created);
       }
-      setMode('view');
-      toast.success('Documentation saved');
+      setMode("view");
+      toast.success("Documentation saved");
     } catch (error) {
-      toast.error('Failed to save');
+      toast.error("Failed to save");
     }
   };
 
   return (
-    <div className={`fixed inset-0 z-50 ${open ? '' : 'hidden'}`}>
-      <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
+    <div className={`fixed inset-0 z-50 ${open ? "" : "hidden"}`}>
+      <div
+        className="fixed inset-0 bg-background/80 backdrop-blur-sm"
+        onClick={() => onOpenChange(false)}
+      />
       <div className="fixed inset-4 bg-background border rounded-lg shadow-lg overflow-hidden flex flex-col">
-        {mode === 'view' && documentation ? (
+        {mode === "view" && documentation ? (
           <DocumentationViewer
             workflow={workflow}
             documentation={documentation}
-            onEdit={() => setMode('edit')}
+            onEdit={() => setMode("edit")}
           />
         ) : (
           <DocumentationEditor
@@ -395,7 +397,7 @@ export function DocumentationDialog({
             onSave={handleSave}
             onCancel={() => {
               if (documentation) {
-                setMode('view');
+                setMode("view");
               } else {
                 onOpenChange(false);
               }
@@ -423,12 +425,12 @@ export function DocumentationButton({ workflow }: { workflow: Workflow }) {
   return (
     <>
       <Button
-        variant={hasDoc ? 'default' : 'outline'}
+        variant={hasDoc ? "default" : "outline"}
         size="sm"
         onClick={() => setOpen(true)}
       >
         <FileText className="size-4" />
-        {hasDoc ? 'View Documentation' : 'Add Documentation'}
+        {hasDoc ? "View Documentation" : "Add Documentation"}
       </Button>
 
       <DocumentationDialog
