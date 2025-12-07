@@ -141,11 +141,13 @@ def generate_presigned_url(s3_key: str) -> str:
     try:
         # Use get_cdn_url if available (S3Backend), otherwise fall back to presigned URL
         if hasattr(object_storage.backend, "get_cdn_url"):
-            return object_storage.backend.get_cdn_url(s3_key)
+            url = object_storage.backend.get_cdn_url(s3_key)
         else:
-            return object_storage.generate_presigned_url(
+            url = object_storage.generate_presigned_url(
                 s3_key, expiration=PRESIGNED_URL_EXPIRATION
             )
+        # Ensure we return a string
+        return str(url) if url is not None else f"s3://{s3_key}"
     except Exception as e:
         logger.error("presigned_url_generation_failed", s3_key=s3_key, error=str(e))
         # Return a placeholder URL as fallback

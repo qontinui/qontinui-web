@@ -46,7 +46,7 @@ interface Project {
 }
 
 export default function Dashboard() {
-  const { user, logout, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { projectId: contextProjectId, setProjectId } = useAutomation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -155,12 +155,6 @@ export default function Dashboard() {
   );
 
   const loading = projectsLoading;
-
-  const handleLogout = () => {
-    logout();
-    router.push("/");
-    toast.success("Logged out successfully");
-  };
 
   const handleNewProject = async () => {
     // Show wizard for new users with no projects

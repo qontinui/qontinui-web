@@ -7,7 +7,7 @@ Screenshots can be used for workflow automation, pattern matching, and state dis
 
 import io
 import uuid
-from typing import Any
+from typing import Any, Literal, cast
 from uuid import UUID
 
 import structlog
@@ -121,7 +121,8 @@ def get_image_dimensions(file_contents: bytes) -> tuple[int, int]:
     """
     try:
         with Image.open(io.BytesIO(file_contents)) as img:
-            return img.size
+            width, height = img.size
+            return (width, height)
     except Exception as e:
         logger.error("image_open_failed", error=str(e))
         raise validation_error(
@@ -352,7 +353,10 @@ async def upload_screenshot(
         id=screenshot.id,
         project_id=screenshot.project_id,
         name=screenshot.name,
-        source=screenshot.source,
+        source=cast(
+            Literal["manual_upload", "runner_capture", "web_capture"],
+            screenshot.source,
+        ),
         monitor_index=screenshot.monitor_index,
         metadata=screenshot.metadata,
         storage_path=screenshot.s3_key,
@@ -464,7 +468,10 @@ async def list_screenshots(
                 id=screenshot.id,
                 project_id=screenshot.project_id,
                 name=screenshot.name,
-                source=screenshot.source,
+                source=cast(
+                    Literal["manual_upload", "runner_capture", "web_capture"],
+                    screenshot.source,
+                ),
                 monitor_index=screenshot.monitor_index,
                 metadata=screenshot.metadata,
                 storage_path=screenshot.s3_key,
@@ -581,7 +588,10 @@ async def get_screenshot(
         id=screenshot.id,
         project_id=screenshot.project_id,
         name=screenshot.name,
-        source=screenshot.source,
+        source=cast(
+            Literal["manual_upload", "runner_capture", "web_capture"],
+            screenshot.source,
+        ),
         monitor_index=screenshot.monitor_index,
         metadata=screenshot.metadata,
         storage_path=screenshot.s3_key,
@@ -701,7 +711,10 @@ async def update_screenshot(
         id=screenshot.id,
         project_id=screenshot.project_id,
         name=screenshot.name,
-        source=screenshot.source,
+        source=cast(
+            Literal["manual_upload", "runner_capture", "web_capture"],
+            screenshot.source,
+        ),
         monitor_index=screenshot.monitor_index,
         metadata=screenshot.metadata,
         storage_path=screenshot.s3_key,

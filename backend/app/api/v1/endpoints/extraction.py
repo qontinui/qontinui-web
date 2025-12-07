@@ -1,6 +1,6 @@
 """API endpoints for web extraction."""
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import structlog
@@ -357,7 +357,7 @@ async def import_to_state_structure(
     # Get project and check permissions
     from app.crud.project import get_project
 
-    project = await get_project(db, project_id=session.project_id)
+    project = await get_project(db, project_id=cast(UUID, session.project_id))
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
@@ -379,9 +379,14 @@ async def import_to_state_structure(
             workflow_id=data.target_workflow_id,
         )
 
-    config = project.configuration or {}
+    # Get configuration as dict (project.configuration is the actual value, not a Column)
+    config: dict[str, Any] = cast(dict[str, Any], project.configuration) if project.configuration else {}
     config.setdefault("states", [])
-    existing_state_ids = {state.get("id") for state in config["states"]}
+    states_list = config.get("states", [])
+    if not isinstance(states_list, list):
+        states_list = []
+        config["states"] = states_list
+    existing_state_ids = {state.get("id") for state in states_list if isinstance(state, dict)}
     imported_count = 0
 
     for annotation, state_data in states_to_import:
