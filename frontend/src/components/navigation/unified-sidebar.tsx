@@ -108,6 +108,14 @@ const navItems: NavItem[] = [
         route: "/automation-builder/components",
         color: "#BD00FF",
       },
+      {
+        id: "marketplace",
+        label: "Marketplace",
+        description: "Community automation packages",
+        icon: <Store size={22} />,
+        route: "/marketplace",
+        color: "#BD00FF",
+      },
     ],
   },
   {
@@ -315,20 +323,6 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    id: "project",
-    label: "Project",
-    icon: <FileText size={28} />,
-    route: "/project-dashboard",
-    color: "#FFD700",
-  },
-  {
-    id: "analytics",
-    label: "Analytics",
-    icon: <BarChart3 size={28} />,
-    route: "/analytics",
-    color: "#FFD700",
-  },
-  {
     id: "runners",
     label: "Runners",
     icon: <Server size={28} />,
@@ -362,13 +356,6 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    id: "marketplace",
-    label: "Marketplace",
-    icon: <Store size={28} />,
-    route: "/marketplace",
-    color: "#8B5CF6",
-  },
-  {
     id: "settings",
     label: "Settings",
     icon: <Settings size={28} />,
@@ -400,13 +387,6 @@ const navItems: NavItem[] = [
         color: "#FFD700",
       },
     ],
-  },
-  {
-    id: "organizations",
-    label: "Organizations",
-    icon: <Users size={28} />,
-    route: "/organizations",
-    color: "#00D9FF",
   },
   {
     id: "admin",
@@ -660,7 +640,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
             Q
           </div>
         ) : (
-          <h1 className="text-xl font-bold bg-gradient-to-r from-cyan-500 via-purple-500 to-green-500 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
             Qontinui
           </h1>
         )}

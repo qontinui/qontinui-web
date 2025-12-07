@@ -656,7 +656,10 @@ class ApiClient {
     projectId: number,
     file: File,
     name: string,
-    source: "manual_upload" | "runner_capture" | "web_capture" = "manual_upload",
+    source:
+      | "manual_upload"
+      | "runner_capture"
+      | "web_capture" = "manual_upload",
     monitorIndex?: number,
     onProgress?: (progress: number) => void
   ): Promise<{
@@ -775,7 +778,8 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (options?.source) queryParams.append("source", options.source);
     if (options?.limit) queryParams.append("limit", options.limit.toString());
-    if (options?.offset) queryParams.append("offset", options.offset.toString());
+    if (options?.offset)
+      queryParams.append("offset", options.offset.toString());
 
     const url = `/projects/${projectId}/screenshots${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
     const response = await this.fetchWithAuth(url);

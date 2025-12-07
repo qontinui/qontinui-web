@@ -36,7 +36,10 @@ export default function ConnectRunnerPage() {
 
   const handleDownloadRunner = () => {
     // TODO: Link to actual download page or GitHub releases
-    window.open("https://github.com/qontinui/qontinui-runner/releases", "_blank");
+    window.open(
+      "https://github.com/qontinui/qontinui-runner/releases",
+      "_blank"
+    );
   };
 
   // Show loading while auth is checking

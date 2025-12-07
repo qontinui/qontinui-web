@@ -1347,7 +1347,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   const syncScreenshotsFromBackend = useCallback(
     async (projectIdToSync: string) => {
       if (!projectIdToSync) {
-        projectLogger.warn("syncScreenshotsFromBackend", "No project ID provided");
+        projectLogger.warn(
+          "syncScreenshotsFromBackend",
+          "No project ID provided"
+        );
         return;
       }
 
@@ -1642,7 +1645,14 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
       triggerSave();
     },
-    [projectName, setProjectName, setCategories, triggerSave, projectId, syncScreenshotsFromBackend]
+    [
+      projectName,
+      setProjectName,
+      setCategories,
+      triggerSave,
+      projectId,
+      syncScreenshotsFromBackend,
+    ]
   );
 
   // Clear all data for new project

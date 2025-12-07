@@ -92,21 +92,24 @@ export function SidebarFlyout({
     return null;
   }
 
+  // Header height: logo (64px) + org switcher (~56px) + project switcher (~44px) + nav padding (16px) = ~180px
+  const headerHeight = 180;
+
   const flyoutContent = (
     <div
       ref={flyoutRef}
       className="fixed bg-[#0A0A0B] border-r border-gray-800/50 shadow-2xl flex flex-col animate-in slide-in-from-left-2 duration-200"
       style={{
-        top: 0,
+        top: headerHeight,
         left: "256px", // sidebar width (w-64)
         width: "280px",
-        height: "100vh",
+        height: `calc(100vh - ${headerHeight}px)`,
         zIndex: 49, // Just below the sidebar
       }}
     >
       {/* Header */}
       <div
-        className="h-16 border-b border-gray-800/50 flex items-center justify-between px-4"
+        className="h-12 border-b border-gray-800/50 flex items-center justify-between px-4"
         style={{
           background: `linear-gradient(135deg, ${parentColor}10 0%, transparent 100%)`,
         }}

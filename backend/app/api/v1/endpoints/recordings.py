@@ -27,7 +27,6 @@ from app.models.project import Project
 from app.models.recording import (
     DiscoveredState,
     DiscoveredTransition,
-    ProcessingPhase,
     Recording,
     RecordingContext,
     RecordingFrame,

@@ -14,9 +14,6 @@ import structlog
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.screenshot_storage_service import ScreenshotStorageService
-from app.services.session_repository import SessionRepository
-
 # DEPRECATED: CV-heavy service removed - moved to qontinui library
 # from app.services.state_matching_service import StateMatchingService
 

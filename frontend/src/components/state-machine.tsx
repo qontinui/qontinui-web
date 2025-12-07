@@ -188,7 +188,12 @@ export function StateStructure() {
     // Find transitions that need positions to be saved
     const transitionsNeedingPositions = transitions
       .filter((t): t is OutgoingTransition => t.type === "OutgoingTransition")
-      .filter(t => !t.position && Array.isArray(t.activateStates) && t.activateStates.length > 0);
+      .filter(
+        (t) =>
+          !t.position &&
+          Array.isArray(t.activateStates) &&
+          t.activateStates.length > 0
+      );
 
     if (transitionsNeedingPositions.length === 0) return;
 
@@ -331,12 +336,16 @@ export function StateStructure() {
 
     const newNodes = [...stateNodes, ...transitionNodes];
 
-    console.log('[StateStructure] Setting nodes:', {
+    console.log("[StateStructure] Setting nodes:", {
       stateNodesCount: stateNodes.length,
       transitionNodesCount: transitionNodes.length,
       totalNodes: newNodes.length,
       edgesCount: newEdges.length,
-      nodeDetails: newNodes.map(n => ({ id: n.id, type: n.type, position: n.position })),
+      nodeDetails: newNodes.map((n) => ({
+        id: n.id,
+        type: n.type,
+        position: n.position,
+      })),
     });
 
     setNodes(newNodes);
@@ -345,12 +354,12 @@ export function StateStructure() {
 
   const handleAddState = () => {
     const position = findEmptyPosition();
-    console.log('[StateStructure] handleAddState - position:', position);
+    console.log("[StateStructure] handleAddState - position:", position);
     const newState = StateUpdateCoordinator.createDefaultState(
       states,
       position
     );
-    console.log('[StateStructure] handleAddState - newState:', newState);
+    console.log("[StateStructure] handleAddState - newState:", newState);
     addState(newState);
     // Auto-layout is handled by useEffect watching states.length
   };

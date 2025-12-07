@@ -5,7 +5,6 @@ These schemas define the request/response models for managing project screenshot
 and images that are used in visual automation workflows.
 """
 
-from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
