@@ -9,6 +9,8 @@ Create Date: 2025-11-23 19:14:13.943874
 from typing import Sequence, Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import UUID
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -23,7 +25,7 @@ def upgrade() -> None:
     op.create_table(
         "capture_sessions",
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("project_id", sa.Integer(), nullable=False),
+        sa.Column("project_id", UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", sa.UUID(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
@@ -146,7 +148,7 @@ def upgrade() -> None:
         "learned_workflows",
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column("session_id", sa.UUID(), nullable=False),
-        sa.Column("project_id", sa.Integer(), nullable=False),
+        sa.Column("project_id", UUID(as_uuid=True), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("workflow_json", sa.JSON(), nullable=False),

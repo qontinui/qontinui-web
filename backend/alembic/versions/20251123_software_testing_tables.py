@@ -9,8 +9,10 @@ Create Date: 2025-11-23 21:45:00.000000
 from typing import Sequence, Union
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20251123_software_testing_tables"
@@ -32,7 +34,7 @@ def upgrade() -> None:
             server_default=sa.text("gen_random_uuid()"),
             nullable=False,
         ),
-        sa.Column("project_id", sa.Integer(), nullable=False),
+        sa.Column("project_id", UUID(as_uuid=True), nullable=False),
         sa.Column("runner_connection_id", sa.Integer(), nullable=True),
         sa.Column("workflow_id", sa.String(length=255), nullable=True),
         sa.Column(
@@ -121,7 +123,7 @@ def upgrade() -> None:
             server_default=sa.text("gen_random_uuid()"),
             nullable=False,
         ),
-        sa.Column("project_id", sa.Integer(), nullable=False),
+        sa.Column("project_id", UUID(as_uuid=True), nullable=False),
         sa.Column("workflow_id", sa.String(length=255), nullable=True),
         sa.Column("transition_id", sa.String(length=255), nullable=False),
         sa.Column("total_executions", sa.Integer(), nullable=False),
@@ -207,7 +209,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("test_run_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("project_id", sa.Integer(), nullable=False),
+        sa.Column("project_id", UUID(as_uuid=True), nullable=False),
         sa.Column("workflow_id", sa.String(length=255), nullable=True),
         sa.Column("snapshot_time", sa.DateTime(timezone=True), nullable=False),
         sa.Column("transitions_covered", sa.Integer(), nullable=False),

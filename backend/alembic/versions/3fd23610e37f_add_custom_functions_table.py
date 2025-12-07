@@ -9,6 +9,8 @@ Create Date: 2025-11-23 16:33:41.235014
 from typing import Sequence, Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import UUID
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -23,7 +25,7 @@ def upgrade() -> None:
     op.create_table(
         "custom_functions",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("project_id", sa.Integer(), nullable=False),
+        sa.Column("project_id", UUID(as_uuid=True), nullable=False),
         sa.Column("file_path", sa.String(), nullable=False),
         sa.Column("function_name", sa.String(), nullable=False),
         sa.Column("display_name", sa.String(), nullable=True),
