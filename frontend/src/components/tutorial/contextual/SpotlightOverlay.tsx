@@ -7,10 +7,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from "react";
-// TODO: Install framer-motion dependency
-// import { motion, AnimatePresence } from "framer-motion";
-const motion: any = { div: "div", svg: "svg" };
-const AnimatePresence: any = ({ children }: any) => <>{children}</>;
+import { motion, AnimatePresence } from "framer-motion";
 
 export interface SpotlightOverlayProps {
   /** Target element to spotlight (CSS selector) */

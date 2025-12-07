@@ -7,10 +7,7 @@
  */
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
-// TODO: Install framer-motion dependency
-// import { motion, AnimatePresence } from "framer-motion";
-const motion: any = { div: "div" };
-const AnimatePresence: any = ({ children }: any) => <>{children}</>;
+import { motion, AnimatePresence } from "framer-motion";
 import { X, ArrowRight, ArrowLeft } from "lucide-react";
 import type { TooltipPosition } from "../../../types/tutorial";
 

@@ -7,9 +7,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from "react";
-// TODO: Install framer-motion dependency
-// import { AnimatePresence } from "framer-motion";
-const AnimatePresence: any = ({ children }: any) => <>{children}</>;
+import { AnimatePresence } from "framer-motion";
 import { useTutorialStore } from "../../../stores/tutorial-store";
 import type { Tutorial } from "../../../types/tutorial";
 import { SpotlightOverlay } from "./SpotlightOverlay";

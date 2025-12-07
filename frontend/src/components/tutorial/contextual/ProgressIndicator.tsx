@@ -6,9 +6,7 @@
  */
 
 import React from "react";
-// TODO: Install framer-motion dependency
-// import { motion } from "framer-motion";
-const motion: any = { div: "div" };
+import { motion } from "framer-motion";
 
 export interface ProgressIndicatorProps {
   /** Current step number (1-indexed) */

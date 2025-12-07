@@ -6,10 +6,7 @@
  */
 
 import React, { useState } from "react";
-// TODO: Install framer-motion dependency
-// import { motion, AnimatePresence } from "framer-motion";
-const motion: any = { div: "div" };
-const AnimatePresence: any = ({ children }: any) => <>{children}</>;
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronLeft,
   ChevronRight,
