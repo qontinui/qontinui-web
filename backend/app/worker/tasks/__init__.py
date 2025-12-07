@@ -5,8 +5,7 @@ import importlib.util
 
 # Import email tasks from the parent-level tasks.py module
 # We need to access the sibling tasks.py file at app/worker/tasks.py
-# Since this __init__.py creates a package that shadows it, we use sys.modules
-import sys
+# Since this __init__.py creates a package that shadows it, we use importlib
 from pathlib import Path
 
 from app.worker.tasks.cleanup_tasks import (

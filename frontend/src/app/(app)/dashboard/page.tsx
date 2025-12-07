@@ -14,21 +14,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SubscriptionBadge } from "@/components/subscription-badge";
 import {
   Plus,
   Trash2,
   Upload,
   Clock,
   FolderOpen,
-  LogOut,
   BookTemplate as Template,
   Play,
-  User as UserIcon,
-  BarChart3,
-  BookOpen,
-  Shield,
-  Cable,
   Check,
 } from "lucide-react";
 import { toast } from "sonner";

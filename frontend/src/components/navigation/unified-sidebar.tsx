@@ -26,7 +26,6 @@ import {
   Target,
   Sliders,
   Globe,
-  Users,
   Play,
   Video,
   Monitor,
