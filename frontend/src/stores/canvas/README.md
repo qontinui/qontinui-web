@@ -46,7 +46,6 @@ canvas/
 
 - `setWorkflow()`: Load a workflow
 - `clearWorkflow()`: Clear current workflow
-- `saveWorkflow()`: Save workflow to backend
 - `validateWorkflow()`: Validate workflow structure
 - `clearValidation()`: Clear validation results
 

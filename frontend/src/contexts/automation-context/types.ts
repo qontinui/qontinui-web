@@ -438,6 +438,7 @@ export interface AutomationContextType {
   getConfiguration: () => any;
   loadConfiguration: (config: any) => Promise<void>;
   clearAllData: () => void;
+  syncScreenshotsFromBackend: (projectId: string) => Promise<void>;
 
   // Backend loading control - prevents race conditions
   isLoadingFromBackend: boolean;

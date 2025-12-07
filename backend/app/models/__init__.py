@@ -5,12 +5,6 @@ This package contains all SQLAlchemy models for the application.
 """
 
 from app.models.admin_notification_settings import AdminNotificationSettings
-from app.models.analysis_result import (
-    AnalysisJob,
-    AnalyzerResult,
-    DetectedElementModel,
-    FusedElement,
-)
 from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
 from app.models.audit_log import AuditLog
@@ -63,13 +57,8 @@ from app.models.organization import (
 )
 from app.models.path_discovery import PathDiscovery
 from app.models.project import Project
+from app.models.project_assets import ProjectImage, ProjectScreenshot
 from app.models.project_version import ProjectVersion
-from app.models.region_result import (
-    DetectedRegionModel,
-    FusedRegionModel,
-    RegionAnalysisJob,
-    RegionAnalyzerResult,
-)
 from app.models.runner_connection import RunnerConnection
 from app.models.runner_device import RunnerDevice
 from app.models.runner_token import RunnerToken
@@ -115,6 +104,8 @@ __all__ = [
     "User",
     # Projects
     "Project",
+    "ProjectScreenshot",
+    "ProjectImage",
     # Organizations and Teams
     "Organization",
     "TeamMember",
@@ -165,15 +156,6 @@ __all__ = [
     "SnapshotRun",
     "Screenshot",
     "Pattern",
-    # Analysis
-    "AnalysisJob",
-    "AnalyzerResult",
-    "DetectedElementModel",
-    "FusedElement",
-    "RegionAnalysisJob",
-    "RegionAnalyzerResult",
-    "DetectedRegionModel",
-    "FusedRegionModel",
     # Runner Tokens
     "RunnerToken",
     "RunnerConnection",

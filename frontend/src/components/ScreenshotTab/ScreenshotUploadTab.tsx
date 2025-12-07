@@ -198,10 +198,14 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           reader.readAsDataURL(file);
         });
 
-        // Upload to S3 via API
-        const result = await apiClient.uploadProjectImage(
+        // Upload to S3 via new screenshot API
+        const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
+        const result = await apiClient.uploadProjectScreenshot(
           parseInt(projectId ?? "0", 10),
           file,
+          nameWithoutExtension,
+          "manual_upload",
+          undefined,
           (progress: number) => {
             setUploadingFiles((prev: any[]) =>
               prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
@@ -210,22 +214,17 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
         );
 
         // Create screenshot object with S3 data
-        const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
-        // Use presigned_url from backend response (fallback to presigned_urls.original for legacy compatibility)
-        const screenshotUrl =
-          result.presigned_url || result.presigned_urls?.original || result.url;
+        const screenshotUrl = result.presigned_url;
         if (!screenshotUrl) {
           console.error("Upload response missing URL:", result);
           throw new Error("Upload succeeded but no URL was returned");
         }
         const screenshot = {
-          id: result.image_id,
-          name: nameWithoutExtension,
+          id: result.id,
+          name: result.name,
           url: normalizeUrl(screenshotUrl),
-          size: result.size || 0,
-          uploadedAt: result.created_at
-            ? new Date(result.created_at)
-            : new Date(),
+          size: result.file_size,
+          uploadedAt: new Date(result.created_at),
           projectName: projectName,
         };
 
@@ -420,31 +419,30 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
       // Add to uploading files for progress display
       setUploadingFiles([{ name: filename, progress: 0 }]);
 
-      // Upload using existing upload logic
-      const result = await apiClient.uploadProjectImage(
+      // Upload using new screenshot upload endpoint
+      const result = await apiClient.uploadProjectScreenshot(
         parseInt(projectId ?? "0", 10),
         file,
+        `Screenshot ${data.width}x${data.height}`,
+        "web_capture",
+        monitorIndex !== null ? monitorIndex : undefined,
         (progress) => {
           setUploadingFiles([{ name: filename, progress }]);
         }
       );
 
       // Add to screenshots
-      // Use presigned_url from backend response (fallback to presigned_urls.original for legacy compatibility)
-      const captureUrl =
-        result.presigned_url || result.presigned_urls?.original || result.url;
+      const captureUrl = result.presigned_url;
       if (!captureUrl) {
         console.error("Upload response missing URL:", result);
         throw new Error("Upload succeeded but no URL was returned");
       }
       const screenshot = {
-        id: result.image_id,
-        name: `Screenshot ${data.width}x${data.height}`,
+        id: result.id,
+        name: result.name,
         url: captureUrl,
-        size: result.size || 0,
-        uploadedAt: result.created_at
-          ? new Date(result.created_at)
-          : new Date(),
+        size: result.file_size,
+        uploadedAt: new Date(result.created_at),
         projectName: projectName,
       };
 

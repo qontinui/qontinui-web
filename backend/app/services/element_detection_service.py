@@ -4,9 +4,7 @@ Element detection service for capture sessions.
 Facade that coordinates multiple specialized services to detect UI elements
 in captured screenshots. Delegates to:
 - TemplateMatcherService: API-based element detection
-- RegionAnalyzer: Fallback region detection
-- OCRService: Text extraction
-- ColorAnalyzer: Color-based analysis
+- RegionAnalyzer: Fallback region detection (DEPRECATED - removed)
 """
 
 import io
@@ -21,7 +19,9 @@ from sqlalchemy.orm import selectinload
 
 from app.models.capture import CaptureDetectedElement, CaptureScreenshot, CaptureSession
 from app.services.object_storage import object_storage
-from app.services.region_analyzer import RegionAnalyzer
+
+# DEPRECATED: CV-heavy service removed - moved to qontinui library
+# from app.services.region_analyzer import RegionAnalyzer
 from app.services.template_matcher_service import TemplateMatcherService
 
 logger = structlog.get_logger(__name__)
@@ -236,9 +236,9 @@ class ElementDetectionService:
     @staticmethod
     async def _detect_elements(image: Image.Image, config: dict) -> list[dict]:
         """
-        Detect elements using API with fallback to basic detection.
+        Detect elements using API.
 
-        Coordinates between TemplateMatcherService and RegionAnalyzer.
+        Coordinates with TemplateMatcherService for API-based detection.
 
         Args:
             image: PIL Image of the screenshot
@@ -253,11 +253,9 @@ class ElementDetectionService:
         if success and elements:
             return elements
 
-        # Fallback to basic region detection
-        logger.info("using_fallback_detection", reason="api_detection_failed")
-        return RegionAnalyzer.detect_uniform_regions(
-            image=image,
-            grid_size=50,
-            variance_threshold=100.0,
-            max_regions=50,
+        # No fallback available - RegionAnalyzer has been removed
+        logger.warning(
+            "element_detection_failed",
+            reason="api_detection_failed_and_no_fallback_available",
         )
+        return []

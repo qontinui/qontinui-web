@@ -3,7 +3,6 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     admin_ws,
-    analysis,
     analytics,
     annotations,
     audit_logs,
@@ -29,10 +28,11 @@ from app.api.v1.endpoints import (
     organizations,
     pattern_optimization,
     project_files,
+    project_images,
+    project_screenshots,
     projects,
     public,
     recordings,
-    region_analysis,
     runner_command_ws,
     runner_devices,
     runner_status_ws,
@@ -62,6 +62,12 @@ api_router.include_router(
 api_router.include_router(export.router, prefix="/projects", tags=["export"])
 api_router.include_router(images.router, prefix="/projects", tags=["images"])
 api_router.include_router(
+    project_images.router, prefix="/projects", tags=["project-images"]
+)
+api_router.include_router(
+    project_screenshots.router, prefix="/projects", tags=["project-screenshots"]
+)
+api_router.include_router(
     integration_testing.router,
     prefix="/integration-testing",
     tags=["integration-testing"],
@@ -86,10 +92,6 @@ api_router.include_router(
 )
 api_router.include_router(
     annotations.router, prefix="/annotations", tags=["annotations"]
-)
-api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
-api_router.include_router(
-    region_analysis.router, prefix="/region-analysis", tags=["region-analysis"]
 )
 api_router.include_router(feedback.router, tags=["feedback"])
 api_router.include_router(

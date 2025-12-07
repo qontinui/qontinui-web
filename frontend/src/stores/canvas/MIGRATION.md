@@ -70,7 +70,6 @@ const {
   // Workflow
   setWorkflow,
   clearWorkflow,
-  saveWorkflow,
 
   // Actions
   addAction,

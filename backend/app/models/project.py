@@ -70,3 +70,9 @@ class Project(Base):
     transition_reliability_stats = relationship(
         "TransitionReliability", back_populates="project", cascade="all, delete-orphan"
     )
+    screenshots = relationship(
+        "ProjectScreenshot", back_populates="project", cascade="all, delete-orphan"
+    )
+    images = relationship(
+        "ProjectImage", back_populates="project", cascade="all, delete-orphan"
+    )

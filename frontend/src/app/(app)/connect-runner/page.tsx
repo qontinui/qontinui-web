@@ -1,222 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
-import { projectService } from "@/services/service-factory";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   ArrowLeft,
-  Copy,
   Download,
   Loader2,
-  RefreshCw,
   Monitor,
   Settings,
+  ExternalLink,
 } from "lucide-react";
-import { toast } from "sonner";
-import { QRCodeSVG } from "qrcode.react";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
-import type { Project } from "@/services/project-service";
 import { AutomationStreamingCard } from "@/components/profile/automation-streaming-card";
-
-interface ConnectionInfo {
-  version: string;
-  url: string;
-  token: string;
-  userId: string;
-  projectId: string | null;
-  createdAt: string;
-  backendUrl: string;
-  runnerTokenId?: string;
-  tokenExpiresAt?: string | null;
-}
 
 export default function ConnectRunnerPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(
-    null
-  );
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    null
-  );
-  const [copied, setCopied] = useState(false);
-  const [useDedicatedToken, setUseDedicatedToken] = useState(true);
-  const [tokenName, setTokenName] = useState("");
-  const [expiresInDays, setExpiresInDays] = useState("30");
 
   const { connections: activeConnections } = useRealtimeConnections();
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/");
-      return;
-    }
-
-    if (user) {
-      loadData();
     }
   }, [user, authLoading, router]);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-
-      console.log("[ConnectRunner] Loading projects...");
-
-      // Only load projects on initial load - connection info is generated on demand
-      const projectsList = await projectService.getProjects();
-      console.log(
-        "[ConnectRunner] Projects loaded:",
-        projectsList?.length || 0,
-        projectsList
-      );
-      setProjects(projectsList);
-    } catch (error) {
-      console.error("[ConnectRunner] Failed to load projects:", error);
-      toast.error("Failed to load projects");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const [generating, setGenerating] = useState(false);
-
-  const generateConnectionString = async () => {
-    try {
-      setGenerating(true);
-      console.log("[ConnectRunner] Generating connection info...", {
-        useDedicatedToken,
-        tokenName,
-        expiresInDays,
-      });
-
-      const expiryValue = expiresInDays === "never" ? "0" : expiresInDays;
-      const connInfo = await fetchConnectionInfo(
-        useDedicatedToken,
-        tokenName || undefined,
-        expiryValue
-      );
-
-      console.log("[ConnectRunner] Connection info generated:", connInfo);
-      setConnectionInfo(connInfo);
-
-      if (useDedicatedToken && connInfo.runnerTokenId) {
-        toast.success("Runner token created successfully!");
-      } else {
-        toast.success("Connection string generated!");
-      }
-    } catch (error) {
-      console.error(
-        "[ConnectRunner] Failed to generate connection info:",
-        error
-      );
-      toast.error("Failed to generate connection string");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const fetchConnectionInfo = async (
-    useDedicated: boolean = false,
-    name?: string,
-    expiry?: string
-  ): Promise<ConnectionInfo> => {
-    // Use the Next.js proxy to avoid CORS issues
-    // The proxy forwards /api/* to http://localhost:8000/api/*
-    // HttpOnly cookies are sent automatically with credentials: 'include'
-
-    // Build URL with query parameters
-    const params = new URLSearchParams();
-    if (useDedicated) {
-      params.set("use_dedicated_token", "true");
-      if (name) {
-        params.set("token_name", name);
-      }
-      if (expiry) {
-        const days = parseInt(expiry, 10);
-        // 0 means never expires
-        params.set("expires_in_days", days === 0 ? "0" : expiry);
-      }
-    }
-
-    const queryString = params.toString();
-    const url = `/api/v1/users/me/connection-info${queryString ? `?${queryString}` : ""}`;
-
-    const response = await fetch(url, {
-      method: "GET",
-      credentials: "include", // Send cookies
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      console.error(
-        "[ConnectRunner] Failed to fetch connection info:",
-        response.status,
-        error
-      );
-      throw new Error(`Failed to fetch connection info: ${response.status}`);
-    }
-    return response.json();
-  };
-
-  const getConnectionString = (): string => {
-    if (!connectionInfo) return "";
-
-    const config = {
-      ...connectionInfo,
-      projectId: selectedProjectId,
-    };
-
-    return JSON.stringify(config, null, 2);
-  };
-
-  const handleCopyConnectionString = async () => {
-    const connectionString = getConnectionString();
-    try {
-      await navigator.clipboard.writeText(connectionString);
-      setCopied(true);
-      toast.success("Connection string copied to clipboard!");
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error("Failed to copy:", error);
-      toast.error("Failed to copy connection string");
-    }
-  };
-
-  const handleDownloadConfig = () => {
-    const connectionString = getConnectionString();
-    const blob = new Blob([connectionString], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "qontinui-runner-config.json";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("Configuration file downloaded!");
-  };
-
-  const handleRefresh = async () => {
-    // Clear existing connection info and regenerate
-    setConnectionInfo(null);
-    await generateConnectionString();
-  };
-
   const handleBackToDashboard = () => {
     router.push("/dashboard");
+  };
+
+  const handleDownloadRunner = () => {
+    // TODO: Link to actual download page or GitHub releases
+    window.open("https://github.com/qontinui/qontinui-runner/releases", "_blank");
   };
 
   // Show loading while auth is checking
@@ -261,7 +81,7 @@ export default function ConnectRunnerPage() {
       </header>
 
       {/* Main Content */}
-      <main className="p-6 max-w-5xl mx-auto">
+      <main className="p-6 max-w-4xl mx-auto">
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
@@ -269,8 +89,8 @@ export default function ConnectRunnerPage() {
                 Connect Desktop Runner
               </h2>
               <p className="text-gray-400">
-                Use this connection information to link the qontinui-runner
-                desktop app to your account
+                Download and log into the Qontinui Runner app to connect your
+                desktop for automation
               </p>
             </div>
             <div className="flex gap-3">
@@ -286,14 +106,14 @@ export default function ConnectRunnerPage() {
 
         {/* Runner Connection Status Card */}
         <Card
-          className={`mb-6 p-4 border ${activeConnections && activeConnections.length > 0 ? "bg-green-950/30 border-green-500/50" : "bg-red-950/30 border-red-500/50"}`}
+          className={`mb-6 p-4 border ${activeConnections && activeConnections.length > 0 ? "bg-green-950/30 border-green-500/50" : "bg-yellow-950/30 border-yellow-500/50"}`}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               {/* Status Light */}
               <div className="relative">
                 <div
-                  className={`w-4 h-4 rounded-full ${activeConnections && activeConnections.length > 0 ? "bg-green-500" : "bg-red-500"}`}
+                  className={`w-4 h-4 rounded-full ${activeConnections && activeConnections.length > 0 ? "bg-green-500" : "bg-yellow-500"}`}
                 />
                 {activeConnections && activeConnections.length > 0 && (
                   <div className="absolute inset-0 w-4 h-4 rounded-full bg-green-500 animate-ping opacity-75" />
@@ -304,7 +124,7 @@ export default function ConnectRunnerPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <span
-                    className={`font-semibold ${activeConnections && activeConnections.length > 0 ? "text-green-400" : "text-red-400"}`}
+                    className={`font-semibold ${activeConnections && activeConnections.length > 0 ? "text-green-400" : "text-yellow-400"}`}
                   >
                     {activeConnections && activeConnections.length > 0
                       ? "Runner Connected"
@@ -319,17 +139,9 @@ export default function ConnectRunnerPage() {
                         <span className="text-white">{conn.runner_name}</span>
                         {conn.project_name && (
                           <>
-                            <span className="text-gray-500">→</span>
+                            <span className="text-gray-500">-</span>
                             <span className="text-[#00D9FF]">
                               {conn.project_name}
-                            </span>
-                          </>
-                        )}
-                        {!conn.project_name && conn.project_id && (
-                          <>
-                            <span className="text-gray-500">→</span>
-                            <span className="text-gray-400">
-                              Project #{conn.project_id}
                             </span>
                           </>
                         )}
@@ -338,8 +150,7 @@ export default function ConnectRunnerPage() {
                   </div>
                 ) : (
                   <p className="text-sm text-gray-500 mt-1">
-                    Use the connection string below to connect your desktop
-                    runner
+                    Follow the steps below to connect your desktop runner
                   </p>
                 )}
               </div>
@@ -357,308 +168,142 @@ export default function ConnectRunnerPage() {
           </div>
         </Card>
 
-        {loading ? (
-          <div className="text-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-            <div className="text-lg text-gray-400">
-              Loading connection information...
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Automation Streaming Settings - Full Width */}
-            <AutomationStreamingCard context="connect-runner" />
+        <div className="space-y-6">
+          {/* Automation Streaming Settings */}
+          <AutomationStreamingCard context="connect-runner" />
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left Column - Configuration */}
-              <div className="space-y-6">
-                {/* Token Options */}
-                <Card className="bg-[#1A1A1B] border-gray-800 p-6">
-                  <h3 className="text-xl font-semibold mb-4">
-                    Connection Options
-                  </h3>
-                  <div className="space-y-4">
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        id="dedicated-token"
-                        checked={useDedicatedToken}
-                        onCheckedChange={(checked) => {
-                          setUseDedicatedToken(checked as boolean);
-                          setConnectionInfo(null); // Clear connection info when options change
-                        }}
-                        className="mt-1"
-                      />
-                      <div className="flex-1">
-                        <Label
-                          htmlFor="dedicated-token"
-                          className="text-white cursor-pointer"
-                        >
-                          Create dedicated runner token (Recommended)
-                        </Label>
-                        <p className="text-sm text-gray-400 mt-1">
-                          A dedicated token can be revoked independently and
-                          supports long-running automations (JWT expires in 1
-                          hour)
-                        </p>
+          {/* How to Connect - Step by Step */}
+          <Card className="bg-[#1A1A1B] border-gray-800 p-6">
+            <h3 className="text-xl font-semibold mb-6">How to Connect</h3>
+            <div className="space-y-6">
+              {/* Step 1: Download */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold">
+                    1
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-lg mb-2">
+                    Download Qontinui Runner
+                  </h4>
+                  <p className="text-gray-400 mb-3">
+                    Download and install the desktop runner app for your
+                    operating system.
+                  </p>
+                  <Button
+                    onClick={handleDownloadRunner}
+                    className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download Runner
+                    <ExternalLink className="w-3 h-3 ml-2" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Step 2: Login */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold">
+                    2
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-lg mb-2">
+                    Log in with your Qontinui account
+                  </h4>
+                  <p className="text-gray-400">
+                    Open the runner app and log in using the same email and
+                    password you use for this website. The runner will
+                    automatically register with your account.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 3: Select Project */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold">
+                    3
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-lg mb-2">
+                    Select a project in the runner
+                  </h4>
+                  <p className="text-gray-400">
+                    Choose which project to work with from the runner app. Your
+                    projects will be synced automatically after login.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 4: Ready */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold">
+                    4
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-lg mb-2">
+                    Start automating!
+                  </h4>
+                  <p className="text-gray-400">
+                    Once connected, you can send workflow configurations
+                    directly from the web app to your runner for immediate
+                    execution. Use the &quot;Send to Runner&quot; option in the
+                    workflow editor to execute automations on your desktop. The
+                    runner status will show as &quot;Connected&quot; above.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* All Connected Runners */}
+          {activeConnections && activeConnections.length > 0 && (
+            <Card className="bg-[#1A1A1B] border-gray-800 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold">Connected Runners</h3>
+                <Link href="/runners">
+                  <Button variant="ghost" size="sm" className="text-gray-400">
+                    View All
+                    <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
+                  </Button>
+                </Link>
+              </div>
+              <div className="space-y-3">
+                {activeConnections.map((conn) => (
+                  <div
+                    key={conn.id}
+                    className="flex items-center justify-between bg-[#0A0A0B] border border-gray-700 rounded-lg p-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <Monitor className="w-5 h-5 text-gray-400" />
+                        <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full" />
+                      </div>
+                      <div>
+                        <div className="font-medium">{conn.runner_name}</div>
+                        <div className="text-sm text-gray-500">
+                          {conn.project_name || "No project selected"}
+                        </div>
                       </div>
                     </div>
-
-                    {useDedicatedToken && (
-                      <div className="space-y-4 pl-7">
-                        <div>
-                          <Label htmlFor="token-name" className="text-gray-400">
-                            Token Name
-                          </Label>
-                          <Input
-                            id="token-name"
-                            placeholder="e.g., My Laptop, Work Desktop"
-                            value={tokenName}
-                            onChange={(e) => {
-                              setTokenName(e.target.value);
-                              setConnectionInfo(null); // Clear connection info when options change
-                            }}
-                            className="mt-2 bg-[#0A0A0B] border-gray-700"
-                          />
-                        </div>
-
-                        <div>
-                          <Label htmlFor="expiration" className="text-gray-400">
-                            Expiration
-                          </Label>
-                          <select
-                            id="expiration"
-                            value={expiresInDays}
-                            onChange={(e) => {
-                              setExpiresInDays(e.target.value);
-                              setConnectionInfo(null); // Clear connection info when options change
-                            }}
-                            className="mt-2 w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#00D9FF]"
-                          >
-                            <option value="7">7 days</option>
-                            <option value="30">30 days</option>
-                            <option value="90">90 days</option>
-                            <option value="365">1 year</option>
-                            <option value="never">Never expires</option>
-                          </select>
-                        </div>
-                      </div>
-                    )}
-
-                    <Button
-                      onClick={generateConnectionString}
-                      disabled={generating}
-                      className="w-full mt-4 bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] hover:from-[#00B8DB] hover:to-[#9E00D9] text-white"
+                    <Badge
+                      variant="outline"
+                      className="border-green-500/50 text-green-400"
                     >
-                      {generating ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Generating...
-                        </>
-                      ) : connectionInfo ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          Regenerate Connection String
-                        </>
-                      ) : (
-                        "Generate Connection String"
-                      )}
-                    </Button>
-
-                    {connectionInfo?.runnerTokenId && (
-                      <p className="text-sm text-green-400 text-center">
-                        ✓ Dedicated token created
-                        {connectionInfo.tokenExpiresAt
-                          ? ` (expires ${new Date(connectionInfo.tokenExpiresAt).toLocaleDateString()})`
-                          : " (never expires)"}
-                      </p>
-                    )}
+                      Connected
+                    </Badge>
                   </div>
-                </Card>
-
-                {/* Project Selection */}
-                <Card className="bg-[#1A1A1B] border-gray-800 p-6">
-                  <h3 className="text-xl font-semibold mb-4">Select Project</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm text-gray-400 mb-2 block">
-                        Choose the project for the runner to work with:
-                      </label>
-                      <select
-                        value={selectedProjectId ?? ""}
-                        onChange={(e) =>
-                          setSelectedProjectId(e.target.value || null)
-                        }
-                        className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#00D9FF] cursor-pointer"
-                        style={{ colorScheme: "dark" }}
-                      >
-                        <option value="" className="bg-[#1A1A1B] text-white">
-                          Select a project
-                        </option>
-                        {projects.map((project) => (
-                          <option
-                            key={String(project.id)}
-                            value={String(project.id)}
-                            className="bg-[#1A1A1B] text-white"
-                          >
-                            {project.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {projects.length === 0 && (
-                      <p className="text-sm text-amber-400">
-                        No projects found. Create a project first.
-                      </p>
-                    )}
-                  </div>
-                </Card>
-
-                {/* Connection String */}
-                <Card className="bg-[#1A1A1B] border-gray-800 p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-semibold">Connection String</h3>
-                    {connectionInfo && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleRefresh}
-                        className="text-gray-400 hover:text-white"
-                        disabled={generating}
-                      >
-                        <RefreshCw
-                          className={`w-4 h-4 ${generating ? "animate-spin" : ""}`}
-                        />
-                      </Button>
-                    )}
-                  </div>
-                  <div className="space-y-4">
-                    {connectionInfo ? (
-                      <>
-                        <div className="relative">
-                          <pre className="bg-[#0A0A0B] border border-gray-700 rounded-lg p-4 text-sm overflow-x-auto max-h-80 overflow-y-auto">
-                            <code className="text-gray-300">
-                              {getConnectionString()}
-                            </code>
-                          </pre>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={handleCopyConnectionString}
-                            className="flex-1 bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
-                            disabled={!selectedProjectId}
-                          >
-                            {copied ? (
-                              <>Copy Succeeded!</>
-                            ) : (
-                              <>
-                                <Copy className="w-4 h-4 mr-2" />
-                                Copy Connection String
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            onClick={handleDownloadConfig}
-                            variant="outline"
-                            className="border-gray-700 hover:bg-[#1A1A1B]"
-                            disabled={!selectedProjectId}
-                          >
-                            <Download className="w-4 h-4 mr-2" />
-                            Download
-                          </Button>
-                        </div>
-                        {!selectedProjectId && (
-                          <p className="text-sm text-amber-400">
-                            Please select a project to enable copy and download
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <div className="bg-[#0A0A0B] border border-gray-700 border-dashed rounded-lg p-8 text-center">
-                        <p className="text-gray-400 mb-2">
-                          No connection string generated yet
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          Configure your options above and click "Generate
-                          Connection String"
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </Card>
+                ))}
               </div>
-
-              {/* Right Column - QR Code */}
-              <div className="space-y-6">
-                <Card className="bg-[#1A1A1B] border-gray-800 p-6">
-                  <h3 className="text-xl font-semibold mb-4">QR Code</h3>
-                  <div className="flex flex-col items-center space-y-4">
-                    {selectedProjectId && connectionInfo ? (
-                      <>
-                        <div className="bg-white p-4 rounded-lg">
-                          <QRCodeSVG
-                            value={getConnectionString()}
-                            size={256}
-                            level="H"
-                            includeMargin={true}
-                          />
-                        </div>
-                        <p className="text-sm text-gray-400 text-center">
-                          Scan this QR code with the desktop runner app to
-                          connect instantly
-                        </p>
-                      </>
-                    ) : (
-                      <div className="bg-[#0A0A0B] border border-gray-700 border-dashed rounded-lg p-12 text-center">
-                        <p className="text-gray-400">
-                          {!connectionInfo
-                            ? "Generate a connection string first"
-                            : "Select a project to show QR code"}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </Card>
-
-                {/* Instructions */}
-                <Card className="bg-[#1A1A1B] border-gray-800 p-6">
-                  <h3 className="text-xl font-semibold mb-4">How to Connect</h3>
-                  <ol className="space-y-3 text-sm text-gray-400">
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#00D9FF] text-black flex items-center justify-center font-semibold">
-                        1
-                      </span>
-                      <span>Select a project from the dropdown above</span>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#00D9FF] text-black flex items-center justify-center font-semibold">
-                        2
-                      </span>
-                      <span>
-                        Either scan the QR code or copy the connection string
-                      </span>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#00D9FF] text-black flex items-center justify-center font-semibold">
-                        3
-                      </span>
-                      <span>
-                        Paste the connection string in the desktop runner app
-                      </span>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#00D9FF] text-black flex items-center justify-center font-semibold">
-                        4
-                      </span>
-                      <span>
-                        The runner will connect and sync with your account
-                      </span>
-                    </li>
-                  </ol>
-                </Card>
-              </div>
-            </div>
-          </div>
-        )}
+            </Card>
+          )}
+        </div>
       </main>
     </div>
   );

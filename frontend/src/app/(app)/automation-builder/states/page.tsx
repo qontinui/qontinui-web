@@ -15,6 +15,7 @@
 import { Suspense } from "react";
 import { StateStructure } from "@/components/state-machine";
 import { RequireProject } from "@/components/require-project";
+import { useProjectLoader } from "@/hooks/use-project-loader";
 import { Loader2 } from "lucide-react";
 
 function LoadingFallback() {
@@ -25,11 +26,24 @@ function LoadingFallback() {
   );
 }
 
+/**
+ * Content wrapper that loads project data from backend based on URL
+ */
+function StatesPageContent() {
+  const { isLoading } = useProjectLoader();
+
+  if (isLoading) {
+    return <LoadingFallback />;
+  }
+
+  return <StateStructure />;
+}
+
 export default function StatesPage() {
   return (
     <Suspense fallback={<LoadingFallback />}>
       <RequireProject pageName="States">
-        <StateStructure />
+        <StatesPageContent />
       </RequireProject>
     </Suspense>
   );

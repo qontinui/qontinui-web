@@ -22,6 +22,5 @@ exclude =
 per-file-ignores =
     __init__.py:F401
     app/main.py:E402
-    app/services/pattern_optimization_service.py:C901
 max-complexity = 10
 docstring-convention = google

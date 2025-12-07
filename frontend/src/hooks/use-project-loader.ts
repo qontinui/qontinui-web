@@ -7,6 +7,7 @@
  * Responsibilities:
  * - Extract project ID from URL search params
  * - Fetch project data from backend API
+ * - Save current project before loading new one (prevents data loss)
  * - Trigger context's loadConfiguration
  * - Track loading state
  * - Handle errors
@@ -46,8 +47,12 @@ export function useProjectLoader(): UseProjectLoaderResult {
   const {
     loadConfiguration,
     setProjectName,
+    projectId: contextProjectId,
     setProjectId: setContextProjectId,
     setIsLoadingFromBackend,
+    getConfiguration,
+    states,
+    workflows,
   } = useAutomation();
 
   // Extract project ID from URL as primitive value
@@ -61,7 +66,7 @@ export function useProjectLoader(): UseProjectLoaderResult {
 
   // Core loading function
   const loadProject = useCallback(
-    async (urlProjectId: string) => {
+    async (urlProjectId: string, force: boolean = false) => {
       // Debug: Log exactly what we received
       projectLogger.debug("ProjectLoader", "loadProject called", {
         urlProjectId,
@@ -86,17 +91,45 @@ export function useProjectLoader(): UseProjectLoaderResult {
         return;
       }
 
-      // Prevent duplicate loads
-      if (loadedProjectIdRef.current === urlProjectId) {
-        projectLogger.debug(
-          "ProjectLoader",
-          "Project already loaded, skipping",
-          {
-            urlProjectId,
-            loadedId: loadedProjectIdRef.current,
-          }
-        );
-        return;
+      // Skip duplicate load checks if force is true (manual reload)
+      if (!force) {
+        // Prevent duplicate loads - check both ref and context
+        // The ref check prevents re-fetching within the same component lifecycle
+        // The context check prevents re-fetching when navigating between pages
+        // (preserves local IndexedDB data that hasn't been synced to backend yet)
+        if (loadedProjectIdRef.current === urlProjectId) {
+          projectLogger.debug(
+            "ProjectLoader",
+            "Project already loaded (ref match), skipping",
+            {
+              urlProjectId,
+              loadedId: loadedProjectIdRef.current,
+            }
+          );
+          return;
+        }
+
+        // If context already has this project loaded WITH DATA, skip backend fetch
+        // This preserves local changes that haven't been auto-saved yet
+        // IMPORTANT: Only skip if actual data exists - the projectId alone from
+        // localStorage is not sufficient since the IndexedDB data may not be loaded
+        const hasDataInContext = states.length > 0 || workflows.length > 0;
+        if (contextProjectId === urlProjectId && hasDataInContext) {
+          projectLogger.debug(
+            "ProjectLoader",
+            "Project already in context with data, skipping backend fetch",
+            {
+              urlProjectId,
+              contextProjectId,
+              stateCount: states.length,
+              workflowCount: workflows.length,
+            }
+          );
+          // Still mark as loaded in ref to prevent future redundant checks
+          loadedProjectIdRef.current = urlProjectId;
+          setProjectId(urlProjectId);
+          return;
+        }
       }
 
       // Prevent concurrent loads
@@ -115,6 +148,7 @@ export function useProjectLoader(): UseProjectLoaderResult {
       projectLogger.projectLoader("Starting project load", {
         urlProjectId,
         previousLoadedId: loadedProjectIdRef.current,
+        currentContextProjectId: contextProjectId,
       });
 
       loadingRef.current = true;
@@ -122,6 +156,59 @@ export function useProjectLoader(): UseProjectLoaderResult {
       setError(null);
 
       try {
+        // CRITICAL: Save current project to backend BEFORE loading the new one
+        // This prevents data loss when navigating between pages/projects
+        if (contextProjectId && contextProjectId !== urlProjectId) {
+          projectLogger.projectLoader(
+            "Saving current project before loading new one",
+            {
+              currentProjectId: contextProjectId,
+              newProjectId: urlProjectId,
+            }
+          );
+
+          try {
+            const currentConfig = getConfiguration();
+            const hasData =
+              (currentConfig.workflows?.length ?? 0) > 0 ||
+              (currentConfig.states?.length ?? 0) > 0 ||
+              (currentConfig.transitions?.length ?? 0) > 0 ||
+              (currentConfig.images?.length ?? 0) > 0;
+
+            if (hasData) {
+              await projectService.updateProject(contextProjectId, {
+                configuration: currentConfig,
+              });
+              projectLogger.projectLoader(
+                "Current project saved successfully",
+                {
+                  projectId: contextProjectId,
+                  workflowCount: currentConfig.workflows?.length ?? 0,
+                  stateCount: currentConfig.states?.length ?? 0,
+                }
+              );
+            } else {
+              projectLogger.projectLoader(
+                "Skipping save - current config is empty",
+                { projectId: contextProjectId }
+              );
+            }
+          } catch (saveError) {
+            // Log error but continue with loading - don't block the user
+            projectLogger.error(
+              "ProjectLoader",
+              "Failed to save current project before loading new one",
+              {
+                projectId: contextProjectId,
+                error:
+                  saveError instanceof Error
+                    ? saveError.message
+                    : "Unknown error",
+              }
+            );
+          }
+        }
+
         // Signal to context that we're loading from backend
         // This prevents the context's useEffect from overwriting our data
         setIsLoadingFromBackend(true);
@@ -188,6 +275,10 @@ export function useProjectLoader(): UseProjectLoaderResult {
       setProjectName,
       setContextProjectId,
       setIsLoadingFromBackend,
+      contextProjectId,
+      getConfiguration,
+      states.length,
+      workflows.length,
     ]
   );
 
@@ -209,12 +300,12 @@ export function useProjectLoader(): UseProjectLoaderResult {
     }
   }, [projectIdFromUrl, loadProject, setContextProjectId]);
 
-  // Manual reload function
+  // Manual reload function - forces a backend fetch even if project is already loaded
   const reloadProject = useCallback(async () => {
     if (projectIdFromUrl) {
-      // Clear the loaded ref to force reload
+      // Clear the loaded ref and force reload from backend
       loadedProjectIdRef.current = null;
-      await loadProject(projectIdFromUrl);
+      await loadProject(projectIdFromUrl, true);
     }
   }, [projectIdFromUrl, loadProject]);
 

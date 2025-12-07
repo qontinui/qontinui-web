@@ -183,6 +183,53 @@ export function StateStructure() {
     [onNodesChange, states, updateState, transitions, updateTransition]
   );
 
+  // Separate effect to ensure transition positions are set (runs once per transition without position)
+  React.useEffect(() => {
+    // Find transitions that need positions to be saved
+    const transitionsNeedingPositions = transitions
+      .filter((t): t is OutgoingTransition => t.type === "OutgoingTransition")
+      .filter(t => !t.position && Array.isArray(t.activateStates) && t.activateStates.length > 0);
+
+    if (transitionsNeedingPositions.length === 0) return;
+
+    transitionsNeedingPositions.forEach((transition) => {
+      const sourceState = states.find((s) => s.id === transition.fromState);
+      if (!sourceState) return;
+
+      // Calculate position for the transition
+      const proposedPosition = {
+        x: sourceState.position.x,
+        y: sourceState.position.y + 150,
+      };
+
+      // Check if this position is occupied
+      const isOccupied = [
+        ...states,
+        ...transitions.filter((t) => t.position),
+      ].some((item) => {
+        const pos = "position" in item ? item.position : item.position;
+        return (
+          pos &&
+          Math.abs(pos.x - proposedPosition.x) < 150 &&
+          Math.abs(pos.y - proposedPosition.y) < 80
+        );
+      });
+
+      const finalPosition = isOccupied
+        ? { x: sourceState.position.x + 200, y: sourceState.position.y }
+        : proposedPosition;
+
+      // Save the position
+      updateTransition({
+        ...transition,
+        position: {
+          x: Math.round(finalPosition.x),
+          y: Math.round(finalPosition.y),
+        },
+      });
+    });
+  }, [transitions, states, updateTransition]);
+
   React.useEffect(() => {
     // Skip rebuilding nodes while dragging to prevent node destruction
     if (isDraggingRef.current) {
@@ -230,47 +277,17 @@ export function StateStructure() {
 
         if (sourceState && activateStates.length > 0) {
           // Create a transition node for all transitions (both single and multi-target)
-          // Use saved position or try to position below the source state
+          // Use saved position or calculate a temporary position for display
+          // (permanent position is saved in the separate useEffect above)
           let position = transition.position;
 
           if (!position) {
-            // Try to place it below the source state
-            const proposedPosition = {
+            // Calculate temporary position for this render
+            // The separate useEffect will persist this position
+            position = {
               x: sourceState.position.x,
               y: sourceState.position.y + 150,
             };
-
-            // Check if this position is occupied
-            const isOccupied = [
-              ...states,
-              ...transitions.filter((t) => t.position),
-            ].some((item) => {
-              const pos = "position" in item ? item.position : item.position;
-              return (
-                pos &&
-                Math.abs(pos.x - proposedPosition.x) < 150 &&
-                Math.abs(pos.y - proposedPosition.y) < 80
-              );
-            });
-
-            if (!isOccupied) {
-              position = proposedPosition;
-            } else {
-              // Find an empty position
-              position = {
-                x: sourceState.position.x + 200,
-                y: sourceState.position.y,
-              };
-            }
-
-            // Save the position for next time
-            updateTransition({
-              ...transition,
-              position: {
-                x: Math.round(position.x),
-                y: Math.round(position.y),
-              },
-            });
           }
 
           const transitionNode: Node = {
@@ -314,15 +331,26 @@ export function StateStructure() {
 
     const newNodes = [...stateNodes, ...transitionNodes];
 
+    console.log('[StateStructure] Setting nodes:', {
+      stateNodesCount: stateNodes.length,
+      transitionNodesCount: transitionNodes.length,
+      totalNodes: newNodes.length,
+      edgesCount: newEdges.length,
+      nodeDetails: newNodes.map(n => ({ id: n.id, type: n.type, position: n.position })),
+    });
+
     setNodes(newNodes);
     setEdges(newEdges);
   }, [states, transitions, images, setNodes, setEdges]);
 
   const handleAddState = () => {
+    const position = findEmptyPosition();
+    console.log('[StateStructure] handleAddState - position:', position);
     const newState = StateUpdateCoordinator.createDefaultState(
       states,
-      findEmptyPosition()
+      position
     );
+    console.log('[StateStructure] handleAddState - newState:', newState);
     addState(newState);
     // Auto-layout is handled by useEffect watching states.length
   };

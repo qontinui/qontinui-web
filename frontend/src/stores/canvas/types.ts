@@ -106,7 +106,6 @@ export interface PreferencesState {
 export interface WorkflowActions {
   setWorkflow: (workflow: Workflow) => void;
   clearWorkflow: () => void;
-  saveWorkflow: (projectId?: string) => Promise<void>;
   validateWorkflow: () => ValidationResult;
   clearValidation: () => void;
 }

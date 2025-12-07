@@ -22,6 +22,7 @@ from app.db.base_class import Base
 
 if TYPE_CHECKING:
     from app.models.project import Project
+    from app.models.project_assets import ProjectScreenshot
     from app.models.user import User
 
 
@@ -80,6 +81,9 @@ class CaptureSession(Base):
     )
     learned_workflows: Mapped[list["LearnedWorkflow"]] = relationship(
         "LearnedWorkflow", back_populates="session", cascade="all, delete-orphan"
+    )
+    project_screenshots: Mapped[list["ProjectScreenshot"]] = relationship(
+        "ProjectScreenshot", back_populates="capture_session"
     )
 
 

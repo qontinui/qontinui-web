@@ -19,6 +19,7 @@ import { ScreenshotManager } from "./screenshot-manager";
 import { screenshotDB, normalizeUrl } from "@/lib/screenshot-db";
 import { projectDB } from "@/lib/project-db";
 import { projectLogger } from "@/lib/project-logger";
+import { apiClient } from "@/lib/api-client";
 import type {
   AutomationContextType,
   State,
@@ -1342,6 +1343,73 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     lastSaved,
   ]);
 
+  // Sync screenshots from backend database
+  const syncScreenshotsFromBackend = useCallback(
+    async (projectIdToSync: string) => {
+      if (!projectIdToSync) {
+        projectLogger.warn("syncScreenshotsFromBackend", "No project ID provided");
+        return;
+      }
+
+      try {
+        projectLogger.configLoader("Fetching screenshots from backend", {
+          projectId: projectIdToSync,
+        });
+
+        const response = await apiClient.listProjectScreenshots(
+          parseInt(projectIdToSync, 10),
+          { limit: 100 }
+        );
+
+        projectLogger.configLoader("Screenshots fetched from backend", {
+          count: response.screenshots.length,
+          total: response.total,
+        });
+
+        // Convert backend screenshots to local format and add to IndexedDB
+        const backendScreenshots = response.screenshots.map((s) => ({
+          id: s.id,
+          name: s.name,
+          url: normalizeUrl(s.presigned_url),
+          size: s.file_size,
+          uploadedAt: new Date(s.created_at),
+          projectName: projectName,
+          // Additional metadata that might be useful
+          source: s.source,
+          width: s.width,
+          height: s.height,
+        }));
+
+        // Update IndexedDB
+        for (const screenshot of backendScreenshots) {
+          await screenshotDB.update(screenshot);
+        }
+
+        // Update state
+        setScreenshots(backendScreenshots);
+
+        projectLogger.configLoader("Screenshots synced from backend", {
+          count: backendScreenshots.length,
+        });
+      } catch (error) {
+        projectLogger.error(
+          "syncScreenshotsFromBackend",
+          "Failed to sync screenshots from backend",
+          { error, projectId: projectIdToSync }
+        );
+        // Don't throw - screenshots failing shouldn't block project load
+      }
+    },
+    [projectName]
+  );
+
+  // Auto-sync screenshots when projectId changes
+  useEffect(() => {
+    if (projectId && !isLoadingFromBackend) {
+      syncScreenshotsFromBackend(projectId);
+    }
+  }, [projectId, isLoadingFromBackend, syncScreenshotsFromBackend]);
+
   // Load a complete configuration
   const loadConfiguration = useCallback(
     async (config: any) => {
@@ -1564,9 +1632,17 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         projectName: newProjectName,
       });
 
+      // Sync screenshots from backend database if project has an ID
+      if (projectId) {
+        projectLogger.configLoader("Syncing screenshots from backend", {
+          projectId,
+        });
+        await syncScreenshotsFromBackend(projectId);
+      }
+
       triggerSave();
     },
-    [projectName, setProjectName, setCategories, triggerSave]
+    [projectName, setProjectName, setCategories, triggerSave, projectId, syncScreenshotsFromBackend]
   );
 
   // Clear all data for new project
@@ -1716,6 +1792,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       getConfiguration,
       loadConfiguration,
       clearAllData,
+      syncScreenshotsFromBackend,
 
       // Backend loading control
       isLoadingFromBackend,
@@ -1773,6 +1850,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       getConfiguration,
       loadConfiguration,
       clearAllData,
+      syncScreenshotsFromBackend,
       isLoadingFromBackend,
       setIsLoadingFromBackend,
     ]

@@ -173,7 +173,7 @@ export function OutgoingTransitionBuilder({
               <SelectTrigger className="bg-transparent border-gray-600">
                 <SelectValue placeholder="Select origin state" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="z-[100]">
                 {states.map((state) => (
                   <SelectItem key={state.id} value={state.id}>
                     {state.name}
@@ -330,7 +330,7 @@ export function OutgoingTransitionBuilder({
                 <SelectTrigger className="bg-transparent border-gray-600">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectContent className="z-[100] bg-[#27272A] border-gray-700">
                   <SelectItem value="All">All Categories</SelectItem>
                   <SelectItem value="Transitions">Transitions</SelectItem>
                   <SelectItem value="Main">Main</SelectItem>

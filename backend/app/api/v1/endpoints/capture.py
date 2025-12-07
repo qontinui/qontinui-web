@@ -7,7 +7,7 @@ for the workflow learning pipeline.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -524,29 +524,11 @@ async def match_screenshot_to_states(
     Returns:
         List of state matches with confidence scores
     """
-    from app.services.state_matching_service import StateMatchingService
-
-    matches = await StateMatchingService.match_screenshot_to_states(
-        db=db,
-        screenshot_id=screenshot_id,
-        user_id=current_user.id,
-        confidence_threshold=confidence_threshold,
+    # DEPRECATED: State matching functionality has been removed
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="State matching functionality has been removed. Use qontinui library for local execution.",
     )
-
-    return [
-        ScreenshotStateMatchResponse(
-            id=match.id,
-            screenshot_id=match.screenshot_id,
-            state_identifier=match.state_identifier,
-            state_metadata=match.state_metadata,
-            confidence=match.confidence,
-            matched_elements=match.matched_elements,
-            is_confirmed=match.is_confirmed,
-            review_notes=match.review_notes,
-            created_at=match.created_at,
-        )
-        for match in matches
-    ]
 
 
 @router.post(

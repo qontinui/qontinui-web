@@ -800,59 +800,17 @@ async def start_processing(
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_user_async),
 ):
-    """Start processing a recording to discover states"""
-    result = await db.execute(select(Recording).where(Recording.id == recording_id))
-    recording = result.scalar_one_or_none()
+    """
+    Start processing a recording to discover states
 
-    if not recording:
-        raise HTTPException(status_code=404, detail="Recording not found")
-
-    if recording.is_processing:
-        raise HTTPException(
-            status_code=400, detail="Recording is already being processed"
-        )
-
-    if recording.is_completed:
-        raise HTTPException(
-            status_code=400, detail="Recording has already been processed"
-        )
-
-    # Update status
-    recording.status = RecordingStatus.PROCESSING
-    recording.processing_phase = ProcessingPhase.FRAME_ANALYSIS
-    recording.processing_progress = 0.0  # type: ignore[assignment]
-    recording.processing_started_at = datetime.utcnow()  # type: ignore[assignment]
-
-    await db.commit()
-
-    # Queue ARQ task for processing
-    try:
-        from app.worker.arq_pool import get_arq_pool
-
-        pool = await get_arq_pool()
-        job = await pool.enqueue_job("process_recording_task", recording_id)
-        logger.info(
-            f"Queued processing task for recording {recording_id}",
-            job_id=job.job_id if job else None,
-        )
-    except Exception as e:
-        logger.error(f"Failed to queue processing task: {str(e)}", exc_info=True)
-        # Revert status
-        recording.status = RecordingStatus.UPLOADED
-        recording.processing_phase = None
-        recording.processing_progress = 0.0  # type: ignore[assignment]
-        recording.processing_started_at = None  # type: ignore[assignment]
-        await db.commit()
-        raise HTTPException(
-            status_code=500, detail=f"Failed to start processing: {str(e)}"
-        )
-
-    return {
-        "success": True,
-        "message": "Processing started",
-        "recording_id": recording_id,
-        "status": recording.status,
-    }
+    NOTE: This endpoint is deprecated. Recording processing has been moved to the
+    qontinui library. Use the qontinui API for state discovery operations.
+    """
+    raise HTTPException(
+        status_code=501,
+        detail="Recording processing has been moved to qontinui library. "
+        "This endpoint is deprecated and will be removed in a future version.",
+    )
 
 
 @router.get("/{recording_id}/status", response_model=ProcessingJobStatus)

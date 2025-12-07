@@ -22,13 +22,15 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_async_db
 from app.models.snapshot import SnapshotRun
 from app.services.object_storage import object_storage
-from app.services.pattern_auto_extraction import PatternAutoExtractor
+
+# DEPRECATED: CV-heavy services removed - functionality moved to qontinui library
+# from app.services.pattern_auto_extraction import PatternAutoExtractor
+# from app.services.video_export import (
+#     VideoExportOptions,
+#     VideoQuality,
+#     create_execution_video,
+# )
 from app.services.pdf_report import PDFReportOptions, generate_pdf_report
-from app.services.video_export import (
-    VideoExportOptions,
-    VideoQuality,
-    create_execution_video,
-)
 
 # Redis key prefix for PDF report jobs
 PDF_JOB_KEY_PREFIX = "pdf_report:job:"
@@ -51,22 +53,23 @@ class MockExecutionRequest(BaseModel):
     actions: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class VideoExportRequest(BaseModel):
-    """Request for video export"""
-
-    execution_data: dict[str, Any] = Field(..., description="Execution response data")
-    frame_duration: float = Field(
-        1.5, ge=0.5, le=5.0, description="Duration per frame in seconds"
-    )
-    quality: VideoQuality = Field(
-        VideoQuality.MEDIUM, description="Video quality preset"
-    )
-    include_overlays: bool = Field(True, description="Include action overlays")
-    include_timeline: bool = Field(True, description="Include timeline progress bar")
-    include_text: bool = Field(True, description="Include text overlays")
-    smooth_transitions: bool = Field(
-        True, description="Smooth transitions between frames"
-    )
+# DEPRECATED: Video export functionality removed - moved to qontinui library
+# class VideoExportRequest(BaseModel):
+#     """Request for video export"""
+#
+#     execution_data: dict[str, Any] = Field(..., description="Execution response data")
+#     frame_duration: float = Field(
+#         1.5, ge=0.5, le=5.0, description="Duration per frame in seconds"
+#     )
+#     quality: VideoQuality = Field(
+#         VideoQuality.MEDIUM, description="Video quality preset"
+#     )
+#     include_overlays: bool = Field(True, description="Include action overlays")
+#     include_timeline: bool = Field(True, description="Include timeline progress bar")
+#     include_text: bool = Field(True, description="Include text overlays")
+#     smooth_transitions: bool = Field(
+#         True, description="Smooth transitions between frames"
+#     )
 
 
 class VideoExportResponse(BaseModel):
@@ -271,213 +274,65 @@ async def execute_mock_process(request: MockExecutionRequest) -> dict[str, Any]:
     return mock_response
 
 
-@router.post("/export/video", status_code=status.HTTP_202_ACCEPTED)
-async def export_execution_video(
-    request: VideoExportRequest,
-    background_tasks: BackgroundTasks,
-) -> VideoExportResponse:
+@router.post("/export/video", status_code=status.HTTP_410_GONE)
+async def export_execution_video():
     """
-    Export execution to MP4 video
+    DEPRECATED: Video export functionality has been removed.
 
-    Initiates background video generation and returns a video_id for polling status.
+    This endpoint has been deprecated and removed. Video export functionality
+    should be implemented in the qontinui library for local execution.
     """
-    try:
-        # Generate video ID
-        video_id = str(uuid4())
-
-        # Initialize job status
-        job_status = VideoStatusResponse(
-            video_id=video_id,
-            status="processing",
-            progress=0.0,
-        )
-        _video_jobs[video_id] = job_status
-
-        # Prepare video options
-        options = VideoExportOptions(
-            frame_duration=request.frame_duration,
-            quality=request.quality,
-            include_overlays=request.include_overlays,
-            include_timeline=request.include_timeline,
-            include_text=request.include_text,
-            smooth_transitions=request.smooth_transitions,
-        )
-
-        # Schedule background task
-        background_tasks.add_task(
-            _generate_video_task,
-            video_id=video_id,
-            execution_data=request.execution_data,
-            options=options,
-        )
-
-        logger.info(f"Video export initiated: {video_id}")
-
-        return VideoExportResponse(
-            video_id=video_id,
-            status="processing",
-            progress=0.0,
-        )
-
-    except Exception as e:
-        logger.error(f"Failed to initiate video export: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to initiate video export: {str(e)}",
-        )
-
-
-@router.get("/export/video/{video_id}/status", status_code=status.HTTP_200_OK)
-async def get_video_export_status(video_id: str) -> VideoStatusResponse:
-    """
-    Get video export status
-
-    Poll this endpoint to check video generation progress.
-    """
-    if video_id not in _video_jobs:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Video job not found: {video_id}",
-        )
-
-    return _video_jobs[video_id]
-
-
-@router.get("/export/video/{video_id}/download", status_code=status.HTTP_200_OK)
-async def download_video(video_id: str) -> FileResponse:
-    """
-    Download generated video file
-
-    Returns the MP4 file when ready.
-    """
-    if video_id not in _video_jobs:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Video job not found: {video_id}",
-        )
-
-    job = _video_jobs[video_id]
-
-    if job.status != "completed":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Video not ready. Current status: {job.status}",
-        )
-
-    if not job.video_url:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Video file not found",
-        )
-
-    # Extract file path from URL
-    # In production, this would handle proper URL to path conversion
-    video_path = Path(
-        job.video_url.replace("/api/integration-testing/export/video/", "")
-    )
-
-    if not video_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Video file not found on disk",
-        )
-
-    return FileResponse(
-        path=str(video_path),
-        media_type="video/mp4",
-        filename=f"execution_{video_id}.mp4",
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Video export functionality has been removed. Use qontinui library for local execution.",
     )
 
 
-@router.delete("/export/video/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.get("/export/video/{video_id}/status", status_code=status.HTTP_410_GONE)
+async def get_video_export_status(video_id: str):
+    """
+    DEPRECATED: Video export functionality has been removed.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Video export functionality has been removed. Use qontinui library for local execution.",
+    )
+
+
+@router.get("/export/video/{video_id}/download", status_code=status.HTTP_410_GONE)
+async def download_video(video_id: str):
+    """
+    DEPRECATED: Video export functionality has been removed.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Video export functionality has been removed. Use qontinui library for local execution.",
+    )
+
+
+@router.delete("/export/video/{video_id}", status_code=status.HTTP_410_GONE)
 async def delete_video(video_id: str):
     """
-    Delete video export job and file
-
-    Cleanup after download.
+    DEPRECATED: Video export functionality has been removed.
     """
-    if video_id not in _video_jobs:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Video job not found: {video_id}",
-        )
-
-    job = _video_jobs[video_id]
-
-    # Delete file if exists
-    if job.video_url:
-        try:
-            video_path = Path(
-                job.video_url.replace("/api/integration-testing/export/video/", "")
-            )
-            if video_path.exists():
-                video_path.unlink()
-        except Exception as e:
-            logger.warning(f"Failed to delete video file: {e}")
-
-    # Remove job
-    del _video_jobs[video_id]
-
-    logger.info(f"Video job deleted: {video_id}")
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Video export functionality has been removed. Use qontinui library for local execution.",
+    )
 
 
-# Background task
-async def _generate_video_task(
-    video_id: str,
-    execution_data: dict[str, Any],
-    options: VideoExportOptions,
-):
-    """
-    Background task to generate video
-
-    Updates job status as it progresses.
-    """
-    job = _video_jobs.get(video_id)
-    if not job:
-        logger.error(f"Job not found: {video_id}")
-        return
-
-    try:
-        logger.info(f"Starting video generation: {video_id}")
-
-        # Prepare paths
-        # In production, use proper storage service
-        output_dir = Path("/tmp/qontinui/videos")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{video_id}.mp4"
-
-        # Get screenshot base path from execution data
-        # This would come from the actual storage location
-        process_id = execution_data.get("process_id", "")
-        screenshot_base_path = f"/tmp/qontinui/screenshots/{process_id}"
-
-        # Progress callback
-        async def update_progress(current: int, total: int):
-            job.progress = current / total if total > 0 else 0
-            logger.debug(f"Video progress: {current}/{total} ({job.progress:.1%})")
-
-        # Generate video
-        metadata = await create_execution_video(
-            execution_data=execution_data,
-            screenshot_base_path=screenshot_base_path,
-            output_path=str(output_path),
-            options=options,
-            progress_callback=update_progress,
-        )
-
-        # Update job status
-        job.status = "completed"
-        job.progress = 1.0
-        job.video_url = f"/api/integration-testing/export/video/{video_id}/download"
-        job.file_size = metadata.get("file_size")
-        job.duration_seconds = metadata.get("duration_seconds")
-
-        logger.info(f"Video generation completed: {video_id}")
-
-    except Exception as e:
-        logger.error(f"Video generation failed for {video_id}: {e}", exc_info=True)
-        job.status = "failed"
-        job.error = str(e)
+# DEPRECATED: Video generation removed - moved to qontinui library
+# async def _generate_video_task(
+#     video_id: str,
+#     execution_data: dict[str, Any],
+#     options: VideoExportOptions,
+# ):
+#     """
+#     Background task to generate video
+#
+#     Updates job status as it progresses.
+#     """
+#     pass
 
 
 # PDF Report Generation Endpoints
@@ -771,113 +626,16 @@ async def _get_screenshots_from_snapshot_ids(
     return screenshot_paths
 
 
-# Pattern Auto-Extraction Endpoints (EXPERIMENTAL)
-@router.post("/patterns/auto-extract", status_code=status.HTTP_200_OK)
-async def auto_extract_patterns(
-    request: AutoExtractRequest,
-    db: AsyncSession = Depends(get_async_db),
-) -> AutoExtractResponse:
+# Pattern Auto-Extraction Endpoints (EXPERIMENTAL) - DEPRECATED
+@router.post("/patterns/auto-extract", status_code=status.HTTP_410_GONE)
+async def auto_extract_patterns():
     """
-    Auto-extract UI patterns using computer vision (EXPERIMENTAL)
+    DEPRECATED: Pattern auto-extraction functionality has been removed.
 
-    This endpoint uses OpenCV-based computer vision to automatically detect
-    UI patterns like buttons, input fields, and icons from screenshots.
-
-    WARNING: This is an experimental feature. Detection accuracy may vary
-    depending on screenshot quality and UI design.
-
-    Args:
-        request: Auto-extraction configuration including:
-            - state_name: State name for pattern naming
-            - snapshot_ids: List of snapshot run IDs to process
-            - screenshot_paths: Alternative direct paths to screenshots
-            - detect_buttons: Enable button detection
-            - detect_inputs: Enable input field detection
-            - detect_icons: Enable icon detection
-            - min_confidence: Minimum confidence threshold (0.0-1.0)
-
-    Returns:
-        AutoExtractResponse with detected patterns and metadata
-
-    Raises:
-        HTTPException: If extraction fails or no screenshots found
+    This endpoint has been deprecated and removed. Pattern extraction should be
+    implemented in the qontinui library for local execution.
     """
-    try:
-        logger.info(
-            f"Starting auto-extraction for state '{request.state_name}' "
-            f"with {len(request.snapshot_ids)} snapshots"
-        )
-
-        # Initialize extractor
-        extractor = PatternAutoExtractor()
-
-        # Collect screenshot paths
-        screenshots = []
-
-        # Option 1: Use direct screenshot paths
-        if request.screenshot_paths:
-            screenshots.extend(request.screenshot_paths)
-            logger.info(
-                f"Using {len(request.screenshot_paths)} direct screenshot paths"
-            )
-
-        # Option 2: Get screenshots from snapshot IDs via database lookup
-        if request.snapshot_ids:
-            db_screenshots = await _get_screenshots_from_snapshot_ids(
-                db,
-                request.snapshot_ids,
-                state_name=request.state_name,
-            )
-            screenshots.extend(db_screenshots)
-            logger.info(
-                f"Found {len(db_screenshots)} screenshots from {len(request.snapshot_ids)} snapshot IDs"
-            )
-
-        if not screenshots:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No screenshots provided. Use screenshot_paths or snapshot_ids.",
-            )
-
-        # Extract patterns
-        detected = extractor.extract_patterns(
-            screenshot_paths=screenshots,
-            state_name=request.state_name,
-            detect_buttons=request.detect_buttons,
-            detect_inputs=request.detect_inputs,
-            detect_icons=request.detect_icons,
-            min_confidence=request.min_confidence,
-        )
-
-        # Convert to response format
-        patterns = [
-            DetectedPattern(
-                region=p.region,
-                confidence=p.confidence,
-                pattern_type=p.pattern_type,
-                suggested_name=p.suggested_name,
-                image_data=p.image_data,
-                source_screenshot=p.source_screenshot,
-            )
-            for p in detected
-        ]
-
-        logger.info(
-            f"Auto-extraction completed: {len(patterns)} patterns detected "
-            f"from {len(screenshots)} screenshots"
-        )
-
-        return AutoExtractResponse(
-            patterns=patterns,
-            total_screenshots=len(screenshots),
-            total_detected=len(patterns),
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Pattern auto-extraction failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Pattern auto-extraction failed: {str(e)}",
-        )
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Pattern auto-extraction functionality has been removed. Use qontinui library for local execution.",
+    )

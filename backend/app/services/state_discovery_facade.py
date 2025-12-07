@@ -88,24 +88,24 @@ class StateDiscoveryFacade:
     def _get_simple_service(self) -> Any:
         """Lazy load simple algorithm service"""
         if self._service is None:
-            # Note: AutomatedStateDiscoveryService and ComputerVisionService are planned
-            # for future integration with the qontinui library. For now, using
-            # FrameStateDiscoveryService which provides basic state discovery.
-            from app.services.frame_state_discovery_service import (
-                FrameStateDiscoveryService,
+            # Note: State discovery has been moved to qontinui library.
+            # This facade is deprecated and will be removed in a future version.
+            # For now, returning None to indicate unavailable service.
+            raise NotImplementedError(
+                "Simple state discovery service has been removed. "
+                "Use qontinui library for state discovery operations."
             )
-
-            self._service = FrameStateDiscoveryService()
         return self._service
 
     def _get_advanced_service(self) -> Any:
         """Lazy load advanced algorithm service"""
         if self._service is None:
-            from app.services.frame_state_discovery_service import (
-                FrameStateDiscoveryService,
+            # Note: State discovery has been moved to qontinui library.
+            # This facade is deprecated and will be removed in a future version.
+            raise NotImplementedError(
+                "Advanced state discovery service has been removed. "
+                "Use qontinui library for state discovery operations."
             )
-
-            self._service = FrameStateDiscoveryService()
         return self._service
 
     async def discover_from_automation_session(

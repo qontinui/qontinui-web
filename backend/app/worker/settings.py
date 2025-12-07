@@ -25,7 +25,6 @@ from app.worker.tasks.partition_tasks import (
     get_partition_cron_jobs,
     get_partition_statistics,
 )
-from app.worker.tasks.recording_processing_tasks import process_recording_task
 
 
 def get_arq_redis_settings() -> RedisSettings:
@@ -74,8 +73,6 @@ class WorkerSettings:
         auto_create_partitions,
         cleanup_old_partitions,
         get_partition_statistics,
-        # Recording processing tasks
-        process_recording_task,
     ]
 
     # Cron jobs - Dynamically loaded from scheduler

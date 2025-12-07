@@ -61,12 +61,10 @@ const gridSize = useGridSize();
 ### Workflow Actions
 
 ```typescript
-const { setWorkflow, clearWorkflow, saveWorkflow, validateWorkflow } =
-  useCanvasStore();
+const { setWorkflow, clearWorkflow, validateWorkflow } = useCanvasStore();
 
 setWorkflow(workflow); // Load workflow
 clearWorkflow(); // Clear current
-await saveWorkflow(); // Save to backend
 const result = validateWorkflow(); // Validate
 ```
 

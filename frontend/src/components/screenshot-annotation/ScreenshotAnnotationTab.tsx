@@ -1,5 +1,16 @@
-import React, { useState, useEffect } from "react";
-import { MousePointer, Square, Eye, ImageIcon, X } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  MousePointer,
+  Square,
+  Eye,
+  ImageIcon,
+  X,
+  Upload,
+  FolderOpen,
+  Camera,
+  Monitor,
+  Loader2,
+} from "lucide-react";
 import {
   Screenshot,
   SelectionMode,
@@ -18,6 +29,8 @@ import {
 } from "../../contexts/automation-context/types";
 import { ScrollArea } from "../ui/scroll-area";
 import { Badge } from "../ui/badge";
+import { ScreenshotSelector } from "../screenshot-selector";
+import { toast } from "sonner";
 
 interface ScreenshotAnnotationTabProps {
   states: any[];
@@ -78,6 +91,13 @@ const convertToContextLocation = (
   };
 };
 
+interface MonitorInfo {
+  index: number;
+  width: number;
+  height: number;
+  is_primary: boolean;
+}
+
 const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
   states,
 }) => {
@@ -85,6 +105,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     screenshots: projectScreenshots,
     updateState,
     updateScreenshot,
+    addScreenshot,
   } = useAutomation();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [selectedScreenshot, setSelectedScreenshot] =
@@ -100,6 +121,159 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
   const [activeLocationTab, setActiveLocationTab] = useState<string | null>(
     null
   );
+
+  // Screenshot upload/capture state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const screenshotSelectorTriggerRef = useRef<HTMLButtonElement>(null);
+  const monitorMenuRef = useRef<HTMLDivElement>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [showMonitorMenu, setShowMonitorMenu] = useState(false);
+  const [availableMonitors, setAvailableMonitors] = useState<MonitorInfo[]>([]);
+
+  // Close monitor menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        monitorMenuRef.current &&
+        !monitorMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowMonitorMenu(false);
+      }
+    };
+
+    if (showMonitorMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showMonitorMenu]);
+
+  const handleFileUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      const img = new window.Image();
+      img.onload = () => {
+        if (img.width < 10 || img.height < 10) {
+          toast.error("Image too small", {
+            description: `${file.name} is ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`,
+          });
+          return;
+        }
+
+        const newScreenshot = {
+          id: `screenshot-${Date.now()}`,
+          name: file.name,
+          url: base64,
+          size: file.size,
+          uploadedAt: new Date(),
+        };
+
+        addScreenshot(newScreenshot);
+        toast.success("Screenshot uploaded successfully");
+      };
+      img.onerror = () => {
+        toast.error("Failed to process image", {
+          description: `${file.name} could not be loaded.`,
+        });
+      };
+      img.src = base64;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0 && files[0]) {
+      handleFileUpload(files[0]);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleSelectProjectScreenshot = (screenshotId: string) => {
+    const screenshot = screenshots.find((s) => s.id === screenshotId);
+    if (screenshot) {
+      setSelectedScreenshot(screenshot);
+    }
+  };
+
+  const handleOpenMonitorMenu = async () => {
+    setShowMonitorMenu(true);
+    try {
+      const apiUrl =
+        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+      const response = await fetch(`${apiUrl}/api/capture/screenshot/monitors`);
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableMonitors(data.monitors || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch monitors:", error);
+      setAvailableMonitors([
+        { index: 0, width: 1920, height: 1080, is_primary: true },
+      ]);
+    }
+  };
+
+  const handleCaptureFromScreen = async (monitorIndex: number | null) => {
+    setShowMonitorMenu(false);
+    setIsCapturing(true);
+
+    try {
+      const apiUrl =
+        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+      const monitorParam =
+        monitorIndex !== null ? `&monitor=${monitorIndex}` : "";
+      const response = await fetch(
+        `${apiUrl}/api/capture/screenshot/current?quality=95${monitorParam}`
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          errorText || `Failed to capture screenshot: ${response.statusText}`
+        );
+      }
+
+      const data = await response.json();
+      const byteCharacters = atob(data.screenshot_base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "image/png" });
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const monitorLabel =
+        monitorIndex !== null ? `monitor${monitorIndex}_` : "";
+      const filename = `screenshot_${monitorLabel}${timestamp}.png`;
+      const file = new File([blob], filename, { type: "image/png" });
+
+      handleFileUpload(file);
+
+      toast.success("Screenshot captured", {
+        description: `${data.width}x${data.height} pixels`,
+      });
+    } catch (error: any) {
+      console.error("Screenshot capture failed:", error);
+      toast.error("Failed to capture screenshot", {
+        description:
+          error.message || "Make sure qontinui-api is running on port 8001",
+      });
+    } finally {
+      setIsCapturing(false);
+    }
+  };
 
   // Sync local screenshots with project screenshots
   useEffect(() => {
@@ -693,6 +867,120 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Screenshot List */}
         <div className="w-64 border-r border-gray-800 bg-[#27272A]/50 flex flex-col flex-shrink-0">
+          {/* Screenshot Actions */}
+          <div className="p-3 border-b border-gray-800">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-300">Screenshots</h3>
+            </div>
+            <div className="space-y-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full px-3 py-2 bg-[#00D9FF] text-black rounded-md hover:bg-[#00D9FF]/90 text-sm flex items-center justify-center gap-2 font-medium"
+              >
+                <Upload className="w-4 h-4" />
+                Upload Image
+              </button>
+              <button
+                onClick={() => screenshotSelectorTriggerRef.current?.click()}
+                className="w-full px-3 py-2 bg-[#00FF88] text-black rounded-md hover:bg-[#00FF88]/90 text-sm flex items-center justify-center gap-2 font-medium"
+              >
+                <FolderOpen className="w-4 h-4" />
+                From Project
+              </button>
+
+              {/* Capture from Screen button */}
+              <div className="relative" ref={monitorMenuRef}>
+                <button
+                  onClick={handleOpenMonitorMenu}
+                  disabled={isCapturing}
+                  className="w-full px-3 py-2 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 text-sm flex items-center justify-center gap-2 font-medium disabled:opacity-50"
+                >
+                  {isCapturing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Camera className="w-4 h-4" />
+                  )}
+                  {isCapturing ? "Capturing..." : "Capture Screen"}
+                </button>
+
+                {showMonitorMenu && (
+                  <div className="absolute left-0 right-0 mt-2 bg-[#27272A] rounded-md shadow-lg z-10 border border-gray-700">
+                    <div className="py-1">
+                      <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-700">
+                        Select monitor
+                      </div>
+                      {availableMonitors.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-gray-400 flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Loading...
+                        </div>
+                      ) : (
+                        <>
+                          {availableMonitors.map((monitor) => (
+                            <button
+                              key={monitor.index}
+                              onClick={() =>
+                                handleCaptureFromScreen(monitor.index)
+                              }
+                              className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                            >
+                              <Monitor className="w-4 h-4" />
+                              <span className="flex-1">
+                                Monitor {monitor.index + 1}
+                                {monitor.is_primary && (
+                                  <span className="text-xs text-[#00FF88] ml-1">
+                                    (Primary)
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {monitor.width}×{monitor.height}
+                              </span>
+                            </button>
+                          ))}
+                          {availableMonitors.length > 1 && (
+                            <>
+                              <div className="border-t border-gray-700 my-1"></div>
+                              <button
+                                onClick={() => handleCaptureFromScreen(null)}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                              >
+                                <Monitor className="w-4 h-4" />
+                                All Monitors
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+
+            {/* Hidden Screenshot Selector Trigger */}
+            <ScreenshotSelector
+              selectedScreenshot={selectedScreenshot?.id || ""}
+              onSelectScreenshot={handleSelectProjectScreenshot}
+              multiSelect={false}
+              allowUpload={false}
+              trigger={
+                <button
+                  ref={screenshotSelectorTriggerRef}
+                  style={{ display: "none" }}
+                />
+              }
+            />
+          </div>
+
           <ScrollArea className="flex-1 h-full">
             <div className="p-4">
               {/* Anchor Region Creator */}
@@ -711,6 +999,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                 <div className="text-center py-8 text-gray-500">
                   <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
                   <p className="text-sm">No screenshots</p>
+                  <p className="text-xs mt-1">Upload or select from project</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -794,11 +1083,14 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
               />
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-400 bg-[#F3F4F6]">
+            <div className="flex-1 flex items-center justify-center text-gray-400 bg-[#18181B]">
               <div className="text-center">
                 <ImageIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p className="text-lg font-medium">
                   Select a screenshot to annotate
+                </p>
+                <p className="text-sm mt-2 text-gray-500">
+                  Upload, capture, or select from project screenshots
                 </p>
               </div>
             </div>

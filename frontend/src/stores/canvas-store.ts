@@ -121,7 +121,6 @@ export interface CanvasActions {
   // Workflow management
   setWorkflow: (workflow: Workflow) => void;
   clearWorkflow: () => void;
-  saveWorkflow: (projectId?: string) => Promise<void>;
 
   // Action CRUD
   addAction: (action: Action) => void;
@@ -337,46 +336,6 @@ export const useCanvasStore = create<CanvasStore>()(
               historyIndex: -1,
               validationResult: null,
             });
-          },
-
-          saveWorkflow: async (projectId?: string) => {
-            const workflow = get().workflow;
-            if (!workflow) {
-              throw new Error("No workflow to save");
-            }
-
-            if (!projectId) {
-              // If no projectId provided, just mark as clean (for local-only mode)
-              set((state) => {
-                state.isDirty = false;
-              });
-              return;
-            }
-
-            try {
-              // Import API client dynamically to avoid circular dependencies
-              const { apiClient } = await import("@/lib/api-client");
-
-              // Get current project to merge workflow into configuration
-              const project = await apiClient.getProject(parseInt(projectId));
-
-              // Update project configuration with workflow
-              const updatedConfig = {
-                ...project.configuration,
-                workflow,
-              };
-
-              await apiClient.updateProject(parseInt(projectId), {
-                configuration: updatedConfig,
-              });
-
-              set((state) => {
-                state.isDirty = false;
-              });
-            } catch (error) {
-              console.error("Failed to save workflow:", error);
-              throw error;
-            }
           },
 
           // ========================================================================

@@ -647,6 +647,269 @@ class ApiClient {
    * Get a token for WebSocket authentication.
    * This fetches the JWT from the HttpOnly cookie via the ws-token endpoint.
    */
+  // ===== Project Screenshot Endpoints =====
+
+  /**
+   * Upload a screenshot to a project using the new screenshots endpoint
+   */
+  async uploadProjectScreenshot(
+    projectId: number,
+    file: File,
+    name: string,
+    source: "manual_upload" | "runner_capture" | "web_capture" = "manual_upload",
+    monitorIndex?: number,
+    onProgress?: (progress: number) => void
+  ): Promise<{
+    id: string;
+    project_id: string;
+    name: string;
+    source: string;
+    monitor_index?: number;
+    metadata?: any;
+    storage_path: string;
+    presigned_url: string;
+    thumbnail_url?: string;
+    width: number;
+    height: number;
+    file_size: number;
+    content_type: string;
+    created_at: string;
+    updated_at: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append("file", file);
+
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable && onProgress) {
+          const progress = (e.loaded / e.total) * 100;
+          onProgress(progress);
+        }
+      });
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch (error) {
+            reject(new Error("Failed to parse upload response"));
+          }
+        } else {
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            reject(new Error(errorData.detail || "Upload failed"));
+          } catch {
+            reject(new Error(`Upload failed with status ${xhr.status}`));
+          }
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        reject(new Error("Network error during upload"));
+      });
+
+      xhr.addEventListener("timeout", () => {
+        reject(new Error("Upload timeout"));
+      });
+
+      // Build URL with query parameters
+      const params = new URLSearchParams();
+      params.append("name", name);
+      params.append("source", source);
+      if (monitorIndex !== undefined) {
+        params.append("monitor_index", monitorIndex.toString());
+      }
+
+      xhr.open(
+        "POST",
+        `${API_BASE_URL}/api/v1/projects/${projectId}/screenshots/upload?${params.toString()}`
+      );
+
+      // HttpOnly Cookie Security: Enable credentials to send cookies
+      xhr.withCredentials = true;
+
+      const csrfToken = csrfService.getToken();
+      if (csrfToken) {
+        xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+      }
+
+      xhr.timeout = 60000; // 60 seconds for file uploads
+      xhr.send(formData);
+    });
+  }
+
+  /**
+   * List screenshots for a project
+   */
+  async listProjectScreenshots(
+    projectId: number,
+    options?: {
+      source?: "manual_upload" | "runner_capture" | "web_capture";
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<{
+    screenshots: Array<{
+      id: string;
+      project_id: string;
+      name: string;
+      source: string;
+      monitor_index?: number;
+      metadata?: any;
+      storage_path: string;
+      presigned_url: string;
+      thumbnail_url?: string;
+      width: number;
+      height: number;
+      file_size: number;
+      content_type: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const queryParams = new URLSearchParams();
+    if (options?.source) queryParams.append("source", options.source);
+    if (options?.limit) queryParams.append("limit", options.limit.toString());
+    if (options?.offset) queryParams.append("offset", options.offset.toString());
+
+    const url = `/projects/${projectId}/screenshots${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const response = await this.fetchWithAuth(url);
+
+    if (!response.ok) {
+      throw new Error("Failed to list project screenshots");
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get a single screenshot by ID
+   */
+  async getProjectScreenshot(
+    projectId: number,
+    screenshotId: string
+  ): Promise<{
+    id: string;
+    project_id: string;
+    name: string;
+    source: string;
+    monitor_index?: number;
+    metadata?: any;
+    storage_path: string;
+    presigned_url: string;
+    thumbnail_url?: string;
+    width: number;
+    height: number;
+    file_size: number;
+    content_type: string;
+    created_at: string;
+    updated_at: string;
+  }> {
+    const response = await this.fetchWithAuth(
+      `/projects/${projectId}/screenshots/${screenshotId}`
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to get project screenshot");
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Update a screenshot's metadata
+   */
+  async updateProjectScreenshot(
+    projectId: number,
+    screenshotId: string,
+    updates: {
+      name?: string;
+      source?: "manual_upload" | "runner_capture" | "web_capture";
+      monitor_index?: number;
+      metadata?: any;
+    }
+  ): Promise<{
+    id: string;
+    project_id: string;
+    name: string;
+    source: string;
+    monitor_index?: number;
+    metadata?: any;
+    storage_path: string;
+    presigned_url: string;
+    thumbnail_url?: string;
+    width: number;
+    height: number;
+    file_size: number;
+    content_type: string;
+    created_at: string;
+    updated_at: string;
+  }> {
+    const response = await this.fetchWithAuth(
+      `/projects/${projectId}/screenshots/${screenshotId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to update project screenshot");
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Delete a screenshot
+   */
+  async deleteProjectScreenshot(
+    projectId: number,
+    screenshotId: string
+  ): Promise<void> {
+    const response = await this.fetchWithAuth(
+      `/projects/${projectId}/screenshots/${screenshotId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to delete project screenshot");
+    }
+  }
+
+  /**
+   * Batch delete multiple screenshots
+   */
+  async batchDeleteProjectScreenshots(
+    projectId: number,
+    screenshotIds: string[]
+  ): Promise<{
+    deleted_count: number;
+    failed_ids: string[];
+    errors: string[];
+  }> {
+    const response = await this.fetchWithAuth(
+      `/projects/${projectId}/screenshots/batch-delete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ screenshot_ids: screenshotIds }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to batch delete project screenshots");
+    }
+
+    return response.json();
+  }
+
   async getWebSocketToken(): Promise<string | null> {
     try {
       const response = await fetch("/api/v1/ws-token", {

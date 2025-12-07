@@ -387,7 +387,6 @@ export function useCanvasWorkflow() {
   const isDirty = useCanvasStore((state) => state.isDirty);
   const setWorkflow = useCanvasStore((state) => state.setWorkflow);
   const clearWorkflow = useCanvasStore((state) => state.clearWorkflow);
-  const saveWorkflow = useCanvasStore((state) => state.saveWorkflow);
 
   const workflowInfo = useMemo(() => {
     if (!workflow) {
@@ -433,7 +432,6 @@ export function useCanvasWorkflow() {
     // Operations
     setWorkflow,
     clearWorkflow,
-    saveWorkflow,
   };
 }
 
