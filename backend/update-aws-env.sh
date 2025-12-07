@@ -44,7 +44,8 @@ aws elasticbeanstalk update-environment \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=ENVIRONMENT,Value="production" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEBUG,Value="False" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=PORT,Value="8000" \
-      Namespace=aws:elasticbeanstalk:application:environment,OptionName=REDIS_ENABLED,Value="False" \
+      Namespace=aws:elasticbeanstalk:application:environment,OptionName=REDIS_ENABLED,Value="false" \
+      Namespace=aws:elasticbeanstalk:application:environment,OptionName=REDIS_HOST,Value="" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=RATE_LIMIT_ENABLED,Value="True"
 
 echo ""

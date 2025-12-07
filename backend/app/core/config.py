@@ -142,8 +142,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_HOUR: int = 600
 
     # Redis (for task queue) - Optional, will fall back to synchronous operations
+    # Default is False for production since we don't have Redis in AWS yet
     REDIS_ENABLED: bool = Field(
-        default=True, description="Enable Redis for task queue and caching"
+        default=False, description="Enable Redis for task queue and caching"
     )
     REDIS_HOST: str = Field(default="localhost")
     REDIS_PORT: int = Field(default=6379)
