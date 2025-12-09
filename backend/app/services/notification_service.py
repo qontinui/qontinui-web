@@ -217,7 +217,7 @@ class NotificationService:
                 select(Notification).filter(
                     and_(
                         Notification.user_id == user_id,
-                        Notification.read is False,
+                        Notification.read.is_(False),
                     )
                 )
             )
@@ -255,7 +255,7 @@ class NotificationService:
                 select(func.count(Notification.id)).filter(
                     and_(
                         Notification.user_id == user_id,
-                        Notification.read is False,
+                        Notification.read.is_(False),
                     )
                 )
             )
@@ -267,7 +267,7 @@ class NotificationService:
                 .filter(
                     and_(
                         Notification.user_id == user_id,
-                        Notification.read is False,
+                        Notification.read.is_(False),
                     )
                 )
                 .group_by(Notification.type)

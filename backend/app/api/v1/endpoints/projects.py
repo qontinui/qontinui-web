@@ -315,13 +315,6 @@ async def update_existing_project(
     Requires edit permission on the project.
     Checks if project is locked by another user before allowing updates.
     """
-    print(f"\n\n{'='*60}")
-    print("UPDATE PROJECT STARTED")
-    print(f"project_id: {project_id}")
-    print(f"user_id: {current_user.id}")
-    print(f"update_fields: {project_update.model_dump(exclude_unset=True)}")
-    print(f"{'='*60}\n")
-
     logger.info(
         "update_project_request",
         project_id=str(project_id),
@@ -405,7 +398,6 @@ async def update_existing_project(
             error_type=type(e).__name__,
             traceback=error_traceback,
         )
-        print(f"UPDATE PROJECT ERROR: {error_traceback}")  # Force print to stdout
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update project: {str(e)}",

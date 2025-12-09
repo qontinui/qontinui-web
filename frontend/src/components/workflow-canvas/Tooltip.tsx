@@ -157,7 +157,6 @@ export function Tooltip({
     }
 
     setPosition({ x, y });
-    // setActualPlacement(finalPlacement); // TODO: add state for actualPlacement
   }, [placement, offset]);
 
   const showTooltip = useCallback(() => {

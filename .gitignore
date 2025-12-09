@@ -9,6 +9,7 @@ venv/
 .venv
 .env
 .env.*.local
+.env.staging
 *.sqlite3
 *.db
 .coverage

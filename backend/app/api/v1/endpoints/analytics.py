@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 
+import structlog
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +8,8 @@ from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.user import User
 from app.services.analytics_service import analytics_service
 from app.services.metrics_service import metrics_service
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -38,7 +41,7 @@ async def track_download(request: Request, db: AsyncSession = Depends(get_async_
         return {"success": True}
     except Exception as e:
         # Silent fail - don't block download
-        print(f"Download tracking error: {e}")
+        logger.warning("download_tracking_error", error=str(e))
         return {"success": False, "error": str(e)}
 
 

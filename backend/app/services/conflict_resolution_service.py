@@ -391,7 +391,7 @@ class ConflictResolutionService:
             List of unresolved ConflictLog instances
         """
         try:
-            query = select(ConflictLog).filter(ConflictLog.resolved is False)
+            query = select(ConflictLog).filter(ConflictLog.resolved.is_(False))
 
             if resource_type:
                 query = query.filter(ConflictLog.resource_type == resource_type)
