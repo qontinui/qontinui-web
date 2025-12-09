@@ -39,13 +39,14 @@ import {
 import "@xyflow/react/dist/style.css";
 import { toast } from "sonner";
 
-import { Workflow, Action, Connection } from "@/lib/action-schema/action-types";
+import { Workflow, Action } from "@/lib/action-schema/action-types";
 import {
   CanvasNode,
   CanvasEdge,
   CanvasSettings,
   DEFAULT_CANVAS_SETTINGS,
   ConnectionAttempt,
+  EdgeInfo,
 } from "./canvas-types";
 import {
   workflowToReactFlow,
@@ -83,7 +84,7 @@ export interface WorkflowCanvasProps {
   onNodeClick?: (action: Action) => void;
 
   /** Callback when an edge is clicked */
-  onEdgeClick?: (connection: Connection) => void;
+  onEdgeClick?: (edgeInfo: EdgeInfo) => void;
 
   /** Canvas settings */
   settings?: Partial<CanvasSettings>;
@@ -594,17 +595,44 @@ function WorkflowCanvasInner({
   );
 
   /**
-   * Handle edge click
+   * Handle edge click - builds rich EdgeInfo for editing
    */
   const handleEdgeClick = useCallback(
     (_event: React.MouseEvent, edge: Edge) => {
       const canvasEdge = edge as unknown as CanvasEdge;
 
       if (onEdgeClick) {
-        onEdgeClick(canvasEdge.data.connection);
+        // Parse edge ID to get connection index
+        // Format: ${sourceActionId}-${connType}-${outputIndex}-${targetId}-${connIndex}
+        const edgeIdParts = canvasEdge.id.split("-");
+        const connectionIndex = parseInt(
+          edgeIdParts[edgeIdParts.length - 1] || "0",
+          10
+        );
+
+        // Get source and target action names
+        const sourceAction = workflow.actions.find(
+          (a) => a.id === canvasEdge.source
+        );
+        const targetAction = workflow.actions.find(
+          (a) => a.id === canvasEdge.target
+        );
+
+        const edgeInfo: EdgeInfo = {
+          sourceId: canvasEdge.source,
+          sourceName: sourceAction?.name || sourceAction?.type || "Unknown",
+          targetId: canvasEdge.target,
+          targetName: targetAction?.name || targetAction?.type || "Unknown",
+          connection: canvasEdge.data.connection,
+          outputType: canvasEdge.data.connectionType,
+          outputIndex: canvasEdge.data.outputIndex,
+          connectionIndex,
+        };
+
+        onEdgeClick(edgeInfo);
       }
     },
-    [onEdgeClick]
+    [onEdgeClick, workflow.actions]
   );
 
   /**

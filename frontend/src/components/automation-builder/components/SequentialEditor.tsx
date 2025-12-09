@@ -60,6 +60,15 @@ const ACTION_GROUPS = {
   Verification: [
     { type: "VANISH", label: "Wait for Vanish", color: "bg-red-500" },
   ],
+  Shell: [
+    { type: "SHELL", label: "Run Command", color: "bg-slate-500" },
+    { type: "SHELL_SCRIPT", label: "Run Script", color: "bg-slate-600" },
+    {
+      type: "TRIGGER_AI_ANALYSIS",
+      label: "AI Analysis",
+      color: "bg-violet-500",
+    },
+  ],
 } as const;
 
 // Flat list for finding action types by type
@@ -512,6 +521,29 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
       return { key: "" };
     case "KEY_UP":
       return { key: "" };
+    case "SHELL":
+      return {
+        command: "",
+        shell: "bash",
+        outputFormat: "text",
+        timeout: 30000,
+        failOnError: true,
+      };
+    case "SHELL_SCRIPT":
+      return {
+        script: "",
+        shell: "bash",
+        outputFormat: "text",
+        timeout: 60000,
+        failOnError: true,
+      };
+    case "TRIGGER_AI_ANALYSIS":
+      return {
+        provider: "claude",
+        prompt: "",
+        timeout: 600000,
+        failOnIssues: false,
+      };
     default:
       return {};
   }
@@ -750,6 +782,63 @@ function getActionSummary(
       return config.key || config.keys?.[0]
         ? `Release key: ${config.key || config.keys?.[0]}`
         : "No key selected";
+    }
+    case "SHELL": {
+      const config = action.config as {
+        command?: string;
+        shell?: string;
+        description?: string;
+      };
+      if (config.description) {
+        return config.description;
+      }
+      if (config.command) {
+        const displayCmd =
+          config.command.length > 40
+            ? config.command.substring(0, 40) + "..."
+            : config.command;
+        return `${config.shell || "sh"}: ${displayCmd}`;
+      }
+      return "No command specified";
+    }
+    case "SHELL_SCRIPT": {
+      const config = action.config as {
+        script?: string;
+        shell?: string;
+        description?: string;
+      };
+      if (config.description) {
+        return config.description;
+      }
+      if (config.script) {
+        const lines = config.script.split("\n").filter((l) => l.trim());
+        return `${config.shell || "bash"} script (${lines.length} lines)`;
+      }
+      return "No script specified";
+    }
+    case "TRIGGER_AI_ANALYSIS": {
+      const config = action.config as {
+        provider?: string;
+        prompt?: string;
+        description?: string;
+        resultsDirectory?: string;
+      };
+      if (config.description) {
+        return config.description;
+      }
+      const provider = config.provider || "claude";
+      // Show the prompt/command if specified
+      if (config.prompt) {
+        // Truncate long prompts for display
+        const displayPrompt = config.prompt.length > 40
+          ? config.prompt.substring(0, 40) + "..."
+          : config.prompt;
+        return `AI Analysis (${provider}): ${displayPrompt}`;
+      }
+      if (config.resultsDirectory) {
+        return `AI Analysis (${provider}) - ${config.resultsDirectory}`;
+      }
+      return `AI Analysis (${provider})`;
     }
     default:
       return "Configure action";

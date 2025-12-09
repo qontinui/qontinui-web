@@ -14,6 +14,7 @@ import type {
   Organization,
   OrganizationCreate,
   OrganizationUpdate,
+  OrganizationStatistics,
   TeamMember,
   Invitation,
   InvitationCreate,
@@ -103,6 +104,21 @@ export class OrganizationService {
 
     if (!response.ok) {
       throw new Error("Failed to fetch organization");
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get organization statistics
+   */
+  async getStatistics(id: string): Promise<OrganizationStatistics> {
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/organizations/${id}/statistics`
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch organization statistics");
     }
 
     return response.json();

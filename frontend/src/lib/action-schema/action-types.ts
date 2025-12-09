@@ -67,6 +67,12 @@ import {
   CustomFunctionActionConfig,
 } from "./configs/code-actions";
 
+import {
+  ShellActionConfig,
+  ShellScriptActionConfig,
+  TriggerAiAnalysisActionConfig,
+} from "./configs/shell-actions";
+
 // ============================================================================
 // Action Types
 // ============================================================================
@@ -110,6 +116,8 @@ export type StateActionType = "GO_TO_STATE" | "RUN_WORKFLOW" | "SCREENSHOT";
 
 export type CodeActionType = "CODE_BLOCK" | "CUSTOM_FUNCTION";
 
+export type ShellActionType = "SHELL" | "SHELL_SCRIPT" | "TRIGGER_AI_ANALYSIS";
+
 export type ActionType =
   | FindActionType
   | MouseActionType
@@ -117,7 +125,8 @@ export type ActionType =
   | ControlFlowActionType
   | DataActionType
   | StateActionType
-  | CodeActionType;
+  | CodeActionType
+  | ShellActionType;
 
 // ============================================================================
 // Action Configuration Map
@@ -171,6 +180,11 @@ export interface ActionConfigMap {
   // Code actions
   CODE_BLOCK: CodeBlockActionConfig;
   CUSTOM_FUNCTION: CustomFunctionActionConfig;
+
+  // Shell actions
+  SHELL: ShellActionConfig;
+  SHELL_SCRIPT: ShellScriptActionConfig;
+  TRIGGER_AI_ANALYSIS: TriggerAiAnalysisActionConfig;
 }
 
 // ============================================================================
@@ -216,6 +230,26 @@ export interface Action<T extends ActionType = ActionType> {
 // ============================================================================
 
 /**
+ * Edge condition for conditional routing
+ */
+export interface EdgeCondition {
+  /** Condition type */
+  type: "expression" | "variable" | "always" | "timeout" | "retry-exhausted";
+
+  /** JavaScript expression to evaluate (for type: "expression") */
+  expression?: string;
+
+  /** Variable name to check (for type: "variable") */
+  variable?: string;
+
+  /** Comparison operator (for type: "variable") */
+  operator?: "equals" | "not-equals" | "greater" | "less" | "contains" | "exists";
+
+  /** Value to compare against (for type: "variable") */
+  value?: string | number | boolean;
+}
+
+/**
  * Connection from one action's output to another action's input
  */
 export interface Connection {
@@ -227,6 +261,20 @@ export interface Connection {
 
   /** Input index on the target action (usually 0) */
   index: number;
+
+  // ========== Edge Properties (optional) ==========
+
+  /** Human-readable label displayed on the edge */
+  label?: string;
+
+  /** Condition that must be met to follow this edge */
+  condition?: EdgeCondition;
+
+  /** Priority/probability weight (0-100), higher = more likely/important */
+  weight?: number;
+
+  /** Optional description for documentation */
+  description?: string;
 }
 
 /**
@@ -430,7 +478,7 @@ export interface Workflow {
   description?: string;
 
   // ============================================================================
-  // Integration Testing Configuration (from Process)
+  // State Machine Configuration
   // ============================================================================
 
   /**
@@ -440,8 +488,9 @@ export interface Workflow {
   initialScreenshotId?: string;
 
   /**
-   * States that should be active at test start
-   * Used for mock/simulated test runs
+   * States that should be active when this workflow starts.
+   * Required for Main category workflows to enable model-based GUI automation.
+   * The qontinui library uses these to initialize the state machine.
    */
   initialStateIds?: string[];
 

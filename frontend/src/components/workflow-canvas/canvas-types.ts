@@ -296,6 +296,11 @@ export const ACTION_TYPE_TO_CATEGORY: Record<ActionType, ActionCategory> = {
   // Code actions
   CODE_BLOCK: ActionCategory.DATA,
   CUSTOM_FUNCTION: ActionCategory.DATA,
+
+  // Shell actions
+  SHELL: ActionCategory.DATA,
+  SHELL_SCRIPT: ActionCategory.DATA,
+  TRIGGER_AI_ANALYSIS: ActionCategory.DATA,
 };
 
 /**
@@ -358,6 +363,29 @@ export interface NodeClickEvent {
 export interface EdgeClickEvent {
   edge: CanvasEdge;
   event: React.MouseEvent;
+}
+
+/**
+ * Rich edge information for edge editing
+ * Contains all context needed to display and update an edge
+ */
+export interface EdgeInfo {
+  /** Source action ID */
+  sourceId: string;
+  /** Source action name */
+  sourceName: string;
+  /** Target action ID */
+  targetId: string;
+  /** Target action name */
+  targetName: string;
+  /** The connection object */
+  connection: Connection;
+  /** Output type (main, error, success, parallel) */
+  outputType: "main" | "error" | "success" | "parallel";
+  /** Output index */
+  outputIndex: number;
+  /** Connection index within the output */
+  connectionIndex: number;
 }
 
 /**

@@ -22,7 +22,8 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible";
-import { Check, X, Users, ChevronDown } from "lucide-react";
+import { Check, X, Users, ChevronDown, Play, AlertCircle } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { LibraryItem } from "../types";
 import { isLinearWorkflow, getSuggestedMode } from "../types";
 import type { BuilderMode } from "../types";
@@ -30,6 +31,7 @@ import { PermissionBadge } from "./PermissionBadge";
 import type { PermissionLevel } from "@/types/collaboration";
 import { ExpectationsPanel } from "@/components/expectations/ExpectationsPanel";
 import type { WorkflowExpectations } from "@/lib/expectations/types";
+import type { State } from "@/contexts/automation-context/types";
 
 export interface ItemMetadataPanelProps {
   item: LibraryItem;
@@ -38,6 +40,8 @@ export interface ItemMetadataPanelProps {
   collaboratorCount?: number;
   onOpenShare?: () => void;
   className?: string;
+  /** Available states for initial state selection (required for Main category workflows) */
+  states?: State[];
 }
 
 // Workflow categories (unified for all workflows)
@@ -59,6 +63,7 @@ export function ItemMetadataPanel({
   collaboratorCount,
   onOpenShare,
   className,
+  states = [],
 }: ItemMetadataPanelProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(item.name);
@@ -70,6 +75,7 @@ export function ItemMetadataPanel({
     item.metadata?.viewMode || getSuggestedMode(item)
   );
   const [expectationsOpen, setExpectationsOpen] = useState(false);
+  const [initialStatesOpen, setInitialStatesOpen] = useState(false);
 
   // Reset temp values when item changes
   useEffect(() => {
@@ -148,6 +154,32 @@ export function ItemMetadataPanel({
     },
     [item, onUpdate]
   );
+
+  /**
+   * Handle initial state toggle
+   */
+  const handleInitialStateToggle = useCallback(
+    (stateId: string, checked: boolean) => {
+      const currentIds = (item as any).initialStateIds || [];
+      const newIds = checked
+        ? [...currentIds, stateId]
+        : currentIds.filter((id: string) => id !== stateId);
+
+      onUpdate({
+        ...item,
+        initialStateIds: newIds,
+        metadata: {
+          ...item.metadata,
+          updated: new Date().toISOString(),
+        },
+      } as LibraryItem);
+    },
+    [item, onUpdate]
+  );
+
+  // Check if this is a Main category workflow
+  const isMainCategory = (item.category || "Main") === "Main";
+  const initialStateIds: string[] = (item as any).initialStateIds || [];
 
   const isLinear = isLinearWorkflow(item);
   const currentViewMode = item.metadata?.viewMode || getSuggestedMode(item);
@@ -339,6 +371,74 @@ export function ItemMetadataPanel({
             <X className="w-4 h-4 mr-2" />
             Cancel
           </Button>
+        </div>
+      )}
+
+      {/* Initial States Section - Only for Main category workflows */}
+      {isMainCategory && (
+        <div className="mt-6 pt-6 border-t border-gray-800">
+          <Collapsible
+            open={initialStatesOpen}
+            onOpenChange={setInitialStatesOpen}
+          >
+            <CollapsibleTrigger className="w-full flex items-center justify-between py-2 hover:bg-gray-900/50 rounded-md px-2 transition-colors">
+              <div className="flex items-center gap-2">
+                <Play className="h-4 w-4 text-[#00FF88]" />
+                <span className="text-sm font-medium text-gray-300">
+                  Initial States
+                </span>
+                {initialStateIds.length > 0 && (
+                  <span className="text-xs text-[#00FF88] bg-[#00FF88]/10 px-1.5 py-0.5 rounded">
+                    {initialStateIds.length} selected
+                  </span>
+                )}
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                  initialStatesOpen ? "rotate-180" : ""
+                }`}
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-2">
+              <div className="bg-gray-900/30 border border-gray-800 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-3">
+                  Select which states should be considered active when this
+                  workflow starts. Required for model-based GUI automation.
+                </p>
+                {states.length === 0 ? (
+                  <div className="flex items-center gap-2 text-sm text-amber-500">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>No states defined in this project</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {states.map((state) => (
+                      <label
+                        key={state.id}
+                        className="flex items-center gap-2 p-2 rounded hover:bg-gray-800/50 cursor-pointer transition-colors"
+                      >
+                        <Checkbox
+                          checked={initialStateIds.includes(state.id)}
+                          onCheckedChange={(checked) =>
+                            handleInitialStateToggle(state.id, checked === true)
+                          }
+                          className="border-gray-600 data-[state=checked]:bg-[#00FF88] data-[state=checked]:border-[#00FF88]"
+                        />
+                        <span className="text-sm text-gray-300 flex-1">
+                          {state.name}
+                        </span>
+                        {state.description && (
+                          <span className="text-xs text-gray-500 truncate max-w-[120px]">
+                            {state.description}
+                          </span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
       )}
 

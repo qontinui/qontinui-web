@@ -35,6 +35,25 @@ pytest.ini
 
 # Ignore logs
 *.log
+logs/
 
-# Ignore EB logs directory
+# Ignore entire .elasticbeanstalk directory (except config.yml which is needed)
 .elasticbeanstalk/logs/
+.elasticbeanstalk/app_versions/
+
+# Ignore terraform (not needed for deployment)
+terraform/
+
+# Ignore development/test artifacts
+htmlcov/
+coverage.xml
+.coverage
+.mypy_cache/
+
+# Ignore user projects directory (local development only)
+user_projects/
+
+# Ignore ML/dataset files (not needed for web backend)
+ml/
+dataset*.py
+backup_migrations/

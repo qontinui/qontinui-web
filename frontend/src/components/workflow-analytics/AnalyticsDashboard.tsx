@@ -15,7 +15,10 @@
 
 import React, { useState, useMemo } from "react";
 import { Workflow } from "@/lib/action-schema/action-types";
-import { WorkflowMetrics } from "@/services/workflow-analytics-service";
+import {
+  WorkflowMetrics,
+  ExecutionRecord,
+} from "@/services/workflow-analytics-service";
 import {
   LineChart,
   Line,
@@ -40,6 +43,7 @@ import {
   AlertTriangle,
   Filter,
   X,
+  RefreshCw,
 } from "lucide-react";
 import {
   Card,
@@ -60,6 +64,16 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 // ============================================================================
 // Types
@@ -68,8 +82,10 @@ import { cn } from "@/lib/utils";
 export interface AnalyticsDashboardProps {
   workflows: Workflow[];
   metrics: Record<string, WorkflowMetrics>;
+  executions?: ExecutionRecord[];
   timeRange: { start: Date; end: Date };
   onTimeRangeChange: (range: { start: Date; end: Date }) => void;
+  onRefresh?: () => void;
   className?: string;
 }
 
@@ -197,11 +213,16 @@ function MetricCard({
 export function AnalyticsDashboard({
   workflows,
   metrics,
+  executions = [],
   timeRange,
   onTimeRangeChange,
+  onRefresh,
   className,
 }: AnalyticsDashboardProps) {
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
+  const [customDateDialogOpen, setCustomDateDialogOpen] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
 
   // Calculate aggregated metrics
   const aggregatedMetrics = useMemo(() => {
@@ -268,16 +289,15 @@ export function AnalyticsDashboard({
     };
   }, [metrics]);
 
-  // Timeline data
+  // Timeline data - aggregates executions by day
   const timelineData = useMemo(() => {
-    const data: Array<{
-      name: string;
-      executions: number;
-      success: number;
-      failed: number;
-    }> = [];
+    // Group executions by date
+    const executionsByDate: Record<
+      string,
+      { executions: number; success: number; failed: number }
+    > = {};
 
-    // Group by day for the selected time range
+    // Initialize all dates in the range with zero values
     const daysDiff = Math.ceil(
       (timeRange.end.getTime() - timeRange.start.getTime()) /
         (1000 * 60 * 60 * 24)
@@ -289,19 +309,101 @@ export function AnalyticsDashboard({
         timeRange.start.getTime() +
           (i * (timeRange.end.getTime() - timeRange.start.getTime())) / points
       );
-      data.push({
-        name: date.toLocaleDateString("en-US", {
+      const dateKey = date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+      executionsByDate[dateKey] = { executions: 0, success: 0, failed: 0 };
+    }
+
+    // Aggregate actual executions by date
+    executions.forEach((exec) => {
+      const execDate = new Date(exec.startTime);
+      // Only include executions within the time range
+      if (execDate >= timeRange.start && execDate <= timeRange.end) {
+        const dateKey = execDate.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
-        }),
-        executions: Math.floor(Math.random() * 100), // TODO: Replace with actual data
-        success: Math.floor(Math.random() * 80),
-        failed: Math.floor(Math.random() * 20),
+        });
+        // Find the closest bucket date
+        const bucketDate = Object.keys(executionsByDate).find((key) => {
+          // Simple matching - same day label
+          return key === dateKey;
+        });
+        if (bucketDate && executionsByDate[bucketDate]) {
+          executionsByDate[bucketDate].executions++;
+          if (exec.success) {
+            executionsByDate[bucketDate].success++;
+          } else {
+            executionsByDate[bucketDate].failed++;
+          }
+        } else {
+          // Find nearest bucket for executions that don't match exactly
+          const execDateNum = execDate.getTime();
+          let nearestKey: string | null = null;
+          let nearestDiff = Infinity;
+          for (let i = 0; i < points; i++) {
+            const bucketDateObj = new Date(
+              timeRange.start.getTime() +
+                (i * (timeRange.end.getTime() - timeRange.start.getTime())) /
+                  points
+            );
+            const diff = Math.abs(bucketDateObj.getTime() - execDateNum);
+            if (diff < nearestDiff) {
+              nearestDiff = diff;
+              nearestKey = bucketDateObj.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              });
+            }
+          }
+          if (nearestKey) {
+            const bucket = executionsByDate[nearestKey];
+            if (bucket) {
+              bucket.executions++;
+              if (exec.success) {
+                bucket.success++;
+              } else {
+                bucket.failed++;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Convert to array, maintaining chronological order
+    const data: Array<{
+      name: string;
+      executions: number;
+      success: number;
+      failed: number;
+    }> = [];
+
+    for (let i = 0; i < points; i++) {
+      const date = new Date(
+        timeRange.start.getTime() +
+          (i * (timeRange.end.getTime() - timeRange.start.getTime())) / points
+      );
+      const dateKey = date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+      const bucket = executionsByDate[dateKey] || {
+        executions: 0,
+        success: 0,
+        failed: 0,
+      };
+      data.push({
+        name: dateKey,
+        executions: bucket.executions,
+        success: bucket.success,
+        failed: bucket.failed,
       });
     }
 
     return data;
-  }, [timeRange]);
+  }, [timeRange, executions]);
 
   // Success rate by workflow data
   const successRateData = useMemo(() => {
@@ -339,7 +441,12 @@ export function AnalyticsDashboard({
   // Handle time range change
   const handleTimeRangeChange = (preset: string) => {
     if (preset === "custom") {
-      // TODO: Open custom date picker
+      // Initialize custom date inputs with current time range
+      const startDateStr = timeRange.start.toISOString().split("T")[0] ?? "";
+      const endDateStr = timeRange.end.toISOString().split("T")[0] ?? "";
+      setCustomStartDate(startDateStr);
+      setCustomEndDate(endDateStr);
+      setCustomDateDialogOpen(true);
       return;
     }
 
@@ -347,6 +454,25 @@ export function AnalyticsDashboard({
     if (rangeFunc) {
       onTimeRangeChange(rangeFunc());
     }
+  };
+
+  // Handle applying custom date range
+  const handleApplyCustomDateRange = () => {
+    if (!customStartDate || !customEndDate) return;
+
+    const start = new Date(customStartDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(customEndDate);
+    end.setHours(23, 59, 59, 999);
+
+    if (start > end) {
+      // Swap if start is after end
+      onTimeRangeChange({ start: end, end: start });
+    } else {
+      onTimeRangeChange({ start, end });
+    }
+
+    setCustomDateDialogOpen(false);
   };
 
   // Handle export
@@ -396,15 +522,16 @@ export function AnalyticsDashboard({
               <SelectItem value="custom">Custom range...</SelectItem>
             </SelectContent>
           </Select>
-          {/* TODO: Implement refresh functionality
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setRefreshKey((k) => k + 1)}
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          */}
+          {onRefresh && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onRefresh}
+              title="Refresh data"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          )}
           <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Export
@@ -701,6 +828,53 @@ export function AnalyticsDashboard({
           </CardContent>
         </Card>
       </div>
+
+      {/* Custom Date Range Dialog */}
+      <Dialog open={customDateDialogOpen} onOpenChange={setCustomDateDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Custom Date Range</DialogTitle>
+            <DialogDescription>
+              Select a custom date range for analytics data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="start-date" className="text-right">
+                Start Date
+              </Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="end-date" className="text-right">
+                End Date
+              </Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="col-span-3"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCustomDateDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleApplyCustomDateRange}>Apply Range</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

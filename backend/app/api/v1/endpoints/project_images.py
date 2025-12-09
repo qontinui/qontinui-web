@@ -67,6 +67,11 @@ MAGIC_BYTES = {
 # Presigned URL expiration: 7 days
 PRESIGNED_URL_EXPIRATION = 7 * 24 * 60 * 60  # 604800 seconds
 
+# Thumbnail settings
+THUMBNAIL_MAX_SIZE = (256, 256)  # Max dimensions (width, height)
+THUMBNAIL_QUALITY = 85  # WebP quality (0-100)
+THUMBNAIL_FORMAT = "WEBP"  # Use WebP for smaller file sizes
+
 
 # ============================================================================
 # Request/Response Schemas
@@ -177,6 +182,67 @@ async def check_project_permission(
         )
 
 
+def generate_thumbnail(image: Image.Image) -> tuple[bytes, int, int]:
+    """
+    Generate a thumbnail from a PIL Image.
+
+    Creates a WebP thumbnail with max dimensions of 256x256, preserving aspect ratio.
+
+    Args:
+        image: PIL Image object
+
+    Returns:
+        Tuple of (thumbnail_bytes, thumbnail_width, thumbnail_height)
+    """
+    try:
+        # Make a copy to avoid modifying the original
+        thumbnail = image.copy()
+
+        # Convert to RGB if image has transparency (WebP RGB is smaller)
+        if thumbnail.mode in ("RGBA", "LA", "P"):
+            # Create white background
+            background = Image.new("RGB", thumbnail.size, (255, 255, 255))
+            if thumbnail.mode == "P":
+                thumbnail = thumbnail.convert("RGBA")
+            background.paste(
+                thumbnail,
+                mask=(
+                    thumbnail.split()[-1] if thumbnail.mode in ("RGBA", "LA") else None
+                ),
+            )
+            thumbnail = background
+
+        # Resize with aspect ratio preservation
+        thumbnail.thumbnail(THUMBNAIL_MAX_SIZE, Image.Resampling.LANCZOS)
+
+        # Get dimensions after resize
+        thumb_width, thumb_height = thumbnail.size
+
+        # Convert to WebP bytes
+        output = io.BytesIO()
+        thumbnail.save(
+            output,
+            format=THUMBNAIL_FORMAT,
+            quality=THUMBNAIL_QUALITY,
+            method=6,  # Slowest but best compression
+        )
+        thumbnail_bytes = output.getvalue()
+        output.close()
+
+        logger.debug(
+            "thumbnail_generated",
+            original_size=image.size,
+            thumbnail_size=(thumb_width, thumb_height),
+            thumbnail_bytes=len(thumbnail_bytes),
+        )
+
+        return thumbnail_bytes, thumb_width, thumb_height
+
+    except Exception as e:
+        logger.error("thumbnail_generation_failed", error=str(e))
+        raise
+
+
 def build_image_response(
     image: ProjectImage, presigned_url: str | None = None
 ) -> ProjectImageResponse:
@@ -184,6 +250,11 @@ def build_image_response(
     # Generate presigned URL if not provided
     if presigned_url is None:
         presigned_url = generate_presigned_url(image.s3_key)
+
+    # Generate thumbnail URL if thumbnail exists
+    thumbnail_url: str | None = None
+    if image.thumbnail_s3_key:
+        thumbnail_url = generate_presigned_url(image.thumbnail_s3_key)
 
     return ProjectImageResponse(
         id=image.id,
@@ -197,7 +268,7 @@ def build_image_response(
         metadata=image.metadata,
         storage_path=image.s3_key,
         presigned_url=presigned_url,
-        thumbnail_url=None,  # TODO: Add thumbnail support
+        thumbnail_url=thumbnail_url,
         width=image.width,
         height=image.height,
         file_size=image.size_bytes,
@@ -308,12 +379,52 @@ async def upload_image(
     s3_key = f"images/{current_user.id}/{project_id}/{image_id}.{extension}"
 
     try:
-        # Get image dimensions
+        # Get image dimensions and generate thumbnail
         img = Image.open(io.BytesIO(file_contents))
         width, height = img.size
+
+        # Generate thumbnail
+        thumbnail_s3_key: str | None = None
+        try:
+            thumbnail_bytes, thumb_width, thumb_height = generate_thumbnail(img)
+            thumbnail_s3_key = (
+                f"thumbnails/{current_user.id}/{project_id}/{image_id}.webp"
+            )
+
+            # Upload thumbnail to S3
+            thumb_obj = io.BytesIO(thumbnail_bytes)
+            object_storage.backend.upload_file(
+                file_obj=thumb_obj,
+                key=thumbnail_s3_key,
+                content_type="image/webp",
+                metadata={
+                    "user_id": str(current_user.id),
+                    "project_id": project_id,
+                    "image_id": str(image_id),
+                    "is_thumbnail": "true",
+                },
+            )
+
+            logger.info(
+                "thumbnail_uploaded",
+                user_id=str(current_user.id),
+                project_id=project_id,
+                thumbnail_s3_key=thumbnail_s3_key,
+                thumbnail_size=len(thumbnail_bytes),
+            )
+        except Exception as e:
+            logger.warning(
+                "thumbnail_generation_failed",
+                user_id=str(current_user.id),
+                image_id=str(image_id),
+                error=str(e),
+            )
+            # Continue without thumbnail - not a critical failure
+            thumbnail_s3_key = None
+
         img.close()
 
-        # Upload to S3
+        # Upload main image to S3
         file_obj = io.BytesIO(file_contents)
         object_storage.backend.upload_file(
             file_obj=file_obj,
@@ -353,6 +464,7 @@ async def upload_image(
         user_id=current_user.id,
         name=file.filename or f"image_{image_id}",
         s3_key=s3_key,
+        thumbnail_s3_key=thumbnail_s3_key,
         width=width,
         height=height,
         size_bytes=file_size,
@@ -491,6 +603,43 @@ async def extract_image_from_screenshot(
         img = Image.open(io.BytesIO(screenshot_data))
         cropped = img.crop((x, y, x + width, y + height))
 
+        # Generate thumbnail from cropped image
+        thumbnail_s3_key: str | None = None
+        try:
+            thumbnail_bytes, thumb_width, thumb_height = generate_thumbnail(cropped)
+            thumbnail_s3_key = f"thumbnails/{current_user.id}/{project_id}/{extract_data.screenshot_id}.webp"
+
+            # Upload thumbnail to S3
+            thumb_obj = io.BytesIO(thumbnail_bytes)
+            object_storage.backend.upload_file(
+                file_obj=thumb_obj,
+                key=thumbnail_s3_key,
+                content_type="image/webp",
+                metadata={
+                    "user_id": str(current_user.id),
+                    "project_id": project_id,
+                    "screenshot_id": str(extract_data.screenshot_id),
+                    "is_thumbnail": "true",
+                },
+            )
+
+            logger.info(
+                "thumbnail_uploaded_from_extraction",
+                user_id=str(current_user.id),
+                project_id=project_id,
+                thumbnail_s3_key=thumbnail_s3_key,
+                thumbnail_size=len(thumbnail_bytes),
+            )
+        except Exception as e:
+            logger.warning(
+                "thumbnail_generation_failed_extraction",
+                user_id=str(current_user.id),
+                screenshot_id=str(extract_data.screenshot_id),
+                error=str(e),
+            )
+            # Continue without thumbnail - not a critical failure
+            thumbnail_s3_key = None
+
         # Convert to bytes
         output = io.BytesIO()
         # Use PNG for lossless extraction
@@ -578,6 +727,7 @@ async def extract_image_from_screenshot(
         user_id=current_user.id,
         name=extract_data.name,
         s3_key=s3_key,
+        thumbnail_s3_key=thumbnail_s3_key,
         width=width,
         height=height,
         size_bytes=cropped_size,
@@ -869,8 +1019,9 @@ async def delete_image(
         raise not_found_error("Image", "image")
 
     s3_key = image.s3_key
+    thumbnail_s3_key = image.thumbnail_s3_key
 
-    # Delete from S3
+    # Delete main image from S3
     try:
         success = object_storage.delete_file(s3_key)
         if not success:
@@ -888,6 +1039,25 @@ async def delete_image(
             error=str(e),
         )
         # Continue to clean up database even if S3 delete fails
+
+    # Delete thumbnail from S3 if it exists
+    if thumbnail_s3_key:
+        try:
+            success = object_storage.delete_file(thumbnail_s3_key)
+            if not success:
+                logger.warning(
+                    "thumbnail_delete_failed",
+                    user_id=str(current_user.id),
+                    thumbnail_s3_key=thumbnail_s3_key,
+                )
+        except Exception as e:
+            logger.error(
+                "thumbnail_delete_error",
+                user_id=str(current_user.id),
+                thumbnail_s3_key=thumbnail_s3_key,
+                error=str(e),
+            )
+            # Continue to clean up database even if thumbnail delete fails
 
     # Update storage tracking
     try:
@@ -969,8 +1139,9 @@ async def batch_delete_images(
                 continue
 
             s3_key = image.s3_key
+            thumbnail_s3_key = image.thumbnail_s3_key
 
-            # Delete from S3
+            # Delete main image from S3
             try:
                 object_storage.delete_file(s3_key)
             except Exception as e:
@@ -981,6 +1152,19 @@ async def batch_delete_images(
                     error=str(e),
                 )
                 # Continue anyway
+
+            # Delete thumbnail from S3 if it exists
+            if thumbnail_s3_key:
+                try:
+                    object_storage.delete_file(thumbnail_s3_key)
+                except Exception as e:
+                    logger.error(
+                        "thumbnail_delete_error_batch",
+                        image_id=str(image_id),
+                        thumbnail_s3_key=thumbnail_s3_key,
+                        error=str(e),
+                    )
+                    # Continue anyway
 
             # Update storage tracking
             try:

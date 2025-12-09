@@ -128,7 +128,23 @@ select = [
 ignore = [
     "E501",  # line too long (handled by formatter)
     "E203",  # whitespace before ':'
+    "B008",  # function call in default argument - allowed for FastAPI Depends()
+    "B017",  # pytest.raises(Exception) - acceptable for validation tests
+    "B904",  # raise from - good practice but not critical, many existing exceptions
+    "B019",  # lru_cache on methods - used intentionally for secrets/config caching
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["E402"]  # Import order in tests is flexible
+"app/api/deps.py" = ["E402"]  # FastAPI deps require specific import ordering
+"app/api/v1/endpoints/auth_endpoints.py" = ["E402"]  # Auth endpoints need specific imports
+"app/db/session.py" = ["E402"]  # Database session setup requires specific order
+"app/main.py" = ["E402"]  # App initialization requires specific order
+"check_database.py" = ["E402"]  # Script with path setup
+"create_admin.py" = ["E402"]  # Script with path setup
+"create_tables.py" = ["E402"]  # Script with path setup
+"generate_test_data.py" = ["E402"]  # Script with path setup
+"setup_annotations.py" = ["E402"]  # Script with path setup
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

@@ -784,9 +784,11 @@ export class WorkflowTemplatesService {
    */
   private loadCustomTemplates(): void {
     try {
-      const json = localStorage.getItem("workflow-custom-templates");
-      if (json) {
-        this.customTemplates = JSON.parse(json);
+      if (typeof window !== 'undefined') {
+        const json = localStorage.getItem("workflow-custom-templates");
+        if (json) {
+          this.customTemplates = JSON.parse(json);
+        }
       }
     } catch (error) {
       console.error("Failed to load custom templates:", error);
@@ -799,10 +801,12 @@ export class WorkflowTemplatesService {
    */
   private saveCustomTemplates(): void {
     try {
-      localStorage.setItem(
-        "workflow-custom-templates",
-        JSON.stringify(this.customTemplates)
-      );
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          "workflow-custom-templates",
+          JSON.stringify(this.customTemplates)
+        );
+      }
     } catch (error) {
       console.error("Failed to save custom templates:", error);
     }
@@ -813,7 +817,9 @@ export class WorkflowTemplatesService {
    */
   clearCustomTemplates(): void {
     this.customTemplates = [];
-    localStorage.removeItem("workflow-custom-templates");
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem("workflow-custom-templates");
+    }
   }
 }
 

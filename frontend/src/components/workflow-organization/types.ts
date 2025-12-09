@@ -108,8 +108,45 @@ export interface SearchFilter {
   /** Has documentation filter */
   hasDocumentation?: boolean | null;
 
+  // ========== Execution History Filters ==========
+
+  /** Last run date range */
+  lastRunDateRange?: DateRange;
+
   /** Minimum success rate (0-100) */
   minSuccessRate?: number;
+
+  /** Minimum number of executions */
+  minRunCount?: number;
+
+  /** Filter by has been executed */
+  hasBeenExecuted?: boolean | null;
+}
+
+/**
+ * Execution statistics for a workflow
+ */
+export interface WorkflowExecutionStats {
+  /** Workflow ID */
+  workflowId: string;
+
+  /** Total number of executions */
+  runCount: number;
+
+  /** Number of successful executions */
+  successCount: number;
+
+  /** Number of failed executions */
+  failureCount: number;
+
+  /** Success rate (0-100) */
+  successRate: number;
+
+  /** Last execution timestamp */
+  lastRunAt?: Date;
+
+  /** Average execution duration in milliseconds */
+  avgDurationMs?: number;
 }
 
 export interface SavedFilter {

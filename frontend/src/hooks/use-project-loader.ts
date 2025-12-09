@@ -151,6 +151,12 @@ export function useProjectLoader(): UseProjectLoaderResult {
         currentContextProjectId: contextProjectId,
       });
 
+      // CRITICAL: Mark this project as being loaded BEFORE any async operations
+      // This prevents the useEffect from re-triggering due to dependency changes
+      // (like workflows.length) during async operations in loadConfiguration.
+      // Without this, the effect could re-run with stale ref and cause duplicate loads.
+      loadedProjectIdRef.current = urlProjectId;
+
       loadingRef.current = true;
       setIsLoading(true);
       setError(null);
@@ -244,9 +250,6 @@ export function useProjectLoader(): UseProjectLoaderResult {
         setProjectId(String(project.id));
         setContextProjectId(String(project.id));
 
-        // Mark as successfully loaded
-        loadedProjectIdRef.current = urlProjectId;
-
         projectLogger.projectLoader("Project load completed successfully", {
           projectId: project.id,
           projectName: project.name,
@@ -258,6 +261,8 @@ export function useProjectLoader(): UseProjectLoaderResult {
           urlProjectId,
           error: errorMessage,
         });
+        // Reset the ref on error so retry attempts can proceed
+        loadedProjectIdRef.current = null;
         setError(errorMessage);
         toast.error("Failed to load project");
       } finally {

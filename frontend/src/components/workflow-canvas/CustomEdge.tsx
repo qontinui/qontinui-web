@@ -11,7 +11,7 @@ import {
   EdgeLabelRenderer,
   BaseEdge,
 } from "@xyflow/react";
-import { X } from "lucide-react";
+import { X, Zap } from "lucide-react";
 import { CanvasEdgeData } from "./canvas-types";
 import { getConnectionColor } from "./canvas-config";
 
@@ -51,13 +51,27 @@ export function CustomEdge({
   const connectionColor = getConnectionColor(data.connectionType);
   const isSelected = selected || data.selected;
 
-  // Calculate edge style
+  // Check for edge properties from the connection object
+  const hasCondition =
+    data.connection?.condition &&
+    data.connection.condition.type !== "always";
+  const customLabel = data.connection?.label;
+  const displayLabel = customLabel || data.label;
+  const weight = data.connection?.weight;
+
+  // Calculate edge style - dimmer stroke for low weight edges
+  const weightOpacity = weight !== undefined ? 0.3 + (weight / 100) * 0.7 : 0.8;
   const edgeStyle: React.CSSProperties = {
     ...style,
     stroke: connectionColor,
     strokeWidth: isSelected ? 3 : isHovered ? 3 : 2,
-    strokeDasharray: data.connectionType === "parallel" ? "5,5" : undefined,
-    opacity: data.recentlyTraversed ? 1 : 0.8,
+    strokeDasharray:
+      data.connectionType === "parallel"
+        ? "5,5"
+        : hasCondition
+          ? "8,4"
+          : undefined,
+    opacity: data.recentlyTraversed ? 1 : weightOpacity,
     transition: "stroke-width 0.15s ease-in-out, opacity 0.15s ease-in-out",
   };
 
@@ -73,7 +87,7 @@ export function CustomEdge({
     border: `1px solid ${connectionColor}`,
     color: connectionColor,
     pointerEvents: "all",
-    opacity: isHovered || isSelected || data.label ? 1 : 0,
+    opacity: isHovered || isSelected || displayLabel ? 1 : 0,
     transition: "opacity 0.15s ease-in-out",
   };
 
@@ -108,15 +122,42 @@ export function CustomEdge({
 
       {/* Edge label and delete button */}
       <EdgeLabelRenderer>
-        {/* Label */}
-        {data.label && (
+        {/* Label with condition indicator */}
+        {displayLabel && (
           <div
             style={labelStyle}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
-            className="nodrag nopan"
+            className="nodrag nopan flex items-center gap-1"
           >
-            {data.label}
+            {hasCondition && (
+              <Zap className="w-3 h-3" style={{ color: "#00D9FF" }} />
+            )}
+            <span>{displayLabel}</span>
+            {weight !== undefined && weight !== 100 && (
+              <span
+                className="text-xs opacity-60 ml-1"
+                style={{ fontSize: 9 }}
+              >
+                {weight}%
+              </span>
+            )}
+          </div>
+        )}
+        {/* Condition indicator when no label (show on hover) */}
+        {!displayLabel && hasCondition && (
+          <div
+            style={{
+              ...labelStyle,
+              opacity: isHovered || isSelected ? 1 : 0,
+              padding: "2px 6px",
+            }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            className="nodrag nopan flex items-center gap-1"
+          >
+            <Zap className="w-3 h-3" style={{ color: "#00D9FF" }} />
+            <span className="text-xs">{data.connection?.condition?.type}</span>
           </div>
         )}
 

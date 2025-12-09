@@ -13,7 +13,6 @@ import {
   Loader2,
   Monitor,
   Settings,
-  ExternalLink,
 } from "lucide-react";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { AutomationStreamingCard } from "@/components/profile/automation-streaming-card";
@@ -35,11 +34,7 @@ export default function ConnectRunnerPage() {
   };
 
   const handleDownloadRunner = () => {
-    // TODO: Link to actual download page or GitHub releases
-    window.open(
-      "https://github.com/qontinui/qontinui-runner/releases",
-      "_blank"
-    );
+    router.push("/download");
   };
 
   // Show loading while auth is checking
@@ -200,7 +195,6 @@ export default function ConnectRunnerPage() {
                   >
                     <Download className="w-4 h-4 mr-2" />
                     Download Runner
-                    <ExternalLink className="w-3 h-3 ml-2" />
                   </Button>
                 </div>
               </div>

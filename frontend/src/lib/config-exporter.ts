@@ -334,7 +334,7 @@ export class ConfigExporter {
         }
       }
 
-      return {
+      const exported: any = {
         id: workflow.id,
         name: workflow.name,
         description: workflow.description,
@@ -345,6 +345,13 @@ export class ConfigExporter {
         connections: connections,
         metadata: workflow.metadata || {},
       };
+
+      // Include initialStateIds if present (required for Main category workflows)
+      if (workflow.initialStateIds && workflow.initialStateIds.length > 0) {
+        exported.initialStateIds = workflow.initialStateIds;
+      }
+
+      return exported;
     });
   }
 

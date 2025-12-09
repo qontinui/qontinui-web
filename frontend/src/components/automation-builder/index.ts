@@ -22,6 +22,7 @@ export {
 } from "./components/BuilderModeSelector";
 export { ItemMetadataPanel } from "./components/ItemMetadataPanel";
 export { EditorToolbar, CompactToolbar } from "./components/EditorToolbar";
+export { EdgePropertiesPanel } from "./components/EdgePropertiesPanel";
 
 // Main component
 export { AutomationBuilder } from "./AutomationBuilder";

@@ -229,14 +229,6 @@ export function TypeActionProperties({
           checked={action.config.press_enter}
           onCheckedChange={(checked) => {
             updateConfig("press_enter", checked);
-            // If enabling press_enter and text doesn't end with {ENTER}, add it
-            // If disabling press_enter and text ends with {ENTER}, remove it
-            const currentText = action.config.text || "";
-            if (checked && !currentText.endsWith("{ENTER}")) {
-              updateConfig("text", currentText + "{ENTER}");
-            } else if (!checked && currentText.endsWith("{ENTER}")) {
-              updateConfig("text", currentText.slice(0, -7)); // Remove "{ENTER}" (7 chars)
-            }
           }}
         />
         <Label htmlFor="press_enter" className="text-xs text-gray-400">

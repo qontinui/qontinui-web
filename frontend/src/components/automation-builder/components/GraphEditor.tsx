@@ -6,7 +6,7 @@
  * Matches the interface style of SequentialEditor for consistency.
  */
 
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { WorkflowCanvas } from "@/components/workflow-canvas";
 import { NodePalette } from "@/components/workflow-canvas/NodePalette";
@@ -16,6 +16,8 @@ import type {
   Connection,
   ActionType,
 } from "@/lib/action-schema/action-types";
+import type { EdgeInfo } from "@/components/workflow-canvas";
+import { EdgePropertiesPanel } from "./EdgePropertiesPanel";
 import type { GraphEditorProps } from "../types";
 
 function GraphEditorInner({
@@ -24,6 +26,9 @@ function GraphEditorInner({
   onUpdateWorkflow,
   onAddNode,
 }: GraphEditorProps) {
+  // Track selected edge for property editing
+  const [selectedEdge, setSelectedEdge] = useState<EdgeInfo | null>(null);
+
   /**
    * Handle workflow changes from canvas
    */
@@ -35,21 +40,72 @@ function GraphEditorInner({
   );
 
   /**
-   * Handle node clicks - select the action
+   * Handle node clicks - select the action, clear edge selection
    */
   const handleNodeClick = useCallback(
     (action: Action) => {
+      setSelectedEdge(null);
       onSelectNode(action);
     },
     [onSelectNode]
   );
 
   /**
-   * Handle edge clicks - currently just logs
-   * TODO: Implement edge property editing if needed
+   * Handle edge clicks - select edge for property editing
    */
-  const handleEdgeClick = useCallback((connection: Connection) => {
-    console.log("[GraphEditor] Edge clicked:", connection);
+  const handleEdgeClick = useCallback(
+    (edgeInfo: EdgeInfo) => {
+      console.log("[GraphEditor] Edge clicked:", edgeInfo);
+      setSelectedEdge(edgeInfo);
+      onSelectNode(null); // Deselect any node
+    },
+    [onSelectNode]
+  );
+
+  /**
+   * Handle edge property updates
+   */
+  const handleEdgeUpdate = useCallback(
+    (updatedConnection: Connection) => {
+      if (!selectedEdge) return;
+
+      // Deep clone the connections object
+      const newConnections = JSON.parse(JSON.stringify(workflow.connections));
+
+      // Navigate to the correct connection and update it
+      const sourceConnections = newConnections[selectedEdge.sourceId];
+      if (sourceConnections) {
+        const outputArray = sourceConnections[selectedEdge.outputType];
+        if (
+          outputArray &&
+          outputArray[selectedEdge.outputIndex] &&
+          outputArray[selectedEdge.outputIndex][selectedEdge.connectionIndex]
+        ) {
+          outputArray[selectedEdge.outputIndex][selectedEdge.connectionIndex] =
+            updatedConnection;
+
+          const updatedWorkflow = {
+            ...workflow,
+            connections: newConnections,
+          };
+          onUpdateWorkflow(updatedWorkflow);
+
+          // Update selected edge with new connection data
+          setSelectedEdge({
+            ...selectedEdge,
+            connection: updatedConnection,
+          });
+        }
+      }
+    },
+    [selectedEdge, workflow, onUpdateWorkflow]
+  );
+
+  /**
+   * Close edge properties panel
+   */
+  const handleCloseEdgePanel = useCallback(() => {
+    setSelectedEdge(null);
   }, []);
 
   /**
@@ -84,7 +140,7 @@ function GraphEditorInner({
       </div>
 
       {/* Canvas */}
-      <div className="flex-1">
+      <div className="flex-1 relative">
         <WorkflowCanvas
           workflow={workflow}
           onWorkflowChange={handleWorkflowChange}
@@ -108,6 +164,17 @@ function GraphEditorInner({
           }}
         />
       </div>
+
+      {/* Edge Properties Panel - slides in from right when edge is selected */}
+      {selectedEdge && (
+        <div className="w-80 flex-shrink-0 border-l border-gray-800">
+          <EdgePropertiesPanel
+            edge={selectedEdge}
+            onUpdate={handleEdgeUpdate}
+            onClose={handleCloseEdgePanel}
+          />
+        </div>
+      )}
     </div>
   );
 }

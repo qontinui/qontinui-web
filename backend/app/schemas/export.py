@@ -111,6 +111,10 @@ class Workflow(BaseModel):
     metadata: WorkflowMetadata | None = None
     category: str | None = None
     tags: list[str] | None = None
+    initialStateIds: list[str] | None = Field(
+        default=None,
+        description="Initial active states when workflow starts. Required for Main category workflows for model-based GUI automation.",
+    )
 
 
 class StateImage(BaseModel):

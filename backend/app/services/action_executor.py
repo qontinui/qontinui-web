@@ -234,7 +234,7 @@ class ActionExecutor:
                     f"[{self.workflow_run_id}] click() called in async context - use click_async() instead"
                 )
                 # Schedule and return pending result
-                future = asyncio.ensure_future(self.click_async(x, y))
+                asyncio.ensure_future(self.click_async(x, y))
                 # Block would deadlock - raise instead
                 raise RuntimeError(
                     "Cannot use synchronous click() in async context. Use await click_async() instead."

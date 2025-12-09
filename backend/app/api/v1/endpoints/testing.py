@@ -895,7 +895,7 @@ async def upload_screenshot(
         )
 
     # Get test run and verify access
-    test_run = await get_test_run_with_access(db, run_id, user.id)
+    await get_test_run_with_access(db, run_id, user.id)
 
     # Read image data
     image_data = await image.read()
@@ -1450,9 +1450,7 @@ async def get_deficiency(
         )
 
     # Get test run to verify project access
-    test_run = await get_test_run_with_access(
-        db, deficiency.test_run_id, current_user.id
-    )
+    await get_test_run_with_access(db, deficiency.test_run_id, current_user.id)
 
     # Get assigned user info if assigned
     assigned_to_info = None

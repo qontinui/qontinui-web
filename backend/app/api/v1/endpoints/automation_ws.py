@@ -1183,6 +1183,11 @@ async def websocket_runner_endpoint(
                         }
                     )
 
+                elif message_type == "pong":
+                    # Standard WebSocket keepalive response - no action needed
+                    # Silently ignore to avoid log spam
+                    pass
+
                 else:
                     # Unknown message type - still relay to frontend in case they can handle it
                     if connection_record and runner_manager:

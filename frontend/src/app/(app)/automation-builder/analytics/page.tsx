@@ -490,6 +490,14 @@ export default function WorkflowAnalyticsPage() {
     return workflowAnalyticsService.getRecentExecutions(100);
   }, [refreshKey]);
 
+  // Executions filtered by the selected time range
+  const timeRangeExecutions = useMemo(() => {
+    return workflowAnalyticsService.getExecutionsInDateRange(
+      timeRange.start,
+      timeRange.end
+    );
+  }, [refreshKey, timeRange]);
+
   // Filter metrics
   const filteredMetrics = useMemo(() => {
     let filtered = allMetrics;
@@ -884,8 +892,10 @@ export default function WorkflowAnalyticsPage() {
                   (acc, m) => ({ ...acc, [m.workflowId]: m }),
                   {}
                 )}
+                executions={timeRangeExecutions}
                 timeRange={timeRange}
                 onTimeRangeChange={setTimeRange}
+                onRefresh={handleRefresh}
               />
             </TabsContent>
 

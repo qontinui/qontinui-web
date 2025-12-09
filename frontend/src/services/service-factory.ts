@@ -19,6 +19,7 @@ import { TestingService } from "./testing-service";
 import { RecordingService } from "./recording-service";
 import { CaptureService } from "./capture-service";
 import { CodePackageService } from "./code-package-service";
+import { ExtractionService } from "./extraction-service";
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -48,6 +49,7 @@ export class ServiceFactory {
   public readonly recordingService: RecordingService;
   public readonly captureService: CaptureService;
   public readonly codePackageService: CodePackageService;
+  public readonly extractionService: ExtractionService;
 
   private constructor() {
     // Initialize auth services in dependency order
@@ -93,6 +95,9 @@ export class ServiceFactory {
     // Initialize code package service
     this.codePackageService = new CodePackageService(this.httpClient);
 
+    // Initialize extraction service
+    this.extractionService = new ExtractionService(this.httpClient);
+
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
       this.authService.logout();
@@ -134,3 +139,4 @@ export const testingService = factory.testingService;
 export const recordingService = factory.recordingService;
 export const captureService = factory.captureService;
 export const codePackageService = factory.codePackageService;
+export const extractionService = factory.extractionService;

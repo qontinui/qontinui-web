@@ -416,7 +416,6 @@ class CodeExecutionService:
 
             # Capture stdout/stderr
             import io
-            import sys
 
             stdout_capture = io.StringIO()
             stderr_capture = io.StringIO()
@@ -445,7 +444,7 @@ class CodeExecutionService:
                         # Try to evaluate as expression
                         try:
                             result = eval(request.code, safe_globals, safe_locals)
-                        except:
+                        except Exception:
                             # If not an expression, result is None
                             pass
 

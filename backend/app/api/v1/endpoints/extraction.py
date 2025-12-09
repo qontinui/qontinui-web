@@ -380,13 +380,17 @@ async def import_to_state_structure(
         )
 
     # Get configuration as dict (project.configuration is the actual value, not a Column)
-    config: dict[str, Any] = cast(dict[str, Any], project.configuration) if project.configuration else {}
+    config: dict[str, Any] = (
+        cast(dict[str, Any], project.configuration) if project.configuration else {}
+    )
     config.setdefault("states", [])
     states_list = config.get("states", [])
     if not isinstance(states_list, list):
         states_list = []
         config["states"] = states_list
-    existing_state_ids = {state.get("id") for state in states_list if isinstance(state, dict)}
+    existing_state_ids = {
+        state.get("id") for state in states_list if isinstance(state, dict)
+    }
     imported_count = 0
 
     for annotation, state_data in states_to_import:

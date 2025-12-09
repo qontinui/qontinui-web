@@ -263,6 +263,50 @@ export function getDefaultConfig<T extends ActionType>(
         outputVariable: "screenshot",
       } as unknown as ActionConfigMap[T];
 
+    // ========================================================================
+    // Code Actions
+    // ========================================================================
+    case "CODE_BLOCK":
+      return {
+        language: "javascript",
+        code: "",
+      } as unknown as ActionConfigMap[T];
+
+    case "CUSTOM_FUNCTION":
+      return {
+        functionName: "",
+        parameters: [],
+      } as unknown as ActionConfigMap[T];
+
+    // ========================================================================
+    // Shell Actions
+    // ========================================================================
+    case "SHELL":
+      return {
+        command: "",
+        shell: "bash",
+        outputFormat: "text",
+        timeout: 30000,
+        failOnError: true,
+      } as unknown as ActionConfigMap[T];
+
+    case "SHELL_SCRIPT":
+      return {
+        script: "",
+        shell: "bash",
+        outputFormat: "text",
+        timeout: 60000,
+        failOnError: true,
+      } as unknown as ActionConfigMap[T];
+
+    case "TRIGGER_AI_ANALYSIS":
+      return {
+        provider: "claude",
+        prompt: "",
+        timeout: 600000,
+        failOnIssues: false,
+      } as unknown as ActionConfigMap[T];
+
     default:
       return {} as ActionConfigMap[T];
   }

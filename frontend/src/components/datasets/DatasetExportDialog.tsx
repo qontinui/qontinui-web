@@ -9,6 +9,10 @@
  * - Pascal VOC
  * - CSV
  * - JSONL
+ *
+ * NOTE: Images are NOT included in exports to avoid AWS transfer costs.
+ * Users should use the qontinui-runner to package local images with
+ * the exported annotations.
  */
 
 import { useState, useEffect } from "react";
@@ -41,8 +45,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Package,
   SplitSquareHorizontal,
+  Info,
 } from "lucide-react";
 import type { ExportFormat, DatasetExportJob } from "@/types/dataset";
 
@@ -100,8 +104,7 @@ export function DatasetExportDialog({
   datasetName,
 }: DatasetExportDialogProps) {
   const [step, setStep] = useState<ExportStep>("configure");
-  const [format, setFormat] = useState<ExportFormat>("coco");
-  const [includeImages, setIncludeImages] = useState(true);
+  const [format, setFormat] = useState<ExportFormat>("yolo");
   const [useSplit, setUseSplit] = useState(false);
   const [trainPercent, setTrainPercent] = useState(70);
   const [valPercent, setValPercent] = useState(20);
@@ -149,7 +152,7 @@ export function DatasetExportDialog({
     try {
       const job = await datasetService.startExport(datasetId, {
         format,
-        include_images: includeImages,
+        include_images: false, // Images are never included - users package locally via runner
         split: useSplit
           ? {
               train_percent: trainPercent / 100,
@@ -184,8 +187,7 @@ export function DatasetExportDialog({
 
   const handleClose = () => {
     setStep("configure");
-    setFormat("coco");
-    setIncludeImages(true);
+    setFormat("yolo");
     setUseSplit(false);
     setTrainPercent(70);
     setValPercent(20);
@@ -246,25 +248,18 @@ export function DatasetExportDialog({
               </Select>
             </div>
 
-            {/* Include Images */}
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="include-images"
-                checked={includeImages}
-                onCheckedChange={(checked) =>
-                  setIncludeImages(checked === true)
-                }
-              />
-              <Label htmlFor="include-images" className="cursor-pointer">
-                <div className="flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  Include images in export
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  When enabled, the ZIP will contain all images. Disable for
-                  annotations only.
+            {/* Info about images */}
+            <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
+              <Info className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+              <div className="text-sm text-muted-foreground">
+                <p>
+                  Export contains <strong>annotations only</strong>. Images are
+                  stored locally on your machine by the Qontinui Runner.
                 </p>
-              </Label>
+                <p className="mt-1">
+                  Use the Runner to package your local images with this export.
+                </p>
+              </div>
             </div>
 
             {/* Train/Val/Test Split */}

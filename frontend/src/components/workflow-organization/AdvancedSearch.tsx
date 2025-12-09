@@ -25,6 +25,9 @@ import {
   FileCheck,
   BookOpen,
   RotateCcw,
+  Play,
+  CheckCircle,
+  Hash,
 } from "lucide-react";
 import { Workflow } from "../../lib/action-schema/action-types";
 import {
@@ -32,6 +35,7 @@ import {
   SearchFilter,
   SavedFilter,
   ComplexityLevel,
+  WorkflowExecutionStats,
 } from "./types";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -68,6 +72,8 @@ export interface AdvancedSearchProps {
   onSearch: (results: Workflow[], filter: SearchFilter) => void;
   onSaveFilter: (name: string, filter: SearchFilter) => void;
   savedFilters?: SavedFilter[];
+  /** Execution statistics for workflows (keyed by workflow ID) */
+  executionStats?: Map<string, WorkflowExecutionStats>;
   className?: string;
 }
 
@@ -115,7 +121,11 @@ function calculateComplexity(workflow: Workflow): ComplexityLevel {
 /**
  * Check if workflow matches search filter
  */
-function matchesFilter(workflow: Workflow, filter: SearchFilter): boolean {
+function matchesFilter(
+  workflow: Workflow,
+  filter: SearchFilter,
+  executionStats?: Map<string, WorkflowExecutionStats>
+): boolean {
   // Text search
   if (filter.query) {
     const query = filter.query.toLowerCase();
@@ -236,10 +246,50 @@ function matchesFilter(workflow: Workflow, filter: SearchFilter): boolean {
     }
   }
 
-  // Success rate filter (placeholder - would need execution history)
-  // if (filter.minSuccessRate !== undefined) {
-  //   // TODO: Implement when execution history is available
-  // }
+  // ========== Execution History Filters ==========
+  const stats = executionStats?.get(workflow.id);
+
+  // Has been executed filter
+  if (filter.hasBeenExecuted !== null && filter.hasBeenExecuted !== undefined) {
+    const hasBeenExecuted = stats !== undefined && stats.runCount > 0;
+    if (hasBeenExecuted !== filter.hasBeenExecuted) {
+      return false;
+    }
+  }
+
+  // Last run date range filter
+  if (filter.lastRunDateRange?.from || filter.lastRunDateRange?.to) {
+    if (!stats?.lastRunAt) {
+      // Workflow has never been run, doesn't match date range
+      return false;
+    }
+    const lastRun = new Date(stats.lastRunAt);
+    if (filter.lastRunDateRange.from && lastRun < filter.lastRunDateRange.from) {
+      return false;
+    }
+    if (filter.lastRunDateRange.to && lastRun > filter.lastRunDateRange.to) {
+      return false;
+    }
+  }
+
+  // Minimum success rate filter
+  if (filter.minSuccessRate !== undefined) {
+    if (!stats || stats.runCount === 0) {
+      // No execution data, doesn't meet minimum success rate
+      return false;
+    }
+    if (stats.successRate < filter.minSuccessRate) {
+      return false;
+    }
+  }
+
+  // Minimum run count filter
+  if (filter.minRunCount !== undefined) {
+    const runCount = stats?.runCount ?? 0;
+    if (runCount < filter.minRunCount) {
+      return false;
+    }
+  }
 
   return true;
 }
@@ -287,6 +337,7 @@ export function AdvancedSearch({
   onSearch,
   onSaveFilter,
   savedFilters = [],
+  executionStats,
   className,
 }: AdvancedSearchProps) {
   // State
@@ -301,6 +352,11 @@ export function AdvancedSearch({
   const [selectedComplexity, setSelectedComplexity] = useState<
     ComplexityLevel[]
   >([]);
+  // Execution history filter state
+  const [minSuccessRate, setMinSuccessRate] = useState<number | undefined>(
+    undefined
+  );
+  const [minRunCount, setMinRunCount] = useState<number | undefined>(undefined);
 
   // Debounce text query
   const debouncedQuery = useDebounce(textQuery, 300);
@@ -346,8 +402,21 @@ export function AdvancedSearch({
     ) {
       newFilter.hasDocumentation = filter.hasDocumentation;
     }
-    if (filter.minSuccessRate !== undefined) {
-      newFilter.minSuccessRate = filter.minSuccessRate;
+    // Execution history filters
+    if (minSuccessRate !== undefined) {
+      newFilter.minSuccessRate = minSuccessRate;
+    }
+    if (minRunCount !== undefined) {
+      newFilter.minRunCount = minRunCount;
+    }
+    if (filter.lastRunDateRange?.from || filter.lastRunDateRange?.to) {
+      newFilter.lastRunDateRange = filter.lastRunDateRange;
+    }
+    if (
+      filter.hasBeenExecuted !== undefined &&
+      filter.hasBeenExecuted !== null
+    ) {
+      newFilter.hasBeenExecuted = filter.hasBeenExecuted;
     }
 
     setFilter(newFilter);
@@ -363,13 +432,16 @@ export function AdvancedSearch({
     filter.category,
     filter.hasTests,
     filter.hasDocumentation,
-    filter.minSuccessRate,
+    minSuccessRate,
+    minRunCount,
+    filter.lastRunDateRange,
+    filter.hasBeenExecuted,
   ]);
 
   // Filter workflows
   const filteredWorkflows = useMemo(() => {
-    return workflows.filter((w) => matchesFilter(w, filter));
-  }, [workflows, filter]);
+    return workflows.filter((w) => matchesFilter(w, filter, executionStats));
+  }, [workflows, filter, executionStats]);
 
   // Trigger search callback
   useEffect(() => {
@@ -383,6 +455,8 @@ export function AdvancedSearch({
     setSelectedTags([]);
     setSelectedActionTypes([]);
     setSelectedComplexity([]);
+    setMinSuccessRate(undefined);
+    setMinRunCount(undefined);
     setFilter({});
     toast.success("Filters cleared");
   }, []);
@@ -406,6 +480,8 @@ export function AdvancedSearch({
     setSelectedTags(f.tags || []);
     setSelectedActionTypes(f.actionTypes || []);
     setSelectedComplexity(f.complexityLevel || []);
+    setMinSuccessRate(f.minSuccessRate);
+    setMinRunCount(f.minRunCount);
     setFilter(f);
     toast.success(`Filter "${savedFilter.name}" loaded`);
   }, []);
@@ -867,6 +943,206 @@ export function AdvancedSearch({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <Separator />
+
+            {/* Execution History Filters */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Play className="h-4 w-4 text-muted-foreground" />
+                <Label className="font-semibold">Execution History</Label>
+              </div>
+
+              {/* Has Been Executed */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-muted-foreground" />
+                  <Label>Has Been Executed</Label>
+                </div>
+                <Select
+                  value={
+                    filter.hasBeenExecuted === null ||
+                    filter.hasBeenExecuted === undefined
+                      ? "all"
+                      : filter.hasBeenExecuted
+                        ? "yes"
+                        : "no"
+                  }
+                  onValueChange={(value) => {
+                    setFilter({
+                      ...filter,
+                      hasBeenExecuted:
+                        value === "all" ? null : value === "yes",
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="yes">Yes - Has been run</SelectItem>
+                    <SelectItem value="no">No - Never run</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Last Run Date Range */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <Label>Last Run Date</Label>
+                </div>
+                <div className="space-y-1">
+                  <Input
+                    type="date"
+                    placeholder="From"
+                    value={
+                      filter.lastRunDateRange?.from
+                        ? filter.lastRunDateRange.from
+                            .toISOString()
+                            .split("T")[0]
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const date = e.target.value
+                        ? new Date(e.target.value)
+                        : undefined;
+                      setFilter({
+                        ...filter,
+                        lastRunDateRange: {
+                          ...filter.lastRunDateRange,
+                          from: date,
+                        },
+                      });
+                    }}
+                  />
+                  <Input
+                    type="date"
+                    placeholder="To"
+                    value={
+                      filter.lastRunDateRange?.to
+                        ? filter.lastRunDateRange.to.toISOString().split("T")[0]
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const date = e.target.value
+                        ? new Date(e.target.value)
+                        : undefined;
+                      setFilter({
+                        ...filter,
+                        lastRunDateRange: {
+                          ...filter.lastRunDateRange,
+                          to: date,
+                        },
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Minimum Success Rate */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-muted-foreground" />
+                  <Label>Min Success Rate</Label>
+                  {minSuccessRate !== undefined && (
+                    <Badge variant="outline" className="ml-auto">
+                      {minSuccessRate}%
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="e.g., 80"
+                    value={minSuccessRate ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value
+                        ? parseInt(e.target.value, 10)
+                        : undefined;
+                      setMinSuccessRate(
+                        val !== undefined && !isNaN(val)
+                          ? Math.min(100, Math.max(0, val))
+                          : undefined
+                      );
+                    }}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
+                  {minSuccessRate !== undefined && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setMinSuccessRate(undefined)}
+                      className="h-8 px-2"
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Only show workflows with at least this success rate
+                </p>
+              </div>
+
+              {/* Minimum Run Count */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Hash className="h-4 w-4 text-muted-foreground" />
+                  <Label>Min Run Count</Label>
+                  {minRunCount !== undefined && (
+                    <Badge variant="outline" className="ml-auto">
+                      {minRunCount}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="e.g., 5"
+                    value={minRunCount ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value
+                        ? parseInt(e.target.value, 10)
+                        : undefined;
+                      setMinRunCount(
+                        val !== undefined && !isNaN(val) && val >= 0
+                          ? val
+                          : undefined
+                      );
+                    }}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">runs</span>
+                  {minRunCount !== undefined && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setMinRunCount(undefined)}
+                      className="h-8 px-2"
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Only show workflows that have been run at least this many
+                  times
+                </p>
+              </div>
+
+              {/* Info note when no execution stats provided */}
+              {!executionStats && (
+                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                  Execution history filters require execution statistics data.
+                  These filters will have no effect without execution stats.
+                </div>
+              )}
             </div>
           </div>
         </ScrollArea>

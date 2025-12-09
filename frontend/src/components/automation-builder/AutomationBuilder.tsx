@@ -12,7 +12,8 @@
 
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { UnifiedProcessLibrary } from "@/components/unified-process-library";
 import { ActionProperties } from "@/components/action-properties";
 import { useAutomation } from "@/contexts/automation-context";
@@ -59,7 +60,11 @@ export function AutomationBuilder() {
   const [projectExportDialogOpen, setProjectExportDialogOpen] = useState(false);
 
   // Context
-  const { addWorkflow, updateWorkflow } = useAutomation();
+  const { addWorkflow, updateWorkflow, states, workflows } = useAutomation();
+
+  // URL params for deep linking
+  const searchParams = useSearchParams();
+  const initializedFromUrlRef = useRef(false);
 
   // Hooks
   const { updateItem, deleteItem, createWorkflow } = useItemManagement();
@@ -98,6 +103,40 @@ export function AutomationBuilder() {
       setMyPermission(undefined);
     }
   }, [selectedItem?.id, getMyPermission]);
+
+  // Handle URL parameters for deep linking to workflows
+  useEffect(() => {
+    // Only run once when workflows are loaded and we haven't initialized yet
+    if (initializedFromUrlRef.current || workflows.length === 0) {
+      return;
+    }
+
+    const workflowId = searchParams.get("workflow");
+    const modeParam = searchParams.get("mode");
+
+    if (workflowId) {
+      const targetWorkflow = workflows.find((w) => w.id === workflowId);
+      if (targetWorkflow) {
+        initializedFromUrlRef.current = true;
+        setSelectedItem(targetWorkflow);
+
+        // Set the editor mode based on the workflow type
+        const isLinear = isLinearWorkflow(targetWorkflow);
+        setMode(isLinear ? "sequential" : "graph");
+
+        // If mode=run, show a toast indicating run mode
+        if (modeParam === "run") {
+          toast.info("Workflow loaded for execution", {
+            description: `Use the Execute panel or connect to Desktop Runner to run "${targetWorkflow.name}"`,
+          });
+        }
+      } else {
+        toast.error("Workflow not found", {
+          description: `Could not find workflow with ID "${workflowId}"`,
+        });
+      }
+    }
+  }, [workflows, searchParams]);
 
   /**
    * Handle item selection from library
@@ -499,6 +538,7 @@ export function AutomationBuilder() {
             currentPermission={myPermission}
             collaboratorCount={collaborators.length}
             onOpenShare={handleShare}
+            states={states}
           />
         ) : (
           // Show action properties when an action is selected

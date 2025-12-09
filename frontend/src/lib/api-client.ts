@@ -747,7 +747,7 @@ class ApiClient {
    * List screenshots for a project
    */
   async listProjectScreenshots(
-    projectId: number,
+    projectId: string,
     options?: {
       source?: "manual_upload" | "runner_capture" | "web_capture";
       limit?: number;
@@ -785,7 +785,13 @@ class ApiClient {
     const response = await this.fetchWithAuth(url);
 
     if (!response.ok) {
-      throw new Error("Failed to list project screenshots");
+      const errorData = await response.json().catch(() => ({}));
+      const error = new Error(
+        errorData.message || "Failed to list project screenshots"
+      ) as Error & { code?: string; status?: number };
+      error.code = errorData.error;
+      error.status = response.status;
+      throw error;
     }
 
     return response.json();
@@ -968,6 +974,89 @@ class ApiClient {
 
     // Fallback without token (backend will try cookie auth)
     return baseUrl;
+  }
+
+  // ===== Extraction Endpoints =====
+
+  /**
+   * Get extraction session details with annotations
+   */
+  async getExtractionSession(extractionId: string): Promise<any> {
+    const response = await this.fetchWithAuth(`/extractions/${extractionId}`);
+    if (!response.ok) {
+      throw new Error("Failed to get extraction session");
+    }
+    return response.json();
+  }
+
+  /**
+   * List extraction sessions for a project
+   */
+  async listExtractionSessions(
+    projectId: string,
+    params?: {
+      skip?: number;
+      limit?: number;
+      status?: string;
+    }
+  ): Promise<any[]> {
+    const queryParams = new URLSearchParams();
+    if (params?.skip !== undefined)
+      queryParams.append("skip", params.skip.toString());
+    if (params?.limit !== undefined)
+      queryParams.append("limit", params.limit.toString());
+    if (params?.status) queryParams.append("status", params.status);
+
+    const url = `/projects/${projectId}/extractions${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const response = await this.fetchWithAuth(url);
+
+    if (!response.ok) {
+      throw new Error("Failed to list extraction sessions");
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Delete an extraction session
+   */
+  async deleteExtractionSession(extractionId: string): Promise<void> {
+    const response = await this.fetchWithAuth(`/extractions/${extractionId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to delete extraction session");
+    }
+  }
+
+  /**
+   * Import states from extraction to workflow
+   */
+  async importExtractionStates(
+    extractionId: string,
+    data: {
+      state_ids?: string[];
+      target_workflow_id?: string;
+    }
+  ): Promise<{
+    imported_states: number;
+    imported_transitions: number;
+    workflow_id: string | null;
+  }> {
+    const response = await this.fetchWithAuth(
+      `/extractions/${extractionId}/import-states`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to import extraction states");
+    }
+
+    return response.json();
   }
 }
 

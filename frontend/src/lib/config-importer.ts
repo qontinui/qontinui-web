@@ -172,19 +172,31 @@ export class ConfigImporter {
    * Import workflows from v2.0.0 configuration
    */
   private importWorkflows(exportWorkflows: ExportWorkflow[]): Workflow[] {
-    return exportWorkflows.map((exportWorkflow) => ({
-      id: exportWorkflow.id,
-      name: exportWorkflow.name,
-      description: exportWorkflow.description || "",
-      category: exportWorkflow.category,
-      format: "graph" as const,
-      version: this.SUPPORTED_VERSION,
-      actions:
-        exportWorkflow.actions?.map((action) => this.importAction(action)) ||
-        [],
-      connections: (exportWorkflow.connections as any) || {},
-      metadata: exportWorkflow.metadata || {},
-    }));
+    return exportWorkflows.map((exportWorkflow) => {
+      const workflow: any = {
+        id: exportWorkflow.id,
+        name: exportWorkflow.name,
+        description: exportWorkflow.description || "",
+        category: exportWorkflow.category,
+        format: "graph" as const,
+        version: this.SUPPORTED_VERSION,
+        actions:
+          exportWorkflow.actions?.map((action) => this.importAction(action)) ||
+          [],
+        connections: (exportWorkflow.connections as any) || {},
+        metadata: exportWorkflow.metadata || {},
+      };
+
+      // Import initialStateIds if present (for Main category workflows)
+      if (
+        (exportWorkflow as any).initialStateIds &&
+        Array.isArray((exportWorkflow as any).initialStateIds)
+      ) {
+        workflow.initialStateIds = (exportWorkflow as any).initialStateIds;
+      }
+
+      return workflow;
+    });
   }
 
   /**

@@ -30,6 +30,13 @@ export interface OrganizationUpdate {
   description?: string;
 }
 
+export interface OrganizationStatistics {
+  member_count: number;
+  project_count: number;
+  active_users_today: number;
+  total_workflows: number;
+}
+
 export type MemberRole = "owner" | "admin" | "member" | "viewer";
 
 export interface TeamMember {

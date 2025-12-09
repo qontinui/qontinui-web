@@ -281,7 +281,7 @@ class ButtonDatasetGenerator:
             font = ImageFont.truetype(
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", max(10, height // 3)
             )
-        except:
+        except OSError:
             font = ImageFont.load_default()
 
         # Calculate text position

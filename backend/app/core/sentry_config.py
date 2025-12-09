@@ -61,8 +61,8 @@ def configure_sentry(
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-        from sentry_sdk.types import Event, Hint
 
+        # Note: Event and Hint types imported for type hints in filter functions when needed
         # Logging integration (capture ERROR and CRITICAL logs)
         logging_integration = LoggingIntegration(
             level=None,  # Don't capture logs as breadcrumbs

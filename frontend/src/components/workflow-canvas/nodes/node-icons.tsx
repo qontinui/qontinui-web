@@ -43,6 +43,9 @@ import {
   Box,
   Code,
   FileCode,
+  Terminal,
+  FileTerminal,
+  Brain,
   LucideIcon,
 } from "lucide-react";
 import { ActionType } from "@/lib/action-schema/action-types";
@@ -106,6 +109,11 @@ const ACTION_ICONS: Record<ActionType, LucideIcon> = {
   // Code Actions
   CODE_BLOCK: Code,
   CUSTOM_FUNCTION: FileCode,
+
+  // Shell Actions
+  SHELL: Terminal,
+  SHELL_SCRIPT: FileTerminal,
+  TRIGGER_AI_ANALYSIS: Brain,
 };
 
 /**

@@ -394,3 +394,19 @@ class OrganizationSwitchResponse(BaseSchema):
     current_organization_id: UUID | None = None
     success: bool = True
     message: str = "Organization context switched successfully"
+
+
+# ============================================================================
+# Organization Statistics
+# ============================================================================
+
+
+class OrganizationStatistics(BaseSchema):
+    """Schema for organization statistics response."""
+
+    member_count: int = Field(0, description="Total number of members")
+    project_count: int = Field(0, description="Total number of projects")
+    active_users_today: int = Field(
+        0, description="Number of users active in last 24 hours"
+    )
+    total_workflows: int = Field(0, description="Total number of workflows")

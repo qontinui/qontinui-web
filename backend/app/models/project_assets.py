@@ -143,6 +143,9 @@ class ProjectImage(Base):
     # Optional S3/MinIO storage key for mask image
     mask_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # Optional S3/MinIO storage key for thumbnail image
+    thumbnail_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # Image dimensions
     width: Mapped[int] = mapped_column(Integer, nullable=False)
     height: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner";
 import type {
   Organization,
+  OrganizationStatistics,
   Activity as ActivityType,
 } from "@/types/collaboration";
 
@@ -34,12 +35,7 @@ export default function OrganizationDetailsPage() {
   const { switchOrg, members, getMembers } = useOrganization();
 
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [statistics, _setStatistics] = useState<{
-    member_count: number;
-    project_count: number;
-    active_users_today: number;
-    total_workflows: number;
-  } | null>(null);
+  const [statistics, setStatistics] = useState<OrganizationStatistics | null>(null);
   const [, _setActivities] = useState<ActivityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -64,13 +60,12 @@ export default function OrganizationDetailsPage() {
         setOrganization(org);
 
         // Load statistics
-        // TODO: Implement getStatistics method in OrganizationService
-        // try {
-        //   const stats = await organizationService.getStatistics(orgId);
-        //   setStatistics(stats);
-        // } catch (err) {
-        //   console.error("Failed to load statistics:", err);
-        // }
+        try {
+          const stats = await organizationService.getStatistics(orgId);
+          setStatistics(stats);
+        } catch (err) {
+          console.error("Failed to load statistics:", err);
+        }
 
         // Load members
         await getMembers(orgId);

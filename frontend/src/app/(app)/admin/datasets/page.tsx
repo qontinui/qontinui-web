@@ -51,6 +51,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DatasetImportDialog } from "@/components/datasets/DatasetImportDialog";
+import { DatasetExportDialog } from "@/components/datasets/DatasetExportDialog";
 import type { Dataset } from "@/types/dataset";
 
 export default function DatasetsPage() {
@@ -60,6 +61,7 @@ export default function DatasetsPage() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [exportDataset, setExportDataset] = useState<Dataset | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Dataset | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -337,8 +339,7 @@ export default function DatasetsPage() {
                       variant="outline"
                       onClick={(e) => {
                         e.stopPropagation();
-                        // TODO: Open export dialog
-                        toast.info("Export coming soon");
+                        setExportDataset(dataset);
                       }}
                     >
                       <Download className="h-4 w-4" />
@@ -368,6 +369,16 @@ export default function DatasetsPage() {
         onOpenChange={setShowImportDialog}
         onImportComplete={handleImportComplete}
       />
+
+      {/* Export Dialog */}
+      {exportDataset && (
+        <DatasetExportDialog
+          open={!!exportDataset}
+          onOpenChange={(open) => !open && setExportDataset(null)}
+          datasetId={exportDataset.id}
+          datasetName={exportDataset.name}
+        />
+      )}
 
       {/* Delete Confirmation */}
       <AlertDialog

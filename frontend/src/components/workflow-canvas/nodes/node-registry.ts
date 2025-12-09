@@ -77,6 +77,11 @@ export const NODE_TYPES: Record<ActionType, NodeComponent> = {
   // Code Actions
   CODE_BLOCK: CodeBlockNode,
   CUSTOM_FUNCTION: CustomFunctionNode,
+
+  // Shell Actions
+  SHELL: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for shell
+  SHELL_SCRIPT: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for shell script
+  TRIGGER_AI_ANALYSIS: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for AI analysis
 };
 
 /**

@@ -253,7 +253,7 @@ class FunctionScanner:
             # For complex types, use ast.unparse (Python 3.9+)
             try:
                 return ast.unparse(annotation)
-            except:
+            except Exception:
                 return str(annotation)
 
     @staticmethod

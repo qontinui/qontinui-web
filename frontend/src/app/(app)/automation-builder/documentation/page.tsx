@@ -79,6 +79,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RequireProject } from "@/components/require-project";
+import { toast } from "sonner";
 
 // ============================================================================
 // Types
@@ -1306,7 +1307,12 @@ export default function DocumentationPage() {
                     `/automation-builder?workflow=${selectedWorkflow.id}`
                   )
                 }
-                onRun={() => console.log("Run workflow")}
+                onRun={() => {
+                  router.push(
+                    `/automation-builder?workflow=${selectedWorkflow.id}&mode=run`
+                  );
+                  toast.info("Opening workflow in run mode");
+                }}
                 onViewTests={() =>
                   router.push(
                     `/automation-builder/testing?workflow=${selectedWorkflow.id}`

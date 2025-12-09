@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
+from app.models.project_assets import ProjectScreenshot
 from app.models.user import User
 from app.services.object_storage import object_storage
 
@@ -159,9 +160,192 @@ class FileMigrator:
 
     async def migrate_screenshots(self, db: AsyncSession):
         """Migrate screenshot files"""
-        # TODO: Implement screenshot migration when screenshot storage is implemented
-        logger.info("screenshot_migration_not_implemented")
-        pass
+        uploads_dir = Path("uploads/screenshots")
+
+        if not uploads_dir.exists():
+            logger.warning("screenshots_directory_not_found", path=str(uploads_dir))
+            return
+
+        logger.info("scanning_screenshots", path=str(uploads_dir))
+
+        # Get all screenshot files (recursively to handle nested structures)
+        screenshot_files = list(uploads_dir.rglob("*"))
+        file_count = len([f for f in screenshot_files if f.is_file()])
+        logger.info("found_screenshot_files", count=file_count)
+
+        for file_path in screenshot_files:
+            if not file_path.is_file():
+                continue
+
+            try:
+                # Extract filename from path
+                filename = file_path.name
+
+                # Try to find screenshot in database by matching the s3_key pattern
+                # Screenshots are stored as: screenshots/{user_id}/{project_id}/{uuid}.{ext}
+                # Or they might be stored as: uploads/screenshots/{filename}
+
+                # First, try to find by checking if the current s3_key contains the filename
+                result = await db.execute(
+                    select(ProjectScreenshot).filter(
+                        ProjectScreenshot.s3_key.contains(filename)
+                    )
+                )
+                screenshot = result.scalar_one_or_none()
+
+                # If not found, try to match by extra_metadata.uploaded_filename
+                if not screenshot:
+                    result = await db.execute(
+                        select(ProjectScreenshot).filter(
+                            ProjectScreenshot.extra_metadata["uploaded_filename"].astext
+                            == filename
+                        )
+                    )
+                    screenshot = result.scalar_one_or_none()
+
+                # If still not found, try to match by the file stem (UUID) in the s3_key
+                if not screenshot:
+                    file_stem = file_path.stem  # UUID part without extension
+                    result = await db.execute(
+                        select(ProjectScreenshot).filter(
+                            ProjectScreenshot.s3_key.contains(file_stem)
+                        )
+                    )
+                    screenshot = result.scalar_one_or_none()
+
+                if not screenshot:
+                    logger.warning(
+                        "screenshot_no_record_found",
+                        filename=filename,
+                        path=str(file_path),
+                    )
+                    self.skipped.append(
+                        {
+                            "file": str(file_path),
+                            "reason": "No database record found",
+                        }
+                    )
+                    continue
+
+                # Check if already migrated (s3_key doesn't start with "uploads/")
+                if not screenshot.s3_key.startswith("uploads/"):
+                    logger.info(
+                        "screenshot_already_migrated",
+                        filename=filename,
+                        screenshot_id=str(screenshot.id),
+                        s3_key=screenshot.s3_key,
+                    )
+                    self.skipped.append(
+                        {
+                            "file": str(file_path),
+                            "reason": "Already migrated",
+                            "screenshot_id": str(screenshot.id),
+                            "s3_key": screenshot.s3_key,
+                        }
+                    )
+                    continue
+
+                # Determine content type from file extension
+                ext = file_path.suffix.lower()
+                content_type_map = {
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".gif": "image/gif",
+                    ".webp": "image/webp",
+                }
+                content_type = content_type_map.get(ext, "image/png")
+
+                # Upload to object storage
+                if not self.dry_run:
+                    logger.info(
+                        "uploading_screenshot",
+                        filename=filename,
+                        screenshot_id=str(screenshot.id),
+                        user_id=str(screenshot.user_id),
+                        project_id=str(screenshot.project_id),
+                    )
+
+                    # Build the new S3 key following the pattern: screenshots/{user_id}/{project_id}/{uuid}.{ext}
+                    new_s3_key = f"screenshots/{screenshot.user_id}/{screenshot.project_id}/{screenshot.id}{ext}"
+
+                    storage_key, new_url = object_storage.upload_from_path(
+                        file_path=file_path,
+                        prefix=f"screenshots/{screenshot.user_id}/{screenshot.project_id}",
+                        content_type=content_type,
+                        metadata={
+                            "screenshot_id": str(screenshot.id),
+                            "user_id": str(screenshot.user_id),
+                            "project_id": str(screenshot.project_id),
+                            "migrated_at": datetime.utcnow().isoformat(),
+                            "original_path": str(file_path),
+                            "source": screenshot.source,
+                        },
+                        generate_unique_name=False,
+                    )
+
+                    # Update screenshot record with new s3_key
+                    old_s3_key = screenshot.s3_key
+                    await db.execute(
+                        update(ProjectScreenshot)
+                        .where(ProjectScreenshot.id == screenshot.id)
+                        .values(s3_key=storage_key)
+                    )
+                    await db.commit()
+
+                    logger.info(
+                        "screenshot_migrated",
+                        filename=filename,
+                        screenshot_id=str(screenshot.id),
+                        old_s3_key=old_s3_key,
+                        new_s3_key=storage_key,
+                        user_id=str(screenshot.user_id),
+                        project_id=str(screenshot.project_id),
+                    )
+
+                    self.uploaded.append(
+                        {
+                            "file": str(file_path),
+                            "screenshot_id": str(screenshot.id),
+                            "user_id": str(screenshot.user_id),
+                            "project_id": str(screenshot.project_id),
+                            "old_s3_key": old_s3_key,
+                            "new_s3_key": storage_key,
+                            "storage_key": storage_key,
+                        }
+                    )
+                else:
+                    logger.info(
+                        "screenshot_would_migrate",
+                        filename=filename,
+                        screenshot_id=str(screenshot.id),
+                        user_id=str(screenshot.user_id),
+                        project_id=str(screenshot.project_id),
+                    )
+                    self.uploaded.append(
+                        {
+                            "file": str(file_path),
+                            "screenshot_id": str(screenshot.id),
+                            "user_id": str(screenshot.user_id),
+                            "project_id": str(screenshot.project_id),
+                            "old_s3_key": screenshot.s3_key,
+                        }
+                    )
+
+            except Exception as e:
+                logger.error(
+                    "screenshot_migration_failed",
+                    filename=file_path.name,
+                    path=str(file_path),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                self.failed.append(
+                    {
+                        "file": str(file_path),
+                        "error": str(e),
+                    }
+                )
 
     def generate_report(self) -> dict:
         """Generate migration report"""
@@ -253,8 +437,8 @@ async def main():
             # Migrate avatars
             await migrator.migrate_avatars(db)
 
-            # Migrate screenshots (when implemented)
-            # await migrator.migrate_screenshots(db)
+            # Migrate screenshots
+            await migrator.migrate_screenshots(db)
 
         except Exception as e:
             logger.error("migration_failed", error=str(e), error_type=type(e).__name__)

@@ -103,7 +103,7 @@ async def update_dataset_stats(db: AsyncSession, dataset_id: uuid.UUID) -> None:
         .where(
             and_(
                 TrainingDatasetImage.dataset_id == dataset_id,
-                TrainingDatasetImage.reviewed == True,
+                TrainingDatasetImage.reviewed is True,
             )
         )
     )
@@ -280,9 +280,9 @@ async def get_dataset_images(
     # Apply filters
     if review_status:
         if "reviewed" in review_status:
-            query = query.where(TrainingDatasetImage.reviewed == True)
+            query = query.where(TrainingDatasetImage.reviewed is True)
         elif "pending" in review_status:
-            query = query.where(TrainingDatasetImage.reviewed == False)
+            query = query.where(TrainingDatasetImage.reviewed is False)
 
     if search:
         query = query.where(
@@ -1295,7 +1295,11 @@ async def generate_export(
     job: TrainingDatasetExportJob,
     dataset: TrainingDataset,
 ) -> str:
-    """Generate export file and return download URL"""
+    """Generate export file and return download URL.
+
+    NOTE: Images are NEVER included in exports to avoid AWS transfer costs.
+    Users package local images via qontinui-runner.
+    """
     # Get all images and annotations
     images_result = await db.execute(
         select(TrainingDatasetImage).where(
@@ -1321,7 +1325,7 @@ async def generate_export(
     if job.format == ExportFormat.COCO:
         export_data = generate_coco_export(images, annotations, dataset)
     elif job.format == ExportFormat.YOLO:
-        export_data = generate_yolo_export(images, annotations_by_image)
+        export_data = generate_yolo_export(images, annotations_by_image, dataset)
     elif job.format == ExportFormat.JSONL:
         export_data = generate_jsonl_export(images, annotations_by_image)
     else:
@@ -1336,16 +1340,9 @@ async def generate_export(
             for item in export_data:
                 zf.writestr(item["path"], item["content"])
 
-        # Include images if requested
-        if job.include_images:
-            for img in images:
-                try:
-                    img_content = object_storage.backend.download_file(img.storage_path)  # type: ignore[arg-type]
-                    zf.writestr(f"images/{img.filename}", img_content)
-                except Exception as e:
-                    logger.warning(
-                        "failed_to_include_image", image_id=str(img.id), error=str(e)
-                    )
+        # Always include image manifest for matching local files
+        manifest = generate_image_manifest(images, dataset)
+        zf.writestr("image_manifest.json", json.dumps(manifest, indent=2))
 
     # Upload export file
     zip_buffer.seek(0)
@@ -1357,6 +1354,34 @@ async def generate_export(
     )
 
     return url
+
+
+def generate_image_manifest(images: Any, dataset: Any) -> dict[str, Any]:
+    """Generate manifest to help match local images with annotations.
+
+    This manifest allows qontinui-runner to package local images
+    with the exported annotations.
+    """
+    return {
+        "version": "1.0",
+        "dataset_id": str(dataset.id),
+        "dataset_name": dataset.name,
+        "export_date": datetime.utcnow().isoformat(),
+        "total_images": len(images),
+        "images": [
+            {
+                "filename": img.filename,
+                "image_hash": img.image_hash,
+                "width": img.width,
+                "height": img.height,
+                "action_id": img.action_id,
+                "action_type": img.action_type,
+                "active_states": img.active_states,
+                "timestamp": img.timestamp.isoformat() if img.timestamp else None,
+            }
+            for img in images
+        ],
+    }
 
 
 def generate_coco_export(images: Any, annotations: Any, dataset: Any) -> dict[str, Any]:
@@ -1433,24 +1458,91 @@ def generate_coco_export(images: Any, annotations: Any, dataset: Any) -> dict[st
 
 
 def generate_yolo_export(
-    images: Any, annotations_by_image: Any
+    images: Any, annotations_by_image: Any, dataset: Any
 ) -> list[dict[str, str]]:
-    """Generate YOLO format export"""
+    """Generate YOLO format export with data.yaml and classes.txt.
+
+    Output structure:
+    - data.yaml          # YOLO configuration
+    - classes.txt        # Class names (one per line)
+    - labels/            # Label files (.txt)
+    - README.md          # Instructions for packaging images
+    """
     files: list[dict[str, str]] = []
 
+    # Collect all unique categories
+    categories: dict[int, str] = {}
+    for img in images:
+        img_anns = annotations_by_image.get(str(img.id), [])
+        for ann in img_anns:
+            if ann.category_id not in categories:
+                categories[ann.category_id] = (
+                    ann.category_name or f"class_{ann.category_id}"
+                )
+
+    # Sort categories by ID for consistent ordering
+    sorted_categories = sorted(categories.items(), key=lambda x: x[0])
+
+    # Create class ID mapping (remap to 0-based sequential IDs)
+    class_id_remap: dict[int, int] = {}
+    class_names: list[str] = []
+    for new_id, (orig_id, name) in enumerate(sorted_categories):
+        class_id_remap[orig_id] = new_id
+        class_names.append(name)
+
+    # Generate classes.txt
+    files.append(
+        {
+            "path": "classes.txt",
+            "content": "\n".join(class_names),
+        }
+    )
+
+    # Generate data.yaml (YOLO configuration)
+    data_yaml_content = f"""# YOLO Dataset Configuration
+# Dataset: {dataset.name}
+# Exported: {datetime.utcnow().isoformat()}
+#
+# IMPORTANT: This export contains annotations only.
+# Use qontinui-runner to package your local images.
+
+# Path to dataset root (update after packaging images)
+path: ./
+
+# Train/val/test directories (create after packaging)
+train: images/train
+val: images/val
+test: images/test
+
+# Number of classes
+nc: {len(class_names)}
+
+# Class names
+names:
+{chr(10).join(f'  {i}: "{name}"' for i, name in enumerate(class_names))}
+"""
+    files.append(
+        {
+            "path": "data.yaml",
+            "content": data_yaml_content,
+        }
+    )
+
+    # Generate label files
     for img in images:
         img_anns = annotations_by_image.get(str(img.id), [])
         lines: list[str] = []
 
         for ann in img_anns:
             # YOLO format: class_id x_center y_center width height (normalized)
+            remapped_class_id = class_id_remap.get(ann.category_id, 0)
             x_center = (ann.x + ann.width / 2) / img.width
             y_center = (ann.y + ann.height / 2) / img.height
             norm_width = ann.width / img.width
             norm_height = ann.height / img.height
 
             lines.append(
-                f"{ann.category_id} {x_center:.6f} {y_center:.6f} {norm_width:.6f} {norm_height:.6f}"
+                f"{remapped_class_id} {x_center:.6f} {y_center:.6f} {norm_width:.6f} {norm_height:.6f}"
             )
 
         label_filename = os.path.splitext(img.filename)[0] + ".txt"
@@ -1460,6 +1552,68 @@ def generate_yolo_export(
                 "content": "\n".join(lines),
             }
         )
+
+    # Generate README with instructions
+    readme_content = f"""# YOLO Dataset Export
+
+**Dataset:** {dataset.name}
+**Exported:** {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")} UTC
+**Images:** {len(images)}
+**Classes:** {len(class_names)}
+
+## Important: Images Not Included
+
+This export contains **annotations only**. Images are stored locally on your
+machine by the Qontinui Runner to avoid cloud storage transfer costs.
+
+## Packaging Your Dataset
+
+Use the Qontinui Runner to package your local images with these annotations:
+
+1. Open Qontinui Runner
+2. Go to Settings > Dataset Export
+3. Select this annotation export file
+4. The runner will match and package your local images
+
+Alternatively, manually copy images to match the label filenames:
+- For each `labels/screenshot_001.txt`, place `images/screenshot_001.png`
+
+## Directory Structure for Training
+
+After packaging, organize as:
+
+```
+dataset/
+├── data.yaml
+├── images/
+│   ├── train/
+│   ├── val/
+│   └── test/
+└── labels/
+    ├── train/
+    ├── val/
+    └── test/
+```
+
+## Classes
+
+{chr(10).join(f'{i}: {name}' for i, name in enumerate(class_names))}
+
+## Using with Ultralytics YOLOv8
+
+```python
+from ultralytics import YOLO
+
+model = YOLO('yolov8n.pt')
+model.train(data='data.yaml', epochs=100)
+```
+"""
+    files.append(
+        {
+            "path": "README.md",
+            "content": readme_content,
+        }
+    )
 
     return files
 

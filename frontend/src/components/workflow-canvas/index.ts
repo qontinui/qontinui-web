@@ -19,6 +19,7 @@ export type {
   ConnectionAttempt,
   NodeClickEvent,
   EdgeClickEvent,
+  EdgeInfo,
   CanvasClickEvent,
   HandleDefinition,
 } from "./canvas-types";

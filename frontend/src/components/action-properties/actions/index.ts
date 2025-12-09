@@ -29,6 +29,13 @@ export { LoopActionProperties } from "./control-flow/LoopActionProperties";
 // Import Code Execution components
 export { CodeBlockActionProperties } from "./code-execution/CodeBlockActionProperties";
 
+// Import Shell Execution components
+export {
+  ShellActionProperties,
+  ShellScriptActionProperties,
+  TriggerAiAnalysisActionProperties,
+} from "./shell/ShellActionProperties";
+
 // Register components with the registry
 import { FindActionProperties } from "./FindActionProperties";
 import { ClickActionProperties } from "./ClickActionProperties";
@@ -53,6 +60,13 @@ import { LoopActionProperties } from "./control-flow/LoopActionProperties";
 
 // Import Code Execution components
 import { CodeBlockActionProperties } from "./code-execution/CodeBlockActionProperties";
+
+// Import Shell Execution components
+import {
+  ShellActionProperties,
+  ShellScriptActionProperties,
+  TriggerAiAnalysisActionProperties,
+} from "./shell/ShellActionProperties";
 
 // Register all action types with their components
 actionConfigRegistry.register("FIND", FindActionProperties, "FIND");
@@ -99,4 +113,21 @@ actionConfigRegistry.register(
   "CODE_BLOCK" as any,
   CodeBlockActionProperties,
   "CODE_BLOCK" as any
+);
+
+// Register Shell Execution components
+actionConfigRegistry.register(
+  "SHELL" as any,
+  ShellActionProperties,
+  "SHELL" as any
+);
+actionConfigRegistry.register(
+  "SHELL_SCRIPT" as any,
+  ShellScriptActionProperties,
+  "SHELL_SCRIPT" as any
+);
+actionConfigRegistry.register(
+  "TRIGGER_AI_ANALYSIS" as any,
+  TriggerAiAnalysisActionProperties,
+  "TRIGGER_AI_ANALYSIS" as any
 );

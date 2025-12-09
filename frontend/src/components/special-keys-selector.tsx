@@ -65,6 +65,13 @@ const SPECIAL_KEYS = {
     { label: "Alt+Tab", value: "{ALT+TAB}", display: "⌥⇥ Alt+Tab" },
     { label: "Alt+F4", value: "{ALT+F4}", display: "⌥F4 Close" },
   ],
+  "Terminal/CLI": [
+    {
+      label: "Section (§)",
+      value: "§",
+      display: "§ Section Symbol",
+    },
+  ],
 };
 
 interface SpecialKeysSelectorProps {
@@ -136,7 +143,7 @@ export function SpecialKeysSelector({
                 <span className="font-mono">{key.display}</span>
               </DropdownMenuItem>
             ))}
-            {category !== "Common Combos" && (
+            {category !== "Terminal/CLI" && (
               <DropdownMenuSeparator className="bg-gray-700" />
             )}
           </div>

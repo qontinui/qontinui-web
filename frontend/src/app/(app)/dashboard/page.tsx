@@ -10,6 +10,7 @@ import {
   useProjects,
   useCreateProject,
   useDeleteProject,
+  useUpdateProject,
 } from "@/hooks/use-projects";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +36,8 @@ import {
   EarlyAccessBanner,
   EarlyAccessWelcomeModal,
 } from "@/components/early-access";
+import { CreateProjectDialog } from "@/components/create-project-dialog";
+import { EditableProjectName } from "@/components/editable-project-name";
 
 interface Project {
   id: string;
@@ -57,11 +60,13 @@ export default function Dashboard() {
   const { data: apiProjects = [], isLoading: projectsLoading } = useProjects();
   const createProject = useCreateProject();
   const deleteProject = useDeleteProject();
+  const updateProject = useUpdateProject();
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [showFirstProjectWizard, setShowFirstProjectWizard] = useState(false);
   const [showEarlyAccessWelcome, setShowEarlyAccessWelcome] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   // Onboarding state
   const { showTutorialOverlay, hasCompletedWelcome, toggleWelcomeModal } =
@@ -156,24 +161,32 @@ export default function Dashboard() {
 
   const loading = projectsLoading;
 
-  const handleNewProject = async () => {
+  const handleNewProject = () => {
     // Show wizard for new users with no projects
     if (projects.length === 0 && isNewUser()) {
       setShowFirstProjectWizard(true);
       return;
     }
 
+    // Show the create project dialog
+    setShowCreateDialog(true);
+  };
+
+  const handleCreateProjectConfirm = async (name: string, description?: string) => {
     try {
       console.log("Creating new project...");
 
       // Create a new project via API
       const newProject = await createProject.mutateAsync({
-        name: `New Automation ${new Date().toLocaleDateString()}`,
-        description: "A new automation workflow",
+        name,
+        description: description || "A new automation workflow",
         configuration: {},
       });
 
       console.log("Project created:", newProject);
+
+      // Close the dialog
+      setShowCreateDialog(false);
 
       // Select the newly created project (stays on dashboard)
       setProjectId(newProject.id);
@@ -183,6 +196,21 @@ export default function Dashboard() {
       console.error("Failed to create project:", error);
       console.error("Error details:", error.message, error.response);
       toast.error(error.message || "Failed to create new project");
+      throw error; // Re-throw so the dialog knows it failed
+    }
+  };
+
+  const handleUpdateProjectName = async (projectId: string, newName: string) => {
+    try {
+      await updateProject.mutateAsync({
+        id: projectId,
+        data: { name: newName },
+      });
+      toast.success("Project name updated");
+    } catch (error: any) {
+      console.error("Failed to update project name:", error);
+      toast.error(error.message || "Failed to update project name");
+      throw error;
     }
   };
 
@@ -479,21 +507,17 @@ export default function Dashboard() {
                       <CardContent className="p-6">
                         <div className="mb-4">
                           <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
                               {isSelected && (
                                 <div className="w-5 h-5 rounded-full bg-[#00D9FF] flex items-center justify-center flex-shrink-0">
                                   <Check className="w-3 h-3 text-black" />
                                 </div>
                               )}
-                              <h4
-                                className={`font-semibold text-lg transition-colors line-clamp-1 ${
-                                  isSelected
-                                    ? "text-[#00D9FF]"
-                                    : "group-hover:text-[#00D9FF]"
-                                }`}
-                              >
-                                {project.name}
-                              </h4>
+                              <EditableProjectName
+                                name={project.name}
+                                onSave={(newName) => handleUpdateProjectName(project.id, newName)}
+                                isSelected={isSelected}
+                              />
                             </div>
                             <Badge
                               className={`${getStatusColor(project.status)} text-xs`}
@@ -586,6 +610,14 @@ export default function Dashboard() {
           )}
         </div>
       </main>
+
+      {/* Create Project Dialog */}
+      <CreateProjectDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        onConfirm={handleCreateProjectConfirm}
+        isLoading={createProject.isPending}
+      />
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmationDialog

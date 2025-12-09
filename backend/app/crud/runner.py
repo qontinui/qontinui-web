@@ -47,7 +47,7 @@ async def create_runner_token(
     count_query = select(func.count(RunnerToken.id)).where(
         and_(
             RunnerToken.user_id == user_id,
-            RunnerToken.is_revoked == False,
+            RunnerToken.is_revoked is False,
         )
     )
     result = await db.execute(count_query)
@@ -110,7 +110,7 @@ async def get_runner_tokens(
 
     # Filter revoked if needed
     if not include_revoked:
-        query = query.where(RunnerToken.is_revoked == False)
+        query = query.where(RunnerToken.is_revoked is False)
 
     result = await db.execute(query)
     return list(result.all())  # type: ignore[arg-type]
@@ -619,17 +619,17 @@ async def get_runner_token_stats(
     tokens_query = select(
         func.count(RunnerToken.id).label("total"),
         func.count(RunnerToken.id)
-        .filter(RunnerToken.is_revoked == False)
+        .filter(RunnerToken.is_revoked is False)
         .label("active"),
         func.count(RunnerToken.id)
-        .filter(RunnerToken.is_revoked == True)
+        .filter(RunnerToken.is_revoked is True)
         .label("revoked"),
         func.count(RunnerToken.id)
         .filter(
             and_(
                 RunnerToken.expires_at.isnot(None),
                 RunnerToken.expires_at < datetime.utcnow(),
-                RunnerToken.is_revoked == False,
+                RunnerToken.is_revoked is False,
             )
         )
         .label("expired"),

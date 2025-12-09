@@ -53,7 +53,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         try:
             if hasattr(request.state, "user") and request.state.user:
                 user_id = str(request.state.user.id)
-        except:
+        except Exception:
             pass
 
         # Process request

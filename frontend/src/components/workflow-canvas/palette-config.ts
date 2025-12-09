@@ -40,6 +40,9 @@ import {
   CornerRightDown,
   Code,
   FileCode,
+  Terminal,
+  FileTerminal,
+  Brain,
 } from "lucide-react";
 
 // ============================================================================
@@ -496,6 +499,65 @@ export const NODE_METADATA: Record<ActionType, NodeMetadata> = {
     icon: FileCode,
     keywords: ["function", "custom", "python", "plugin", "module", "import"],
     tags: ["code", "python", "plugin", "advanced"],
+  },
+
+  // ========================================================================
+  // Shell Actions
+  // ========================================================================
+  SHELL: {
+    type: "SHELL",
+    displayName: "Run Command",
+    description: "Execute a shell command and capture output",
+    category: "code",
+    icon: Terminal,
+    keywords: [
+      "shell",
+      "command",
+      "bash",
+      "powershell",
+      "cmd",
+      "terminal",
+      "execute",
+      "run",
+      "cli",
+    ],
+    tags: ["shell", "command", "system"],
+  },
+  SHELL_SCRIPT: {
+    type: "SHELL_SCRIPT",
+    displayName: "Run Script",
+    description: "Execute a multi-line shell script",
+    category: "code",
+    icon: FileTerminal,
+    keywords: [
+      "shell",
+      "script",
+      "bash",
+      "powershell",
+      "batch",
+      "multiline",
+      "execute",
+      "run",
+    ],
+    tags: ["shell", "script", "system"],
+  },
+  TRIGGER_AI_ANALYSIS: {
+    type: "TRIGGER_AI_ANALYSIS",
+    displayName: "AI Analysis",
+    description: "Trigger AI to analyze automation results and fix issues",
+    category: "code",
+    icon: Brain,
+    keywords: [
+      "ai",
+      "analysis",
+      "claude",
+      "debug",
+      "fix",
+      "error",
+      "autonomous",
+      "intelligent",
+    ],
+    tags: ["ai", "analysis", "debug"],
   },
 };
 

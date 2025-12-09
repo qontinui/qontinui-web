@@ -9,13 +9,13 @@ Provides endpoints for:
 """
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -30,6 +30,7 @@ from app.models.organization import (
     TeamMember,
     TeamRole,
 )
+from app.models.project import Project as ProjectModel
 from app.models.user import User
 from app.schemas.collaboration import (
     InvitationAccept,
@@ -37,6 +38,7 @@ from app.schemas.collaboration import (
     InvitationResponse,
     OrganizationCreate,
     OrganizationResponse,
+    OrganizationStatistics,
     OrganizationSwitchResponse,
     OrganizationUpdate,
     TeamMemberCreate,
@@ -924,3 +926,90 @@ async def list_organization_projects(
 
     # Convert ORM objects to Pydantic models
     return [Project.model_validate(project) for project in paginated_projects]
+
+
+# ============================================================================
+# Organization Statistics
+# ============================================================================
+
+
+@router.get("/{organization_id}/statistics", response_model=OrganizationStatistics)
+async def get_organization_statistics(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    organization_id: UUID,
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """
+    Get statistics for an organization.
+
+    Returns member count, project count, active users today, and total workflows.
+    User must be a member of the organization to view statistics.
+    """
+    logger.info(
+        "get_org_statistics_request",
+        user_id=current_user.id,
+        organization_id=organization_id,
+    )
+
+    # Verify user is a member of the organization
+    result = await db.execute(
+        select(TeamMember).filter(
+            and_(
+                TeamMember.organization_id == organization_id,
+                TeamMember.user_id == current_user.id,
+            )
+        )
+    )
+    membership = result.scalar_one_or_none()
+    verify_organization_role(membership, "member")
+
+    # Count members
+    member_count_result = await db.execute(
+        select(func.count(TeamMember.id)).filter(
+            TeamMember.organization_id == organization_id
+        )
+    )
+    member_count = member_count_result.scalar() or 0
+
+    # Count projects in the organization
+    project_count_result = await db.execute(
+        select(func.count(ProjectModel.id)).filter(
+            ProjectModel.organization_id == organization_id
+        )
+    )
+    project_count = project_count_result.scalar() or 0
+
+    # Count active users today (members with last_active_at in the last 24 hours)
+    yesterday = datetime.utcnow() - timedelta(hours=24)
+    active_users_result = await db.execute(
+        select(func.count(TeamMember.id)).filter(
+            and_(
+                TeamMember.organization_id == organization_id,
+                TeamMember.last_active_at >= yesterday,
+            )
+        )
+    )
+    active_users_today = active_users_result.scalar() or 0
+
+    # Count total workflows
+    # For now, we'll count the total number of projects as a proxy for workflows
+    # since workflows are stored in the configuration JSON of each project.
+    # A more accurate count would require parsing the configuration JSON.
+    total_workflows = project_count
+
+    logger.info(
+        "get_org_statistics_response",
+        organization_id=organization_id,
+        member_count=member_count,
+        project_count=project_count,
+        active_users_today=active_users_today,
+        total_workflows=total_workflows,
+    )
+
+    return OrganizationStatistics(
+        member_count=member_count,
+        project_count=project_count,
+        active_users_today=active_users_today,
+        total_workflows=total_workflows,
+    )

@@ -1360,7 +1360,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         });
 
         const response = await apiClient.listProjectScreenshots(
-          parseInt(projectIdToSync, 10),
+          projectIdToSync,
           { limit: 100 }
         );
 
@@ -1395,6 +1395,22 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
           count: backendScreenshots.length,
         });
       } catch (error) {
+        // Check if this is a PROJECT_NOT_FOUND error (stale project ID)
+        const errorObj = error as Error & { code?: string; status?: number };
+        if (
+          errorObj?.code === "PROJECT_NOT_FOUND" ||
+          errorObj?.status === 404
+        ) {
+          projectLogger.warn(
+            "syncScreenshotsFromBackend",
+            "Project not found - clearing stale project ID",
+            { projectId: projectIdToSync }
+          );
+          // Clear the stale project ID from localStorage
+          setProjectId(null);
+          return;
+        }
+
         projectLogger.error(
           "syncScreenshotsFromBackend",
           "Failed to sync screenshots from backend",
@@ -1403,7 +1419,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         // Don't throw - screenshots failing shouldn't block project load
       }
     },
-    [projectName]
+    [projectName, setProjectId]
   );
 
   // Auto-sync screenshots when projectId changes

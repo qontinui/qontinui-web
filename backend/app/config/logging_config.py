@@ -145,12 +145,30 @@ def configure_logging(environment: str = "development") -> None:
     if environment == "development":
         try:
             DEV_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+            # Custom rotator for Windows compatibility
+            # Uses copy-truncate instead of rename to avoid file locking issues
+            def windows_safe_rotator(source: str, dest: str) -> None:
+                """Custom log rotator that works on Windows by copying then truncating."""
+                import shutil
+
+                try:
+                    # Copy the current log to the backup location
+                    shutil.copy2(source, dest)
+                    # Truncate the original file instead of renaming
+                    with open(source, "w", encoding="utf-8"):
+                        pass
+                except Exception as e:
+                    print(f"[logging] Log rotation failed: {e}", file=sys.stderr)
+
             file_handler = logging.handlers.RotatingFileHandler(
                 DEV_LOG_FILE,
                 maxBytes=5 * 1024 * 1024,  # 5MB
                 backupCount=3,
                 encoding="utf-8",
+                delay=True,  # Don't open file until first write
             )
+            file_handler.rotator = windows_safe_rotator
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(json_formatter)
             root_logger.addHandler(file_handler)

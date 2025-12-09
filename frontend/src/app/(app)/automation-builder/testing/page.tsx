@@ -65,6 +65,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TestCaseEditor } from "@/components/workflow-testing/TestCaseEditor";
+import { TestSuiteEditor } from "@/components/workflow-testing/TestSuiteEditor";
 import {
   getWorkflowTestingService,
   type TestCase,
@@ -133,9 +134,10 @@ export default function WorkflowTestingPage() {
   // ========================================================================
 
   const [showCreateTest, setShowCreateTest] = React.useState(false);
-  const [_showCreateSuite, setShowCreateSuite] = React.useState(false);
+  const [showCreateSuite, setShowCreateSuite] = React.useState(false);
   const [showImportDialog, setShowImportDialog] = React.useState(false);
   const [editingTest, setEditingTest] = React.useState<TestCase | null>(null);
+  const [editingSuite, setEditingSuite] = React.useState<TestSuite | null>(null);
 
   // ========================================================================
   // State - Test Execution
@@ -313,6 +315,41 @@ export default function WorkflowTestingPage() {
   // ========================================================================
   // Handlers - Test Suites
   // ========================================================================
+
+  const handleCreateSuite = React.useCallback(
+    (suite: TestSuite) => {
+      testingService.createTestSuite(
+        suite.name,
+        suite.description,
+        suite.testCaseIds
+      );
+      // Update the suite with additional properties
+      testingService.updateTestSuite(suite.id, {
+        executionOrder: suite.executionOrder,
+        stopOnFailure: suite.stopOnFailure,
+        tags: suite.tags,
+      });
+      loadData();
+      setShowCreateSuite(false);
+    },
+    [testingService, loadData]
+  );
+
+  const handleUpdateSuite = React.useCallback(
+    (suite: TestSuite) => {
+      testingService.updateTestSuite(suite.id, {
+        name: suite.name,
+        description: suite.description,
+        testCaseIds: suite.testCaseIds,
+        executionOrder: suite.executionOrder,
+        stopOnFailure: suite.stopOnFailure,
+        tags: suite.tags,
+      });
+      loadData();
+      setEditingSuite(null);
+    },
+    [testingService, loadData]
+  );
 
   // ========================================================================
   // Handlers - Test Execution
@@ -998,9 +1035,7 @@ export default function WorkflowTestingPage() {
                           selectedSuite.testCaseIds.includes(tc.id)
                         )}
                         onRun={handleRunSuite}
-                        onEdit={() => {
-                          /* TODO: Implement edit suite */
-                        }}
+                        onEdit={() => setEditingSuite(selectedSuite)}
                         isRunning={
                           execution.isRunning &&
                           execution.currentTest === selectedSuite.name
@@ -1088,6 +1123,31 @@ export default function WorkflowTestingPage() {
                   }
                   onSave={handleUpdateTest}
                   onCancel={() => setEditingTest(null)}
+                />
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {showCreateSuite && (
+            <Dialog open onOpenChange={() => setShowCreateSuite(false)}>
+              <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+                <TestSuiteEditor
+                  availableTestCases={testCases}
+                  onSave={handleCreateSuite}
+                  onCancel={() => setShowCreateSuite(false)}
+                />
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {editingSuite && (
+            <Dialog open onOpenChange={() => setEditingSuite(null)}>
+              <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+                <TestSuiteEditor
+                  suite={editingSuite}
+                  availableTestCases={testCases}
+                  onSave={handleUpdateSuite}
+                  onCancel={() => setEditingSuite(null)}
                 />
               </DialogContent>
             </Dialog>

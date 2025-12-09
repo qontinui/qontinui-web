@@ -34,6 +34,10 @@ import {
   Store,
   CreditCard,
   TestTube2,
+  LogOut,
+  Download,
+  Upload,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsedMenuPopover } from "./collapsed-menu-popover";
@@ -47,6 +51,14 @@ import { useAuth } from "@/contexts/auth-context";
 import { useAutomation } from "@/contexts/automation-context";
 import { useProjects, useCreateProject } from "@/hooks/use-projects";
 import { toast } from "sonner";
+import { ConfigExporter } from "@/lib/config-exporter";
+import { ConfigImporter } from "@/lib/config-importer";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface NavItem {
   id: string;
@@ -204,11 +216,10 @@ const navItems: NavItem[] = [
       {
         id: "web-extraction",
         label: "Web Extraction",
-        description: "Extract state structure from web pages",
+        description: "View and manage extraction results from the Runner",
         icon: <Globe size={22} />,
-        route: "/automation-builder/web-extraction",
+        route: "/extractions",
         color: "#4ECDC4",
-        badge: "beta",
       },
       {
         id: "remove-backgrounds",
@@ -453,7 +464,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   className,
   projectId: propProjectId,
 }) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { isCollapsed, setIsCollapsed } = useSidebar();
   const [openFlyout, setOpenFlyout] = useState<string | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -466,10 +477,111 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     useOrganization();
 
   // Project management
-  const { projectId: contextProjectId, setProjectId: setContextProjectId } =
-    useAutomation();
+  const {
+    projectId: contextProjectId,
+    setProjectId: setContextProjectId,
+    projectName,
+    images,
+    workflows,
+    states,
+    transitions,
+    categories,
+    settings,
+    loadConfiguration,
+  } = useAutomation();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const createProject = useCreateProject();
+
+  // Export/Import handlers
+  const exporter = new ConfigExporter();
+  const importer = new ConfigImporter();
+
+  const handleExport = async () => {
+    if (!user) {
+      toast.error("Please log in to export your project");
+      return;
+    }
+
+    try {
+      const config = await exporter.exportConfiguration(
+        images,
+        workflows,
+        states,
+        transitions,
+        categories,
+        {
+          name: projectName || currentProject?.name || "Untitled",
+          description: "Exported from Qontinui Web",
+          author: user?.username,
+        },
+        settings
+      );
+
+      exporter.downloadConfiguration(
+        config,
+        `${(projectName || currentProject?.name || "project").replace(/\s+/g, "_")}_config.json`
+      );
+
+      toast.success("Export complete", {
+        description: "Configuration downloaded successfully.",
+      });
+    } catch (error) {
+      toast.error("Export failed", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
+
+  const handleImport = async () => {
+    if (!user) {
+      toast.error("Please log in to import a project");
+      return;
+    }
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const result = await importer.loadFromFile(file);
+
+        if (result.errors.length > 0) {
+          toast.error("Import failed", {
+            description: result.errors.join(", "),
+          });
+          return;
+        }
+
+        if (result.warnings.length > 0) {
+          result.warnings.forEach((warning) => {
+            toast.warning("Import warning", { description: warning });
+          });
+        }
+
+        loadConfiguration(result);
+
+        toast.success("Import successful", {
+          description: `Loaded ${result.states.length} states, ${result.workflows?.length || 0} workflows`,
+        });
+      } catch (error) {
+        toast.error("Import failed", {
+          description: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    };
+
+    input.click();
+  };
+
+  const handleLogout = async () => {
+    logout();
+    router.push("/");
+    toast.success("Logged out successfully");
+  };
 
   // Get project ID from prop, URL params, or context - prioritize in that order
   const projectId =
@@ -825,14 +937,90 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       {/* Bottom Gradient Overlay */}
       <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-purple-500/5 to-transparent pointer-events-none" />
 
-      {/* Footer */}
-      <div className="border-t border-gray-800/50 p-2 flex justify-center">
-        <button
-          onClick={toggleCollapse}
-          className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-gray-100"
-        >
-          {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-        </button>
+      {/* Footer with User Actions */}
+      <div className="border-t border-gray-800/50 p-2">
+        <TooltipProvider delayDuration={300}>
+          {/* User action buttons */}
+          {user && (
+            <div
+              className={cn(
+                "flex gap-1 mb-2",
+                isCollapsed ? "flex-col items-center" : "justify-center"
+              )}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleExport}
+                    className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-[#BD00FF]"
+                  >
+                    <Download size={18} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side={isCollapsed ? "right" : "top"}>
+                  <p>Export Project</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleImport}
+                    className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-[#00FF88]"
+                  >
+                    <Upload size={18} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side={isCollapsed ? "right" : "top"}>
+                  <p>Import Project</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleLogout}
+                    className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-red-500"
+                  >
+                    <LogOut size={18} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side={isCollapsed ? "right" : "top"}>
+                  <p>Log Out</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )}
+
+          {/* User info (when expanded) */}
+          {user && !isCollapsed && (
+            <div className="flex items-center gap-2 px-2 py-1 mb-2 text-xs text-gray-500">
+              <User size={14} />
+              <span className="truncate">{user.username || user.email}</span>
+            </div>
+          )}
+
+          {/* Collapse toggle */}
+          <div className="flex justify-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={toggleCollapse}
+                  className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-gray-100"
+                >
+                  {isCollapsed ? (
+                    <ChevronRight size={20} />
+                  ) : (
+                    <ChevronLeft size={20} />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side={isCollapsed ? "right" : "top"}>
+                <p>{isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
       </div>
 
       {/* Create Organization Dialog */}

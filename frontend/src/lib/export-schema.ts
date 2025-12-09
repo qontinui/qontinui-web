@@ -1,9 +1,23 @@
 /**
  * Qontinui Automation Configuration Schema
- * Version 2.2.0
+ * Version 2.5.0
  *
  * This defines the structure for exported automation configurations
  * that can be consumed by the Qontinui runner.
+ *
+ * CHANGELOG v2.5.0:
+ * - Added TRIGGER_AI_ANALYSIS action type for autonomous debugging
+ * - Invokes AI assistants to analyze automation results and fix issues
+ * - Supports provider selection (currently: claude)
+ *
+ * CHANGELOG v2.4.0:
+ * - Added SHELL and SHELL_SCRIPT action types for command execution
+ * - Supports multiple shells (bash, sh, powershell, cmd, zsh)
+ * - Output can be captured as text, JSON, or lines
+ *
+ * CHANGELOG v2.3.0:
+ * - Added initialStateIds to workflows for model-based GUI automation
+ * - Allows specifying which states should be active when a Main workflow starts
  *
  * CHANGELOG v2.2.0:
  * - Normalized state and transition position coordinates to integers
@@ -51,6 +65,12 @@ export interface Workflow {
   connections: WorkflowConnections;
   metadata?: WorkflowMetadata;
   expectations?: WorkflowExpectations; // Optional workflow-level expectations
+  /**
+   * Initial active states when this workflow starts.
+   * Required for Main category workflows to enable model-based GUI automation.
+   * The qontinui library needs to know which states are active at automation start.
+   */
+  initialStateIds?: string[];
 }
 
 /**
@@ -145,6 +165,10 @@ export type ActionType =
   | "KEY_UP"
   // Combined keyboard actions
   | "TYPE"
+  // Shell actions
+  | "SHELL"
+  | "SHELL_SCRIPT"
+  | "TRIGGER_AI_ANALYSIS"
   // Other actions
   | "WAIT"
   | "VANISH"
@@ -355,6 +379,11 @@ export interface ActionConfig {
   // === Condition/Loop (legacy - kept for compatibility) ===
   condition?: ConditionConfig;
   loop?: LoopConfig;
+
+  // === TRIGGER_AI_ANALYSIS Options ===
+  aiProvider?: "claude"; // AI provider to use (currently: claude)
+  resultsDirectory?: string; // Path to automation results directory
+  failOnIssues?: boolean; // Whether to fail if AI reports issues
 }
 
 export interface Region {

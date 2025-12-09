@@ -63,7 +63,7 @@ class OCRService:
         """
         try:
             # Crop to region
-            region = image.crop((x, y, x + width, y + height))
+            image.crop((x, y, x + width, y + height))
 
             # Placeholder implementation
             # In production:

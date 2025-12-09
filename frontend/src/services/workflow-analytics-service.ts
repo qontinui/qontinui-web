@@ -461,6 +461,20 @@ export function getRecentExecutions(limit: number = 50): ExecutionRecord[] {
 }
 
 /**
+ * Get execution records filtered by date range
+ */
+export function getExecutionsInDateRange(
+  startDate: Date | string,
+  endDate: Date | string
+): ExecutionRecord[] {
+  const executions = getExecutions();
+  return filterByTimeRange(executions, {
+    start: startDate,
+    end: endDate,
+  });
+}
+
+/**
  * Calculate success rate for a workflow
  */
 export function calculateSuccessRate(
@@ -757,6 +771,7 @@ export const workflowAnalyticsService = {
   getSlowestWorkflows,
   getHighestErrorRateWorkflows,
   getRecentExecutions,
+  getExecutionsInDateRange,
   calculateSuccessRate,
   calculateAvgDuration,
   getExecutionTimeline,

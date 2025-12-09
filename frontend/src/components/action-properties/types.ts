@@ -47,7 +47,13 @@ export interface Action {
     | "MAP"
     | "REDUCE"
     | "STRING_OPERATION"
-    | "MATH_OPERATION";
+    | "MATH_OPERATION"
+    // Code actions
+    | "CODE_BLOCK"
+    | "CUSTOM_FUNCTION"
+    // Shell actions
+    | "SHELL"
+    | "SHELL_SCRIPT";
   config: Record<string, any>;
   /** Base settings (timing, logging, etc.) */
   base?: BaseActionSettings;
