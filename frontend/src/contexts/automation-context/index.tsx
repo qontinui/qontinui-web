@@ -160,16 +160,22 @@ function migratePatternImages(
         const patternAny = pattern as any;
 
         // Check if pattern has embedded image data but no imageId
-        if (!pattern.imageId && patternAny.image) {
+        // OR if pattern.imageId accidentally contains base64 data (fix for corrupted data)
+        const imageIdIsData = pattern.imageId && pattern.imageId.startsWith("data:image");
+        const hasEmbeddedImage = !pattern.imageId && patternAny.image;
+
+        if (hasEmbeddedImage || imageIdIsData) {
+          const imageData = imageIdIsData ? pattern.imageId! : patternAny.image;
+
           // Try to find matching image in library
           let matchingImage = images.find(
-            (img) => img.url === patternAny.image
+            (img) => img.url === imageData
           );
 
           // If not found, also check newImages we've created in this migration
           if (!matchingImage) {
             matchingImage = newImages.find(
-              (img) => img.url === patternAny.image
+              (img) => img.url === imageData
             );
           }
 
@@ -179,10 +185,10 @@ function migratePatternImages(
             matchingImage = {
               id: imageId,
               name: pattern.name || stateImage.name || "Migrated Image",
-              url: patternAny.image,
+              url: imageData,
               mask: patternAny.mask,
               size: Math.ceil(
-                ((patternAny.image.split(",")[1] || "").length * 3) / 4
+                ((imageData.split(",")[1] || "").length * 3) / 4
               ),
               createdAt: new Date(),
               usageCount: 1,
@@ -198,6 +204,7 @@ function migratePatternImages(
           );
 
           // Return pattern with imageId, removing embedded data
+          // If imageId was the data, it gets overwritten here
           const { image, mask, ...rest } = patternAny;
           return {
             ...rest,
@@ -921,6 +928,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   // Helper: Resolve pattern's image data from library
   const resolvePatternImage = useCallback(
     (pattern: Pattern): { url: string; mask?: string } | null => {
+      // Fallback for when migration hasn't run yet or for transient bad data
+      // If imageId is actually the base64 data, return it directly
+      if (pattern.imageId && pattern.imageId.startsWith("data:image")) {
+        return { url: pattern.imageId };
+      }
+
       if (!pattern.imageId) {
         // Pattern has no imageId - this is a data issue
         return null;
@@ -1283,7 +1296,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     const averageIterationCount =
       executionRecords.length > 0
         ? executionRecords.reduce((sum, r) => sum + r.iterationCount, 0) /
-          executionRecords.length
+        executionRecords.length
         : 0;
 
     return {
