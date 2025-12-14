@@ -14,12 +14,8 @@ from pathlib import Path
 
 import pytest
 
-# Add qontinui library to path for importing Pydantic schemas
-qontinui_path = Path(__file__).parent.parent.parent.parent.parent / "qontinui" / "src"
-sys.path.insert(0, str(qontinui_path))
-
-# Import qontinui Pydantic schemas
-from qontinui.config.schema import (
+# Import qontinui-schemas Pydantic models
+from qontinui_schemas.config.models import (
     Action,
     ClickActionConfig,
     FindActionConfig,
