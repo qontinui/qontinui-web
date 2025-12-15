@@ -29,7 +29,7 @@ import {
 // Types
 // ============================================================================
 
-type MessageHandler<T = any> = (data: T) => void;
+type MessageHandler<T = unknown> = (data: T) => void;
 
 interface CollaborationHandlers {
   onPresenceUpdate?: MessageHandler<UserPresence[]>;
