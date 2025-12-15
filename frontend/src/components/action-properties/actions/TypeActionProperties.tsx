@@ -128,7 +128,7 @@ export function TypeActionProperties({
                     Select Strings
                   </Label>
                   <div className="space-y-2 max-h-48 overflow-y-auto p-2 bg-gray-800/50 rounded border border-gray-700">
-                    {selectedState.strings.map((str: any, index: number) => (
+                    {selectedState.strings.map((str: unknown, index: number) => (
                       <div key={str.id} className="flex items-start space-x-2">
                         <Checkbox
                           id={`string-${str.id}`}

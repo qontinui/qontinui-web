@@ -96,7 +96,7 @@ export function useCodeExecutionFiles(
       setFiles(pythonFiles);
       setProjectRoot(data.project_root);
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[useCodeExecutionFiles] Error fetching files:", err);
       setError(err.message || "Failed to load Python files");
       setFiles([]);
@@ -149,7 +149,7 @@ export function useCodeExecutionFiles(
 
         const data: ValidateFileResponse = await response.json();
         return data;
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("[useCodeExecutionFiles] Error validating file:", err);
         return {
           valid: false,

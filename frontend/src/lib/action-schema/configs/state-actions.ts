@@ -34,7 +34,7 @@ export interface RunWorkflowActionConfig {
   workflowId: string;
 
   /** Pass variables to the workflow */
-  variables?: Record<string, any>;
+  variables?: Record<string, unknown>;
 
   /** Workflow repetition options */
   repetition?: {

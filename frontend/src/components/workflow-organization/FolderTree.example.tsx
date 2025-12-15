@@ -104,7 +104,7 @@ export function WorkflowBrowserExample() {
     selectedFolderId === null
       ? workflows
       : selectedFolderId === "uncategorized"
-        ? workflows.filter((w) => !(w as any).folderId)
+        ? workflows.filter((w) => !(w as unknown).folderId)
         : getWorkflowsInFolder(selectedFolderId, workflows, folders, true);
 
   // Handle folder creation
@@ -123,7 +123,7 @@ export function WorkflowBrowserExample() {
           return {
             ...w,
             folderId: folderId || undefined,
-          } as any;
+          } as unknown;
         }
         return w;
       })
@@ -302,7 +302,7 @@ export function FolderTreeWithPersistence() {
       try {
         const parsed = JSON.parse(saved);
         setFolders(
-          parsed.map((f: any) => ({
+          parsed.map((f: unknown) => ({
             ...f,
             createdAt: new Date(f.createdAt),
             updatedAt: new Date(f.updatedAt),

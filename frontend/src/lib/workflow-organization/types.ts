@@ -63,7 +63,7 @@ export interface WorkflowFolder {
   description?: string;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -138,7 +138,7 @@ export interface WorkflowDependency {
   type: DependencyType;
 
   /** Optional context or metadata about the dependency */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -289,10 +289,10 @@ export interface TestAssertion {
   path: string;
 
   /** Expected value */
-  expected: any;
+  expected: unknown;
 
   /** Actual value (filled during test execution) */
-  actual?: any;
+  actual?: unknown;
 
   /** Human-readable description */
   description?: string;
@@ -332,10 +332,10 @@ export interface TestCase {
   description?: string;
 
   /** Input variables/parameters for the test */
-  inputs: Record<string, any>;
+  inputs: Record<string, unknown>;
 
   /** Expected outputs/results */
-  expectedOutputs?: Record<string, any>;
+  expectedOutputs?: Record<string, unknown>;
 
   /** Assertions to validate */
   assertions: TestAssertion[];
@@ -362,7 +362,7 @@ export interface TestCase {
   timeout?: number;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -394,7 +394,7 @@ export interface TestSuite {
   updatedAt: string;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -426,10 +426,10 @@ export interface TestResult {
   assertions?: TestAssertion[];
 
   /** Output variables */
-  outputs?: Record<string, any>;
+  outputs?: Record<string, unknown>;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -651,7 +651,7 @@ export interface ComponentParameter {
   required: boolean;
 
   /** Default value if not provided */
-  defaultValue?: any;
+  defaultValue?: unknown;
 
   /** Human-readable description */
   description?: string;
@@ -661,7 +661,7 @@ export interface ComponentParameter {
     min?: number;
     max?: number;
     pattern?: string;
-    enum?: any[];
+    enum?: unknown[];
   };
 }
 
@@ -715,7 +715,7 @@ export interface SubflowComponent {
   icon?: string;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -741,7 +741,7 @@ export interface ComponentLibrary {
   updatedAt: string;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -758,7 +758,7 @@ export interface ComponentUsage {
   actionId: string;
 
   /** Parameter values passed to the component */
-  parameterValues: Record<string, any>;
+  parameterValues: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -835,7 +835,7 @@ export interface WorkflowDocumentation {
   }>;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -897,7 +897,7 @@ export interface WorkflowBranch {
   isMerged: boolean;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -923,10 +923,10 @@ export interface VersionChange {
   path: string;
 
   /** Previous value */
-  oldValue?: any;
+  oldValue?: unknown;
 
   /** New value */
-  newValue?: any;
+  newValue?: unknown;
 
   /** Human-readable description */
   description?: string;
@@ -964,7 +964,7 @@ export interface WorkflowVersion {
   tags?: string[];
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -1121,7 +1121,7 @@ export interface ReviewRequest {
   description?: string;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -1238,7 +1238,7 @@ export interface SavedFilter {
   isShared: boolean;
 
   /** Custom metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -1308,7 +1308,7 @@ export interface BulkOperation {
   workflowIds: string[];
 
   /** Operation-specific parameters */
-  parameters: Record<string, any>;
+  parameters: Record<string, unknown>;
 
   /** Whether to confirm before executing */
   requireConfirmation?: boolean;
@@ -1328,7 +1328,7 @@ export interface BulkOperationItemResult {
   error?: string;
 
   /** Additional result data */
-  data?: any;
+  data?: unknown;
 }
 
 /**

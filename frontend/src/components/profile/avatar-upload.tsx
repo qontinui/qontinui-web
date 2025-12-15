@@ -57,7 +57,7 @@ export function AvatarUpload({
       setAvatarUrl(result.avatar_url);
       setPreviewUrl(null);
       toast.success("Avatar uploaded successfully");
-    } catch (error: any) {
+    } catch (error: unknown) {
       setPreviewUrl(null);
       toast.error(error.message || "Failed to upload avatar");
     } finally {
@@ -99,7 +99,7 @@ export function AvatarUpload({
       setAvatarUrl(undefined);
       setPreviewUrl(null);
       toast.success("Avatar deleted successfully");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to delete avatar");
     }
   };

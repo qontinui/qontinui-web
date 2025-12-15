@@ -58,7 +58,7 @@ export default function ProfilePage() {
     }
   };
 
-  const handleUpdateProfile = async (data: any) => {
+  const handleUpdateProfile = async (data: unknown) => {
     await profileService.updateProfile(data);
     await updateUser(data);
   };

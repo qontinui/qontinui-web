@@ -91,14 +91,14 @@ export default function WorkflowVisualizationPage() {
             projectDB.getAllTransitions(),
           ]);
 
-        setWorkflows(loadedWorkflows as any);
+        setWorkflows(loadedWorkflows as unknown);
         setStates(loadedStates);
         setTransitions(loadedTransitions);
 
         // Extract unique project names
         const projectNames = Array.from(
           new Set([
-            ...loadedWorkflows.map((w: any) => w.projectName).filter(Boolean),
+            ...loadedWorkflows.map((w: unknown) => w.projectName).filter(Boolean),
             ...loadedStates.map((s) => s.projectName).filter(Boolean),
           ])
         ) as string[];
@@ -206,7 +206,7 @@ export default function WorkflowVisualizationPage() {
 
     // For STATE_ACTIVATOR actions, activate the specified state
     if ((action.type as string) === "STATE_ACTIVATOR" && action.config) {
-      const config = action.config as any;
+      const config = action.config as unknown;
       const stateIds = config.stateIds || [];
       setActiveStateIds((prev) => {
         const newIds = [...prev];

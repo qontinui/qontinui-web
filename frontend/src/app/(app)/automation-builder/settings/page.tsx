@@ -89,7 +89,7 @@ export default function SettingsPage() {
     toast.success("Settings exported");
   };
 
-  const updateSetting = (key: string, value: any) => {
+  const updateSetting = (key: string, value: unknown) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 

@@ -68,10 +68,10 @@ export function CustomOrganizationExample() {
   } = useImageOrganization({
     images: images.map((img) => ({
       ...img,
-      folderId: (img as any).folderId,
-      tags: (img as any).tags || [],
+      folderId: (img as unknown).folderId,
+      tags: (img as unknown).tags || [],
     })),
-    onUpdateImage: updateImage as any,
+    onUpdateImage: updateImage as unknown,
   });
 
   return (
@@ -151,14 +151,14 @@ export function CustomOrganizationExample() {
                 <Badge
                   key={source}
                   variant={
-                    currentFilter.sources?.includes(source as any)
+                    currentFilter.sources?.includes(source as unknown)
                       ? "default"
                       : "outline"
                   }
                   className="cursor-pointer"
                   onClick={() => {
                     const sources = currentFilter.sources || [];
-                    const newSources = sources.includes(source as any)
+                    const newSources = sources.includes(source as unknown)
                       ? sources.filter((s) => s !== source)
                       : [...sources, source as any];
                     setCurrentFilter({ ...currentFilter, sources: newSources });
@@ -193,10 +193,10 @@ export function ProgrammaticExample() {
   } = useImageOrganization({
     images: images.map((img) => ({
       ...img,
-      folderId: (img as any).folderId,
-      tags: (img as any).tags || [],
+      folderId: (img as unknown).folderId,
+      tags: (img as unknown).tags || [],
     })),
-    onUpdateImage: updateImage as any,
+    onUpdateImage: updateImage as unknown,
   });
 
   const handleOrganizeImages = () => {
@@ -214,9 +214,9 @@ export function ProgrammaticExample() {
     // Auto-organize by name patterns
     images.forEach((image) => {
       if (image.name.toLowerCase().includes("button")) {
-        updateImage({ ...image, folderId: buttonsFolder.id } as any);
+        updateImage({ ...image, folderId: buttonsFolder.id } as unknown);
       } else if (image.name.toLowerCase().includes("icon")) {
-        updateImage({ ...image, folderId: iconsFolder.id } as any);
+        updateImage({ ...image, folderId: iconsFolder.id } as unknown);
       }
     });
 

@@ -136,7 +136,7 @@ export default function PackageDetailsPage() {
             Package not found
           </h2>
           <p className="text-gray-500 mb-6">
-            The package you're looking for doesn't exist.
+            The package you&apos;re looking for doesn&apos;t exist.
           </p>
           <Button onClick={handleBack} variant="outline">
             <ArrowLeft className="w-4 h-4 mr-2" />

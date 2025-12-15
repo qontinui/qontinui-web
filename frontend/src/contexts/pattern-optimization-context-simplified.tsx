@@ -142,7 +142,7 @@ export function PatternOptimizationProvider({
     async (files: File[]) => {
       console.log("[PatternOptimization] Adding screenshots:", files.length);
 
-      // Create session if it doesn't exist
+      // Create session if it doesn&apos;t exist
       let currentSession = session;
       if (!currentSession) {
         currentSession = {
@@ -356,7 +356,7 @@ export function PatternOptimizationProvider({
             const base64Data = croppedImage.split(",")[1] ?? "";
             screenshots.push(base64Data);
 
-            // Since we're sending cropped regions, the coordinates are now relative to the crop
+            // Since we&apos;re sending cropped regions, the coordinates are now relative to the crop
             regions.push({
               x: 0,
               y: 0,
@@ -428,7 +428,7 @@ export function PatternOptimizationProvider({
             signal: controller.signal,
           });
           console.log("[PatternOptimization] Fetch completed successfully");
-        } catch (fetchError: any) {
+        } catch (fetchError: unknown) {
           clearTimeout(timeoutId);
           console.error("[PatternOptimization] Fetch error:", fetchError);
           console.error("[PatternOptimization] Error stack:", fetchError.stack);
@@ -526,7 +526,7 @@ export function PatternOptimizationProvider({
           "[PatternOptimization] Extraction successful! Pattern saved to session:",
           extractedPattern
         );
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("[PatternOptimization] Extraction failed:", error);
 
         if (error.name === "AbortError") {

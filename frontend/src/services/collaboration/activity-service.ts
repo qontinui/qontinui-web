@@ -42,10 +42,10 @@ export class ActivityService {
     actionType: ActivityActionType,
     resourceType: ResourceType,
     resourceId: string,
-    changes?: Record<string, any>,
+    changes?: Record<string, unknown>,
     resourceName?: string,
     description?: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): Promise<void> {
     const data: ActivityCreate = {
       action_type: actionType,
@@ -253,7 +253,7 @@ export class ActivityService {
     resourceType: ResourceType,
     resourceId: string,
     resourceName?: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): Promise<void> {
     return this.trackActivity(
       projectId,
@@ -274,7 +274,7 @@ export class ActivityService {
     projectId: string,
     resourceType: ResourceType,
     resourceId: string,
-    changes: Record<string, any>,
+    changes: Record<string, unknown>,
     resourceName?: string
   ): Promise<void> {
     return this.trackActivity(

@@ -38,7 +38,7 @@ export interface MigrationOptions {
 /**
  * Detect workflow version from data
  */
-export function detectWorkflowVersion(data: any): string {
+export function detectWorkflowVersion(data: unknown): string {
   // Check explicit version field
   if (data.version) {
     return data.version;
@@ -100,7 +100,7 @@ const CURRENT_VERSION = "1.0.0";
  * Migrate workflow from one version to another
  */
 export function migrateWorkflow(
-  data: any,
+  data: unknown,
   fromVersion: string,
   toVersion: string = CURRENT_VERSION,
   options: MigrationOptions = {}
@@ -156,7 +156,7 @@ export function migrateWorkflow(
 // ============================================================================
 
 type MigrationFunction = (
-  data: any,
+  data: unknown,
   context: {
     warnings: string[];
     errors: string[];
@@ -198,19 +198,19 @@ function getMigrationPath(from: string, to: string): MigrationFunction[] {
  * Migrate from v0.5.0 (node/edge format) to v0.9.0 (sequential format)
  */
 function migrateV05ToV09(
-  data: any,
+  data: unknown,
   context: {
     warnings: string[];
     errors: string[];
     preserveUnknown: boolean;
     strict: boolean;
   }
-): any {
+): unknown {
   const { warnings } = context;
 
   warnings.push("Migrating from node/edge format to sequential format");
 
-  const workflow: any = {
+  const workflow: unknown = {
     id: data.id || `workflow-${Date.now()}`,
     name: data.name || "Untitled Workflow",
     version: "0.9.0",
@@ -221,7 +221,7 @@ function migrateV05ToV09(
 
   // Convert nodes to actions
   if (data.nodes && Array.isArray(data.nodes)) {
-    workflow.actions = data.nodes.map((node: any, index: number) => ({
+    workflow.actions = data.nodes.map((node: unknown, index: number) => ({
       id: node.id || `action-${index}`,
       type: node.type,
       name: node.name,
@@ -243,14 +243,14 @@ function migrateV05ToV09(
  * Migrate from v0.9.0 (sequential format) to v1.0.0 (graph format)
  */
 function migrateV09ToV10(
-  data: any,
+  data: unknown,
   context: {
     warnings: string[];
     errors: string[];
     preserveUnknown: boolean;
     strict: boolean;
   }
-): any {
+): unknown {
   const { warnings } = context;
 
   warnings.push("Migrating from sequential format to graph format");
@@ -270,7 +270,7 @@ function migrateV09ToV10(
 
   // Convert actions and add positions
   if (data.actions && Array.isArray(data.actions)) {
-    workflow.actions = data.actions.map((action: any, index: number) => {
+    workflow.actions = data.actions.map((action: unknown, index: number) => {
       const x = 100 + (index % 4) * 300;
       const y = 100 + Math.floor(index / 4) * 200;
 
@@ -309,7 +309,7 @@ function migrateV09ToV10(
  * Dry-run migration to check for issues
  */
 export function dryRunMigration(
-  data: any,
+  data: unknown,
   fromVersion: string,
   toVersion: string = CURRENT_VERSION
 ): MigrationResult {
@@ -415,7 +415,7 @@ export function canMigrate(from: string, to: string): boolean {
 /**
  * Create backup of workflow before migration
  */
-export function backupWorkflow(workflow: any): string {
+export function backupWorkflow(workflow: unknown): string {
   const backup = {
     workflow,
     timestamp: new Date().toISOString(),
@@ -431,7 +431,7 @@ export function backupWorkflow(workflow: any): string {
 /**
  * Restore workflow from backup
  */
-export function restoreWorkflow(backupKey: string): any {
+export function restoreWorkflow(backupKey: string): unknown {
   const backup = localStorage.getItem(backupKey);
   if (!backup) {
     throw new Error("Backup not found");

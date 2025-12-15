@@ -33,7 +33,7 @@ export interface ActionResult {
   description: string;
   category: string;
   confidence?: number;
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
   examples?: string[];
 }
 
@@ -48,12 +48,12 @@ export interface ActionDetails {
     type: string;
     description: string;
     required: boolean;
-    default?: any;
+    default?: unknown;
   }>;
   examples: Array<{
     name: string;
     description: string;
-    config: any;
+    config: unknown;
   }>;
   relatedActions?: string[];
   documentation?: string;
@@ -70,7 +70,7 @@ export interface ValidationError {
     | "invalid_config";
   severity: "error" | "warning";
   message: string;
-  details?: any;
+  details?: unknown;
   suggestion?: string;
 }
 
@@ -124,8 +124,8 @@ export interface WorkflowSuggestion {
     type: "add" | "remove" | "modify" | "connect";
     actionId?: string;
     action?: Action;
-    connection?: any;
-    modification?: any;
+    connection?: unknown;
+    modification?: unknown;
   }>;
   preview?: Workflow;
 }
@@ -144,7 +144,7 @@ export interface RefinementFeedback {
 export class MCPClient {
   private baseUrl: string;
   private timeout: number;
-  private cache: Map<string, { data: any; timestamp: number }>;
+  private cache: Map<string, { data: unknown; timestamp: number }>;
   private cacheTimeout: number;
 
   constructor(
@@ -360,7 +360,7 @@ export class MCPClient {
    */
   async generateFromTemplate(
     templateId: string,
-    parameters?: Record<string, any>
+    parameters?: Record<string, unknown>
   ): Promise<GeneratedWorkflow> {
     const response = await this.request("POST", "/workflows/from-template", {
       templateId,
@@ -455,7 +455,7 @@ export class MCPClient {
         type: string;
         description: string;
         required: boolean;
-        default?: any;
+        default?: unknown;
       }>;
       preview?: Workflow;
     }>
@@ -555,9 +555,9 @@ export class MCPClient {
   private async request(
     method: "GET" | "POST" | "PUT" | "DELETE",
     endpoint: string,
-    data?: any,
+    data?: unknown,
     options?: { timeout?: number }
-  ): Promise<any> {
+  ): Promise<unknown> {
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
@@ -602,7 +602,7 @@ export class MCPClient {
     }
   }
 
-  private getCached(key: string): any | null {
+  private getCached(key: string): unknown | null {
     const cached = this.cache.get(key);
     if (!cached) return null;
 
@@ -615,7 +615,7 @@ export class MCPClient {
     return cached.data;
   }
 
-  private setCache(key: string, data: any): void {
+  private setCache(key: string, data: unknown): void {
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
@@ -660,7 +660,7 @@ export class MCPError extends Error {
   constructor(
     message: string,
     public statusCode: number,
-    public details?: any
+    public details?: unknown
   ) {
     super(message);
     this.name = "MCPError";
@@ -679,7 +679,7 @@ let mcpClient: MCPClient | null = null;
 export function getMCPClient(): MCPClient {
   if (!mcpClient) {
     const baseUrl =
-      (import.meta as any).env?.VITE_MCP_URL || "http://localhost:3000/mcp";
+      (import.meta as unknown).env?.VITE_MCP_URL || "http://localhost:3000/mcp";
     mcpClient = new MCPClient(baseUrl);
   }
   return mcpClient;

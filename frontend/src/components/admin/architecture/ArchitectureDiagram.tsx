@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { ComponentType } from "@/app/(app)/admin/architecture/page";
 
-// Define ArchitectureLevel locally since it's only used by this component
+// Define ArchitectureLevel locally since it&apos;s only used by this component
 export type ArchitectureLevel =
   | "root"
   | "qontinui-web"

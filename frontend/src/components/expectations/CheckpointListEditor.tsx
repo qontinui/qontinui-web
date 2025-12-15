@@ -170,7 +170,7 @@ export function CheckpointListEditor({
         <div className="space-y-3">
           {checkpointNames.map((name) => {
             const checkpoint = current[name];
-            // Skip if checkpoint doesn't exist (shouldn't happen, but for type safety)
+            // Skip if checkpoint doesn&apos;t exist (shouldn&apos;t happen, but for type safety)
             if (!checkpoint) return null;
             const isExpanded = expandedCheckpoints.has(name);
 

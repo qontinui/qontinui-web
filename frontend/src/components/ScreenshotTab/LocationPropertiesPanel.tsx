@@ -5,7 +5,7 @@ import { StateImage } from "../../contexts/automation-context/types";
 
 interface LocationPropertiesPanelProps {
   selectedLocation: ScreenshotLocation;
-  states: any[]; // Will be replaced with proper State type
+  states: unknown[]; // Will be replaced with proper State type
   onUpdate: (location: ScreenshotLocation) => void;
   onDelete: (locationId: string) => void;
 }

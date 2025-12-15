@@ -42,7 +42,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
   const [resultSuccess, setResultSuccess] = useState(true);
   const [duration, setDuration] = useState(100);
   const [text, setText] = useState<string>("");
-  const [matches, setMatches] = useState<any[]>([]);
+  const [matches, setMatches] = useState<unknown[]>([]);
   const [showScreenshotSelector, setShowScreenshotSelector] = useState(false);
 
   // Action configuration
@@ -71,7 +71,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
     setMatches([...matches, newMatch]);
   };
 
-  const handleUpdateMatch = (index: number, field: string, value: any) => {
+  const handleUpdateMatch = (index: number, field: string, value: unknown) => {
     const updated = [...matches];
     if (field.includes(".")) {
       const parts = field.split(".");

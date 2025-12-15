@@ -40,7 +40,7 @@ export interface HistoryEntry {
     | "other";
 
   /** User-defined metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface HistoryManagerConfig {

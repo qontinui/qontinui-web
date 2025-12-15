@@ -129,9 +129,9 @@ function connectionsToEdges(
       if (!connectionArray) return;
 
       // Process each output index
-      connectionArray.forEach((outputConnections: any, outputIndex: number) => {
+      connectionArray.forEach((outputConnections: unknown, outputIndex: number) => {
         // Process each connection from this output
-        outputConnections.forEach((conn: any, connIndex: number) => {
+        outputConnections.forEach((conn: unknown, connIndex: number) => {
           const edgeId = `${sourceActionId}-${connType}-${outputIndex}-${conn.action}-${connIndex}`;
           const color = getConnectionColor(connType);
           const style = getConnectionStyle(connType);

@@ -58,7 +58,7 @@ export interface ComponentLibraryProps {
   onSelectComponent: (component: SubflowComponent) => void;
   onInsertComponent: (
     componentId: string,
-    parameters: Record<string, any>
+    parameters: Record<string, unknown>
   ) => void;
   onCreateComponent: (component: SubflowComponent) => void;
   onUpdateComponent: (id: string, updates: Partial<SubflowComponent>) => void;

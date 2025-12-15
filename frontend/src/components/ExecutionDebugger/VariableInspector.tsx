@@ -11,7 +11,7 @@ import { useExecutionDebugger } from "../../stores/execution-debugger-store";
 
 interface VariableNodeProps {
   name: string;
-  value: any;
+  value: unknown;
   type: string;
   isNew?: boolean;
   isChanged?: boolean;
@@ -57,7 +57,7 @@ const VariableNode: React.FC<VariableNodeProps> = ({
   const getChildEntries = () => {
     if (!isExpandable) return [];
     if (isArray) {
-      return value.map((item: any, index: number) => ({
+      return value.map((item: unknown, index: number) => ({
         key: String(index),
         value: item,
         type: typeof item,

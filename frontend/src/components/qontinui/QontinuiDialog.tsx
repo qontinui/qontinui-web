@@ -76,7 +76,7 @@ export function QontinuiDialogFooter({
   return <DialogFooter className={className} {...props} />;
 }
 
-// Re-export base components that don't need theming
+// Re-export base components that don&apos;t need theming
 export { Dialog, DialogTrigger, DialogClose, DialogPortal };
 
 /**

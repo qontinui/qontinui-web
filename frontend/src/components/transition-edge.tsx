@@ -87,7 +87,7 @@ export function TransitionEdge({
         markerEnd="url(#react-flow__arrowclosed)"
       />
 
-      {/* Don't show any badges on edges since we're using transition nodes for all transitions */}
+      {/* Don't show any badges on edges since we&apos;re using transition nodes for all transitions */}
     </>
   );
 }

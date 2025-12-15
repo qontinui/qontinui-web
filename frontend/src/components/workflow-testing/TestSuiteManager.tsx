@@ -154,7 +154,7 @@ export function TestSuiteManager({
 
       suiteTestCases.forEach((testCase) => {
         // Get the most recent test result for each test case
-        const testResults = testCase.metadata?.testResults as any[] | undefined;
+        const testResults = testCase.metadata?.testResults as unknown[] | undefined;
         if (testResults && testResults.length > 0) {
           const latestResult = testResults[0]; // Results are stored most recent first
           totalWithResults++;

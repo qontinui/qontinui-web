@@ -290,7 +290,7 @@ Use when: Need to test or verify the State Machine Builder feature, or after mak
 Verifies: Navigation menu works, Build dropdown opens, State Machine Builder page loads, canvas renders correctly, no console errors.
 Prerequisites: qontinui-web frontend running on localhost:3001, user logged in to the application, a project is selected.
 Success indicators: State Machine canvas is visible, toolbar appears, no errors in browser console, URL shows /build/state-machine, page title shows "State Machine".
-Failure indicators: 404 error, blank page, canvas doesn't render, console errors about missing components, navigation menu doesn't respond to clicks.`}</pre>
+Failure indicators: 404 error, blank page, canvas doesn&apos;t render, console errors about missing components, navigation menu doesn&apos;t respond to clicks.`}</pre>
             </div>
           </div>
 

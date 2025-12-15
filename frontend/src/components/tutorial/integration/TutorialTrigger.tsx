@@ -93,7 +93,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
     }
   }, []);
 
-  // Helper function to add tutorial to "don't show again" list - currently unused
+  // Helper function to add tutorial to "don&apos;t show again" list - currently unused
   /*
   const addToDontShow = useCallback(
     (tutorialId: string) => {
@@ -312,13 +312,13 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
     };
 
     window.addEventListener(
-      "trigger-tutorial" as any,
+      "trigger-tutorial" as unknown,
       handleCustomTrigger as EventListener
     );
 
     return () => {
       window.removeEventListener(
-        "trigger-tutorial" as any,
+        "trigger-tutorial" as unknown,
         handleCustomTrigger as EventListener
       );
     };
@@ -358,7 +358,7 @@ export function triggerTutorialById(tutorialId: string): void {
 }
 
 /**
- * Mark a tutorial as "don't show again"
+ * Mark a tutorial as "don&apos;t show again"
  *
  * @param tutorialId - ID of the tutorial to dismiss
  *

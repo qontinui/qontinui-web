@@ -132,14 +132,14 @@ export function useProjectPermissions(
     }
 
     // Get user's permission level
-    const permissionLevel = getPermissionLevel(project, currentUser as any);
+    const permissionLevel = getPermissionLevel(project, currentUser as unknown);
 
     // Pre-compute all permission checks
-    const canView = canUserView(project, currentUser as any);
-    const canComment = canUserComment(project, currentUser as any);
-    const canEdit = canUserEdit(project, currentUser as any);
-    const canAdmin = canUserAdmin(project, currentUser as any);
-    const isOwner = isProjectOwner(project, currentUser as any);
+    const canView = canUserView(project, currentUser as unknown);
+    const canComment = canUserComment(project, currentUser as unknown);
+    const canEdit = canUserEdit(project, currentUser as unknown);
+    const canAdmin = canUserAdmin(project, currentUser as unknown);
+    const isOwner = isProjectOwner(project, currentUser as unknown);
 
     return {
       permissionLevel,

@@ -53,7 +53,7 @@ export function useConflictResolution(
    * Check for conflicts
    */
   const checkForConflicts = useCallback(
-    async (localChanges: any): Promise<ConflictCheckResult> => {
+    async (localChanges: unknown): Promise<ConflictCheckResult> => {
       setIsChecking(true);
 
       try {
@@ -96,7 +96,7 @@ export function useConflictResolution(
     async (
       conflictId: string,
       strategy: ResolutionStrategy,
-      resolution?: any
+      resolution?: unknown
     ): Promise<void> => {
       setIsResolving(true);
 

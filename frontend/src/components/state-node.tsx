@@ -148,7 +148,7 @@ export function StateNode({
             {/* State Images Thumbnail Grid */}
             {state.stateImages && state.stateImages.length > 0 && (
               <div className="grid grid-cols-3 gap-1 max-w-[150px] mx-auto">
-                {state.stateImages.slice(0, 6).map((stateImage: any) => {
+                {state.stateImages.slice(0, 6).map((stateImage: unknown) => {
                   // Get first pattern's image from library
                   const firstPattern = stateImage.patterns?.[0];
                   const imageData = firstPattern

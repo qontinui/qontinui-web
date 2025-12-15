@@ -88,20 +88,20 @@ function migrateWorkflows(workflows: Workflow[]): Workflow[] {
         const config = { ...action.config };
 
         // Migrate processId to workflowId
-        if ((config as any).processId) {
-          (config as any).workflowId = (config as any).processId;
-          delete (config as any).processId;
+        if ((config as unknown).processId) {
+          (config as unknown).workflowId = (config as unknown).processId;
+          delete (config as unknown).processId;
         }
 
         // Migrate processRepetition to repetition
-        if ((config as any).processRepetition) {
-          (config as any).repetition = (config as any).processRepetition;
-          delete (config as any).processRepetition;
+        if ((config as unknown).processRepetition) {
+          (config as unknown).repetition = (config as unknown).processRepetition;
+          delete (config as unknown).processRepetition;
         }
 
         return {
           ...action,
-          type: "RUN_WORKFLOW" as any,
+          type: "RUN_WORKFLOW" as unknown,
           config,
         };
       }
@@ -157,7 +157,7 @@ function migratePatternImages(
       }
 
       const migratedPatterns = stateImage.patterns.map((pattern) => {
-        const patternAny = pattern as any;
+        const patternAny = pattern as unknown;
 
         // Check if pattern has embedded image data but no imageId
         // OR if pattern.imageId accidentally contains base64 data (fix for corrupted data)
@@ -248,10 +248,10 @@ interface AutomationProviderProps {
 }
 
 export function AutomationProvider({ children }: AutomationProviderProps) {
-  // Track if we're in the middle of renaming to prevent premature reload
+  // Track if we&apos;re in the middle of renaming to prevent premature reload
   const isRenamingRef = useRef(false);
 
-  // Track if we're loading from backend to prevent IndexedDB from overwriting
+  // Track if we&apos;re loading from backend to prevent IndexedDB from overwriting
   const [isLoadingFromBackend, setIsLoadingFromBackendState] = useState(false);
   const isLoadingFromBackendRef = useRef(false);
 
@@ -307,7 +307,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   // Settings are now per-project using the project name in the key
   const settingsKey = `qontinui-settings-v2-${projectName.replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase()}`;
 
-  // Force correct defaults - hardcoded to ensure they're applied
+  // Force correct defaults - hardcoded to ensure they&apos;re applied
   const CORRECT_DEFAULTS: ProjectSettings = {
     mouse: {
       click_hold_duration: 100,
@@ -380,7 +380,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         isLoadingFromBackend: isLoadingFromBackendRef.current,
       });
 
-      // Skip loading if we're loading from backend (prevents race condition)
+      // Skip loading if we&apos;re loading from backend (prevents race condition)
       if (isLoadingFromBackendRef.current) {
         projectLogger.contextProvider(
           "SKIPPING IndexedDB load - loading from backend",
@@ -391,7 +391,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         return;
       }
 
-      // Skip loading if we're in the middle of a rename operation
+      // Skip loading if we&apos;re in the middle of a rename operation
       if (isRenamingRef.current) {
         projectLogger.contextProvider(
           "SKIPPING IndexedDB load - rename in progress",
@@ -703,7 +703,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       };
       try {
         await projectDB.addWorkflow(workflowWithProject);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // If key already exists, update instead
         if (error.name === "ConstraintError") {
           await projectDB.updateWorkflow(workflowWithProject);
@@ -754,7 +754,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       const stateWithProject = { ...state, projectName };
       try {
         await projectDB.addState(stateWithProject);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // If key already exists, update instead
         if (error.name === "ConstraintError") {
           await projectDB.updateState(stateWithProject);
@@ -779,7 +779,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       try {
         await projectDB.addTransition(incomingTransition);
         setTransitions((prev) => [...prev, incomingTransition]);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // If transition already exists, ignore the error
         if (error.name !== "ConstraintError") {
           console.error("Failed to create incoming transition:", error);
@@ -819,7 +819,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       const transitionWithProject = { ...transition, projectName };
       try {
         await projectDB.addTransition(transitionWithProject);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // If key already exists, update instead
         if (error.name === "ConstraintError") {
           await projectDB.updateTransition(transitionWithProject);
@@ -854,7 +854,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       const imageWithProject = { ...image, projectName };
       try {
         await projectDB.addImage(imageWithProject);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // If key already exists, update instead
         if (error.name === "ConstraintError") {
           await projectDB.updateImage(imageWithProject);
@@ -1133,7 +1133,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   // Screenshot management functions (using IndexedDB)
   const addScreenshot = useCallback(
     async (screenshot: Screenshot) => {
-      // Normalize the URL to ensure it's absolute (e.g., http://localhost:8000/uploads/...)
+      // Normalize the URL to ensure it&apos;s absolute (e.g., http://localhost:8000/uploads/...)
       const normalizedScreenshot = {
         ...screenshot,
         url: normalizeUrl(screenshot.url),
@@ -1148,7 +1148,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   );
 
   const updateScreenshot = useCallback(async (screenshot: Screenshot) => {
-    // Normalize the URL to ensure it's absolute
+    // Normalize the URL to ensure it&apos;s absolute
     const normalizedScreenshot = {
       ...screenshot,
       url: normalizeUrl(screenshot.url),
@@ -1432,7 +1432,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
           "Failed to sync screenshots from backend",
           { error, projectId: projectIdToSync }
         );
-        // Don't throw - screenshots failing shouldn't block project load
+        // Don't throw - screenshots failing shouldn&apos;t block project load
       }
     },
     [projectName, setProjectId]
@@ -1447,7 +1447,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
   // Load a complete configuration
   const loadConfiguration = useCallback(
-    async (config: any) => {
+    async (config: unknown) => {
       const newProjectName = config.name || "Untitled Project";
 
       // Check if the incoming config has any data
@@ -1468,7 +1468,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         configHasData,
       });
 
-      // SAFETY: If backend returns empty config, don't clear local data
+      // SAFETY: If backend returns empty config, don&apos;t clear local data
       // This prevents data loss when backend has been corrupted or reset
       if (!configHasData) {
         projectLogger.warn(

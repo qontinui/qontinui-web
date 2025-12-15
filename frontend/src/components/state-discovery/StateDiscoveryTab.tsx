@@ -118,7 +118,7 @@ const StateDiscoveryTab: React.FC = () => {
           si.lightPixelPercentage <= maxLightPixelPercentage;
         return passedDarkFilter && passedLightFilter;
       }
-      // If no backend data and filters are active, assume it won't pass
+      // If no backend data and filters are active, assume it won&apos;t pass
       // (backend should always provide this data after the fix)
       if (maxDarkPixelPercentage < 100 || maxLightPixelPercentage < 100) {
         return false;
@@ -178,7 +178,7 @@ const StateDiscoveryTab: React.FC = () => {
     }
   }, [selectedScreenshotUrl]);
 
-  // Reset selected state if it's been filtered out
+  // Reset selected state if it&apos;s been filtered out
   React.useEffect(() => {
     if (
       selectedState &&
@@ -199,7 +199,7 @@ const StateDiscoveryTab: React.FC = () => {
     }
   }, [selectedState, rightPanelTab]);
 
-  // Reset selected state image if it's been filtered out
+  // Reset selected state image if it&apos;s been filtered out
   React.useEffect(() => {
     if (
       selectedStateImage &&
@@ -746,7 +746,7 @@ const StateDiscoveryTab: React.FC = () => {
             <div className="flex items-center gap-4 mb-4">
               <Tabs
                 value={viewMode}
-                onValueChange={(v) => setViewMode(v as any)}
+                onValueChange={(v) => setViewMode(v as unknown)}
               >
                 <TabsList>
                   <TabsTrigger value="all">All StateImages</TabsTrigger>

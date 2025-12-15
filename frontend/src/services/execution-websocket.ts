@@ -214,7 +214,7 @@ export class ExecutionWebSocket {
    *
    * If connection is offline and queuing is enabled, message will be queued.
    */
-  send(data: any): void {
+  send(data: unknown): void {
     const message = typeof data === "string" ? data : JSON.stringify(data);
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {

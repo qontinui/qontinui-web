@@ -49,17 +49,17 @@ export function ActionDetails({ action }: ActionDetailsProps) {
           </div>
         )}
 
-        {action.action_type === "SCROLL" && (action as any).direction && (
+        {action.action_type === "SCROLL" && (action as unknown).direction && (
           <>
             <div>
               <dt className="text-gray-500">Direction</dt>
-              <dd className="font-medium">{(action as any).direction}</dd>
+              <dd className="font-medium">{(action as unknown).direction}</dd>
             </div>
             <div>
               <dt className="text-gray-500">Amount</dt>
               <dd className="font-medium">
-                {(action as any).amount || 1}{" "}
-                {((action as any).amount || 1) === 1 ? "unit" : "units"}
+                {(action as unknown).amount || 1}{" "}
+                {((action as unknown).amount || 1) === 1 ? "unit" : "units"}
               </dd>
             </div>
           </>
@@ -77,10 +77,10 @@ export function ActionDetails({ action }: ActionDetailsProps) {
         )}
 
         {(action.action_type === "DEFINE" || action.action_type === "VANISH") &&
-          (action as any).state_name && (
+          (action as unknown).state_name && (
             <div className="col-span-2">
               <dt className="text-gray-500">State Name</dt>
-              <dd className="font-medium">{(action as any).state_name}</dd>
+              <dd className="font-medium">{(action as unknown).state_name}</dd>
             </div>
           )}
 

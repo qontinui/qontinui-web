@@ -1264,7 +1264,7 @@ export class ProjectOptimizationService {
       // Check workflows (actions with image configs)
       workflows.forEach((workflow) => {
         const usedInWorkflow = workflow.actions.some((action) => {
-          const config = action.config as any;
+          const config = action.config as unknown;
           return (
             config.target?.image === image.id || config.imageId === image.id
           );
@@ -1960,7 +1960,7 @@ export class ProjectOptimizationService {
     workflow.actions.forEach((action) => {
       // Check RUN_WORKFLOW actions
       if (action.type === "RUN_WORKFLOW") {
-        const config = action.config as any;
+        const config = action.config as unknown;
         if (config.workflowId && !workflowIds.has(config.workflowId)) {
           broken.push({
             type: "workflow",
@@ -1974,7 +1974,7 @@ export class ProjectOptimizationService {
 
       // Check GO_TO_STATE actions
       if (action.type === "GO_TO_STATE") {
-        const config = action.config as any;
+        const config = action.config as unknown;
         if (config.stateId && !stateIds.has(config.stateId)) {
           broken.push({
             type: "state",
@@ -1987,7 +1987,7 @@ export class ProjectOptimizationService {
       }
 
       // Check image references in action configs
-      const config = action.config as any;
+      const config = action.config as unknown;
       if (config.target?.image && !imageIds.has(config.target.image)) {
         broken.push({
           type: "image",
@@ -2504,7 +2504,7 @@ export class ProjectOptimizationService {
       // Find workflows using this image
       workflows.forEach((workflow) => {
         const usesImage = workflow.actions.some((action) => {
-          const config = action.config as any;
+          const config = action.config as unknown;
           return (
             config.target?.image === resourceId || config.imageId === resourceId
           );
@@ -2518,7 +2518,7 @@ export class ProjectOptimizationService {
       workflows.forEach((workflow) => {
         const usesState = workflow.actions.some((action) => {
           if (action.type === "GO_TO_STATE") {
-            const config = action.config as any;
+            const config = action.config as unknown;
             return config.stateId === resourceId;
           }
           return false;
@@ -2566,7 +2566,7 @@ export class ProjectOptimizationService {
 
       const outgoing = allTransitions.filter(
         (t) => t.type === "OutgoingTransition" && t.fromState === fromState
-      ) as any[];
+      ) as unknown[];
 
       for (const t of outgoing) {
         if (t.toState === transition.fromState) return true;

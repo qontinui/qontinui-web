@@ -40,7 +40,7 @@ interface TestResult {
   testId: string;
   passed: boolean;
   message: string;
-  details?: any;
+  details?: unknown;
   duration: number;
 }
 
@@ -170,7 +170,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
   ): Promise<{
     passed: boolean;
     message: string;
-    details?: any;
+    details?: unknown;
   }> => {
     switch (testCase.type) {
       case "state_detection":

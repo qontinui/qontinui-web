@@ -31,7 +31,7 @@ export interface DiscoveredState {
   stateImageIds: string[]; // Changed from stateImages to match backend
   screenshotIds: string[]; // Changed from screenshots to match backend
   confidence: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface StateTransition {

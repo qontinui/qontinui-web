@@ -136,7 +136,7 @@ function buildFolderTree(
   // Count workflows per folder
   const workflowCounts = new Map<string, number>();
   workflows.forEach((workflow) => {
-    const folderId = (workflow as any).folderId || null;
+    const folderId = (workflow as unknown).folderId || null;
     if (folderId) {
       workflowCounts.set(folderId, (workflowCounts.get(folderId) || 0) + 1);
     }
@@ -647,7 +647,7 @@ export function FolderTree({
   // Count total workflows
   const totalWorkflows = workflows.length;
   const uncategorizedCount = workflows.filter(
-    (w) => !(w as any).folderId
+    (w) => !(w as unknown).folderId
   ).length;
 
   // Drag and drop sensors

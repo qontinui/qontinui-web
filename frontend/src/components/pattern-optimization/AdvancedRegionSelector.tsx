@@ -554,7 +554,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   const handleMouseUp = () => {
     // Save region when finishing drawing or dragging
     if (currentRegion && (isDrawing || isDragging)) {
-      // Save region if it's valid size
+      // Save region if it&apos;s valid size
       if (currentRegion.width > 10 && currentRegion.height > 10) {
         onRegionChange(currentRegion);
         console.log("[AdvancedRegionSelector] Region saved:", currentRegion);

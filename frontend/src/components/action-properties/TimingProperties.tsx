@@ -8,7 +8,7 @@ import { Action } from "./types";
 
 interface TimingPropertiesProps {
   action: Action;
-  updateConfig?: (key: string, value: any) => void;
+  updateConfig?: (key: string, value: unknown) => void;
 }
 
 /**

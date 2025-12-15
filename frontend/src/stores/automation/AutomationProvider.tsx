@@ -20,7 +20,7 @@ interface AutomationProviderProps {
  * It can be extended to handle initialization if needed.
  */
 export function AutomationProvider({ children }: AutomationProviderProps) {
-  // With Zustand, the store is global and doesn't need a provider.
+  // With Zustand, the store is global and doesn&apos;t need a provider.
   // This component exists for API compatibility and potential future
   // initialization logic.
   return <>{children}</>;

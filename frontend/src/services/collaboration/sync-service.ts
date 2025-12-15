@@ -212,7 +212,7 @@ export class SyncService {
   async syncResource(
     resourceType: ResourceType,
     resourceId: string,
-    localVersion: any,
+    localVersion: unknown,
     forceSync: boolean = false
   ): Promise<SyncResult> {
     try {
@@ -472,7 +472,7 @@ export class SyncService {
    * @param change - The change to apply optimistically
    * @param originalState - The original state before the change (for rollback)
    */
-  applyOptimisticUpdate(change: Change, originalState: any = null): void {
+  applyOptimisticUpdate(change: Change, originalState: unknown = null): void {
     if (!this.config.enableOptimisticUpdates) {
       return;
     }
@@ -718,7 +718,7 @@ export class SyncService {
   /**
    * Convert change to operation
    */
-  private changeToOperation(change: Change): any {
+  private changeToOperation(change: Change): unknown {
     return {
       type: change.type,
       path: change.path,
@@ -737,7 +737,7 @@ export class SyncService {
    * @param resourceId - The resource ID
    */
   private operationToChange(
-    operation: any,
+    operation: unknown,
     resourceType: ResourceType,
     resourceId: string
   ): Change {

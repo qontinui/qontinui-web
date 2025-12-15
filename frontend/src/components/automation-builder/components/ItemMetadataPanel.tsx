@@ -160,7 +160,7 @@ export function ItemMetadataPanel({
    */
   const handleInitialStateToggle = useCallback(
     (stateId: string, checked: boolean) => {
-      const currentIds = (item as any).initialStateIds || [];
+      const currentIds = (item as unknown).initialStateIds || [];
       const newIds = checked
         ? [...currentIds, stateId]
         : currentIds.filter((id: string) => id !== stateId);
@@ -179,7 +179,7 @@ export function ItemMetadataPanel({
 
   // Check if this is a Main category workflow
   const isMainCategory = (item.category || "Main") === "Main";
-  const initialStateIds: string[] = (item as any).initialStateIds || [];
+  const initialStateIds: string[] = (item as unknown).initialStateIds || [];
 
   const isLinear = isLinearWorkflow(item);
   const currentViewMode = item.metadata?.viewMode || getSuggestedMode(item);

@@ -230,7 +230,7 @@ export function DeficiencyAssignment({
         {/* Info */}
         {!onAssignmentChange && (
           <p className="text-xs text-muted-foreground text-center py-2">
-            You don't have permission to assign this deficiency
+            You don&apos;t have permission to assign this deficiency
           </p>
         )}
 

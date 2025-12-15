@@ -264,7 +264,7 @@ describe("AlignmentTools", () => {
       position: { x: 200, y: 50 },
       data: {},
     },
-  ] as any[];
+  ] as unknown[];
 
   it("aligns nodes to the left", () => {
     const updates = alignNodes(mockNodes, "left");
@@ -380,7 +380,7 @@ describe("Hover Effects", () => {
       id: "node-1",
       position: { x: 0, y: 0 },
       data: {},
-    } as any;
+    } as unknown;
 
     const hoverState = {
       nodeId: "node-1",
@@ -399,7 +399,7 @@ describe("Hover Effects", () => {
       id: "node-2",
       position: { x: 0, y: 0 },
       data: {},
-    } as any;
+    } as unknown;
 
     const hoverState = {
       nodeId: "node-1",
@@ -418,7 +418,7 @@ describe("Hover Effects", () => {
       source: "node-1",
       target: "node-2",
       data: {},
-    } as any;
+    } as unknown;
 
     const hoverState = {
       nodeId: null,

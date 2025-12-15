@@ -69,12 +69,12 @@ interface Action {
     | "VANISH"
     | "GO_TO_STATE"
     | "RUN_WORKFLOW";
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 }
 
 type LibraryItem =
   | { type: "process"; data: Process }
-  | { type: "workflow"; data: any };
+  | { type: "workflow"; data: unknown };
 
 export function ProcessBuilder() {
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
@@ -117,14 +117,14 @@ export function ProcessBuilder() {
     if (selectedProcess) {
       const updatedProcess = workflows.find((w) => w.id === selectedProcess.id);
       if (updatedProcess && updatedProcess !== selectedProcess) {
-        setSelectedItem({ type: "process", data: updatedProcess } as any);
+        setSelectedItem({ type: "process", data: updatedProcess } as unknown);
         // Also update selectedAction if it exists
         if (selectedAction) {
           const updatedAction = updatedProcess.actions.find(
             (a) => a.id === selectedAction.id
           );
           if (updatedAction) {
-            setSelectedAction(updatedAction as any);
+            setSelectedAction(updatedAction as unknown);
           }
         }
       }
@@ -139,18 +139,18 @@ export function ProcessBuilder() {
       category,
       actions: [],
     };
-    addWorkflow(newProcess as any);
-    setSelectedItem({ type: "process", data: newProcess } as any);
+    addWorkflow(newProcess as unknown);
+    setSelectedItem({ type: "process", data: newProcess } as unknown);
   };
 
   const handleUpdateProcess = (updatedProcess: Process) => {
-    updateWorkflow(updatedProcess as any);
+    updateWorkflow(updatedProcess as unknown);
     // Don't set selectedItem here - let useEffect handle it
   };
 
   const handleSelectItem = (item: LibraryItem) => {
     if (item.type === "workflow") {
-      // Workflows can't be edited in the sequential builder
+      // Workflows can&apos;t be edited in the sequential builder
       toast.info("Graph workflows can only be edited in the Graph Builder", {
         description: "Switch to the Graph Builder tab to edit this workflow.",
       });
@@ -473,7 +473,7 @@ export function ProcessBuilder() {
                   a.id === updated.id ? updated : a
                 ),
               };
-              handleUpdateProcess(updatedProcess as any);
+              handleUpdateProcess(updatedProcess as unknown);
               // useEffect will handle updating selectedAction
             }
           }}

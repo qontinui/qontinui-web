@@ -179,9 +179,9 @@ export async function runWorkflowTest(
  */
 async function executeWorkflowWithInputs(
   workflow: Workflow,
-  inputs: Record<string, any>
+  inputs: Record<string, unknown>
 ): Promise<{
-  variables: Record<string, any>;
+  variables: Record<string, unknown>;
   executionPath: string[];
   activeStates: string[];
   actionsExecuted: number;
@@ -192,7 +192,7 @@ async function executeWorkflowWithInputs(
 
   return {
     variables: { ...inputs, result: "simulated_execution" },
-    executionPath: workflow.actions?.slice(0, 3).map((a: any) => a.id) || [],
+    executionPath: workflow.actions?.slice(0, 3).map((a: unknown) => a.id) || [],
     activeStates: [],
     actionsExecuted: Math.min(3, workflow.actions?.length || 0),
   };
@@ -201,7 +201,7 @@ async function executeWorkflowWithInputs(
 /**
  * Evaluate an assertion against a value
  */
-function evaluateAssertion(assertion: any, actualValue: any): boolean {
+function evaluateAssertion(assertion: unknown, actualValue: unknown): boolean {
   switch (assertion.type) {
     case "equals":
       return deepEquals(actualValue, assertion.expected);
@@ -247,7 +247,7 @@ function evaluateAssertion(assertion: any, actualValue: any): boolean {
 /**
  * Get value from object by path
  */
-function getValueByPath(obj: any, path: string): any {
+function getValueByPath(obj: unknown, path: string): unknown {
   if (!path) return obj;
   const parts = path.split(".");
   let current = obj;
@@ -261,7 +261,7 @@ function getValueByPath(obj: any, path: string): any {
 /**
  * Deep equality check
  */
-function deepEquals(a: any, b: any): boolean {
+function deepEquals(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a == null || b == null) return false;
   if (typeof a !== typeof b) return false;

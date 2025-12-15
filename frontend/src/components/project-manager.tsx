@@ -43,8 +43,8 @@ import {
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 
 interface ProjectManagerProps {
-  currentConfiguration: any;
-  onLoadConfiguration: (config: any) => void;
+  currentConfiguration: unknown;
+  onLoadConfiguration: (config: unknown) => void;
 }
 
 export function ProjectManager({
@@ -94,7 +94,7 @@ export function ProjectManager({
       setNewProjectDescription("");
       setIsPublic(false);
       toast.success("Project saved successfully");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to save project");
     }
   };
@@ -112,7 +112,7 @@ export function ProjectManager({
         configuration: updated.configuration ?? {},
       });
       toast.success("Project updated successfully");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to update project");
     }
   };
@@ -125,7 +125,7 @@ export function ProjectManager({
       setSelectedProject({ ...project, configuration: config } as Project);
       setLoadDialogOpen(false);
       toast.success(`Loaded project: ${project.name}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to load project");
     }
   };
@@ -149,7 +149,7 @@ export function ProjectManager({
       toast.success("Project deleted successfully");
       setDeleteDialogOpen(false);
       setProjectToDelete(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to delete project");
     }
   };

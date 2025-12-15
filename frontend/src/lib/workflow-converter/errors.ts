@@ -21,7 +21,7 @@ export class NonLinearWorkflowError extends Error {
 export class WorkflowValidationError extends Error {
   constructor(
     message: string,
-    public readonly details?: Record<string, any>
+    public readonly details?: Record<string, unknown>
   ) {
     super(message);
     this.name = "WorkflowValidationError";

@@ -293,7 +293,7 @@ describe("Node Utilities", () => {
       const validAction: Action<"CLICK"> = {
         id: "2",
         type: "CLICK",
-        config: {} as any, // No target = clicks at current position (pure action)
+        config: {} as unknown, // No target = clicks at current position (pure action)
         position: [0, 0],
       };
 
@@ -323,7 +323,7 @@ describe("Node Utilities", () => {
         type: "IF",
         config: {
           thenActions: ["action-1"],
-        } as any,
+        } as unknown,
         position: [0, 0],
       };
 
@@ -355,7 +355,7 @@ describe("Node Utilities", () => {
         config: {
           loopType: "FOR",
           actions: ["action-1"],
-        } as any,
+        } as unknown,
         position: [0, 0],
       };
 

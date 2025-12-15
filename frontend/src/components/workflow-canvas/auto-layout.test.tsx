@@ -55,19 +55,19 @@ function createTestWorkflow(): Workflow {
       {
         id: "a1",
         type: "CLICK",
-        config: {} as any,
+        config: {} as unknown,
         position: [100, 100],
       },
       {
         id: "a2",
         type: "TYPE",
-        config: {} as any,
+        config: {} as unknown,
         position: [100, 200],
       },
       {
         id: "a3",
         type: "WAIT",
-        config: {} as any,
+        config: {} as unknown,
         position: [100, 300],
       },
     ],
@@ -92,13 +92,13 @@ function createOverlappingWorkflow(): Workflow {
       {
         id: "a1",
         type: "CLICK",
-        config: {} as any,
+        config: {} as unknown,
         position: [100, 100],
       },
       {
         id: "a2",
         type: "TYPE",
-        config: {} as any,
+        config: {} as unknown,
         position: [110, 110], // Overlapping with a1
       },
     ],
@@ -116,25 +116,25 @@ function createBranchingWorkflow(): Workflow {
       {
         id: "a1",
         type: "IF",
-        config: {} as any,
+        config: {} as unknown,
         position: [100, 100],
       },
       {
         id: "a2",
         type: "CLICK",
-        config: {} as any,
+        config: {} as unknown,
         position: [100, 200],
       },
       {
         id: "a3",
         type: "TYPE",
-        config: {} as any,
+        config: {} as unknown,
         position: [300, 200],
       },
       {
         id: "a4",
         type: "WAIT",
-        config: {} as any,
+        config: {} as unknown,
         position: [200, 300],
       },
     ],

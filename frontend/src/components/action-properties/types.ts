@@ -55,7 +55,7 @@ export interface Action {
     // Shell actions
     | "SHELL"
     | "SHELL_SCRIPT";
-  config: Record<string, any>;
+  config: Record<string, unknown>;
   /** Base settings (timing, logging, etc.) */
   base?: BaseActionSettings;
   /** Execution control (timeout, retries, etc.) */
@@ -68,12 +68,12 @@ export interface ActionPropertiesComponentProps {
   action: Action;
   updateConfig: (
     key: string,
-    value: any,
-    additionalUpdates?: Record<string, any>
+    value: unknown,
+    additionalUpdates?: Record<string, unknown>
   ) => void;
-  images: any[];
-  states: any[];
-  processes: any[]; // Array of workflows (prop name "processes" for legacy compatibility)
+  images: unknown[];
+  states: unknown[];
+  processes: unknown[]; // Array of workflows (prop name "processes" for legacy compatibility)
   textAreaRef?: React.RefObject<HTMLTextAreaElement | null>;
   shouldOpenImageSelector?: boolean;
   onUpdateAction?: (action: Action) => void;

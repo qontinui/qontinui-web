@@ -58,7 +58,7 @@ export class MigrationEngine {
    *
    * Automatically finds the migration path and applies all necessary migrations
    */
-  async migrateToLatest(config: any): Promise<MigrationResult> {
+  async migrateToLatest(config: unknown): Promise<MigrationResult> {
     const configVersion = config.version;
 
     // Validate version format
@@ -248,7 +248,7 @@ export class MigrationEngine {
    * Add migration history entry to config metadata
    */
   private addMigrationHistory(
-    config: any,
+    config: unknown,
     originalVersion: string,
     path: Migration[]
   ): void {
@@ -291,7 +291,7 @@ export class MigrationEngine {
    * Generate cache key for a config
    * Uses version + content hash for uniqueness
    */
-  private getCacheKey(config: any): string {
+  private getCacheKey(config: unknown): string {
     const version = config.version || "unknown";
     // Simple hash using JSON stringify (fast for small configs)
     // For large configs, could use a proper hash function
@@ -345,7 +345,7 @@ export class MigrationEngine {
    * Preview what migrations would be applied without actually applying them
    * Useful for showing users what will change before migration
    */
-  async previewMigration(config: any): Promise<{
+  async previewMigration(config: unknown): Promise<{
     needsMigration: boolean;
     currentVersion: string;
     targetVersion: string;

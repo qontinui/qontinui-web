@@ -13,7 +13,7 @@ export interface AutomationSession {
   started_at: string;
   ended_at?: string;
   last_heartbeat_at: string;
-  configuration_snapshot?: Record<string, any>;
+  configuration_snapshot?: Record<string, unknown>;
   total_screenshots: number;
   total_actions: number;
   error_message?: string;
@@ -77,7 +77,7 @@ export interface AutomationLog {
   timestamp: string;
   level: "debug" | "info" | "warning" | "error" | "critical";
   message: string;
-  log_data?: Record<string, any>;
+  log_data?: Record<string, unknown>;
   screenshot_id?: string;
   sequence_number: number;
   created_at: string;

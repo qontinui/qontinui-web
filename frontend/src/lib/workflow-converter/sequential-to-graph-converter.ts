@@ -402,10 +402,10 @@ export class SequentialToGraphConverter {
         type as keyof (typeof this.connections)[typeof sourceId]
       ]
     ) {
-      (this.connections[sourceId] as any)[type] = [];
+      (this.connections[sourceId] as unknown)[type] = [];
     }
 
-    const outputs = (this.connections[sourceId] as any)[type]!;
+    const outputs = (this.connections[sourceId] as unknown)[type]!;
 
     // Ensure output array exists
     while (outputs.length <= outputIndex) {

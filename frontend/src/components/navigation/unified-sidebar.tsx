@@ -611,7 +611,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       // Select the newly created project
       handleProjectChange(newProject.id);
       toast.success("Project created successfully");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to create project:", error);
       toast.error(error.message || "Failed to create project");
     }
@@ -716,7 +716,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   }> = organizations.map((org) => ({
     id: org.id,
     name: org.name,
-    avatar_url: undefined, // Organizations don't have avatars yet
+    avatar_url: undefined, // Organizations don&apos;t have avatars yet
     member_count: org.member_count,
     role: org.owner_id === user?.id ? "owner" : "member",
   }));

@@ -29,9 +29,9 @@ import { toast } from "sonner";
 
 export interface ConflictChange {
   field: string;
-  local_value: any;
-  remote_value: any;
-  base_value?: any;
+  local_value: unknown;
+  remote_value: unknown;
+  base_value?: unknown;
   conflicted: boolean;
 }
 
@@ -58,7 +58,7 @@ interface ConflictResolutionDialogProps {
   onResolve: (
     conflictId: string,
     resolution: "local" | "remote" | "merge",
-    mergedData?: Record<string, any>
+    mergedData?: Record<string, unknown>
   ) => Promise<void>;
   onResolveAll: (resolution: "local" | "remote") => Promise<void>;
 }
@@ -103,7 +103,7 @@ export function ConflictResolutionDialog({
 
     setLoading(true);
     try {
-      let mergedData: Record<string, any> | undefined;
+      let mergedData: Record<string, unknown> | undefined;
 
       if (resolution === "merge") {
         mergedData = {};
@@ -127,7 +127,7 @@ export function ConflictResolutionDialog({
       } else {
         onOpenChange(false);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to resolve conflict");
     } finally {
       setLoading(false);
@@ -148,14 +148,14 @@ export function ConflictResolutionDialog({
       await onResolveAll(resolution);
       toast.success(`All conflicts resolved with ${resolution} changes`);
       onOpenChange(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to resolve all conflicts");
     } finally {
       setLoading(false);
     }
   };
 
-  const renderValue = (value: any) => {
+  const renderValue = (value: unknown) => {
     if (value === null || value === undefined) {
       return <span className="text-muted-foreground italic">empty</span>;
     }
@@ -386,7 +386,7 @@ export function ConflictResolutionDialog({
         )}
 
         {/* View Mode Toggle */}
-        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
+        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as unknown)}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="split">Split View</TabsTrigger>
             <TabsTrigger value="unified">Unified View</TabsTrigger>

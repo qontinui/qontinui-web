@@ -204,7 +204,7 @@ export function CreateTokenDialog({
             {/* Success Alert */}
             <Alert className="bg-green-500/10 border-green-500/50">
               <AlertDescription className="text-green-200">
-                Token created successfully! Make sure to copy it now - it won't
+                Token created successfully! Make sure to copy it now - it won&apos;t
                 be shown again.
               </AlertDescription>
             </Alert>

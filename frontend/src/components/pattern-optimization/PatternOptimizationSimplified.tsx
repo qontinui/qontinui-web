@@ -610,7 +610,7 @@ const PatternOptimizationContent: React.FC = () => {
                   onChange={(e) =>
                     setConfig((prev) => ({
                       ...prev,
-                      colorAveraging: e.target.value as any,
+                      colorAveraging: e.target.value as unknown,
                     }))
                   }
                   className="w-full bg-[#0A0A0B] border border-gray-700 rounded-md px-3 py-2 text-sm text-white"

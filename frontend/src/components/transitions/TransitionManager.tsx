@@ -191,7 +191,7 @@ export function TransitionManager() {
         {/* View Mode Tabs */}
         <Tabs
           value={viewMode}
-          onValueChange={(v: any) => setViewMode(v)}
+          onValueChange={(v: unknown) => setViewMode(v)}
           className="mt-4"
         >
           <TabsList className="bg-[#1A1A1B]">

@@ -151,7 +151,7 @@ function AutomationBuilderContent() {
  * Exported Component with Suspense Boundary
  *
  * Note: AutomationProvider is already provided by the app layout.
- * Don't wrap again here or RequireProject won't see the projectId.
+ * Don't wrap again here or RequireProject won&apos;t see the projectId.
  */
 export default function AutomationBuilder() {
   return (

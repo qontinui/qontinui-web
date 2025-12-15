@@ -39,7 +39,7 @@ export default function DemoPage() {
 
         const data = await response.json();
         setProjects(data);
-      } catch (err: any) {
+      } catch (err: unknown) {
         setError(err.message || "An error occurred");
       } finally {
         setLoading(false);

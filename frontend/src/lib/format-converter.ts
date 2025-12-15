@@ -14,7 +14,7 @@ interface Process {
   name: string;
   description?: string;
   category?: string;
-  actions: any[];
+  actions: unknown[];
 }
 
 /**
@@ -23,7 +23,7 @@ interface Process {
 export function processToWorkflow(process: Process): Workflow {
   // Convert actions to graph format (add positions)
   const actions: WorkflowAction[] = process.actions.map(
-    (action: any, index: number) => ({
+    (action: unknown, index: number) => ({
       ...action,
       position: [100 + index * 250, 100] as [number, number], // Horizontal layout
     })
@@ -85,7 +85,7 @@ export function workflowToProcess(workflow: Workflow): Process {
 function topologicalSort(
   actions: WorkflowAction[],
   connections: Connections
-): any[] {
+): unknown[] {
   const actionMap = new Map(actions.map((a) => [a.id, a]));
   const inDegree = new Map<string, number>();
   const adjList = new Map<string, string[]>();
@@ -121,7 +121,7 @@ function topologicalSort(
   });
 
   // Perform topological sort
-  const sorted: any[] = [];
+  const sorted: unknown[] = [];
 
   while (queue.length > 0) {
     const current = queue.shift()!;

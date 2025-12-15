@@ -280,7 +280,7 @@ function AutomationBuilderContent() {
         screenshots
       );
 
-      // Validation for informational purposes only - don't block export
+      // Validation for informational purposes only - don&apos;t block export
       const validation = exporter.validateConfiguration(config);
       if (!validation.valid) {
         console.warn(
@@ -355,7 +355,7 @@ function AutomationBuilderContent() {
     input.click();
   };
 
-  const handleLoadConfiguration = (config: any) => {
+  const handleLoadConfiguration = (config: unknown) => {
     // This will be called by ProjectManager when loading a project
     // The automation context will handle updating all the state, including project name
     loadConfiguration(config);

@@ -113,24 +113,24 @@ actionConfigRegistry.register("LOOP", LoopActionProperties, "LOOP");
 
 // Register Code Execution components
 actionConfigRegistry.register(
-  "CODE_BLOCK" as any,
+  "CODE_BLOCK" as unknown,
   CodeBlockActionProperties,
   "CODE_BLOCK" as any
 );
 
 // Register Shell Execution components
 actionConfigRegistry.register(
-  "SHELL" as any,
+  "SHELL" as unknown,
   ShellActionProperties,
   "SHELL" as any
 );
 actionConfigRegistry.register(
-  "SHELL_SCRIPT" as any,
+  "SHELL_SCRIPT" as unknown,
   ShellScriptActionProperties,
   "SHELL_SCRIPT" as any
 );
 actionConfigRegistry.register(
-  "TRIGGER_AI_ANALYSIS" as any,
+  "TRIGGER_AI_ANALYSIS" as unknown,
   TriggerAiAnalysisActionProperties,
   "TRIGGER_AI_ANALYSIS" as any
 );

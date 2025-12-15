@@ -18,8 +18,8 @@ export type VariableValue =
   | number
   | boolean
   | null
-  | { [key: string]: any }
-  | any[];
+  | { [key: string]: unknown }
+  | unknown[];
 
 /**
  * A single workflow variable

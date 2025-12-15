@@ -26,7 +26,7 @@ export class StateDiscoveryAPIClient {
   async uploadScreenshots(
     files: File[],
     projectId: string = "default"
-  ): Promise<any> {
+  ): Promise<unknown> {
     console.log("[APIClient] Uploading screenshots:", {
       filesCount: files.length,
       projectId,
@@ -57,7 +57,7 @@ export class StateDiscoveryAPIClient {
     return data;
   }
 
-  async startAnalysis(uploadId: string, config: AnalysisConfig): Promise<any> {
+  async startAnalysis(uploadId: string, config: AnalysisConfig): Promise<unknown> {
     console.log("[APIClient] Starting analysis:", {
       uploadId,
       config,
@@ -129,7 +129,7 @@ export class StateDiscoveryAPIClient {
   async deleteStateImage(
     stateImageId: string,
     options?: { cascade?: boolean; force?: boolean }
-  ): Promise<any> {
+  ): Promise<unknown> {
     console.log("[APIClient] Deleting state image:", {
       stateImageId,
       options,
@@ -151,7 +151,7 @@ export class StateDiscoveryAPIClient {
     return response.json();
   }
 
-  async bulkDeleteStateImages(ids: string[], options?: any): Promise<any> {
+  async bulkDeleteStateImages(ids: string[], options?: unknown): Promise<unknown> {
     console.log("[APIClient] Bulk deleting state images:", {
       count: ids.length,
       options,
@@ -173,7 +173,7 @@ export class StateDiscoveryAPIClient {
   async updateStateImage(
     stateImageId: string,
     updates: Partial<StateImage>
-  ): Promise<any> {
+  ): Promise<unknown> {
     console.log("[APIClient] Updating state image:", {
       stateImageId,
       updates,
@@ -196,7 +196,7 @@ export class StateDiscoveryAPIClient {
     sourceIds: string[],
     targetName: string,
     strategy: string = "union"
-  ): Promise<any> {
+  ): Promise<unknown> {
     console.log("[APIClient] Merging state images:", {
       sourceCount: sourceIds.length,
       targetName,
@@ -225,7 +225,7 @@ export class StateDiscoveryAPIClient {
     name: string,
     description?: string,
     projectId: string = "default"
-  ): Promise<any> {
+  ): Promise<unknown> {
     console.log("[APIClient] Saving structure:", {
       analysisId,
       name,
@@ -253,7 +253,7 @@ export class StateDiscoveryAPIClient {
   async exportStructure(
     structureId: string,
     format: string = "json"
-  ): Promise<any> {
+  ): Promise<unknown> {
     console.log("[APIClient] Exporting structure:", {
       structureId,
       format,

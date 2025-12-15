@@ -18,7 +18,7 @@ export interface ConditionConfig {
   text?: string;
   variableName?: string;
   expression?: string; // JavaScript expression
-  expectedValue?: any;
+  expectedValue?: unknown;
   operator?: "==" | "!=" | ">" | "<" | ">=" | "<=" | "contains" | "matches";
 }
 
@@ -104,7 +104,7 @@ export interface SwitchActionConfig {
   /** Cases to match */
   cases: Array<{
     /** Value to match (can be array for multiple values) */
-    value: any | any[];
+    value: unknown | unknown[];
     /** Actions to execute if matched */
     actions: string[];
   }>;

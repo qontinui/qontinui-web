@@ -2,7 +2,7 @@
  * Example usage of ImageWithRefresh and ImageUploadProgress components
  *
  * This file demonstrates how to use the new S3 image handling components.
- * DO NOT import this file in production code - it's for reference only.
+ * DO NOT import this file in production code - it&apos;s for reference only.
  */
 
 import { useState } from "react";

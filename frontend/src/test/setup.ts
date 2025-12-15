@@ -40,7 +40,7 @@ global.IntersectionObserver = class IntersectionObserver {
     return [];
   }
   unobserve() {}
-} as any;
+} as unknown;
 
 // Mock ResizeObserver (required by some UI components)
 global.ResizeObserver = class ResizeObserver {
@@ -48,7 +48,7 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
   observe() {}
   unobserve() {}
-} as any;
+} as unknown;
 
 // Suppress console errors in tests (optional - can be removed if you want to see them)
 // global.console.error = vi.fn();

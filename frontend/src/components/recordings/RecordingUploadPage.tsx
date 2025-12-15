@@ -197,7 +197,7 @@ export function RecordingUploadPage() {
       setTimeout(() => {
         router.push(`/recordings/${response.recording_id}`);
       }, 2000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Upload failed:", error);
       setState((prev) => ({
         ...prev,

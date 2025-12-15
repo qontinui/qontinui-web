@@ -194,7 +194,7 @@ describe("AutoLayout", () => {
         {
           id: "if-1",
           type: "IF",
-          config: {} as any,
+          config: {} as unknown,
           position: [0, 0],
         },
         {
@@ -234,7 +234,7 @@ describe("AutoLayout", () => {
         {
           id: "switch-1",
           type: "SWITCH",
-          config: {} as any,
+          config: {} as unknown,
           position: [0, 0],
         },
         {
@@ -385,7 +385,7 @@ describe("AutoLayout", () => {
         {
           id: "try",
           type: "TRY_CATCH",
-          config: {} as any,
+          config: {} as unknown,
           position: [0, 0],
         },
         {
@@ -592,7 +592,7 @@ describe("AutoLayout", () => {
         {
           id: "action-1",
           type: "LOOP",
-          config: {} as any,
+          config: {} as unknown,
           position: [0, 0],
         },
       ];

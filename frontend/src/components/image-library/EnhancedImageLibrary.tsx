@@ -104,8 +104,8 @@ export function EnhancedImageLibrary() {
   const images = useMemo<ImageWithMetadata[]>(() => {
     return contextImages.map((img) => ({
       ...img,
-      folderId: (img as any).folderId,
-      tags: (img as any).tags || [],
+      folderId: (img as unknown).folderId,
+      tags: (img as unknown).tags || [],
       selected: false,
     }));
   }, [contextImages]);
@@ -127,7 +127,7 @@ export function EnhancedImageLibrary() {
     selectedImageIds,
     toggleImageSelection,
     clearSelection,
-  } = useImageOrganization({ images, onUpdateImage: updateImage as any });
+  } = useImageOrganization({ images, onUpdateImage: updateImage as unknown });
 
   // View state
   const [viewMode, setViewMode] = useState<ImageViewMode>("grid");
@@ -296,7 +296,7 @@ export function EnhancedImageLibrary() {
 
           // Add folder assignment if a folder is selected
           if (selectedFolderId) {
-            (imageAsset as any).folderId = selectedFolderId;
+            (imageAsset as unknown).folderId = selectedFolderId;
           }
 
           addImage(imageAsset);
@@ -324,7 +324,7 @@ export function EnhancedImageLibrary() {
             });
 
           return { success: true, fileName: file.name };
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error(`Upload failed for ${file.name}:`, error);
           toast.error(`Failed to save ${file.name}`, {
             description: error.message || "Unknown error occurred",
@@ -479,7 +479,7 @@ export function EnhancedImageLibrary() {
       selectedImageIds.forEach((imageId) => {
         const image = images.find((img) => img.id === imageId);
         if (image) {
-          updateImage({ ...image, folderId: targetFolderId } as any);
+          updateImage({ ...image, folderId: targetFolderId } as unknown);
         }
       });
       toast.success(`Moved ${selectedImageIds.size} image(s)`);
@@ -528,8 +528,8 @@ export function EnhancedImageLibrary() {
     size: "thumb" | "medium" | "original" = "thumb"
   ): string => {
     // If the image has variants (new format), use them
-    if ((image as any).variants) {
-      const variants = (image as any).variants as Record<string, string>;
+    if ((image as unknown).variants) {
+      const variants = (image as unknown).variants as Record<string, string>;
       return variants[size] || variants.thumb || image.url;
     }
 
@@ -623,7 +623,7 @@ export function EnhancedImageLibrary() {
     workflows.forEach((workflow) => {
       // Check if image is used in any action in the workflow
       const usesImage = workflow.actions.some((action) => {
-        const config = action.config as any;
+        const config = action.config as unknown;
         return config.imageId === selectedImage.id;
       });
       if (usesImage) {
@@ -888,7 +888,7 @@ export function EnhancedImageLibrary() {
         <div className="w-64 border-r border-gray-800 flex flex-col">
           <Tabs
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as any)}
+            onValueChange={(v) => setActiveTab(v as unknown)}
             className="flex-1 flex flex-col"
           >
             <TabsList className="grid w-full grid-cols-2 bg-[#27272A] m-2">
@@ -1040,13 +1040,13 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
                 variant="outline"
                 className={cn(
                   "cursor-pointer transition-all",
-                  filter.sources?.includes(source as any)
+                  filter.sources?.includes(source as unknown)
                     ? "bg-[#00FF88] text-black border-[#00FF88]"
                     : "border-gray-700 hover:border-gray-600"
                 )}
                 onClick={() => {
                   const sources = filter.sources || [];
-                  const newSources = sources.includes(source as any)
+                  const newSources = sources.includes(source as unknown)
                     ? sources.filter((s) => s !== source)
                     : [...sources, source as any];
                   onFilterChange({ ...filter, sources: newSources });
@@ -1076,7 +1076,7 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
                     : "border-gray-700 hover:border-gray-600"
                 )}
                 onClick={() =>
-                  onFilterChange({ ...filter, usageFilter: usage as any })
+                  onFilterChange({ ...filter, usageFilter: usage as unknown })
                 }
               >
                 {usage.charAt(0).toUpperCase() + usage.slice(1)}

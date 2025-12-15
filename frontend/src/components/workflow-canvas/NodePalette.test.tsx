@@ -33,7 +33,7 @@ jest.mock("@/stores/favorite-nodes");
 jest.mock("@/stores/recent-nodes");
 jest.mock("@xyflow/react", () => ({
   useReactFlow: () => ({
-    screenToFlowPosition: ({ x, y }: any) => ({ x, y }),
+    screenToFlowPosition: ({ x, y }: unknown) => ({ x, y }),
     getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
   }),
 }));
@@ -601,7 +601,7 @@ describe("Integration Tests", () => {
   });
 
   it("favorites workflow: add to favorites and access from favorites section", async () => {
-    const favorites: any[] = [];
+    const favorites: unknown[] = [];
     const mockToggleFavorite = jest.fn((type) => {
       favorites.push({ type, order: 0, addedAt: Date.now() });
     });

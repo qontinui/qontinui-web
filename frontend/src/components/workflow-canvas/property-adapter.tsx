@@ -25,7 +25,7 @@ function canvasActionToPropertyAction(action: CanvasAction): PropertyAction {
   return {
     id: action.id,
     type: action.type as PropertyAction["type"],
-    config: action.config as Record<string, any>,
+    config: action.config as Record<string, unknown>,
   };
 }
 
@@ -40,8 +40,8 @@ export interface PropertyAdapterResult {
   /** Update handler for property changes */
   updateConfig: (
     key: string,
-    value: any,
-    additionalUpdates?: Record<string, any>
+    value: unknown,
+    additionalUpdates?: Record<string, unknown>
   ) => void;
 
   /** Full action update handler */
@@ -113,16 +113,16 @@ export function usePropertyAdapter(actionId: string): PropertyAdapterResult {
    * Update config handler - called by action-properties components
    */
   const updateConfig = useCallback(
-    (key: string, value: any, additionalUpdates?: Record<string, any>) => {
+    (key: string, value: unknown, additionalUpdates?: Record<string, unknown>) => {
       if (!canvasAction) return;
 
-      const oldValue = (canvasAction.config as any)[key];
+      const oldValue = (canvasAction.config as unknown)[key];
 
       // Record change for tracking
       recordChange(actionId, `config.${key}`, oldValue, value);
 
       // Accumulate changes
-      const updates: Record<string, any> = { [key]: value };
+      const updates: Record<string, unknown> = { [key]: value };
       if (additionalUpdates) {
         Object.assign(updates, additionalUpdates);
       }
@@ -161,7 +161,7 @@ export function usePropertyAdapter(actionId: string): PropertyAdapterResult {
 
       // Record changes for each updated property
       for (const [key, value] of Object.entries(updates)) {
-        const oldValue = (canvasAction as any)[key];
+        const oldValue = (canvasAction as unknown)[key];
         recordChange(actionId, key, oldValue, value);
       }
 
@@ -219,7 +219,7 @@ export interface MultiPropertyAdapterResult {
   actions: PropertyAction[];
 
   /** Batch update handler for common properties */
-  updateCommonConfig: (key: string, value: any) => void;
+  updateCommonConfig: (key: string, value: unknown) => void;
 
   /** Get common value for a property (or undefined if mixed) */
   getCommonValue: (key: string) => any | undefined;
@@ -256,12 +256,12 @@ export function useMultiPropertyAdapter(
    * Returns undefined if values are mixed
    */
   const getCommonValue = useCallback(
-    (key: string): any | undefined => {
+    (key: string): unknown | undefined => {
       if (canvasActions.length === 0) return undefined;
 
-      const firstValue = (canvasActions[0]!.config as any)[key];
+      const firstValue = (canvasActions[0]!.config as unknown)[key];
       const allSame = canvasActions.every(
-        (action) => (action.config as any)[key] === firstValue
+        (action) => (action.config as unknown)[key] === firstValue
       );
 
       return allSame ? firstValue : undefined;
@@ -283,9 +283,9 @@ export function useMultiPropertyAdapter(
    * Update config for all selected actions
    */
   const updateCommonConfig = useCallback(
-    (key: string, value: any) => {
+    (key: string, value: unknown) => {
       canvasActions.forEach((action) => {
-        const oldValue = (action.config as any)[key];
+        const oldValue = (action.config as unknown)[key];
         recordChange(action.id, `config.${key}`, oldValue, value);
 
         updateActionInCanvas(action.id, {
@@ -346,10 +346,10 @@ export function useMultiPropertyAdapter(
  */
 export interface PropertyEditorWrapperProps {
   actionId: string;
-  component: React.ComponentType<any>;
-  images?: any[];
-  states?: any[];
-  processes?: any[];
+  component: React.ComponentType<unknown>;
+  images?: unknown[];
+  states?: unknown[];
+  processes?: unknown[];
 }
 
 export function PropertyEditorWrapper({

@@ -4,7 +4,7 @@ import { Screenshot } from "../../types/Screenshot";
 
 interface StateAssociationPanelProps {
   screenshot: Screenshot;
-  states: any[]; // Will be replaced with proper State type
+  states: unknown[]; // Will be replaced with proper State type
   onStateAssociation: (stateIds: string[]) => void;
 }
 

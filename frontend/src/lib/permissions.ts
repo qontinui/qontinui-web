@@ -33,7 +33,7 @@ export interface ProjectWithPermissions {
   name: string;
   owner_id: string;
   permission_level?: PermissionLevel;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // ============================================================================

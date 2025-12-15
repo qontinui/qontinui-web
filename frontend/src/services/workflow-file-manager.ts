@@ -107,7 +107,7 @@ export class WorkflowFileManager {
       const content = await this.readFileAsText(file);
 
       // Parse JSON
-      let data: any;
+      let data: unknown;
       try {
         data = JSON.parse(content);
       } catch (parseError) {
@@ -675,7 +675,7 @@ export class WorkflowFileManager {
                 (arr) => arr.length > 0
               );
               if (nonEmptyOutputs.length > 0) {
-                (cleanedConnections[sourceId] as any)[type] = nonEmptyOutputs;
+                (cleanedConnections[sourceId] as unknown)[type] = nonEmptyOutputs;
               }
             }
           });

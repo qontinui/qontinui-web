@@ -57,7 +57,7 @@ export function ProcessingMonitor({
         // Fetch logs
         const logEntries =
           await recordingService.getProcessingLogs(recordingId);
-        setLogs(logEntries as any);
+        setLogs(logEntries as unknown);
 
         // Check if completed or failed
         if (jobStatus.status === "completed") {
@@ -67,7 +67,7 @@ export function ProcessingMonitor({
           setPolling(false);
           onError?.(jobStatus.error || "Processing failed");
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Failed to fetch processing status:", error);
       }
     };

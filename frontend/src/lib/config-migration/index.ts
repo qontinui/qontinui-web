@@ -34,7 +34,7 @@ for (const migration of ALL_MIGRATIONS) {
  * @param config - Configuration object with a version field
  * @returns Migration result with transformed config, warnings, and errors
  */
-export async function migrateConfigToLatest(config: any) {
+export async function migrateConfigToLatest(config: unknown) {
   return migrationEngine.migrateToLatest(config);
 }
 
@@ -74,7 +74,7 @@ export function getAllMigrations() {
  * @param config - Configuration object with a version field
  * @returns Preview information including migration steps and estimated changes
  */
-export async function previewMigration(config: any) {
+export async function previewMigration(config: unknown) {
   return migrationEngine.previewMigration(config);
 }
 

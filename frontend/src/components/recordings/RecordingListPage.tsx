@@ -75,7 +75,7 @@ export function RecordingListPage() {
       );
       setRecordings(response.recordings);
       setTotal(response.total);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to load recordings:", error);
       toast.error("Failed to load recordings");
     } finally {
@@ -108,7 +108,7 @@ export function RecordingListPage() {
       await recordingService.deleteRecording(id);
       toast.success("Recording deleted");
       loadRecordings();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to delete recording:", error);
       toast.error("Failed to delete recording");
     }
@@ -119,7 +119,7 @@ export function RecordingListPage() {
       await recordingService.startProcessing(id);
       toast.success("Processing started");
       loadRecordings();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to start processing:", error);
       toast.error("Failed to start processing");
     }

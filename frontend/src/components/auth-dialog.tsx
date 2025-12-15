@@ -77,7 +77,7 @@ export function AuthDialog({
       } else {
         router.push("/dashboard");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Login failed");
     } finally {
       setLoading(false);
@@ -98,7 +98,7 @@ export function AuthDialog({
       registerForm.reset();
       // Redirect to dashboard
       router.push("/dashboard");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Registration failed");
     } finally {
       setLoading(false);

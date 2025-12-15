@@ -499,16 +499,16 @@ export class WorkflowDocumentationService {
         parts.push(`- **${name}** (${action.type})`);
 
         if (action.type === "SCREENSHOT") {
-          const config = action.config as any;
+          const config = action.config as unknown;
           parts.push(
             `  - Saves screenshot: \`${config.filename || "screenshot.png"}\``
           );
         } else if (action.type === "SET_VARIABLE") {
-          const config = action.config as any;
+          const config = action.config as unknown;
           parts.push(`  - Sets variable: \`${config.variable}\``);
           parts.push(`  - Scope: ${config.scope || "local"}`);
         } else if (action.type === "RUN_WORKFLOW") {
-          const config = action.config as any;
+          const config = action.config as unknown;
           parts.push(`  - Executes workflow: \`${config.workflowId}\``);
         }
       });
@@ -1339,9 +1339,9 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
 
     Object.values(workflow.connections).forEach((outputs) => {
       ["main", "error", "success", "parallel"].forEach((type) => {
-        const connections = (outputs as any)[type];
+        const connections = (outputs as unknown)[type];
         if (connections) {
-          connections.forEach((conns: any[]) => {
+          connections.forEach((conns: unknown[]) => {
             conns.forEach((conn) => hasIncoming.add(conn.action));
           });
         }
@@ -1362,12 +1362,12 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
     // Check workflow variables
     if (workflow.variables) {
       ["local", "process", "global"].forEach((scope) => {
-        const vars = (workflow.variables as any)[scope];
+        const vars = (workflow.variables as unknown)[scope];
         if (vars) {
           Object.entries(vars).forEach(([name, value]) => {
             variables.push({
               name,
-              scope: scope as any,
+              scope: scope as unknown,
               type: typeof value,
               usage: "Predefined",
               actions: [],
@@ -1380,7 +1380,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
     // Check action configs for variable usage
     workflow.actions.forEach((action) => {
       if (action.type === "SET_VARIABLE" || action.type === "GET_VARIABLE") {
-        const config = action.config as any;
+        const config = action.config as unknown;
         const varName = config.variable;
         const scope = config.scope || "local";
 
@@ -1388,7 +1388,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
         if (!varInfo) {
           varInfo = {
             name: varName,
-            scope: scope as any,
+            scope: scope as unknown,
             type: "unknown",
             usage: action.type === "SET_VARIABLE" ? "Set" : "Get",
             actions: [],
@@ -1411,7 +1411,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
 
     workflow.actions.forEach((action) => {
       if (action.type === "RUN_WORKFLOW") {
-        const config = action.config as any;
+        const config = action.config as unknown;
         dependencies.push({
           type: "workflow",
           name: config.workflowId || "Unknown workflow",
@@ -1422,7 +1422,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
 
       // Check for image dependencies
       if ("target" in action.config) {
-        const target = (action.config as any).target;
+        const target = (action.config as unknown).target;
         if (target?.image) {
           dependencies.push({
             type: "resource",

@@ -15,7 +15,7 @@ import { screenshotDB } from "./screenshot-db";
 export interface SyncResult {
   success: boolean;
   error?: string;
-  data?: any;
+  data?: unknown;
 }
 
 /**

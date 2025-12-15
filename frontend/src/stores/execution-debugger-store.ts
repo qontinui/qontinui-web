@@ -19,7 +19,7 @@ interface ExecutionDebuggerStore extends ExecutionDebuggerState {
 
   // Action execution tracking
   startAction: (actionIndex: number, action: Action) => void;
-  completeAction: (actionIndex: number, result: any, error?: string) => void;
+  completeAction: (actionIndex: number, result: unknown, error?: string) => void;
   failAction: (actionIndex: number, error: string, stackTrace?: string) => void;
   skipAction: (actionIndex: number, reason: string) => void;
 
@@ -34,7 +34,7 @@ interface ExecutionDebuggerStore extends ExecutionDebuggerState {
   endLoop: (actionId: string) => void;
 
   // Variable management
-  setVariable: (name: string, value: any, actionIndex: number) => void;
+  setVariable: (name: string, value: unknown, actionIndex: number) => void;
   getVariable: (name: string) => any;
   deleteVariable: (name: string) => void;
 
@@ -57,7 +57,7 @@ interface ExecutionDebuggerStore extends ExecutionDebuggerState {
     category: ExecutionLogEntry["category"],
     message: string,
     actionIndex?: number,
-    details?: any
+    details?: unknown
   ) => void;
   clearLogs: () => void;
   exportLogs: () => string;
@@ -163,7 +163,7 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
       );
     },
 
-    completeAction: (actionIndex: number, result: any, error?: string) => {
+    completeAction: (actionIndex: number, result: unknown, error?: string) => {
       const now = Date.now();
       const event = get().actionEvents.find(
         (e) => e.actionIndex === actionIndex
@@ -353,7 +353,7 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
       });
     },
 
-    setVariable: (name: string, value: any, actionIndex: number) => {
+    setVariable: (name: string, value: unknown, actionIndex: number) => {
       const now = Date.now();
       const previousValue = get().context.variables[name]?.value;
 
@@ -479,7 +479,7 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
       // Evaluate the condition with current variables
       try {
         const variables = get().context.variables;
-        const variableValues: Record<string, any> = {};
+        const variableValues: Record<string, unknown> = {};
 
         // Extract raw values from VariableValue objects
         for (const [name, varValue] of Object.entries(variables)) {

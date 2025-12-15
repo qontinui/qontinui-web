@@ -455,7 +455,7 @@ export function TemplateDialog({
   const templates = workflowTemplates.getTemplates({
     search: searchQuery,
     category:
-      selectedCategory === "all" ? undefined : (selectedCategory as any),
+      selectedCategory === "all" ? undefined : (selectedCategory as unknown),
   });
 
   const categories = ["all", ...workflowTemplates.getCategories()];

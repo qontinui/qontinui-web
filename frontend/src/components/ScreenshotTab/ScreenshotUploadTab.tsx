@@ -40,7 +40,7 @@ import {
 } from "../qontinui";
 
 interface ScreenshotUploadTabProps {
-  states: any[];
+  states: unknown[];
   onExport: (screenshots: Screenshot[]) => void;
 }
 
@@ -229,7 +229,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           "manual_upload",
           undefined,
           (progress: number) => {
-            setUploadingFiles((prev: any[]) =>
+            setUploadingFiles((prev: unknown[]) =>
               prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
             );
           }
@@ -279,7 +279,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
         // Remove from uploading list
         setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error(`Upload failed for ${file.name}:`, error);
 
         // Show user-friendly error message
@@ -499,7 +499,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
       toast.success("Screenshot captured and uploaded", {
         description: `${data.width}x${data.height} pixels`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Screenshot capture failed:", error);
       toast.error("Failed to capture screenshot", {
         description:

@@ -21,11 +21,11 @@ export function useOptimisticUpdate(
   resourceType: ResourceType,
   resourceId: string
 ): UseOptimisticUpdateReturn {
-  const [optimisticState, setOptimisticState] = useState<any>(null);
+  const [optimisticState, setOptimisticState] = useState<unknown>(null);
   const [hasOptimistic, setHasOptimistic] = useState(false);
 
   const applyOptimistic = useCallback(
-    (change: any) => {
+    (change: unknown) => {
       setOptimisticState(change);
       setHasOptimistic(true);
 

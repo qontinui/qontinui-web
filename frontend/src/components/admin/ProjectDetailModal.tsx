@@ -165,7 +165,7 @@ export default function ProjectDetailModal({
               <TabsContent value="states" className="space-y-4">
                 {project.states && project.states.length > 0 ? (
                   <div className="space-y-4">
-                    {project.states.map((state: any, index: number) => (
+                    {project.states.map((state: unknown, index: number) => (
                       <Card key={state.id || index}>
                         <CardHeader>
                           <div className="flex items-center justify-between">
@@ -193,7 +193,7 @@ export default function ProjectDetailModal({
                               </p>
                               <div className="grid gap-2">
                                 {state.transitions.map(
-                                  (transition: any, tIndex: number) => (
+                                  (transition: unknown, tIndex: number) => (
                                     <div
                                       key={transition.id || tIndex}
                                       className="flex items-center gap-2 p-2 rounded-md bg-muted/50 text-sm"
@@ -238,7 +238,7 @@ export default function ProjectDetailModal({
               <TabsContent value="images" className="space-y-4">
                 {project.image_library && project.image_library.length > 0 ? (
                   <div className="grid grid-cols-2 gap-4">
-                    {project.image_library.map((item: any, index: number) => (
+                    {project.image_library.map((item: unknown, index: number) => (
                       <Card key={index}>
                         <CardHeader>
                           <div className="flex items-center gap-2">

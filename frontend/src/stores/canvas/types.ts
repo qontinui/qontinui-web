@@ -30,7 +30,7 @@ export interface ValidationError {
     | "invalid_config";
   severity: "error" | "warning";
   message: string;
-  details?: any;
+  details?: unknown;
 }
 
 export interface ValidationResult {

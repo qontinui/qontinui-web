@@ -55,7 +55,7 @@ describe("CanvasPropertiesPanel", () => {
     vi.clearAllMocks();
 
     // Setup default store states
-    (useCanvasStore as any).mockReturnValue({
+    (useCanvasStore as unknown).mockReturnValue({
       workflow: mockWorkflow,
       selectedNodes: [],
       selectedEdges: [],
@@ -63,7 +63,7 @@ describe("CanvasPropertiesPanel", () => {
         mockWorkflow.actions.find((a) => a.id === id),
     });
 
-    (usePropertiesPanelStore as any).mockReturnValue({
+    (usePropertiesPanelStore as unknown).mockReturnValue({
       isOpen: true,
       position: "right",
       width: 400,
@@ -83,7 +83,7 @@ describe("CanvasPropertiesPanel", () => {
     });
 
     it("should show collapsed state when closed", () => {
-      (usePropertiesPanelStore as any).mockReturnValue({
+      (usePropertiesPanelStore as unknown).mockReturnValue({
         isOpen: false,
         toggleOpen: vi.fn(),
       });
@@ -95,7 +95,7 @@ describe("CanvasPropertiesPanel", () => {
 
     it("should toggle panel visibility", async () => {
       const toggleOpen = vi.fn();
-      (usePropertiesPanelStore as any).mockReturnValue({
+      (usePropertiesPanelStore as unknown).mockReturnValue({
         isOpen: true,
         toggleOpen,
       });
@@ -110,7 +110,7 @@ describe("CanvasPropertiesPanel", () => {
 
   describe("Single Node Selection", () => {
     it("should show single node properties when one node is selected", () => {
-      (useCanvasStore as any).mockReturnValue({
+      (useCanvasStore as unknown).mockReturnValue({
         workflow: mockWorkflow,
         selectedNodes: ["action-1"],
         selectedEdges: [],
@@ -124,7 +124,7 @@ describe("CanvasPropertiesPanel", () => {
     });
 
     it("should show property editor for selected action type", () => {
-      (useCanvasStore as any).mockReturnValue({
+      (useCanvasStore as unknown).mockReturnValue({
         workflow: mockWorkflow,
         selectedNodes: ["action-1"],
         selectedEdges: [],
@@ -137,7 +137,7 @@ describe("CanvasPropertiesPanel", () => {
     });
 
     it("should show history tab for single node", async () => {
-      (useCanvasStore as any).mockReturnValue({
+      (useCanvasStore as unknown).mockReturnValue({
         workflow: mockWorkflow,
         selectedNodes: ["action-1"],
         selectedEdges: [],
@@ -155,7 +155,7 @@ describe("CanvasPropertiesPanel", () => {
 
   describe("Multi-Node Selection", () => {
     it("should show multi-select properties when multiple nodes are selected", () => {
-      (useCanvasStore as any).mockReturnValue({
+      (useCanvasStore as unknown).mockReturnValue({
         workflow: mockWorkflow,
         selectedNodes: ["action-1", "action-2"],
         selectedEdges: [],
@@ -171,7 +171,7 @@ describe("CanvasPropertiesPanel", () => {
 
   describe("Edge Selection", () => {
     it("should show connection properties when edge is selected", () => {
-      (useCanvasStore as any).mockReturnValue({
+      (useCanvasStore as unknown).mockReturnValue({
         workflow: mockWorkflow,
         selectedNodes: [],
         selectedEdges: ["action-1-main-0-action-2"],
@@ -193,7 +193,7 @@ describe("CanvasPropertiesPanel", () => {
   describe("Panel Resizing", () => {
     it("should allow resizing the panel", async () => {
       const setWidth = vi.fn();
-      (usePropertiesPanelStore as any).mockReturnValue({
+      (usePropertiesPanelStore as unknown).mockReturnValue({
         isOpen: true,
         position: "right",
         width: 400,
@@ -221,7 +221,7 @@ describe("CanvasPropertiesPanel", () => {
 
   describe("Unsaved Changes", () => {
     it("should show unsaved changes indicator", () => {
-      (usePropertiesPanelStore as any).mockReturnValue({
+      (usePropertiesPanelStore as unknown).mockReturnValue({
         isOpen: true,
         hasUnsavedChanges: true,
       });
@@ -231,7 +231,7 @@ describe("CanvasPropertiesPanel", () => {
     });
 
     it("should show save/discard buttons when there are unsaved changes", () => {
-      (usePropertiesPanelStore as any).mockReturnValue({
+      (usePropertiesPanelStore as unknown).mockReturnValue({
         isOpen: true,
         hasUnsavedChanges: true,
       });
@@ -289,7 +289,7 @@ describe("WorkflowProperties", () => {
   };
 
   beforeEach(() => {
-    (useCanvasStore as any).mockReturnValue({
+    (useCanvasStore as unknown).mockReturnValue({
       workflow: mockWorkflow,
     });
   });
@@ -350,7 +350,7 @@ describe("ConnectionProperties", () => {
   };
 
   beforeEach(() => {
-    (useCanvasStore as any).mockReturnValue({
+    (useCanvasStore as unknown).mockReturnValue({
       workflow: mockWorkflow,
       deleteConnection: vi.fn(),
     });
@@ -369,7 +369,7 @@ describe("ConnectionProperties", () => {
 
   it("should allow deleting connection", async () => {
     const deleteConnection = vi.fn();
-    (useCanvasStore as any).mockReturnValue({
+    (useCanvasStore as unknown).mockReturnValue({
       workflow: mockWorkflow,
       deleteConnection,
     });

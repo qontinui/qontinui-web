@@ -463,7 +463,7 @@ export function getStatusBadge(status: ActionExecutionStatus): {
  */
 export function centerViewportOnNode(
   nodeId: string,
-  reactFlowInstance: any,
+  reactFlowInstance: unknown,
   options: {
     zoom?: number;
     duration?: number;
@@ -484,7 +484,7 @@ export function centerViewportOnNode(
  */
 export function followExecution(
   currentActionId: string,
-  reactFlowInstance: any,
+  reactFlowInstance: unknown,
   enabled: boolean
 ): void {
   if (!enabled || !currentActionId) {

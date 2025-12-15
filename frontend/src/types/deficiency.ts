@@ -60,10 +60,10 @@ export interface Deficiency {
     os?: string;
     browser?: string;
     screen_resolution?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   preconditions: {
-    [key: string]: any;
+    [key: string]: unknown;
   };
 
   // Lifecycle
@@ -86,7 +86,7 @@ export interface Deficiency {
   // Metadata
   tags: string[];
   custom_fields: {
-    [key: string]: any;
+    [key: string]: unknown;
   };
 
   // Audit
@@ -127,9 +127,9 @@ export interface DeficiencyActivity {
     | "resolved";
   details: {
     field?: string;
-    old_value?: any;
-    new_value?: any;
-    [key: string]: any;
+    old_value?: unknown;
+    new_value?: unknown;
+    [key: string]: unknown;
   };
   created_at: string;
 }

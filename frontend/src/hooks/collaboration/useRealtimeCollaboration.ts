@@ -23,7 +23,7 @@ export function useRealtimeCollaboration(
   resourceId: string
 ): UseRealtimeCollaborationReturn {
   const [isConnected, setIsConnected] = useState(false);
-  const [remoteChanges, setRemoteChanges] = useState<any[]>([]);
+  const [remoteChanges, setRemoteChanges] = useState<unknown[]>([]);
 
   useEffect(() => {
     // Connect to WebSocket

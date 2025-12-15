@@ -227,7 +227,7 @@ export function useVariableHistory(
 /**
  * Helper function to determine the type of a variable value
  */
-function getValueType(value: any): string {
+function getValueType(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
   return typeof value;
@@ -236,7 +236,7 @@ function getValueType(value: any): string {
 /**
  * Helper function to format variable values for display
  */
-export function formatVariableValue(value: any, maxLength = 100): string {
+export function formatVariableValue(value: unknown, maxLength = 100): string {
   if (value === null) return "null";
   if (value === undefined) return "undefined";
 
@@ -266,7 +266,7 @@ export function formatVariableValue(value: any, maxLength = 100): string {
 /**
  * Helper function to detect if a value has changed
  */
-export function hasValueChanged(oldValue: any, newValue: any): boolean {
+export function hasValueChanged(oldValue: unknown, newValue: unknown): boolean {
   // Handle null/undefined
   if (oldValue === null || oldValue === undefined) {
     return newValue !== null && newValue !== undefined;

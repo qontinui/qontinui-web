@@ -157,7 +157,7 @@ export async function deleteVideo(videoId: string): Promise<void> {
 
 // PDF Report Types
 export interface PDFReportOptions {
-  executionResult: any;
+  executionResult: unknown;
   screenshotsDir: string;
   includeScreenshots?: boolean;
   includeCoverage?: boolean;

@@ -56,7 +56,7 @@ export interface ComponentInsertDialogProps {
   component: SubflowComponent;
   open: boolean;
   onClose: () => void;
-  onInsert: (parameters: Record<string, any>) => void;
+  onInsert: (parameters: Record<string, unknown>) => void;
   className?: string;
 }
 
@@ -66,7 +66,7 @@ interface ValidationError {
 }
 
 interface ParameterValue {
-  value: any;
+  value: unknown;
   isValid: boolean;
   error?: string;
 }
@@ -238,7 +238,7 @@ export function ComponentInsertDialog({
       return;
     }
 
-    const parameters: Record<string, any> = {};
+    const parameters: Record<string, unknown> = {};
     Object.entries(parameterValues).forEach(([name, paramValue]) => {
       const param = component.parameters.find((p) => p.name === name);
       if (!param) return;
@@ -272,7 +272,7 @@ export function ComponentInsertDialog({
     onClose();
   };
 
-  const handleParameterChange = (paramName: string, value: any) => {
+  const handleParameterChange = (paramName: string, value: unknown) => {
     setParameterValues((prev) => ({
       ...prev,
       [paramName]: {
@@ -310,7 +310,7 @@ export function ComponentInsertDialog({
 
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as any)}
+          onValueChange={(v) => setActiveTab(v as unknown)}
           className="flex-1 flex flex-col min-h-0"
         >
           <TabsList>
@@ -575,9 +575,9 @@ export function ComponentInsertDialog({
 
 interface ParameterInputProps {
   parameter: ComponentParameter;
-  value: any;
+  value: unknown;
   error?: string;
-  onChange: (value: any) => void;
+  onChange: (value: unknown) => void;
 }
 
 function ParameterInput({

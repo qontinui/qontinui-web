@@ -30,7 +30,7 @@ interface TestRun {
   startTime: Date;
   endTime?: Date;
   status: "running" | "completed" | "failed";
-  results: any[];
+  results: unknown[];
   currentAction: number;
   totalActions: number;
   successRate?: number;
@@ -98,7 +98,7 @@ export const ProcessTestRunner: React.FC = () => {
   }, [selectedCategory, workflowsByCategory, workflows]);
 
   // Get all actions for a process
-  const getProcessActions = (processId: string): any[] => {
+  const getProcessActions = (processId: string): unknown[] => {
     const process = workflows.find((p) => p.id === processId);
     if (!process || !process.actions) return [];
     return process.actions;

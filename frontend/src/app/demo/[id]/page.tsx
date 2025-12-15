@@ -18,7 +18,7 @@ interface PublicProject {
   id: string;
   name: string;
   description: string | null;
-  configuration: any;
+  configuration: unknown;
   updated_at: string;
   created_at: string;
   owner_id: string;
@@ -50,7 +50,7 @@ export default function DemoProjectPage() {
 
         const data = await response.json();
         setProject(data);
-      } catch (err: any) {
+      } catch (err: unknown) {
         setError(err.message || "An error occurred");
       } finally {
         setLoading(false);
@@ -177,7 +177,7 @@ export default function DemoProjectPage() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {workflows.map((workflow: any, index: number) => (
+                    {workflows.map((workflow: unknown, index: number) => (
                       <div
                         key={index}
                         className="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4"
@@ -219,7 +219,7 @@ export default function DemoProjectPage() {
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {actions.slice(0, 10).map((action: any, index: number) => (
+                    {actions.slice(0, 10).map((action: unknown, index: number) => (
                       <div
                         key={index}
                         className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-md"

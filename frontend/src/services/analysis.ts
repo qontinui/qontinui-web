@@ -19,7 +19,7 @@ export interface DetectedElement {
   label?: string;
   element_type?: string;
   screenshot_index: number;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface AnalyzerResult {
@@ -27,7 +27,7 @@ export interface AnalyzerResult {
   analyzer_name: string;
   elements: DetectedElement[];
   confidence: number;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface FusedElement {
@@ -39,7 +39,7 @@ export interface FusedElement {
   label?: string;
   element_type?: string;
   screenshot_index: number;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface AnalyzerInfo {
@@ -48,7 +48,7 @@ export interface AnalyzerInfo {
   version: string;
   supports_multi_screenshot: boolean;
   required_screenshots: number;
-  default_parameters: Record<string, any>;
+  default_parameters: Record<string, unknown>;
 }
 
 export interface AnalysisResponse {
@@ -61,7 +61,7 @@ export interface AnalysisResponse {
     avg_confidence: number;
     multi_vote_elements: number;
   };
-  analyzer_statistics: Record<string, any>;
+  analyzer_statistics: Record<string, unknown>;
   status: string;
   error_message?: string;
 }
@@ -70,16 +70,16 @@ export interface AnalysisJob {
   id: string;
   annotation_set_id: string;
   analyzers_used: string[];
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
   fusion_enabled: boolean;
-  fusion_config?: Record<string, any>;
+  fusion_config?: Record<string, unknown>;
   status: string;
   started_at?: string;
   completed_at?: string;
   error_message?: string;
   total_elements_found: number;
   total_fused_elements: number;
-  analyzer_statistics?: Record<string, any>;
+  analyzer_statistics?: Record<string, unknown>;
   created_at: string;
   created_by_id: string;
 }
@@ -91,7 +91,7 @@ export interface AnalysisJobDetail extends AnalysisJob {
 export interface AnalysisRequest {
   annotation_set_id: string;
   analyzer_names?: string[];
-  analyzer_configs?: Record<string, Record<string, any>>;
+  analyzer_configs?: Record<string, Record<string, unknown>>;
   parallel?: boolean;
   fuse_results?: boolean;
   overlap_threshold?: number;

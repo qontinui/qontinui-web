@@ -938,7 +938,7 @@ export default function AuthenticationArchitectureDiagram() {
                   HIGH: Rate Limiting Not Scalable
                 </div>
                 <div className="text-muted-foreground">
-                  In-memory storage won't work across instances. Migrate to
+                  In-memory storage won&apos;t work across instances. Migrate to
                   Redis.
                 </div>
               </div>
@@ -976,7 +976,7 @@ export default function AuthenticationArchitectureDiagram() {
                   MEDIUM: Cross-Tab Session Sync
                 </div>
                 <div className="text-muted-foreground">
-                  Logout in one tab doesn't affect others. Use BroadcastChannel.
+                  Logout in one tab doesn&apos;t affect others. Use BroadcastChannel.
                 </div>
               </div>
             </div>

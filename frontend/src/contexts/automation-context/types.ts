@@ -106,7 +106,7 @@ export interface StateLocation {
   monitors?: number[]; // Monitor indices where this location should be checked
 
   // Metadata and history
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   actionHistory?: ActionHistory;
 }
 
@@ -348,7 +348,7 @@ export interface ExecutionRecord {
   success: boolean;
   iterationCount: number;
   errors: string[];
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface StateCheckResult {
@@ -471,7 +471,7 @@ export interface AutomationContextType {
 
   // Configuration
   getConfiguration: () => any;
-  loadConfiguration: (config: any) => Promise<void>;
+  loadConfiguration: (config: unknown) => Promise<void>;
   clearAllData: () => void;
   syncScreenshotsFromBackend: (projectId: string) => Promise<void>;
 

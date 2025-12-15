@@ -18,7 +18,7 @@ const API_PATH = "/api";
 export function useStateDiscovery() {
   const [stateImages, setStateImages] = useState<StateImage[]>([]);
   const [states, setStates] = useState<DiscoveredState[]>([]);
-  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [analysisResult, setAnalysisResult] = useState<unknown>(null);
   const [uploadId, setUploadId] = useState<string>("");
   const [analysisId, setAnalysisId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +74,7 @@ export function useStateDiscovery() {
   const startAnalysis = useCallback(
     async (
       config: AnalysisConfig,
-      onProgress?: (progress: any) => void,
+      onProgress?: (progress: unknown) => void,
       onComplete?: () => void
     ) => {
       if (!uploadId) {
@@ -178,7 +178,7 @@ export function useStateDiscovery() {
   const connectWebSocket = useCallback(
     (
       analysisId: string,
-      onProgress?: (progress: any) => void,
+      onProgress?: (progress: unknown) => void,
       onComplete?: () => void
     ) => {
       // Close existing connection
@@ -378,7 +378,7 @@ export function useStateDiscovery() {
 
   // Bulk delete StateImages
   const bulkDeleteStateImages = useCallback(
-    async (ids: string[], options?: any) => {
+    async (ids: string[], options?: unknown) => {
       const response = await fetch(
         `${API_BASE_URL}${API_PATH}/state-discovery/state-images/batch`,
         {

@@ -44,7 +44,7 @@ export default function RecordingDetailPage() {
       } else if (data.status === "completed") {
         setActiveTab("review");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to load recording:", error);
       toast.error("Failed to load recording");
     } finally {
@@ -60,7 +60,7 @@ export default function RecordingDetailPage() {
       toast.success("Processing started");
       setActiveTab("processing");
       loadRecording();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to start processing:", error);
       toast.error("Failed to start processing");
     }
@@ -75,7 +75,7 @@ export default function RecordingDetailPage() {
       await recordingService.deleteRecording(recordingId);
       toast.success("Recording deleted");
       router.push("/recordings");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to delete recording:", error);
       toast.error("Failed to delete recording");
     }

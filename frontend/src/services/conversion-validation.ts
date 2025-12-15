@@ -17,7 +17,7 @@ export interface ValidationIssue {
   type: string;
   message: string;
   actionId?: string;
-  details?: any;
+  details?: unknown;
 }
 
 export interface ValidationResult {
@@ -348,8 +348,8 @@ function validateIfAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as any;
-  const convertedConfig = converted.config as any;
+  const originalConfig = original.config as unknown;
+  const convertedConfig = converted.config as unknown;
 
   // Check condition preservation
   if (
@@ -392,8 +392,8 @@ function validateLoopAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as any;
-  const convertedConfig = converted.config as any;
+  const originalConfig = original.config as unknown;
+  const convertedConfig = converted.config as unknown;
 
   // Check condition preservation
   if (
@@ -427,8 +427,8 @@ function validateSwitchAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as any;
-  const convertedConfig = converted.config as any;
+  const originalConfig = original.config as unknown;
+  const convertedConfig = converted.config as unknown;
 
   // Check case count preservation
   if (originalConfig.cases?.length !== convertedConfig.cases?.length) {
@@ -449,8 +449,8 @@ function validateTryCatchAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as any;
-  const convertedConfig = converted.config as any;
+  const originalConfig = original.config as unknown;
+  const convertedConfig = converted.config as unknown;
 
   // Check that try/catch blocks exist
   const hasTry =

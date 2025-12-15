@@ -35,7 +35,7 @@ import { toast } from "sonner";
 import { useDebouncedCallback } from "../../hooks/use-debounced-callback";
 
 interface ScreenshotAnnotationTabProps {
-  states: any[];
+  states: unknown[];
 }
 
 // Helper function to convert AnchorType to PositionName - currently unused
@@ -290,7 +290,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       toast.success("Screenshot captured", {
         description: `${data.width}x${data.height} pixels`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Screenshot capture failed:", error);
       toast.error("Failed to capture screenshot", {
         description:
@@ -319,7 +319,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                   uploadedAt: ps.uploadedAt,
                   associatedStates: ps.associatedStates || [],
                   regions: ps.regions || [],
-                  locations: (ps.locations || []) as any,
+                  locations: (ps.locations || []) as unknown,
                 });
               };
               img.onerror = () => {
@@ -332,7 +332,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                   uploadedAt: ps.uploadedAt,
                   associatedStates: ps.associatedStates || [],
                   regions: ps.regions || [],
-                  locations: (ps.locations || []) as any,
+                  locations: (ps.locations || []) as unknown,
                 });
               };
               img.src = ps.url;
@@ -472,7 +472,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     ];
 
     // Handle SearchRegions - they belong to Patterns, not State.regions
-    const updatedStateImages = state.stateImages.map((image: any) => {
+    const updatedStateImages = state.stateImages.map((image: unknown) => {
       // Find SearchRegions for this StateImage using saveToStateImageId
       const searchRegionsForImage = searchRegions.filter(
         (r: ScreenshotRegion) => r.saveToStateImageId === image.id
@@ -482,7 +482,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
 
       // Add/update SearchRegions in the first pattern
       const updatedPatterns = image.patterns.map(
-        (pattern: any, idx: number) => {
+        (pattern: unknown, idx: number) => {
           if (idx === 0) {
             // Convert screenshot SearchRegions to Pattern SearchRegions
             const patternSearchRegions = searchRegionsForImage.map(
@@ -500,7 +500,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
             // Merge with existing search regions
             const mergedSearchRegions = [
               ...pattern.searchRegions.filter(
-                (sr: any) =>
+                (sr: unknown) =>
                   !patternSearchRegions.find((psr) => psr.id === sr.id)
               ),
               ...patternSearchRegions,
@@ -720,12 +720,12 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           });
         } else if (deletedRegion.type === "SearchRegion") {
           // Remove from Pattern.searchRegions
-          const updatedStateImages = state.stateImages.map((image: any) => {
+          const updatedStateImages = state.stateImages.map((image: unknown) => {
             if (deletedRegion.saveToStateImageId === image.id) {
-              const updatedPatterns = image.patterns.map((pattern: any) => ({
+              const updatedPatterns = image.patterns.map((pattern: unknown) => ({
                 ...pattern,
                 searchRegions: pattern.searchRegions.filter(
-                  (sr: any) => sr.id !== regionId
+                  (sr: unknown) => sr.id !== regionId
                 ),
               }));
               return { ...image, patterns: updatedPatterns };

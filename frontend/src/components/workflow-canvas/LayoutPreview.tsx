@@ -670,8 +670,8 @@ function calculateBoundingBox(actions: Action[]): BoundingBox {
   };
 }
 
-function useMemo<T>(factory: () => T, deps: any[]): T {
-  const ref = useRef<{ value: T; deps: any[] } | undefined>(undefined);
+function useMemo<T>(factory: () => T, deps: unknown[]): T {
+  const ref = useRef<{ value: T; deps: unknown[] } | undefined>(undefined);
 
   if (!ref.current || !depsEqual(ref.current.deps, deps)) {
     ref.current = { value: factory(), deps };
@@ -680,7 +680,7 @@ function useMemo<T>(factory: () => T, deps: any[]): T {
   return ref.current.value;
 }
 
-function depsEqual(a: any[], b: any[]): boolean {
+function depsEqual(a: unknown[], b: unknown[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     if (a[i] !== b[i]) return false;

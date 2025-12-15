@@ -149,7 +149,7 @@ export function StatePropertiesPanel({
   const prevPatternsCount = useRef<{ [key: string]: number }>({});
 
   useEffect(() => {
-    // If the state ID changed, we're looking at a different state
+    // If the state ID changed, we&apos;re looking at a different state
     // Reset tracking without opening any selectors
     if (state.id !== prevStateId.current) {
       prevStateId.current = state.id;
@@ -820,7 +820,7 @@ export function StatePropertiesPanel({
                                                           } = pattern;
                                                           updatedPatterns[
                                                             pIdx
-                                                          ] = rest as any;
+                                                          ] = rest as unknown;
                                                         }
                                                         updateStateImage(
                                                           index,
@@ -1326,7 +1326,7 @@ export function StatePropertiesPanel({
                                                     ...rest
                                                   } = pattern;
                                                   updatedPatterns[pIdx] =
-                                                    rest as any;
+                                                    rest as unknown;
                                                 }
                                                 updateStateImage(index, {
                                                   patterns: updatedPatterns,
@@ -1504,7 +1504,7 @@ export function StatePropertiesPanel({
                           <div>
                             Reference:{" "}
                             {(() => {
-                              // First check if it's in the current state
+                              // First check if it&apos;s in the current state
                               const imageInCurrentState =
                                 state.stateImages?.find(
                                   (img) => img.id === location.referenceImageId

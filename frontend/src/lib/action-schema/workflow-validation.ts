@@ -41,7 +41,7 @@ export interface ValidationError {
   type: ValidationErrorType;
   message: string;
   actionId?: string;
-  details?: any;
+  details?: unknown;
 }
 
 /**

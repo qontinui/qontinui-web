@@ -54,8 +54,8 @@ export function ActionProperties({
 
   const updateConfig = (
     key: string,
-    value: any,
-    additionalUpdates: Record<string, any> = {}
+    value: unknown,
+    additionalUpdates: Record<string, unknown> = {}
   ) => {
     // Special case: reset entire config to new value
     if (key === "__reset__") {

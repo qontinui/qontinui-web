@@ -598,7 +598,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
       if (maskValue === 0) {
         imageData.data[i + 3] = 0; // Make transparent
       } else {
-        // Keep original pixel data but ensure it's fully opaque
+        // Keep original pixel data but ensure it&apos;s fully opaque
         imageData.data[i + 3] = 255;
       }
     }

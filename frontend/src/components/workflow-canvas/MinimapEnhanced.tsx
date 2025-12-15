@@ -39,7 +39,7 @@ export function MinimapEnhanced({
 }: MinimapEnhancedProps) {
   const [isVisible, setIsVisible] = useState(defaultVisible);
 
-  const getNodeColor = (node: any): string => {
+  const getNodeColor = (node: unknown): string => {
     const canvasNode = node as CanvasNode;
 
     // Color by execution state if available

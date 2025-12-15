@@ -148,7 +148,7 @@ export interface CodeBlockActionConfig {
     retries?: number;
 
     /** Fallback value (if onError='fallback') */
-    fallbackValue?: any;
+    fallbackValue?: unknown;
 
     /** Continue workflow on error (if onError='skip') */
     continueOnError?: boolean;
@@ -180,7 +180,7 @@ export interface CustomFunctionActionConfig {
   functionName: string;
 
   /** Input parameter mappings */
-  inputs: Record<string, any>;
+  inputs: Record<string, unknown>;
 
   /** Output variable mappings */
   outputs: Record<string, string>;

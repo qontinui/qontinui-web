@@ -200,7 +200,7 @@ export const versionSchemas = {
  * @returns Validation result with success flag and errors
  */
 export function validateConfig(
-  config: any,
+  config: unknown,
   version?: string
 ): {
   success: boolean;
@@ -248,7 +248,7 @@ export function validateConfig(
  * @param config - Config object with workflows
  * @returns Validation result
  */
-export function validateWorkflows(config: any): {
+export function validateWorkflows(config: unknown): {
   success: boolean;
   errors: string[];
 } {
@@ -291,7 +291,7 @@ export function validateWorkflows(config: any): {
         for (const [actionId, outputs] of Object.entries(
           workflow.connections
         )) {
-          if ((outputs as any).parallel) {
+          if ((outputs as unknown).parallel) {
             errors.push(
               `Workflow "${workflow.name}", Action ${actionId}: parallel connections not allowed in v2.0.1+`
             );

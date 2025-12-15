@@ -33,7 +33,7 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
 
   const changes = getChangesForAction(actionId);
 
-  const formatValue = (value: any): string => {
+  const formatValue = (value: unknown): string => {
     if (value === null || value === undefined) return "null";
     if (typeof value === "string") return `"${value}"`;
     if (typeof value === "object") return JSON.stringify(value, null, 2);

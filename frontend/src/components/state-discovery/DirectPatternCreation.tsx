@@ -84,7 +84,7 @@ export function DirectPatternCreation() {
           const data = await response.json();
 
           const screenshotList: SnapshotScreenshot[] = data.screenshots.map(
-            (s: any, idx: number) => ({
+            (s: unknown, idx: number) => ({
               id: `${snapshot.run_id}_${idx}`,
               path: s.screenshot_path,
               url: `/api/integration-testing/snapshots/${snapshot.run_id}/screenshot/${s.screenshot_path}`,

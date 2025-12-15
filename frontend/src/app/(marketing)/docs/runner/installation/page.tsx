@@ -347,7 +347,7 @@ export default function InstallationGuidePage() {
             <Alert className="border-blue-300 bg-blue-50">
               <CheckCircle2 className="h-4 w-4 text-blue-600" />
               <AlertDescription>
-                <strong>Good news!</strong> Linux doesn't require code signing.
+                <strong>Good news!</strong> Linux doesn&apos;t require code signing.
                 No security warnings!
               </AlertDescription>
             </Alert>
@@ -438,17 +438,17 @@ export default function InstallationGuidePage() {
           <div className="space-y-4">
             <div className="bg-white border border-slate-200 rounded-lg p-6">
               <h3 className="font-semibold mb-2">
-                Windows: "This app can't run on your PC"
+                Windows: "This app can&apos;t run on your PC"
               </h3>
               <p className="text-sm text-slate-700">
-                You need a 64-bit version of Windows. Qontinui Runner doesn't
+                You need a 64-bit version of Windows. Qontinui Runner doesn&apos;t
                 support 32-bit systems.
               </p>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-lg p-6">
               <h3 className="font-semibold mb-2">
-                macOS: "Damaged and can't be opened"
+                macOS: "Damaged and can&apos;t be opened"
               </h3>
               <p className="text-sm text-slate-700 mb-2">
                 This happens when macOS quarantines downloaded files. Fix with:

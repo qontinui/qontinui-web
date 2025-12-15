@@ -47,8 +47,8 @@ export interface SyncQueueItem {
   priority: number; // Higher = more important (default: 0)
 
   // Data
-  data: any; // Operation-specific data
-  metadata: Record<string, any>; // Additional metadata
+  data: unknown; // Operation-specific data
+  metadata: Record<string, unknown>; // Additional metadata
 
   // Retry logic
   retryCount: number; // Number of retry attempts
@@ -169,11 +169,11 @@ class SyncQueue {
    */
   async enqueue(
     type: SyncOperationType,
-    data: any,
+    data: unknown,
     options: {
       priority?: number;
       maxRetries?: number;
-      metadata?: Record<string, any>;
+      metadata?: Record<string, unknown>;
       conflictResolution?: "server_wins" | "client_wins" | "merge";
     } = {}
   ): Promise<SyncQueueItem> {
@@ -233,7 +233,7 @@ class SyncQueue {
       }
 
       request.onsuccess = () => {
-        let items = request.result.map((item: any) => ({
+        let items = request.result.map((item: unknown) => ({
           ...item,
           createdAt: new Date(item.createdAt),
           updatedAt: new Date(item.updatedAt),
@@ -455,7 +455,7 @@ class SyncQueue {
    */
   async markCompleted(
     id: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): Promise<void> {
     const item = await this.get(id);
     if (!item) return;

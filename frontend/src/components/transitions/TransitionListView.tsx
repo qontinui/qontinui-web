@@ -129,7 +129,7 @@ export function TransitionListView({
     <div className="h-full flex flex-col gap-3">
       {/* Sort and Group Controls */}
       <div className="flex gap-2">
-        <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
+        <Select value={sortBy} onValueChange={(v: unknown) => setSortBy(v)}>
           <SelectTrigger className="w-[150px] bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
@@ -141,7 +141,7 @@ export function TransitionListView({
           </SelectContent>
         </Select>
 
-        <Select value={groupBy} onValueChange={(v: any) => setGroupBy(v)}>
+        <Select value={groupBy} onValueChange={(v: unknown) => setGroupBy(v)}>
           <SelectTrigger className="w-[150px] bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>

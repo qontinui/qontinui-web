@@ -172,7 +172,7 @@ class ScreenshotDB {
         const request = store.getAll();
 
         request.onsuccess = () => {
-          const screenshots = request.result.map((s: any) => ({
+          const screenshots = request.result.map((s: unknown) => ({
             ...s,
             url: normalizeUrl(s.url),
             uploadedAt: new Date(s.uploadedAt),
@@ -197,7 +197,7 @@ class ScreenshotDB {
         const request = index.getAll(projectName);
 
         request.onsuccess = () => {
-          const screenshots = request.result.map((s: any) => ({
+          const screenshots = request.result.map((s: unknown) => ({
             ...s,
             url: normalizeUrl(s.url),
             uploadedAt: new Date(s.uploadedAt),

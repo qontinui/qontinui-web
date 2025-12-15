@@ -24,7 +24,7 @@ function createExampleWorkflows(): Workflow[] {
     format: "graph",
     category: "Main",
     actions: [
-      createAction("CLICK", { target: "login-button.png" as any }, [100, 100], {
+      createAction("CLICK", { target: "login-button.png" as unknown }, [100, 100], {
         id: "action-1",
       }),
       createAction("TYPE", { text: "username" }, [100, 250], {
@@ -49,7 +49,7 @@ function createExampleWorkflows(): Workflow[] {
       createAction("RUN_WORKFLOW", { workflowId: "workflow-a" }, [100, 100], {
         id: "action-1",
       }),
-      createAction("CLICK", { target: "#checkout" as any }, [100, 250], {
+      createAction("CLICK", { target: "#checkout" as unknown }, [100, 250], {
         id: "action-2",
       }),
     ],
@@ -71,7 +71,7 @@ function createExampleWorkflows(): Workflow[] {
       createAction("RUN_WORKFLOW", { workflowId: "workflow-b" }, [100, 100], {
         id: "action-1",
       }),
-      createAction("CLICK", { target: "#confirm" as any }, [100, 250], {
+      createAction("CLICK", { target: "#confirm" as unknown }, [100, 250], {
         id: "action-2",
       }),
     ],

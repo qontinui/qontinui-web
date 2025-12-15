@@ -87,7 +87,7 @@ export function InviteMemberDialog({
       await onInvite(data.email, data.role);
       toast.success(`Invitation sent to ${data.email}`);
       form.reset();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to send invitation");
     } finally {
       setLoading(false);
@@ -99,7 +99,7 @@ export function InviteMemberDialog({
     try {
       await onResend(invitationId);
       toast.success(`Invitation resent to ${email}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to resend invitation");
     } finally {
       setActionLoading(null);
@@ -112,7 +112,7 @@ export function InviteMemberDialog({
     try {
       await onCancel(invitationId);
       toast.success("Invitation cancelled");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to cancel invitation");
     } finally {
       setActionLoading(null);

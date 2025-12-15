@@ -32,7 +32,7 @@ export function useStateDiscovery() {
   // Local React state
   const [stateImages, setStateImages] = useState<StateImage[]>([]);
   const [states, setStates] = useState<DiscoveredState[]>([]);
-  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [analysisResult, setAnalysisResult] = useState<unknown>(null);
   const [uploadId, setUploadId] = useState<string>("");
   const [analysisId, setAnalysisId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +102,7 @@ export function useStateDiscovery() {
   const startAnalysis = useCallback(
     async (
       config: AnalysisConfig,
-      onProgress?: (progress: any) => void,
+      onProgress?: (progress: unknown) => void,
       onComplete?: () => void
     ) => {
       console.log("[useStateDiscovery] Starting analysis:", {
@@ -229,7 +229,7 @@ export function useStateDiscovery() {
 
   // Bulk delete StateImages
   const bulkDeleteStateImages = useCallback(
-    async (ids: string[], options?: any) => {
+    async (ids: string[], options?: unknown) => {
       console.log(
         "[useStateDiscovery] Bulk deleting state images:",
         ids.length

@@ -43,7 +43,7 @@ interface DeficiencyDetailsProps {
   activities?: DeficiencyActivity[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onStatusChange?: (newStatus: any) => Promise<void>;
+  onStatusChange?: (newStatus: unknown) => Promise<void>;
   onAssignmentChange?: (userId: string | null) => Promise<void>;
   onCommentAdd?: (
     content: string,

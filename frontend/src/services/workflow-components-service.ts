@@ -36,7 +36,7 @@ export interface ComponentParameter {
   required: boolean;
 
   /** Default value if not provided */
-  defaultValue?: any;
+  defaultValue?: unknown;
 
   /** Description of parameter purpose */
   description?: string;
@@ -115,7 +115,7 @@ export interface WorkflowComponent {
     created?: string;
     updated?: string;
     author?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -130,7 +130,7 @@ export interface ComponentInstance {
   componentId: string;
 
   /** Parameter values for this instance */
-  parameterValues: Record<string, any>;
+  parameterValues: Record<string, unknown>;
 
   /** Actions generated from the component with applied parameters */
   actions: Action[];
@@ -358,7 +358,7 @@ export class WorkflowComponentsService {
       const sourceConnections = workflow.connections[sourceId];
       if (!sourceConnections) return;
 
-      const filteredConnections: any = {};
+      const filteredConnections: unknown = {};
 
       Object.entries(sourceConnections).forEach(([type, outputs]) => {
         const filteredOutputs = outputs
@@ -391,7 +391,7 @@ export class WorkflowComponentsService {
     actions.forEach((action) => {
       // Infer from TYPE actions
       if (action.type === "TYPE" && "text" in action.config) {
-        const text = (action.config as any).text;
+        const text = (action.config as unknown).text;
         if (text && typeof text === "string" && !seen.has("inputText")) {
           parameters.push({
             name: "inputText",
@@ -410,7 +410,7 @@ export class WorkflowComponentsService {
           action.type === "EXISTS") &&
         "target" in action.config
       ) {
-        const target = (action.config as any).target;
+        const target = (action.config as unknown).target;
         if (target?.image && !seen.has("targetImage")) {
           parameters.push({
             name: "targetImage",
@@ -433,7 +433,7 @@ export class WorkflowComponentsService {
 
       // Infer from WAIT actions
       if (action.type === "WAIT" && "duration" in action.config) {
-        const duration = (action.config as any).duration;
+        const duration = (action.config as unknown).duration;
         if (duration && !seen.has("waitDuration")) {
           parameters.push({
             name: "waitDuration",
@@ -449,7 +449,7 @@ export class WorkflowComponentsService {
 
       // Infer from LOOP actions
       if (action.type === "LOOP" && "iterations" in action.config) {
-        const iterations = (action.config as any).iterations;
+        const iterations = (action.config as unknown).iterations;
         if (iterations && !seen.has("iterations")) {
           parameters.push({
             name: "iterations",
@@ -478,7 +478,7 @@ export class WorkflowComponentsService {
     workflowId: string,
     componentId: string,
     position: [number, number],
-    parameterValues: Record<string, any>
+    parameterValues: Record<string, unknown>
   ): ComponentInstance | null {
     const component = this.components.get(componentId);
     if (!component) {
@@ -679,7 +679,7 @@ export class WorkflowComponentsService {
     name: string,
     type: ComponentParameter["type"],
     required: boolean,
-    defaultValue?: any,
+    defaultValue?: unknown,
     description?: string
   ): ComponentParameter {
     return {
@@ -696,7 +696,7 @@ export class WorkflowComponentsService {
    */
   validateParameters(
     component: WorkflowComponent,
-    values: Record<string, any>
+    values: Record<string, unknown>
   ): ValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -774,10 +774,10 @@ export class WorkflowComponentsService {
    */
   applyParameters(
     component: WorkflowComponent,
-    values: Record<string, any>
+    values: Record<string, unknown>
   ): { actions: Action[]; connections: Connections } {
     // Merge with default values
-    const allValues: Record<string, any> = {};
+    const allValues: Record<string, unknown> = {};
     component.parameters.forEach((param) => {
       allValues[param.name] = values[param.name] ?? param.defaultValue;
     });
@@ -799,8 +799,8 @@ export class WorkflowComponentsService {
    * Replace parameter placeholders in action config
    */
   private replaceParametersInConfig(
-    config: any,
-    values: Record<string, any>
+    config: unknown,
+    values: Record<string, unknown>
   ): void {
     Object.keys(config).forEach((key) => {
       const value = config[key];
@@ -913,7 +913,7 @@ export class WorkflowComponentsService {
     // Check for RUN_WORKFLOW actions that reference other components
     component.actions.forEach((action) => {
       if (action.type === "RUN_WORKFLOW" && "workflowId" in action.config) {
-        const workflowId = (action.config as any).workflowId;
+        const workflowId = (action.config as unknown).workflowId;
         const referencedComponent = this.components.get(workflowId);
 
         if (referencedComponent) {
@@ -938,7 +938,7 @@ export class WorkflowComponentsService {
    */
   validateParameterTypes(
     component: WorkflowComponent,
-    values: Record<string, any>
+    values: Record<string, unknown>
   ): ValidationResult {
     return this.validateParameters(component, values);
   }
@@ -1037,7 +1037,7 @@ export class WorkflowComponentsService {
    */
   instantiateComponent(
     component: WorkflowComponent,
-    parameterValues: Record<string, any>,
+    parameterValues: Record<string, unknown>,
     positionOffset?: [number, number]
   ): ComponentInstance {
     // Validate parameters
@@ -1193,7 +1193,7 @@ export class WorkflowComponentsService {
    */
   private saveUsageData(): void {
     try {
-      const data: any = {};
+      const data: unknown = {};
       this.usageData.forEach((usages, componentId) => {
         data[componentId] = usages;
       });
@@ -1428,7 +1428,7 @@ export class WorkflowComponentsService {
   private createBuiltinClickAndWait(): void {
     const click = createAction(
       "CLICK",
-      { target: "${targetImage}" as any },
+      { target: "${targetImage}" as unknown },
       [100, 100],
       { id: "click", name: "Click Element" }
     );
@@ -1489,7 +1489,7 @@ export class WorkflowComponentsService {
   private createBuiltinFormFill(): void {
     const clickField1 = createAction(
       "CLICK",
-      { target: "${field1Selector}" as any },
+      { target: "${field1Selector}" as unknown },
       [100, 100],
       { id: "click-field1", name: "Click Field 1" }
     );
@@ -1503,7 +1503,7 @@ export class WorkflowComponentsService {
 
     const clickField2 = createAction(
       "CLICK",
-      { target: "${field2Selector}" as any },
+      { target: "${field2Selector}" as unknown },
       [100, 400],
       { id: "click-field2", name: "Click Field 2" }
     );
@@ -1669,7 +1669,7 @@ export class WorkflowComponentsService {
 
     const click = createAction(
       "CLICK",
-      { target: "${targetImage}" as any },
+      { target: "${targetImage}" as unknown },
       [300, 400],
       { id: "click-element", name: "Click Element" }
     );

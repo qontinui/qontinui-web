@@ -153,8 +153,8 @@ export default function AnnotationsPage() {
   useEffect(() => {
     if (selectedBox) {
       setLabel(selectedBox.label || "");
-      setDescription((selectedBox as any).description || "");
-      setReason((selectedBox as any).reason || "");
+      setDescription((selectedBox as unknown).description || "");
+      setReason((selectedBox as unknown).reason || "");
     } else {
       setLabel("");
       setDescription("");
@@ -200,7 +200,7 @@ export default function AnnotationsPage() {
         clearTimeout(autoSaveTimerRef.current);
       }
     };
-    // Note: We intentionally don't include handleSave in dependencies to avoid infinite loops
+    // Note: We intentionally don&apos;t include handleSave in dependencies to avoid infinite loops
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hasUnsavedChanges,
@@ -476,7 +476,7 @@ export default function AnnotationsPage() {
         width: number;
         height: number;
       }> = [];
-      const allAnnotations: Array<any> = [];
+      const allAnnotations: Array<unknown> = [];
 
       for (let i = 0; i < screenshots.length; i++) {
         const screenshot = screenshots[i];
@@ -571,8 +571,8 @@ export default function AnnotationsPage() {
             width: Math.round(box.width),
             height: Math.round(box.height),
             label: box.label,
-            description: (box as any).description,
-            reason: (box as any).reason,
+            description: (box as unknown).description,
+            reason: (box as unknown).reason,
             screenshot_index: i,
           });
         });
@@ -660,7 +660,7 @@ export default function AnnotationsPage() {
           saved.screenshots.length,
           "items"
         );
-        saved.screenshots.forEach((s: any, i: number) => {
+        saved.screenshots.forEach((s: unknown, i: number) => {
           console.log(`[Annotations]   Response screenshot ${i}:`, s);
         });
       }
@@ -756,8 +756,8 @@ export default function AnnotationsPage() {
           Math.round(box.y + box.height),
         ],
         label: box.label || "",
-        description: (box as any).description || "",
-        reason: (box as any).reason || "",
+        description: (box as unknown).description || "",
+        reason: (box as unknown).reason || "",
         width: Math.round(box.width),
         height: Math.round(box.height),
         area: Math.round(box.width * box.height),
@@ -807,8 +807,8 @@ export default function AnnotationsPage() {
             Math.round(box.y + box.height),
           ],
           label: box.label || "",
-          description: (box as any).description || "",
-          reason: (box as any).reason || "",
+          description: (box as unknown).description || "",
+          reason: (box as unknown).reason || "",
           width: Math.round(box.width),
           height: Math.round(box.height),
           area: Math.round(box.width * box.height),
@@ -891,7 +891,7 @@ export default function AnnotationsPage() {
         return url;
       };
 
-      // Determine which format we're dealing with
+      // Determine which format we&apos;re dealing with
       const screenshotsToLoad =
         set.screenshots && set.screenshots.length > 0
           ? set.screenshots // New multi-screenshot format
@@ -1416,9 +1416,9 @@ export default function AnnotationsPage() {
                                 {Math.round(box.width)} ×{" "}
                                 {Math.round(box.height)}px
                               </div>
-                              {(box as any).description && (
+                              {(box as unknown).description && (
                                 <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                  {(box as any).description}
+                                  {(box as unknown).description}
                                 </div>
                               )}
                             </div>
@@ -1594,7 +1594,7 @@ export default function AnnotationsPage() {
                           </div>
                         )}
                         <div className="text-xs text-muted-foreground mt-2">
-                          {new Date((set as any).created_at).toLocaleString()}
+                          {new Date((set as unknown).created_at).toLocaleString()}
                         </div>
                         {isBlobUrl && (
                           <div className="text-xs text-red-500 mt-2">

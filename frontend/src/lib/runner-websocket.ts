@@ -86,7 +86,7 @@ export interface LogEvent {
   session_id: string;
   level: "debug" | "info" | "warning" | "error" | "critical";
   message: string;
-  log_data?: Record<string, any>;
+  log_data?: Record<string, unknown>;
   sequence_number: number;
   timestamp: string;
 }
@@ -229,7 +229,7 @@ export interface ExtractionErrorEvent {
 export interface WSMessage {
   type: string;
   timestamp: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export class RunnerWebSocket {
@@ -356,7 +356,7 @@ export class RunnerWebSocket {
   /**
    * Send a message to the server
    */
-  send(message: Record<string, any>): void {
+  send(message: Record<string, unknown>): void {
     console.log(
       "[RunnerWebSocket] send() called, isConnected:",
       this.isConnected(),

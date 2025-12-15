@@ -1590,7 +1590,7 @@ export class StateOrganizationService {
   /**
    * Create StateImage from template
    */
-  private createStateImageFromTemplate(template: any): StateImage {
+  private createStateImageFromTemplate(template: unknown): StateImage {
     return {
       id: this.generateId("image"),
       name: template.name,
@@ -1602,7 +1602,7 @@ export class StateOrganizationService {
       })),
       shared: template.shared,
       searchRegions:
-        template.searchRegions?.map((sr: any) => ({
+        template.searchRegions?.map((sr: unknown) => ({
           id: this.generateId("searchregion"),
           ...sr,
         })) || [],

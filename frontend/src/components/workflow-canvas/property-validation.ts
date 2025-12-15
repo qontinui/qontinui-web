@@ -30,8 +30,8 @@ export interface ValidationResult {
 }
 
 export type ValidatorFunction = (
-  value: any,
-  config: Record<string, any>,
+  value: unknown,
+  config: Record<string, unknown>,
   action: Action
 ) => ValidationError | null;
 
@@ -46,7 +46,7 @@ export function required(
   fieldName: string,
   message?: string
 ): ValidatorFunction {
-  return (value: any) => {
+  return (value: unknown) => {
     if (value === undefined || value === null || value === "") {
       return {
         property: fieldName,
@@ -68,7 +68,7 @@ export function numberRange(
   max: number,
   message?: string
 ): ValidatorFunction {
-  return (value: any) => {
+  return (value: unknown) => {
     if (typeof value !== "number") return null;
 
     if (value < min || value > max) {
@@ -91,7 +91,7 @@ export function minValue(
   min: number,
   message?: string
 ): ValidatorFunction {
-  return (value: any) => {
+  return (value: unknown) => {
     if (typeof value !== "number") return null;
 
     if (value < min) {
@@ -114,7 +114,7 @@ export function maxValue(
   max: number,
   message?: string
 ): ValidatorFunction {
-  return (value: any) => {
+  return (value: unknown) => {
     if (typeof value !== "number") return null;
 
     if (value > max) {
@@ -138,7 +138,7 @@ export function stringLength(
   maxLength?: number,
   message?: string
 ): ValidatorFunction {
-  return (value: any) => {
+  return (value: unknown) => {
     if (typeof value !== "string") return null;
 
     if (value.length < minLength) {
@@ -173,7 +173,7 @@ export function pattern(
   regex: RegExp,
   message?: string
 ): ValidatorFunction {
-  return (value: any) => {
+  return (value: unknown) => {
     if (typeof value !== "string") return null;
 
     if (!regex.test(value)) {
@@ -193,10 +193,10 @@ export function pattern(
  */
 export function enumValue(
   fieldName: string,
-  allowedValues: any[],
+  allowedValues: unknown[],
   message?: string
 ): ValidatorFunction {
-  return (value: any) => {
+  return (value: unknown) => {
     if (!allowedValues.includes(value)) {
       return {
         property: fieldName,
@@ -219,7 +219,7 @@ export function arrayLength(
   maxLength?: number,
   message?: string
 ): ValidatorFunction {
-  return (value: any) => {
+  return (value: unknown) => {
     if (!Array.isArray(value)) return null;
 
     if (value.length < minLength) {
@@ -251,14 +251,14 @@ export function arrayLength(
 export function custom(
   fieldName: string,
   validatorFn: (
-    value: any,
-    config: Record<string, any>,
+    value: unknown,
+    config: Record<string, unknown>,
     action: Action
   ) => boolean,
   message: string,
   severity: ValidationSeverity = "error"
 ): ValidatorFunction {
-  return (value: any, config: Record<string, any>, action: Action) => {
+  return (value: unknown, config: Record<string, unknown>, action: Action) => {
     if (!validatorFn(value, config, action)) {
       return {
         property: fieldName,
@@ -409,7 +409,7 @@ export function validateAction(action: Action): ValidationResult {
 
   // Run each validator
   for (const validator of validators) {
-    const config = action.config as Record<string, any>;
+    const config = action.config as Record<string, unknown>;
 
     // Extract the property name from the validator (first parameter)
     // This is a bit hacky but works for our validators
@@ -493,7 +493,7 @@ export function validateAction(action: Action): ValidationResult {
 export function validateProperty(
   action: Action,
   propertyPath: string,
-  value: any
+  value: unknown
 ): ValidationError | null {
   const validators = ACTION_VALIDATORS[action.type] || [];
 
@@ -504,7 +504,7 @@ export function validateProperty(
     const propertyName = propertyMatch ? propertyMatch[1] : null;
 
     if (propertyName === propertyPath) {
-      const config = action.config as Record<string, any>;
+      const config = action.config as Record<string, unknown>;
       return validator(value, config, action);
     }
   }

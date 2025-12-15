@@ -55,13 +55,13 @@ export interface UseConflictResolutionReturn {
   isResolving: boolean;
 
   /** Check for conflicts manually */
-  checkForConflicts: (localChanges: any) => Promise<ConflictCheckResult>;
+  checkForConflicts: (localChanges: unknown) => Promise<ConflictCheckResult>;
 
   /** Resolve a specific conflict */
   resolveConflict: (
     conflictId: string,
     strategy: ResolutionStrategy,
-    resolution?: any
+    resolution?: unknown
   ) => Promise<void>;
 
   /** Auto-resolve all resolvable conflicts */
@@ -91,7 +91,7 @@ export interface UseSyncStateReturn {
   syncError: string | null;
 
   /** Perform sync operation */
-  sync: (localVersion: any) => Promise<any>;
+  sync: (localVersion: unknown) => Promise<unknown>;
 }
 
 /**
@@ -99,13 +99,13 @@ export interface UseSyncStateReturn {
  */
 export interface UseOptimisticUpdateReturn {
   /** Current optimistic state */
-  optimisticState: any;
+  optimisticState: unknown;
 
   /** Whether there are optimistic updates */
   hasOptimistic: boolean;
 
   /** Apply optimistic update */
-  applyOptimistic: (change: any) => void;
+  applyOptimistic: (change: unknown) => void;
 
   /** Rollback optimistic update */
   rollback: (changeId: string) => void;
@@ -116,7 +116,7 @@ export interface UseOptimisticUpdateReturn {
  */
 export interface UseOfflineQueueReturn {
   /** Current queue state */
-  queueState: any;
+  queueState: unknown;
 
   /** Whether currently processing queue */
   isProcessing: boolean;
@@ -136,7 +136,7 @@ export interface UseRealtimeCollaborationReturn {
   isConnected: boolean;
 
   /** Remote changes received */
-  remoteChanges: any[];
+  remoteChanges: unknown[];
 
   /** Clear remote changes buffer */
   clearRemoteChanges: () => void;

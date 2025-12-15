@@ -144,7 +144,7 @@ function matchesFilter(
 
   // Folder filter
   if (filter.folderIds && filter.folderIds.length > 0) {
-    const workflowFolderId = (workflow as any).folderId || null;
+    const workflowFolderId = (workflow as unknown).folderId || null;
     if (!filter.folderIds.includes(workflowFolderId)) {
       return false;
     }
@@ -260,7 +260,7 @@ function matchesFilter(
   // Last run date range filter
   if (filter.lastRunDateRange?.from || filter.lastRunDateRange?.to) {
     if (!stats?.lastRunAt) {
-      // Workflow has never been run, doesn't match date range
+      // Workflow has never been run, doesn&apos;t match date range
       return false;
     }
     const lastRun = new Date(stats.lastRunAt);
@@ -278,7 +278,7 @@ function matchesFilter(
   // Minimum success rate filter
   if (filter.minSuccessRate !== undefined) {
     if (!stats || stats.runCount === 0) {
-      // No execution data, doesn't meet minimum success rate
+      // No execution data, doesn&apos;t meet minimum success rate
       return false;
     }
     if (stats.successRate < filter.minSuccessRate) {

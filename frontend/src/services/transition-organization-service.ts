@@ -89,7 +89,7 @@ export interface TransitionTemplate {
     created?: string;
     updated?: string;
     author?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -122,7 +122,7 @@ export interface TransitionGroup {
   metadata?: {
     created?: string;
     updated?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -431,7 +431,7 @@ export class TransitionOrganizationService {
   private static instance: TransitionOrganizationService;
   private templates: Map<string, TransitionTemplate> = new Map();
   private groups: Map<string, TransitionGroup> = new Map();
-  private transitionMetadata: Map<string, any> = new Map();
+  private transitionMetadata: Map<string, unknown> = new Map();
 
   private constructor() {
     this.loadTemplates();
@@ -1704,7 +1704,7 @@ export class TransitionOrganizationService {
       transitionIds.includes(t.id)
     );
 
-    const exportData: any = {
+    const exportData: unknown = {
       version: "1.0.0",
       timestamp: new Date().toISOString(),
       transitions: selectedTransitions,
@@ -1773,7 +1773,7 @@ export class TransitionOrganizationService {
         }
       }
 
-      const result: any = {
+      const result: unknown = {
         transitions: [],
       };
 
@@ -2228,14 +2228,14 @@ export class TransitionOrganizationService {
   /**
    * Get transition metadata
    */
-  private getTransitionMetadata(transitionId: string): any {
+  private getTransitionMetadata(transitionId: string): unknown {
     return this.transitionMetadata.get(transitionId);
   }
 
   /**
    * Set transition metadata
    */
-  setTransitionMetadata(transitionId: string, metadata: any): void {
+  setTransitionMetadata(transitionId: string, metadata: unknown): void {
     this.transitionMetadata.set(transitionId, metadata);
     this.saveMetadata();
   }
@@ -2320,7 +2320,7 @@ export class TransitionOrganizationService {
    */
   private saveMetadata(): void {
     try {
-      const data: any = {};
+      const data: unknown = {};
       this.transitionMetadata.forEach((metadata, id) => {
         data[id] = metadata;
       });

@@ -71,7 +71,7 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
       });
       toast.success("Profile updated successfully");
       setIsEditing(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to update profile");
     }
   };

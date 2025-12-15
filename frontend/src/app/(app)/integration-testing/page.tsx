@@ -43,7 +43,7 @@ export default function IntegrationTestingPage() {
 
     // Convert workflow actions to ActionSpec format
     const actions: ActionSpec[] =
-      process.actions?.map((action: any) => ({
+      process.actions?.map((action: unknown) => ({
         type: action.actionType || action.type || "FIND",
         pattern_id: action.patternId || action.pattern_id,
         text: action.text,

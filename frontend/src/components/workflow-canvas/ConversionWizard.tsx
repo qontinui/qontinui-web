@@ -157,7 +157,7 @@ export function ConversionWizard({
       } else {
         setError(result.errors?.[0]?.message || "Failed to generate preview");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.message || "Failed to generate preview");
     }
   };
@@ -170,7 +170,7 @@ export function ConversionWizard({
       if (previewWorkflow) {
         onComplete(previewWorkflow, targetFormat);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.message || "Conversion failed");
     } finally {
       setIsConverting(false);

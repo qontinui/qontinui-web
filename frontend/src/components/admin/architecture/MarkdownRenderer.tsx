@@ -41,7 +41,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           p: ({ children, node }) => {
             // Check if any child is a block-level element to avoid nesting errors
             const hasBlockChild = node?.children?.some(
-              (child: any) =>
+              (child: unknown) =>
                 child.type === "element" &&
                 ["pre", "div", "blockquote", "ul", "ol", "table"].includes(
                   child.tagName
@@ -67,7 +67,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
               {children}
             </pre>
           ),
-          code: ({ inline, className, children, ...props }: any) => {
+          code: ({ inline, className, children, ...props }: unknown) => {
             const match = /language-(\w+)/.exec(className || "");
             const language = match ? match[1] : "";
             const codeString = String(children).replace(/\n$/, "");

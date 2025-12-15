@@ -108,7 +108,7 @@ export function CommentThread({
       setNewComment("");
       setReplyToId(null);
       toast.success("Comment added");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to add comment");
     } finally {
       setLoading(false);
@@ -124,7 +124,7 @@ export function CommentThread({
       setEditingId(null);
       setEditContent("");
       toast.success("Comment updated");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to update comment");
     } finally {
       setActionLoading(null);
@@ -138,7 +138,7 @@ export function CommentThread({
     try {
       await onDeleteComment(commentId);
       toast.success("Comment deleted");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to delete comment");
     } finally {
       setActionLoading(null);
@@ -155,7 +155,7 @@ export function CommentThread({
         await onResolve();
         toast.success("Discussion resolved");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to update status");
     } finally {
       setLoading(false);

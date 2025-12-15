@@ -581,6 +581,6 @@ export function TutorialOverlay() {
     </div>
   );
 
-  // Render in portal to ensure it's at the top of the DOM
+  // Render in portal to ensure it&apos;s at the top of the DOM
   return createPortal(overlayContent, document.body);
 }

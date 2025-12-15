@@ -270,7 +270,7 @@ To test the tutorial:
    - Test with screen reader
 
 5. Test edge cases:
-   - What if target element doesn't exist?
+   - What if target element doesn&apos;t exist?
    - What if element is off-screen?
    - What happens on window resize?
 */

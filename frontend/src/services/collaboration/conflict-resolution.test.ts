@@ -597,7 +597,7 @@ describe("ConflictResolutionService", () => {
     it("should detect no conflicts when versions match", async () => {
       const serverVersion = { name: "Test", value: 10 };
 
-      (global.fetch as any).mockResolvedValueOnce({
+      (global.fetch as unknown).mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           version: serverVersion,
@@ -621,7 +621,7 @@ describe("ConflictResolutionService", () => {
       const serverVersion = { name: "Server", value: 15 };
       const localVersion = { name: "Local", value: 12 };
 
-      (global.fetch as any).mockResolvedValueOnce({
+      (global.fetch as unknown).mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           version: serverVersion,

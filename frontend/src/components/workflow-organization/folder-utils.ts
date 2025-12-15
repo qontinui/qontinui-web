@@ -104,7 +104,7 @@ export function getWorkflowsInFolder(
   }
 
   if (folderId === "uncategorized") {
-    return workflows.filter((w) => !(w as any).folderId);
+    return workflows.filter((w) => !(w as unknown).folderId);
   }
 
   const folderIds = includeSubfolders
@@ -112,7 +112,7 @@ export function getWorkflowsInFolder(
     : [folderId];
 
   return workflows.filter((w) => {
-    const workflowFolderId = (w as any).folderId;
+    const workflowFolderId = (w as unknown).folderId;
     return workflowFolderId && folderIds.includes(workflowFolderId);
   });
 }
@@ -131,7 +131,7 @@ export function countWorkflowsInFolder(
     return 0;
   }
 
-  return workflows.filter((w) => (w as any).folderId === folderId).length;
+  return workflows.filter((w) => (w as unknown).folderId === folderId).length;
 }
 
 /**
@@ -312,7 +312,7 @@ export function getFolderStats(
 
   const emptyFolders = folders.filter((f) => {
     const hasChildren = folders.some((child) => child.parentId === f.id);
-    const hasWorkflows = workflows.some((w) => (w as any).folderId === f.id);
+    const hasWorkflows = workflows.some((w) => (w as unknown).folderId === f.id);
     return !hasChildren && !hasWorkflows;
   }).length;
 

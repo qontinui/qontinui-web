@@ -23,7 +23,7 @@ interface TryItButtonProps {
   config: TryItConfig;
 
   /** Optional callback when user completes the exercise */
-  onComplete?: (result: any) => void;
+  onComplete?: (result: unknown) => void;
 
   /** Optional CSS class name for the button container */
   className?: string;
@@ -83,7 +83,7 @@ export function TryItButton({
    * Handle exercise completion
    * Called when user finishes the Try It exercise
    */
-  const handleExerciseComplete = (result: any) => {
+  const handleExerciseComplete = (result: unknown) => {
     setIsCompleted(true);
     setIsTryItOpen(false);
 

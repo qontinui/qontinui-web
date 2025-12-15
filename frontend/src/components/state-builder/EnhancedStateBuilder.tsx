@@ -90,7 +90,7 @@ interface StateTemplate {
 interface BulkOperationPayload {
   stateIds: string[];
   operation: "move" | "tag" | "delete" | "export" | "duplicate";
-  data?: any;
+  data?: unknown;
 }
 
 // ============================================================================

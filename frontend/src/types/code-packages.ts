@@ -150,7 +150,7 @@ export interface PackageInstallation {
   installed_at: string;
   last_used_at?: string;
   enabled: boolean;
-  configuration?: Record<string, any>; // Custom config per installation
+  configuration?: Record<string, unknown>; // Custom config per installation
 }
 
 export interface SearchFilters {
@@ -216,7 +216,7 @@ export interface InstallPackageRequest {
   package_id: string;
   version_id?: string; // If not provided, uses latest
   project_id: string;
-  configuration?: Record<string, any>;
+  configuration?: Record<string, unknown>;
 }
 
 export interface RatePackageRequest {

@@ -36,7 +36,7 @@ export function SimpleWorkflowExample() {
         action: {
           id: "1",
           type: "CLICK",
-          config: {} as any,
+          config: {} as unknown,
           position: [100, 100],
         },
         executionState: "idle",
@@ -68,7 +68,7 @@ export function SimpleWorkflowExample() {
           type: "WAIT",
           config: {
             duration: 1000,
-          } as any,
+          } as unknown,
           position: [500, 100],
         },
         executionState: "idle",
@@ -121,7 +121,7 @@ export function ConditionalWorkflowExample() {
         action: {
           id: "1",
           type: "FIND",
-          config: {} as any,
+          config: {} as unknown,
           position: [100, 150],
         },
       },
@@ -136,12 +136,12 @@ export function ConditionalWorkflowExample() {
           type: "IF",
           config: {
             condition: {
-              type: "image_exists" as any,
+              type: "image_exists" as unknown,
               imageId: "success-icon",
             },
             thenActions: ["3"],
             elseActions: ["4"],
-          } as any,
+          } as unknown,
           position: [300, 150],
         },
       },
@@ -155,8 +155,8 @@ export function ConditionalWorkflowExample() {
           id: "3",
           type: "SCREENSHOT",
           config: {
-            region: "fullscreen" as any,
-          } as any,
+            region: "fullscreen" as unknown,
+          } as unknown,
           position: [500, 50],
         },
       },
@@ -171,7 +171,7 @@ export function ConditionalWorkflowExample() {
           type: "WAIT",
           config: {
             duration: 2000,
-          } as any,
+          } as unknown,
           position: [500, 250],
         },
       },
@@ -253,7 +253,7 @@ export function LoopWorkflowExample() {
         action: {
           id: "3",
           type: "CLICK",
-          config: {} as any,
+          config: {} as unknown,
           position: [500, 100],
         },
       },
@@ -267,8 +267,8 @@ export function LoopWorkflowExample() {
           id: "4",
           type: "SCREENSHOT",
           config: {
-            region: "fullscreen" as any,
-          } as any,
+            region: "fullscreen" as unknown,
+          } as unknown,
           position: [500, 200],
         },
       },
@@ -316,7 +316,7 @@ export function InteractiveWorkflowExample() {
         action: {
           id: "1",
           type: "CLICK",
-          config: {} as any,
+          config: {} as unknown,
           position: [100, 100],
         },
         executionState: "idle",
@@ -331,7 +331,7 @@ export function InteractiveWorkflowExample() {
         action: {
           id: "2",
           type: "WAIT",
-          config: { duration: 1000 } as any,
+          config: { duration: 1000 } as unknown,
           position: [300, 100],
         },
         executionState: "idle",
@@ -512,8 +512,8 @@ export function AllNodeTypesShowcase() {
         data: {
           action: {
             id: `${catIndex}-${nodeIndex}`,
-            type: nodeInfo.type as any,
-            config: {} as any,
+            type: nodeInfo.type as unknown,
+            config: {} as unknown,
             position: [nodeInfo.x, nodeInfo.y],
           },
           executionState: "idle" as const,

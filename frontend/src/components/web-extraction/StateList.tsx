@@ -44,7 +44,7 @@ interface ExtractionAnnotation {
   source_url: string;
   viewport_width: number;
   viewport_height: number;
-  elements: any[];
+  elements: unknown[];
   states: StateAnnotation[];
 }
 

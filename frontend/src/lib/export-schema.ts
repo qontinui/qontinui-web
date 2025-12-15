@@ -116,7 +116,7 @@ export interface WorkflowMetadata {
   created?: string;
   updated?: string;
   viewMode?: "sequential" | "graph"; // Preferred visualization mode
-  [key: string]: any; // Allow additional metadata
+  [key: string]: unknown; // Allow additional metadata
 }
 
 export interface ConfigMetadata {
@@ -684,7 +684,7 @@ export interface ExecutionRecord {
   success: boolean;
   iterationCount: number;
   errors: string[];
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 // Validation schema using JSON Schema format

@@ -16,10 +16,10 @@ export type ActionExecutionStatus =
 export type ExecutionSpeed = "slow" | "normal" | "fast";
 
 export interface VariableValue {
-  value: any;
+  value: unknown;
   type: string;
   lastModified: number;
-  previousValue?: any;
+  previousValue?: unknown;
 }
 
 export interface ExecutionContext {
@@ -33,7 +33,7 @@ export interface ConditionEvaluation {
   condition: string;
   result: boolean;
   evaluatedAt: number;
-  variables: Record<string, any>;
+  variables: Record<string, unknown>;
   branch: "if" | "else" | "elseif";
 }
 
@@ -53,7 +53,7 @@ export interface ActionExecutionEvent {
   startTime?: number;
   endTime?: number;
   duration?: number;
-  result?: any;
+  result?: unknown;
   error?: string;
   stackTrace?: string;
   executionCount: number;
@@ -72,7 +72,7 @@ export interface ExecutionLogEntry {
   category: "action" | "condition" | "loop" | "variable" | "system";
   message: string;
   actionIndex?: number;
-  details?: any;
+  details?: unknown;
 }
 
 export interface ExecutionDebuggerState {
@@ -96,7 +96,7 @@ export interface ExecutionDebuggerState {
   variableHistory: Array<{
     timestamp: number;
     variableName: string;
-    value: any;
+    value: unknown;
     actionIndex: number;
   }>;
 

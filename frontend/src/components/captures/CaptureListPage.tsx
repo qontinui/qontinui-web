@@ -51,7 +51,7 @@ export function CaptureListPage() {
       setLoading(true);
       const response = await captureService.getSessionsForProject(projectId);
       setCaptures(response.sessions);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to load captures:", error);
       toast.error("Failed to load captures");
     } finally {
@@ -83,7 +83,7 @@ export function CaptureListPage() {
       await captureService.deleteSession(sessionId);
       toast.success("Capture session deleted");
       loadCaptures();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to delete capture:", error);
       toast.error("Failed to delete capture session");
     }

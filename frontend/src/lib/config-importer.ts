@@ -33,7 +33,7 @@ interface Transition {
   workflows: string[];
   timeout: number;
   retryCount: number;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ImportResult {
@@ -42,7 +42,7 @@ export interface ImportResult {
   workflows: Workflow[];
   states: State[];
   transitions: Transition[];
-  settings?: any; // QontinuiConfig.settings
+  settings?: unknown; // QontinuiConfig.settings
   errors: string[];
   warnings: string[];
 }
@@ -61,7 +61,7 @@ export class ConfigImporter {
 
     try {
       // Parse JSON if string
-      let config: any =
+      let config: unknown =
         typeof configJson === "string" ? JSON.parse(configJson) : configJson;
 
       // Migrate config if needed
@@ -174,7 +174,7 @@ export class ConfigImporter {
    */
   private importWorkflows(exportWorkflows: ExportWorkflow[]): Workflow[] {
     return exportWorkflows.map((exportWorkflow) => {
-      const workflow: any = {
+      const workflow: unknown = {
         id: exportWorkflow.id,
         name: exportWorkflow.name,
         description: exportWorkflow.description || "",
@@ -184,16 +184,16 @@ export class ConfigImporter {
         actions:
           exportWorkflow.actions?.map((action) => this.importAction(action)) ||
           [],
-        connections: (exportWorkflow.connections as any) || {},
+        connections: (exportWorkflow.connections as unknown) || {},
         metadata: exportWorkflow.metadata || {},
       };
 
       // Import initialStateIds if present (for Main category workflows)
       if (
-        (exportWorkflow as any).initialStateIds &&
-        Array.isArray((exportWorkflow as any).initialStateIds)
+        (exportWorkflow as unknown).initialStateIds &&
+        Array.isArray((exportWorkflow as unknown).initialStateIds)
       ) {
-        workflow.initialStateIds = (exportWorkflow as any).initialStateIds;
+        workflow.initialStateIds = (exportWorkflow as unknown).initialStateIds;
       }
 
       return workflow;
@@ -207,8 +207,8 @@ export class ConfigImporter {
    * (v2.0.1-to-v2.1.0 migration). This method assumes the config has
    * already been migrated to the latest version.
    */
-  private importAction(action: any): any {
-    const imported: any = {
+  private importAction(action: unknown): unknown {
+    const imported: unknown = {
       id: action.id,
       type: action.type,
       config: this.importActionConfig(action),
@@ -227,8 +227,8 @@ export class ConfigImporter {
   /**
    * Import action configuration
    */
-  private importActionConfig(action: any): Record<string, any> {
-    const config: Record<string, any> = { ...action.config };
+  private importActionConfig(action: unknown): Record<string, unknown> {
+    const config: Record<string, unknown> = { ...action.config };
 
     // Handle target conversions - only FIND supports multiple images (imageIds)
     if (config.target?.type === "image" && action.type === "FIND") {
@@ -290,7 +290,7 @@ export class ConfigImporter {
   /**
    * Import states from configuration
    */
-  private importStates(exportStates: any[], images: ImageAsset[]): State[] {
+  private importStates(exportStates: unknown[], images: ImageAsset[]): State[] {
     return exportStates.map((exportState) => {
       this.updateImageUsage(exportState, images);
 
@@ -300,11 +300,11 @@ export class ConfigImporter {
         description: exportState.description || "",
         initial: exportState.isInitial || false,
         stateImages:
-          exportState.stateImages?.map((img: any) => ({
+          exportState.stateImages?.map((img: unknown) => ({
             id: img.id,
             name: img.name,
             patterns:
-              img.patterns?.map((pattern: any) => ({
+              img.patterns?.map((pattern: unknown) => ({
                 id: pattern.id,
                 name: pattern.name,
                 image: pattern.imageId
@@ -334,7 +334,7 @@ export class ConfigImporter {
   /**
    * Import transitions from configuration
    */
-  private importTransitions(exportTransitions: any[]): Transition[] {
+  private importTransitions(exportTransitions: unknown[]): Transition[] {
     return exportTransitions.map((exportTransition) => {
       const type: "OutgoingTransition" | "IncomingTransition" =
         exportTransition.type;
@@ -455,9 +455,9 @@ export class ConfigImporter {
   /**
    * Update image usage tracking for patterns in a state
    */
-  private updateImageUsage(exportState: any, images: ImageAsset[]): void {
-    exportState.stateImages?.forEach((stateImage: any) => {
-      stateImage.patterns?.forEach((pattern: any) => {
+  private updateImageUsage(exportState: unknown, images: ImageAsset[]): void {
+    exportState.stateImages?.forEach((stateImage: unknown) => {
+      stateImage.patterns?.forEach((pattern: unknown) => {
         const image = images.find((img) => img.id === pattern.imageId);
 
         if (image) {
@@ -497,7 +497,7 @@ export class ConfigImporter {
   /**
    * Validate configuration before import
    */
-  validateBeforeImport(config: any): { valid: boolean; errors: string[] } {
+  validateBeforeImport(config: unknown): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
 
     // Check required fields
@@ -558,9 +558,9 @@ export class ConfigImporter {
         ...action,
         config: {
           ...action.config,
-          imageId: (action.config as any).imageId
-            ? idMap.get((action.config as any).imageId) ||
-              (action.config as any).imageId
+          imageId: (action.config as unknown).imageId
+            ? idMap.get((action.config as unknown).imageId) ||
+              (action.config as unknown).imageId
             : undefined,
         },
       }));
@@ -619,12 +619,12 @@ export class ConfigImporter {
         }
         if (transition.activateStates) {
           updatedTransition.activateStates = transition.activateStates.map(
-            (sid: any) => idMap.get(sid) || sid
+            (sid: unknown) => idMap.get(sid) || sid
           );
         }
         if (transition.deactivateStates) {
           updatedTransition.deactivateStates = transition.deactivateStates.map(
-            (sid: any) => idMap.get(sid) || sid
+            (sid: unknown) => idMap.get(sid) || sid
           );
         }
       } else if (

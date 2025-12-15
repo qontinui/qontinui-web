@@ -439,7 +439,7 @@ export function SequentialEditor({
 }
 
 // Helper functions (copied from action-editor.tsx)
-function getDefaultConfig(type: Action["type"]): Record<string, any> {
+function getDefaultConfig(type: Action["type"]): Record<string, unknown> {
   switch (type) {
     case "FIND":
       return {
@@ -561,13 +561,13 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
 
 function getActionSummary(
   action: Action,
-  states: any[],
-  workflows: any[],
-  images: any[]
+  states: unknown[],
+  workflows: unknown[],
+  images: unknown[]
 ): string {
   switch (action.type) {
     case "FIND": {
-      const config = action.config as any;
+      const config = action.config as unknown;
       if (config.removedImage) {
         return `[REMOVED: ${config.removedImage}]`;
       }
@@ -593,7 +593,7 @@ function getActionSummary(
         let stateImageName = null;
         for (const state of states) {
           const stateImage = state.stateImages?.find(
-            (si: any) => si.id === imageId
+            (si: unknown) => si.id === imageId
           );
           if (stateImage) {
             stateImageName = stateImage.name;
@@ -646,7 +646,7 @@ function getActionSummary(
             const imageNames = config.imageIds
               .map((id) => {
                 for (const s of states) {
-                  const img = s.stateImages?.find((si: any) => si.id === id);
+                  const img = s.stateImages?.find((si: unknown) => si.id === id);
                   if (img)
                     return img.name.replace(
                       /\.(png|jpg|jpeg|gif|webp|svg)$/i,
@@ -683,9 +683,9 @@ function getActionSummary(
         if (!state) return "Invalid state";
         if (config.textSource.stringIds?.length > 0 && state.strings) {
           const selectedStrings = state.strings
-            .filter((s: any) => config.textSource!.stringIds.includes(s.id))
-            .map((s: any) => s.value)
-            .filter((v: any) => v);
+            .filter((s: unknown) => config.textSource!.stringIds.includes(s.id))
+            .map((s: unknown) => s.value)
+            .filter((v: unknown) => v);
           if (selectedStrings.length === 0) {
             return `No strings selected from ${state.name || state.id}`;
           }
@@ -708,7 +708,7 @@ function getActionSummary(
       }
     }
     case "DRAG": {
-      const config = action.config as { source?: any; destination?: any };
+      const config = action.config as { source?: unknown; destination?: unknown };
       return `Drag from ${config.source || "source"} to ${config.destination || "destination"}`;
     }
     case "SCROLL": {
@@ -744,7 +744,7 @@ function getActionSummary(
         // Find StateImage across all states
         for (const state of states) {
           const stateImage = state.stateImages?.find(
-            (si: any) => si.id === stateImageId
+            (si: unknown) => si.id === stateImageId
           );
           if (stateImage) {
             const nameWithoutExtension = stateImage.name.replace(
@@ -785,15 +785,15 @@ function getActionSummary(
     case "RUN_WORKFLOW": {
       const config = action.config as { workflowId?: string };
       if (config.workflowId) {
-        const workflow = workflows.find((w: any) => w.id === config.workflowId);
+        const workflow = workflows.find((w: unknown) => w.id === config.workflowId);
         return workflow ? workflow.name : config.workflowId;
       }
       return "No workflow selected";
     }
     case "IF": {
       const config = action.config as {
-        thenActions?: any[];
-        elseActions?: any[];
+        thenActions?: unknown[];
+        elseActions?: unknown[];
         condition?: { type?: string };
       };
       const thenCount = config.thenActions?.length || 0;
@@ -808,7 +808,7 @@ function getActionSummary(
     case "LOOP": {
       const config = action.config as {
         loopType?: string;
-        actions?: any[];
+        actions?: unknown[];
         iterations?: number;
       };
       const loopType = config.loopType || "FOR";
@@ -823,7 +823,7 @@ function getActionSummary(
       }
     }
     case "MOUSE_MOVE": {
-      const config = action.config as { target?: any; x?: number; y?: number };
+      const config = action.config as { target?: unknown; x?: number; y?: number };
       if (config.target === "Coordinates") {
         return `Move mouse to (${config.x}, ${config.y})`;
       }

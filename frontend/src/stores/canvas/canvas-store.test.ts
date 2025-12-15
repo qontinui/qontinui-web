@@ -46,7 +46,7 @@ const createMockWorkflow = (): Workflow => ({
 
 describe("WorkflowSlice", () => {
   it("should set workflow", () => {
-    const useStore = create(immer(createWorkflowSlice as any));
+    const useStore = create(immer(createWorkflowSlice as unknown));
     const workflow = createMockWorkflow();
 
     useStore.getState().setWorkflow(workflow);
@@ -56,7 +56,7 @@ describe("WorkflowSlice", () => {
   });
 
   it("should clear workflow", () => {
-    const useStore = create(immer(createWorkflowSlice as any));
+    const useStore = create(immer(createWorkflowSlice as unknown));
     const workflow = createMockWorkflow();
 
     useStore.getState().setWorkflow(workflow);
@@ -67,7 +67,7 @@ describe("WorkflowSlice", () => {
   });
 
   it("should validate workflow", () => {
-    const useStore = create(immer(createWorkflowSlice as any));
+    const useStore = create(immer(createWorkflowSlice as unknown));
     const workflow = createMockWorkflow();
 
     useStore.getState().setWorkflow(workflow);
@@ -84,7 +84,7 @@ describe("WorkflowSlice", () => {
 // ============================================================================
 
 describe("ActionSlice", () => {
-  let useStore: any;
+  let useStore: unknown;
 
   beforeEach(() => {
     // Create a combined store with workflow and action slices for testing
@@ -170,7 +170,7 @@ describe("ActionSlice", () => {
 // ============================================================================
 
 describe("SelectionSlice", () => {
-  let useStore: any;
+  let useStore: unknown;
 
   beforeEach(() => {
     useStore = create(
@@ -242,7 +242,7 @@ describe("SelectionSlice", () => {
 // ============================================================================
 
 describe("HistorySlice", () => {
-  let useStore: any;
+  let useStore: unknown;
 
   beforeEach(() => {
     useStore = create(
@@ -309,10 +309,10 @@ describe("HistorySlice", () => {
 // ============================================================================
 
 describe("ViewportSlice", () => {
-  let useStore: any;
+  let useStore: unknown;
 
   beforeEach(() => {
-    useStore = create(immer(createViewportSlice as any));
+    useStore = create(immer(createViewportSlice as unknown));
   });
 
   it("should set viewport", () => {
@@ -363,10 +363,10 @@ describe("ViewportSlice", () => {
 // ============================================================================
 
 describe("PreferencesSlice", () => {
-  let useStore: any;
+  let useStore: unknown;
 
   beforeEach(() => {
-    useStore = create(immer(createPreferencesSlice as any));
+    useStore = create(immer(createPreferencesSlice as unknown));
   });
 
   it("should toggle minimap", () => {

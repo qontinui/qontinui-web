@@ -328,7 +328,7 @@ export default function ImageRecognitionDocPage() {
               solutions={[
                 "Lower the similarity threshold (try 0.8 instead of 0.9)",
                 "Check if the UI element has changed appearance slightly",
-                "Verify the pattern image matches what's currently on screen",
+                "Verify the pattern image matches what&apos;s currently on screen",
                 "Add a search region if searching the entire screen",
                 "Enable multi-scale search if resolution differs",
                 "Capture a new screenshot if the element has been updated",
@@ -351,7 +351,7 @@ export default function ImageRecognitionDocPage() {
               solutions={[
                 "Use search regions to limit the search area",
                 "Make pattern images smaller (crop to essential features)",
-                "Disable multi-scale search if resolution doesn't vary",
+                "Disable multi-scale search if resolution doesn&apos;t vary",
                 "Switch to grayscale color space (faster but less accurate)",
                 "Mark static elements as fixed=true for optimization",
               ]}
@@ -411,7 +411,7 @@ export default function ImageRecognitionDocPage() {
               <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-yellow-900">
                 <strong>Note:</strong> Most users should keep default settings.
-                Only adjust these if you're experiencing specific recognition
+                Only adjust these if you&apos;re experiencing specific recognition
                 issues or need to optimize performance.
               </p>
             </div>

@@ -38,9 +38,9 @@ export class ConflictDetector {
    * Detect conflicts between local, server, and base versions
    */
   detectConflicts(
-    localVersion: any,
-    serverVersion: any,
-    baseVersion: any
+    localVersion: unknown,
+    serverVersion: unknown,
+    baseVersion: unknown
   ): Conflict[] {
     const conflicts: Conflict[] = [];
 
@@ -88,9 +88,9 @@ export class ConflictDetector {
    * Detect property-level conflicts
    */
   private detectPropertyConflicts(
-    local: any,
-    remote: any,
-    base: any,
+    local: unknown,
+    remote: unknown,
+    base: unknown,
     path: string[] = []
   ): Conflict[] {
     const conflicts: Conflict[] = [];
@@ -187,9 +187,9 @@ export class ConflictDetector {
    * Detect structural conflicts (actions, connections, etc.)
    */
   private detectStructuralConflicts(
-    local: any,
-    remote: any,
-    base: any,
+    local: unknown,
+    remote: unknown,
+    base: unknown,
     path: string[] = []
   ): Conflict[] {
     const conflicts: Conflict[] = [];
@@ -227,9 +227,9 @@ export class ConflictDetector {
    * Detect conflicts in arrays
    */
   private detectArrayConflicts(
-    local: any[],
-    remote: any[],
-    base: any[],
+    local: unknown[],
+    remote: unknown[],
+    base: unknown[],
     path: string[],
     conflictType: ConflictType
   ): Conflict[] {
@@ -311,9 +311,9 @@ export class ConflictDetector {
    */
   private createConflict(
     type: ConflictType,
-    localValue: any,
-    remoteValue: any,
-    baseValue: any,
+    localValue: unknown,
+    remoteValue: unknown,
+    baseValue: unknown,
     path: string[]
   ): Conflict {
     return {
@@ -341,9 +341,9 @@ export class ConflictDetector {
    */
   private isAutoResolvable(
     type: ConflictType,
-    local: any,
-    remote: any,
-    base: any
+    local: unknown,
+    remote: unknown,
+    base: unknown
   ): boolean {
     // Simple heuristics for auto-resolution
     switch (type) {
@@ -428,7 +428,7 @@ export class ConflictDetector {
   /**
    * Resolve a conflict using the specified strategy
    */
-  resolveConflict(conflict: Conflict, strategy: ResolutionStrategy): any {
+  resolveConflict(conflict: Conflict, strategy: ResolutionStrategy): unknown {
     switch (strategy) {
       case "KeepLocal":
         return conflict.localVersion;
@@ -452,7 +452,7 @@ export class ConflictDetector {
   /**
    * Attempt to automatically merge a conflict
    */
-  private attemptAutoMerge(conflict: Conflict): any {
+  private attemptAutoMerge(conflict: Conflict): unknown {
     const { localVersion, serverVersion, baseVersion, type } = conflict;
 
     switch (type) {
@@ -492,7 +492,7 @@ export class ConflictDetector {
   /**
    * Perform three-way merge
    */
-  threeWayMerge(local: any, remote: any, base: any): MergeResult {
+  threeWayMerge(local: unknown, remote: unknown, base: unknown): MergeResult {
     const conflicts = this.detectConflicts(local, remote, base);
     const resolutions: Resolution[] = [];
     const mergedVersion = { ...base };
@@ -533,7 +533,7 @@ export class ConflictDetector {
   /**
    * Apply resolution to merged version
    */
-  private applyResolution(target: any, path: string[], value: any): void {
+  private applyResolution(target: unknown, path: string[], value: unknown): void {
     if (path.length === 0) return;
 
     let current = target;
@@ -556,9 +556,9 @@ export class ConflictDetector {
    * Apply non-conflicting changes
    */
   private applyNonConflictingChanges(
-    target: any,
-    source: any,
-    base: any,
+    target: unknown,
+    source: unknown,
+    base: unknown,
     conflicts: Conflict[]
   ): void {
     if (!source || typeof source !== "object") return;
@@ -602,7 +602,7 @@ export class ConflictResolutionService {
     projectId: string,
     resourceType: string,
     resourceId: string,
-    localChanges: any
+    localChanges: unknown
   ): Promise<ConflictCheckResult> {
     try {
       // Get current server version
@@ -670,7 +670,7 @@ export class ConflictResolutionService {
       const conflict = await response.json();
 
       // Generate strategy previews
-      const strategyPreviews: Record<ResolutionStrategy, any> = {
+      const strategyPreviews: Record<ResolutionStrategy, unknown> = {
         KeepLocal: conflict.localVersion,
         KeepRemote: conflict.serverVersion,
         Merge: this.detector.resolveConflict(conflict, "Merge"),
@@ -711,7 +711,7 @@ export class ConflictResolutionService {
   async resolveConflict(
     conflictId: string,
     strategy: ResolutionStrategy,
-    resolution?: any
+    resolution?: unknown
   ): Promise<void> {
     try {
       const response = await fetch(

@@ -73,7 +73,7 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
 
       // Map API response to component format
       const screenshots: ProjectScreenshot[] = data.screenshots.map(
-        (s: any) => ({
+        (s: unknown) => ({
           id: s.id,
           name: s.name,
           hash: s.hash,

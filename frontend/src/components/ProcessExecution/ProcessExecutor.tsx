@@ -31,7 +31,7 @@ interface ExecutionResult {
   success: boolean;
   duration: number;
   error?: string;
-  matches?: any[];
+  matches?: unknown[];
   screenshot?: string;
 }
 
@@ -126,7 +126,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       // Simulate action execution based on type
       // In production, this would call the actual qontinui API
       let success = false;
-      let matches: any[] = [];
+      let matches: unknown[] = [];
       let error: string | undefined;
 
       switch (action.type) {
@@ -157,12 +157,12 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         case "TYPE":
           await new Promise((resolve) => setTimeout(resolve, 800));
           success = true;
-          const typeConfig = action.config as any;
+          const typeConfig = action.config as unknown;
           addLog(`Typed text: "${typeConfig.text || ""}"`, "success");
           break;
 
         case "WAIT":
-          const waitConfig = action.config as any;
+          const waitConfig = action.config as unknown;
           const waitTime = waitConfig.duration || 1000;
           await new Promise((resolve) => setTimeout(resolve, waitTime));
           success = true;
@@ -172,7 +172,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         case "GO_TO_STATE":
           await new Promise((resolve) => setTimeout(resolve, 400));
           success = Math.random() > 0.1; // 90% success rate
-          const goToStateConfig = action.config as any;
+          const goToStateConfig = action.config as unknown;
           if (success) {
             addLog(
               `Transitioned to state: ${goToStateConfig.stateIds?.[0] || "unknown"}`,
@@ -187,7 +187,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         case "RUN_WORKFLOW":
           await new Promise((resolve) => setTimeout(resolve, 1000));
           success = true;
-          const runWorkflowConfig = action.config as any;
+          const runWorkflowConfig = action.config as unknown;
           addLog(
             `Running sub-workflow: ${runWorkflowConfig.workflowId}`,
             "info"
@@ -209,7 +209,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
       // Handle SET_VARIABLE action for debugger
       if (debugEnabled && action.type === "SET_VARIABLE") {
-        const setVarConfig = action.config as any;
+        const setVarConfig = action.config as unknown;
         if (setVarConfig.variableName) {
           setVariable(setVarConfig.variableName, setVarConfig.value, index);
         }
@@ -595,7 +595,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         <div className="border-t">
           {/* Action List */}
           <div className="max-h-64 overflow-y-auto">
-            {process.actions.map((action: any, index: number) => {
+            {process.actions.map((action: unknown, index: number) => {
               const result = status.results.find(
                 (r) => r.actionIndex === index
               );

@@ -18,7 +18,7 @@ export const migrationV1ToV2: Migration = {
   toVersion: "2.0.0",
   description: "Migrate legacy formats to modern v2.0.0 graph format",
 
-  migrate(config: any, context: MigrationContext): any {
+  migrate(config: unknown, context: MigrationContext): unknown {
     const migrated = structuredClone(config);
 
     // Ensure workflows array exists
@@ -85,7 +85,7 @@ export const migrationV1ToV2: Migration = {
     return migrated;
   },
 
-  isApplicable(config: any): boolean {
+  isApplicable(config: unknown): boolean {
     // Check if any workflows need migration
     for (const workflow of config.workflows || []) {
       // Check for missing format or non-graph format
@@ -106,7 +106,7 @@ export const migrationV1ToV2: Migration = {
     return false;
   },
 
-  validate(config: any): boolean {
+  validate(config: unknown): boolean {
     // Use Zod schema validation for strict type checking
     const schemaResult = validateConfig(config, "2.0.0");
     if (!schemaResult.success) {

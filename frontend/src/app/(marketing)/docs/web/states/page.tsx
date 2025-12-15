@@ -211,7 +211,7 @@ export default function StatesDocPage() {
             <PropertyCard
               icon={<Box className="w-5 h-5 text-blue-600" />}
               title="Shared"
-              description="Check this if the image appears in multiple states (e.g., a common toolbar). Shared images alone don't uniquely identify a state."
+              description="Check this if the image appears in multiple states (e.g., a common toolbar). Shared images alone don&apos;t uniquely identify a state."
               defaultValue="Unchecked"
             />
           </div>

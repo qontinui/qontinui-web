@@ -121,13 +121,13 @@ export default function Dashboard() {
   // Transform API projects to match our interface
   const projects = useMemo(
     () =>
-      apiProjects.map((p: any) => ({
+      apiProjects.map((p: unknown) => ({
         id: p.id.toString(),
         name: p.name,
         description: p.description || "No description",
         created_at: p.created_at,
         updated_at: p.updated_at,
-        status: "draft" as const, // Default status since API doesn't have this field yet
+        status: "draft" as const, // Default status since API doesn&apos;t have this field yet
       })),
     [apiProjects]
   );
@@ -140,7 +140,7 @@ export default function Dashboard() {
     // Check if the project ID in URL exists in the projects list
     const projectExists = projects.some((p) => p.id === projectParam);
     if (!projectExists && projects.length >= 0) {
-      // Project doesn't exist, clear the parameter
+      // Project doesn&apos;t exist, clear the parameter
       console.log(`Project ${projectParam} not found, clearing from URL`);
       router.push("/dashboard");
     }
@@ -149,7 +149,7 @@ export default function Dashboard() {
   // Generate activities from projects
   const activities = useMemo(
     () =>
-      projects.slice(0, 5).map((p: any, idx: number) => ({
+      projects.slice(0, 5).map((p: unknown, idx: number) => ({
         id: `activity-${idx}`,
         type: idx === 0 ? ("created" as const) : ("modified" as const),
         projectName: p.name,
@@ -195,7 +195,7 @@ export default function Dashboard() {
       setProjectId(newProject.id);
       router.push(`/dashboard?project=${newProject.id}`);
       toast.success("Project created and selected");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to create project:", error);
       console.error("Error details:", error.message, error.response);
       toast.error(error.message || "Failed to create new project");
@@ -213,7 +213,7 @@ export default function Dashboard() {
         data: { name: newName },
       });
       toast.success("Project name updated");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to update project name:", error);
       toast.error(error.message || "Failed to update project name");
       throw error;
@@ -275,7 +275,7 @@ export default function Dashboard() {
 
         // Navigate to the new project
         router.push(`/automation-builder?project=${newProject.id}`);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Import failed:", error);
         toast.error(`Failed to import project: ${error.message}`);
       }

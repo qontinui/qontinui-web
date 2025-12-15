@@ -138,7 +138,7 @@ export function testTooltipPositioning() {
   viewportSizes.forEach((size, index) => {
     setTimeout(() => {
       console.log(`Testing ${size.name} (${size.width}x${size.height})`);
-      // Note: This won't actually resize the window in most browsers
+      // Note: This won&apos;t actually resize the window in most browsers
       // Manual testing required for different viewport sizes
       console.log("Manual test required: Resize window to test positioning");
     }, index * 1000);
@@ -433,7 +433,7 @@ export function measurePerformance() {
 
 // Attach test utilities to window for easy access in console
 if (typeof window !== "undefined") {
-  (window as any).tutorialTests = {
+  (window as unknown).tutorialTests = {
     // Utilities
     reset: resetOnboardingForTesting,
     start: startTutorialForTesting,

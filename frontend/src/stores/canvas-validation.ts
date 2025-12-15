@@ -31,7 +31,7 @@ export interface ValidationError {
     | "unreachable";
   severity: "error" | "warning" | "info";
   message: string;
-  details?: any;
+  details?: unknown;
 }
 
 export interface ValidationResult {
@@ -400,7 +400,7 @@ function detectMissingConnections(workflow: Workflow): ValidationError[] {
 
     if (action.type === "SWITCH") {
       // SWITCH must have all case branches
-      const cases = (action.config as any).cases || [];
+      const cases = (action.config as unknown).cases || [];
       const mainOutputs = connections?.main || [];
 
       if (mainOutputs.length < cases.length + 1) {
@@ -610,7 +610,7 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
     }
 
     // Type-specific validation
-    const config = action.config as any;
+    const config = action.config as unknown;
 
     // Type-specific validation using string checks instead of type enum
     if (action.type === "CLICK") {

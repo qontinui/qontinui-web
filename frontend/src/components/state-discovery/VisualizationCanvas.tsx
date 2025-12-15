@@ -165,7 +165,7 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
     // The screenshot filename is the original file name, but we need to match with the screenshot IDs
     // stored in the stateImage.screenshots array
     if (screenshotIndex !== undefined) {
-      // Generate the screenshot ID that matches what's stored in stateImage.screenshots
+      // Generate the screenshot ID that matches what&apos;s stored in stateImage.screenshots
       const screenshotId = `screenshot_${screenshotIndex.toString().padStart(3, "0")}`;
       // Filter based on screenshot ID
 

@@ -723,7 +723,7 @@ export function getRecommendedNodes(
     IF: ["FIND", "EXISTS", "GET_VARIABLE"],
     LOOP: ["BREAK", "CONTINUE", "FIND"],
     // ... add more recommendations
-  } as any;
+  } as unknown;
 
   return recommendations[currentNodeType] || [];
 }

@@ -204,8 +204,8 @@ export interface Activity {
   resource_id: string;
   resource_name: string | null;
   description: string;
-  changes: Record<string, any> | null;
-  metadata: Record<string, any> | null;
+  changes: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -215,8 +215,8 @@ export interface ActivityCreate {
   resource_id: string;
   resource_name?: string;
   description?: string;
-  changes?: Record<string, any>;
-  metadata?: Record<string, any>;
+  changes?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ActivityFeedOptions {
@@ -272,7 +272,7 @@ export type WebSocketMessageType =
 export interface WebSocketMessage {
   type: WebSocketMessageType;
   timestamp: string;
-  data: any;
+  data: unknown;
 }
 
 export interface PresenceUpdateMessage {
@@ -301,7 +301,7 @@ export interface ResourceUpdateMessage {
   resource_id: string;
   user_id: string;
   user_name: string | null;
-  changes: Record<string, any>;
+  changes: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -319,5 +319,5 @@ export interface Subscription {
 export interface CollaborationError {
   code: string;
   message: string;
-  details?: any;
+  details?: unknown;
 }

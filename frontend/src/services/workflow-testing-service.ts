@@ -47,7 +47,7 @@ export interface Assertion {
   path?: string;
 
   /** Expected value for comparison assertions */
-  expected?: any;
+  expected?: unknown;
 
   /** Regex pattern for regex assertions */
   pattern?: string;
@@ -58,11 +58,11 @@ export interface Assertion {
 
 export interface TestCaseConfig {
   /** Input variables for the workflow */
-  inputs?: Record<string, any>;
+  inputs?: Record<string, unknown>;
 
   /** Initial state setup */
   initialState?: {
-    variables?: Record<string, any>;
+    variables?: Record<string, unknown>;
     screenshots?: string[];
     activeStates?: string[];
   };
@@ -114,7 +114,7 @@ export interface TestCase {
     updated?: string;
     author?: string;
     lastRun?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 
   /** Enabled/disabled status */
@@ -149,7 +149,7 @@ export interface TestSuite {
     created?: string;
     updated?: string;
     author?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 
   /** Tags for categorization */
@@ -168,7 +168,7 @@ export interface AssertionResult {
   passed: boolean;
 
   /** Actual value found */
-  actualValue?: any;
+  actualValue?: unknown;
 
   /** Error message if failed */
   error?: string;
@@ -210,7 +210,7 @@ export interface TestResult {
 
   /** Final workflow state */
   finalState?: {
-    variables?: Record<string, any>;
+    variables?: Record<string, unknown>;
     activeStates?: string[];
   };
 
@@ -224,7 +224,7 @@ export interface TestResult {
   error?: string;
 
   /** Additional execution details */
-  details?: any;
+  details?: unknown;
 }
 
 export interface TestStatistics {
@@ -849,7 +849,7 @@ export class WorkflowTestingService {
   /**
    * Evaluate an assertion against an actual value
    */
-  evaluateAssertion(assertion: Assertion, context: any): AssertionResult {
+  evaluateAssertion(assertion: Assertion, context: unknown): AssertionResult {
     try {
       // Get the actual value from the context using the path
       const actualValue = assertion.path
@@ -1403,7 +1403,7 @@ export class WorkflowTestingService {
   /**
    * Deep equality comparison
    */
-  private deepEquals(a: any, b: any): boolean {
+  private deepEquals(a: unknown, b: unknown): boolean {
     if (a === b) return true;
     if (a == null || b == null) return false;
     if (typeof a !== typeof b) return false;
@@ -1423,7 +1423,7 @@ export class WorkflowTestingService {
   /**
    * Get a value from an object by path string
    */
-  private getValueByPath(obj: any, path: string): any {
+  private getValueByPath(obj: unknown, path: string): unknown {
     const parts = path.split(".");
     let current = obj;
 

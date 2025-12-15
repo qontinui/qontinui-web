@@ -38,7 +38,7 @@ export interface Branch {
   parentBranchId?: string;
   currentVersionId?: string;
   isDefault?: boolean;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -58,7 +58,7 @@ export interface Version {
     actionCount: number;
     connectionCount: number;
     changesSummary?: ChangeSummary;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -72,7 +72,7 @@ export interface Tag {
   name: string;
   description?: string;
   createdAt: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -105,7 +105,7 @@ export interface ActionDiff {
   type: string;
   name?: string;
   position: [number, number];
-  config: any;
+  config: unknown;
 }
 
 export interface ActionModification {
@@ -113,10 +113,10 @@ export interface ActionModification {
   changes: {
     type?: { old: string; new: string };
     name?: { old?: string; new?: string };
-    config?: { old: any; new: any; fields: string[] };
+    config?: { old: unknown; new: unknown; fields: string[] };
     position?: { old: [number, number]; new: [number, number] };
-    base?: { old?: any; new?: any };
-    execution?: { old?: any; new?: any };
+    base?: { old?: unknown; new?: unknown };
+    execution?: { old?: unknown; new?: unknown };
   };
 }
 
@@ -137,15 +137,15 @@ export interface ConnectionModification {
 
 export interface PropertyChange {
   property: string;
-  oldValue: any;
-  newValue: any;
+  oldValue: unknown;
+  newValue: unknown;
 }
 
 export interface VariableChange {
   scope: "local" | "process" | "global";
   key: string;
-  oldValue?: any;
-  newValue?: any;
+  oldValue?: unknown;
+  newValue?: unknown;
   type: "added" | "removed" | "modified";
 }
 
@@ -166,9 +166,9 @@ export interface MergeConflict {
   id: string;
   type: "action" | "connection" | "property" | "variable";
   path: string;
-  sourceValue: any;
-  targetValue: any;
-  baseValue?: any;
+  sourceValue: unknown;
+  targetValue: unknown;
+  baseValue?: unknown;
   description: string;
 }
 
@@ -182,7 +182,7 @@ export interface MergeResult {
 export interface ConflictResolution {
   conflictId: string;
   resolution: "source" | "target" | "manual";
-  value?: any;
+  value?: unknown;
 }
 
 /**
@@ -919,9 +919,9 @@ export class WorkflowVersionControl {
     ]);
 
     propertyKeys.forEach((key) => {
-      const sourceVal = (sourceWorkflow as any)[key];
-      const targetVal = (targetWorkflow as any)[key];
-      const baseVal = baseWorkflow ? (baseWorkflow as any)[key] : undefined;
+      const sourceVal = (sourceWorkflow as unknown)[key];
+      const targetVal = (targetWorkflow as unknown)[key];
+      const baseVal = baseWorkflow ? (baseWorkflow as unknown)[key] : undefined;
 
       if (baseVal !== undefined) {
         const sourceChanged =
@@ -1396,7 +1396,7 @@ export class WorkflowVersionControl {
     return Object.keys(changes).length > 0 ? changes : null;
   }
 
-  private getChangedFields(obj1: any, obj2: any): string[] {
+  private getChangedFields(obj1: unknown, obj2: unknown): string[] {
     const fields: string[] = [];
     const allKeys = new Set([
       ...Object.keys(obj1 || {}),
@@ -1490,8 +1490,8 @@ export class WorkflowVersionControl {
     (["main", "error", "success", "parallel"] as const).forEach((type) => {
       const conns = outputs[type as keyof typeof outputs];
       if (conns) {
-        conns.forEach((outputConns: any, outputIndex: number) => {
-          outputConns.forEach((conn: any) => {
+        conns.forEach((outputConns: unknown, outputIndex: number) => {
+          outputConns.forEach((conn: unknown) => {
             connections.push({
               source,
               target: conn.action,
@@ -1523,8 +1523,8 @@ export class WorkflowVersionControl {
     ];
 
     properties.forEach((prop) => {
-      const val1 = (workflow1 as any)[prop];
-      const val2 = (workflow2 as any)[prop];
+      const val1 = (workflow1 as unknown)[prop];
+      const val2 = (workflow2 as unknown)[prop];
 
       if (JSON.stringify(val1) !== JSON.stringify(val2)) {
         changes.push({
@@ -1611,7 +1611,7 @@ export class WorkflowVersionControl {
     return ancestors;
   }
 
-  private hashObject(obj: any): string {
+  private hashObject(obj: unknown): string {
     const str = JSON.stringify(obj);
     let hash = 0;
     for (let i = 0; i < str.length; i++) {

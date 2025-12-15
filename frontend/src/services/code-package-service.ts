@@ -57,8 +57,8 @@ interface BackendPackageDetailRead {
   avg_rating: number | null;
   created_at: string;
   updated_at: string;
-  category: any;
-  latest_version: any;
+  category: unknown;
+  latest_version: unknown;
   total_versions: number;
   total_ratings: number;
 }
@@ -269,7 +269,7 @@ export class CodePackageService {
     id: string,
     data: UpdatePackageRequest
   ): Promise<CodePackage> {
-    const updateData: any = {};
+    const updateData: unknown = {};
 
     if (data.name !== undefined) updateData.name = data.name;
     if (data.description !== undefined)
@@ -462,7 +462,7 @@ export class CodePackageService {
         verified: pkg.is_verified,
         staff: false,
       },
-      license: pkg.license as any,
+      license: pkg.license as unknown,
       visibility: "public" as const,
       latest_version: {
         id: "0",
@@ -706,7 +706,7 @@ export class CodePackageService {
   /**
    * Map category ID to name
    */
-  private mapCategoryIdToName(categoryId: number): any {
+  private mapCategoryIdToName(categoryId: number): unknown {
     const idToName: Record<number, string> = {
       1: "automation",
       2: "utilities",

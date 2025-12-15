@@ -31,7 +31,7 @@ interface StateTransitionGraphProps {
 /**
  * Custom node component for state visualization
  */
-function StateNode({ data }: { data: any }) {
+function StateNode({ data }: { data: unknown }) {
   const coverage = data.coverage || 0;
 
   // Determine node color based on coverage

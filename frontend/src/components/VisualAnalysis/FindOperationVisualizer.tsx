@@ -202,7 +202,7 @@ export const FindOperationVisualizer: React.FC<
       const result = await testStateImage(screenshot, imageId, similarity);
 
       if (result.found && result.matches) {
-        const foundMatches: FindMatch[] = result.matches.map((m: any) => ({
+        const foundMatches: FindMatch[] = result.matches.map((m: unknown) => ({
           region: m.region,
           score: m.score,
           label: stateImage.name,

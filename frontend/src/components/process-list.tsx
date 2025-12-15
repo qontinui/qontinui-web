@@ -35,7 +35,7 @@ interface Process {
 interface Action {
   id: string;
   type: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 }
 
 interface ProcessListProps {

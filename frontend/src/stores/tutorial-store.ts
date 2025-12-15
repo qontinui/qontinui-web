@@ -229,7 +229,7 @@ export interface TutorialActions {
   /**
    * Validate the current step
    */
-  validateStep: (stepId: string, context?: any) => Promise<boolean>;
+  validateStep: (stepId: string, context?: unknown) => Promise<boolean>;
 
   /**
    * Record a validation attempt
@@ -243,7 +243,7 @@ export interface TutorialActions {
   /**
    * Check if any tutorial should be triggered for the current context
    */
-  checkTriggers: (page: string, context?: any) => Tutorial | null;
+  checkTriggers: (page: string, context?: unknown) => Tutorial | null;
 
   /**
    * Record that a trigger was shown
@@ -596,7 +596,7 @@ export const useTutorialStore = create<TutorialStore>()(
       // Validation Methods
       // ========================================================================
 
-      validateStep: async (stepId: string, context?: any): Promise<boolean> => {
+      validateStep: async (stepId: string, context?: unknown): Promise<boolean> => {
         const currentStep = get().getCurrentStep();
         if (!currentStep || currentStep.id !== stepId) {
           return false;
@@ -682,7 +682,7 @@ export const useTutorialStore = create<TutorialStore>()(
       // Tutorial Trigger Methods
       // ========================================================================
 
-      checkTriggers: (_page: string, _context?: any): Tutorial | null => {
+      checkTriggers: (_page: string, _context?: unknown): Tutorial | null => {
         // This is a placeholder implementation
         // In a real application, you would:
         // 1. Load all available tutorials

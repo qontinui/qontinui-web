@@ -38,7 +38,7 @@ export function FindActionProperties({
       // Get all image IDs from the selected state
       const selectedState = states.find((s) => s.id === selectedStateId);
       const imageIds =
-        selectedState?.stateImages?.map((si: any) => si.id) || [];
+        selectedState?.stateImages?.map((si: unknown) => si.id) || [];
 
       updateConfig("target", {
         type: "stateImage",

@@ -65,7 +65,7 @@ export function SessionHistory() {
   const loadSessions = async () => {
     try {
       setLoading(true);
-      const params: any = { limit: 50 };
+      const params: unknown = { limit: 50 };
       if (filterStatus !== "all") {
         params.status = filterStatus;
       }

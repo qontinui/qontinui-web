@@ -157,7 +157,7 @@ class ApiClient {
       }
 
       return response;
-    } catch (error: any) {
+    } catch (error: unknown) {
       clearTimeout(timeoutId);
 
       if (error.name === "AbortError") {
@@ -257,7 +257,7 @@ class ApiClient {
     url: string,
     file: File,
     onProgress?: (progress: number) => void
-  ): Promise<any> {
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       const formData = new FormData();
@@ -487,7 +487,7 @@ class ApiClient {
     source?: "manual" | "runner" | "api";
     page?: number;
     page_size?: number;
-  }): Promise<any> {
+  }): Promise<unknown> {
     const queryParams = new URLSearchParams();
     if (params?.project_id) queryParams.append("project_id", params.project_id);
     if (params?.session_id) queryParams.append("session_id", params.session_id);
@@ -509,7 +509,7 @@ class ApiClient {
   /**
    * Get a specific screenshot by ID
    */
-  async getScreenshot(screenshotId: string): Promise<any> {
+  async getScreenshot(screenshotId: string): Promise<unknown> {
     const response = await this.fetchWithAuth(
       `/automation/screenshots/${screenshotId}`
     );
@@ -545,7 +545,7 @@ class ApiClient {
   /**
    * Get a specific automation session with statistics
    */
-  async getAutomationSession(sessionId: string): Promise<any> {
+  async getAutomationSession(sessionId: string): Promise<unknown> {
     const response = await this.fetchWithAuth(
       `/automation/sessions/${sessionId}`
     );
@@ -608,7 +608,7 @@ class ApiClient {
   /**
    * Get screenshot statistics
    */
-  async getScreenshotStats(projectId?: string): Promise<any> {
+  async getScreenshotStats(projectId?: string): Promise<unknown> {
     const queryParams = new URLSearchParams();
     if (projectId) queryParams.append("project_id", projectId);
 
@@ -627,7 +627,7 @@ class ApiClient {
   /**
    * Get automation session statistics
    */
-  async getSessionStats(projectId?: string): Promise<any> {
+  async getSessionStats(projectId?: string): Promise<unknown> {
     const queryParams = new URLSearchParams();
     if (projectId) queryParams.append("project_id", projectId);
 
@@ -668,7 +668,7 @@ class ApiClient {
     name: string;
     source: string;
     monitor_index?: number;
-    metadata?: any;
+    metadata?: unknown;
     storage_path: string;
     presigned_url: string;
     thumbnail_url?: string;
@@ -760,7 +760,7 @@ class ApiClient {
       name: string;
       source: string;
       monitor_index?: number;
-      metadata?: any;
+      metadata?: unknown;
       storage_path: string;
       presigned_url: string;
       thumbnail_url?: string;
@@ -809,7 +809,7 @@ class ApiClient {
     name: string;
     source: string;
     monitor_index?: number;
-    metadata?: any;
+    metadata?: unknown;
     storage_path: string;
     presigned_url: string;
     thumbnail_url?: string;
@@ -841,7 +841,7 @@ class ApiClient {
       name?: string;
       source?: "manual_upload" | "runner_capture" | "web_capture";
       monitor_index?: number;
-      metadata?: any;
+      metadata?: unknown;
     }
   ): Promise<{
     id: string;
@@ -849,7 +849,7 @@ class ApiClient {
     name: string;
     source: string;
     monitor_index?: number;
-    metadata?: any;
+    metadata?: unknown;
     storage_path: string;
     presigned_url: string;
     thumbnail_url?: string;
@@ -981,7 +981,7 @@ class ApiClient {
   /**
    * Get extraction session details with annotations
    */
-  async getExtractionSession(extractionId: string): Promise<any> {
+  async getExtractionSession(extractionId: string): Promise<unknown> {
     const response = await this.fetchWithAuth(`/extractions/${extractionId}`);
     if (!response.ok) {
       throw new Error("Failed to get extraction session");
@@ -999,7 +999,7 @@ class ApiClient {
       limit?: number;
       status?: string;
     }
-  ): Promise<any[]> {
+  ): Promise<unknown[]> {
     const queryParams = new URLSearchParams();
     if (params?.skip !== undefined)
       queryParams.append("skip", params.skip.toString());

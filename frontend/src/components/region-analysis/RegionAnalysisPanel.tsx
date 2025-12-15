@@ -60,7 +60,7 @@ export function RegionAnalysisPanel({
     new Set()
   );
   const [analyzerConfigs, setAnalyzerConfigs] = useState<
-    Record<string, Record<string, any>>
+    Record<string, Record<string, unknown>>
   >({});
   const [isLoadingAnalyzers, setIsLoadingAnalyzers] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
@@ -86,7 +86,7 @@ export function RegionAnalysisPanel({
       setSelectedAnalyzers(new Set(data.map((a) => a.name)));
 
       // Initialize configs with default parameters
-      const configs: Record<string, Record<string, any>> = {};
+      const configs: Record<string, Record<string, unknown>> = {};
       data.forEach((analyzer) => {
         configs[analyzer.name] = { ...analyzer.default_parameters };
       });
@@ -112,7 +112,7 @@ export function RegionAnalysisPanel({
   const updateAnalyzerConfig = (
     analyzerName: string,
     param: string,
-    value: any
+    value: unknown
   ) => {
     setAnalyzerConfigs((prev) => ({
       ...prev,

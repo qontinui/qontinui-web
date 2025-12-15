@@ -57,7 +57,7 @@ class WebSocketCollaborationService {
 
   // Message sequencing fields
   private lastReceivedSequence: number = 0;
-  private outOfOrderBuffer: Map<number, any> = new Map();
+  private outOfOrderBuffer: Map<number, unknown> = new Map();
   private expectedSequence: number = 1;
   private ackBatchSize: number = 10; // Send ack every N messages
   private unacknowledgedCount: number = 0;
@@ -103,7 +103,7 @@ class WebSocketCollaborationService {
               "[CollaborationWS] Reconnecting, requesting sync state"
             );
             this.send({
-              type: "sync_state" as any,
+              type: "sync_state" as unknown,
               timestamp: new Date().toISOString(),
               data: {
                 last_acked_sequence: this.lastAckedSequence,
@@ -126,10 +126,10 @@ class WebSocketCollaborationService {
           // Don't reset sequence tracking on disconnect - preserve for reconnect
           this.handlers.onDisconnect?.();
         },
-        onMessage: (event: any) => {
+        onMessage: (event: unknown) => {
           this.handleMessage(event);
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           console.error("[CollaborationWS] Error:", error);
           this.handlers.onError?.(error);
         },
@@ -303,7 +303,7 @@ class WebSocketCollaborationService {
   /**
    * Handle incoming WebSocket message
    */
-  private handleMessage(event: any): void {
+  private handleMessage(event: unknown): void {
     try {
       const message = event as WebSocketMessage & { sequence?: number };
 
@@ -339,7 +339,7 @@ class WebSocketCollaborationService {
   /**
    * Process a sequenced message (handle ordering)
    */
-  private processSequencedMessage(message: any): void {
+  private processSequencedMessage(message: unknown): void {
     const sequence = message.sequence;
 
     // Track the highest sequence we've received
@@ -407,7 +407,7 @@ class WebSocketCollaborationService {
   /**
    * Dispatch message to appropriate handler
    */
-  private dispatchMessage(message: any): void {
+  private dispatchMessage(message: unknown): void {
     switch (message.type) {
       case "presence_update":
         this.handlers.onPresenceUpdate?.(message.data);
@@ -470,7 +470,7 @@ class WebSocketCollaborationService {
    */
   private sendAck(sequence: number): void {
     this.send({
-      type: "ack" as any,
+      type: "ack" as unknown,
       timestamp: new Date().toISOString(),
       data: { sequence },
     });
@@ -483,7 +483,7 @@ class WebSocketCollaborationService {
    */
   private requestResend(fromSequence: number): void {
     this.send({
-      type: "resend" as any,
+      type: "resend" as unknown,
       timestamp: new Date().toISOString(),
       data: { from_sequence: fromSequence },
     });
@@ -497,7 +497,7 @@ class WebSocketCollaborationService {
   /**
    * Handle connection state message
    */
-  private handleConnectionState(state: any): void {
+  private handleConnectionState(state: unknown): void {
     console.log("[CollaborationWS] Connection state:", state);
 
     // If reconnecting and there are unacknowledged messages, request resend

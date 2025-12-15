@@ -8,19 +8,19 @@ import { StateImage, DiscoveredState } from "@/types/stateDiscovery";
 export class StateDiscoveryStateManager {
   private stateImages: StateImage[] = [];
   private states: DiscoveredState[] = [];
-  private listeners: Set<(type: string, data: any) => void> = new Set();
+  private listeners: Set<(type: string, data: unknown) => void> = new Set();
 
   constructor() {
     console.log("[StateManager] Initialized");
   }
 
   // Subscribe to state changes
-  subscribe(listener: (type: string, data: any) => void): () => void {
+  subscribe(listener: (type: string, data: unknown) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  private notify(type: string, data: any): void {
+  private notify(type: string, data: unknown): void {
     this.listeners.forEach((listener) => listener(type, data));
   }
 

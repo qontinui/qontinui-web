@@ -208,7 +208,7 @@ describe("ConfigImporter", () => {
           name: "Test Process",
           description: "A test process",
           // actions is undefined
-        } as any,
+        } as unknown,
       ],
       states: [
         {
@@ -266,7 +266,7 @@ describe("ConfigImporter", () => {
           timeout: 1000,
           retryCount: 0,
           // processes is undefined
-        } as any,
+        } as unknown,
       ],
       settings: {},
     };
@@ -564,7 +564,7 @@ describe("ConfigImporter", () => {
 
   describe("validateBeforeImport", () => {
     it("should validate required fields", () => {
-      const invalidConfig: any = {
+      const invalidConfig: unknown = {
         version: "1.0.0",
         // missing required fields
       };

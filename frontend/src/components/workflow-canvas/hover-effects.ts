@@ -516,14 +516,14 @@ export function useHoverEffects() {
 /**
  * Throttle hover updates to maintain 60 FPS
  */
-export function throttleHover<T extends (...args: any[]) => void>(
+export function throttleHover<T extends (...args: unknown[]) => void>(
   fn: T,
   delay: number = 16 // ~60fps
 ): T {
   let lastCall = 0;
   let timeoutId: NodeJS.Timeout | null = null;
 
-  return ((...args: any[]) => {
+  return ((...args: unknown[]) => {
     const now = Date.now();
 
     if (now - lastCall >= delay) {
@@ -545,13 +545,13 @@ export function throttleHover<T extends (...args: any[]) => void>(
 /**
  * Debounce hover updates
  */
-export function debounceHover<T extends (...args: any[]) => void>(
+export function debounceHover<T extends (...args: unknown[]) => void>(
   fn: T,
   delay: number = 100
 ): T {
   let timeoutId: NodeJS.Timeout | null = null;
 
-  return ((...args: any[]) => {
+  return ((...args: unknown[]) => {
     if (timeoutId) clearTimeout(timeoutId);
     timeoutId = setTimeout(() => fn(...args), delay);
   }) as T;

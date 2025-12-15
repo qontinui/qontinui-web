@@ -54,8 +54,8 @@ export interface SearchResultItem {
   breadcrumb?: string[];
   matches: SearchMatch[];
   score: number;
-  metadata?: Record<string, any>;
-  resource?: any; // Original resource object
+  metadata?: Record<string, unknown>;
+  resource?: unknown; // Original resource object
 }
 
 export interface SearchResults {
@@ -765,7 +765,7 @@ class GlobalSearchService {
       const stored = localStorage.getItem(this.RECENT_SEARCHES_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        this.recentSearches = parsed.map((s: any) => ({
+        this.recentSearches = parsed.map((s: unknown) => ({
           ...s,
           timestamp: new Date(s.timestamp),
         }));

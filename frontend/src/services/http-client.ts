@@ -138,7 +138,7 @@ export class HttpClient {
       });
 
       return response;
-    } catch (error: any) {
+    } catch (error: unknown) {
       clearTimeout(timeoutId);
 
       if (error.name === "AbortError") {

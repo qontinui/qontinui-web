@@ -46,8 +46,8 @@ export function RequireProject({
   }
 
   if (error) {
-    // If there's an error (including auth errors), treat it as "no projects"
-    // This handles the case where the user isn't logged in or their session expired
+    // If there&apos;s an error (including auth errors), treat it as "no projects"
+    // This handles the case where the user isn&apos;t logged in or their session expired
     return (
       <div className="flex items-center justify-center min-h-[400px] p-4">
         <Card className="bg-[#1A1A1B]/30 border-gray-800/50 border-dashed backdrop-blur-sm max-w-md">

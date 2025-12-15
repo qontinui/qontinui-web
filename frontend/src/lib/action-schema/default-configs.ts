@@ -21,7 +21,7 @@ export function getDefaultConfig<T extends ActionType>(
       return {
         target: {
           type: "image",
-          imageId: null as any,
+          imageId: null as unknown,
         },
       } as ActionConfigMap[T];
 
@@ -29,7 +29,7 @@ export function getDefaultConfig<T extends ActionType>(
       return {
         target: {
           type: "image",
-          imageId: null as any,
+          imageId: null as unknown,
         },
         maxWaitTime: 5000,
         pollInterval: 500,
@@ -39,7 +39,7 @@ export function getDefaultConfig<T extends ActionType>(
       return {
         target: {
           type: "image",
-          imageId: null as any,
+          imageId: null as unknown,
         },
       } as ActionConfigMap[T];
 
@@ -327,7 +327,7 @@ export function getDefaultConfig<T extends ActionType>(
  */
 export function isValidConfig<T extends ActionType>(
   type: T,
-  config: any
+  config: unknown
 ): config is ActionConfigMap[T] {
   // Basic validation - could be expanded
   switch (type) {

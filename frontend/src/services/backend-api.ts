@@ -63,7 +63,7 @@ export type ActionExecutionStatus =
  */
 export interface ExecutionOptions {
   /** Initial variables to pass to workflow */
-  initialVariables?: Record<string, any>;
+  initialVariables?: Record<string, unknown>;
 
   /** Enable debug mode */
   debugMode?: boolean;
@@ -153,7 +153,7 @@ export interface ExecutionStatusDetail {
   };
 
   /** Current context variables */
-  variables?: Record<string, any>;
+  variables?: Record<string, unknown>;
 }
 
 /**
@@ -187,10 +187,10 @@ export interface ExecutionEvent {
     stack?: string;
 
     /** Result data */
-    result?: any;
+    result?: unknown;
 
     /** Variable updates */
-    variables?: Record<string, any>;
+    variables?: Record<string, unknown>;
 
     /** Log message */
     message?: string;
@@ -202,7 +202,7 @@ export interface ExecutionEvent {
     duration?: number;
 
     /** Additional metadata */
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
 }
 
@@ -258,7 +258,7 @@ export interface ApiError {
   status?: number;
 
   /** Additional details */
-  details?: any;
+  details?: unknown;
 }
 
 // ============================================================================
@@ -370,7 +370,7 @@ export class BackendAPI {
   async getExecutionStatus(
     executionId: string
   ): Promise<ExecutionStatusDetail> {
-    const response = await this.request<any>(
+    const response = await this.request<unknown>(
       `/api/execution/${executionId}/status`,
       { method: "GET" }
     );
@@ -481,7 +481,7 @@ export class BackendAPI {
       params.set("limit", limit.toString());
     }
 
-    const response = await this.request<any[]>(
+    const response = await this.request<unknown[]>(
       `/api/workflow/${workflowId}/history?${params}`,
       { method: "GET" }
     );
@@ -515,7 +515,7 @@ export class BackendAPI {
       params.set("limit", limit.toString());
     }
 
-    const response = await this.request<any[]>(`/api/executions?${params}`, {
+    const response = await this.request<unknown[]>(`/api/executions?${params}`, {
       method: "GET",
     });
 
@@ -677,7 +677,7 @@ export class BackendAPI {
     endpoint: string,
     options: {
       method: string;
-      body?: any;
+      body?: unknown;
       headers?: Record<string, string>;
     }
   ): Promise<T> {
@@ -761,7 +761,7 @@ export class BackendAPI {
     message: string,
     code?: string,
     status?: number,
-    details?: any
+    details?: unknown
   ): ApiError {
     const error = new Error(message) as ApiError;
     error.message = message;

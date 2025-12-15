@@ -52,7 +52,7 @@ export class CaptureService {
 
     // Transform web backend capture sessions to frontend format
     // These are screenshot-based sessions, not video capture sessions
-    const sessions: CaptureSession[] = items.map((item: any) => ({
+    const sessions: CaptureSession[] = items.map((item: unknown) => ({
       id: 0, // UUID-based, using 0 as placeholder
       sessionId: item.id, // UUID
       projectId: undefined,

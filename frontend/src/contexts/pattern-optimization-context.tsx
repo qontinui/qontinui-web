@@ -169,7 +169,7 @@ export function PatternOptimizationProvider({
     async (screenshots: OptimizationScreenshot[]) => {
       console.log("Adding screenshots:", screenshots);
 
-      // Create session if it doesn't exist
+      // Create session if it doesn&apos;t exist
       if (!session) {
         console.log("No session, creating new one...");
         const newSession: OptimizationSession = {
@@ -207,7 +207,7 @@ export function PatternOptimizationProvider({
 
       setSession((prev) => {
         if (!prev) {
-          // If session still doesn't exist, create it now
+          // If session still doesn&apos;t exist, create it now
           const newSession: OptimizationSession = {
             id: `session-${Date.now()}`,
             screenshots: processedScreenshots,
@@ -429,7 +429,7 @@ export function PatternOptimizationProvider({
 
       // Convert API response to our format
       const patterns: ExtractedPattern[] = apiResult.extractedPatterns.map(
-        (pattern: any) => ({
+        (pattern: unknown) => ({
           id: pattern.id,
           screenshotId:
             session.screenshots[pattern.screenshot_index]?.id ||

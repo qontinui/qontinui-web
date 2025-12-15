@@ -79,7 +79,7 @@ function escapeCSVField(field: string): string {
  * Export runner tokens as CSV file
  */
 export function exportRunnerTokensCSV(
-  tokens: any[],
+  tokens: unknown[],
   filename: string = "runner-tokens.csv"
 ): void {
   if (tokens.length === 0) {

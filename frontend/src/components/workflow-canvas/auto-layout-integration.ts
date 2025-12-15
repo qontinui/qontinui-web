@@ -101,7 +101,7 @@ export function applyAutoLayoutOnConversion(
       duration,
       actionsPositioned: workflow.actions.length,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
       style,
@@ -448,7 +448,7 @@ function calculateClarity(workflow: Workflow): number {
 /**
  * Check if two actions overlap
  */
-function hasOverlap(action1: any, action2: any): boolean {
+function hasOverlap(action1: unknown, action2: unknown): boolean {
   const [x1, y1] = action1.position;
   const [x2, y2] = action2.position;
 

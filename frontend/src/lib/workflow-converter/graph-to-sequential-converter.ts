@@ -272,7 +272,7 @@ export class GraphToSequentialConverter {
   ): Action[] {
     return actions.map((action) => {
       // Create a new action without graph-specific properties
-      const cleaned: any = {
+      const cleaned: unknown = {
         id: action.id,
         type: action.type,
         config: action.config,
@@ -330,7 +330,7 @@ export class GraphToSequentialConverter {
     // Validate control flow references
     actions.forEach((action) => {
       if (action.type === "IF") {
-        const config = action.config as any;
+        const config = action.config as unknown;
         if (config.thenActions) {
           this.validateActionReferences(config.thenActions, ids, action.id);
         }
@@ -338,7 +338,7 @@ export class GraphToSequentialConverter {
           this.validateActionReferences(config.elseActions, ids, action.id);
         }
       } else if (action.type === "LOOP") {
-        const config = action.config as any;
+        const config = action.config as unknown;
         if (config.actions) {
           this.validateActionReferences(config.actions, ids, action.id);
         }

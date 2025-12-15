@@ -19,7 +19,7 @@ export const migrationV22ToV23: Migration = {
   toVersion: "2.3.0",
   description: "Add initialStateIds support for workflow initial states",
 
-  migrate(config: any, context: MigrationContext): any {
+  migrate(config: unknown, context: MigrationContext): unknown {
     const migrated = structuredClone(config);
 
     // Count workflows for informational purposes
@@ -58,7 +58,7 @@ export const migrationV22ToV23: Migration = {
   /**
    * This migration is always applicable - it's a schema extension
    */
-  isApplicable(_config: any): boolean {
+  isApplicable(_config: unknown): boolean {
     return true;
   },
 
@@ -66,7 +66,7 @@ export const migrationV22ToV23: Migration = {
    * Validate the migrated config
    * - If initialStateIds exists, it should be an array of strings
    */
-  validate(migratedConfig: any): boolean {
+  validate(migratedConfig: unknown): boolean {
     if (migratedConfig.workflows && Array.isArray(migratedConfig.workflows)) {
       for (const workflow of migratedConfig.workflows) {
         if (workflow.initialStateIds !== undefined) {

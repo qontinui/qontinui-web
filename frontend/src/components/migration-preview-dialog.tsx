@@ -30,7 +30,7 @@ import {
 import { previewMigration } from "@/lib/config-migration";
 
 interface MigrationPreviewDialogProps {
-  config: any;
+  config: unknown;
   open: boolean;
   onApprove: () => void;
   onCancel: () => void;

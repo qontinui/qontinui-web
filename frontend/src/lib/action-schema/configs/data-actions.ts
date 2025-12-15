@@ -12,7 +12,7 @@ export interface SetVariableActionConfig {
   variableName: string;
 
   /** Value to set */
-  value?: any;
+  value?: unknown;
 
   /** Get value from another source */
   valueSource?: {
@@ -39,7 +39,7 @@ export interface GetVariableActionConfig {
   outputVariable?: string;
 
   /** Default value if variable doesn't exist */
-  defaultValue?: any;
+  defaultValue?: unknown;
 }
 
 /**
@@ -84,7 +84,7 @@ export interface FilterActionConfig {
     expression?: string; // JavaScript expression
     property?: string; // Property name
     operator?: "==" | "!=" | ">" | "<" | ">=" | "<=" | "contains" | "matches";
-    value?: any; // Expected value
+    value?: unknown; // Expected value
     customFunction?: string; // JavaScript function
   };
 
@@ -122,7 +122,7 @@ export interface ReduceActionConfig {
   operation: "sum" | "average" | "min" | "max" | "count" | "custom";
 
   /** Initial value for accumulator */
-  initialValue?: any;
+  initialValue?: unknown;
 
   /** Custom reducer function (JavaScript) */
   customReducer?: string;

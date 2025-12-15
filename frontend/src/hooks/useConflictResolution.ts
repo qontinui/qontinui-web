@@ -44,13 +44,13 @@ interface UseConflictResolutionReturn {
   isResolving: boolean;
 
   /** Check for conflicts manually */
-  checkForConflicts: (localChanges: any) => Promise<ConflictCheckResult>;
+  checkForConflicts: (localChanges: unknown) => Promise<ConflictCheckResult>;
 
   /** Resolve a specific conflict */
   resolveConflict: (
     conflictId: string,
     strategy: ResolutionStrategy,
-    resolution?: any
+    resolution?: unknown
   ) => Promise<void>;
 
   /** Auto-resolve all resolvable conflicts */
@@ -94,7 +94,7 @@ export function useConflictResolution(
    * Check for conflicts
    */
   const checkForConflicts = useCallback(
-    async (localChanges: any): Promise<ConflictCheckResult> => {
+    async (localChanges: unknown): Promise<ConflictCheckResult> => {
       setIsChecking(true);
 
       try {
@@ -137,7 +137,7 @@ export function useConflictResolution(
     async (
       conflictId: string,
       strategy: ResolutionStrategy,
-      resolution?: any
+      resolution?: unknown
     ): Promise<void> => {
       setIsResolving(true);
 
@@ -313,7 +313,7 @@ export function useSyncState(resourceType: ResourceType, resourceId: string) {
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const sync = useCallback(
-    async (localVersion: any) => {
+    async (localVersion: unknown) => {
       setIsSyncing(true);
       setSyncError(null);
 
@@ -359,11 +359,11 @@ export function useOptimisticUpdate(
   resourceType: ResourceType,
   resourceId: string
 ) {
-  const [optimisticState, setOptimisticState] = useState<any>(null);
+  const [optimisticState, setOptimisticState] = useState<unknown>(null);
   const [hasOptimistic, setHasOptimistic] = useState(false);
 
   const applyOptimistic = useCallback(
-    (change: any) => {
+    (change: unknown) => {
       setOptimisticState(change);
       setHasOptimistic(true);
 
@@ -468,7 +468,7 @@ export function useRealtimeCollaboration(
   resourceId: string
 ) {
   const [isConnected, setIsConnected] = useState(false);
-  const [remoteChanges, setRemoteChanges] = useState<any[]>([]);
+  const [remoteChanges, setRemoteChanges] = useState<unknown[]>([]);
 
   useEffect(() => {
     // Connect to WebSocket

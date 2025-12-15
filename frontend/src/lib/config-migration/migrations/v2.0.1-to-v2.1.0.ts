@@ -17,7 +17,7 @@ export const migrationV201ToV21: Migration = {
   description:
     "Consolidate FIND_STATE_IMAGE into FIND with stateImage target type",
 
-  migrate(config: any, context: MigrationContext): any {
+  migrate(config: unknown, context: MigrationContext): unknown {
     const migrated = structuredClone(config);
 
     // Track conversion count
@@ -86,7 +86,7 @@ export const migrationV201ToV21: Migration = {
   /**
    * Only apply this migration if FIND_STATE_IMAGE actions exist
    */
-  isApplicable(config: any): boolean {
+  isApplicable(config: unknown): boolean {
     if (!config.workflows) return false;
 
     // Check if any workflow has FIND_STATE_IMAGE actions
@@ -106,7 +106,7 @@ export const migrationV201ToV21: Migration = {
   /**
    * Validate the migrated config
    */
-  validate(migratedConfig: any): boolean {
+  validate(migratedConfig: unknown): boolean {
     // Ensure no FIND_STATE_IMAGE actions remain
     if (migratedConfig.workflows) {
       for (const workflow of migratedConfig.workflows) {

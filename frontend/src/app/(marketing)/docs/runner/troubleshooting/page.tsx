@@ -81,7 +81,7 @@ export default function TroubleshootingPage() {
               errorCode="INSTALL_001"
               symptoms={[
                 "Windows protected your PC warning appears",
-                "Installer won't run or gets blocked",
+                "Installer won&apos;t run or gets blocked",
               ]}
               solutions={[
                 "Click More info on the SmartScreen dialog",
@@ -97,7 +97,7 @@ export default function TroubleshootingPage() {
               problem="Windows: Missing WebView2 Runtime (Development mode)"
               errorCode="INSTALL_002"
               symptoms={[
-                "App won't launch after installation",
+                "App won&apos;t launch after installation",
                 "Error message mentions WebView2 or browser components",
               ]}
               solutions={[
@@ -131,7 +131,7 @@ export default function TroubleshootingPage() {
               problem="Linux: Permission denied when running AppImage"
               errorCode="INSTALL_004"
               symptoms={[
-                "AppImage won't execute",
+                "AppImage won&apos;t execute",
                 "Permission denied error in terminal",
               ]}
               solutions={[
@@ -173,7 +173,7 @@ export default function TroubleshootingPage() {
               errorCode="CONN_001"
               symptoms={[
                 "Connection failed when trying to log in",
-                "Runner can't fetch projects or configurations",
+                "Runner can&apos;t fetch projects or configurations",
                 "Authentication errors",
               ]}
               solutions={[
@@ -191,7 +191,7 @@ export default function TroubleshootingPage() {
               errorCode="CONN_002"
               symptoms={[
                 "Runner asks you to log in every time you open it",
-                "Session doesn't persist between launches",
+                "Session doesn&apos;t persist between launches",
               ]}
               solutions={[
                 "Windows: Check Windows Credential Manager access",
@@ -222,7 +222,7 @@ export default function TroubleshootingPage() {
                 "Copy the connection string from Connect Desktop Runner page",
                 "Paste the full connection string into Runner",
                 "Check that your account has permission to access the project",
-                "Try regenerating the connection string if it's old",
+                "Try regenerating the connection string if it&apos;s old",
               ]}
               relatedDocs="/docs/runner/execution"
             />
@@ -295,7 +295,7 @@ export default function TroubleshootingPage() {
                 "Add action_delay between actions to give UI time to respond (try 200-500ms)",
                 "Check if target app is waiting for user input or has modal dialogs",
                 "Look for loading animations or spinners that may be blocking interactions",
-                "Verify the app isn't frozen or unresponsive",
+                "Verify the app isn&apos;t frozen or unresponsive",
               ]}
               technicalDetails={{
                 title: "Timeout Configuration",
@@ -313,7 +313,7 @@ export default function TroubleshootingPage() {
               errorCode="EXEC_004"
               symptoms={[
                 "FIND actions repeatedly fail",
-                "CLICK actions can't locate elements",
+                "CLICK actions can&apos;t locate elements",
                 "Low similarity scores in logs",
               ]}
               solutions={[
@@ -494,7 +494,7 @@ export default function TroubleshootingPage() {
                     "System Preferences > Security & Privacy > Privacy > Accessibility. Add Qontinui Runner.",
                 },
                 {
-                  problem: "App won't open on Apple Silicon",
+                  problem: "App won&apos;t open on Apple Silicon",
                   solution:
                     "Download the universal binary .dmg. Right-click > Open first time.",
                 },

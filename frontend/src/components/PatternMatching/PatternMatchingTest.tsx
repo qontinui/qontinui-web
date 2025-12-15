@@ -538,7 +538,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                 bounds: searchRegion,
                 id: "search-region",
                 name: "Search Region",
-              } as any)
+              } as unknown)
             : undefined
         );
 
@@ -546,7 +546,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
 
         if (result.found && result.matches) {
           const matchResults: MatchResult[] = result.matches.map(
-            (m: any, idx: number) => ({
+            (m: unknown, idx: number) => ({
               region: m.region,
               score: m.score,
               index: idx + 1,
@@ -568,7 +568,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                 bounds: searchRegion,
                 id: "search-region",
                 name: "Search Region",
-              } as any)
+              } as unknown)
             : undefined
         );
 

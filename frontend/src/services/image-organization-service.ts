@@ -52,7 +52,7 @@ export interface ImageMetadata {
   originalFileName?: string;
   uploadedBy?: string;
   lastModified: string;
-  customFields?: Record<string, any>; // Extensible custom metadata
+  customFields?: Record<string, unknown>; // Extensible custom metadata
 }
 
 /**
@@ -67,7 +67,7 @@ export interface ImageCollection {
   icon?: string;
   created: string;
   updated: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**

@@ -23,7 +23,7 @@ import { useStateDiscovery } from "@/hooks/useStateDiscovery";
 
 interface DeleteConfirmationDialogProps {
   stateImage: StateImage;
-  onConfirm: (options: any) => void;
+  onConfirm: (options: unknown) => void;
   onCancel: () => void;
 }
 
@@ -164,7 +164,7 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
                   </Label>
                   <RadioGroup
                     value={orphanStrategy}
-                    onValueChange={(value: any) => setOrphanStrategy(value)}
+                    onValueChange={(value: unknown) => setOrphanStrategy(value)}
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="keep" id="keep" />

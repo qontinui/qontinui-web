@@ -148,7 +148,7 @@ class HealthService {
     };
   }
 
-  private countCriticalAlerts(data: any): number {
+  private countCriticalAlerts(data: unknown): number {
     let count = 0;
 
     // Count critical alerts from various sources

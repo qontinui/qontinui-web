@@ -216,7 +216,7 @@ DefaultNode.displayName = "DefaultNode";
 /**
  * Get preview text for action config
  */
-function getConfigPreview(actionType: string, config: any): string {
+function getConfigPreview(actionType: string, config: unknown): string {
   switch (actionType) {
     case "CLICK":
     case "DOUBLE_CLICK":

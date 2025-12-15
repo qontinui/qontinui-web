@@ -74,13 +74,13 @@ export function StateStructureReview({
       const flowNodes = createFlowNodes(data.states);
       const flowEdges = createFlowEdges(data.transitions);
 
-      setNodes(flowNodes as any);
-      setEdges(flowEdges as any);
+      setNodes(flowNodes as unknown);
+      setEdges(flowEdges as unknown);
 
       // Select all by default
       setSelectedStateIds(new Set(data.states.map((s) => s.id)));
       setSelectedTransitionIds(new Set(data.transitions.map((t) => t.id)));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to load state structure:", error);
       toast.error("Failed to load state structure");
     } finally {
@@ -262,7 +262,7 @@ export function StateStructureReview({
       setTimeout(() => {
         router.push(`/dashboard`);
       }, 2000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to accept structure:", error);
       toast.error(error.message || "Failed to accept structure");
     } finally {
@@ -290,7 +290,7 @@ export function StateStructureReview({
       setTimeout(() => {
         router.push(`/dashboard`);
       }, 2000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to accept structure:", error);
       toast.error(error.message || "Failed to accept structure");
     } finally {
@@ -311,7 +311,7 @@ export function StateStructureReview({
       await recordingService.acceptStateStructure(recordingId, request);
       toast.success("State structure discarded");
       router.push("/recordings");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to discard structure:", error);
       toast.error("Failed to discard structure");
     }

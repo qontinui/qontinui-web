@@ -312,7 +312,7 @@ export function SettingsTab() {
   const updateSetting = (
     category: keyof QontinuiSettings,
     key: string,
-    value: any
+    value: unknown
   ) => {
     setSettings((prev) => ({
       ...prev,

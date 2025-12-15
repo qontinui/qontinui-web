@@ -50,7 +50,7 @@ interface Action {
     | "RAG_FIND"
     | "GO_TO_STATE"
     | "RUN_WORKFLOW";
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 }
 
 interface ActionEditorProps {
@@ -304,7 +304,7 @@ export function ActionEditor({
   );
 }
 
-function getDefaultConfig(type: Action["type"]): Record<string, any> {
+function getDefaultConfig(type: Action["type"]): Record<string, unknown> {
   switch (type) {
     case "FIND":
       return {
@@ -457,9 +457,9 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
 
 function renderActionSummary(
   action: Action,
-  states: any[],
-  workflows: any[],
-  images: any[]
+  states: unknown[],
+  workflows: unknown[],
+  images: unknown[]
 ) {
   const summary = getActionSummary(action, states, workflows, images);
   const hasRemovedImage = summary.includes("[REMOVED:");
@@ -492,9 +492,9 @@ function renderActionSummary(
 
 function getActionSummary(
   action: Action,
-  states: any[],
-  workflows: any[],
-  images: any[]
+  states: unknown[],
+  workflows: unknown[],
+  images: unknown[]
 ): string {
   switch (action.type) {
     case "FIND":
@@ -506,7 +506,7 @@ function getActionSummary(
       if (action.config.target?.type === "stateImage") {
         const stateId = action.config.target.stateId;
         if (stateId) {
-          const state = states.find((s: any) => s.id === stateId);
+          const state = states.find((s: unknown) => s.id === stateId);
           return state
             ? `Find any image from ${state.name}`
             : "State not found";
@@ -524,7 +524,7 @@ function getActionSummary(
         let stateImageName = null;
         for (const state of states) {
           const stateImage = state.stateImages?.find(
-            (si: any) => si.id === imageId
+            (si: unknown) => si.id === imageId
           );
           if (stateImage) {
             stateImageName = stateImage.name;
@@ -561,7 +561,7 @@ function getActionSummary(
         // Find StateImage across all states
         for (const state of states) {
           const stateImage = state.stateImages?.find(
-            (si: any) => si.id === stateImageId
+            (si: unknown) => si.id === stateImageId
           );
           if (stateImage) {
             const nameWithoutExtension = stateImage.name.replace(
@@ -617,11 +617,11 @@ function getActionSummary(
         if (action.config.selectedStateStrings?.length > 0 && state.strings) {
           // Get the actual string values
           const selectedStrings = state.strings
-            .filter((s: any) =>
+            .filter((s: unknown) =>
               action.config.selectedStateStrings.includes(s.id)
             )
-            .map((s: any) => s.value)
-            .filter((v: any) => v); // Remove empty values
+            .map((s: unknown) => s.value)
+            .filter((v: unknown) => v); // Remove empty values
 
           if (selectedStrings.length === 0) {
             return `No strings selected from ${state.name || state.id}`;

@@ -117,7 +117,7 @@ export function WorkflowAnalyticsExample() {
 
   // Get all metrics
   const allMetrics = useMemo(() => {
-    const metricsMap: Record<string, any> = {};
+    const metricsMap: Record<string, unknown> = {};
 
     workflows.forEach((workflow) => {
       metricsMap[workflow.id] = workflowAnalyticsService.getWorkflowMetrics(
@@ -184,7 +184,7 @@ export function WorkflowAnalyticsExample() {
   };
 
   // Handle apply suggestion
-  const handleApplySuggestion = (suggestion: any) => {
+  const handleApplySuggestion = (suggestion: unknown) => {
     console.log("Applying suggestion:", suggestion);
     // Implement suggestion application logic
   };

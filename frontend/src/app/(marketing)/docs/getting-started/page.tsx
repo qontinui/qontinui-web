@@ -106,7 +106,7 @@ export default function GettingStartedPage() {
               </ul>
               <p className="text-muted-foreground text-sm mt-3">
                 <strong>Tip:</strong> Add identifying images to each state so
-                Qontinui can recognize when it's active.
+                Qontinui can recognize when it&apos;s active.
               </p>
             </div>
 

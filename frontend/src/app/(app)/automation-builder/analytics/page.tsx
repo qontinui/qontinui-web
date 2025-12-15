@@ -262,8 +262,8 @@ function ExecutionTable({ executions, onRowClick }: ExecutionTableProps) {
 
   const sortedExecutions = useMemo(() => {
     return [...executions].sort((a, b) => {
-      let aVal: any = a[sortBy];
-      let bVal: any = b[sortBy];
+      let aVal: unknown = a[sortBy];
+      let bVal: unknown = b[sortBy];
 
       if (sortBy === "startTime") {
         aVal = new Date(aVal).getTime();
@@ -757,7 +757,7 @@ export default function WorkflowAnalyticsPage() {
                 <Select
                   value={filters.status}
                   onValueChange={(v) =>
-                    setFilters({ ...filters, status: v as any })
+                    setFilters({ ...filters, status: v as unknown })
                   }
                 >
                   <SelectTrigger className="w-[150px] bg-[#0A0A0B] border-gray-700">

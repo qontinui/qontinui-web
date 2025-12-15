@@ -206,7 +206,7 @@ export function ImagesManager() {
             });
 
           return { success: true, fileName: file.name };
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error(`Upload failed for ${file.name}:`, error);
 
           // Show user-friendly error message
@@ -262,7 +262,7 @@ export function ImagesManager() {
 
     // Get usage information
     const usageInfo = getImageUsage(imageId);
-    setImageToDelete(image as any);
+    setImageToDelete(image as unknown);
     setDeletionUsageInfo(usageInfo);
     setShowDeletionDialog(true);
   };
@@ -618,7 +618,7 @@ export function ImagesManager() {
                         variant="ghost"
                         size="sm"
                         className="text-purple-400 hover:text-purple-300 hover:bg-purple-400/20 h-6 w-6 p-0"
-                        onClick={() => handleEditMask(image as any)}
+                        onClick={() => handleEditMask(image as unknown)}
                         title="Edit Mask"
                       >
                         <Edit className="w-3 h-3" />

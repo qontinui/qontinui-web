@@ -438,7 +438,7 @@ export function VariableMonitor({
       {/* Tabs */}
       <Tabs
         value={activeTab}
-        onValueChange={(v) => setActiveTab(v as any)}
+        onValueChange={(v) => setActiveTab(v as unknown)}
         className="flex-1"
       >
         <div className="border-b border-gray-800 px-6">

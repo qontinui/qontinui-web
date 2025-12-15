@@ -149,7 +149,7 @@ function getWorkflowDependencies(workflow: Workflow): string[] {
 
   workflow.actions.forEach((action) => {
     if (action.type === "RUN_WORKFLOW") {
-      const config = action.config as any;
+      const config = action.config as unknown;
       if (config.workflowId) {
         dependencies.add(config.workflowId);
       }
@@ -551,7 +551,7 @@ function applyTreeLayout(
  * Export graph as PNG
  */
 async function exportAsPNG(
-  _reactFlowInstance: any,
+  _reactFlowInstance: unknown,
   _filename: string = "dependency-graph.png"
 ) {
   // Use html2canvas or similar - for now just alert
@@ -933,7 +933,7 @@ function DependencyGraphInner({
           const runWorkflowAction = workflow?.actions.find(
             (a) =>
               a.type === "RUN_WORKFLOW" &&
-              (a.config as any).workflowId === depId
+              (a.config as unknown).workflowId === depId
           );
 
           const isHighlighted =
@@ -1192,7 +1192,7 @@ function DependencyGraphInner({
               {/* Filter */}
               <Select
                 value={selectedFilter}
-                onValueChange={(v) => setSelectedFilter(v as any)}
+                onValueChange={(v) => setSelectedFilter(v as unknown)}
               >
                 <SelectTrigger className="w-40">
                   <Filter className="h-4 w-4 mr-2" />

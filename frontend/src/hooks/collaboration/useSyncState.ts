@@ -25,7 +25,7 @@ export function useSyncState(
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const sync = useCallback(
-    async (localVersion: any) => {
+    async (localVersion: unknown) => {
       setIsSyncing(true);
       setSyncError(null);
 

@@ -115,7 +115,7 @@ export interface StateMetadata {
   complexity?: StateComplexity;
   lastAnalyzed?: string;
   notes?: string;
-  customFields?: Record<string, any>;
+  customFields?: Record<string, unknown>;
   createdBy?: string;
   lastModifiedBy?: string;
   createdAt?: string;

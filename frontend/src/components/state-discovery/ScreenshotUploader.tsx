@@ -77,7 +77,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
         if (response.ok) {
           const data = await response.json();
-          const hashes = data.screenshots.map((s: any) => s.hash);
+          const hashes = data.screenshots.map((s: unknown) => s.hash);
           setProjectHashes(hashes);
         }
       } catch (error) {
@@ -276,7 +276,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         );
         if (hashResponse.ok) {
           const hashData = await hashResponse.json();
-          const updatedHashes = hashData.screenshots.map((s: any) => s.hash);
+          const updatedHashes = hashData.screenshots.map((s: unknown) => s.hash);
           setProjectHashes(updatedHashes);
         }
       }
@@ -292,7 +292,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   };
 
   // Handle selecting project screenshots
-  const handleSelectProjectScreenshots = async (selected: any[]) => {
+  const handleSelectProjectScreenshots = async (selected: unknown[]) => {
     // Convert project screenshots to File objects
     // Selected project screenshots
 

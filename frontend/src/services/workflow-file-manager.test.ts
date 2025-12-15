@@ -271,7 +271,7 @@ describe("WorkflowFileManager", () => {
         actions: "not an array",
       };
 
-      const result = manager.validateWorkflow(invalidWorkflow as any);
+      const result = manager.validateWorkflow(invalidWorkflow as unknown);
 
       expect(result.valid).toBe(false);
     });
@@ -320,7 +320,7 @@ describe("WorkflowFileManager", () => {
     });
 
     test("should fix missing format", () => {
-      const fixableWorkflow: any = {
+      const fixableWorkflow: unknown = {
         ...testWorkflow,
       };
       delete fixableWorkflow.format;
@@ -332,7 +332,7 @@ describe("WorkflowFileManager", () => {
     });
 
     test("should fix missing connections", () => {
-      const fixableWorkflow: any = {
+      const fixableWorkflow: unknown = {
         ...testWorkflow,
         format: "graph",
       };
@@ -358,7 +358,7 @@ describe("WorkflowFileManager", () => {
         ],
       };
 
-      const result = manager.autoFixWorkflow(fixableWorkflow as any);
+      const result = manager.autoFixWorkflow(fixableWorkflow as unknown);
 
       expect(result.fixed).toBe(true);
       expect(result.workflow.actions[0].position).toBeDefined();

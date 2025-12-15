@@ -17,7 +17,7 @@ export interface SemanticObject {
     color?: number[];
     interactable?: boolean;
     position?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -54,7 +54,7 @@ export interface SemanticCompareRequest {
 export interface ComparisonDifference {
   added: SemanticObject[];
   removed: SemanticObject[];
-  changed: any[];
+  changed: unknown[];
 }
 
 export interface SemanticCompareResponse {

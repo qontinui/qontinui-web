@@ -103,7 +103,7 @@ export function getActionTypeColor(actionType: ActionType): string {
  */
 export function getActionOutputCount(
   actionType: ActionType,
-  config?: any
+  config?: unknown
 ): number {
   switch (actionType) {
     case "IF":
@@ -568,7 +568,7 @@ export const MINIMAP_CONFIG = {
   height: 150,
 
   /** Node color in minimap */
-  nodeColor: (node: any) => {
+  nodeColor: (node: unknown) => {
     if (node.data?.action?.type) {
       return getActionTypeColor(node.data.action.type);
     }

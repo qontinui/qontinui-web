@@ -24,7 +24,7 @@ export interface ScreenshotData {
   url?: string; // Blob URL for display
   permanentUrl?: string; // Permanent URL from backend (for saving)
   dimensions?: { width: number; height: number };
-  annotations?: any[];
+  annotations?: unknown[];
   hasUnsavedChanges?: boolean;
 }
 

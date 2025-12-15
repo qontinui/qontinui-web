@@ -73,7 +73,7 @@ interface StateDetectionResponse {
   total_transitions: number;
   states: DiscoveredState[];
   algorithm: string;
-  parameters: Record<string, any>;
+  parameters: Record<string, unknown>;
   processing_time_ms: number;
 }
 

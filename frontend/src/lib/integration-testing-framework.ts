@@ -18,7 +18,7 @@ export interface ActionSnapshot {
   id: string;
   timestamp: Date;
   actionType: "FIND" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "WAIT";
-  actionConfig: any; // Action configuration used
+  actionConfig: unknown; // Action configuration used
 
   // Match results
   matches: Array<{
@@ -163,7 +163,7 @@ export class IntegrationTestEngine {
    */
   async executeAction(
     actionType: string,
-    config: any
+    config: unknown
   ): Promise<ActionSnapshot> {
     if (!this.scenario) throw new Error("No scenario loaded");
 
@@ -185,7 +185,7 @@ export class IntegrationTestEngine {
       const failureSnapshot: ActionSnapshot = {
         id: generateId(),
         timestamp: new Date(),
-        actionType: actionType as any,
+        actionType: actionType as unknown,
         actionConfig: config,
         matches: [],
         stateName: activeStates[0] || "UNKNOWN",
@@ -379,7 +379,7 @@ export class SnapshotRecorder {
 
   async recordAction(
     actionType: ActionSnapshot["actionType"],
-    matches: any[],
+    matches: unknown[],
     nextScreenshot?: Screenshot
   ): Promise<ActionSnapshot> {
     if (!this.currentScreenshot) throw new Error("No current screenshot");

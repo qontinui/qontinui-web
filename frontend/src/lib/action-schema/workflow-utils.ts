@@ -70,8 +70,8 @@ export function getNextActions(
   types.forEach((type) => {
     const typeConnections = connections[type as keyof typeof connections];
     if (typeConnections) {
-      typeConnections.forEach((outputConnections: any) => {
-        outputConnections.forEach((conn: any) => {
+      typeConnections.forEach((outputConnections: unknown) => {
+        outputConnections.forEach((conn: unknown) => {
           nextActionIds.add(conn.action);
         });
       });
@@ -363,7 +363,7 @@ export interface LegacyProcess {
   actions: Array<{
     id: string;
     type: string;
-    config: Record<string, any>;
+    config: Record<string, unknown>;
   }>;
   initialScreenshotId?: string;
   initialStateIds?: string[];

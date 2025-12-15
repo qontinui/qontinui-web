@@ -268,7 +268,7 @@ export function PatternDebuggingExample() {
           preloadedData: debugData,
           hints: [
             "Examine the error logs to understand what went wrong",
-            "The automation couldn't find the expected element",
+            "The automation couldn&apos;t find the expected element",
             "Try adjusting the pattern matching tolerance",
             "Or update the pattern with a fresh screenshot",
             "Test again to verify the fix",

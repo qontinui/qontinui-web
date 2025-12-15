@@ -171,7 +171,7 @@ export interface ImageWithMetadata extends ImageAsset {
 export interface BulkOperation {
   type: "move" | "tag" | "collection" | "delete" | "download";
   imageIds: string[];
-  data?: any;
+  data?: unknown;
 }
 
 export interface ImageUsageDetail {

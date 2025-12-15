@@ -843,15 +843,15 @@ describe("SequentialToGraphConverter", () => {
 
     it("should throw error for invalid input", () => {
       expect(() => {
-        converter.convert(null as any);
+        converter.convert(null as unknown);
       }).toThrow("Actions must be an array");
 
       expect(() => {
-        converter.convert(undefined as any);
+        converter.convert(undefined as unknown);
       }).toThrow("Actions must be an array");
 
       expect(() => {
-        converter.convert("not an array" as any);
+        converter.convert("not an array" as unknown);
       }).toThrow("Actions must be an array");
     });
   });

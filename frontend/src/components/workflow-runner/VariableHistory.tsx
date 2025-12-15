@@ -126,7 +126,7 @@ function formatRelativeTime(isoString: string): string {
 /**
  * Format value for display
  */
-function formatValue(value: any): string {
+function formatValue(value: unknown): string {
   if (value === null) return "null";
   if (value === undefined) return "undefined";
 
@@ -140,7 +140,7 @@ function formatValue(value: any): string {
 /**
  * Detect if value is complex (object or array)
  */
-function isComplexValue(value: any): boolean {
+function isComplexValue(value: unknown): boolean {
   return typeof value === "object" && value !== null;
 }
 

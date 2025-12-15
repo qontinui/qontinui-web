@@ -26,7 +26,7 @@ const STATUS_CONFIG: Record<
     color: string;
     bgColor: string;
     borderColor: string;
-    icon: React.ComponentType<any>;
+    icon: React.ComponentType<unknown>;
   }
 > = {
   pending: {
@@ -68,10 +68,10 @@ const getActionIcon = (actionType: string) => {
 };
 
 // Helper to resolve TYPE action text from StateStrings
-const getTypeActionText = (action: Action, states: any[]): string | null => {
+const getTypeActionText = (action: Action, states: unknown[]): string | null => {
   if (action.type !== "TYPE") return null;
 
-  const typeConfig = action.config as any;
+  const typeConfig = action.config as unknown;
 
   // If using manual text, return it directly
   if (!typeConfig.textSource && typeConfig.text) {
@@ -85,9 +85,9 @@ const getTypeActionText = (action: Action, states: any[]): string | null => {
 
     if (typeConfig.textSource.stringIds?.length > 0) {
       const selectedStrings = state.strings
-        .filter((s: any) => typeConfig.textSource.stringIds.includes(s.id))
-        .map((s: any) => s.value)
-        .filter((v: any) => v);
+        .filter((s: unknown) => typeConfig.textSource.stringIds.includes(s.id))
+        .map((s: unknown) => s.value)
+        .filter((v: unknown) => v);
 
       if (selectedStrings.length > 0) {
         return selectedStrings.join(" | ");
@@ -105,7 +105,7 @@ interface ActionItemProps {
   status: ActionExecutionStatus;
   duration?: number;
   executionCount: number;
-  states: any[];
+  states: unknown[];
   onClick?: () => void;
 }
 

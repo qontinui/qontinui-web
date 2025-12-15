@@ -20,8 +20,8 @@ export type PanelPosition = "right" | "bottom" | "floating";
 export interface UnsavedChange {
   actionId: string;
   property: string;
-  oldValue: any;
-  newValue: any;
+  oldValue: unknown;
+  newValue: unknown;
   timestamp: number;
 }
 
@@ -75,8 +75,8 @@ export interface PropertiesPanelActions {
   recordChange: (
     actionId: string,
     property: string,
-    oldValue: any,
-    newValue: any
+    oldValue: unknown,
+    newValue: unknown
   ) => void;
   clearChanges: (actionId?: string) => void;
   discardChanges: (actionId?: string) => void;
@@ -222,8 +222,8 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
         recordChange: (
           actionId: string,
           property: string,
-          oldValue: any,
-          newValue: any
+          oldValue: unknown,
+          newValue: unknown
         ) => {
           set((state) => {
             const changes = new Map(state.unsavedChanges);

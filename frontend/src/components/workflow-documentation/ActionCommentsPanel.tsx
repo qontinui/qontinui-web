@@ -411,7 +411,7 @@ export function ActionCommentsPanel({
               {!selectedActionComment && !showNewCommentForm && (
                 <div className="p-4 rounded-lg bg-muted/30 border border-dashed">
                   <p className="text-sm text-muted-foreground">
-                    Add comments to document what this action does, why it's
+                    Add comments to document what this action does, why it&apos;s
                     needed, or any important notes for other developers.
                   </p>
                 </div>

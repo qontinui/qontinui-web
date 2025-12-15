@@ -20,7 +20,7 @@ export interface MigrationContext {
  * Result returned from migration operations
  */
 export interface MigrationResult {
-  config: any; // Transformed configuration
+  config: unknown; // Transformed configuration
   context: MigrationContext;
   success: boolean;
 }
@@ -55,17 +55,17 @@ export interface Migration {
    * Transform config from fromVersion to toVersion
    * Should not mutate input config
    */
-  migrate(config: any, context: MigrationContext): any;
+  migrate(config: unknown, context: MigrationContext): unknown;
 
   /**
    * Optional: Check if this migration needs to run
    * Returns true if the config has elements that need migration
    */
-  isApplicable?(config: any): boolean;
+  isApplicable?(config: unknown): boolean;
 
   /**
    * Optional: Validate that migration was successful
    * Returns true if the migrated config is valid
    */
-  validate?(config: any): boolean;
+  validate?(config: unknown): boolean;
 }

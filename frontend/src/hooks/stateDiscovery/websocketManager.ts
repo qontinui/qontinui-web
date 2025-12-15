@@ -4,9 +4,9 @@
  */
 
 export interface WebSocketCallbacks {
-  onProgress?: (progress: any) => void;
-  onStateImageFound?: (stateImage: any) => void;
-  onComplete?: (data: any) => void;
+  onProgress?: (progress: unknown) => void;
+  onStateImageFound?: (stateImage: unknown) => void;
+  onComplete?: (data: unknown) => void;
   onError?: (error: string) => void;
 }
 
@@ -96,7 +96,7 @@ export class StateDiscoveryWebSocketManager {
     };
   }
 
-  private handleMessage(message: any): void {
+  private handleMessage(message: unknown): void {
     console.log("[WebSocketManager] Handling message:", {
       type: message.type,
       analysisId: this.analysisId,
@@ -138,7 +138,7 @@ export class StateDiscoveryWebSocketManager {
     }
   }
 
-  sendMessage(message: any): void {
+  sendMessage(message: unknown): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
       console.log("[WebSocketManager] Sent message:", message);

@@ -615,7 +615,7 @@ export function AnalysisPanel() {
                       </span>{" "}
                       Pattern similarity between your examples is perfect, but
                       the strategy needs more diverse test cases to prove it
-                      won't match incorrect patterns in real-world use.
+                      won&apos;t match incorrect patterns in real-world use.
                     </p>
                   </div>
                 </div>

@@ -25,7 +25,7 @@ export interface Snapshot {
   workflow: Workflow;
   timestamp: string;
   tags?: string[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface SnapshotDiff {
@@ -549,7 +549,7 @@ export class WorkflowSnapshotsService {
   /**
    * Hash an action for comparison
    */
-  private hashAction(action: any): string {
+  private hashAction(action: unknown): string {
     const str = JSON.stringify({
       type: action.type,
       config: action.config,

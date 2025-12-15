@@ -89,7 +89,7 @@ export interface GraphEditorProps {
   selectedNode: Action | null;
   onSelectNode: (action: Action | null) => void;
   onUpdateWorkflow: (workflow: Workflow) => void;
-  onAddNode: (nodeType: any) => void;
+  onAddNode: (nodeType: unknown) => void;
 }
 
 /**

@@ -50,7 +50,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
     setSeverityFilter(value);
     setFilters((prev) => ({
       ...prev,
-      severity: value === "all" ? undefined : (value as any),
+      severity: value === "all" ? undefined : (value as unknown),
       page: 1,
     }));
   };
@@ -59,7 +59,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
     setStatusFilter(value);
     setFilters((prev) => ({
       ...prev,
-      status: value === "all" ? undefined : (value as any),
+      status: value === "all" ? undefined : (value as unknown),
       page: 1,
     }));
   };

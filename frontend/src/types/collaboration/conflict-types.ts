@@ -79,13 +79,13 @@ export interface Conflict {
   resourceId: string;
 
   /** Local version of the resource */
-  localVersion: any;
+  localVersion: unknown;
 
   /** Server version of the resource */
-  serverVersion: any;
+  serverVersion: unknown;
 
   /** Base version (common ancestor) */
-  baseVersion: any;
+  baseVersion: unknown;
 
   /** Path to the conflicting field */
   path: string[];
@@ -120,7 +120,7 @@ export interface MergeResult {
   conflicts: Conflict[];
 
   /** The merged version (if successful) */
-  mergedVersion: any;
+  mergedVersion: unknown;
 
   /** Resolutions applied */
   resolutions: Resolution[];
@@ -140,7 +140,7 @@ export interface Resolution {
   strategy: ResolutionStrategy;
 
   /** Resulting value after resolution */
-  resolvedValue: any;
+  resolvedValue: unknown;
 
   /** User who resolved the conflict */
   resolvedBy?: string;
@@ -163,10 +163,10 @@ export interface Operation {
   path: string[];
 
   /** Value being set (for insert/update) */
-  value?: any;
+  value?: unknown;
 
   /** Previous value (for update/delete) */
-  oldValue?: any;
+  oldValue?: unknown;
 
   /** When the operation was created */
   timestamp: Date;
@@ -199,7 +199,7 @@ export interface ConflictCheckResult {
   conflicts: Conflict[];
 
   /** Current server version */
-  serverVersion: any;
+  serverVersion: unknown;
 
   /** Whether the resource can be saved */
   canSave: boolean;
@@ -225,7 +225,7 @@ export interface ConflictDetails extends Conflict {
   recommendedStrategy: ResolutionStrategy;
 
   /** Preview of each resolution strategy */
-  strategyPreviews: Record<ResolutionStrategy, any>;
+  strategyPreviews: Record<ResolutionStrategy, unknown>;
 }
 
 /**
@@ -246,10 +246,10 @@ export interface Change {
   path: string[];
 
   /** New value */
-  value: any;
+  value: unknown;
 
   /** Previous value */
-  oldValue?: any;
+  oldValue?: unknown;
 
   /** When the change was made */
   timestamp: Date;
@@ -284,7 +284,7 @@ export interface SyncResult {
   failedChanges: Change[];
 
   /** Current version after sync */
-  currentVersion: any;
+  currentVersion: unknown;
 
   /** Version identifier */
   versionId: string;
@@ -344,7 +344,7 @@ export interface RemoteUpdate {
   version?: {
     id: string;
     number: number;
-    data: any;
+    data: unknown;
   };
 
   /** User who made the change */
@@ -359,13 +359,13 @@ export interface RemoteUpdate {
  */
 export interface ThreeWayMergeInfo {
   /** Base version (common ancestor) */
-  base: any;
+  base: unknown;
 
   /** Local version */
-  local: any;
+  local: unknown;
 
   /** Remote version */
-  remote: any;
+  remote: unknown;
 
   /** Path being merged */
   path: string[];
@@ -382,7 +382,7 @@ export interface OptimisticUpdate {
   change: Change;
 
   /** Original state before the update */
-  originalState: any;
+  originalState: unknown;
 
   /** When the update was applied */
   appliedAt: Date;
@@ -415,7 +415,7 @@ export interface ConflictResolutionContext {
   changeHistory: Change[];
 
   /** Current state of the resource */
-  currentState: any;
+  currentState: unknown;
 }
 
 /**
@@ -513,7 +513,7 @@ export interface VersionInfo {
   number: number;
 
   /** Version data */
-  data: any;
+  data: unknown;
 
   /** When the version was created */
   createdAt: Date;
@@ -559,7 +559,7 @@ export interface ConflictDetectorConfig {
   minimumSeverity: ConflictSeverity;
 
   /** Custom conflict detection rules */
-  customRules?: Array<(local: any, remote: any, base: any) => Conflict | null>;
+  customRules?: Array<(local: unknown, remote: unknown, base: unknown) => Conflict | null>;
 }
 
 /**

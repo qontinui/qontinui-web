@@ -154,7 +154,7 @@ function SequentialView({
  * Get a human-readable summary of the action configuration
  */
 function getActionSummary(action: Action): string {
-  const config = action.config as any;
+  const config = action.config as unknown;
 
   switch (action.type) {
     case "FIND":

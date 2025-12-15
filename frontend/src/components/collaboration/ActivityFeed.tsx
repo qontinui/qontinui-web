@@ -73,7 +73,7 @@ export interface ActivityItem {
   resource_name: string;
   description?: string;
   timestamp: Date | string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 interface ActivityFeedProps {
@@ -86,7 +86,7 @@ interface ActivityFeedProps {
   className?: string;
 }
 
-const actionIcons: Record<ActivityAction, React.ComponentType<any>> = {
+const actionIcons: Record<ActivityAction, React.ComponentType<unknown>> = {
   created: FilePlus,
   updated: FileEdit,
   deleted: FileX,

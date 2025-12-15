@@ -65,7 +65,7 @@ export const ImageExtractionTab: React.FC = () => {
       setNewStateName(persistedState.newStateName);
     }
 
-    // Note: We don't persist screenshots due to storage limitations
+    // Note: We don&apos;t persist screenshots due to storage limitations
     // Users will need to re-upload when navigating back
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

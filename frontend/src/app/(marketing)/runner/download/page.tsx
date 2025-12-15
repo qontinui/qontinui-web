@@ -93,7 +93,7 @@ export default function DownloadPage() {
         }),
       });
     } catch (e) {
-      // Silent fail - don't block download
+      // Silent fail - don&apos;t block download
       console.error("Analytics error:", e);
     }
 
@@ -136,7 +136,7 @@ export default function DownloadPage() {
                 </h2>
               </div>
               <p className="text-slate-700 mb-4">
-                We've detected you're using {getPlatformName(platform)}.
+                We've detected you&apos;re using {getPlatformName(platform)}.
                 Download the recommended version below.
               </p>
               {platform === "windows" && (

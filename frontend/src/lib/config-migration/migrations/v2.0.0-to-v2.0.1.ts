@@ -17,7 +17,7 @@ export const migrationV2ToV201: Migration = {
   description:
     "Remove deprecated parallel execution connections (GUI automation is sequential)",
 
-  migrate(config: any, context: MigrationContext): any {
+  migrate(config: unknown, context: MigrationContext): unknown {
     const migrated = structuredClone(config);
 
     // Track if any parallel connections were found
@@ -38,17 +38,17 @@ export const migrationV2ToV201: Migration = {
           if (outputs && typeof outputs === "object") {
             // Check if parallel field exists and has connections
             if (
-              (outputs as any).parallel &&
-              (outputs as any).parallel.length > 0
+              (outputs as unknown).parallel &&
+              (outputs as unknown).parallel.length > 0
             ) {
               foundParallelConnections = true;
               context.warnings.push(
-                `Workflow ${workflow.id} - Action ${actionId}: Removed ${(outputs as any).parallel.length} parallel connection(s). GUI automation requires sequential execution.`
+                `Workflow ${workflow.id} - Action ${actionId}: Removed ${(outputs as unknown).parallel.length} parallel connection(s). GUI automation requires sequential execution.`
               );
             }
 
             // Remove parallel field
-            delete (outputs as any).parallel;
+            delete (outputs as unknown).parallel;
           }
         }
       }
@@ -73,7 +73,7 @@ export const migrationV2ToV201: Migration = {
   /**
    * Optional: Only apply this migration if parallel connections exist
    */
-  isApplicable(config: any): boolean {
+  isApplicable(config: unknown): boolean {
     if (!config.workflows) return false;
 
     // Check if any workflow has parallel connections
@@ -82,8 +82,8 @@ export const migrationV2ToV201: Migration = {
         for (const outputs of Object.values(workflow.connections)) {
           if (outputs && typeof outputs === "object") {
             if (
-              (outputs as any).parallel &&
-              (outputs as any).parallel.length > 0
+              (outputs as unknown).parallel &&
+              (outputs as unknown).parallel.length > 0
             ) {
               return true;
             }
@@ -98,7 +98,7 @@ export const migrationV2ToV201: Migration = {
   /**
    * Validate the migrated config
    */
-  validate(migratedConfig: any): boolean {
+  validate(migratedConfig: unknown): boolean {
     // Use Zod schema validation for v2.0.1
     const schemaResult = validateConfig(migratedConfig, "2.0.1");
     if (!schemaResult.success) {
@@ -125,7 +125,7 @@ export const migrationV2ToV201: Migration = {
         if (workflow.connections) {
           for (const outputs of Object.values(workflow.connections)) {
             if (outputs && typeof outputs === "object") {
-              if ((outputs as any).parallel !== undefined) {
+              if ((outputs as unknown).parallel !== undefined) {
                 console.error(
                   "Validation failed: parallel field still exists after migration"
                 );

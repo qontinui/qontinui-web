@@ -15,7 +15,7 @@ export const migrationV21ToV22: Migration = {
   toVersion: "2.2.0",
   description: "Normalize state and transition positions to integers",
 
-  migrate(config: any, context: MigrationContext): any {
+  migrate(config: unknown, context: MigrationContext): unknown {
     const migrated = structuredClone(config);
 
     let statesNormalized = 0;
@@ -81,14 +81,14 @@ export const migrationV21ToV22: Migration = {
    * This migration is always applicable - it normalizes positions even if they're already integers
    * (in which case it's a no-op for those values)
    */
-  isApplicable(_config: any): boolean {
+  isApplicable(_config: unknown): boolean {
     return true;
   },
 
   /**
    * Validate the migrated config - ensure all positions are integers
    */
-  validate(migratedConfig: any): boolean {
+  validate(migratedConfig: unknown): boolean {
     // Check state positions
     if (migratedConfig.states && Array.isArray(migratedConfig.states)) {
       for (const state of migratedConfig.states) {

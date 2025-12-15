@@ -13,7 +13,7 @@ export interface ActionSpec {
   type: string; // "FIND" | "CLICK" | "TYPE" | etc.
   pattern_id?: string;
   text?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface MockExecutionResponse {

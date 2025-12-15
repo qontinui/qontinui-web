@@ -60,7 +60,7 @@ export default function CaptureViewerPage() {
       // Fetch events separately for more control
       const eventData = await captureService.getSessionEvents(sessionId);
       setEvents(eventData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to load capture session:", error);
       toast.error("Failed to load capture session");
     } finally {
@@ -92,7 +92,7 @@ export default function CaptureViewerPage() {
       );
       setCapturedFrame(frameBase64);
       setShowSaveDialog(true);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to capture frame:", error);
       toast.error("Failed to capture frame");
     } finally {
@@ -114,7 +114,7 @@ export default function CaptureViewerPage() {
         toast.success("Screenshot saved to project");
         setShowSaveDialog(false);
         setCapturedFrame(null);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Failed to save screenshot:", error);
         toast.error("Failed to save screenshot");
       }

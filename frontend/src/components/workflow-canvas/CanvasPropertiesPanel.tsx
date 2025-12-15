@@ -197,7 +197,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
                   <p className="text-xs text-gray-500 font-mono">{action.id}</p>
                 </div>
                 <Badge variant="secondary" className="text-xs">
-                  {actionConfigRegistry.getDisplayName(action.type as any)}
+                  {actionConfigRegistry.getDisplayName(action.type as unknown)}
                 </Badge>
               </div>
 

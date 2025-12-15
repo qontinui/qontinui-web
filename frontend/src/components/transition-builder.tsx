@@ -61,7 +61,7 @@ export function TransitionBuilder() {
     setStaysVisible(checked);
     if (fromState) {
       if (checked) {
-        // Remove from deactivate states if it's there
+        // Remove from deactivate states if it&apos;s there
         setDeactivateStates(deactivateStates.filter((s) => s !== fromState));
       } else {
         // Add to deactivate states if not already there
@@ -196,7 +196,7 @@ export function TransitionBuilder() {
 
         <Tabs
           value={transitionType}
-          onValueChange={(v) => setTransitionType(v as any)}
+          onValueChange={(v) => setTransitionType(v as unknown)}
         >
           <TabsList className="grid w-[400px] mx-auto grid-cols-2 bg-gray-800">
             <TabsTrigger

@@ -59,7 +59,7 @@ export default function OverviewTab() {
                 Admin Access Required
               </h3>
               <p className="text-muted-foreground text-center max-w-md mb-4">
-                You don't have admin privileges. Contact a superuser to grant
+                You don&apos;t have admin privileges. Contact a superuser to grant
                 you admin access, or use the bootstrap endpoint if this is a
                 fresh installation.
               </p>

@@ -22,7 +22,7 @@ export function calculateTestCoverage(
   const workflowTestingService = getWorkflowTestingService();
   const allTests = workflowTestingService.getAllTestCases();
 
-  allTests.forEach((test: any) => {
+  allTests.forEach((test: unknown) => {
     if (test.enabled !== false) {
       tested.add(test.workflowId);
     }

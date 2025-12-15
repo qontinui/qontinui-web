@@ -127,7 +127,7 @@ interface ActivityEvent {
   resourceName: string;
   timestamp: Date;
   user?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 interface DependencyNode {
@@ -461,7 +461,7 @@ function MetricCard({
   color,
   trend,
 }: {
-  icon: any;
+  icon: unknown;
   label: string;
   value: string | number;
   color: string;
@@ -1584,7 +1584,7 @@ function ExportImportPanel() {
 // ============================================================================
 
 // Treemap content renderer
-const TreemapContent = ({ x, y, width, height, index, name, count }: any) => {
+const TreemapContent = ({ x, y, width, height, index, name, count }: unknown) => {
   if (!x || !y || !width || !height) return null;
   const colors = [
     "#00D9FF",

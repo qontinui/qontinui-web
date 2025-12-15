@@ -24,7 +24,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
   >("full");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [maskMetadata, setMaskMetadata] = useState<any>(null);
+  const [maskMetadata, setMaskMetadata] = useState<unknown>(null);
 
   useEffect(() => {
     if (canvasRef.current && stateImage) {
@@ -33,7 +33,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
   }, [stateImage, maskData, showMask, maskOpacity]);
 
   useEffect(() => {
-    // Fetch mask if StateImage has one but we don't have the data
+    // Fetch mask if StateImage has one but we don&apos;t have the data
     if (stateImage.hasMask && !maskData && !isLoading) {
       fetchMask();
     }
@@ -214,7 +214,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
             <label className="text-xs text-gray-600">Mask Type:</label>
             <select
               value={maskType}
-              onChange={(e) => setMaskType(e.target.value as any)}
+              onChange={(e) => setMaskType(e.target.value as unknown)}
               className="w-full text-xs border rounded px-1 py-0.5"
             >
               <option value="full">Full Rectangle</option>

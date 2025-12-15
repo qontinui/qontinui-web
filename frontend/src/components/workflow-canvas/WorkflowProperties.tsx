@@ -69,17 +69,17 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
     );
   }
 
-  const updateMetadata = (key: string, value: any) => {
+  const updateMetadata = (key: string, value: unknown) => {
     // This would update workflow in canvas store
     // For now, we'll just log
     console.log("Update metadata:", key, value);
   };
 
-  const updateSettings = (key: string, value: any) => {
+  const updateSettings = (key: string, value: unknown) => {
     console.log("Update settings:", key, value);
   };
 
-  const updateVariable = (scope: string, name: string, value: any) => {
+  const updateVariable = (scope: string, name: string, value: unknown) => {
     console.log("Update variable:", scope, name, value);
   };
 
@@ -303,7 +303,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
               <div className="flex gap-2">
                 <Select
                   value={newVarScope}
-                  onValueChange={(v: any) => setNewVarScope(v)}
+                  onValueChange={(v: unknown) => setNewVarScope(v)}
                 >
                   <SelectTrigger className="w-[120px] bg-transparent border-gray-700 text-gray-200">
                     <SelectValue />

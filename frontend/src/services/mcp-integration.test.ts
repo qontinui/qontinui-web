@@ -21,13 +21,13 @@ const mockWorkflow: Workflow = {
     {
       id: "action-1",
       type: "CLICK",
-      config: { findBy: "text", searchText: "Submit" } as any,
+      config: { findBy: "text", searchText: "Submit" } as unknown,
       position: [100, 100],
     },
     {
       id: "action-2",
       type: "TYPE",
-      config: { text: "Hello World" } as any,
+      config: { text: "Hello World" } as unknown,
       position: [100, 200],
     },
   ],

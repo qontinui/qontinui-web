@@ -230,8 +230,8 @@ export function useProjectLoader(): UseProjectLoaderResult {
           projectId: project.id,
           projectName: project.name,
           hasConfiguration: !!project.configuration,
-          workflowCount: (project.configuration as any)?.workflows?.length ?? 0,
-          stateCount: (project.configuration as any)?.states?.length ?? 0,
+          workflowCount: (project.configuration as unknown)?.workflows?.length ?? 0,
+          stateCount: (project.configuration as unknown)?.states?.length ?? 0,
         });
 
         // Load configuration into context

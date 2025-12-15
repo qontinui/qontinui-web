@@ -78,7 +78,7 @@ export function TransitionFilters({
 
       <Select
         value={filters.actionType}
-        onValueChange={(value: any) =>
+        onValueChange={(value: unknown) =>
           onFiltersChange({ ...filters, actionType: value })
         }
       >

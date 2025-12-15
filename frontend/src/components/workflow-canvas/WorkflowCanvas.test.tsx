@@ -289,7 +289,7 @@ describe("validateConnection", () => {
     ];
 
     const result = validateConnection(attempt, nodes, newEdges);
-    // Note: This specific case may pass validation since we're checking the attempt
+    // Note: This specific case may pass validation since we&apos;re checking the attempt
     // The actual cycle detection happens when both edges exist
   });
 

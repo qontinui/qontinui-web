@@ -82,7 +82,7 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
           maskImg.src = mask;
         });
 
-        // If mask didn't load, just show image without mask
+        // If mask didn&apos;t load, just show image without mask
         if (
           !maskLoadedSuccessfully ||
           maskImg.width === 0 ||
@@ -198,7 +198,7 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
     );
   }
 
-  // If there's a mask, show the canvas
+  // If there&apos;s a mask, show the canvas
   if (mask && dimensions) {
     return (
       <div

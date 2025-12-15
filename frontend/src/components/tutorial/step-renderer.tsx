@@ -11,7 +11,7 @@ import {
 
 interface StepRendererProps {
   currentTutorial: Tutorial;
-  onTryIt?: (config: any) => void;
+  onTryIt?: (config: unknown) => void;
 }
 
 /**

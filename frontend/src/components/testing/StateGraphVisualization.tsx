@@ -23,7 +23,7 @@ interface StateGraphVisualizationProps {
 }
 
 // Custom node component for state nodes
-function StateNode({ data }: any) {
+function StateNode({ data }: unknown) {
   const getSuccessRateColor = (rate: number) => {
     if (rate >= 90) return "border-green-500 bg-green-500/20";
     if (rate >= 70) return "border-yellow-500 bg-yellow-500/20";

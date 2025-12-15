@@ -111,7 +111,7 @@ export function registerNodeType(
   if (NODE_TYPES[actionType]) {
     console.warn(`Overwriting existing node component for: ${actionType}`);
   }
-  (NODE_TYPES as any)[actionType] = component;
+  (NODE_TYPES as unknown)[actionType] = component;
 }
 
 /**

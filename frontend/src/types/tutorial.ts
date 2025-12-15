@@ -122,7 +122,7 @@ export interface WorkflowIntegration {
   validateUserActions: boolean;
 
   /** Optional sample data to use */
-  sampleData?: Record<string, any>;
+  sampleData?: Record<string, unknown>;
 
   /** Optional cleanup function after tutorial */
   cleanup?: boolean;
@@ -232,7 +232,7 @@ export interface TryItConfig {
   component: string;
 
   /** Optional data to preload into the component */
-  preloadedData?: Record<string, any>;
+  preloadedData?: Record<string, unknown>;
 
   /** Optional success criteria for completion */
   successCriteria?: {
@@ -240,7 +240,7 @@ export interface TryItConfig {
     description: string;
 
     /** Function or rule to validate completion (stored as JSON-serializable criteria) */
-    validation?: Record<string, any>;
+    validation?: Record<string, unknown>;
   };
 
   /** Optional hints to help users complete the exercise */
@@ -290,7 +290,7 @@ export interface TutorialStep {
   tryIt?: TryItConfig;
 
   /** Optional JSON configuration to display to the user */
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
 
   /** Optional difficulty level specific to this step */
   difficulty?: DifficultyLevel;
@@ -371,7 +371,7 @@ export interface Tutorial {
   workflowIntegration?: WorkflowIntegration;
 
   /** Optional complete automation configuration resulting from following the tutorial */
-  finalProject?: Record<string, any>;
+  finalProject?: Record<string, unknown>;
 
   /** Optional prerequisites (tutorial IDs that should be completed first) */
   prerequisites?: string[];
@@ -468,7 +468,7 @@ export interface TutorialProgress {
   isActive?: boolean;
 
   /** Optional custom metadata for extended tracking */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -541,14 +541,14 @@ export interface TutorialSystemConfig {
 /**
  * Type guard to check if a value is a valid AnnotationType
  */
-export function isAnnotationType(value: any): value is AnnotationType {
+export function isAnnotationType(value: unknown): value is AnnotationType {
   return ["highlight", "arrow", "pulse", "label"].includes(value);
 }
 
 /**
  * Type guard to check if a value is a valid TryItType
  */
-export function isTryItType(value: any): value is TryItType {
+export function isTryItType(value: unknown): value is TryItType {
   return [
     "upload-screenshots",
     "identify-element",
@@ -564,6 +564,6 @@ export function isTryItType(value: any): value is TryItType {
 /**
  * Type guard to check if a value is a valid DifficultyLevel
  */
-export function isDifficultyLevel(value: any): value is DifficultyLevel {
+export function isDifficultyLevel(value: unknown): value is DifficultyLevel {
   return ["beginner", "intermediate", "advanced"].includes(value);
 }

@@ -33,7 +33,7 @@ export interface DetectedRegion {
   region_type: string;
   label?: string;
   screenshot_index: number;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   grid_metadata?: GridMetadata;
 }
 
@@ -42,7 +42,7 @@ export interface RegionAnalyzerResult {
   analyzer_name: string;
   regions: DetectedRegion[];
   confidence: number;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface FusedRegion {
@@ -54,7 +54,7 @@ export interface FusedRegion {
   region_type?: string;
   label?: string;
   screenshot_index: number;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   grid_metadata?: GridMetadata;
 }
 
@@ -64,7 +64,7 @@ export interface RegionAnalyzerInfo {
   version: string;
   supports_multi_screenshot: boolean;
   required_screenshots: number;
-  default_parameters: Record<string, any>;
+  default_parameters: Record<string, unknown>;
   detects_grids: boolean;
 }
 
@@ -79,7 +79,7 @@ export interface RegionAnalysisResponse {
     multi_vote_regions: number;
     total_grid_cells: number;
   };
-  analyzer_statistics: Record<string, any>;
+  analyzer_statistics: Record<string, unknown>;
   status: string;
   error_message?: string;
 }
@@ -88,9 +88,9 @@ export interface RegionAnalysisJob {
   id: string;
   annotation_set_id: string;
   analyzers_used: string[];
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
   fusion_enabled: boolean;
-  fusion_config?: Record<string, any>;
+  fusion_config?: Record<string, unknown>;
   status: string;
   started_at?: string;
   completed_at?: string;
@@ -98,7 +98,7 @@ export interface RegionAnalysisJob {
   total_regions_found: number;
   total_fused_regions: number;
   total_grid_cells: number;
-  analyzer_statistics?: Record<string, any>;
+  analyzer_statistics?: Record<string, unknown>;
   created_at: string;
   created_by_id: string;
 }
@@ -110,7 +110,7 @@ export interface RegionAnalysisJobDetail extends RegionAnalysisJob {
 export interface RegionAnalysisRequest {
   annotation_set_id: string;
   analyzer_names?: string[];
-  analyzer_configs?: Record<string, Record<string, any>>;
+  analyzer_configs?: Record<string, Record<string, unknown>>;
   parallel?: boolean;
   fuse_results?: boolean;
   overlap_threshold?: number;

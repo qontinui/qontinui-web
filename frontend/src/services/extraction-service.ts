@@ -5,7 +5,7 @@ export interface ExtractionSession {
   id: string;
   project_id: string;
   source_urls: string[];
-  config: Record<string, any>;
+  config: Record<string, unknown>;
   status: "pending" | "running" | "completed" | "failed";
   stats: {
     pages_extracted?: number;
@@ -42,8 +42,8 @@ export interface ExtractionAnnotation {
   source_url: string;
   viewport_width: number;
   viewport_height: number;
-  elements: any[];
-  states: any[];
+  elements: unknown[];
+  states: unknown[];
   created_at: string;
   updated_at: string;
 }

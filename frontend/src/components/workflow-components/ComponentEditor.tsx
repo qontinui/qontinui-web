@@ -60,7 +60,7 @@ export interface ComponentEditorProps {
   onCancel: () => void;
   onTest?: (
     component: SubflowComponent,
-    parameters: Record<string, any>
+    parameters: Record<string, unknown>
   ) => void;
   className?: string;
 }
@@ -168,7 +168,7 @@ export function ComponentEditor({
   const handleTest = () => {
     if (!validate()) return;
 
-    const testParameters: Record<string, any> = {};
+    const testParameters: Record<string, unknown> = {};
     parameters.forEach((param) => {
       testParameters[param.name] = param.defaultValue;
     });

@@ -93,13 +93,13 @@ export function SemanticAnalysisTab() {
         description_model: descriptionModel,
       };
 
-      const requestBody: any = {
+      const requestBody: unknown = {
         image: selectedImage,
         strategy,
         options,
       };
 
-      // Only include text_prompt if it's not empty and strategy is sam3
+      // Only include text_prompt if it&apos;s not empty and strategy is sam3
       if (textPrompt.trim() && strategy === "sam3") {
         requestBody.text_prompt = textPrompt.trim();
       }

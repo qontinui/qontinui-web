@@ -27,13 +27,13 @@ import {
 export interface ConversionError {
   code: string;
   message: string;
-  details?: any;
+  details?: unknown;
 }
 
 export interface ConversionWarning {
   code: string;
   message: string;
-  details?: any;
+  details?: unknown;
 }
 
 export interface ConversionStatistics {
@@ -222,7 +222,7 @@ export class FormatConverter {
         statistics,
         validation,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
         errors: [
@@ -347,7 +347,7 @@ export class FormatConverter {
         statistics,
         validation,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
         errors: [

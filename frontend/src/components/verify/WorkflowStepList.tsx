@@ -35,7 +35,7 @@ export interface WorkflowStepListProps {
  * Get an appropriate icon for each action type
  */
 function getActionIcon(actionType: string) {
-  const iconMap: Record<string, React.ComponentType<any>> = {
+  const iconMap: Record<string, React.ComponentType<unknown>> = {
     CLICK: MousePointerClick,
     DOUBLE_CLICK: MousePointerClick,
     RIGHT_CLICK: MousePointerClick,
@@ -64,7 +64,7 @@ function getActionIcon(actionType: string) {
 /**
  * Get a display-friendly name for the action
  */
-function getActionDisplayName(action: any, _index: number): string {
+function getActionDisplayName(action: unknown, _index: number): string {
   // Use custom name if provided
   if (action.name) {
     return action.name;

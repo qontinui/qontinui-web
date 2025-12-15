@@ -338,7 +338,7 @@ export function AnalyticsDashboard({
             executionsByDate[bucketDate].failed++;
           }
         } else {
-          // Find nearest bucket for executions that don't match exactly
+          // Find nearest bucket for executions that don&apos;t match exactly
           const execDateNum = execDate.getTime();
           let nearestKey: string | null = null;
           let nearestDiff = Infinity;

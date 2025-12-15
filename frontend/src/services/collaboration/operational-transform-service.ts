@@ -651,7 +651,7 @@ export class OperationalTransformService {
   /**
    * Apply an operation to a document
    */
-  apply(doc: any, op: Operation): any {
+  apply(doc: unknown, op: Operation): unknown {
     const result = JSON.parse(JSON.stringify(doc)); // Deep clone
 
     switch (op.type) {
@@ -686,7 +686,7 @@ export class OperationalTransformService {
   /**
    * Apply insert operation
    */
-  private applyInsert(doc: any, op: Operation): void {
+  private applyInsert(doc: unknown, op: Operation): void {
     const parent = this.navigateToPath(doc, op.path.slice(0, -1));
     const key = op.path[op.path.length - 1];
 
@@ -702,7 +702,7 @@ export class OperationalTransformService {
   /**
    * Apply delete operation
    */
-  private applyDelete(doc: any, op: Operation): void {
+  private applyDelete(doc: unknown, op: Operation): void {
     const parent = this.navigateToPath(doc, op.path.slice(0, -1));
     const key = op.path[op.path.length - 1];
 
@@ -718,7 +718,7 @@ export class OperationalTransformService {
   /**
    * Apply update operation
    */
-  private applyUpdate(doc: any, op: Operation): void {
+  private applyUpdate(doc: unknown, op: Operation): void {
     const parent = this.navigateToPath(doc, op.path.slice(0, -1));
     const key = op.path[op.path.length - 1];
     if (key !== undefined) {
@@ -729,7 +729,7 @@ export class OperationalTransformService {
   /**
    * Apply move operation
    */
-  private applyMove(doc: any, op: Operation): void {
+  private applyMove(doc: unknown, op: Operation): void {
     const parent = this.navigateToPath(doc, op.path.slice(0, -1));
     const key = op.path[op.path.length - 1];
 
@@ -742,7 +742,7 @@ export class OperationalTransformService {
   /**
    * Apply connect operation
    */
-  private applyConnect(doc: any, op: Operation): void {
+  private applyConnect(doc: unknown, op: Operation): void {
     if (!doc.connections) {
       doc.connections = [];
     }
@@ -758,11 +758,11 @@ export class OperationalTransformService {
   /**
    * Apply disconnect operation
    */
-  private applyDisconnect(doc: any, op: Operation): void {
+  private applyDisconnect(doc: unknown, op: Operation): void {
     if (!doc.connections) return;
 
     doc.connections = doc.connections.filter(
-      (conn: any) =>
+      (conn: unknown) =>
         !(conn.source === op.sourceId && conn.target === op.targetId)
     );
   }
@@ -770,7 +770,7 @@ export class OperationalTransformService {
   /**
    * Navigate to a path in the document
    */
-  private navigateToPath(doc: any, path: string[]): any {
+  private navigateToPath(doc: unknown, path: string[]): unknown {
     let current = doc;
 
     for (const segment of path) {

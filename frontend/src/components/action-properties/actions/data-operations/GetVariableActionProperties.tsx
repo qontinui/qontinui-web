@@ -13,7 +13,7 @@ import { GetVariableActionConfig } from "@/lib/action-schema";
  * Allows users to:
  * - Specify the variable name to retrieve
  * - Optionally set an output variable (where to store the value)
- * - Optionally set a default value if the variable doesn't exist
+ * - Optionally set a default value if the variable doesn&apos;t exist
  */
 export function GetVariableActionProperties({
   action,
@@ -60,7 +60,7 @@ export function GetVariableActionProperties({
           className="bg-transparent border-gray-700 font-mono text-sm"
         />
         <p className="text-xs text-gray-500">
-          Value to use if the variable doesn't exist. Numbers and booleans will
+          Value to use if the variable doesn&apos;t exist. Numbers and booleans will
           be automatically converted.
         </p>
       </div>

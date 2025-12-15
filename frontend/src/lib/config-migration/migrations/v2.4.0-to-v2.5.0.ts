@@ -20,7 +20,7 @@ export const migrationV24ToV25: Migration = {
   description:
     "Add TRIGGER_AI_ANALYSIS action type for autonomous debugging with AI assistants",
 
-  migrate(config: any, context: MigrationContext): any {
+  migrate(config: unknown, context: MigrationContext): unknown {
     const migrated = structuredClone(config);
 
     // This migration is purely additive - no transformation needed
@@ -41,7 +41,7 @@ export const migrationV24ToV25: Migration = {
   /**
    * This migration is always applicable - it's a schema extension
    */
-  isApplicable(_config: any): boolean {
+  isApplicable(_config: unknown): boolean {
     return true;
   },
 
@@ -49,7 +49,7 @@ export const migrationV24ToV25: Migration = {
    * Validate the migrated config
    * - If TRIGGER_AI_ANALYSIS actions exist, validate their configs
    */
-  validate(migratedConfig: any): boolean {
+  validate(migratedConfig: unknown): boolean {
     if (migratedConfig.workflows && Array.isArray(migratedConfig.workflows)) {
       for (const workflow of migratedConfig.workflows) {
         if (workflow.actions && Array.isArray(workflow.actions)) {

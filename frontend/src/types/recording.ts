@@ -101,7 +101,7 @@ export interface ProcessingLogEntry {
   phase: ProcessingPhase;
   level: string; // 'info' | 'warning' | 'error'
   message: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   progress?: number;
 }
 
@@ -184,7 +184,7 @@ export interface DiscoveredWorkflow {
 export interface WorkflowAction {
   id: string;
   type: string;
-  [key: string]: any; // Additional properties based on action type
+  [key: string]: unknown; // Additional properties based on action type
 }
 
 export interface DiscoveredTransition {
@@ -244,7 +244,7 @@ export interface RecordingError {
   success: false;
   error: string;
   message: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 // Review & Acceptance Types
@@ -252,20 +252,20 @@ export interface RecordingError {
 export interface StateReviewUpdate {
   user_approved: boolean;
   user_notes?: string;
-  modifications?: Record<string, any>;
+  modifications?: Record<string, unknown>;
 }
 
 export interface TransitionReviewUpdate {
   user_approved: boolean;
   user_notes?: string;
-  modifications?: Record<string, any>;
+  modifications?: Record<string, unknown>;
 }
 
 export interface AcceptanceRequest {
   action: "accept" | "accept_selected" | "modify" | "discard";
   selected_state_ids?: string[];
   selected_transition_ids?: string[];
-  modifications?: Record<string, any>;
+  modifications?: Record<string, unknown>;
 }
 
 export interface AcceptanceResponse {

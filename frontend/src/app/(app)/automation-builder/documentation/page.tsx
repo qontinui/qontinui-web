@@ -137,12 +137,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "CLICK" as any,
+          type: "CLICK" as unknown,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as any[],
-      connections: {} as any,
+        })) as unknown[],
+      connections: {} as unknown,
       variables: {},
     },
     {
@@ -155,12 +155,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "TYPE" as any,
+          type: "TYPE" as unknown,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as any[],
-      connections: {} as any,
+        })) as unknown[],
+      connections: {} as unknown,
       variables: {},
     },
     {
@@ -173,12 +173,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "CLICK" as any,
+          type: "CLICK" as unknown,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as any[],
-      connections: {} as any,
+        })) as unknown[],
+      connections: {} as unknown,
       variables: {},
     },
     {
@@ -191,12 +191,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "WAIT" as any,
+          type: "WAIT" as unknown,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as any[],
-      connections: {} as any,
+        })) as unknown[],
+      connections: {} as unknown,
       variables: {},
     },
     {
@@ -209,12 +209,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "TYPE" as any,
+          type: "TYPE" as unknown,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as any[],
-      connections: {} as any,
+        })) as unknown[],
+      connections: {} as unknown,
       variables: {},
     },
   ];
@@ -489,7 +489,7 @@ function DocumentationNavigator({
         <div className="flex flex-col gap-2">
           <Select
             value={filter.status}
-            onValueChange={(value: any) =>
+            onValueChange={(value: unknown) =>
               onFilterChange({ ...filter, status: value })
             }
           >
@@ -1269,7 +1269,7 @@ export default function DocumentationPage() {
                           No Documentation Yet
                         </h3>
                         <p className="text-gray-400 mb-6">
-                          This workflow doesn't have documentation yet. Create
+                          This workflow doesn&apos;t have documentation yet. Create
                           documentation to help others understand how it works.
                         </p>
                         <div className="flex gap-3 justify-center">

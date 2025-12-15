@@ -166,7 +166,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
       toast.success("Screenshot captured", {
         description: `${data.width}x${data.height} pixels`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Screenshot capture failed:", error);
       toast.error("Failed to capture screenshot", {
         description:

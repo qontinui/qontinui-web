@@ -207,7 +207,7 @@ export class WebSocketCollaborationService {
   sendResourceUpdate(
     resourceType: ResourceType,
     resourceId: string,
-    changes: Record<string, any>
+    changes: Record<string, unknown>
   ): void {
     const message: WebSocketMessage = {
       type: "resource_update",

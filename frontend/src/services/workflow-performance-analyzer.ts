@@ -42,7 +42,7 @@ export interface ExecutionData {
   /** Variables at different points */
   variableSnapshots?: Array<{
     actionId: string;
-    variables: Record<string, any>;
+    variables: Record<string, unknown>;
   }>;
 
   /** Critical path actions */
@@ -1727,7 +1727,7 @@ export class WorkflowPerformanceAnalyzer {
     severity: "minor" | "moderate" | "severe";
     details: string;
   }> {
-    const regressions: Array<any> = [];
+    const regressions: Array<unknown> = [];
 
     for (let i = 1; i < versions.length; i++) {
       const prev = versions[i - 1];

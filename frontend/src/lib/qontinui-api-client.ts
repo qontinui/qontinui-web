@@ -57,7 +57,7 @@ interface MatchesResponse {
 
 interface StateDetectionRequest {
   screenshot: string;
-  states: any[];
+  states: unknown[];
   similarity?: number;
 }
 
@@ -146,7 +146,7 @@ export class QontinuiAPIClient {
   private async request<T>(
     endpoint: string,
     method: string = "GET",
-    body?: any
+    body?: unknown
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     console.log(`[QontinuiAPI] Making request to: ${url}`);
@@ -278,7 +278,7 @@ export class QontinuiAPIClient {
   ): Promise<StateDetectionResponse> {
     const request: StateDetectionRequest = {
       screenshot,
-      states: states as any[], // Convert to plain objects
+      states: states as unknown[], // Convert to plain objects
       similarity,
     };
 
@@ -418,10 +418,10 @@ export class QontinuiAPIClient {
    * Execute a process in hybrid mock mode
    */
   async executeProcess(
-    process: any,
+    process: unknown,
     screenshots: string[],
-    states: any[],
-    categories: any[] = [],
+    states: unknown[],
+    categories: unknown[] = [],
     mode: "hybrid" | "full_mock" = "hybrid",
     similarity: number = 0.8
   ): Promise<{
@@ -432,7 +432,7 @@ export class QontinuiAPIClient {
     status: string;
     current_action: number;
     total_actions: number;
-    results: any[];
+    results: unknown[];
   }> {
     return this.request("/process/execute", "POST", {
       process,
@@ -449,7 +449,7 @@ export class QontinuiAPIClient {
    */
   async executeProcessStep(
     sessionId: string,
-    action: any
+    action: unknown
   ): Promise<{
     actionId: string;
     actionType: string;
@@ -471,7 +471,7 @@ export class QontinuiAPIClient {
     success_rate: number;
     active_states: string[];
     current_screenshot: number;
-    history: any[];
+    history: unknown[];
   }> {
     return this.request(`/process/status/${sessionId}`);
   }
@@ -485,7 +485,7 @@ export class QontinuiAPIClient {
     total_actions: number;
     successful_actions: number;
     success_rate: number;
-    execution_history: any[];
+    execution_history: unknown[];
   }> {
     return this.request(`/process/complete/${sessionId}`, "POST");
   }

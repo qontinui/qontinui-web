@@ -329,13 +329,13 @@ export interface Connections {
  */
 export interface WorkflowVariables {
   /** Local variables - scoped to single workflow execution */
-  local?: Record<string, any>;
+  local?: Record<string, unknown>;
 
   /** Process variables - persist across workflow executions */
-  process?: Record<string, any>;
+  process?: Record<string, unknown>;
 
   /** Global variables - persist across all processes */
-  global?: Record<string, any>;
+  global?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -398,7 +398,7 @@ export interface WorkflowMetadata {
   viewMode?: "sequential" | "graph";
 
   /** Additional custom metadata */
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // ============================================================================
@@ -551,7 +551,7 @@ export const MULTI_OUTPUT_ACTIONS = {
 /**
  * Get the number of outputs for a given action type
  */
-export function getActionOutputCount(actionType: string, config?: any): number {
+export function getActionOutputCount(actionType: string, config?: unknown): number {
   if (actionType === "IF" || actionType === "TRY_CATCH") {
     return MULTI_OUTPUT_ACTIONS[actionType];
   }

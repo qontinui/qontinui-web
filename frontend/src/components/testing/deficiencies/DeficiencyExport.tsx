@@ -112,7 +112,7 @@ export function DeficiencyExport({
             <Label>Export Format</Label>
             <RadioGroup
               value={format}
-              onValueChange={(v) => setFormat(v as any)}
+              onValueChange={(v) => setFormat(v as unknown)}
             >
               {(["pdf", "csv", "json"] as const).map((formatOption) => {
                 const Icon = formatIcons[formatOption];

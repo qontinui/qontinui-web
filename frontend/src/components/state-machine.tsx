@@ -138,9 +138,9 @@ export function StateStructure() {
 
   // Handle node position changes
   const handleNodesChange = useCallback(
-    (changes: any) => {
+    (changes: unknown) => {
       // Track drag start/end to prevent node destruction during drag
-      changes.forEach((change: any) => {
+      changes.forEach((change: unknown) => {
         if (change.type === "position") {
           if (change.dragging === true) {
             isDraggingRef.current = true;
@@ -154,13 +154,13 @@ export function StateStructure() {
       onNodesChange(changes);
 
       // Update positions when nodes finish dragging (dragging === false means drag ended)
-      changes.forEach((change: any) => {
+      changes.forEach((change: unknown) => {
         if (
           change.type === "position" &&
           change.dragging === false &&
           change.position
         ) {
-          // Check if it's a state node
+          // Check if it&apos;s a state node
           const state = states.find((s) => s.id === change.id);
           if (state) {
             updateState({
@@ -668,7 +668,7 @@ export function StateStructure() {
   const updateRegion = (
     index: number,
     field: keyof StateRegion,
-    value: any
+    value: unknown
   ) => {
     if (!selectedNode) return;
     const currentState = states.find((s) => s.id === selectedNode);
@@ -716,7 +716,7 @@ export function StateStructure() {
   const updateLocation = (
     index: number,
     field: keyof StateLocation,
-    value: any
+    value: unknown
   ) => {
     if (!selectedNode) return;
     const currentState = states.find((s) => s.id === selectedNode);
@@ -760,7 +760,7 @@ export function StateStructure() {
   const updateString = (
     index: number,
     field: keyof StateString,
-    value: any
+    value: unknown
   ) => {
     if (!selectedNode) return;
     const currentState = states.find((s) => s.id === selectedNode);
@@ -801,7 +801,7 @@ export function StateStructure() {
     if (pendingIdChangeRef.current) {
       const { oldId, newId } = pendingIdChangeRef.current;
 
-      // If selectedNode matches the newId but we can't find it yet,
+      // If selectedNode matches the newId but we can&apos;t find it yet,
       // try to find the oldId temporarily
       if (selectedNode === newId) {
         const oldState = states.find((s) => s.id === oldId);

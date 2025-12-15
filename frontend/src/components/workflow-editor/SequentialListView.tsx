@@ -359,7 +359,7 @@ function buildActionTree(
 
     // Check for nested actions
     if (action.type === "IF") {
-      const ifConfig = action.config as any;
+      const ifConfig = action.config as unknown;
       const children: ActionTreeNode[] = [];
 
       // Then branch
@@ -384,14 +384,14 @@ function buildActionTree(
         node.children = children;
       }
     } else if (action.type === "LOOP") {
-      const loopConfig = action.config as any;
+      const loopConfig = action.config as unknown;
       if (loopConfig.loopActions && Array.isArray(loopConfig.loopActions)) {
         node.children = loopConfig.loopActions.map((a: Action) =>
           processAction(a, level + 1)
         );
       }
     } else if (action.type === "TRY_CATCH") {
-      const tryConfig = action.config as any;
+      const tryConfig = action.config as unknown;
       const children: ActionTreeNode[] = [];
 
       if (tryConfig.tryActions && Array.isArray(tryConfig.tryActions)) {
@@ -453,7 +453,7 @@ function getActionSummary(action: Action): string {
   }
 
   // Generate summary based on action type and config
-  const config = action.config as any;
+  const config = action.config as unknown;
 
   switch (action.type) {
     case "CLICK":

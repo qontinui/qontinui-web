@@ -71,7 +71,7 @@ describe("Workflow Type System", () => {
     });
 
     test("should detect graph format from connections", () => {
-      const workflow: any = {
+      const workflow: unknown = {
         id: "wf-1",
         name: "Test",
         version: "1.0.0",
@@ -88,7 +88,7 @@ describe("Workflow Type System", () => {
     test("should detect graph format from action positions", () => {
       const action = createAction("CLICK", { target: { image: "test.png" } });
       action.position = [100, 200];
-      const workflow: any = {
+      const workflow: unknown = {
         id: "wf-1",
         name: "Test",
         version: "1.0.0",
@@ -529,7 +529,7 @@ describe("Workflow Validation", () => {
     });
 
     test("should require workflow id, name, version", () => {
-      const workflow: any = {
+      const workflow: unknown = {
         actions: [],
       };
       const result = validateWorkflow(workflow);
@@ -687,7 +687,7 @@ describe("Workflow Validation", () => {
     });
 
     test("should detect invalid position format", () => {
-      const action: any = createAction(
+      const action: unknown = createAction(
         "CLICK",
         { target: { image: "test.png" } },
         { id: "action-1" }

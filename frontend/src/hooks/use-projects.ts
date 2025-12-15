@@ -97,7 +97,7 @@ export function useCreateProject() {
     mutationFn: async (data: {
       name: string;
       description?: string;
-      configuration: any;
+      configuration: unknown;
     }) => {
       const result = await projectService.createProject(data);
       return parseApi(ProjectSchema, result, "create project");

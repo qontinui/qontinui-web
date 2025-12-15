@@ -101,12 +101,12 @@ export function TestCaseEditor({
     testCase?.config.initialState?.activeStates || []
   );
   const [inputVariables, setInputVariables] = React.useState<
-    Record<string, any>
+    Record<string, unknown>
   >(testCase?.config.inputs || {});
 
   // Expected outputs
   const [expectedVariables, setExpectedVariables] = React.useState<
-    Record<string, any>
+    Record<string, unknown>
   >(testCase?.config.initialState?.variables || {});
   const [expectedFinalAction, setExpectedFinalAction] = React.useState<string>(
     testCase?.config.expected?.finalActionId || ""
@@ -261,13 +261,13 @@ export function TestCaseEditor({
       const { runWorkflowTest } = await import("@/lib/api/workflow-testing");
 
       // Get project ID from workflow or default
-      const projectId = (workflow as any).projectId || "default-project";
+      const projectId = (workflow as unknown).projectId || "default-project";
 
       // Execute the test
       const result = await runWorkflowTest(testCaseData, workflow, projectId);
 
       // Store result in test case metadata
-      const existingResults = (testCase?.metadata?.testResults as any[]) || [];
+      const existingResults = (testCase?.metadata?.testResults as unknown[]) || [];
       const updatedResults = [result, ...existingResults].slice(0, 100); // Keep last 100 results
 
       // Update test case with result
@@ -346,7 +346,7 @@ export function TestCaseEditor({
   }, []);
 
   // Variable handlers
-  const addInputVariable = React.useCallback((key: string, value: any) => {
+  const addInputVariable = React.useCallback((key: string, value: unknown) => {
     setInputVariables((prev) => ({ ...prev, [key]: value }));
   }, []);
 
@@ -357,7 +357,7 @@ export function TestCaseEditor({
     });
   }, []);
 
-  const addExpectedVariable = React.useCallback((key: string, value: any) => {
+  const addExpectedVariable = React.useCallback((key: string, value: unknown) => {
     setExpectedVariables((prev) => ({ ...prev, [key]: value }));
   }, []);
 
@@ -914,8 +914,8 @@ function AssertionEditor({
 }
 
 interface KeyValueEditorProps {
-  values: Record<string, any>;
-  onAdd: (key: string, value: any) => void;
+  values: Record<string, unknown>;
+  onAdd: (key: string, value: unknown) => void;
   onRemove: (key: string) => void;
   placeholder?: string;
 }

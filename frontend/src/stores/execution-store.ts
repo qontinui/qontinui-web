@@ -56,7 +56,7 @@ export interface ActionExecutionState {
   stack?: string;
 
   /** Result data */
-  result?: any;
+  result?: unknown;
 
   /** Number of times executed (for loops) */
   executionCount?: number;
@@ -120,7 +120,7 @@ export interface ExecutionState {
   selectedActionId: string | null;
 
   // Variables
-  currentVariables: Record<string, any>;
+  currentVariables: Record<string, unknown>;
 }
 
 /**
@@ -145,7 +145,7 @@ export interface ExecutionActions {
   ) => void;
   addExecutionEvent: (event: ExecutionEvent) => void;
   setExecutionStatus: (status: ExecutionStatusDetail) => void;
-  updateVariables: (variables: Record<string, any>) => void;
+  updateVariables: (variables: Record<string, unknown>) => void;
   processExecutionEvent: (event: ExecutionEvent) => void;
 
   // History
@@ -538,7 +538,7 @@ export const useExecutionStore = create<ExecutionStore>()(
         }
       },
 
-      updateVariables: (variables: Record<string, any>) => {
+      updateVariables: (variables: Record<string, unknown>) => {
         set({ currentVariables: variables });
       },
 

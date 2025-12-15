@@ -96,7 +96,7 @@ export interface PatternAnalysis {
 
 export interface OptimizationStrategy {
   type: "multi-pattern" | "consensus" | "feature-based" | "differential";
-  parameters: Record<string, any>;
+  parameters: Record<string, unknown>;
 }
 
 export interface StrategyEvaluation {

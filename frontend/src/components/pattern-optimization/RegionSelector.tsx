@@ -206,7 +206,7 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
     setIsDrawing(false);
     setStartPoint(null);
 
-    // Only save region if it's not too small
+    // Only save region if it&apos;s not too small
     if (currentRegion.width > 10 && currentRegion.height > 10) {
       onRegionChange(currentRegion);
     }

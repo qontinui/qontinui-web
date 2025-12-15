@@ -123,7 +123,7 @@ export function ProjectSharingDialog({
       await onAddUser(emailInput, selectedPermission);
       toast.success(`Shared with ${emailInput}`);
       setEmailInput("");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to share project");
     } finally {
       setLoading(false);
@@ -142,7 +142,7 @@ export function ProjectSharingDialog({
       const org = organizations.find((o) => o.id === selectedOrg);
       toast.success(`Shared with ${org?.name}`);
       setSelectedOrg("");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to share project");
     } finally {
       setLoading(false);
@@ -157,7 +157,7 @@ export function ProjectSharingDialog({
     try {
       await onChangePermission(collaboratorId, permission);
       toast.success("Permission updated");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to update permission");
     } finally {
       setActionLoading(null);
@@ -173,7 +173,7 @@ export function ProjectSharingDialog({
     try {
       await onRevoke(collaboratorId);
       toast.success("Access revoked");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(error.message || "Failed to revoke access");
     } finally {
       setActionLoading(null);
@@ -190,7 +190,7 @@ export function ProjectSharingDialog({
         setLinkCopied(true);
         toast.success("Link copied to clipboard");
         setTimeout(() => setLinkCopied(false), 2000);
-      } catch (error: any) {
+      } catch (error: unknown) {
         toast.error(error.message || "Failed to generate link");
       } finally {
         setLoading(false);
