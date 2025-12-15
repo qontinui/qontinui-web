@@ -485,6 +485,34 @@ async def get_active_connections(
     return list(result.scalars().all())
 
 
+async def get_active_connection_for_project(
+    db: AsyncSession,
+    project_id: UUID,
+) -> RunnerConnection | None:
+    """
+    Get the active runner connection for a specific project.
+
+    Args:
+        db: Database session
+        project_id: ID of the project
+
+    Returns:
+        Active RunnerConnection record if found, None otherwise
+    """
+    query = (
+        select(RunnerConnection)
+        .where(
+            and_(
+                RunnerConnection.project_id == project_id,
+                RunnerConnection.disconnected_at.is_(None),
+            )
+        )
+        .order_by(RunnerConnection.connected_at.desc())
+    )
+    result = await db.execute(query)
+    return result.scalars().first()
+
+
 async def close_orphaned_connections(
     db: AsyncSession,
     user_id: UUID,

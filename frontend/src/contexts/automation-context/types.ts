@@ -3,6 +3,25 @@ import { ActionSnapshot } from "../../lib/integration-testing-framework";
 import type { ProjectSettings } from "@/types/project-settings";
 import type { Workflow } from "@/lib/action-schema/action-types";
 
+// Re-export types from rag-builder for convenience
+export type { MatchingStrategy, OCRMatchMode, OCRFilter, OCRConfig } from "@/types/rag-builder";
+
+// RAG embedding result for a single state image
+export interface RAGEmbeddingResult {
+  stateImageId: string;
+  imageEmbedding?: number[];
+  textEmbedding?: number[];
+  ocrText?: string;
+  ocrConfidence?: number;
+}
+
+// RAG setup results returned from backend
+export interface RAGSetupResults {
+  projectId: string;
+  elementsProcessed: number;
+  embeddings: RAGEmbeddingResult[];
+}
+
 // ActionHistory type for state objects
 export interface ActionHistory {
   snapshots: ActionSnapshot[];
@@ -144,6 +163,12 @@ export interface StateImage {
   monitors?: number[]; // Monitor indices where this image should be searched
   // RAG Find multi-pattern mode (precedence level 2: between project default and action override)
   ragMultiPatternMode?: "all" | "combined"; // How to search when StateImage has >1 pattern: "all" = search each pattern separately, "combined" = search using combined vector
+  searchMode?: "default" | "rag" | "template"; // Search mode for this image
+  // RAG embeddings
+  imageEmbedding?: number[];
+  textEmbedding?: number[];
+  ocrText?: string;
+  ocrConfidence?: number;
 }
 
 export interface State {

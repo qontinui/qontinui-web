@@ -39,7 +39,6 @@ import {
   Image as ImageIcon,
   Eye,
   Box,
-  GitBranch,
   Clock,
   AlertCircle,
   CheckCircle,

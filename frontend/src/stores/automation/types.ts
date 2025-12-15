@@ -82,7 +82,7 @@ export type {
 export {
   MatchingStrategy,
   OCRMatchMode,
-} from "@/contexts/automation-context/types";
+} from "@/types/rag-builder";
 
 // ============================================================================
 // Slice Interfaces

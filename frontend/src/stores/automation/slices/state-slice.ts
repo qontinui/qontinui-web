@@ -176,7 +176,7 @@ export const createStateSlice: StateCreator<
     });
 
     set((state) => {
-      results.embeddings.forEach((embedding) => {
+      results.embeddings.forEach((embedding: { stateImageId: string; imageEmbedding?: number[]; textEmbedding?: number[]; ocrText?: string; ocrConfidence?: number }) => {
         // Find state containing this stateImage
         for (const s of state.states) {
           const stateImage = s.stateImages.find(

@@ -549,6 +549,10 @@ async def auto_create_baselines(
     errors = 0
 
     for state_name, screenshot in state_screenshots.items():
+        # Skip if state_name is None
+        if state_name is None:
+            continue
+
         # Check if baseline already exists
         existing = await baseline_management_service.get_baseline_for_state(
             db, project_id, state_name, test_run.workflow_id

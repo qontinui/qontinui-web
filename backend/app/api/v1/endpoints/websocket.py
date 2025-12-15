@@ -409,11 +409,11 @@ async def websocket_dashboard_endpoint(
             return
 
         # Verify project exists and user has access
+        from sqlalchemy.sql import Select
+        user_org_subquery: Select = select(User.personal_org_id).where(User.id == user.id)  # type: ignore[arg-type]
         project_query = select(Project).where(
             Project.id == project_uuid,
-            Project.organization_id.in_(
-                select(User.personal_org_id).where(User.id == user.id)
-            ),
+            Project.organization_id.in_(user_org_subquery),
         )
         project_result = await db.execute(project_query)
         project = project_result.scalar_one_or_none()

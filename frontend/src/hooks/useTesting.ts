@@ -10,7 +10,6 @@ import type {
   Deficiency,
   TestRunFilters,
   DeficiencyFilters,
-  TestRunComparisonData,
 } from "@/services/testing-service";
 
 // Query keys for organizing cache

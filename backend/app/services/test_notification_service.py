@@ -671,7 +671,7 @@ class TestNotificationService:
             <p>Workflow: {context['workflow_name']}</p>
             <p>Coverage: {context['coverage']}</p>
             <p>Transitions: {context['successful_transitions']}/{context['total_transitions']} successful</p>
-            {f"<p>⚠️ Found {context['deficiencies_found']} deficiencies</p>" if context['deficiencies_found'] > 0 else ""}
+            {f"<p>⚠️ Found {context['deficiencies_found']} deficiencies</p>" if int(context['deficiencies_found'] or 0) > 0 else ""}
             <p><a href="{context['dashboard_url']}">View Dashboard</a></p>
             """
 
@@ -883,9 +883,11 @@ class TestNotificationService:
                 )
 
             # Create notification for project owner
+            from uuid import UUID as UUIDType
+            owner_id: UUIDType = project.owner_id  # type: ignore[assignment]
             await notification_service.create_notification(
                 db=db,
-                user_id=project.owner_id,
+                user_id=owner_id,
                 notification_type=notification_type,
                 title=title,
                 message=message,

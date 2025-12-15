@@ -40,7 +40,6 @@ interface ExportPanelProps {
 }
 
 export function ExportPanel({
-  extractionId,
   selectedStateIds,
   totalStatesCount,
   onImport,

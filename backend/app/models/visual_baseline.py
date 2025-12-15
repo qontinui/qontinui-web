@@ -228,14 +228,17 @@ class VisualBaseline(Base):
     @property
     def algorithm(self) -> str:
         """Get the comparison algorithm from settings."""
-        return self.comparison_settings.get("algorithm", "ssim")
+        result = self.comparison_settings.get("algorithm", "ssim")
+        return str(result)
 
     @property
     def threshold(self) -> float:
         """Get the comparison threshold from settings."""
-        return self.comparison_settings.get("threshold", 0.95)
+        result = self.comparison_settings.get("threshold", 0.95)
+        return float(result)
 
     @property
     def ignore_regions(self) -> list[dict]:
         """Get the ignore regions from settings."""
-        return self.comparison_settings.get("ignore_regions", [])
+        result = self.comparison_settings.get("ignore_regions", [])
+        return list(result) if result else []

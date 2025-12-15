@@ -73,7 +73,7 @@ export class ExtractionService {
     const response = await this.httpClient.fetch(url);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      await response.json().catch(() => ({}));
       throw new Error(`Failed to get extractions: ${response.statusText}`);
     }
 

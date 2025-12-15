@@ -136,7 +136,7 @@ async def comparison_to_detail_response(
     """Convert VisualComparisonResult model to detailed response schema."""
     base = await comparison_to_response(comparison, include_urls)
 
-    diff_regions = []
+    diff_regions: list[DiffRegionResponse] = []
     if comparison.diff_regions and isinstance(comparison.diff_regions, list):
         diff_regions = [
             DiffRegionResponse(

@@ -379,7 +379,7 @@ class SlackIntegration:
         Returns:
             List of Slack field dictionaries
         """
-        fields = [
+        fields: list[dict[str, Any]] = [
             {
                 "title": "Severity",
                 "value": notification.severity.upper(),

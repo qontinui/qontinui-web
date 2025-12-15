@@ -248,7 +248,8 @@ class TestNotificationPreferences(Base):
             "webhook": self.webhook_config,
         }
         config = config_map.get(channel.lower(), {})
-        return config.get("enabled", False)
+        result = config.get("enabled", False)
+        return bool(result)
 
     def __repr__(self) -> str:
         return (

@@ -696,7 +696,8 @@ class BaselineManagementService:
                 import numpy as np
 
                 img_array = np.array(img.convert("RGB"))
-                return comparator.compute_perceptual_hash(img_array)
+                hash_result = comparator.compute_perceptual_hash(img_array)
+                return str(hash_result) if hash_result is not None else None
         except ImportError:
             logger.warning("qontinui library not available for perceptual hash")
             return None

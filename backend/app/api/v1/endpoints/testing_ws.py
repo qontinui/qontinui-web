@@ -167,11 +167,11 @@ async def handle_session_start(
             }
 
         # Verify project exists and user has access
+        from sqlalchemy.sql import Select
+        user_org_subquery: Select = select(User.personal_org_id).where(User.id == user.id)  # type: ignore[arg-type]
         project_query = select(Project).where(
             Project.id == session_data.project_id,
-            Project.organization_id.in_(
-                select(User.personal_org_id).where(User.id == user.id)
-            ),
+            Project.organization_id.in_(user_org_subquery),
         )
         project_result = await db.execute(project_query)
         project = project_result.scalar_one_or_none()
@@ -915,7 +915,9 @@ async def websocket_testing_runner_endpoint(
             return
 
         # Re-fetch user in this session
-        user_result = await db.execute(select(User).filter(User.id == user.id))
+        from uuid import UUID as UUIDType
+        user_id: UUIDType = user.id  # type: ignore[assignment]
+        user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
 
         if not user:

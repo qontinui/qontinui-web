@@ -431,7 +431,7 @@ class VisualComparisonService:
             "comparison_reviewed",
             comparison_id=str(comparison_id),
             decision=decision_value,
-            new_status=comparison.status.value,
+            new_status=comparison.status,
         )
 
         return comparison
@@ -523,7 +523,7 @@ class VisualComparisonService:
             .group_by(VisualComparisonResult.status)
         )
 
-        stats = {status.value: 0 for status in VisualComparisonStatus}
+        stats: dict[str, int | float] = {status.value: 0 for status in VisualComparisonStatus}
         for status, count in result.all():
             stats[status.value] = count
 

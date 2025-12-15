@@ -1033,7 +1033,7 @@ async def upload_screenshot(
                     diff_url = None
                     if comparison.diff_image_path:
                         try:
-                            diff_url = object_storage.get_presigned_url(
+                            diff_url = object_storage.generate_presigned_url(
                                 comparison.diff_image_path
                             )
                         except Exception:

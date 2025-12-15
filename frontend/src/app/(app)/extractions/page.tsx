@@ -269,7 +269,7 @@ export default function ExtractionsPage() {
         open={deleteDialogOpen}
         title="Delete Extraction"
         itemName={
-          extractionToDelete ? formatUrls(extractionToDelete.source_urls) : ""
+          extractionToDelete ? (formatUrls(extractionToDelete.source_urls) || "") : ""
         }
         description={`Are you sure you want to delete this extraction? This will permanently delete all extracted data and annotations. This action cannot be undone.`}
         onClose={() => {
