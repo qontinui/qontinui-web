@@ -134,14 +134,18 @@ export function TestStepTimeline({
               key={step.id}
               ref={isCurrent ? currentStepRef : undefined}
               className={`bg-[#1A1A1B]/50 border-gray-800/50 transition-all ${
-                isCurrent ? "ring-2 ring-[#00D9FF]/50 shadow-lg shadow-[#00D9FF]/10" : ""
+                isCurrent
+                  ? "ring-2 ring-[#00D9FF]/50 shadow-lg shadow-[#00D9FF]/10"
+                  : ""
               }`}
             >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
                   {/* Timeline connector */}
                   <div className="flex flex-col items-center">
-                    <div className="flex-shrink-0">{getStatusIcon(step.status)}</div>
+                    <div className="flex-shrink-0">
+                      {getStatusIcon(step.status)}
+                    </div>
                     {index < steps.length - 1 && (
                       <div className="w-px flex-1 min-h-[30px] bg-gray-700 mt-2" />
                     )}
@@ -156,7 +160,9 @@ export function TestStepTimeline({
                           <Badge className="text-xs font-mono">
                             #{step.stepNumber}
                           </Badge>
-                          <Badge className={`text-xs ${getStatusColor(step.status)}`}>
+                          <Badge
+                            className={`text-xs ${getStatusColor(step.status)}`}
+                          >
                             {step.status}
                           </Badge>
                           <Badge variant="outline" className="text-xs">
@@ -178,8 +184,12 @@ export function TestStepTimeline({
 
                         {step.actionType && (
                           <div className="text-sm text-gray-400 mb-2">
-                            <span className="font-medium text-gray-300">Action:</span>{" "}
-                            <span className="text-[#00D9FF]">{step.actionType}</span>
+                            <span className="font-medium text-gray-300">
+                              Action:
+                            </span>{" "}
+                            <span className="text-[#00D9FF]">
+                              {step.actionType}
+                            </span>
                           </div>
                         )}
 
@@ -268,24 +278,27 @@ export function TestStepTimeline({
                         )}
 
                         {/* Metadata */}
-                        {step.metadata && Object.keys(step.metadata).length > 0 && (
-                          <div className="space-y-2">
-                            <div className="text-xs text-gray-400 font-medium">
-                              Metadata:
+                        {step.metadata &&
+                          Object.keys(step.metadata).length > 0 && (
+                            <div className="space-y-2">
+                              <div className="text-xs text-gray-400 font-medium">
+                                Metadata:
+                              </div>
+                              <div className="bg-gray-800/50 rounded p-2 text-xs font-mono">
+                                <pre className="text-gray-300 whitespace-pre-wrap">
+                                  {JSON.stringify(step.metadata, null, 2)}
+                                </pre>
+                              </div>
                             </div>
-                            <div className="bg-gray-800/50 rounded p-2 text-xs font-mono">
-                              <pre className="text-gray-300 whitespace-pre-wrap">
-                                {JSON.stringify(step.metadata, null, 2)}
-                              </pre>
-                            </div>
-                          </div>
-                        )}
+                          )}
 
                         {/* Full details grid */}
                         {step.stepType === "transition" && (
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div>
-                              <div className="text-gray-400 mb-1">From State</div>
+                              <div className="text-gray-400 mb-1">
+                                From State
+                              </div>
                               <div className="text-white font-mono bg-gray-800/50 px-2 py-1 rounded">
                                 {step.fromState}
                               </div>
@@ -331,7 +344,9 @@ export function TestStepTimeline({
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <div className="text-gray-400 mb-1">Status</div>
-                  <Badge className={getStatusColor(selectedScreenshot.step.status)}>
+                  <Badge
+                    className={getStatusColor(selectedScreenshot.step.status)}
+                  >
                     {selectedScreenshot.step.status}
                   </Badge>
                 </div>

@@ -39,7 +39,8 @@ import {
   SpecialKeyDisplay,
 } from "@/components/special-keys-selector";
 import { StateImageViewer } from "@/components/state-image-viewer";
-import { useAutomation } from "@/contexts/automation-context";
+import { MonitorSelector } from "@/components/monitor-selector";
+import { useImages } from "@/hooks/automation";
 import type {
   State,
   StateRegion,
@@ -49,7 +50,7 @@ import type {
   Pattern,
   IncomingTransition,
   Transition,
-} from "@/contexts/automation-context";
+} from "@/stores/automation";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { createFindAnyStateImageWorkflow } from "@/lib/workflow-helpers";
 
@@ -71,21 +72,21 @@ interface StatePropertiesPanelProps {
   updateRegion: (
     index: number,
     field: keyof StateRegion,
-    value: string | number
+    value: string | number | number[]
   ) => void;
   removeRegion: (index: number) => void;
   addLocation: () => void;
   updateLocation: (
     index: number,
     field: keyof StateLocation,
-    value: string | number
+    value: string | number | number[]
   ) => void;
   removeLocation: (index: number) => void;
   addString: () => void;
   updateString: (
     index: number,
     field: keyof StateString,
-    value: string | boolean
+    value: string | boolean | number[]
   ) => void;
   removeString: (index: number) => void;
 }
@@ -108,8 +109,13 @@ export function StatePropertiesPanel({
   addString,
   updateString,
   removeString,
+  updateRegion,
+  updateLocation,
+  addRegion,
+  addLocation,
+  deleteTransition,
 }: StatePropertiesPanelProps) {
-  const { resolvePatternImage } = useAutomation();
+  const { resolvePatternImage } = useImages();
 
   const stringTextAreaRefs = useRef<{
     [key: string]: HTMLTextAreaElement | null;
@@ -407,6 +413,61 @@ export function StatePropertiesPanel({
                           })()}
                         </div>
 
+                        {/* StateImage Options */}
+                        {(stateImage.patterns || []).length > 1 && (
+                          <div className="pt-2 border-t border-[#00D9FF]/20">
+                            <details className="group">
+                              <summary className="flex items-center justify-between cursor-pointer text-xs text-gray-300 hover:text-[#00D9FF] transition-colors list-none mb-2">
+                                <span className="font-medium">
+                                  RAG Find Options
+                                </span>
+                                <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                              </summary>
+                              <div className="space-y-2 pl-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-400">
+                                    Multi-Pattern Search Mode
+                                  </Label>
+                                  <Select
+                                    value={
+                                      stateImage.ragMultiPatternMode ||
+                                      "default"
+                                    }
+                                    onValueChange={(value) => {
+                                      updateStateImage(index, {
+                                        ragMultiPatternMode:
+                                          value === "default"
+                                            ? undefined
+                                            : (value as "all" | "combined"),
+                                      });
+                                    }}
+                                  >
+                                    <SelectTrigger className="bg-transparent border-gray-700 h-7 text-xs">
+                                      <SelectValue placeholder="Use project default" />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#27272A] border-gray-700">
+                                      <SelectItem value="default">
+                                        Use Project Default
+                                      </SelectItem>
+                                      <SelectItem value="all">
+                                        Search All Patterns
+                                      </SelectItem>
+                                      <SelectItem value="combined">
+                                        Search Combined Vector
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <p className="text-xs text-gray-500">
+                                    Default mode for RAG Find when this
+                                    StateImage has multiple patterns. Can be
+                                    overridden per action.
+                                  </p>
+                                </div>
+                              </div>
+                            </details>
+                          </div>
+                        )}
+
                         {/* Patterns List */}
                         <div className="pt-2 border-t border-[#00D9FF]/20">
                           <details className="group" open>
@@ -423,11 +484,11 @@ export function StatePropertiesPanel({
                                     key={pattern.id}
                                     className="p-2 bg-gray-900/50 border border-gray-700 rounded space-y-1.5"
                                   >
-                                    {/* Pattern header with thumbnail */}
-                                    <div className="flex items-center gap-2">
-                                      {/* Pattern thumbnail */}
+                                    {/* Pattern header with image */}
+                                    <div className="flex items-start gap-2">
+                                      {/* Pattern image */}
                                       <div
-                                        className="w-12 h-12 bg-gray-800 rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-[#00D9FF] transition-all"
+                                        className="w-48 h-32 bg-gray-800 rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-[#00D9FF] transition-all"
                                         onClick={() =>
                                           setOpenImageSelectorId(
                                             `${stateImage.id}_pattern_${pIdx}`
@@ -1076,6 +1137,42 @@ export function StatePropertiesPanel({
                                 </div>
                               </div>
 
+                              {/* Search Mode (only show if 2+ patterns) */}
+                              {(stateImage.patterns || []).length >= 2 && (
+                                <div className="space-y-1 pb-2 border-b border-gray-700">
+                                  <Label className="text-xs text-gray-300">
+                                    Pattern Search Mode
+                                  </Label>
+                                  <Select
+                                    value={stateImage.searchMode || "separate"}
+                                    onValueChange={(
+                                      value: "separate" | "combined"
+                                    ) =>
+                                      updateStateImage(index, {
+                                        searchMode: value,
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="bg-gray-900 border-gray-600 text-xs h-8">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#27272A] border-gray-700">
+                                      <SelectItem value="separate">
+                                        Search patterns separately
+                                      </SelectItem>
+                                      <SelectItem value="combined">
+                                        Search using combined vector
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <p className="text-xs text-gray-500 italic">
+                                    {stateImage.searchMode === "combined"
+                                      ? "RAG will search using a single combined embedding of all patterns"
+                                      : "RAG will search for each pattern individually (default)"}
+                                  </p>
+                                </div>
+                              )}
+
                               {/* StateImage-level Similarity Override (optional) */}
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between">
@@ -1168,6 +1265,21 @@ export function StatePropertiesPanel({
                                 </div>
                               </div>
 
+                              {/* Monitor Assignment */}
+                              <div className="space-y-1 pt-2 border-t border-gray-700">
+                                <MonitorSelector
+                                  monitors={stateImage.monitors || [0]}
+                                  onChange={(monitors) =>
+                                    updateStateImage(index, { monitors })
+                                  }
+                                  label="Monitors for this StateImage"
+                                  showLabel={true}
+                                  showConnectionStatus={true}
+                                />
+                                <p className="text-xs text-gray-500 italic">
+                                  Which monitors to search for this image
+                                </p>
+                              </div>
                               {/* Pattern-level similarity overrides */}
                               {(stateImage.patterns || []).some(
                                 (p) => p.similarity !== undefined
@@ -1317,6 +1429,15 @@ export function StatePropertiesPanel({
                           <Trash2 className="w-3 h-3" />
                         </Button>
                       </div>
+                      <MonitorSelector
+                        monitors={region.monitors || [0]}
+                        onChange={(monitors) =>
+                          updateRegion(index, "monitors", monitors)
+                        }
+                        label="Monitors"
+                        showLabel={true}
+                        showConnectionStatus={false}
+                      />
                     </div>
                   );
                 })}
@@ -1453,6 +1574,15 @@ export function StatePropertiesPanel({
                         </div>
                       </details>
                     )}
+                    <MonitorSelector
+                      monitors={location.monitors || [0]}
+                      onChange={(monitors) =>
+                        updateLocation(index, "monitors", monitors)
+                      }
+                      label="Monitors"
+                      showLabel={true}
+                      showConnectionStatus={false}
+                    />
                   </div>
                 ))}
               </div>
@@ -1717,6 +1847,15 @@ export function StatePropertiesPanel({
                           </div>
                         )}
                       </div>
+                      <MonitorSelector
+                        monitors={string.monitors || [0]}
+                        onChange={(monitors) =>
+                          updateString(index, "monitors", monitors)
+                        }
+                        label="Monitors"
+                        showLabel={true}
+                        showConnectionStatus={false}
+                      />
                     </div>
                   );
                 })}

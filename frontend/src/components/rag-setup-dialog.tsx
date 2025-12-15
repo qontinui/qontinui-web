@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -58,10 +58,11 @@ export function RAGSetupDialog({
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   // Count StateImages that will be processed
-  const elementCount = config.states?.reduce(
-    (count, state) => count + (state.stateImages?.length || 0),
-    0
-  ) || 0;
+  const elementCount =
+    config.states?.reduce(
+      (count, state) => count + (state.stateImages?.length || 0),
+      0
+    ) || 0;
 
   // Check RAG availability when dialog opens
   useEffect(() => {
@@ -123,7 +124,10 @@ export function RAGSetupDialog({
     });
 
     try {
-      console.log("[RAG] Calling startRAGSetup with config:", { projectId, stateCount: config.states?.length || 0 });
+      console.log("[RAG] Calling startRAGSetup with config:", {
+        projectId,
+        stateCount: config.states?.length || 0,
+      });
       const result = await ragSetupService.startRAGSetup(projectId, config);
       console.log("[RAG] startRAGSetup result:", result);
 
@@ -153,7 +157,9 @@ export function RAGSetupDialog({
 
       setPollInterval(interval);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start RAG setup");
+      setError(
+        err instanceof Error ? err.message : "Failed to start RAG setup"
+      );
       setState("error");
     }
   };
@@ -191,7 +197,10 @@ export function RAGSetupDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md" showCloseButton={state !== "processing"}>
+      <DialogContent
+        className="sm:max-w-md"
+        showCloseButton={state !== "processing"}
+      >
         {state === "checking" && (
           <>
             <DialogHeader>
@@ -259,7 +268,11 @@ export function RAGSetupDialog({
             </div>
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="outline" onClick={handleSkip} className="w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={handleSkip}
+                className="w-full sm:w-auto"
+              >
                 Skip
               </Button>
               <Button
@@ -324,8 +337,10 @@ export function RAGSetupDialog({
                 RAG Setup Complete
               </DialogTitle>
               <DialogDescription>
-                Successfully processed {progress?.elementsProcessed || elementCount}{" "}
-                StateImage{(progress?.elementsProcessed || elementCount) !== 1 ? "s" : ""}.
+                Successfully processed{" "}
+                {progress?.elementsProcessed || elementCount} StateImage
+                {(progress?.elementsProcessed || elementCount) !== 1 ? "s" : ""}
+                .
               </DialogDescription>
             </DialogHeader>
 
@@ -339,11 +354,18 @@ export function RAGSetupDialog({
             </div>
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="outline" onClick={handleDownload} className="w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={handleDownload}
+                className="w-full sm:w-auto"
+              >
                 <Download className="mr-2 h-4 w-4" />
                 Download Config
               </Button>
-              <Button onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
+              <Button
+                onClick={() => onOpenChange(false)}
+                className="w-full sm:w-auto"
+              >
                 Done
               </Button>
             </DialogFooter>
@@ -370,10 +392,18 @@ export function RAGSetupDialog({
             </div>
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="outline" onClick={() => setState("initial")} className="w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={() => setState("initial")}
+                className="w-full sm:w-auto"
+              >
                 Try Again
               </Button>
-              <Button variant="outline" onClick={handleDownload} className="w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={handleDownload}
+                className="w-full sm:w-auto"
+              >
                 <Download className="mr-2 h-4 w-4" />
                 Download Anyway
               </Button>

@@ -9,24 +9,30 @@ during collaborative editing. Implements 3-way merge conflict detection
 with support for resolution tracking.
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20251120_conflict_logs"
-down_revision: Union[str, None] = "20251120_093618"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20251120_093618"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     """Create conflict_logs table."""
     op.create_table(
         "conflict_logs",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("resource_type", sa.String(), nullable=False),
         sa.Column("resource_id", sa.String(), nullable=False),
         sa.Column("local_version", sa.Integer(), nullable=False),
@@ -37,11 +43,20 @@ def upgrade() -> None:
         sa.Column("local_data", postgresql.JSON(astext_type=sa.Text()), nullable=True),
         sa.Column("remote_data", postgresql.JSON(astext_type=sa.Text()), nullable=True),
         sa.Column("changes", postgresql.JSON(astext_type=sa.Text()), nullable=True),
-        sa.Column("detected_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
-        sa.Column("resolved", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "detected_at",
+            sa.DateTime(),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "resolved", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
         sa.Column("resolved_at", sa.DateTime(), nullable=True),
         sa.Column("resolution_type", sa.String(), nullable=True),
-        sa.Column("resolved_data", postgresql.JSON(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "resolved_data", postgresql.JSON(astext_type=sa.Text()), nullable=True
+        ),
         sa.Column("metadata", postgresql.JSON(astext_type=sa.Text()), nullable=True),
         sa.ForeignKeyConstraint(
             ["local_user_id"],

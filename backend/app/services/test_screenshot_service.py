@@ -8,13 +8,11 @@ Screenshots are stored in object storage (S3/MinIO) with metadata in the databas
 import base64
 import io
 from datetime import datetime
-from pathlib import Path
 from uuid import UUID
 
 import structlog
 from PIL import Image
 
-from app.models.test_screenshot import TestScreenshot
 from app.services.screenshot_storage import screenshot_storage
 
 logger = structlog.get_logger(__name__)
@@ -146,9 +144,7 @@ class TestScreenshotService:
             )
             raise
 
-    def get_screenshot_url(
-        self, storage_path: str, expiration: int = 3600
-    ) -> str:
+    def get_screenshot_url(self, storage_path: str, expiration: int = 3600) -> str:
         """
         Get a presigned URL for accessing a stored screenshot.
 
@@ -179,9 +175,7 @@ class TestScreenshotService:
             )
             raise
 
-    def delete_test_run_screenshots(
-        self, project_id: UUID, test_run_id: UUID
-    ) -> int:
+    def delete_test_run_screenshots(self, project_id: UUID, test_run_id: UUID) -> int:
         """
         Delete all screenshots for a test run.
 

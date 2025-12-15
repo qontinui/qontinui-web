@@ -10,7 +10,7 @@ import React, { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { State } from "@/contexts/automation-context";
+import type { State } from "@/stores/automation";
 
 export interface ActiveStatesVisualizerProps {
   activeStates: State[];

@@ -25,7 +25,11 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   ArrowLeft,
   Download,
@@ -534,8 +538,9 @@ export default function ExtractionDetailPage() {
                                     <CardDescription className="text-xs">
                                       {annotation.viewport_width} x{" "}
                                       {annotation.viewport_height} •{" "}
-                                      {annotation.elements?.length || 0} elements
-                                      • {annotation.states?.length || 0} states
+                                      {annotation.elements?.length || 0}{" "}
+                                      elements •{" "}
+                                      {annotation.states?.length || 0} states
                                     </CardDescription>
                                   </div>
                                 </div>

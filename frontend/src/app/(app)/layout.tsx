@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { AuthProvider } from "@/contexts/auth-context";
-import { AutomationProvider } from "@/contexts/automation-context";
+import { AutomationProvider } from "@/stores/automation";
 import { OrganizationProvider } from "@/contexts/organization-context";
 import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
 import { TabStateProvider } from "@/contexts/tab-state-context";

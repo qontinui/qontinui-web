@@ -14,14 +14,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Plus,
-  Trash2,
-  Save,
-  X,
-  GripVertical,
-  AlertCircle,
-} from "lucide-react";
+import { Plus, Trash2, Save, X, GripVertical, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -137,7 +130,9 @@ export function TestSuiteEditor({
       const oldIndex = selectedTestCaseIds.indexOf(active.id as string);
       const newIndex = selectedTestCaseIds.indexOf(over.id as string);
 
-      setSelectedTestCaseIds(arrayMove(selectedTestCaseIds, oldIndex, newIndex));
+      setSelectedTestCaseIds(
+        arrayMove(selectedTestCaseIds, oldIndex, newIndex)
+      );
     }
   };
 
@@ -575,11 +570,7 @@ function SortableTestCaseItem({
       </div>
 
       {/* Remove Button */}
-      <Button
-        onClick={() => onRemove(testCase.id)}
-        variant="ghost"
-        size="sm"
-      >
+      <Button onClick={() => onRemove(testCase.id)} variant="ghost" size="sm">
         <Trash2 className="size-4" />
       </Button>
     </div>

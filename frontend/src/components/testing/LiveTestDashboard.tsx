@@ -231,7 +231,9 @@ export function LiveTestDashboard({
                 <div className="text-sm font-medium text-red-400">
                   Connection Error
                 </div>
-                <div className="text-xs text-red-300 mt-1">{connectionError}</div>
+                <div className="text-xs text-red-300 mt-1">
+                  {connectionError}
+                </div>
               </div>
             </div>
           )}
@@ -325,7 +327,9 @@ export function LiveTestDashboard({
       </Card>
 
       {/* Main Content Grid */}
-      <div className={`grid ${isExpanded ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-3"} gap-6`}>
+      <div
+        className={`grid ${isExpanded ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-3"} gap-6`}
+      >
         {/* Timeline - Takes 2 columns in grid view */}
         <div className={isExpanded ? "col-span-1" : "lg:col-span-2"}>
           <Card className="bg-[#1A1A1B]/50 border-gray-800/50">

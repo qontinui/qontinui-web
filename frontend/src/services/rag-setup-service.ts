@@ -146,7 +146,9 @@ export class RAGSetupService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Runner responded with ${response.status}: ${errorText}`);
+        throw new Error(
+          `Runner responded with ${response.status}: ${errorText}`
+        );
       }
 
       const data = await response.json();
@@ -241,15 +243,12 @@ export class RAGSetupService {
    * Get RAG setup progress for a project
    */
   async getRAGSetupProgress(projectId: string): Promise<RAGSetupProgress> {
-    const response = await fetch(
-      `${this.runnerUrl}/rag/${projectId}/status`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await fetch(`${this.runnerUrl}/rag/${projectId}/status`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -280,15 +279,12 @@ export class RAGSetupService {
    * Get RAG setup result with computed embeddings
    */
   async getRAGSetupResult(projectId: string): Promise<RAGSetupResult | null> {
-    const response = await fetch(
-      `${this.runnerUrl}/rag/${projectId}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await fetch(`${this.runnerUrl}/rag/${projectId}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -315,15 +311,12 @@ export class RAGSetupService {
    * Note: This endpoint may not be implemented yet on the runner
    */
   async cancelRAGSetup(projectId: string): Promise<void> {
-    const response = await fetch(
-      `${this.runnerUrl}/rag/${projectId}/cancel`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await fetch(`${this.runnerUrl}/rag/${projectId}/cancel`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -395,15 +388,12 @@ export class RAGSetupService {
   async loadSavedProject(
     projectId: string
   ): Promise<{ success: boolean; message: string; config?: QontinuiConfig }> {
-    const response = await fetch(
-      `${this.runnerUrl}/rag/${projectId}/load`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await fetch(`${this.runnerUrl}/rag/${projectId}/load`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -432,15 +422,12 @@ export class RAGSetupService {
   async deleteSavedProject(
     projectId: string
   ): Promise<{ success: boolean; message: string }> {
-    const response = await fetch(
-      `${this.runnerUrl}/rag/${projectId}`,
-      {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await fetch(`${this.runnerUrl}/rag/${projectId}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
 
     if (!response.ok) {
       const errorText = await response.text();

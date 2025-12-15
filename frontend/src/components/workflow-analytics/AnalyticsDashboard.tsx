@@ -830,7 +830,10 @@ export function AnalyticsDashboard({
       </div>
 
       {/* Custom Date Range Dialog */}
-      <Dialog open={customDateDialogOpen} onOpenChange={setCustomDateDialogOpen}>
+      <Dialog
+        open={customDateDialogOpen}
+        onOpenChange={setCustomDateDialogOpen}
+      >
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Custom Date Range</DialogTitle>

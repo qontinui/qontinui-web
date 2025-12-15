@@ -96,7 +96,8 @@ class RAGAction(BaseModel):
     )
     config: dict[str, Any]
     description: str | None = Field(
-        default=None, description="Natural language description of what this action does"
+        default=None,
+        description="Natural language description of what this action does",
     )
     expected_outcome: str | None = Field(
         default=None, description="Expected outcome for verification"
@@ -254,4 +255,6 @@ class RAGExportResponse(BaseModel):
     export_size_bytes: int | None = Field(
         default=None, description="Size of exported config in bytes"
     )
-    element_count: int | None = Field(default=None, description="Number of elements exported")
+    element_count: int | None = Field(
+        default=None, description="Number of elements exported"
+    )

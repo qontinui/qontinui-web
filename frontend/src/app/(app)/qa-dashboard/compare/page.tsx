@@ -64,7 +64,9 @@ function ComparePageContent() {
           </p>
         </div>
         <Button
-          onClick={() => router.push(`/qa-dashboard/runs?project_id=${projectIdParam}`)}
+          onClick={() =>
+            router.push(`/qa-dashboard/runs?project_id=${projectIdParam}`)
+          }
           variant="outline"
           className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
         >
@@ -73,9 +75,14 @@ function ComparePageContent() {
         </Button>
       </div>
 
-      <ComparisonSelector projectId={projectIdParam} onCompare={handleCompare} />
+      <ComparisonSelector
+        projectId={projectIdParam}
+        onCompare={handleCompare}
+      />
 
-      {run1Id && run2Id && <TestRunComparison run1Id={run1Id} run2Id={run2Id} />}
+      {run1Id && run2Id && (
+        <TestRunComparison run1Id={run1Id} run2Id={run2Id} />
+      )}
 
       {!run1Id || !run2Id ? (
         <Card className="bg-[#1A1A1B]/50 border-gray-800/50">

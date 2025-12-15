@@ -1013,6 +1013,19 @@ export class ConfigExporter {
       errors.push("At least one state is required");
     }
 
+    // Validate that state elements have corresponding screens (monitors)
+    (config.states || []).forEach((state) => {
+      if (state.stateImages && state.stateImages.length > 0) {
+        state.stateImages.forEach((stateImage) => {
+          if (!stateImage.monitors || stateImage.monitors.length === 0) {
+            errors.push(
+              `State "${state.name || state.id}": StateImage "${stateImage.name || stateImage.id}" has no monitor assignments. All state elements must have corresponding screens.`
+            );
+          }
+        });
+      }
+    });
+
     // Check transitions
     if (!Array.isArray(config.transitions)) {
       errors.push("Transitions must be an array");

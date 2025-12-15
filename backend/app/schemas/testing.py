@@ -498,6 +498,19 @@ class ScreenshotMetadata(BaseModel):
         return v
 
 
+class VisualComparisonSummary(BaseModel):
+    """Summary of visual comparison result for screenshot upload response."""
+
+    comparison_id: UUID = Field(..., description="Visual comparison result ID")
+    baseline_id: UUID | None = Field(None, description="Baseline ID compared against")
+    similarity_score: float = Field(..., description="Similarity score (0.0-1.0)")
+    threshold: float = Field(..., description="Threshold used")
+    passed: bool = Field(..., description="Whether comparison passed")
+    status: str = Field(..., description="Comparison status")
+    diff_image_url: str | None = Field(None, description="Diff image URL if available")
+    diff_region_count: int = Field(0, description="Number of diff regions detected")
+
+
 class ScreenshotUploadResponse(BaseModel):
     """Response schema for screenshot upload."""
 
@@ -507,6 +520,11 @@ class ScreenshotUploadResponse(BaseModel):
     thumbnail_url: str | None = Field(None, description="Thumbnail URL")
     uploaded_at: IsoDatetime = Field(..., description="Upload time")
     file_size_bytes: int = Field(..., description="File size in bytes")
+    # Visual regression fields
+    state_name: str | None = Field(None, description="State name for visual regression")
+    visual_comparison: VisualComparisonSummary | None = Field(
+        None, description="Visual comparison result if baseline exists"
+    )
 
 
 # ============================================================================

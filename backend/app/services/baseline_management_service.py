@@ -11,7 +11,6 @@ Provides operations for creating, updating, and managing visual baselines:
 
 import io
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 import structlog
@@ -503,9 +502,11 @@ class BaselineManagementService:
                 and_(
                     VisualBaseline.project_id == current.project_id,
                     VisualBaseline.state_name == current.state_name,
-                    VisualBaseline.workflow_id == current.workflow_id
-                    if current.workflow_id
-                    else VisualBaseline.workflow_id.is_(None),
+                    (
+                        VisualBaseline.workflow_id == current.workflow_id
+                        if current.workflow_id
+                        else VisualBaseline.workflow_id.is_(None)
+                    ),
                     VisualBaseline.version == target_version,
                 )
             )
@@ -643,9 +644,7 @@ class BaselineManagementService:
         else:
             conditions.append(VisualBaseline.workflow_id.is_(None))
 
-        result = await db.execute(
-            select(VisualBaseline).where(and_(*conditions))
-        )
+        result = await db.execute(select(VisualBaseline).where(and_(*conditions)))
 
         for baseline in result.scalars().all():
             baseline.is_active = False
@@ -695,6 +694,7 @@ class BaselineManagementService:
             image_file = io.BytesIO(image_bytes)
             with Image.open(image_file) as img:
                 import numpy as np
+
                 img_array = np.array(img.convert("RGB"))
                 return comparator.compute_perceptual_hash(img_array)
         except ImportError:

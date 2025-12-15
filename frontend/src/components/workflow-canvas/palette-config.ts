@@ -9,6 +9,7 @@
 import { ActionType } from "@/lib/action-schema/action-types";
 import {
   Search,
+  Sparkles,
   MousePointer,
   Keyboard,
   GitBranch,
@@ -179,8 +180,25 @@ export const NODE_METADATA: Record<ActionType, NodeMetadata> = {
     description: "Wait for element to appear on screen",
     category: "find",
     icon: Timer,
-    keywords: ["wait", "pause", "delay", "timeout", "appear"],
-    tags: ["vision", "wait"],
+    keywords: ["wait", "pause", "delay", "timeout"],
+    tags: ["timing", "wait"],
+  },
+  RAG_FIND: {
+    type: "RAG_FIND",
+    displayName: "RAG Find",
+    description: "Find element using AI embeddings (RAG)",
+    category: "find",
+    icon: Sparkles,
+    keywords: [
+      "rag",
+      "ai",
+      "embeddings",
+      "semantic",
+      "find",
+      "search",
+      "vector",
+    ],
+    tags: ["vision", "ai", "rag"],
   },
 
   // ========================================================================

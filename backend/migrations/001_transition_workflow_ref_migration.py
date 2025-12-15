@@ -19,10 +19,11 @@ from typing import Any
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import all models to ensure relationships are properly configured
-from app.models.project import Project
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+# Import all models to ensure relationships are properly configured
+from app.models.project import Project
 
 
 def migrate_workflows_in_transition(transition: dict[str, Any]) -> bool:

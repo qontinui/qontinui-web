@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { useAutomation } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,17 +16,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Trash2, Edit, Plus, Calendar, Clock, RefreshCw } from "lucide-react";
 import { ScheduleEditor } from "./ScheduleEditor";
 import { ExecutionHistory } from "./ExecutionHistory";
-import type { Schedule } from "@/contexts/automation-context";
+import type { Schedule } from "@/stores/automation";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
+import { useWorkflows } from "@/hooks/automation";
+import { useSchedules } from "@/hooks/automation";
 
 export function ScheduleManager() {
-  const {
-    schedules,
-    workflows,
-    updateSchedule,
-    deleteSchedule,
-    getSchedulerStatistics,
-  } = useAutomation();
+  const { workflows } = useWorkflows();
+  const { schedules, updateSchedule, deleteSchedule, getSchedulerStatistics } =
+    useSchedules();
 
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(
     null

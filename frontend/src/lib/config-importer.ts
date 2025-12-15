@@ -5,6 +5,7 @@ import {
 } from "./export-schema";
 import { Workflow } from "./action-schema";
 import { migrateConfigToLatest, needsMigration } from "./config-migration";
+import { CURRENT_VERSION } from "./config-migration/migrations";
 
 // Types that match the automation context
 interface ImageAsset {
@@ -47,7 +48,7 @@ export interface ImportResult {
 }
 
 export class ConfigImporter {
-  private readonly SUPPORTED_VERSION = "2.1.0";
+  private readonly SUPPORTED_VERSION = CURRENT_VERSION;
 
   /**
    * Import a Qontinui configuration from JSON
@@ -306,7 +307,9 @@ export class ConfigImporter {
               img.patterns?.map((pattern: any) => ({
                 id: pattern.id,
                 name: pattern.name,
-                image: this.resolveImageId(pattern.imageId, images),
+                image: pattern.imageId
+                  ? this.resolveImageId(pattern.imageId, images)
+                  : "",
                 mask: pattern.mask,
                 searchRegions: pattern.searchRegions || [],
                 fixed: pattern.fixed || false,

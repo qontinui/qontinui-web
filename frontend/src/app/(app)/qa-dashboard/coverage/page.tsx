@@ -9,7 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
 import { RequireProject } from "@/components/require-project";
-import { ArrowLeft, TrendingUp, BarChart3, CheckCircle2, AlertTriangle } from "lucide-react";
+import {
+  ArrowLeft,
+  TrendingUp,
+  BarChart3,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
 
 export default function CoveragePage() {
   const { user, loading: authLoading } = useAuth();
@@ -84,7 +90,8 @@ export default function CoveragePage() {
           <div className="mb-8">
             <h2 className="text-3xl font-bold mb-2">Coverage Analysis</h2>
             <p className="text-gray-400">
-              Track test coverage trends and identify gaps in your testing strategy
+              Track test coverage trends and identify gaps in your testing
+              strategy
             </p>
           </div>
 
@@ -159,7 +166,8 @@ export default function CoveragePage() {
                   No Project Selected
                 </h3>
                 <p className="text-gray-400">
-                  Please select a project from the dashboard to view coverage trends
+                  Please select a project from the dashboard to view coverage
+                  trends
                 </p>
               </CardContent>
             </Card>

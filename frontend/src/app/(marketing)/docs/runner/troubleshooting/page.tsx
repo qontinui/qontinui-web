@@ -650,8 +650,8 @@ export default function TroubleshootingPage() {
           <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
             <p className="text-sm text-amber-900">
               <strong>When reporting issues:</strong> Include your OS version,
-              Runner version, error codes from logs, and steps to reproduce. This
-              helps us fix problems faster.
+              Runner version, error codes from logs, and steps to reproduce.
+              This helps us fix problems faster.
             </p>
           </div>
         </section>
@@ -866,7 +866,10 @@ function DebugTechnique({ title, steps }: DebugTechniqueProps) {
       <h3 className="font-semibold text-slate-900 mb-3">{title}</h3>
       <ol className="space-y-2">
         {steps.map((step, idx) => (
-          <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+          <li
+            key={idx}
+            className="flex items-start gap-2 text-sm text-slate-700"
+          >
             <span className="font-semibold text-blue-600">{idx + 1}.</span>
             <span>{step}</span>
           </li>

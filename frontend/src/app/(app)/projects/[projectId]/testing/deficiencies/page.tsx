@@ -89,7 +89,9 @@ export default function ProjectDeficienciesPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push(`/projects/${projectId}/testing/coverage`)}
+              onClick={() =>
+                router.push(`/projects/${projectId}/testing/coverage`)
+              }
               className="border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
             >
               <TrendingUp className="w-4 h-4 mr-2" />

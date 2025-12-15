@@ -41,8 +41,8 @@ export default function ProjectLiveTestingPage() {
   const [activeTab, setActiveTab] = useState<"live" | "history">(() =>
     runIdFromUrl ? "live" : "live"
   );
-  const [activeTestRunId, setActiveTestRunId] = useState<string | undefined>(() =>
-    runIdFromUrl || undefined
+  const [activeTestRunId, setActiveTestRunId] = useState<string | undefined>(
+    () => runIdFromUrl || undefined
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -129,7 +129,10 @@ export default function ProjectLiveTestingPage() {
 
       {/* Main Content */}
       <main className="p-6 max-w-[1800px] mx-auto">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "live" | "history")}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as "live" | "history")}
+        >
           <TabsList className="bg-[#1A1A1B]/50 border border-gray-800/50 mb-6">
             <TabsTrigger
               value="live"
@@ -183,8 +186,8 @@ export default function ProjectLiveTestingPage() {
                     No Active Test
                   </h3>
                   <p className="text-gray-400 mb-6">
-                    Start a new test or select a running test from history to see
-                    live results
+                    Start a new test or select a running test from history to
+                    see live results
                   </p>
                   <Button
                     onClick={handleStartNewTest}

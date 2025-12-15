@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ImageSelector } from "@/components/image-selector";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
 
@@ -18,6 +19,8 @@ import { TimingProperties } from "../TimingProperties";
 export function ClickActionProperties({
   action,
   updateConfig,
+  images,
+  states,
 }: ActionPropertiesComponentProps) {
   return (
     <>
@@ -40,6 +43,61 @@ export function ClickActionProperties({
           </SelectContent>
         </Select>
       </div>
+
+      {action.config.target === "StateImage" && (
+        <div className="space-y-2">
+          <Label className="text-xs text-gray-400">
+            Select State and Images
+          </Label>
+          <div className="text-xs text-gray-500 mb-2">
+            This will FIND the selected image(s) and CLICK the last one found.
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-400">State</Label>
+            <Select
+              value={action.config.stateId || ""}
+              onValueChange={(value) => {
+                updateConfig("stateId", value);
+                // Clear image selection when state changes
+                updateConfig("imageIds", []);
+              }}
+            >
+              <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectValue placeholder="Select a state" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#27272A] border-gray-700">
+                {states.map((state) => (
+                  <SelectItem key={state.id} value={state.id}>
+                    {state.name || state.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {action.config.stateId && (
+            <div className="space-y-2">
+              <Label className="text-xs text-gray-400">
+                Images from State (optional)
+              </Label>
+              <div className="text-xs text-gray-500 mb-2">
+                If no images selected, will find any image from the state.
+              </div>
+              <ImageSelector
+                selectedImages={action.config.imageIds || []}
+                onSelectImages={(imageIds) =>
+                  updateConfig("imageIds", imageIds)
+                }
+                multiSelect={true}
+                images={images}
+                states={states}
+                placeholder="Select specific images (optional)"
+                showStateFilter={false}
+                filterByState={action.config.stateId}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {action.config.target === "Coordinates" && (
         <>

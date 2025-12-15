@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.integrations.slack import slack_integration
 from app.models.notification import NotificationType
 from app.models.project import Project
-from app.models.software_test_run import SoftwareTestRun, TestRunStatus
+from app.models.software_test_run import SoftwareTestRun
 from app.models.test_deficiency import DeficiencySeverity, TestDeficiency
 from app.models.test_notification_preferences import TestNotificationPreferences
 from app.schemas.test_notifications import (
@@ -229,7 +229,9 @@ class TestNotificationService:
 
         except Exception as e:
             logger.error(
-                "test_run_notification_failed", error=str(e), test_run_id=str(test_run_id)
+                "test_run_notification_failed",
+                error=str(e),
+                test_run_id=str(test_run_id),
             )
             return False
 
@@ -428,7 +430,9 @@ class TestNotificationService:
             # Generic webhook
             if preferences.is_channel_enabled("webhook"):
                 webhook_success = await self._send_webhook(
-                    "coverage_drop", notification.model_dump(), preferences.webhook_config
+                    "coverage_drop",
+                    notification.model_dump(),
+                    preferences.webhook_config,
                 )
                 success = success or webhook_success
 
@@ -474,15 +478,21 @@ class TestNotificationService:
         critical_count = sum(
             1 for d in deficiencies if d.severity == DeficiencySeverity.CRITICAL
         )
-        high_count = sum(1 for d in deficiencies if d.severity == DeficiencySeverity.HIGH)
+        high_count = sum(
+            1 for d in deficiencies if d.severity == DeficiencySeverity.HIGH
+        )
 
         # Calculate duration
         duration = None
         if test_run.completed_at and test_run.started_at:
-            duration = int((test_run.completed_at - test_run.started_at).total_seconds())
+            duration = int(
+                (test_run.completed_at - test_run.started_at).total_seconds()
+            )
 
         # Build URLs
-        dashboard_url = f"{frontend_url}/projects/{test_run.project_id}/testing/runs/{test_run.id}"
+        dashboard_url = (
+            f"{frontend_url}/projects/{test_run.project_id}/testing/runs/{test_run.id}"
+        )
         report_url = f"{dashboard_url}/report"
 
         return TestRunNotification(
@@ -514,9 +524,7 @@ class TestNotificationService:
         """Build deficiency notification data."""
         # Get test run for project context
         result = await db.execute(
-            select(SoftwareTestRun).filter(
-                SoftwareTestRun.id == deficiency.test_run_id
-            )
+            select(SoftwareTestRun).filter(SoftwareTestRun.id == deficiency.test_run_id)
         )
         test_run = result.scalar_one_or_none()
 
@@ -815,7 +823,11 @@ class TestNotificationService:
             headers = webhook_config.get("webhook_headers", {})
             headers["Content-Type"] = "application/json"
 
-            payload = {"event": event_type, "data": data, "timestamp": datetime.utcnow().isoformat()}
+            payload = {
+                "event": event_type,
+                "data": data,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
 
             async with httpx.AsyncClient(timeout=self.webhook_timeout) as client:
                 response = await client.post(webhook_url, json=payload, headers=headers)
@@ -860,13 +872,15 @@ class TestNotificationService:
 
             if test_run_id:
                 metadata["test_run_id"] = str(test_run_id)
-                metadata["deep_link"] = f"/projects/{project_id}/testing/runs/{test_run_id}"
+                metadata["deep_link"] = (
+                    f"/projects/{project_id}/testing/runs/{test_run_id}"
+                )
 
             if deficiency_id:
                 metadata["deficiency_id"] = str(deficiency_id)
-                metadata[
-                    "deep_link"
-                ] = f"/projects/{project_id}/testing/deficiencies/{deficiency_id}"
+                metadata["deep_link"] = (
+                    f"/projects/{project_id}/testing/deficiencies/{deficiency_id}"
+                )
 
             # Create notification for project owner
             await notification_service.create_notification(

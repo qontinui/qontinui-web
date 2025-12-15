@@ -127,9 +127,15 @@ class WorkflowTemplatesApiClient {
     if (params?.min_rating)
       queryParams.append("min_rating", params.min_rating.toString());
     if (params?.min_action_count)
-      queryParams.append("min_action_count", params.min_action_count.toString());
+      queryParams.append(
+        "min_action_count",
+        params.min_action_count.toString()
+      );
     if (params?.max_action_count)
-      queryParams.append("max_action_count", params.max_action_count.toString());
+      queryParams.append(
+        "max_action_count",
+        params.max_action_count.toString()
+      );
     if (params?.sort_by) queryParams.append("sort_by", params.sort_by);
     if (params?.sort_order) queryParams.append("sort_order", params.sort_order);
     if (params?.limit) queryParams.append("limit", params.limit.toString());
@@ -147,7 +153,9 @@ class WorkflowTemplatesApiClient {
   /**
    * Get featured templates
    */
-  async getFeaturedTemplates(limit?: number): Promise<FeaturedTemplateResponse> {
+  async getFeaturedTemplates(
+    limit?: number
+  ): Promise<FeaturedTemplateResponse> {
     const queryParams = new URLSearchParams();
     if (limit) queryParams.append("limit", limit.toString());
 
@@ -208,7 +216,9 @@ class WorkflowTemplatesApiClient {
    * Get template by ID
    */
   async getTemplateById(id: number): Promise<MarketplaceTemplateDetail> {
-    const response = await this.fetchWithAuth(`/workflow-templates/templates/${id}`);
+    const response = await this.fetchWithAuth(
+      `/workflow-templates/templates/${id}`
+    );
     if (!response.ok) {
       if (response.status === 404) {
         throw new Error("Template not found");

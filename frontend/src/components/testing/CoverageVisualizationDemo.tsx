@@ -138,10 +138,7 @@ export function CoverageVisualizationDemo({
               Click on any state to view detailed execution statistics.
             </p>
           </div>
-          <StateCoverageHeatMap
-            projectId={projectId}
-            workflowId={workflowId}
-          />
+          <StateCoverageHeatMap projectId={projectId} workflowId={workflowId} />
         </div>
       )}
 

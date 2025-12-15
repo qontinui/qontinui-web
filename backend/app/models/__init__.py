@@ -74,6 +74,8 @@ from app.models.test_deficiency import (
     DeficiencyType,
     TestDeficiency,
 )
+from app.models.test_notification_preferences import TestNotificationPreferences
+from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.training_dataset import (
     AnnotationSource,
     DatasetSource,
@@ -93,6 +95,12 @@ from app.models.transition_execution import (
 from app.models.transition_reliability import TransitionReliability
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
+from app.models.visual_baseline import VisualBaseline
+from app.models.visual_comparison_result import (
+    ReviewDecision,
+    VisualComparisonResult,
+    VisualComparisonStatus,
+)
 from app.models.workflow_variable import (
     VariableHistory,
     VariableScope,
@@ -193,9 +201,17 @@ __all__ = [
     "DeficiencySeverity",
     "DeficiencyType",
     "DeficiencyStatus",
+    "TestScreenshot",
+    "TestScreenshotType",
+    "TestNotificationPreferences",
     "CoverageSnapshot",
     "PathDiscovery",
     "TransitionReliability",
+    # Visual Regression
+    "VisualBaseline",
+    "VisualComparisonResult",
+    "VisualComparisonStatus",
+    "ReviewDecision",
     # Training Datasets
     "TrainingDataset",
     "TrainingDatasetImage",

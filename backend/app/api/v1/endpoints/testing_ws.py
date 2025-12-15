@@ -44,7 +44,6 @@ from app.models.transition_execution import (
 from app.models.user import User
 from app.schemas.testing_ws import (
     DeficiencyData,
-    ErrorResponse,
     ScreenshotData,
     SessionEndData,
     SessionStartData,
@@ -217,9 +216,7 @@ async def handle_session_start(
         }
 
     except Exception as e:
-        logger.error(
-            "session_start_error", error=str(e), error_type=type(e).__name__
-        )
+        logger.error("session_start_error", error=str(e), error_type=type(e).__name__)
         return {
             "type": "error",
             "message": f"Failed to start test session: {str(e)}",
@@ -385,7 +382,9 @@ async def handle_transition_completed(
             test_run.total_transitions += 1
             if transition_data.status == "success":
                 test_run.successful_transitions += 1
-            elif transition_data.status == "failed" or transition_data.status == "error":
+            elif (
+                transition_data.status == "failed" or transition_data.status == "error"
+            ):
                 test_run.failed_transitions += 1
             elif transition_data.status == "skipped":
                 test_run.skipped_transitions += 1
@@ -651,7 +650,8 @@ async def handle_deficiency(
             description=deficiency_data.description,
             reproduction_steps=deficiency_data.reproduction_steps,
             screenshot_urls=[
-                f"testing/{str(screenshot_id)}" for screenshot_id in deficiency_data.screenshot_ids
+                f"testing/{str(screenshot_id)}"
+                for screenshot_id in deficiency_data.screenshot_ids
             ],
             environment_info=deficiency_data.environment_info,
             preconditions=deficiency_data.preconditions,
@@ -781,9 +781,7 @@ async def handle_session_end(
         }
 
     except Exception as e:
-        logger.error(
-            "session_end_error", error=str(e), error_type=type(e).__name__
-        )
+        logger.error("session_end_error", error=str(e), error_type=type(e).__name__)
         return {
             "type": "error",
             "message": f"Failed to end test session: {str(e)}",
@@ -983,7 +981,9 @@ async def websocket_testing_runner_endpoint(
         while True:
             try:
                 # Receive message with timeout
-                data = await asyncio.wait_for(websocket.receive_json(), timeout=heartbeat_interval)
+                data = await asyncio.wait_for(
+                    websocket.receive_json(), timeout=heartbeat_interval
+                )
 
                 # Check message rate limit
                 if not check_message_rate_limit(session_key, limit=100, window=60):

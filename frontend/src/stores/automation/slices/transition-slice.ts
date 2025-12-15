@@ -88,10 +88,14 @@ export const createTransitionSlice: StateCreator<
   },
 
   updateStateReferencesInTransitions: (oldStateId, newStateId) => {
-    projectLogger.info("TransitionSlice", "updateStateReferencesInTransitions", {
-      oldStateId,
-      newStateId,
-    });
+    projectLogger.info(
+      "TransitionSlice",
+      "updateStateReferencesInTransitions",
+      {
+        oldStateId,
+        newStateId,
+      }
+    );
     set((state) => {
       state.transitions = TransitionReferenceUpdater.updateStateReferences(
         state.transitions,

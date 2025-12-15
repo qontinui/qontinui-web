@@ -8,7 +8,13 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
-import { ArrowLeft, TrendingUp, BarChart3, CheckCircle2, AlertTriangle } from "lucide-react";
+import {
+  ArrowLeft,
+  TrendingUp,
+  BarChart3,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
 
 export default function ProjectCoveragePage() {
   const { user, loading: authLoading } = useAuth();
@@ -67,7 +73,9 @@ export default function ProjectCoveragePage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push(`/projects/${projectId}/testing/deficiencies`)}
+              onClick={() =>
+                router.push(`/projects/${projectId}/testing/deficiencies`)
+              }
               className="border-gray-700 hover:border-[#EF4444] hover:text-[#EF4444]"
             >
               <AlertTriangle className="w-4 h-4 mr-2" />
@@ -82,7 +90,8 @@ export default function ProjectCoveragePage() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Coverage Analysis</h2>
           <p className="text-gray-400">
-            Track test coverage trends and identify gaps in your testing strategy
+            Track test coverage trends and identify gaps in your testing
+            strategy
           </p>
         </div>
 

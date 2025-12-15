@@ -96,11 +96,11 @@ export function ExportDialog({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-        <h2 className="text-2xl font-bold mb-4">Export Workflow</h2>
+      <div className="bg-gray-950 border border-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+        <h2 className="text-2xl font-bold mb-4 text-white">Export Workflow</h2>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
+          <div className="bg-red-950/30 border border-red-800 text-red-400 px-4 py-3 rounded mb-4">
             {error}
           </div>
         )}
@@ -108,13 +108,13 @@ export function ExportDialog({
         <div className="space-y-4">
           {/* Format Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
               Format
             </label>
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value as ExportFormat)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2"
+              className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF]"
             >
               <option value="json">JSON (Workflow Data)</option>
               <option value="png">PNG (Image)</option>
@@ -125,14 +125,14 @@ export function ExportDialog({
 
           {/* Filename */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
               Filename
             </label>
             <input
               type="text"
               value={filename}
               onChange={(e) => setFilename(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2"
+              className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF] placeholder:text-gray-500"
               placeholder="workflow-name"
             />
           </div>
@@ -140,7 +140,7 @@ export function ExportDialog({
           {/* Quality (for PNG) */}
           {format === "png" && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Quality: {Math.round(quality * 100)}%
               </label>
               <input
@@ -150,7 +150,7 @@ export function ExportDialog({
                 step="0.05"
                 value={quality}
                 onChange={(e) => setQuality(parseFloat(e.target.value))}
-                className="w-full"
+                className="w-full accent-[#00D9FF]"
               />
             </div>
           )}
@@ -158,7 +158,7 @@ export function ExportDialog({
           {/* Background (for images) */}
           {(format === "png" || format === "svg") && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Background
               </label>
               <select
@@ -168,7 +168,7 @@ export function ExportDialog({
                     e.target.value as "transparent" | "white" | "grid"
                   )
                 }
-                className="w-full border border-gray-300 rounded-md px-3 py-2"
+                className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF]"
               >
                 <option value="white">White</option>
                 <option value="transparent">Transparent</option>
@@ -185,11 +185,11 @@ export function ExportDialog({
                 id="includeMetadata"
                 checked={includeMetadata}
                 onChange={(e) => setIncludeMetadata(e.target.checked)}
-                className="mr-2"
+                className="mr-2 accent-[#00D9FF]"
               />
               <label
                 htmlFor="includeMetadata"
-                className="text-sm text-gray-700"
+                className="text-sm text-gray-300"
               >
                 Include metadata
               </label>
@@ -201,14 +201,14 @@ export function ExportDialog({
         <div className="flex justify-end space-x-3 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+            className="px-4 py-2 border border-gray-700 text-gray-300 rounded-md hover:bg-gray-800"
             disabled={exporting}
           >
             Cancel
           </button>
           <button
             onClick={handleExport}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 bg-[#00D9FF] text-black rounded-md hover:bg-[#00D9FF]/80 disabled:opacity-50"
             disabled={exporting}
           >
             {exporting ? "Exporting..." : "Export"}
@@ -329,31 +329,31 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-        <h2 className="text-2xl font-bold mb-4">Import Workflow</h2>
+      <div className="bg-gray-950 border border-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+        <h2 className="text-2xl font-bold mb-4 text-white">Import Workflow</h2>
 
         <div className="space-y-4">
           {/* Import Method Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
               Import From
             </label>
             <div className="flex space-x-2">
               <button
                 onClick={() => setImportMethod("file")}
-                className={`flex-1 px-3 py-2 rounded-md ${importMethod === "file" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "file" ? "bg-[#00D9FF] text-black" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
               >
                 File
               </button>
               <button
                 onClick={() => setImportMethod("url")}
-                className={`flex-1 px-3 py-2 rounded-md ${importMethod === "url" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "url" ? "bg-[#00D9FF] text-black" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
               >
                 URL
               </button>
               <button
                 onClick={() => setImportMethod("clipboard")}
-                className={`flex-1 px-3 py-2 rounded-md ${importMethod === "clipboard" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "clipboard" ? "bg-[#00D9FF] text-black" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
               >
                 Clipboard
               </button>
@@ -363,14 +363,14 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
           {/* URL Input */}
           {importMethod === "url" && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Workflow URL
               </label>
               <input
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2"
+                className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF] placeholder:text-gray-500"
                 placeholder="https://example.com/workflow.json"
               />
             </div>
@@ -379,15 +379,15 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
           {/* Result Display */}
           {result && (
             <div
-              className={`px-4 py-3 rounded ${result.success ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}
+              className={`px-4 py-3 rounded border ${result.success ? "bg-green-950/30 border-green-800" : "bg-red-950/30 border-red-800"}`}
             >
               {result.success ? (
                 <>
-                  <p className="text-green-800 font-medium">
+                  <p className="text-green-400 font-medium">
                     Import Successful
                   </p>
                   {result.warnings.length > 0 && (
-                    <ul className="mt-2 text-sm text-green-700 list-disc list-inside">
+                    <ul className="mt-2 text-sm text-green-300 list-disc list-inside">
                       {result.warnings.map((warning, i) => (
                         <li key={i}>{warning}</li>
                       ))}
@@ -396,8 +396,8 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
                 </>
               ) : (
                 <>
-                  <p className="text-red-800 font-medium">Import Failed</p>
-                  <ul className="mt-2 text-sm text-red-700 list-disc list-inside">
+                  <p className="text-red-400 font-medium">Import Failed</p>
+                  <ul className="mt-2 text-sm text-red-300 list-disc list-inside">
                     {result.errors.map((error, i) => (
                       <li key={i}>{error.message}</li>
                     ))}
@@ -412,7 +412,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
         <div className="flex justify-end space-x-3 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+            className="px-4 py-2 border border-gray-700 text-gray-300 rounded-md hover:bg-gray-800"
             disabled={loading}
           >
             Cancel
@@ -423,7 +423,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
               else if (importMethod === "url") handleUrlImport();
               else handleClipboardImport();
             }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 bg-[#00D9FF] text-black rounded-md hover:bg-[#00D9FF]/80 disabled:opacity-50"
             disabled={loading || (importMethod === "url" && !url)}
           >
             {loading ? "Importing..." : "Import"}
@@ -475,9 +475,11 @@ export function TemplateDialog({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b">
-          <h2 className="text-2xl font-bold mb-4">Choose a Template</h2>
+      <div className="bg-gray-950 border border-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="p-6 border-b border-gray-800">
+          <h2 className="text-2xl font-bold mb-4 text-white">
+            Choose a Template
+          </h2>
 
           {/* Search */}
           <input
@@ -485,7 +487,7 @@ export function TemplateDialog({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search templates..."
-            className="w-full border border-gray-300 rounded-md px-3 py-2 mb-4"
+            className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 mb-4 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF] placeholder:text-gray-500"
           />
 
           {/* Category Filter */}
@@ -494,7 +496,7 @@ export function TemplateDialog({
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
-                className={`px-4 py-2 rounded-md whitespace-nowrap ${selectedCategory === category ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                className={`px-4 py-2 rounded-md whitespace-nowrap text-sm font-medium ${selectedCategory === category ? "bg-[#00D9FF] text-black" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
               >
                 {category.charAt(0).toUpperCase() + category.slice(1)}
               </button>
@@ -509,24 +511,26 @@ export function TemplateDialog({
               <div
                 key={template.id}
                 onClick={() => handleSelectTemplate(template)}
-                className="border border-gray-200 rounded-lg p-4 hover:border-blue-500 hover:shadow-md cursor-pointer transition"
+                className="border border-gray-700 bg-gray-900 rounded-lg p-4 hover:border-[#00D9FF] hover:shadow-md cursor-pointer transition"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-lg">{template.name}</h3>
+                  <h3 className="font-semibold text-lg text-white">
+                    {template.name}
+                  </h3>
                   {template.builtin && (
-                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                    <span className="text-xs bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/50 px-2 py-1 rounded">
                       Built-in
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-600 mb-3">
+                <p className="text-sm text-gray-400 mb-3">
                   {template.description}
                 </p>
                 <div className="flex flex-wrap gap-1">
                   {template.tags.slice(0, 3).map((tag) => (
                     <span
                       key={tag}
-                      className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded"
+                      className="text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded"
                     >
                       {tag}
                     </span>
@@ -544,10 +548,10 @@ export function TemplateDialog({
         </div>
 
         {/* Actions */}
-        <div className="p-6 border-t flex justify-end">
+        <div className="p-6 border-t border-gray-800 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+            className="px-4 py-2 border border-gray-700 text-gray-300 rounded-md hover:bg-gray-800"
           >
             Cancel
           </button>

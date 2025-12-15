@@ -216,10 +216,11 @@ const navItems: NavItem[] = [
       {
         id: "web-extraction",
         label: "Web Extraction",
-        description: "View and manage extraction results from the Runner",
+        description: "Automatically discover states from web pages",
         icon: <Globe size={22} />,
-        route: "/extractions",
+        route: "/automation-builder/web-extraction",
         color: "#4ECDC4",
+        badge: "beta",
       },
       {
         id: "remove-backgrounds",
@@ -973,6 +974,20 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 </TooltipTrigger>
                 <TooltipContent side={isCollapsed ? "right" : "top"}>
                   <p>Import Project</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => router.push("/docs")}
+                    className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-[#00D9FF]"
+                  >
+                    <FileText size={18} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side={isCollapsed ? "right" : "top"}>
+                  <p>Documentation</p>
                 </TooltipContent>
               </Tooltip>
 

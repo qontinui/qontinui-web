@@ -12,6 +12,7 @@ import {
   Camera,
   Monitor,
   Loader2,
+  CheckCircle,
 } from "lucide-react";
 import { Screenshot } from "../../types/Screenshot";
 import {
@@ -54,6 +55,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     deleteScreenshot: removeScreenshot,
     projectName,
     projectId,
+    triggerSave,
   } = useAutomation();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [selectedScreenshot, setSelectedScreenshot] =
@@ -72,6 +74,26 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
   >([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const monitorMenuRef = useRef<HTMLDivElement>(null);
+
+  // Auto-save state
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
+  const saveStatusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Helper to trigger save and show saved status
+  const handleAutoSave = () => {
+    triggerSave();
+    setSaveStatus("saved");
+
+    // Clear existing timeout
+    if (saveStatusTimeoutRef.current) {
+      clearTimeout(saveStatusTimeoutRef.current);
+    }
+
+    // Hide "Saved" status after 2 seconds
+    saveStatusTimeoutRef.current = setTimeout(() => {
+      setSaveStatus("idle");
+    }, 2000);
+  };
 
   // Close monitor menu when clicking outside
   useEffect(() => {
@@ -233,6 +255,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
         toast.success(`${file.name} uploaded successfully`);
 
+        // Trigger auto-save
+        handleAutoSave();
+
         // Select first uploaded screenshot
         if (!selectedScreenshot) {
           const img = new window.Image();
@@ -298,6 +323,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
         screenshots.find((s) => s.id !== screenshotId) || null
       );
     }
+
+    // Trigger auto-save
+    handleAutoSave();
   };
 
   const handleStartEdit = (screenshot: Screenshot) => {
@@ -448,6 +476,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
       addScreenshot(screenshot);
 
+      // Trigger auto-save
+      handleAutoSave();
+
       // Select the new screenshot
       const img = new window.Image();
       img.onload = () => {
@@ -490,6 +521,12 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
         <div className="flex items-center justify-between w-full">
           {/* Upload and Capture buttons */}
           <div className="flex items-center gap-2">
+            {saveStatus === "saved" && (
+              <div className="flex items-center gap-1 text-xs text-[#00FF88]">
+                <CheckCircle className="w-4 h-4" />
+                <span>Saved</span>
+              </div>
+            )}
             <UploadButton onClick={() => fileInputRef.current?.click()}>
               <Upload className="w-4 h-4" />
               Upload Screenshots

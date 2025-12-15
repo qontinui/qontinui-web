@@ -437,6 +437,7 @@ function getActionIcon(type: string): string {
     SWITCH: "🔀",
     EXISTS: "🔍",
     FIND: "🔍",
+    RAG_FIND: "🔮",
     GET_VARIABLE: "📥",
     SET_VARIABLE: "📤",
     FILTER: "🔽",
@@ -498,6 +499,9 @@ function getActionSummary(action: Action): string {
 
     case "FIND":
       return "Find element";
+
+    case "RAG_FIND":
+      return "RAG Find element";
 
     case "GET_VARIABLE":
       return config.variable ? `Get "${config.variable}"` : "Get variable";

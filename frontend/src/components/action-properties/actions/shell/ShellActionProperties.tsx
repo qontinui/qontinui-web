@@ -52,10 +52,18 @@ const SHELL_OPTIONS: { value: ShellType; label: string }[] = [
   { value: "zsh", label: "Zsh" },
 ];
 
-const OUTPUT_FORMAT_OPTIONS: { value: OutputFormat; label: string; description: string }[] = [
+const OUTPUT_FORMAT_OPTIONS: {
+  value: OutputFormat;
+  label: string;
+  description: string;
+}[] = [
   { value: "text", label: "Text", description: "Capture as plain text" },
   { value: "json", label: "JSON", description: "Parse output as JSON" },
-  { value: "lines", label: "Lines", description: "Split output into array of lines" },
+  {
+    value: "lines",
+    label: "Lines",
+    description: "Split output into array of lines",
+  },
   { value: "none", label: "None", description: "Don't capture output" },
 ];
 
@@ -84,9 +92,7 @@ export function ShellActionProperties({
           placeholder="echo 'Hello World'"
           className="bg-transparent border-gray-700 font-mono text-sm"
         />
-        <p className="text-xs text-gray-500">
-          The shell command to execute
-        </p>
+        <p className="text-xs text-gray-500">The shell command to execute</p>
       </div>
 
       {/* Shell Type */}
@@ -124,7 +130,9 @@ export function ShellActionProperties({
               <SelectItem key={opt.value} value={opt.value}>
                 <div>
                   <span>{opt.label}</span>
-                  <span className="text-gray-500 ml-2 text-xs">- {opt.description}</span>
+                  <span className="text-gray-500 ml-2 text-xs">
+                    - {opt.description}
+                  </span>
                 </div>
               </SelectItem>
             ))}
@@ -138,7 +146,9 @@ export function ShellActionProperties({
         <Input
           type="text"
           value={config.outputVariable || ""}
-          onChange={(e) => updateConfig("outputVariable", e.target.value || undefined)}
+          onChange={(e) =>
+            updateConfig("outputVariable", e.target.value || undefined)
+          }
           placeholder="command_output"
           className="bg-transparent border-gray-700"
         />
@@ -166,7 +176,9 @@ export function ShellActionProperties({
             <Input
               type="text"
               value={config.workingDirectory || ""}
-              onChange={(e) => updateConfig("workingDirectory", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("workingDirectory", e.target.value || undefined)
+              }
               placeholder="/path/to/directory"
               className="bg-transparent border-gray-700"
             />
@@ -178,7 +190,9 @@ export function ShellActionProperties({
             <Input
               type="text"
               value={config.exitCodeVariable || ""}
-              onChange={(e) => updateConfig("exitCodeVariable", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("exitCodeVariable", e.target.value || undefined)
+              }
               placeholder="exit_code"
               className="bg-transparent border-gray-700"
             />
@@ -189,7 +203,9 @@ export function ShellActionProperties({
             <Label className="text-xs text-gray-400">Capture Stderr</Label>
             <Switch
               checked={config.captureStderr || false}
-              onCheckedChange={(checked) => updateConfig("captureStderr", checked)}
+              onCheckedChange={(checked) =>
+                updateConfig("captureStderr", checked)
+              }
             />
           </div>
 
@@ -200,7 +216,9 @@ export function ShellActionProperties({
               <Input
                 type="text"
                 value={config.stderrVariable || ""}
-                onChange={(e) => updateConfig("stderrVariable", e.target.value || undefined)}
+                onChange={(e) =>
+                  updateConfig("stderrVariable", e.target.value || undefined)
+                }
                 placeholder="stderr_output"
                 className="bg-transparent border-gray-700"
               />
@@ -212,7 +230,9 @@ export function ShellActionProperties({
             <Label className="text-xs text-gray-400">Stdin Input</Label>
             <Textarea
               value={config.stdin || ""}
-              onChange={(e) => updateConfig("stdin", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("stdin", e.target.value || undefined)
+              }
               placeholder="Input to pass to command..."
               className="bg-transparent border-gray-700 min-h-[60px] font-mono text-sm"
             />
@@ -229,15 +249,21 @@ export function ShellActionProperties({
               onChange={(e) => updateConfig("timeout", Number(e.target.value))}
               className="bg-transparent border-gray-700"
             />
-            <p className="text-xs text-gray-500">Max execution time in milliseconds</p>
+            <p className="text-xs text-gray-500">
+              Max execution time in milliseconds
+            </p>
           </div>
 
           {/* Fail on Error */}
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">Fail on Non-Zero Exit</Label>
+            <Label className="text-xs text-gray-400">
+              Fail on Non-Zero Exit
+            </Label>
             <Switch
               checked={config.failOnError !== false}
-              onCheckedChange={(checked) => updateConfig("failOnError", checked)}
+              onCheckedChange={(checked) =>
+                updateConfig("failOnError", checked)
+              }
             />
           </div>
 
@@ -246,7 +272,9 @@ export function ShellActionProperties({
             <Label className="text-xs text-gray-400">Description</Label>
             <Textarea
               value={config.description || ""}
-              onChange={(e) => updateConfig("description", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("description", e.target.value || undefined)
+              }
               placeholder="Describe what this command does..."
               className="bg-transparent border-gray-700 min-h-[60px]"
             />
@@ -265,8 +293,8 @@ export function ShellActionProperties({
         <div className="text-xs text-blue-900 dark:text-blue-100">
           <p className="font-medium mb-1">Shell Command Execution</p>
           <p>
-            Execute shell commands and capture their output. Use JSON output format
-            to automatically parse structured data from CLI tools.
+            Execute shell commands and capture their output. Use JSON output
+            format to automatically parse structured data from CLI tools.
           </p>
         </div>
       </div>
@@ -363,7 +391,9 @@ export function ShellScriptActionProperties({
               <SelectItem key={opt.value} value={opt.value}>
                 <div>
                   <span>{opt.label}</span>
-                  <span className="text-gray-500 ml-2 text-xs">- {opt.description}</span>
+                  <span className="text-gray-500 ml-2 text-xs">
+                    - {opt.description}
+                  </span>
                 </div>
               </SelectItem>
             ))}
@@ -377,7 +407,9 @@ export function ShellScriptActionProperties({
         <Input
           type="text"
           value={config.outputVariable || ""}
-          onChange={(e) => updateConfig("outputVariable", e.target.value || undefined)}
+          onChange={(e) =>
+            updateConfig("outputVariable", e.target.value || undefined)
+          }
           placeholder="script_output"
           className="bg-transparent border-gray-700"
         />
@@ -405,7 +437,9 @@ export function ShellScriptActionProperties({
             <Input
               type="text"
               value={config.workingDirectory || ""}
-              onChange={(e) => updateConfig("workingDirectory", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("workingDirectory", e.target.value || undefined)
+              }
               placeholder="/path/to/directory"
               className="bg-transparent border-gray-700"
             />
@@ -417,7 +451,9 @@ export function ShellScriptActionProperties({
             <Input
               type="text"
               value={config.exitCodeVariable || ""}
-              onChange={(e) => updateConfig("exitCodeVariable", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("exitCodeVariable", e.target.value || undefined)
+              }
               placeholder="exit_code"
               className="bg-transparent border-gray-700"
             />
@@ -428,7 +464,9 @@ export function ShellScriptActionProperties({
             <Label className="text-xs text-gray-400">Capture Stderr</Label>
             <Switch
               checked={config.captureStderr || false}
-              onCheckedChange={(checked) => updateConfig("captureStderr", checked)}
+              onCheckedChange={(checked) =>
+                updateConfig("captureStderr", checked)
+              }
             />
           </div>
 
@@ -439,7 +477,9 @@ export function ShellScriptActionProperties({
               <Input
                 type="text"
                 value={config.stderrVariable || ""}
-                onChange={(e) => updateConfig("stderrVariable", e.target.value || undefined)}
+                onChange={(e) =>
+                  updateConfig("stderrVariable", e.target.value || undefined)
+                }
                 placeholder="stderr_output"
                 className="bg-transparent border-gray-700"
               />
@@ -451,7 +491,9 @@ export function ShellScriptActionProperties({
             <Label className="text-xs text-gray-400">Stdin Input</Label>
             <Textarea
               value={config.stdin || ""}
-              onChange={(e) => updateConfig("stdin", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("stdin", e.target.value || undefined)
+              }
               placeholder="Input to pass to script..."
               className="bg-transparent border-gray-700 min-h-[60px] font-mono text-sm"
             />
@@ -468,15 +510,21 @@ export function ShellScriptActionProperties({
               onChange={(e) => updateConfig("timeout", Number(e.target.value))}
               className="bg-transparent border-gray-700"
             />
-            <p className="text-xs text-gray-500">Max execution time in milliseconds</p>
+            <p className="text-xs text-gray-500">
+              Max execution time in milliseconds
+            </p>
           </div>
 
           {/* Fail on Error */}
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">Fail on Non-Zero Exit</Label>
+            <Label className="text-xs text-gray-400">
+              Fail on Non-Zero Exit
+            </Label>
             <Switch
               checked={config.failOnError !== false}
-              onCheckedChange={(checked) => updateConfig("failOnError", checked)}
+              onCheckedChange={(checked) =>
+                updateConfig("failOnError", checked)
+              }
             />
           </div>
 
@@ -485,7 +533,9 @@ export function ShellScriptActionProperties({
             <Label className="text-xs text-gray-400">Description</Label>
             <Textarea
               value={config.description || ""}
-              onChange={(e) => updateConfig("description", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("description", e.target.value || undefined)
+              }
               placeholder="Describe what this script does..."
               className="bg-transparent border-gray-700 min-h-[60px]"
             />
@@ -504,9 +554,9 @@ export function ShellScriptActionProperties({
         <div className="text-xs text-blue-900 dark:text-blue-100">
           <p className="font-medium mb-1">Shell Script Execution</p>
           <p>
-            Execute multi-line shell scripts. The script runs in the selected shell
-            and can capture output in workflow variables. Use JSON output format
-            to automatically parse structured data.
+            Execute multi-line shell scripts. The script runs in the selected
+            shell and can capture output in workflow variables. Use JSON output
+            format to automatically parse structured data.
           </p>
         </div>
       </div>
@@ -516,9 +566,11 @@ export function ShellScriptActionProperties({
 
 type AiProvider = "claude";
 
-const AI_PROVIDER_OPTIONS: { value: AiProvider; label: string; description: string }[] = [
-  { value: "claude", label: "Claude", description: "Claude Code CLI" },
-];
+const AI_PROVIDER_OPTIONS: {
+  value: AiProvider;
+  label: string;
+  description: string;
+}[] = [{ value: "claude", label: "Claude", description: "Claude Code CLI" }];
 
 /**
  * TriggerAiAnalysisActionProperties - Properties component for TRIGGER_AI_ANALYSIS action
@@ -538,8 +590,11 @@ export function TriggerAiAnalysisActionProperties({
         <div className="text-xs text-amber-800 dark:text-amber-200">
           <p className="font-medium mb-1">Bypasses Permissions</p>
           <p>
-            This action runs with <code className="bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1 rounded">--permission-mode bypassPermissions</code>,
-            allowing the AI to make changes without interactive confirmation.
+            This action runs with{" "}
+            <code className="bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1 rounded">
+              --permission-mode bypassPermissions
+            </code>
+            , allowing the AI to make changes without interactive confirmation.
           </p>
         </div>
       </div>
@@ -562,7 +617,9 @@ export function TriggerAiAnalysisActionProperties({
               <SelectItem key={opt.value} value={opt.value}>
                 <div>
                   <span>{opt.label}</span>
-                  <span className="text-gray-500 ml-2 text-xs">- {opt.description}</span>
+                  <span className="text-gray-500 ml-2 text-xs">
+                    - {opt.description}
+                  </span>
                 </div>
               </SelectItem>
             ))}
@@ -586,8 +643,11 @@ export function TriggerAiAnalysisActionProperties({
           className="bg-transparent border-gray-700 min-h-[80px] font-mono text-sm"
         />
         <p className="text-xs text-gray-500">
-          Enter a slash command (e.g., <code className="bg-gray-700 px-1 rounded">/analyze-automation</code>, <code className="bg-gray-700 px-1 rounded">/qa</code>) or a natural language prompt.
-          This will be sent to the AI with bypassed permissions.
+          Enter a slash command (e.g.,{" "}
+          <code className="bg-gray-700 px-1 rounded">/analyze-automation</code>,{" "}
+          <code className="bg-gray-700 px-1 rounded">/qa</code>) or a natural
+          language prompt. This will be sent to the AI with bypassed
+          permissions.
         </p>
       </div>
 
@@ -597,7 +657,9 @@ export function TriggerAiAnalysisActionProperties({
         <Input
           type="text"
           value={config.outputVariable || ""}
-          onChange={(e) => updateConfig("outputVariable", e.target.value || undefined)}
+          onChange={(e) =>
+            updateConfig("outputVariable", e.target.value || undefined)
+          }
           placeholder="analysis_result"
           className="bg-transparent border-gray-700"
         />
@@ -625,12 +687,15 @@ export function TriggerAiAnalysisActionProperties({
             <Input
               type="text"
               value={config.resultsDirectory || ""}
-              onChange={(e) => updateConfig("resultsDirectory", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("resultsDirectory", e.target.value || undefined)
+              }
               placeholder=".automation-results/latest"
               className="bg-transparent border-gray-700"
             />
             <p className="text-xs text-gray-500">
-              Path to automation results (defaults to .automation-results/latest)
+              Path to automation results (defaults to
+              .automation-results/latest)
             </p>
           </div>
 
@@ -640,7 +705,9 @@ export function TriggerAiAnalysisActionProperties({
             <Input
               type="text"
               value={config.workingDirectory || ""}
-              onChange={(e) => updateConfig("workingDirectory", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("workingDirectory", e.target.value || undefined)
+              }
               placeholder="/path/to/project"
               className="bg-transparent border-gray-700"
             />
@@ -657,18 +724,24 @@ export function TriggerAiAnalysisActionProperties({
               onChange={(e) => updateConfig("timeout", Number(e.target.value))}
               className="bg-transparent border-gray-700"
             />
-            <p className="text-xs text-gray-500">Max analysis time in milliseconds (default: 10 minutes)</p>
+            <p className="text-xs text-gray-500">
+              Max analysis time in milliseconds (default: 10 minutes)
+            </p>
           </div>
 
           {/* Fail on Issues */}
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-xs text-gray-400">Fail on Issues</Label>
-              <p className="text-xs text-gray-500">Fail action if AI reports issues found</p>
+              <p className="text-xs text-gray-500">
+                Fail action if AI reports issues found
+              </p>
             </div>
             <Switch
               checked={config.failOnIssues || false}
-              onCheckedChange={(checked) => updateConfig("failOnIssues", checked)}
+              onCheckedChange={(checked) =>
+                updateConfig("failOnIssues", checked)
+              }
             />
           </div>
 
@@ -677,7 +750,9 @@ export function TriggerAiAnalysisActionProperties({
             <Label className="text-xs text-gray-400">Description</Label>
             <Textarea
               value={config.description || ""}
-              onChange={(e) => updateConfig("description", e.target.value || undefined)}
+              onChange={(e) =>
+                updateConfig("description", e.target.value || undefined)
+              }
               placeholder="Describe what this analysis does..."
               className="bg-transparent border-gray-700 min-h-[60px]"
             />
@@ -696,9 +771,12 @@ export function TriggerAiAnalysisActionProperties({
         <div className="text-xs text-purple-900 dark:text-purple-100">
           <p className="font-medium mb-1">AI Analysis</p>
           <p>
-            Trigger an AI assistant to analyze automation results, identify issues,
-            and suggest or apply fixes. Use slash commands like <code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">/analyze-automation</code> or
-            write custom prompts for your specific needs.
+            Trigger an AI assistant to analyze automation results, identify
+            issues, and suggest or apply fixes. Use slash commands like{" "}
+            <code className="bg-purple-100 dark:bg-purple-800 px-1 rounded">
+              /analyze-automation
+            </code>{" "}
+            or write custom prompts for your specific needs.
           </p>
         </div>
       </div>

@@ -77,7 +77,9 @@ class RAGExportService:
 
         # Build metadata (extract values from SQLAlchemy model)
         project_name: str = str(project.name)
-        project_description: str | None = str(project.description) if project.description else None
+        project_description: str | None = (
+            str(project.description) if project.description else None
+        )
         project_created_at: datetime = project.created_at  # type: ignore[assignment]
 
         metadata = RAGMetadata(

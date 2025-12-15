@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Search,
+  Sparkles,
   Camera,
   Clock,
   GitBranch,
@@ -67,6 +68,7 @@ const ACTION_ICONS: Record<ActionType, LucideIcon> = {
   VANISH: EyeOff,
   EXISTS: Eye,
   WAIT: Clock,
+  RAG_FIND: Sparkles,
 
   // Mouse Actions
   CLICK: MousePointerClick,

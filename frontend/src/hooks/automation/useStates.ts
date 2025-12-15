@@ -34,7 +34,9 @@ export function useStates() {
   );
 
   // RAG
-  const applyRAGSetupResults = useAutomationStore((s) => s.applyRAGSetupResults);
+  const applyRAGSetupResults = useAutomationStore(
+    (s) => s.applyRAGSetupResults
+  );
 
   return {
     // State

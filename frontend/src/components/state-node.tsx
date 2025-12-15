@@ -72,6 +72,8 @@ interface StateNodeData extends Record<string, unknown> {
   images?: ImageAsset[];
   hasIncomingTransitions?: boolean;
   incomingTransitions?: IncomingTransition[];
+  hasOutgoingTransitions?: boolean;
+  onAddOutgoingTransition?: (stateId: string) => void;
   isSelected: boolean;
   onSelect: (id: string, selected: boolean) => void;
 }
@@ -88,6 +90,8 @@ export function StateNode({
   };
   const hasIncomingTransitions = data?.hasIncomingTransitions ?? false;
   const incomingTransitions = data?.incomingTransitions ?? [];
+  const hasOutgoingTransitions = data?.hasOutgoingTransitions ?? false;
+  const onAddOutgoingTransition = data?.onAddOutgoingTransition;
   const { resolvePatternImage } = useAutomation();
 
   return (
@@ -231,6 +235,36 @@ export function StateNode({
         position={Position.Bottom}
         className="w-3 h-3 bg-[#BD00FF]"
       />
+
+      {/* Green "Add Outgoing Transition" circle - only show if no outgoing transitions */}
+      {!hasOutgoingTransitions && onAddOutgoingTransition && (
+        <div
+          className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 cursor-pointer hover:scale-110 transition-transform z-10"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddOutgoingTransition(state.id);
+          }}
+          title="Add Outgoing Transition"
+        >
+          <div className="w-8 h-8 rounded-full bg-[#00FF88]/70 hover:bg-[#00FF88] flex items-center justify-center shadow-lg">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M8 3 L8 13 M3 8 L13 8"
+                stroke="black"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

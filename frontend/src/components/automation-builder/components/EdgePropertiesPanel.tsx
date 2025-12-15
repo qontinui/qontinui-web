@@ -24,7 +24,10 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import type { Connection, EdgeCondition } from "@/lib/action-schema/action-types";
+import type {
+  Connection,
+  EdgeCondition,
+} from "@/lib/action-schema/action-types";
 import type { EdgeInfo } from "@/components/workflow-canvas";
 
 // ============================================================================
@@ -87,7 +90,8 @@ export function EdgePropertiesPanel({
       setConditionOperator(edge.connection.condition?.operator || "equals");
       setConditionValue(String(edge.connection.condition?.value ?? ""));
       setConditionOpen(
-        !!edge.connection.condition && edge.connection.condition.type !== "always"
+        !!edge.connection.condition &&
+          edge.connection.condition.type !== "always"
       );
     }
   }, [edge]);

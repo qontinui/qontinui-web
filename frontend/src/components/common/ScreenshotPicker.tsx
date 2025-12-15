@@ -59,6 +59,8 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
   const [isCapturing, setIsCapturing] = useState(false);
   const [showMonitorMenu, setShowMonitorMenu] = useState(false);
   const [availableMonitors, setAvailableMonitors] = useState<MonitorInfo[]>([]);
+  const [captureDelay, setCaptureDelay] = useState<number>(0); // Delay in seconds
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   // Close monitor menu when clicking outside
   useEffect(() => {
@@ -115,6 +117,16 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
     setIsCapturing(true);
 
     try {
+      // Apply delay if set
+      if (captureDelay > 0) {
+        setCountdown(captureDelay);
+        for (let i = captureDelay; i > 0; i--) {
+          setCountdown(i);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        setCountdown(null);
+      }
+
       const apiUrl =
         process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
       const monitorParam =
@@ -195,16 +207,45 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                 className="w-full px-3 py-2 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 text-sm flex items-center justify-center gap-2 font-medium disabled:opacity-50"
               >
                 {isCapturing ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {countdown !== null
+                      ? `Capturing in ${countdown}s...`
+                      : "Capturing..."}
+                  </>
                 ) : (
-                  <Camera className="w-4 h-4" />
+                  <>
+                    <Camera className="w-4 h-4" />
+                    Capture Screen
+                  </>
                 )}
-                {isCapturing ? "Capturing..." : "Capture Screen"}
               </button>
 
               {showMonitorMenu && (
                 <div className="absolute left-0 right-0 mt-2 bg-[#27272A] rounded-md shadow-lg z-10 border border-gray-700">
                   <div className="py-1">
+                    {/* Delay input */}
+                    <div className="px-3 py-2 border-b border-gray-700">
+                      <label className="text-xs text-gray-500 block mb-1">
+                        Capture Delay (seconds)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        value={captureDelay}
+                        onChange={(e) =>
+                          setCaptureDelay(
+                            Math.max(
+                              0,
+                              Math.min(10, parseInt(e.target.value) || 0)
+                            )
+                          )
+                        }
+                        className="w-full px-2 py-1 text-sm bg-gray-800 border border-gray-600 rounded text-white focus:outline-none focus:border-[#BD00FF]"
+                        placeholder="0"
+                      />
+                    </div>
                     <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-700">
                       Select monitor
                     </div>

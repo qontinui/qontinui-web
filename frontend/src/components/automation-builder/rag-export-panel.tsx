@@ -35,19 +35,26 @@ import {
 import { toast } from "sonner";
 import { ragExportService } from "@/services/service-factory";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
-import type { RAGExportRequest, RAGExportStatus, EmbeddingProgress } from "@/services/rag-export-service";
+import type {
+  RAGExportRequest,
+  RAGExportStatus,
+  EmbeddingProgress,
+} from "@/services/rag-export-service";
 
 interface RAGExportPanelProps {
   projectId: string | null;
 }
 
 export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
-  const [exportStatus, setExportStatus] = useState<RAGExportStatus | null>(null);
+  const [exportStatus, setExportStatus] = useState<RAGExportStatus | null>(
+    null
+  );
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
-  const [embeddingProgress, setEmbeddingProgress] = useState<EmbeddingProgress | null>(null);
+  const [embeddingProgress, setEmbeddingProgress] =
+    useState<EmbeddingProgress | null>(null);
   const [lastExportResult, setLastExportResult] = useState<{
     success: boolean;
     message: string;
@@ -122,8 +129,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
         elementCount: exportStatus?.stats.element_count,
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Export failed";
+      const message = error instanceof Error ? error.message : "Export failed";
       toast.error(message);
       setLastExportResult({
         success: false,
@@ -209,10 +215,16 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
   };
 
   // Poll for embedding progress
-  const startPollingEmbeddingProgress = (runnerUrl: string, projectId: string) => {
+  const startPollingEmbeddingProgress = (
+    runnerUrl: string,
+    projectId: string
+  ) => {
     const pollInterval = setInterval(async () => {
       try {
-        const progress = await ragExportService.getEmbeddingProgress(runnerUrl, projectId);
+        const progress = await ragExportService.getEmbeddingProgress(
+          runnerUrl,
+          projectId
+        );
         setEmbeddingProgress(progress);
 
         // Stop polling when complete or failed
@@ -359,7 +371,10 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
             <Switch
               checked={options.include_screenshots}
               onCheckedChange={(checked) =>
-                setOptions((prev) => ({ ...prev, include_screenshots: checked }))
+                setOptions((prev) => ({
+                  ...prev,
+                  include_screenshots: checked,
+                }))
               }
             />
           </div>
@@ -514,8 +529,8 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                     embeddingProgress.status === "completed"
                       ? "border-green-500/50 text-green-400"
                       : embeddingProgress.status === "failed"
-                      ? "border-red-500/50 text-red-400"
-                      : "border-[#00D9FF]/50 text-[#00D9FF]"
+                        ? "border-red-500/50 text-red-400"
+                        : "border-[#00D9FF]/50 text-[#00D9FF]"
                   }
                 >
                   {embeddingProgress.status}
@@ -620,7 +635,9 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                   lastExportResult.success ? "text-green-400" : "text-red-400"
                 }`}
               >
-                {lastExportResult.success ? "Export Successful" : "Export Failed"}
+                {lastExportResult.success
+                  ? "Export Successful"
+                  : "Export Failed"}
               </p>
               <p className="text-sm text-gray-400 mt-1">
                 {lastExportResult.message}
@@ -642,15 +659,13 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
         <CardContent className="flex items-start gap-3 py-4">
           <Info className="w-5 h-5 text-blue-400 mt-0.5" />
           <div className="flex-1">
-            <p className="font-medium text-blue-300">
-              About RAG Export
-            </p>
+            <p className="font-medium text-blue-300">About RAG Export</p>
             <p className="text-sm text-blue-200/70 mt-1">
-              RAG (Retrieval-Augmented Generation) export creates a configuration
-              optimized for AI-powered automation. Elements are structured for
-              vector database indexing, enabling semantic search to find UI
-              components using natural language queries like &quot;login button&quot; or
-              &quot;submit form&quot;.
+              RAG (Retrieval-Augmented Generation) export creates a
+              configuration optimized for AI-powered automation. Elements are
+              structured for vector database indexing, enabling semantic search
+              to find UI components using natural language queries like
+              &quot;login button&quot; or &quot;submit form&quot;.
             </p>
           </div>
         </CardContent>

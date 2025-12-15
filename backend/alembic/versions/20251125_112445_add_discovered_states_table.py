@@ -8,23 +8,25 @@ This migration creates the discovered_states table for storing discovered
 application states from both automation sessions and recordings.
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ARRAY, JSON, UUID
+
 from alembic import op
-from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSON
 
 # revision identifiers, used by Alembic.
 revision: str = "20251125_112445"
-down_revision: Union[str, None] = "20251124_projects_uuid"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20251124_projects_uuid"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     """Create the discovered_states table."""
     # Check if table already exists
     from sqlalchemy import inspect
+
     bind = op.get_bind()
     inspector = inspect(bind)
     if "discovered_states" in inspector.get_table_names():
@@ -185,6 +187,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Drop the discovered_states table."""
     op.drop_index("ix_discovered_states_recording_id", table_name="discovered_states")
-    op.drop_index("ix_discovered_states_automation_session_id", table_name="discovered_states")
+    op.drop_index(
+        "ix_discovered_states_automation_session_id", table_name="discovered_states"
+    )
     op.drop_index("ix_discovered_states_source_type", table_name="discovered_states")
     op.drop_table("discovered_states")

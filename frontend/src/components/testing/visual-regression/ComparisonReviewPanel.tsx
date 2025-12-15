@@ -59,7 +59,8 @@ export function ComparisonReviewPanel({
   className,
 }: ComparisonReviewPanelProps) {
   void _onViewDetails; // Reserved for future use
-  const [selectedComparison, setSelectedComparison] = useState<VisualComparisonResult | null>(null);
+  const [selectedComparison, setSelectedComparison] =
+    useState<VisualComparisonResult | null>(null);
   const [reviewNotes, setReviewNotes] = useState("");
   const [submitting, setSubmitting] = useState<string | null>(null);
 
@@ -146,11 +147,15 @@ export function ComparisonReviewPanel({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h4 className="font-medium truncate">{comparison.state_name}</h4>
+                      <h4 className="font-medium truncate">
+                        {comparison.state_name}
+                      </h4>
                       <p className="text-sm text-muted-foreground">
-                        Similarity: {(comparison.similarity_score * 100).toFixed(1)}%
+                        Similarity:{" "}
+                        {(comparison.similarity_score * 100).toFixed(1)}%
                         <span className="mx-2">|</span>
-                        Threshold: {(comparison.threshold_used * 100).toFixed(0)}%
+                        Threshold:{" "}
+                        {(comparison.threshold_used * 100).toFixed(0)}%
                       </p>
                     </div>
                     <Badge className={getStatusColor(comparison.status)}>
@@ -238,7 +243,8 @@ export function ComparisonReviewPanel({
                   Review: {selectedComparison.state_name}
                 </DialogTitle>
                 <DialogDescription>
-                  Compare the screenshot against the baseline and make a decision.
+                  Compare the screenshot against the baseline and make a
+                  decision.
                 </DialogDescription>
               </DialogHeader>
 
@@ -255,7 +261,9 @@ export function ComparisonReviewPanel({
 
               {/* Notes input */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Review Notes (optional)</label>
+                <label className="text-sm font-medium">
+                  Review Notes (optional)
+                </label>
                 <Textarea
                   placeholder="Add notes about your decision..."
                   value={reviewNotes}
@@ -296,7 +304,9 @@ export function ComparisonReviewPanel({
                 <Button
                   variant="default"
                   className="bg-blue-600 hover:bg-blue-700"
-                  onClick={() => handleReview(selectedComparison, "new_baseline")}
+                  onClick={() =>
+                    handleReview(selectedComparison, "new_baseline")
+                  }
                   disabled={submitting === selectedComparison.id}
                 >
                   <RefreshCw className="h-4 w-4 mr-1" />

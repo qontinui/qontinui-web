@@ -14,7 +14,9 @@ from app.core.config import settings
 from app.services.screenshot_storage import screenshot_storage
 
 
-def create_test_image(width: int = 800, height: int = 600, color: str = "blue") -> bytes:
+def create_test_image(
+    width: int = 800, height: int = 600, color: str = "blue"
+) -> bytes:
     """Create a simple test image."""
     img = Image.new("RGB", (width, height), color=color)
     buffer = io.BytesIO()
@@ -49,7 +51,7 @@ async def test_screenshot_storage():
             screenshot_type="test",
             metadata={"test_key": "test_value", "confidence": 0.95},
         )
-        print(f"   ✓ Upload successful")
+        print("   ✓ Upload successful")
         print(f"   URL: {url}")
     except Exception as e:
         print(f"   ✗ Upload failed: {e}")
@@ -61,7 +63,7 @@ async def test_screenshot_storage():
         # Extract path from URL
         path = f"test-screenshots/{run_id}/{step_id}"
         presigned_url = screenshot_storage.get_screenshot_url(path, expiration=3600)
-        print(f"   ✓ Presigned URL generated")
+        print("   ✓ Presigned URL generated")
         print(f"   URL: {presigned_url[:100]}...")
     except Exception as e:
         print(f"   ✗ URL generation failed: {e}")
@@ -78,7 +80,7 @@ async def test_screenshot_storage():
             screenshot_type="error",
             metadata={"error_message": "Test error"},
         )
-        print(f"   ✓ Second upload successful")
+        print("   ✓ Second upload successful")
         print(f"   URL: {url_2}")
     except Exception as e:
         print(f"   ✗ Second upload failed: {e}")
@@ -95,7 +97,7 @@ async def test_screenshot_storage():
     print("\n5. Testing metadata retrieval...")
     try:
         metadata = screenshot_storage.get_screenshot_metadata(path)
-        print(f"   ✓ Metadata retrieved:")
+        print("   ✓ Metadata retrieved:")
         print(f"     Size: {metadata.get('size')} bytes")
         print(f"     Content-Type: {metadata.get('content_type')}")
         custom_meta = metadata.get("metadata", {})

@@ -9,7 +9,7 @@ import React from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CheckCircle2, Circle, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { State } from "@/contexts/automation-context";
+import type { State } from "@/stores/automation";
 
 export interface ActiveStatesChecklistProps {
   allStates: State[];

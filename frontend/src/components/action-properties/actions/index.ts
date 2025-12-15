@@ -6,6 +6,7 @@ import { actionConfigRegistry } from "../ActionConfigRegistry";
 
 // Import all action property components
 export { FindActionProperties } from "./FindActionProperties";
+export { RagFindActionProperties } from "./RagFindActionProperties";
 export { ClickActionProperties } from "./ClickActionProperties";
 export {
   MouseMoveProperties,
@@ -38,6 +39,7 @@ export {
 
 // Register components with the registry
 import { FindActionProperties } from "./FindActionProperties";
+import { RagFindActionProperties } from "./RagFindActionProperties";
 import { ClickActionProperties } from "./ClickActionProperties";
 import {
   MouseMoveProperties,
@@ -70,6 +72,7 @@ import {
 
 // Register all action types with their components
 actionConfigRegistry.register("FIND", FindActionProperties, "FIND");
+actionConfigRegistry.register("RAG_FIND", RagFindActionProperties, "RAG_FIND");
 actionConfigRegistry.register("CLICK", ClickActionProperties, "CLICK");
 actionConfigRegistry.register("MOUSE_MOVE", MouseMoveProperties, "MOUSE_MOVE");
 actionConfigRegistry.registerMultiple(

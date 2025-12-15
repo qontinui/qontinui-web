@@ -88,7 +88,9 @@ class RunnerClient {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Failed to fetch monitors: ${response.status} - ${errorText}`);
+        throw new Error(
+          `Failed to fetch monitors: ${response.status} - ${errorText}`
+        );
       }
 
       return response.json();
@@ -130,7 +132,9 @@ class RunnerClient {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to fetch runner status: ${response.status} - ${errorText}`);
+      throw new Error(
+        `Failed to fetch runner status: ${response.status} - ${errorText}`
+      );
     }
 
     return response.json();

@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { FileText, Workflow, CheckCircle, AlertCircle, Lightbulb } from "lucide-react";
+import {
+  FileText,
+  Workflow,
+  CheckCircle,
+  AlertCircle,
+  Lightbulb,
+} from "lucide-react";
 
 export const metadata = {
   title: "Workflow Descriptions - Qontinui Runner Documentation",
@@ -26,7 +32,8 @@ export default function WorkflowDescriptionsPage() {
             </h1>
           </div>
           <p className="text-xl text-slate-600">
-            Create structured descriptions that enable AI to intelligently select and execute your automation workflows
+            Create structured descriptions that enable AI to intelligently
+            select and execute your automation workflows
           </p>
         </div>
 
@@ -34,7 +41,8 @@ export default function WorkflowDescriptionsPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-bold text-slate-900 mb-4">Overview</h2>
           <p className="text-slate-700 mb-4">
-            When AI assistants like Claude control Qontinui Runner through the MCP (Model Context Protocol) server, they need to understand:
+            When AI assistants like Claude control Qontinui Runner through the
+            MCP (Model Context Protocol) server, they need to understand:
           </p>
           <ul className="space-y-2 text-slate-700 mb-4">
             <li className="flex items-start gap-2">
@@ -55,7 +63,9 @@ export default function WorkflowDescriptionsPage() {
             </li>
           </ul>
           <p className="text-slate-700">
-            <strong>Structured workflow descriptions</strong> provide this context in a format that both humans and AI can easily understand and parse.
+            <strong>Structured workflow descriptions</strong> provide this
+            context in a format that both humans and AI can easily understand
+            and parse.
           </p>
         </section>
 
@@ -69,8 +79,11 @@ export default function WorkflowDescriptionsPage() {
               Example: AI-Driven Verification
             </h3>
             <p className="text-slate-700 mb-4">
-              You make code changes to the web extraction feature and ask Claude:
-              <em className="block mt-2 italic">&ldquo;Verify the extraction feature works end-to-end&rdquo;</em>
+              You make code changes to the web extraction feature and ask
+              Claude:
+              <em className="block mt-2 italic">
+                &ldquo;Verify the extraction feature works end-to-end&rdquo;
+              </em>
             </p>
             <p className="text-slate-700 mb-4">
               With good workflow descriptions, Claude will:
@@ -82,15 +95,23 @@ export default function WorkflowDescriptionsPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold">2.</span>
-                <span>Identify workflows related to extraction based on &ldquo;Use when&rdquo; and &ldquo;Verifies&rdquo; fields</span>
+                <span>
+                  Identify workflows related to extraction based on &ldquo;Use
+                  when&rdquo; and &ldquo;Verifies&rdquo; fields
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold">3.</span>
-                <span>Check &ldquo;Depends on&rdquo; to determine execution order</span>
+                <span>
+                  Check &ldquo;Depends on&rdquo; to determine execution order
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold">4.</span>
-                <span>Run workflows in sequence (e.g., create extraction data first, then verify it displays)</span>
+                <span>
+                  Run workflows in sequence (e.g., create extraction data first,
+                  then verify it displays)
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold">5.</span>
@@ -110,8 +131,11 @@ export default function WorkflowDescriptionsPage() {
             Structured Description Format
           </h2>
           <p className="text-slate-700 mb-4">
-            Use the existing <code className="bg-slate-100 px-1 rounded">description</code> field in your workflow JSON.
-            No schema changes or additional fields are required. Structure your description using this natural language format:
+            Use the existing{" "}
+            <code className="bg-slate-100 px-1 rounded">description</code> field
+            in your workflow JSON. No schema changes or additional fields are
+            required. Structure your description using this natural language
+            format:
           </p>
 
           <div className="bg-slate-900 text-slate-100 rounded-lg p-6 font-mono text-sm overflow-x-auto mb-6">
@@ -153,7 +177,8 @@ Failure indicators: [Signs that something went wrong]`}</pre>
                     <span className="text-green-600 font-semibold">Yes</span>
                   </td>
                   <td className="border border-slate-300 px-4 py-2 text-slate-700">
-                    First line, clear action-oriented description of what the workflow does
+                    First line, clear action-oriented description of what the
+                    workflow does
                   </td>
                 </tr>
                 <tr className="bg-slate-50">
@@ -175,7 +200,8 @@ Failure indicators: [Signs that something went wrong]`}</pre>
                     Recommended
                   </td>
                   <td className="border border-slate-300 px-4 py-2 text-slate-700">
-                    What features or functionality this workflow tests or validates
+                    What features or functionality this workflow tests or
+                    validates
                   </td>
                 </tr>
                 <tr className="bg-slate-50">
@@ -186,7 +212,8 @@ Failure indicators: [Signs that something went wrong]`}</pre>
                     Recommended
                   </td>
                   <td className="border border-slate-300 px-4 py-2 text-slate-700">
-                    Required state before running (services running, apps open, login state, etc.)
+                    Required state before running (services running, apps open,
+                    login state, etc.)
                   </td>
                 </tr>
                 <tr>
@@ -197,7 +224,8 @@ Failure indicators: [Signs that something went wrong]`}</pre>
                     Optional
                   </td>
                   <td className="border border-slate-300 px-4 py-2 text-slate-700">
-                    Side effects or outputs (new data created, state changes, files written)
+                    Side effects or outputs (new data created, state changes,
+                    files written)
                   </td>
                 </tr>
                 <tr className="bg-slate-50">
@@ -208,7 +236,8 @@ Failure indicators: [Signs that something went wrong]`}</pre>
                     Optional
                   </td>
                   <td className="border border-slate-300 px-4 py-2 text-slate-700">
-                    Other workflow names that must run first (use exact names, case-sensitive)
+                    Other workflow names that must run first (use exact names,
+                    case-sensitive)
                   </td>
                 </tr>
                 <tr>
@@ -219,7 +248,8 @@ Failure indicators: [Signs that something went wrong]`}</pre>
                     Optional
                   </td>
                   <td className="border border-slate-300 px-4 py-2 text-slate-700">
-                    Observable indicators that the workflow succeeded (visible UI elements, log messages, data created)
+                    Observable indicators that the workflow succeeded (visible
+                    UI elements, log messages, data created)
                   </td>
                 </tr>
                 <tr className="bg-slate-50">
@@ -230,7 +260,8 @@ Failure indicators: [Signs that something went wrong]`}</pre>
                     Optional
                   </td>
                   <td className="border border-slate-300 px-4 py-2 text-slate-700">
-                    Signs that something went wrong (error messages, missing elements, API failures)
+                    Signs that something went wrong (error messages, missing
+                    elements, API failures)
                   </td>
                 </tr>
               </tbody>
@@ -249,7 +280,8 @@ Failure indicators: [Signs that something went wrong]`}</pre>
               Example 1: Navigation Workflow
             </h3>
             <p className="text-slate-700 mb-3 text-sm">
-              A simple workflow that navigates to a page and verifies it loads correctly.
+              A simple workflow that navigates to a page and verifies it loads
+              correctly.
             </p>
             <div className="bg-slate-900 text-slate-100 rounded-lg p-6 font-mono text-sm overflow-x-auto">
               <pre>{`Clicks Build > State Machine in the website navigation menu to open the State Machine Builder page.
@@ -269,7 +301,8 @@ Failure indicators: 404 error, blank page, canvas doesn't render, console errors
               Example 2: Data-Producing Workflow
             </h3>
             <p className="text-slate-700 mb-3 text-sm">
-              A workflow that creates new data which other workflows may depend on.
+              A workflow that creates new data which other workflows may depend
+              on.
             </p>
             <div className="bg-slate-900 text-slate-100 rounded-lg p-6 font-mono text-sm overflow-x-auto">
               <pre>{`Opens the runner's extraction panel and performs a new web extraction on the currently visible application.
@@ -312,7 +345,9 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
           </h2>
           <p className="text-slate-700 mb-4">
             For complex verification tasks that require multiple workflows, the{" "}
-            <code className="bg-slate-100 px-1 rounded">Depends on</code> field enables AI to understand ordering requirements and execute workflows in the correct sequence.
+            <code className="bg-slate-100 px-1 rounded">Depends on</code> field
+            enables AI to understand ordering requirements and execute workflows
+            in the correct sequence.
           </p>
 
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
@@ -320,7 +355,8 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
               How AI Chains Workflows
             </h3>
             <p className="text-slate-700 mb-4">
-              When you ask: <em>&ldquo;Verify web extraction works end-to-end&rdquo;</em>
+              When you ask:{" "}
+              <em>&ldquo;Verify web extraction works end-to-end&rdquo;</em>
             </p>
             <div className="space-y-3">
               <div className="flex items-start gap-3">
@@ -329,7 +365,8 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 </div>
                 <div>
                   <p className="text-slate-700">
-                    <strong>Load and analyze:</strong> AI loads the workflow config and reads all descriptions
+                    <strong>Load and analyze:</strong> AI loads the workflow
+                    config and reads all descriptions
                   </p>
                 </div>
               </div>
@@ -339,7 +376,10 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 </div>
                 <div>
                   <p className="text-slate-700">
-                    <strong>Identify relevant workflows:</strong> Finds &ldquo;Start New Web Extraction&rdquo; and &ldquo;Navigate to Web Extraction Page&rdquo; based on &ldquo;Use when&rdquo; and &ldquo;Verifies&rdquo; fields
+                    <strong>Identify relevant workflows:</strong> Finds
+                    &ldquo;Start New Web Extraction&rdquo; and &ldquo;Navigate
+                    to Web Extraction Page&rdquo; based on &ldquo;Use
+                    when&rdquo; and &ldquo;Verifies&rdquo; fields
                   </p>
                 </div>
               </div>
@@ -349,7 +389,9 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 </div>
                 <div>
                   <p className="text-slate-700">
-                    <strong>Determine order:</strong> Sees that page verification &ldquo;Depends on&rdquo; extraction workflow (which &ldquo;Produces&rdquo; data)
+                    <strong>Determine order:</strong> Sees that page
+                    verification &ldquo;Depends on&rdquo; extraction workflow
+                    (which &ldquo;Produces&rdquo; data)
                   </p>
                 </div>
               </div>
@@ -359,7 +401,8 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 </div>
                 <div>
                   <p className="text-slate-700">
-                    <strong>Execute in sequence:</strong> Runs extraction first (produces data), then page verification (consumes data)
+                    <strong>Execute in sequence:</strong> Runs extraction first
+                    (produces data), then page verification (consumes data)
                   </p>
                 </div>
               </div>
@@ -369,7 +412,8 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 </div>
                 <div>
                   <p className="text-slate-700">
-                    <strong>Verify results:</strong> Checks success/failure indicators in logs, screenshots, and API responses
+                    <strong>Verify results:</strong> Checks success/failure
+                    indicators in logs, screenshots, and API responses
                   </p>
                 </div>
               </div>
@@ -379,7 +423,8 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 </div>
                 <div>
                   <p className="text-slate-700">
-                    <strong>Report or fix:</strong> Reports findings and can autonomously fix issues discovered during verification
+                    <strong>Report or fix:</strong> Reports findings and can
+                    autonomously fix issues discovered during verification
                   </p>
                 </div>
               </div>
@@ -403,31 +448,52 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
               <ul className="space-y-3 text-slate-700">
                 <li className="flex items-start gap-2">
                   <span className="text-green-600 mt-0.5">✓</span>
-                  <span>Write the summary as a clear, action-oriented first line (e.g., &ldquo;Clicks the login button...&rdquo;)</span>
+                  <span>
+                    Write the summary as a clear, action-oriented first line
+                    (e.g., &ldquo;Clicks the login button...&rdquo;)
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-600 mt-0.5">✓</span>
-                  <span>Be specific about prerequisites: which services must be running, ports, login state</span>
+                  <span>
+                    Be specific about prerequisites: which services must be
+                    running, ports, login state
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-600 mt-0.5">✓</span>
-                  <span>List concrete, observable success/failure indicators AI can verify in logs or screenshots</span>
+                  <span>
+                    List concrete, observable success/failure indicators AI can
+                    verify in logs or screenshots
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-600 mt-0.5">✓</span>
-                  <span>Use consistent terminology across all workflows in your configuration</span>
+                  <span>
+                    Use consistent terminology across all workflows in your
+                    configuration
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-600 mt-0.5">✓</span>
-                  <span>Reference specific UI elements, page names, routes, and features</span>
+                  <span>
+                    Reference specific UI elements, page names, routes, and
+                    features
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-600 mt-0.5">✓</span>
-                  <span>Use exact workflow names in &ldquo;Depends on&rdquo; (case-sensitive)</span>
+                  <span>
+                    Use exact workflow names in &ldquo;Depends on&rdquo;
+                    (case-sensitive)
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-600 mt-0.5">✓</span>
-                  <span>Include specific error messages or log patterns in failure indicators</span>
+                  <span>
+                    Include specific error messages or log patterns in failure
+                    indicators
+                  </span>
                 </li>
               </ul>
             </div>
@@ -441,31 +507,52 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
               <ul className="space-y-3 text-slate-700">
                 <li className="flex items-start gap-2">
                   <span className="text-red-600 mt-0.5">✗</span>
-                  <span>Leave descriptions empty or use vague text like &ldquo;Tests stuff&rdquo; or &ldquo;Automation workflow&rdquo;</span>
+                  <span>
+                    Leave descriptions empty or use vague text like &ldquo;Tests
+                    stuff&rdquo; or &ldquo;Automation workflow&rdquo;
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-600 mt-0.5">✗</span>
-                  <span>Assume AI knows your application&apos;s structure, routes, or component names</span>
+                  <span>
+                    Assume AI knows your application&apos;s structure, routes,
+                    or component names
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-600 mt-0.5">✗</span>
-                  <span>Forget to mention required login state or authentication tokens</span>
+                  <span>
+                    Forget to mention required login state or authentication
+                    tokens
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-600 mt-0.5">✗</span>
-                  <span>Use ambiguous terms like &ldquo;the page&rdquo; without specifying which page</span>
+                  <span>
+                    Use ambiguous terms like &ldquo;the page&rdquo; without
+                    specifying which page
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-600 mt-0.5">✗</span>
-                  <span>Skip the &ldquo;Use when&rdquo; field - it&apos;s critical for AI workflow selection</span>
+                  <span>
+                    Skip the &ldquo;Use when&rdquo; field - it&apos;s critical
+                    for AI workflow selection
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-600 mt-0.5">✗</span>
-                  <span>Omit failure indicators - AI needs to diagnose what went wrong</span>
+                  <span>
+                    Omit failure indicators - AI needs to diagnose what went
+                    wrong
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-red-600 mt-0.5">✗</span>
-                  <span>Use generic indicators like &ldquo;check if it works&rdquo; without specifics</span>
+                  <span>
+                    Use generic indicators like &ldquo;check if it works&rdquo;
+                    without specifics
+                  </span>
                 </li>
               </ul>
             </div>
@@ -485,16 +572,22 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 1. Start with the Action
               </h3>
               <p className="text-slate-700 mb-3">
-                Begin your summary with an active verb that describes what the workflow does.
+                Begin your summary with an active verb that describes what the
+                workflow does.
               </p>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
                 <div className="bg-green-50 border border-green-200 rounded p-3">
                   <p className="font-semibold text-green-800 mb-1">Good</p>
-                  <p className="text-slate-700">&ldquo;Clicks the Submit button and verifies the form submits&rdquo;</p>
+                  <p className="text-slate-700">
+                    &ldquo;Clicks the Submit button and verifies the form
+                    submits&rdquo;
+                  </p>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded p-3">
                   <p className="font-semibold text-red-800 mb-1">Bad</p>
-                  <p className="text-slate-700">&ldquo;Form submission workflow&rdquo;</p>
+                  <p className="text-slate-700">
+                    &ldquo;Form submission workflow&rdquo;
+                  </p>
                 </div>
               </div>
             </div>
@@ -504,20 +597,25 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 2. Be Specific About State
               </h3>
               <p className="text-slate-700 mb-3">
-                Clearly describe what state the system should be in before and after the workflow.
+                Clearly describe what state the system should be in before and
+                after the workflow.
               </p>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
                 <div className="bg-green-50 border border-green-200 rounded p-3">
                   <p className="font-semibold text-green-800 mb-1">Good</p>
                   <p className="text-slate-700">
-                    Prerequisites: User logged in with admin role, database contains test data<br />
-                    Produces: New project record in database with status &ldquo;active&rdquo;
+                    Prerequisites: User logged in with admin role, database
+                    contains test data
+                    <br />
+                    Produces: New project record in database with status
+                    &ldquo;active&rdquo;
                   </p>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded p-3">
                   <p className="font-semibold text-red-800 mb-1">Bad</p>
                   <p className="text-slate-700">
-                    Prerequisites: Logged in<br />
+                    Prerequisites: Logged in
+                    <br />
                     Produces: New project
                   </p>
                 </div>
@@ -529,20 +627,25 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 3. Make Indicators Observable
               </h3>
               <p className="text-slate-700 mb-3">
-                Success and failure indicators should be things AI can verify in logs, screenshots, or API responses.
+                Success and failure indicators should be things AI can verify in
+                logs, screenshots, or API responses.
               </p>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
                 <div className="bg-green-50 border border-green-200 rounded p-3">
                   <p className="font-semibold text-green-800 mb-1">Good</p>
                   <p className="text-slate-700">
-                    Success: &ldquo;Success message appears&rdquo;, API returns 200 status, log shows &ldquo;Project created&rdquo;<br />
-                    Failure: 404 error, blank screen, console error &ldquo;Cannot read property&rdquo;
+                    Success: &ldquo;Success message appears&rdquo;, API returns
+                    200 status, log shows &ldquo;Project created&rdquo;
+                    <br />
+                    Failure: 404 error, blank screen, console error
+                    &ldquo;Cannot read property&rdquo;
                   </p>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded p-3">
                   <p className="font-semibold text-red-800 mb-1">Bad</p>
                   <p className="text-slate-700">
-                    Success: It works<br />
+                    Success: It works
+                    <br />
                     Failure: Something broke
                   </p>
                 </div>
@@ -554,13 +657,15 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 4. Link Related Workflows
               </h3>
               <p className="text-slate-700 mb-3">
-                Use &ldquo;Depends on&rdquo; to create workflow chains. Reference the exact workflow name as it appears in the config.
+                Use &ldquo;Depends on&rdquo; to create workflow chains.
+                Reference the exact workflow name as it appears in the config.
               </p>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
                 <div className="bg-green-50 border border-green-200 rounded p-3">
                   <p className="font-semibold text-green-800 mb-1">Good</p>
                   <p className="text-slate-700">
-                    Depends on: &ldquo;Create Test User&rdquo; (if no test user exists), &ldquo;Start Backend Server&rdquo;
+                    Depends on: &ldquo;Create Test User&rdquo; (if no test user
+                    exists), &ldquo;Start Backend Server&rdquo;
                   </p>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded p-3">
@@ -580,7 +685,9 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
             JSON Format Example
           </h2>
           <p className="text-slate-700 mb-4">
-            The description is stored as a single string field in the workflow JSON. Use <code className="bg-slate-100 px-1 rounded">\n</code> for newlines:
+            The description is stored as a single string field in the workflow
+            JSON. Use <code className="bg-slate-100 px-1 rounded">\n</code> for
+            newlines:
           </p>
           <div className="bg-slate-900 text-slate-100 rounded-lg p-6 font-mono text-sm overflow-x-auto">
             <pre>{`{
@@ -606,7 +713,8 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
             Workflow Categories
           </h2>
           <p className="text-slate-700 mb-4">
-            Organize workflows into categories to help AI understand their purpose and whether they can be executed directly:
+            Organize workflows into categories to help AI understand their
+            purpose and whether they can be executed directly:
           </p>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">

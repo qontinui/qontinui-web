@@ -194,7 +194,10 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
           wsRef.current.send(message);
           console.log("[useTestStream] Sent queued message");
         } catch (error) {
-          console.error("[useTestStream] Failed to send queued message:", error);
+          console.error(
+            "[useTestStream] Failed to send queued message:",
+            error
+          );
           messageQueue.current.unshift(message);
           break;
         }
@@ -243,7 +246,9 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
         const timeSinceLastHeartbeat = now.getTime() - lastHeartbeat.getTime();
 
         if (timeSinceLastHeartbeat > 60000) {
-          console.warn("[useTestStream] No heartbeat for 60s, connection may be stale");
+          console.warn(
+            "[useTestStream] No heartbeat for 60s, connection may be stale"
+          );
           if (wsRef.current) {
             wsRef.current.close();
           }
@@ -553,14 +558,15 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
         stopHeartbeat();
 
         const wasNormalClosure = event.code === 1000;
-        const shouldReconnect = autoReconnect &&
-                               enabled &&
-                               reconnectCount.current < reconnectAttempts &&
-                               !wasNormalClosure;
+        const shouldReconnect =
+          autoReconnect &&
+          enabled &&
+          reconnectCount.current < reconnectAttempts &&
+          !wasNormalClosure;
 
         setTestData((prev) => ({
           ...prev,
-          state: shouldReconnect ? "reconnecting" : "disconnected"
+          state: shouldReconnect ? "reconnecting" : "disconnected",
         }));
 
         if (onDisconnect) {
@@ -579,14 +585,18 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
           );
 
           reconnectTimeoutRef.current = setTimeout(() => {
-            // eslint-disable-next-line react-hooks/exhaustive-deps -- recursive reconnect is intentional
             connect();
           }, delay);
-        } else if (reconnectCount.current >= reconnectAttempts && !wasNormalClosure) {
+        } else if (
+          reconnectCount.current >= reconnectAttempts &&
+          !wasNormalClosure
+        ) {
           console.error("[useTestStream] Max reconnect attempts reached");
           messageQueue.current = [];
           if (onError) {
-            onError(new Error("Connection lost after maximum reconnection attempts"));
+            onError(
+              new Error("Connection lost after maximum reconnection attempts")
+            );
           }
         }
       };

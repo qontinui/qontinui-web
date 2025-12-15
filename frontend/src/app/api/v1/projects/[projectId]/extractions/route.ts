@@ -47,7 +47,8 @@ async function proxyToBackend(
   return new NextResponse(data, {
     status: response.status,
     headers: {
-      "Content-Type": response.headers.get("Content-Type") || "application/json",
+      "Content-Type":
+        response.headers.get("Content-Type") || "application/json",
     },
   });
 }

@@ -39,6 +39,7 @@ from app.models.test_deficiency import (
     DeficiencyType,
     TestDeficiency,
 )
+from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.transition_execution import (
     TransitionExecution,
     TransitionExecutionStatus,
@@ -67,8 +68,10 @@ from app.schemas.testing import (
     TestRunResponse,
     TransitionBatchCreate,
     TransitionBatchResponse,
+    VisualComparisonSummary,
 )
 from app.services.object_storage import object_storage
+from app.services.visual_comparison_service import VisualComparisonService
 
 # TYPE_CHECKING imports - models are being created by another agent
 if TYPE_CHECKING:
@@ -834,6 +837,10 @@ async def upload_screenshot(
     Uploads a screenshot image to object storage (S3/MinIO) and creates a
     database record with metadata. Generates a thumbnail automatically.
 
+    **Visual Regression:** If a `state` is provided in metadata and a baseline
+    exists for that state, a visual comparison is automatically performed and
+    the result is returned in the response.
+
     **Content-Type:** multipart/form-data
 
     **Form Fields:**
@@ -860,7 +867,8 @@ async def upload_screenshot(
     }
     ```
 
-    **Returns:** Screenshot URLs (full image + thumbnail)
+    **Returns:** Screenshot URLs (full image + thumbnail), plus visual comparison
+    result if baseline exists
     """
     user, runner_token = runner_auth
 
@@ -895,7 +903,7 @@ async def upload_screenshot(
         )
 
     # Get test run and verify access
-    await get_test_run_with_access(db, run_id, user.id)
+    test_run = await get_test_run_with_access(db, run_id, user.id)
 
     # Read image data
     image_data = await image.read()
@@ -946,12 +954,121 @@ async def upload_screenshot(
             screenshot_key, expiration=7 * 24 * 3600
         )
 
+        # Map screenshot type string to enum
+        screenshot_type_map = {
+            "state_verification": TestScreenshotType.STATE_VERIFICATION,
+            "action_result": TestScreenshotType.ACTION_RESULT,
+            "failure": TestScreenshotType.FAILURE,
+            "error": TestScreenshotType.FAILURE,
+            "before_action": TestScreenshotType.BEFORE_ACTION,
+            "after_action": TestScreenshotType.AFTER_ACTION,
+            "success": TestScreenshotType.ACTION_RESULT,
+            "manual": TestScreenshotType.STATE_VERIFICATION,
+            "periodic": TestScreenshotType.STATE_VERIFICATION,
+        }
+        db_screenshot_type = screenshot_type_map.get(
+            screenshot_meta.screenshot_type, TestScreenshotType.STATE_VERIFICATION
+        )
+
+        # Find associated transition execution if provided
+        transition_execution_id = None
+        if screenshot_meta.transition_sequence_number:
+            result = await db.execute(
+                select(TransitionExecution).filter(
+                    and_(
+                        TransitionExecution.test_run_id == run_id,
+                        TransitionExecution.sequence_number
+                        == screenshot_meta.transition_sequence_number,
+                    )
+                )
+            )
+            transition = result.scalar_one_or_none()
+            if transition:
+                transition_execution_id = transition.id
+
+        # Create TestScreenshot database record
+        test_screenshot = TestScreenshot(
+            id=screenshot_meta.screenshot_id,
+            test_run_id=run_id,
+            transition_execution_id=transition_execution_id,
+            screenshot_type=db_screenshot_type,
+            storage_path=screenshot_key,
+            width=screenshot_meta.width,
+            height=screenshot_meta.height,
+            captured_at=screenshot_meta.timestamp,
+            screenshot_metadata={
+                "sequence_number": screenshot_meta.sequence_number,
+                "original_filename": image.filename,
+                "content_type": image.content_type,
+                "file_size_bytes": file_size,
+                "thumbnail_url": thumbnail_url,
+                **screenshot_meta.metadata,
+            },
+            state_name=screenshot_meta.state,  # For visual regression baseline matching
+        )
+        db.add(test_screenshot)
+        await db.flush()
+
         logger.info(
             "screenshot_uploaded",
             run_id=str(run_id),
             screenshot_id=str(screenshot_meta.screenshot_id),
             file_size=file_size,
+            state_name=screenshot_meta.state,
         )
+
+        # Perform visual comparison if state is provided
+        visual_comparison_result = None
+        if screenshot_meta.state:
+            try:
+                comparison_service = VisualComparisonService()
+                comparison = await comparison_service.compare_screenshot(
+                    db=db,
+                    screenshot_id=test_screenshot.id,
+                    # baseline_id will be auto-detected based on state_name
+                )
+
+                if comparison:
+                    # Get presigned URL for diff image if available
+                    diff_url = None
+                    if comparison.diff_image_path:
+                        try:
+                            diff_url = object_storage.get_presigned_url(
+                                comparison.diff_image_path
+                            )
+                        except Exception:
+                            pass
+
+                    visual_comparison_result = VisualComparisonSummary(
+                        comparison_id=comparison.id,
+                        baseline_id=comparison.baseline_id,
+                        similarity_score=comparison.similarity_score,
+                        threshold=comparison.threshold_used,
+                        passed=comparison.status == "passed",
+                        status=comparison.status,
+                        diff_image_url=diff_url,
+                        diff_region_count=comparison.diff_region_count,
+                    )
+
+                    logger.info(
+                        "visual_comparison_completed",
+                        run_id=str(run_id),
+                        screenshot_id=str(screenshot_meta.screenshot_id),
+                        state_name=screenshot_meta.state,
+                        similarity_score=comparison.similarity_score,
+                        status=comparison.status,
+                    )
+            except Exception as comparison_error:
+                # Don't fail the upload if comparison fails
+                logger.warning(
+                    "visual_comparison_failed",
+                    run_id=str(run_id),
+                    screenshot_id=str(screenshot_meta.screenshot_id),
+                    state_name=screenshot_meta.state,
+                    error=str(comparison_error),
+                )
+
+        await db.commit()
 
         return ScreenshotUploadResponse(
             screenshot_id=screenshot_meta.screenshot_id,
@@ -960,6 +1077,8 @@ async def upload_screenshot(
             thumbnail_url=thumbnail_url,
             uploaded_at=datetime.utcnow(),
             file_size_bytes=file_size,
+            state_name=screenshot_meta.state,
+            visual_comparison=visual_comparison_result,
         )
 
     except Exception as e:

@@ -6,6 +6,7 @@
 
 export { TestRunsList } from "./TestRunsList";
 export { TestRunDetails } from "./TestRunDetails";
+export { TestRunComparison } from "./TestRunComparison";
 export { DeficiencyList } from "./DeficiencyList";
 export { DeficiencyCard } from "./DeficiencyCard";
 export { CoverageTrendChart } from "./CoverageTrendChart";

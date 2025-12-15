@@ -172,7 +172,10 @@ export default function Dashboard() {
     setShowCreateDialog(true);
   };
 
-  const handleCreateProjectConfirm = async (name: string, description?: string) => {
+  const handleCreateProjectConfirm = async (
+    name: string,
+    description?: string
+  ) => {
     try {
       console.log("Creating new project...");
 
@@ -200,7 +203,10 @@ export default function Dashboard() {
     }
   };
 
-  const handleUpdateProjectName = async (projectId: string, newName: string) => {
+  const handleUpdateProjectName = async (
+    projectId: string,
+    newName: string
+  ) => {
     try {
       await updateProject.mutateAsync({
         id: projectId,
@@ -515,7 +521,9 @@ export default function Dashboard() {
                               )}
                               <EditableProjectName
                                 name={project.name}
-                                onSave={(newName) => handleUpdateProjectName(project.id, newName)}
+                                onSave={(newName) =>
+                                  handleUpdateProjectName(project.id, newName)
+                                }
                                 isSelected={isSelected}
                               />
                             </div>

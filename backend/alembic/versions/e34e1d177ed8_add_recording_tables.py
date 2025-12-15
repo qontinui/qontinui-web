@@ -8,7 +8,7 @@ Note: Changed dependency from 63e5da6dd826 to 20251124_projects_uuid
       because this migration uses UUID for project_id foreign key.
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -17,9 +17,9 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "e34e1d177ed8"
-down_revision: Union[str, None] = "20251124_projects_uuid"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20251124_projects_uuid"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:  # noqa: C901

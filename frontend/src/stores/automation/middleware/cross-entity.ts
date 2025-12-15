@@ -87,9 +87,13 @@ export const createCrossEntitySlice: StateCreator<
       });
     });
 
-    projectLogger.info("CrossEntity", "markImageAsRemovedInProcesses complete", {
-      modifiedCount,
-    });
+    projectLogger.info(
+      "CrossEntity",
+      "markImageAsRemovedInProcesses complete",
+      {
+        modifiedCount,
+      }
+    );
     return modifiedCount;
   },
 });

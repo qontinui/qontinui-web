@@ -47,6 +47,7 @@ interface Action {
     // Other actions
     | "FIND"
     | "VANISH"
+    | "RAG_FIND"
     | "GO_TO_STATE"
     | "RUN_WORKFLOW";
   config: Record<string, any>;
@@ -68,6 +69,7 @@ const ACTION_GROUPS = {
       color: "bg-cyan-500",
       preset: "stateImage",
     },
+    { type: "RAG_FIND", label: "RAG Find", color: "bg-violet-500" },
   ],
   Mouse: [
     { type: "CLICK", label: "Click", color: "bg-green-500" },
@@ -357,6 +359,15 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         pollInterval: 500,
         // pause_before_begin, pause_after_end are optional overrides
       };
+    case "RAG_FIND":
+      return {
+        target: {
+          type: "stateImage",
+          stateImageId: "",
+        },
+        topK: 1,
+        outputVariable: "",
+      };
     case "GO_TO_STATE":
       return {
         states: [], // Array of state IDs for multi-target pathfinding
@@ -543,6 +554,27 @@ function getActionSummary(
         return "Image not found";
       }
       return "No image selected";
+    case "RAG_FIND": {
+      const ragTarget = action.config.target as { stateImageId?: string };
+      const stateImageId = ragTarget?.stateImageId;
+      if (stateImageId) {
+        // Find StateImage across all states
+        for (const state of states) {
+          const stateImage = state.stateImages?.find(
+            (si: any) => si.id === stateImageId
+          );
+          if (stateImage) {
+            const nameWithoutExtension = stateImage.name.replace(
+              /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+              ""
+            );
+            return `RAG Find: ${nameWithoutExtension}${action.config.topK && action.config.topK > 1 ? ` (top ${action.config.topK})` : ""}`;
+          }
+        }
+        return "StateImage not found";
+      }
+      return "No element selected";
+    }
     case "CLICK":
       return `${action.config.mouseButton?.toLowerCase() || "left"} click on ${action.config.target}`;
     case "DOUBLE_CLICK":

@@ -10,16 +10,17 @@ This migration fixes schema inconsistencies:
 3. Removes presigned_url column from automation_screenshots (generated dynamically)
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20251119_225835"
-down_revision: Union[str, None] = "20251119_225834"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20251119_225834"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

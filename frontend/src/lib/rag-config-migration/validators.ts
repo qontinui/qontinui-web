@@ -4,9 +4,7 @@
  * Provides runtime validation to ensure data integrity
  */
 
-import type {
-  RAGConfig,
-} from "./types";
+import type { RAGConfig } from "./types";
 
 /**
  * Validation result structure
@@ -73,13 +71,9 @@ export function validateRAGConfig(config: unknown): ValidationResult {
   } else {
     // Validate each element
     for (let i = 0; i < (cfg.elements as unknown[]).length; i++) {
-      const elementResult = validateRAGElement(
-        (cfg.elements as unknown[])[i]
-      );
+      const elementResult = validateRAGElement((cfg.elements as unknown[])[i]);
       if (!elementResult.success) {
-        errors.push(
-          `Element ${i}: ${elementResult.errors.join(", ")}`
-        );
+        errors.push(`Element ${i}: ${elementResult.errors.join(", ")}`);
       }
     }
   }

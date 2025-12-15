@@ -25,7 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { MonitorSelector } from "@/components/monitor-selector";
 import { Monitor, CheckSquare, Square, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import type { State } from "@/stores/automation";
+import type { State } from "@/contexts/automation-context";
 
 export interface BatchMonitorSettingsDialogProps {
   open: boolean;
@@ -208,9 +208,8 @@ export function BatchMonitorSettingsDialog({
               <ScrollArea className="h-[250px] border border-gray-800 rounded-lg">
                 <div className="p-2 space-y-1">
                   {states.map((state) => {
-                    const currentMonitors = state.stateImages?.[0]?.monitors || [
-                      0,
-                    ];
+                    const currentMonitors = state.stateImages?.[0]
+                      ?.monitors || [0];
                     const imageCount = state.stateImages?.length || 0;
 
                     return (

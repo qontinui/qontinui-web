@@ -123,17 +123,21 @@ export const useAutomationStore = create<AutomationStore>()(
             set((state) => {
               if (config.name) state.projectName = config.name as string;
               if (config.workflows)
-                state.workflows = config.workflows as AutomationStore["workflows"];
+                state.workflows =
+                  config.workflows as AutomationStore["workflows"];
               if (config.states)
                 state.states = config.states as AutomationStore["states"];
               if (config.transitions)
-                state.transitions = config.transitions as AutomationStore["transitions"];
+                state.transitions =
+                  config.transitions as AutomationStore["transitions"];
               if (config.images)
                 state.images = config.images as AutomationStore["images"];
               if (config.screenshots)
-                state.screenshots = config.screenshots as AutomationStore["screenshots"];
+                state.screenshots =
+                  config.screenshots as AutomationStore["screenshots"];
               if (config.schedules)
-                state.schedules = config.schedules as AutomationStore["schedules"];
+                state.schedules =
+                  config.schedules as AutomationStore["schedules"];
               if (config.settings)
                 state.settings = config.settings as AutomationStore["settings"];
               if (config.categories)
@@ -165,9 +169,13 @@ export const useAutomationStore = create<AutomationStore>()(
           // Clear IndexedDB
           if (projectName) {
             clearIndexedDB(projectName).catch((error) => {
-              projectLogger.error("AutomationStore", "Failed to clear IndexedDB", {
-                error,
-              });
+              projectLogger.error(
+                "AutomationStore",
+                "Failed to clear IndexedDB",
+                {
+                  error,
+                }
+              );
             });
           }
         },
@@ -252,7 +260,12 @@ if (typeof window !== "undefined") {
       if (workflows === prevWorkflows) return;
       const state = useAutomationStore.getState();
       if (state.isLoadingFromBackend || !state.projectName) return;
-      schedulePersist("workflows", workflows, state.projectName, persistWorkflows);
+      schedulePersist(
+        "workflows",
+        workflows,
+        state.projectName,
+        persistWorkflows
+      );
     }
   );
 

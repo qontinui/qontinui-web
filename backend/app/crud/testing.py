@@ -23,8 +23,10 @@ from app.models.test_deficiency import (
     TestDeficiency,
 )
 from app.models.test_screenshot import TestScreenshot, TestScreenshotType
-from app.models.transition_execution import TransitionExecution, TransitionExecutionStatus
-
+from app.models.transition_execution import (
+    TransitionExecution,
+    TransitionExecutionStatus,
+)
 
 # ============================================================================
 # Test Run CRUD
@@ -248,7 +250,9 @@ async def get_transition_execution(
 ) -> TransitionExecution | None:
     """Get a transition execution by ID."""
     result = await db.execute(
-        select(TransitionExecution).filter(TransitionExecution.id == transition_execution_id)
+        select(TransitionExecution).filter(
+            TransitionExecution.id == transition_execution_id
+        )
     )
     return result.scalar_one_or_none()
 
@@ -278,7 +282,9 @@ async def list_transition_executions(
     total = count_result.scalar_one()
 
     # Order by sequence number
-    query = query.order_by(TransitionExecution.sequence_number).offset(skip).limit(limit)
+    query = (
+        query.order_by(TransitionExecution.sequence_number).offset(skip).limit(limit)
+    )
     result = await db.execute(query)
     transitions = list(result.scalars().all())
 
@@ -380,7 +386,9 @@ async def list_test_deficiencies(
 
     if project_id:
         # Join with test runs to filter by project
-        query = query.join(SoftwareTestRun).filter(SoftwareTestRun.project_id == project_id)
+        query = query.join(SoftwareTestRun).filter(
+            SoftwareTestRun.project_id == project_id
+        )
 
     if severity:
         query = query.filter(TestDeficiency.severity == severity)
@@ -527,7 +535,9 @@ async def list_coverage_snapshots(
     total = count_result.scalar_one()
 
     # Order by snapshot_time descending
-    query = query.order_by(desc(CoverageSnapshot.snapshot_time)).offset(skip).limit(limit)
+    query = (
+        query.order_by(desc(CoverageSnapshot.snapshot_time)).offset(skip).limit(limit)
+    )
     result = await db.execute(query)
     snapshots = list(result.scalars().all())
 

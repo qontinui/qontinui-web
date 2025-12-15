@@ -63,10 +63,11 @@ export class TokenValidator {
 
   /**
    * Check if token will expire soon (within specified milliseconds)
+   * Default: 30 seconds BEFORE expiry (proactive refresh to prevent 401 errors)
    */
   isTokenExpiringSoon(
     expiryTime: number,
-    thresholdMs: number = 60000
+    thresholdMs: number = 30000
   ): boolean {
     const timeUntilExpiry = expiryTime - Date.now();
     return timeUntilExpiry < thresholdMs && timeUntilExpiry > 0;

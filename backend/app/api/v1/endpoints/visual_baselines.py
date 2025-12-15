@@ -8,11 +8,19 @@ Provides REST API endpoints for:
 - Version history and rollback
 """
 
-import base64
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,8 +101,8 @@ async def baseline_to_response(
             response.image_url = await baseline_management_service.get_baseline_url(
                 baseline
             )
-            response.thumbnail_url = await baseline_management_service.get_thumbnail_url(
-                baseline
+            response.thumbnail_url = (
+                await baseline_management_service.get_thumbnail_url(baseline)
             )
         except Exception as e:
             logger.warning("failed_to_generate_baseline_urls", error=str(e))
@@ -495,8 +503,8 @@ async def auto_create_baselines(
     await verify_project_access(db, project_id, current_user.id)
 
     # Get screenshots from the test run that have state names
-    from app.models.test_screenshot import TestScreenshot
     from app.models.software_test_run import SoftwareTestRun
+    from app.models.test_screenshot import TestScreenshot
 
     # Verify test run belongs to this project
     run_result = await db.execute(

@@ -137,7 +137,9 @@ export default function WorkflowTestingPage() {
   const [showCreateSuite, setShowCreateSuite] = React.useState(false);
   const [showImportDialog, setShowImportDialog] = React.useState(false);
   const [editingTest, setEditingTest] = React.useState<TestCase | null>(null);
-  const [editingSuite, setEditingSuite] = React.useState<TestSuite | null>(null);
+  const [editingSuite, setEditingSuite] = React.useState<TestSuite | null>(
+    null
+  );
 
   // ========================================================================
   // State - Test Execution

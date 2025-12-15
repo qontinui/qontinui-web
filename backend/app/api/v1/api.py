@@ -47,6 +47,8 @@ from app.api.v1.endpoints import (
     variables,
     versions,
     videos,
+    visual_baselines,
+    visual_comparison,
 )
 
 api_router = APIRouter()
@@ -124,6 +126,12 @@ api_router.include_router(
 api_router.include_router(custom_functions.router, tags=["custom-functions"])
 api_router.include_router(capture.router, prefix="/capture", tags=["capture-sessions"])
 api_router.include_router(testing.router, prefix="/testing", tags=["testing"])
+api_router.include_router(
+    visual_baselines.router, prefix="/testing", tags=["visual-regression"]
+)
+api_router.include_router(
+    visual_comparison.router, prefix="/testing", tags=["visual-regression"]
+)
 api_router.include_router(
     training_datasets.router, prefix="/datasets", tags=["training-datasets"]
 )

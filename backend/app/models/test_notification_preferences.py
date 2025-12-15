@@ -251,4 +251,6 @@ class TestNotificationPreferences(Base):
         return config.get("enabled", False)
 
     def __repr__(self) -> str:
-        return f"<TestNotificationPreferences(id={self.id}, project_id={self.project_id})>"
+        return (
+            f"<TestNotificationPreferences(id={self.id}, project_id={self.project_id})>"
+        )

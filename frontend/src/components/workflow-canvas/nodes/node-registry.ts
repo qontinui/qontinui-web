@@ -35,6 +35,7 @@ export const NODE_TYPES: Record<ActionType, NodeComponent> = {
   VANISH: GuiActionNodes.VANISH,
   EXISTS: GuiActionNodes.EXISTS,
   WAIT: GuiActionNodes.WAIT,
+  RAG_FIND: GuiActionNodes.FIND, // Reuse FIND node for RAG_FIND
 
   // Mouse Actions
   CLICK: GuiActionNodes.CLICK,

@@ -224,8 +224,7 @@ export default function ExtractionsPage() {
                         </div>
                         {extraction.completed_at && (
                           <div>
-                            Completed{" "}
-                            {getRelativeTime(extraction.completed_at)}
+                            Completed {getRelativeTime(extraction.completed_at)}
                           </div>
                         )}
                       </div>
@@ -270,9 +269,7 @@ export default function ExtractionsPage() {
         open={deleteDialogOpen}
         title="Delete Extraction"
         itemName={
-          extractionToDelete
-            ? formatUrls(extractionToDelete.source_urls)
-            : ""
+          extractionToDelete ? formatUrls(extractionToDelete.source_urls) : ""
         }
         description={`Are you sure you want to delete this extraction? This will permanently delete all extracted data and annotations. This action cannot be undone.`}
         onClose={() => {

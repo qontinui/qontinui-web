@@ -7,13 +7,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  ArrowLeft,
-  Download,
-  Loader2,
-  Monitor,
-  Settings,
-} from "lucide-react";
+import { ArrowLeft, Download, Loader2, Monitor, Settings } from "lucide-react";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { AutomationStreamingCard } from "@/components/profile/automation-streaming-card";
 

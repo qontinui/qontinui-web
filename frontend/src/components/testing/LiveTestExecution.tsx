@@ -71,7 +71,9 @@ export function LiveTestExecution({
 
   const getProgressPercentage = () => {
     if (totalTransitions === 0) return 0;
-    return Math.round(((successfulTransitions + failedTransitions) / totalTransitions) * 100);
+    return Math.round(
+      ((successfulTransitions + failedTransitions) / totalTransitions) * 100
+    );
   };
 
   const getSuccessRate = () => {
@@ -188,7 +190,9 @@ export function LiveTestExecution({
                 <div className="text-sm font-medium text-red-400">
                   Connection Error
                 </div>
-                <div className="text-xs text-red-300 mt-1">{connectionError}</div>
+                <div className="text-xs text-red-300 mt-1">
+                  {connectionError}
+                </div>
               </div>
             </div>
           )}

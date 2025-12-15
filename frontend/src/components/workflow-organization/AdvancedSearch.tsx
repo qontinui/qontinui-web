@@ -264,7 +264,10 @@ function matchesFilter(
       return false;
     }
     const lastRun = new Date(stats.lastRunAt);
-    if (filter.lastRunDateRange.from && lastRun < filter.lastRunDateRange.from) {
+    if (
+      filter.lastRunDateRange.from &&
+      lastRun < filter.lastRunDateRange.from
+    ) {
       return false;
     }
     if (filter.lastRunDateRange.to && lastRun > filter.lastRunDateRange.to) {
@@ -972,8 +975,7 @@ export function AdvancedSearch({
                   onValueChange={(value) => {
                     setFilter({
                       ...filter,
-                      hasBeenExecuted:
-                        value === "all" ? null : value === "yes",
+                      hasBeenExecuted: value === "all" ? null : value === "yes",
                     });
                   }}
                 >

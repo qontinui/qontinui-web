@@ -85,7 +85,10 @@ export function EditableProjectName({
 
   if (isEditing) {
     return (
-      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="flex items-center gap-1"
+        onClick={(e) => e.stopPropagation()}
+      >
         <Input
           ref={inputRef}
           value={editedName}

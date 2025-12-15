@@ -106,7 +106,8 @@ export function TransitionTimeline({
             } ${autoScroll && isCurrent ? "scroll-mt-4" : ""}`}
             ref={
               autoScroll && isCurrent
-                ? (el) => el?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+                ? (el) =>
+                    el?.scrollIntoView({ behavior: "smooth", block: "nearest" })
                 : undefined
             }
           >

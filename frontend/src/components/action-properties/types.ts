@@ -29,6 +29,7 @@ export interface Action {
     | "TYPE"
     // Find actions
     | "FIND"
+    | "RAG_FIND"
     | "VANISH"
     | "GO_TO_STATE"
     | "RUN_WORKFLOW"

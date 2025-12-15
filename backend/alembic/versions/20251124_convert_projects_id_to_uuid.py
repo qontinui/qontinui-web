@@ -16,7 +16,7 @@ Steps:
 6. Rename new columns and add constraints
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
@@ -25,9 +25,9 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20251124_projects_uuid"
-down_revision: Union[str, None] = "20251124_training_datasets"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "20251124_training_datasets"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 # Tables that reference projects.id with their constraints
 # Format: (table_name, column_name, constraint_name, on_delete, nullable)

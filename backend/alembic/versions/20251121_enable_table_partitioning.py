@@ -20,19 +20,18 @@ The migration:
 This enables automatic partition management for high-volume data.
 """
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
-from typing import Sequence, Union
+
+from sqlalchemy import text
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 # revision identifiers, used by Alembic.
-revision: str = '20251121_partitioning'
-down_revision: Union[str, None] = 'b46613e9b784'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "20251121_partitioning"
+down_revision: str | None = "b46613e9b784"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def get_month_boundaries(year: int, month: int) -> tuple[str, str]:
@@ -60,6 +59,7 @@ def upgrade() -> None:
 
     # Import inspect to check table existence
     from sqlalchemy import inspect
+
     inspector = inspect(bind)
     existing_tables = inspector.get_table_names()
 
@@ -75,7 +75,9 @@ def upgrade() -> None:
 
         # Create new partitioned parent table
         print("  Creating partitioned parent table automation_logs_new...")
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE TABLE automation_logs_new (
                 id UUID DEFAULT gen_random_uuid(),
                 session_id UUID NOT NULL,
@@ -88,7 +90,9 @@ def upgrade() -> None:
                 PRIMARY KEY (id, created_at),
                 FOREIGN KEY (session_id) REFERENCES automation_sessions(id) ON DELETE CASCADE
             ) PARTITION BY RANGE (created_at)
-        """))
+        """
+            )
+        )
 
         # Create initial partitions for current month + next 2 months
         print("  Creating initial partitions...")
@@ -101,41 +105,69 @@ def upgrade() -> None:
             partition_name = f"automation_logs_y{year}_m{month:02d}"
 
             print(f"    Creating partition {partition_name}...")
-            op.execute(text(f"""
+            op.execute(
+                text(
+                    f"""
                 CREATE TABLE {partition_name}
                 PARTITION OF automation_logs_new
                 FOR VALUES FROM ('{start_date}') TO ('{end_date}')
-            """))
+            """
+                )
+            )
 
         # Copy data from old table to new table
         print("  Migrating existing data...")
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             INSERT INTO automation_logs_new
             SELECT * FROM automation_logs
-        """))
+        """
+            )
+        )
 
         # Create indexes on partitioned table
         print("  Creating indexes...")
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_new_session_id
             ON automation_logs_new (session_id)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_new_level
             ON automation_logs_new (level)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_new_timestamp
             ON automation_logs_new (timestamp)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_new_session_sequence
             ON automation_logs_new (session_id, sequence_number)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_new_event_type
             ON automation_logs_new USING gin (log_data)
-        """))
+        """
+            )
+        )
 
         # Swap tables
         print("  Swapping tables...")
@@ -161,7 +193,9 @@ def upgrade() -> None:
 
         # Create new partitioned parent table
         print("  Creating partitioned parent table analytics_events_new...")
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE TABLE analytics_events_new (
                 id UUID,
                 event_name VARCHAR(255) NOT NULL,
@@ -172,7 +206,9 @@ def upgrade() -> None:
                 PRIMARY KEY (id, timestamp),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             ) PARTITION BY RANGE (timestamp)
-        """))
+        """
+            )
+        )
 
         # Create initial partitions for current month + next 2 months
         print("  Creating initial partitions...")
@@ -185,45 +221,77 @@ def upgrade() -> None:
             partition_name = f"analytics_events_y{year}_m{month:02d}"
 
             print(f"    Creating partition {partition_name}...")
-            op.execute(text(f"""
+            op.execute(
+                text(
+                    f"""
                 CREATE TABLE {partition_name}
                 PARTITION OF analytics_events_new
                 FOR VALUES FROM ('{start_date}') TO ('{end_date}')
-            """))
+            """
+                )
+            )
 
         # Copy data from old table to new table
         print("  Migrating existing data...")
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             INSERT INTO analytics_events_new
             SELECT * FROM analytics_events
-        """))
+        """
+            )
+        )
 
         # Create indexes on partitioned table
         print("  Creating indexes...")
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_analytics_events_new_event_name
             ON analytics_events_new (event_name)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_analytics_events_new_user_id
             ON analytics_events_new (user_id)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_analytics_events_new_timestamp
             ON analytics_events_new (timestamp)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_analytics_events_new_name_timestamp
             ON analytics_events_new (event_name, timestamp)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_analytics_events_new_user_name
             ON analytics_events_new (user_id, event_name)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_analytics_events_new_timestamp_desc
             ON analytics_events_new (timestamp DESC)
-        """))
+        """
+            )
+        )
 
         # Swap tables
         print("  Swapping tables...")
@@ -243,7 +311,9 @@ def upgrade() -> None:
 
         # Create new partitioned parent table
         print("  Creating partitioned parent table automation_input_events_new...")
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE TABLE automation_input_events_new (
                 id BIGSERIAL,
                 session_id UUID NOT NULL,
@@ -270,7 +340,9 @@ def upgrade() -> None:
                 FOREIGN KEY (screenshot_before_id) REFERENCES automation_screenshots(id) ON DELETE SET NULL,
                 FOREIGN KEY (screenshot_after_id) REFERENCES automation_screenshots(id) ON DELETE SET NULL
             ) PARTITION BY RANGE (timestamp)
-        """))
+        """
+            )
+        )
 
         # Create initial partitions for current week + next 12 weeks
         print("  Creating initial partitions...")
@@ -283,42 +355,70 @@ def upgrade() -> None:
             partition_name = f"automation_input_events_y{year}_w{week_number:02d}"
 
             print(f"    Creating partition {partition_name}...")
-            op.execute(text(f"""
+            op.execute(
+                text(
+                    f"""
                 CREATE TABLE {partition_name}
                 PARTITION OF automation_input_events_new
                 FOR VALUES FROM ('{start_date}') TO ('{end_date}')
-            """))
+            """
+                )
+            )
 
         # Copy data from old table to new table
         print("  Migrating existing data...")
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             INSERT INTO automation_input_events_new
             SELECT * FROM automation_input_events
-        """))
+        """
+            )
+        )
 
         # Create indexes on partitioned table
         print("  Creating indexes...")
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_input_events_new_id
             ON automation_input_events_new (id)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_input_events_new_session_id
             ON automation_input_events_new (session_id)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_input_events_new_session_timestamp
             ON automation_input_events_new (session_id, timestamp)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_input_events_new_event_type
             ON automation_input_events_new (event_type)
-        """))
+        """
+            )
+        )
 
         # Swap tables
         print("  Swapping tables...")
         op.execute(text("DROP TABLE automation_input_events CASCADE"))
-        op.execute(text("ALTER TABLE automation_input_events_new RENAME TO automation_input_events"))
+        op.execute(
+            text(
+                "ALTER TABLE automation_input_events_new RENAME TO automation_input_events"
+            )
+        )
 
         # Note: Cannot recreate foreign key from screenshot_input_associations because
         # partitioned tables require unique constraints to include the partition key.
@@ -356,6 +456,7 @@ def downgrade() -> None:
 
     # Import inspect to check table existence
     from sqlalchemy import inspect
+
     inspector = inspect(bind)
     existing_tables = inspector.get_table_names()
 
@@ -366,7 +467,9 @@ def downgrade() -> None:
         print("\n[1/3] Reverting automation_logs to regular table...")
 
         # Create regular table
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE TABLE automation_logs_regular (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 session_id UUID NOT NULL,
@@ -378,39 +481,67 @@ def downgrade() -> None:
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES automation_sessions(id) ON DELETE CASCADE
             )
-        """))
+        """
+            )
+        )
 
         # Copy data
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             INSERT INTO automation_logs_regular
             SELECT * FROM automation_logs
-        """))
+        """
+            )
+        )
 
         # Recreate indexes
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_regular_session_id
             ON automation_logs_regular (session_id)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_regular_level
             ON automation_logs_regular (level)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_regular_timestamp
             ON automation_logs_regular (timestamp)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_regular_session_sequence
             ON automation_logs_regular (session_id, sequence_number)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_logs_regular_event_type
             ON automation_logs_regular USING gin (log_data)
-        """))
+        """
+            )
+        )
 
         # Swap tables
         op.execute(text("DROP TABLE automation_logs CASCADE"))
-        op.execute(text("ALTER TABLE automation_logs_regular RENAME TO automation_logs"))
+        op.execute(
+            text("ALTER TABLE automation_logs_regular RENAME TO automation_logs")
+        )
 
         print("  ✓ automation_logs reverted to regular table")
 
@@ -421,7 +552,9 @@ def downgrade() -> None:
         print("\n[2/3] Reverting analytics_events to regular table...")
 
         # Create regular table
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE TABLE analytics_events_regular (
                 id UUID PRIMARY KEY,
                 event_name VARCHAR(255) NOT NULL,
@@ -431,31 +564,51 @@ def downgrade() -> None:
                 created_at TIMESTAMP NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
-        """))
+        """
+            )
+        )
 
         # Copy data
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             INSERT INTO analytics_events_regular
             SELECT * FROM analytics_events
-        """))
+        """
+            )
+        )
 
         # Recreate indexes
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_analytics_events_regular_event_name
             ON analytics_events_regular (event_name)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_analytics_events_regular_user_id
             ON analytics_events_regular (user_id)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_analytics_events_regular_timestamp
             ON analytics_events_regular (timestamp)
-        """))
+        """
+            )
+        )
 
         # Swap tables
         op.execute(text("DROP TABLE analytics_events CASCADE"))
-        op.execute(text("ALTER TABLE analytics_events_regular RENAME TO analytics_events"))
+        op.execute(
+            text("ALTER TABLE analytics_events_regular RENAME TO analytics_events")
+        )
 
         print("  ✓ analytics_events reverted to regular table")
 
@@ -466,7 +619,9 @@ def downgrade() -> None:
         print("\n[3/3] Reverting automation_input_events to regular table...")
 
         # Create regular table
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE TABLE automation_input_events_regular (
                 id BIGSERIAL PRIMARY KEY,
                 session_id UUID NOT NULL,
@@ -492,35 +647,61 @@ def downgrade() -> None:
                 FOREIGN KEY (screenshot_before_id) REFERENCES automation_screenshots(id) ON DELETE SET NULL,
                 FOREIGN KEY (screenshot_after_id) REFERENCES automation_screenshots(id) ON DELETE SET NULL
             )
-        """))
+        """
+            )
+        )
 
         # Copy data
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             INSERT INTO automation_input_events_regular
             SELECT * FROM automation_input_events
-        """))
+        """
+            )
+        )
 
         # Recreate indexes
-        op.execute(text("""
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_input_events_regular_id
             ON automation_input_events_regular (id)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_input_events_regular_session_id
             ON automation_input_events_regular (session_id)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_input_events_regular_session_timestamp
             ON automation_input_events_regular (session_id, timestamp)
-        """))
-        op.execute(text("""
+        """
+            )
+        )
+        op.execute(
+            text(
+                """
             CREATE INDEX ix_automation_input_events_regular_event_type
             ON automation_input_events_regular (event_type)
-        """))
+        """
+            )
+        )
 
         # Swap tables
         op.execute(text("DROP TABLE automation_input_events CASCADE"))
-        op.execute(text("ALTER TABLE automation_input_events_regular RENAME TO automation_input_events"))
+        op.execute(
+            text(
+                "ALTER TABLE automation_input_events_regular RENAME TO automation_input_events"
+            )
+        )
 
         print("  ✓ automation_input_events reverted to regular table")
 

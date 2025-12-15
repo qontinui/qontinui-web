@@ -22,7 +22,10 @@ import { StateNode } from "@/components/state-node";
 import { TransitionNode } from "@/components/transition-node";
 import { TransitionEdge } from "@/components/transition-edge";
 import {
-  useAutomation,
+  useStates,
+  useTransitions,
+  useWorkflows,
+  useImages,
   type State,
   type StateRegion,
   type StateLocation,
@@ -32,11 +35,12 @@ import {
   type Transition,
   type OutgoingTransition,
   type IncomingTransition,
-} from "@/contexts/automation-context";
-import { StateUpdateCoordinator } from "@/contexts/automation-context/state-update-coordinator";
+} from "@/hooks/automation";
+import { StateUpdateCoordinator } from "@/stores/automation";
 import { OutgoingTransitionBuilder } from "@/components/outgoing-transition-builder";
 import { StatePropertiesPanel } from "@/components/state-properties-panel";
 import { TransitionPropertiesPanel } from "@/components/transition-properties-panel";
+import { BatchMonitorSettingsDialog } from "@/components/batch-monitor-settings-dialog";
 import { getLayoutedElements } from "@/lib/layout-utils";
 
 const nodeTypes: NodeTypes = {
@@ -55,17 +59,20 @@ export function StateStructure() {
     updateState,
     updateStateWithIdChange,
     deleteState,
-    transitions,
-    addTransition,
-    updateTransition,
-    deleteTransition,
-    workflows,
-    addWorkflow,
-    images,
-  } = useAutomation();
+  } = useStates();
+  const { transitions, addTransition, updateTransition, deleteTransition } =
+    useTransitions();
+  const { workflows, addWorkflow } = useWorkflows();
+  const { images } = useImages();
 
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  const [batchMonitorDialogOpen, setBatchMonitorDialogOpen] = useState(false);
+  const [outgoingTransitionDialogOpen, setOutgoingTransitionDialogOpen] =
+    useState(false);
+  const [preselectedOriginState, setPreselectedOriginState] = useState<
+    string | null
+  >(null);
 
   // Track pending ID changes to prevent panel from disappearing
   const pendingIdChangeRef = useRef<{ oldId: string; newId: string } | null>(
@@ -201,11 +208,25 @@ export function StateStructure() {
       const sourceState = states.find((s) => s.id === transition.fromState);
       if (!sourceState) return;
 
-      // Calculate position for the transition
-      const proposedPosition = {
-        x: sourceState.position.x,
-        y: sourceState.position.y + 150,
-      };
+      // Calculate position BETWEEN source and first target
+      const firstTargetState = states.find(
+        (s) => s.id === transition.activateStates[0]
+      );
+      let proposedPosition;
+
+      if (firstTargetState) {
+        // Position transition node midway between source and target
+        proposedPosition = {
+          x: (sourceState.position.x + firstTargetState.position.x) / 2,
+          y: (sourceState.position.y + firstTargetState.position.y) / 2,
+        };
+      } else {
+        // Fallback if target not found
+        proposedPosition = {
+          x: sourceState.position.x,
+          y: sourceState.position.y + 150,
+        };
+      }
 
       // Check if this position is occupied
       const isOccupied = [
@@ -215,13 +236,13 @@ export function StateStructure() {
         const pos = "position" in item ? item.position : item.position;
         return (
           pos &&
-          Math.abs(pos.x - proposedPosition.x) < 150 &&
-          Math.abs(pos.y - proposedPosition.y) < 80
+          Math.abs(pos.x - proposedPosition.x) < 100 &&
+          Math.abs(pos.y - proposedPosition.y) < 60
         );
       });
 
       const finalPosition = isOccupied
-        ? { x: sourceState.position.x + 200, y: sourceState.position.y }
+        ? { x: sourceState.position.x + 150, y: sourceState.position.y + 50 }
         : proposedPosition;
 
       // Save the position
@@ -234,6 +255,12 @@ export function StateStructure() {
       });
     });
   }, [transitions, states, updateTransition]);
+
+  // Handler for adding outgoing transition from a state
+  const handleAddOutgoingTransition = useCallback((stateId: string) => {
+    setPreselectedOriginState(stateId);
+    setOutgoingTransitionDialogOpen(true);
+  }, []);
 
   React.useEffect(() => {
     // Skip rebuilding nodes while dragging to prevent node destruction
@@ -251,6 +278,14 @@ export function StateStructure() {
         incomingTransitionsByState.set(t.toState, [...existing, t]);
       });
 
+    // Check which states have OutgoingTransitions
+    const outgoingTransitionsByState = new Set<string>();
+    transitions
+      .filter((t): t is OutgoingTransition => t.type === "OutgoingTransition")
+      .forEach((t) => {
+        outgoingTransitionsByState.add(t.fromState);
+      });
+
     // Create state nodes
     const stateNodes: Node[] = states.map((state) => ({
       id: state.id,
@@ -261,6 +296,8 @@ export function StateStructure() {
         images,
         hasIncomingTransitions: incomingTransitionsByState.has(state.id),
         incomingTransitions: incomingTransitionsByState.get(state.id) || [],
+        hasOutgoingTransitions: outgoingTransitionsByState.has(state.id),
+        onAddOutgoingTransition: handleAddOutgoingTransition,
       },
     }));
 
@@ -287,12 +324,23 @@ export function StateStructure() {
           let position = transition.position;
 
           if (!position) {
-            // Calculate temporary position for this render
-            // The separate useEffect will persist this position
-            position = {
-              x: sourceState.position.x,
-              y: sourceState.position.y + 150,
-            };
+            // Calculate temporary position BETWEEN source and first target
+            const firstTargetState = states.find(
+              (s) => s.id === activateStates[0]
+            );
+            if (firstTargetState) {
+              // Position transition node midway between source and target
+              position = {
+                x: (sourceState.position.x + firstTargetState.position.x) / 2,
+                y: (sourceState.position.y + firstTargetState.position.y) / 2,
+              };
+            } else {
+              // Fallback if target not found
+              position = {
+                x: sourceState.position.x,
+                y: sourceState.position.y + 150,
+              };
+            }
           }
 
           const transitionNode: Node = {
@@ -350,7 +398,14 @@ export function StateStructure() {
 
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [states, transitions, images, setNodes, setEdges]);
+  }, [
+    states,
+    transitions,
+    images,
+    setNodes,
+    setEdges,
+    handleAddOutgoingTransition,
+  ]);
 
   const handleAddState = () => {
     const position = findEmptyPosition();
@@ -368,6 +423,26 @@ export function StateStructure() {
     deleteState(stateId);
     if (selectedNode === stateId) setSelectedNode(null);
   };
+
+  const handleApplyMonitors = useCallback(
+    (stateIds: string[], monitors: number[]) => {
+      // Apply monitors to all state images in selected states
+      stateIds.forEach((stateId) => {
+        const state = states.find((s) => s.id === stateId);
+        if (state && state.stateImages) {
+          const updatedState = {
+            ...state,
+            stateImages: state.stateImages.map((si) => ({
+              ...si,
+              monitors: monitors,
+            })),
+          };
+          updateState(updatedState);
+        }
+      });
+    },
+    [states, updateState]
+  );
 
   const applyAutoLayout = useCallback(() => {
     const { nodes: layoutedNodes } = getLayoutedElements(nodes, edges, {
@@ -405,17 +480,16 @@ export function StateStructure() {
     });
   }, [nodes, edges, states, transitions, updateState, updateTransition]);
 
-  // Auto-layout when states or transitions are added
+  // Auto-layout when states are added (NOT when transitions are added)
   React.useEffect(() => {
     const currentCounts = {
       stateCount: states.length,
       transitionCount: transitions.length,
     };
 
-    if (
-      currentCounts.stateCount > prevCountsRef.current.stateCount ||
-      currentCounts.transitionCount > prevCountsRef.current.transitionCount
-    ) {
+    // Only auto-layout when states are added, not transitions
+    // This prevents target states from moving when transitions are created
+    if (currentCounts.stateCount > prevCountsRef.current.stateCount) {
       // Delay to ensure nodes/edges are rendered
       setTimeout(() => {
         applyAutoLayout();
@@ -779,6 +853,15 @@ export function StateStructure() {
             Auto Layout
           </Button>
 
+          <Button
+            onClick={() => setBatchMonitorDialogOpen(true)}
+            className="w-full bg-[#7C3AED] hover:bg-[#7C3AED]/80 text-white"
+            disabled={states.length === 0}
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            Batch Monitor Settings
+          </Button>
+
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
               States
@@ -831,6 +914,17 @@ export function StateStructure() {
           </div>
         </div>
       </div>
+
+      {/* Outgoing Transition Dialog triggered by green circle */}
+      {outgoingTransitionDialogOpen && preselectedOriginState && (
+        <OutgoingTransitionBuilder
+          preselectedOriginState={preselectedOriginState}
+          onClose={() => {
+            setOutgoingTransitionDialogOpen(false);
+            setPreselectedOriginState(null);
+          }}
+        />
+      )}
 
       {/* Main Canvas */}
       <div className="flex-1 relative bg-[#0A0A0B] min-h-0">
@@ -928,6 +1022,14 @@ export function StateStructure() {
           </div>
         )}
       </div>
+
+      {/* Batch Monitor Settings Dialog */}
+      <BatchMonitorSettingsDialog
+        open={batchMonitorDialogOpen}
+        onOpenChange={setBatchMonitorDialogOpen}
+        states={states}
+        onApplyMonitors={handleApplyMonitors}
+      />
     </div>
   );
 }

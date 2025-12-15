@@ -31,6 +31,34 @@ export interface ExtractionSessionCreate {
   };
 }
 
+export interface ExtractionSessionDetail extends ExtractionSession {
+  annotations: ExtractionAnnotation[];
+}
+
+export interface ExtractionAnnotation {
+  id: string;
+  session_id: string;
+  screenshot_id: string;
+  source_url: string;
+  viewport_width: number;
+  viewport_height: number;
+  elements: any[];
+  states: any[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StateImportRequest {
+  state_ids?: string[];
+  target_workflow_id?: string;
+}
+
+export interface ImportResult {
+  imported_states: number;
+  imported_transitions: number;
+  workflow_id: string | null;
+}
+
 export class ExtractionService {
   private httpClient: HttpClient;
   private apiUrl: string;
@@ -63,6 +91,48 @@ export class ExtractionService {
     return response.json();
   }
 
+  async getExtractionDetail(
+    extractionId: string
+  ): Promise<ExtractionSessionDetail> {
+    const url = `${this.apiUrl}/api/v1/extractions/${extractionId}`;
+    const response = await this.httpClient.fetch(url);
+
+    if (!response.ok) {
+      throw new Error("Failed to get extraction details");
+    }
+
+    return response.json();
+  }
+
+  async getAnnotations(extractionId: string): Promise<ExtractionAnnotation[]> {
+    const url = `${this.apiUrl}/api/v1/extractions/${extractionId}/annotations`;
+    const response = await this.httpClient.fetch(url);
+
+    if (!response.ok) {
+      throw new Error("Failed to get annotations");
+    }
+
+    return response.json();
+  }
+
+  async importStates(
+    extractionId: string,
+    data: StateImportRequest
+  ): Promise<ImportResult> {
+    const url = `${this.apiUrl}/api/v1/extractions/${extractionId}/import-states`;
+    const response = await this.httpClient.fetch(url, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Failed to import states: ${JSON.stringify(errorData)}`);
+    }
+
+    return response.json();
+  }
+
   async createExtraction(
     projectId: string,
     data: ExtractionSessionCreate
@@ -75,7 +145,9 @@ export class ExtractionService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(`Failed to create extraction: ${JSON.stringify(errorData)}`);
+      throw new Error(
+        `Failed to create extraction: ${JSON.stringify(errorData)}`
+      );
     }
 
     return response.json();

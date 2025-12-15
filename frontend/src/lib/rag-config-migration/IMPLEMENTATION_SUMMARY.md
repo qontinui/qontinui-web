@@ -60,39 +60,46 @@ Created a complete migration system for RAG (Retrieval-Augmented Generation) con
 ## Key Features
 
 ### 1. Type-Safe Migration Infrastructure
+
 - Matches Rust RAGConfig types from qontinui-runner
 - Comprehensive TypeScript interfaces
 - Compile-time type checking
 
 ### 2. BFS Path Finding
+
 - Finds shortest migration path between versions
 - Handles complex migration graphs
 - Efficient traversal
 
 ### 3. Re-embedding Detection
+
 - Tracks if any migration requires re-embedding
 - Critical for maintaining embedding consistency
 - Warns users when re-embedding is needed
 
 ### 4. Comprehensive Validation
+
 - Structure validation (types, required fields)
 - Reference validation (states, workflows, elements)
 - Embedding config validation
 - Version format validation
 
 ### 5. Migration History
+
 - Tracks all migrations applied
 - Stores migration path
 - Records re-embedding requirements
 - ISO 8601 timestamps
 
 ### 6. Caching
+
 - In-memory cache for migration results
 - Simple hash-based cache keys
 - Cache statistics and management
 - Enable/disable caching
 
 ### 7. Preview Functionality
+
 - Preview migrations without applying
 - Shows migration steps
 - Estimates changes
@@ -118,8 +125,12 @@ RAGConfig {
 ## Usage Examples
 
 ### Basic Migration
+
 ```typescript
-import { migrateRAGConfigToLatest, needsRAGMigration } from '@/lib/rag-config-migration';
+import {
+  migrateRAGConfigToLatest,
+  needsRAGMigration,
+} from "@/lib/rag-config-migration";
 
 if (needsRAGMigration(config.version)) {
   const result = await migrateRAGConfigToLatest(config);
@@ -133,28 +144,32 @@ if (needsRAGMigration(config.version)) {
 ```
 
 ### Validation
+
 ```typescript
-import { validateRAGConfigComprehensive } from '@/lib/rag-config-migration';
+import { validateRAGConfigComprehensive } from "@/lib/rag-config-migration";
 
 const result = validateRAGConfigComprehensive(config);
 if (!result.success) {
-  console.error('Validation errors:', result.errors);
+  console.error("Validation errors:", result.errors);
 }
 ```
 
 ### Preview
+
 ```typescript
-import { previewRAGMigration } from '@/lib/rag-config-migration';
+import { previewRAGMigration } from "@/lib/rag-config-migration";
 
 const preview = await previewRAGMigration(config);
-console.log('Migration steps:', preview.migrationSteps);
-console.log('Requires re-embedding:', preview.requiresReembedding);
+console.log("Migration steps:", preview.migrationSteps);
+console.log("Requires re-embedding:", preview.requiresReembedding);
 ```
 
 ## Adding New Migrations
 
 ### Step 1: Create Migration File
+
 Create `migrations/v1.0.0-to-v1.1.0.ts`:
+
 ```typescript
 export const migrationV10ToV11: RAGMigration = {
   fromVersion: "1.0.0",
@@ -171,16 +186,20 @@ export const migrationV10ToV11: RAGMigration = {
 ```
 
 ### Step 2: Register Migration
+
 Update `migrations/index.ts`:
+
 ```typescript
-import { migrationV10ToV11 } from './v1.0.0-to-v1.1.0';
+import { migrationV10ToV11 } from "./v1.0.0-to-v1.1.0";
 
 export const CURRENT_RAG_VERSION = "1.1.0";
 export const RAG_MIGRATIONS = [migrationV10ToV11];
 ```
 
 ### Step 3: Update Types
+
 Update `types.ts` with new fields:
+
 ```typescript
 export interface RAGElement {
   // ... existing fields
@@ -191,46 +210,52 @@ export interface RAGElement {
 ## Re-embedding Flag
 
 ### When to Set `requiresReembedding: true`
+
 - Embedding model versions change
 - Element structure changes (bounding boxes, OCR text)
 - Fields that affect embeddings are modified
 
 ### When to Set `requiresReembedding: false`
+
 - UI/display fields are added
 - Non-embedded metadata changes
 - Reference IDs are updated
 
 ## Comparison with Workflow Migration
 
-| Feature | Workflow Migration | RAG Migration |
-|---------|-------------------|---------------|
-| Version tracking | ✅ | ✅ |
-| BFS path finding | ✅ | ✅ |
-| Validation | ✅ | ✅ |
-| Caching | ✅ | ✅ |
-| Re-embedding flag | ❌ | ✅ |
+| Feature              | Workflow Migration | RAG Migration             |
+| -------------------- | ------------------ | ------------------------- |
+| Version tracking     | ✅                 | ✅                        |
+| BFS path finding     | ✅                 | ✅                        |
+| Validation           | ✅                 | ✅                        |
+| Caching              | ✅                 | ✅                        |
+| Re-embedding flag    | ❌                 | ✅                        |
 | Reference validation | States/Transitions | Elements/States/Workflows |
 
 ## Implementation Notes
 
 ### Type Compatibility
+
 - All TypeScript interfaces match Rust types in qontinui-runner
 - Field naming uses camelCase (TypeScript) vs snake_case (Rust/Python)
 - Automatic conversion handled by serialization layer
 
 ### Validation Strategy
+
 - Three-tier validation approach:
   1. Structure validation (types, required fields)
   2. Reference validation (cross-references between entities)
   3. Comprehensive validation (combines all checks)
 
 ### Migration Engine Design
+
 - Immutable migrations (always use structuredClone)
 - Fail-fast error handling
 - Detailed context for debugging
 - Sequential application with rollback on error
 
 ### Performance
+
 - BFS for optimal path finding (O(V + E) time complexity)
 - In-memory caching for repeated migrations
 - Lazy validation (only when requested)
@@ -238,16 +263,17 @@ export interface RAGElement {
 ## Testing Recommendations
 
 ### Unit Tests
+
 ```typescript
-describe('RAGMigrationEngine', () => {
-  it('should migrate from v1.0.0 to v1.1.0', async () => {
+describe("RAGMigrationEngine", () => {
+  it("should migrate from v1.0.0 to v1.1.0", async () => {
     const config = createTestConfig("1.0.0");
     const result = await migrateRAGConfigToLatest(config);
     expect(result.success).toBe(true);
     expect(result.config.version).toBe("1.1.0");
   });
 
-  it('should detect re-embedding requirement', async () => {
+  it("should detect re-embedding requirement", async () => {
     const result = await migrateRAGConfigToLatest(config);
     expect(result.requiresReembedding).toBe(true);
   });
@@ -255,6 +281,7 @@ describe('RAGMigrationEngine', () => {
 ```
 
 ### Integration Tests
+
 - Test full migration paths (multiple versions)
 - Test validation after migration
 - Test re-embedding detection across paths

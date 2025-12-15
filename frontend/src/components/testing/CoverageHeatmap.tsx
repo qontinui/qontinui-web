@@ -12,12 +12,18 @@ interface CoverageHeatmapProps {
   allStates?: string[];
 }
 
-export function CoverageHeatmap({ coverage, allStates = [] }: CoverageHeatmapProps) {
+export function CoverageHeatmap({
+  coverage,
+  allStates = [],
+}: CoverageHeatmapProps) {
   const heatmapData = useMemo(() => {
     if (!coverage) {
       return {
         covered: [],
-        uncovered: allStates.map((state) => ({ name: state, status: "untested" as const })),
+        uncovered: allStates.map((state) => ({
+          name: state,
+          status: "untested" as const,
+        })),
         recentlyCovered: [],
       };
     }
@@ -93,9 +99,7 @@ export function CoverageHeatmap({ coverage, allStates = [] }: CoverageHeatmapPro
         </CardHeader>
         <CardContent className="p-12 text-center">
           <Circle className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-          <div className="text-gray-400">
-            Waiting for coverage data...
-          </div>
+          <div className="text-gray-400">Waiting for coverage data...</div>
         </CardContent>
       </Card>
     );
@@ -226,11 +230,12 @@ export function CoverageHeatmap({ coverage, allStates = [] }: CoverageHeatmapPro
         </div>
 
         {/* Empty state */}
-        {heatmapData.covered.length === 0 && heatmapData.uncovered.length === 0 && (
-          <div className="text-center py-8 text-gray-400">
-            No state data available yet
-          </div>
-        )}
+        {heatmapData.covered.length === 0 &&
+          heatmapData.uncovered.length === 0 && (
+            <div className="text-center py-8 text-gray-400">
+              No state data available yet
+            </div>
+          )}
       </CardContent>
     </Card>
   );

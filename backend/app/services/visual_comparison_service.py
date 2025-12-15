@@ -57,6 +57,7 @@ class VisualComparisonService:
         if self._comparator is None:
             try:
                 from qontinui.vision.comparison import VisualComparator
+
                 self._comparator = VisualComparator()
             except ImportError:
                 logger.error("qontinui library not available for visual comparison")
@@ -319,17 +320,13 @@ class VisualComparisonService:
         if state_filter:
             conditions.append(TestScreenshot.state_name == state_filter)
 
-        result = await db.execute(
-            select(TestScreenshot).where(and_(*conditions))
-        )
+        result = await db.execute(select(TestScreenshot).where(and_(*conditions)))
         screenshots = result.scalars().all()
 
         results = []
         for screenshot in screenshots:
             try:
-                comparison_result = await self.compare_screenshot(
-                    db, screenshot.id
-                )
+                comparison_result = await self.compare_screenshot(db, screenshot.id)
                 results.append(comparison_result)
             except Exception as e:
                 logger.error(
@@ -464,7 +461,8 @@ class VisualComparisonService:
             .where(
                 and_(
                     SoftwareTestRun.project_id == project_id,
-                    VisualComparisonResult.status == VisualComparisonStatus.PENDING_REVIEW,
+                    VisualComparisonResult.status
+                    == VisualComparisonStatus.PENDING_REVIEW,
                 )
             )
             .order_by(VisualComparisonResult.created_at.desc())
@@ -570,12 +568,13 @@ class VisualComparisonService:
             stats[status.value] = count
 
         stats["total"] = sum(stats.values())
-        stats["pending_review_count"] = stats[VisualComparisonStatus.PENDING_REVIEW.value]
+        stats["pending_review_count"] = stats[
+            VisualComparisonStatus.PENDING_REVIEW.value
+        ]
 
         # Get baseline count
         baseline_result = await db.execute(
-            select(func.count(VisualBaseline.id))
-            .where(
+            select(func.count(VisualBaseline.id)).where(
                 and_(
                     VisualBaseline.project_id == project_id,
                     VisualBaseline.is_active == True,

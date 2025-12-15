@@ -1,6 +1,5 @@
 """Tests for JSON configuration validator."""
 
-import pytest
 
 from app.services.json_validator import JSONConfigValidator
 
@@ -146,7 +145,9 @@ class TestStateValidation:
         validator = JSONConfigValidator()
         config = _make_minimal_config(
             states=[
-                _make_state("state_1", "State One", identifying_images=[], is_initial=True),
+                _make_state(
+                    "state_1", "State One", identifying_images=[], is_initial=True
+                ),
                 _make_state("state_2", "State Two", identifying_images=[]),
             ],
         )

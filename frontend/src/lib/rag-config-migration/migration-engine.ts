@@ -11,7 +11,10 @@ import type {
   RAGMigrationHistoryEntry,
   RAGConfig,
 } from "./types";
-import { compareVersions, isValidVersion } from "../config-migration/version-utils";
+import {
+  compareVersions,
+  isValidVersion,
+} from "../config-migration/version-utils";
 
 export class RAGMigrationEngine {
   private migrations: Map<string, RAGMigration> = new Map();
@@ -195,7 +198,12 @@ export class RAGMigrationEngine {
     }
 
     // Add migration history to metadata
-    this.addMigrationHistory(currentConfig, configVersion, path, requiresReembedding);
+    this.addMigrationHistory(
+      currentConfig,
+      configVersion,
+      path,
+      requiresReembedding
+    );
 
     const result: RAGMigrationResult = {
       success: true,

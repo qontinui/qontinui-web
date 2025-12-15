@@ -10,7 +10,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # ============================================================================
 # Base WebSocket Message Schema
 # ============================================================================
@@ -56,9 +55,7 @@ class SessionEndData(BaseModel):
     status: str = Field(..., description="Final test run status")
     error_summary: str | None = Field(None, description="Error summary if failed")
     total_transitions: int = Field(default=0, description="Total transitions executed")
-    successful_transitions: int = Field(
-        default=0, description="Successful transitions"
-    )
+    successful_transitions: int = Field(default=0, description="Successful transitions")
     failed_transitions: int = Field(default=0, description="Failed transitions")
     skipped_transitions: int = Field(default=0, description="Skipped transitions")
     coverage_percentage: float = Field(
@@ -221,7 +218,9 @@ class TransitionStartedResponse(BaseModel):
     """Response for transition_started message."""
 
     type: str = Field(default="transition_started_ack", description="Response type")
-    transition_execution_id: UUID = Field(..., description="Created execution record ID")
+    transition_execution_id: UUID = Field(
+        ..., description="Created execution record ID"
+    )
     timestamp: str = Field(..., description="ISO timestamp")
 
 
@@ -229,7 +228,9 @@ class TransitionCompletedResponse(BaseModel):
     """Response for transition_completed message."""
 
     type: str = Field(default="transition_completed_ack", description="Response type")
-    transition_execution_id: UUID = Field(..., description="Updated execution record ID")
+    transition_execution_id: UUID = Field(
+        ..., description="Updated execution record ID"
+    )
     timestamp: str = Field(..., description="ISO timestamp")
 
 

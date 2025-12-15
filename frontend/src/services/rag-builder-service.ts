@@ -121,9 +121,7 @@ export class RAGBuilderService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        `Failed to create element: ${JSON.stringify(errorData)}`
-      );
+      throw new Error(`Failed to create element: ${JSON.stringify(errorData)}`);
     }
 
     return response.json();
@@ -346,10 +344,7 @@ export class RAGBuilderService {
   /**
    * Search RAG elements using text and semantic similarity
    */
-  async search(
-    projectId: string,
-    query: SearchQuery
-  ): Promise<SearchResult[]> {
+  async search(projectId: string, query: SearchQuery): Promise<SearchResult[]> {
     const url = `${this.apiUrl}/api/rag/projects/${projectId}/search`;
     const response = await this.httpClient.fetch(url, {
       method: "POST",
@@ -377,9 +372,7 @@ export class RAGBuilderService {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to generate description: ${response.statusText}`
-      );
+      throw new Error(`Failed to generate description: ${response.statusText}`);
     }
 
     const data = await response.json();

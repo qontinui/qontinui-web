@@ -79,7 +79,10 @@ export type {
 };
 
 // Re-export enums (need value export, not just type)
-export { MatchingStrategy, OCRMatchMode } from "@/contexts/automation-context/types";
+export {
+  MatchingStrategy,
+  OCRMatchMode,
+} from "@/contexts/automation-context/types";
 
 // ============================================================================
 // Slice Interfaces

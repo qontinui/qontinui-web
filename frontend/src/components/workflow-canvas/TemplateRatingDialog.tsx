@@ -8,7 +8,7 @@
  * - Submit or update their rating
  */
 
-import { useState } from 'react';
+import { useState } from "react";
 import { workflowTemplates } from "@/services/workflow-templates";
 import { isValidRating } from "@/types/workflow-templates";
 
@@ -53,9 +53,7 @@ function StarRating({ rating, onRatingChange, disabled }: StarRatingProps) {
           disabled={disabled}
           aria-label={`Rate ${star} star${star > 1 ? "s" : ""}`}
         >
-          <span className="star-icon">
-            {displayRating >= star ? "★" : "☆"}
-          </span>
+          <span className="star-icon">{displayRating >= star ? "★" : "☆"}</span>
         </button>
       ))}
       <span className="rating-text">
@@ -106,9 +104,7 @@ export function TemplateRatingDialog({
       onClose();
     } catch (err) {
       console.error("Failed to submit rating:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to submit rating"
-      );
+      setError(err instanceof Error ? err.message : "Failed to submit rating");
     } finally {
       setLoading(false);
     }
@@ -125,9 +121,7 @@ export function TemplateRatingDialog({
       onClose();
     } catch (err) {
       console.error("Failed to delete rating:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to delete rating"
-      );
+      setError(err instanceof Error ? err.message : "Failed to delete rating");
     } finally {
       setLoading(false);
     }
@@ -229,8 +223,8 @@ export function TemplateRatingDialog({
             {loading
               ? "Submitting..."
               : isUpdate
-              ? "Update Rating"
-              : "Submit Rating"}
+                ? "Update Rating"
+                : "Submit Rating"}
           </button>
         </div>
       </div>

@@ -86,7 +86,9 @@ export function MonitorSelector({
     const monitor = runnerMonitors.find((m) => m.index === index);
     if (monitor && isRunnerConnected) {
       // Capitalize position
-      return monitor.position.charAt(0).toUpperCase() + monitor.position.slice(1);
+      return (
+        monitor.position.charAt(0).toUpperCase() + monitor.position.slice(1)
+      );
     }
     // Fallback labels when runner not connected
     const fallbackLabels: { [key: number]: string } = {
@@ -189,8 +191,8 @@ export function MonitorSelector({
                       title={tooltip}
                     >
                       <span className="flex items-center gap-2">
-                        <Monitor className="w-3 h-3" />
-                        [{index}] {getMonitorLabel(index)}
+                        <Monitor className="w-3 h-3" />[{index}]{" "}
+                        {getMonitorLabel(index)}
                       </span>
                     </SelectItem>
                   );
@@ -240,7 +242,9 @@ export function MonitorDisplay({
     // Use real monitor data if available
     const monitor = runnerMonitorData.find((m) => m.index === index);
     if (monitor && isConnected) {
-      return monitor.position.charAt(0).toUpperCase() + monitor.position.slice(1);
+      return (
+        monitor.position.charAt(0).toUpperCase() + monitor.position.slice(1)
+      );
     }
     // Fallback labels
     const fallbackLabels: { [key: number]: string } = {

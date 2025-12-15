@@ -381,8 +381,13 @@ export function StateCoverageHeatMap({
                   }
                 }}
               />
-              <Panel position="top-right" className="bg-[#1A1A1B]/90 p-4 rounded-lg border border-gray-700">
-                <div className="text-xs text-gray-400 mb-2">Coverage Breakdown</div>
+              <Panel
+                position="top-right"
+                className="bg-[#1A1A1B]/90 p-4 rounded-lg border border-gray-700"
+              >
+                <div className="text-xs text-gray-400 mb-2">
+                  Coverage Breakdown
+                </div>
                 {coverageStats && (
                   <div className="space-y-1">
                     <div className="flex items-center justify-between gap-4">

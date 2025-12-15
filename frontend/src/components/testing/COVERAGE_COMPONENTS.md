@@ -13,6 +13,7 @@ The state coverage visualization system provides visual feedback on which states
 A high-level summary card displaying key coverage metrics with trend indicators.
 
 **Features:**
+
 - State coverage percentage with progress bar
 - Transition coverage percentage with progress bar
 - Unique paths discovered count
@@ -21,13 +22,11 @@ A high-level summary card displaying key coverage metrics with trend indicators.
 - Mini sparkline showing coverage trend over last 10 runs
 
 **Usage:**
+
 ```tsx
 import { CoverageSummaryCard } from "@/components/testing";
 
-<CoverageSummaryCard
-  projectId="project-uuid"
-  workflowId="workflow-id"
-/>
+<CoverageSummaryCard projectId="project-uuid" workflowId="workflow-id" />;
 ```
 
 **Props:**
@@ -44,6 +43,7 @@ import { CoverageSummaryCard } from "@/components/testing";
 - **Total Executions**: Total number of transition attempts across all test runs
 
 **Color Coding:**
+
 - Primary metric (state coverage): Cyan (#00D9FF)
 - Secondary metric (transition coverage): Purple (#BD00FF)
 - Tertiary metrics: Green (#00FF88) and Orange (#FFB800)
@@ -53,6 +53,7 @@ import { CoverageSummaryCard } from "@/components/testing";
 An interactive graph visualization showing state coverage with color-coded status indicators.
 
 **Features:**
+
 - Color-coded nodes based on test results:
   - **Green (Passing)**: 90%+ success rate
   - **Yellow (Partial)**: 70-90% success rate
@@ -68,13 +69,11 @@ An interactive graph visualization showing state coverage with color-coded statu
 - Zoom and pan controls
 
 **Usage:**
+
 ```tsx
 import { StateCoverageHeatMap } from "@/components/testing";
 
-<StateCoverageHeatMap
-  projectId="project-uuid"
-  workflowId="workflow-id"
-/>
+<StateCoverageHeatMap projectId="project-uuid" workflowId="workflow-id" />;
 ```
 
 **Props:**
@@ -118,14 +117,14 @@ The original state graph visualization component remains available for compariso
 
 **Key Differences from StateCoverageHeatMap:**
 
-| Feature | StateGraphVisualization | StateCoverageHeatMap |
-|---------|------------------------|---------------------|
-| **Primary Focus** | Success rates | Coverage status |
-| **Node Coloring** | Gradient by success rate | Categorical by status |
-| **Uncovered States** | Not differentiated | Clearly marked in gray |
-| **Node Details** | On-graph only | Click for modal dialog |
-| **Coverage Breakdown** | Simple stats below | Interactive panel |
-| **Edge Width** | Fixed | Scales with attempts |
+| Feature                | StateGraphVisualization  | StateCoverageHeatMap   |
+| ---------------------- | ------------------------ | ---------------------- |
+| **Primary Focus**      | Success rates            | Coverage status        |
+| **Node Coloring**      | Gradient by success rate | Categorical by status  |
+| **Uncovered States**   | Not differentiated       | Clearly marked in gray |
+| **Node Details**       | On-graph only            | Click for modal dialog |
+| **Coverage Breakdown** | Simple stats below       | Interactive panel      |
+| **Edge Width**         | Fixed                    | Scales with attempts   |
 
 **When to Use Which:**
 
@@ -204,12 +203,12 @@ A transition is considered "covered" if `attempt_count > 0`.
 
 ### Success Rate Categories
 
-| Category | Success Rate | Color | Meaning |
-|----------|-------------|-------|---------|
-| Passing | 90% - 100% | Green | Reliably working |
-| Partial | 70% - 89% | Yellow | Works most of the time, may need attention |
-| Failing | 0% - 69% | Red | Frequent failures, needs investigation |
-| Uncovered | N/A (no attempts) | Gray | Not yet tested |
+| Category  | Success Rate      | Color  | Meaning                                    |
+| --------- | ----------------- | ------ | ------------------------------------------ |
+| Passing   | 90% - 100%        | Green  | Reliably working                           |
+| Partial   | 70% - 89%         | Yellow | Works most of the time, may need attention |
+| Failing   | 0% - 69%          | Red    | Frequent failures, needs investigation     |
+| Uncovered | N/A (no attempts) | Gray   | Not yet tested                             |
 
 ## Trend Calculation
 
@@ -224,17 +223,20 @@ The trend indicator compares the latest coverage percentage to the previous run:
 All components follow the Qontinui design system:
 
 **Background Colors:**
+
 - Card background: `#1A1A1B` with 50% opacity
 - Content background: `#0A0A0B` with 50% opacity
 - Border: `gray-800` with 50% opacity
 
 **Brand Colors:**
+
 - Primary (Cyan): `#00D9FF`
 - Secondary (Purple): `#BD00FF`
 - Tertiary (Green): `#00FF88`
 - Accent (Orange): `#FFB800`
 
 **Status Colors:**
+
 - Success/Passing: `green-500` (#10b981)
 - Warning/Partial: `yellow-500` (#eab308)
 - Error/Failing: `red-500` (#ef4444)
@@ -245,6 +247,7 @@ All components follow the Qontinui design system:
 ### Caching
 
 Both components use TanStack Query for data fetching with:
+
 - 2-minute stale time for state graph data (expensive to compute)
 - 1-minute stale time for coverage trends
 - Automatic refetching on window focus
@@ -253,6 +256,7 @@ Both components use TanStack Query for data fetching with:
 ### Graph Layout
 
 The Dagre layout algorithm runs in the browser:
+
 - Memoized to prevent recalculation on re-renders
 - Only recalculates when graph data changes
 - Layout settings: `rankdir: "LR"`, `nodesep: 100`, `ranksep: 150`
@@ -260,6 +264,7 @@ The Dagre layout algorithm runs in the browser:
 ### Large Graphs
 
 For workflows with many states:
+
 - ReactFlow provides virtualization automatically
 - MiniMap helps with navigation
 - Controls allow zooming to focus areas
@@ -306,11 +311,12 @@ To test the components in development:
 ### Graph layout looks cramped
 
 **Solution**: Adjust the Dagre layout settings in `StateCoverageHeatMap.tsx`:
+
 ```typescript
 dagreGraph.setGraph({
-  rankdir: "LR",    // Try "TB" for top-to-bottom
-  nodesep: 150,     // Increase for more space between nodes
-  ranksep: 200      // Increase for more space between ranks
+  rankdir: "LR", // Try "TB" for top-to-bottom
+  nodesep: 150, // Increase for more space between nodes
+  ranksep: 200, // Increase for more space between ranks
 });
 ```
 
@@ -361,6 +367,7 @@ Potential improvements for future iterations:
 ## Support
 
 For questions or issues with these components, refer to:
+
 - Main Testing README: `src/app/(app)/testing/README.md`
 - Testing Service Documentation: `src/services/testing-service.ts`
 - Backend Coverage Model: `backend/app/models/coverage_snapshot.py`

@@ -17,6 +17,7 @@ import {
   VanishActionConfig,
   ExistsActionConfig,
   WaitActionConfig,
+  RagFindActionConfig,
 } from "./configs/find-actions";
 
 import {
@@ -77,7 +78,7 @@ import {
 // Action Types
 // ============================================================================
 
-export type FindActionType = "FIND" | "VANISH" | "EXISTS" | "WAIT";
+export type FindActionType = "FIND" | "VANISH" | "EXISTS" | "WAIT" | "RAG_FIND";
 
 export type MouseActionType =
   | "CLICK"
@@ -138,6 +139,7 @@ export interface ActionConfigMap {
   VANISH: VanishActionConfig;
   EXISTS: ExistsActionConfig;
   WAIT: WaitActionConfig;
+  RAG_FIND: RagFindActionConfig;
 
   // Mouse actions
   CLICK: ClickActionConfig;
@@ -243,7 +245,13 @@ export interface EdgeCondition {
   variable?: string;
 
   /** Comparison operator (for type: "variable") */
-  operator?: "equals" | "not-equals" | "greater" | "less" | "contains" | "exists";
+  operator?:
+    | "equals"
+    | "not-equals"
+    | "greater"
+    | "less"
+    | "contains"
+    | "exists";
 
   /** Value to compare against (for type: "variable") */
   value?: string | number | boolean;

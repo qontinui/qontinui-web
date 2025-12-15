@@ -331,7 +331,9 @@ export default function DownloadPage() {
                       <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold text-sm">
                         {index + 1}
                       </div>
-                      <span className="text-gray-300 pt-0.5">{instruction}</span>
+                      <span className="text-gray-300 pt-0.5">
+                        {instruction}
+                      </span>
                     </li>
                   ))}
                 </ol>
@@ -346,9 +348,9 @@ export default function DownloadPage() {
                         </p>
                         <p className="text-sm text-gray-400">
                           Since the app is not signed with an Apple Developer
-                          certificate, you&apos;ll need to right-click and select
-                          &quot;Open&quot; the first time you launch it. This is a
-                          one-time requirement.
+                          certificate, you&apos;ll need to right-click and
+                          select &quot;Open&quot; the first time you launch it.
+                          This is a one-time requirement.
                         </p>
                       </div>
                     </div>
@@ -364,8 +366,11 @@ export default function DownloadPage() {
                           Linux Dependencies
                         </p>
                         <p className="text-sm text-gray-400">
-                          The runner requires WebKitGTK. On Ubuntu/Debian, install
-                          with: <code className="bg-gray-800 px-1 rounded">sudo apt install libwebkit2gtk-4.1-0</code>
+                          The runner requires WebKitGTK. On Ubuntu/Debian,
+                          install with:{" "}
+                          <code className="bg-gray-800 px-1 rounded">
+                            sudo apt install libwebkit2gtk-4.1-0
+                          </code>
                         </p>
                       </div>
                     </div>
@@ -425,9 +430,7 @@ export default function DownloadPage() {
 
         {/* Help Section */}
         <div className="mt-8 text-center">
-          <p className="text-gray-400 mb-4">
-            Need help setting up the runner?
-          </p>
+          <p className="text-gray-400 mb-4">Need help setting up the runner?</p>
           <div className="flex justify-center gap-4">
             <Link href="/connect-runner">
               <Button variant="outline" className="border-gray-700">

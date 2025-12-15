@@ -157,7 +157,9 @@ export function TestRunCard({
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Success</span>
             </div>
-            <div className="text-lg font-bold text-green-500">{successRate}%</div>
+            <div className="text-lg font-bold text-green-500">
+              {successRate}%
+            </div>
             <div className="text-xs text-gray-500">
               {successfulTransitions} / {totalTransitions}
             </div>
@@ -183,8 +185,9 @@ export function TestRunCard({
             <div className="flex items-center justify-between text-xs">
               <span className="text-gray-400">Progress</span>
               <span className="text-white font-medium">
-                {successfulTransitions + (totalTransitions - successfulTransitions)} /{" "}
-                {totalTransitions} transitions
+                {successfulTransitions +
+                  (totalTransitions - successfulTransitions)}{" "}
+                / {totalTransitions} transitions
               </span>
             </div>
             <Progress

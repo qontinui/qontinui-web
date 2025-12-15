@@ -162,6 +162,94 @@ export interface PaginatedResponse<T> {
   total_pages: number;
 }
 
+export interface TransitionComparison {
+  from_state: string;
+  to_state: string;
+  status: "passed" | "failed" | "new" | "fixed";
+  run1_success: boolean;
+  run2_success: boolean;
+  run1_error?: string | null;
+  run2_error?: string | null;
+  error?: string | null;
+}
+
+export interface CoverageDiff {
+  percentage_change: number;
+  states_gained: number;
+  transitions_gained: number;
+}
+
+export interface DeficienciesDiff {
+  new_count: number;
+  resolved_count: number;
+}
+
+export interface ExecutionTimeDiff {
+  seconds_change: number;
+  percentage_change: number;
+}
+
+export interface DiffRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  change_percentage: number;
+  pixel_count?: number;
+}
+
+export interface TestRunComparisonData {
+  run1: TestRun;
+  run2: TestRun;
+  comparison: {
+    coverage_diff: CoverageDiff;
+    deficiencies_diff: DeficienciesDiff;
+    execution_time_diff: ExecutionTimeDiff;
+    regressions: TransitionComparison[];
+    fixed: TransitionComparison[];
+    new_failures: TransitionComparison[];
+    unchanged_count: number;
+  };
+}
+
+/**
+ * Visual regression types
+ */
+export type VisualComparisonStatus =
+  | "passed"
+  | "failed"
+  | "pending_review"
+  | "approved_as_new"
+  | "no_baseline";
+
+/**
+ * Summary of visual comparison result returned from screenshot upload
+ */
+export interface VisualComparisonSummary {
+  comparison_id: string;
+  baseline_id: string | null;
+  similarity_score: number;
+  threshold: number;
+  passed: boolean;
+  status: VisualComparisonStatus;
+  diff_image_url: string | null;
+  diff_region_count: number;
+}
+
+/**
+ * Response from screenshot upload endpoint
+ */
+export interface ScreenshotUploadResponse {
+  screenshot_id: string;
+  run_id: string;
+  image_url: string;
+  thumbnail_url: string | null;
+  uploaded_at: string;
+  file_size_bytes: number;
+  state_name: string | null;
+  visual_comparison: VisualComparisonSummary | null;
+}
+
 /**
  * Service for managing testing history and results
  */
@@ -342,5 +430,23 @@ export class TestingService {
     }
 
     return response.blob();
+  }
+
+  /**
+   * Compare two test runs
+   */
+  async compareTestRuns(
+    run1Id: string,
+    run2Id: string
+  ): Promise<TestRunComparisonData> {
+    const params = new URLSearchParams({
+      run1_id: run1Id,
+      run2_id: run2Id,
+    });
+
+    const queryString = params.toString();
+    const url = `/api/v1/testing/runs/compare${queryString ? `?${queryString}` : ""}`;
+
+    return this.httpClient.get<TestRunComparisonData>(url);
   }
 }

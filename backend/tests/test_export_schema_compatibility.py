@@ -9,8 +9,6 @@ This test suite ensures that:
 5. All required fields are present
 """
 
-import sys
-from pathlib import Path
 
 import pytest
 

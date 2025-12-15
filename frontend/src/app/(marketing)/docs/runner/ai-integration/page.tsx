@@ -89,8 +89,9 @@ export default function AIIntegrationPage() {
             Description Format
           </h2>
           <p className="text-slate-700 mb-4">
-            Use the existing <code className="bg-slate-100 px-1 rounded">description</code> field in your
-            workflow. No additional fields are needed. Structure your
+            Use the existing{" "}
+            <code className="bg-slate-100 px-1 rounded">description</code> field
+            in your workflow. No additional fields are needed. Structure your
             description with these sections:
           </p>
 
@@ -356,12 +357,22 @@ Failure indicators: Empty state list, broken images, "No extractions found" mess
                 Do
               </h3>
               <ul className="space-y-2 text-slate-700">
-                <li>Write the summary as a clear, action-oriented first line</li>
-                <li>Be specific about prerequisites (which services must be running)</li>
+                <li>
+                  Write the summary as a clear, action-oriented first line
+                </li>
+                <li>
+                  Be specific about prerequisites (which services must be
+                  running)
+                </li>
                 <li>List concrete success/failure indicators AI can verify</li>
                 <li>Use consistent terminology across workflows</li>
-                <li>Reference specific UI elements, page names, and features</li>
-                <li>Include the workflow name in &ldquo;Depends on&rdquo; exactly as written</li>
+                <li>
+                  Reference specific UI elements, page names, and features
+                </li>
+                <li>
+                  Include the workflow name in &ldquo;Depends on&rdquo; exactly
+                  as written
+                </li>
               </ul>
             </div>
 
@@ -371,12 +382,19 @@ Failure indicators: Empty state list, broken images, "No extractions found" mess
                 Don&apos;t
               </h3>
               <ul className="space-y-2 text-slate-700">
-                <li>Leave descriptions empty or vague (&ldquo;Tests stuff&rdquo;)</li>
+                <li>
+                  Leave descriptions empty or vague (&ldquo;Tests stuff&rdquo;)
+                </li>
                 <li>Assume AI knows your application&apos;s structure</li>
                 <li>Forget to mention required login state</li>
                 <li>Use ambiguous terms without context</li>
-                <li>Skip the &ldquo;Use when&rdquo; field - it&apos;s essential for AI selection</li>
-                <li>Omit failure indicators - AI needs to know what went wrong</li>
+                <li>
+                  Skip the &ldquo;Use when&rdquo; field - it&apos;s essential
+                  for AI selection
+                </li>
+                <li>
+                  Omit failure indicators - AI needs to know what went wrong
+                </li>
               </ul>
             </div>
           </div>

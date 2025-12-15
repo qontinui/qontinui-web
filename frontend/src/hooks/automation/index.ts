@@ -15,7 +15,11 @@ export { useSettings } from "./useSettings";
 export { useConfiguration } from "./useConfiguration";
 
 // Re-export store for direct access when needed
-export { useAutomationStore, hydrateStore, resetStore } from "@/stores/automation";
+export {
+  useAutomationStore,
+  hydrateStore,
+  resetStore,
+} from "@/stores/automation";
 
 // Re-export types
 export type {

@@ -11,7 +11,7 @@ from datetime import datetime
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
 from app.api.deps import authenticate_runner, get_async_db, get_current_user_from_ws

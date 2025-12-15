@@ -139,13 +139,11 @@ export default function MonitoringDocPage() {
 
         {/* Log Levels */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
-            Log Levels
-          </h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-6">Log Levels</h2>
 
           <p className="text-slate-700 mb-6">
-            Logs are categorized by severity level. You can filter logs by
-            level in the Runner UI or when viewing log files.
+            Logs are categorized by severity level. You can filter logs by level
+            in the Runner UI or when viewing log files.
           </p>
 
           <div className="space-y-3">
@@ -228,8 +226,8 @@ export default function MonitoringDocPage() {
           </h2>
 
           <p className="text-slate-700 mb-6">
-            Monitor automation execution in real-time through the Runner UI&apos;s
-            Logs tab, which provides three specialized log views.
+            Monitor automation execution in real-time through the Runner
+            UI&apos;s Logs tab, which provides three specialized log views.
           </p>
 
           <div className="space-y-6">
@@ -341,9 +339,9 @@ export default function MonitoringDocPage() {
               title="Via Command Line"
               description="Tail log files directly for development and debugging"
               steps={[
-                'Windows PowerShell: Get-Content .dev-logs\\runner-backend.log -Tail 100 -Wait',
-                'macOS/Linux: tail -f .dev-logs/runner-backend.log',
-                "Search for errors: Select-String -Path .dev-logs\\runner-backend.log -Pattern \"error\" -CaseSensitive:$false",
+                "Windows PowerShell: Get-Content .dev-logs\\runner-backend.log -Tail 100 -Wait",
+                "macOS/Linux: tail -f .dev-logs/runner-backend.log",
+                'Search for errors: Select-String -Path .dev-logs\\runner-backend.log -Pattern "error" -CaseSensitive:$false',
               ]}
               icon={<FileText className="w-8 h-8 text-green-600" />}
             />
@@ -413,8 +411,8 @@ export default function MonitoringDocPage() {
           </h2>
 
           <p className="text-slate-700 mb-6">
-            Use logs to identify performance bottlenecks and optimize
-            automation execution speed.
+            Use logs to identify performance bottlenecks and optimize automation
+            execution speed.
           </p>
 
           <div className="space-y-4">

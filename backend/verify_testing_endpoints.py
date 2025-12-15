@@ -10,7 +10,7 @@ testing_file = Path("app/api/v1/endpoints/testing.py")
 content = testing_file.read_text()
 
 # Extract all router decorators with their paths and methods
-pattern = r'@router\.(get|post|put|patch|delete)\((.*?)\)\s+async def (\w+)'
+pattern = r"@router\.(get|post|put|patch|delete)\((.*?)\)\s+async def (\w+)"
 matches = re.findall(pattern, content, re.DOTALL)
 
 print("=" * 80)
@@ -28,14 +28,14 @@ for method, decorator_args, func_name in matches:
         path = path_match.group(1)
     else:
         path = ""
-    
+
     # Determine auth type by checking function signature
-    func_pattern = rf'async def {func_name}\((.*?)\) -> Any:'
+    func_pattern = rf"async def {func_name}\((.*?)\) -> Any:"
     func_match = re.search(func_pattern, content, re.DOTALL)
-    
+
     if func_match:
         params = func_match.group(1)
-        if 'runner_auth' in params or 'get_runner_user' in params:
+        if "runner_auth" in params or "get_runner_user" in params:
             auth_type = "Runner"
             runner_endpoints.append((method.upper(), path, func_name))
         else:

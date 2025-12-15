@@ -527,7 +527,11 @@ export function AutomationBuilder() {
 
       {/* Right Panel - Properties */}
       <div
-        className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto"
+        className={`${
+          mode === "graph"
+            ? "w-[24rem] xl:w-[27rem] 2xl:w-[30rem]"
+            : "w-[48rem] xl:w-[54rem] 2xl:w-[60rem]"
+        } flex-shrink-0 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto`}
         data-tutorial-id="properties-panel"
       >
         {selectedItem && !selectedAction ? (

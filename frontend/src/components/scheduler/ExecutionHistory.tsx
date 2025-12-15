@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { useAutomation } from "@/contexts/automation-context";
 import {
   Card,
   CardContent,
@@ -19,10 +18,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CheckCircle2, XCircle, Clock, AlertCircle } from "lucide-react";
-import type { ExecutionRecord } from "@/contexts/automation-context";
+import type { ExecutionRecord } from "@/stores/automation";
+import { useWorkflows } from "@/hooks/automation";
+import { useSchedules } from "@/hooks/automation";
 
 export function ExecutionHistory() {
-  const { executionRecords, schedules, workflows } = useAutomation();
+  const { workflows } = useWorkflows();
+  const { schedules, executionRecords } = useSchedules();
   const [selectedScheduleFilter, setSelectedScheduleFilter] =
     useState<string>("all");
   const [selectedStatusFilter, setSelectedStatusFilter] =

@@ -5,17 +5,16 @@ Revises: a5415e071107
 Create Date: 2025-11-21 10:33:09.697163
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
-revision: str = 'b46613e9b784'
-down_revision: Union[str, None] = 'a5415e071107'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "b46613e9b784"
+down_revision: str | None = "a5415e071107"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -27,11 +26,13 @@ def upgrade() -> None:
 
     # Alter column type from Integer to Float (REAL in PostgreSQL)
     # Using USING clause to convert existing integer values to float
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE patterns
         ALTER COLUMN confidence TYPE REAL
         USING confidence::REAL;
-    """)
+    """
+    )
 
 
 def downgrade() -> None:
@@ -40,8 +41,10 @@ def downgrade() -> None:
     WARNING: This will truncate decimal values!
     """
 
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE patterns
         ALTER COLUMN confidence TYPE INTEGER
         USING confidence::INTEGER;
-    """)
+    """
+    )

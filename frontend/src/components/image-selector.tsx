@@ -66,6 +66,7 @@ interface ImageSelectorProps {
   placeholder?: string;
   initialOpen?: boolean;
   showStateFilter?: boolean;
+  filterByState?: string; // Pre-filter to a specific state ID
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
@@ -82,6 +83,7 @@ export function ImageSelector({
   placeholder = "Select image",
   initialOpen = false,
   showStateFilter = false,
+  filterByState,
   open: controlledOpen,
   onOpenChange,
   hideTrigger = false,
@@ -98,7 +100,9 @@ export function ImageSelector({
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
   const setOpen = onOpenChange || setInternalOpen;
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedStateFilter, setSelectedStateFilter] = useState<string>("all");
+  const [selectedStateFilter, setSelectedStateFilter] = useState<string>(
+    filterByState || "all"
+  );
 
   // Update temp selection when dialog opens
   const handleOpenChange = (newOpen: boolean) => {

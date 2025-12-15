@@ -35,7 +35,9 @@ export default function OrganizationDetailsPage() {
   const { switchOrg, members, getMembers } = useOrganization();
 
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [statistics, setStatistics] = useState<OrganizationStatistics | null>(null);
+  const [statistics, setStatistics] = useState<OrganizationStatistics | null>(
+    null
+  );
   const [, _setActivities] = useState<ActivityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);

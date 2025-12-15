@@ -75,8 +75,12 @@ export function useRunnerMonitors(options?: {
   // Derive monitors with fallback
   const monitors = query.data?.monitors ?? DEFAULT_MONITORS;
   // Connected only if we have actual data (not null from error catch)
-  const isRunnerConnected = query.isSuccess && query.data !== null && !query.isError;
-  const availableDescriptors = query.data?.available_descriptors ?? ["primary", "0"];
+  const isRunnerConnected =
+    query.isSuccess && query.data !== null && !query.isError;
+  const availableDescriptors = query.data?.available_descriptors ?? [
+    "primary",
+    "0",
+  ];
 
   return {
     // Query state

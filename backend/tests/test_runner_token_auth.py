@@ -8,18 +8,14 @@ Tests the complete authentication flow:
 4. Token expiration and revocation
 """
 
-import pytest
-import pytest_asyncio
-from datetime import datetime, timedelta
-from uuid import UUID, uuid4
 
+import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import authenticate_runner
 from app.core.security import generate_runner_token, hash_runner_token
 from app.crud import runner as runner_crud
-from app.models.runner_token import RunnerToken
 from app.models.user import User
 
 
@@ -27,7 +23,9 @@ class TestRunnerTokenCreation:
     """Test runner token creation and hashing."""
 
     @pytest.mark.asyncio
-    async def test_create_runner_token(self, async_db_session: AsyncSession, test_user: User):
+    async def test_create_runner_token(
+        self, async_db_session: AsyncSession, test_user: User
+    ):
         """Test creating a runner token."""
         token_record, plain_token = await runner_crud.create_runner_token(
             db=async_db_session,
@@ -208,7 +206,9 @@ class TestAuthenticateRunner:
         assert runner_token.id == token_record.id
 
     @pytest.mark.asyncio
-    async def test_authenticate_with_invalid_token(self, async_db_session: AsyncSession):
+    async def test_authenticate_with_invalid_token(
+        self, async_db_session: AsyncSession
+    ):
         """Test that authentication fails with invalid token."""
         fake_token = "qontinui_runner_invalidinvalidinvalidinvalid"
 

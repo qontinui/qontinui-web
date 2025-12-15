@@ -53,8 +53,7 @@ export function CustomEdge({
 
   // Check for edge properties from the connection object
   const hasCondition =
-    data.connection?.condition &&
-    data.connection.condition.type !== "always";
+    data.connection?.condition && data.connection.condition.type !== "always";
   const customLabel = data.connection?.label;
   const displayLabel = customLabel || data.label;
   const weight = data.connection?.weight;
@@ -135,10 +134,7 @@ export function CustomEdge({
             )}
             <span>{displayLabel}</span>
             {weight !== undefined && weight !== 100 && (
-              <span
-                className="text-xs opacity-60 ml-1"
-                style={{ fontSize: 9 }}
-              >
+              <span className="text-xs opacity-60 ml-1" style={{ fontSize: 9 }}>
                 {weight}%
               </span>
             )}

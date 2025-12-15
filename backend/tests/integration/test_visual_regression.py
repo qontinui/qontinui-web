@@ -7,7 +7,6 @@ and review workflows.
 
 from datetime import datetime
 from io import BytesIO
-from uuid import uuid4
 
 import pytest
 from PIL import Image
@@ -27,7 +26,9 @@ from app.services.baseline_management_service import BaselineManagementService
 from app.services.visual_comparison_service import VisualComparisonService
 
 
-def create_test_image(width: int = 100, height: int = 100, color: tuple = (255, 0, 0)) -> bytes:
+def create_test_image(
+    width: int = 100, height: int = 100, color: tuple = (255, 0, 0)
+) -> bytes:
     """Create a test image with the given dimensions and color."""
     img = Image.new("RGB", (width, height), color)
     buffer = BytesIO()
@@ -334,12 +335,14 @@ class TestVisualRegressionStats:
                 threshold_used=0.95,
                 status=status,
             )
-            for i, status in enumerate([
-                VisualComparisonStatus.PASSED,
-                VisualComparisonStatus.PASSED,
-                VisualComparisonStatus.FAILED,
-                VisualComparisonStatus.PENDING_REVIEW,
-            ])
+            for i, status in enumerate(
+                [
+                    VisualComparisonStatus.PASSED,
+                    VisualComparisonStatus.PASSED,
+                    VisualComparisonStatus.FAILED,
+                    VisualComparisonStatus.PENDING_REVIEW,
+                ]
+            )
         ]
 
         for comp in comparisons:
@@ -354,9 +357,17 @@ class TestVisualRegressionStats:
         )
         all_comparisons = result.scalars().all()
 
-        passed = sum(1 for c in all_comparisons if c.status == VisualComparisonStatus.PASSED)
-        failed = sum(1 for c in all_comparisons if c.status == VisualComparisonStatus.FAILED)
-        pending = sum(1 for c in all_comparisons if c.status == VisualComparisonStatus.PENDING_REVIEW)
+        passed = sum(
+            1 for c in all_comparisons if c.status == VisualComparisonStatus.PASSED
+        )
+        failed = sum(
+            1 for c in all_comparisons if c.status == VisualComparisonStatus.FAILED
+        )
+        pending = sum(
+            1
+            for c in all_comparisons
+            if c.status == VisualComparisonStatus.PENDING_REVIEW
+        )
 
         assert passed >= 2
         assert failed >= 1

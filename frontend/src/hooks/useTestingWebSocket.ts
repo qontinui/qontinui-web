@@ -8,10 +8,24 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import type { TransitionResult } from "@/services/testing-service";
 
-export type TestExecutionState = "idle" | "connecting" | "running" | "completed" | "failed" | "disconnected" | "reconnecting";
+export type TestExecutionState =
+  | "idle"
+  | "connecting"
+  | "running"
+  | "completed"
+  | "failed"
+  | "disconnected"
+  | "reconnecting";
 
 export interface TestExecutionUpdate {
-  type: "test_start" | "transition_start" | "transition_complete" | "transition_failed" | "test_complete" | "test_failed" | "pong";
+  type:
+    | "test_start"
+    | "transition_start"
+    | "transition_complete"
+    | "transition_failed"
+    | "test_complete"
+    | "test_failed"
+    | "pong";
   test_run_id: string;
   timestamp: string;
   data?: unknown;
@@ -123,7 +137,10 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
           wsRef.current.send(message);
           console.log("[useTestingWebSocket] Sent queued message");
         } catch (error) {
-          console.error("[useTestingWebSocket] Failed to send queued message:", error);
+          console.error(
+            "[useTestingWebSocket] Failed to send queued message:",
+            error
+          );
           messageQueue.current.unshift(message);
           break;
         }
@@ -153,7 +170,9 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
         const timeSinceLastHeartbeat = now.getTime() - lastHeartbeat.getTime();
 
         if (timeSinceLastHeartbeat > 60000) {
-          console.warn("[useTestingWebSocket] No heartbeat for 60s, connection may be stale");
+          console.warn(
+            "[useTestingWebSocket] No heartbeat for 60s, connection may be stale"
+          );
           if (wsRef.current) {
             wsRef.current.close();
           }
@@ -306,7 +325,10 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
             }
 
             case "test_complete": {
-              const data = message.data as { success: boolean; duration: number };
+              const data = message.data as {
+                success: boolean;
+                duration: number;
+              };
               stopElapsedTimer();
 
               if (onTestComplete) {
@@ -333,7 +355,10 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
             }
 
             default:
-              console.warn("[useTestingWebSocket] Unknown message type:", message.type);
+              console.warn(
+                "[useTestingWebSocket] Unknown message type:",
+                message.type
+              );
               return updated;
           }
         });
@@ -344,7 +369,13 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
         }
       }
     },
-    [onTransitionComplete, onTestComplete, onError, startElapsedTimer, stopElapsedTimer]
+    [
+      onTransitionComplete,
+      onTestComplete,
+      onError,
+      startElapsedTimer,
+      stopElapsedTimer,
+    ]
   );
 
   /**
@@ -393,18 +424,23 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
       };
 
       wsRef.current.onclose = (event) => {
-        console.log("[useTestingWebSocket] Disconnected:", event.code, event.reason);
+        console.log(
+          "[useTestingWebSocket] Disconnected:",
+          event.code,
+          event.reason
+        );
         stopElapsedTimer();
         stopHeartbeat();
 
         const wasNormalClosure = event.code === 1000;
-        const shouldReconnect = enabled &&
-                               reconnectAttempts.current < maxReconnectAttempts &&
-                               !wasNormalClosure;
+        const shouldReconnect =
+          enabled &&
+          reconnectAttempts.current < maxReconnectAttempts &&
+          !wasNormalClosure;
 
         setExecutionData((prev) => ({
           ...prev,
-          state: shouldReconnect ? "reconnecting" : "disconnected"
+          state: shouldReconnect ? "reconnecting" : "disconnected",
         }));
 
         if (onDisconnect) {
@@ -413,21 +449,28 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
 
         if (shouldReconnect) {
           reconnectAttempts.current++;
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current - 1), 30000);
+          const delay = Math.min(
+            1000 * Math.pow(2, reconnectAttempts.current - 1),
+            30000
+          );
 
           console.log(
             `[useTestingWebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`
           );
 
           reconnectTimeout.current = setTimeout(() => {
-            // eslint-disable-next-line react-hooks/exhaustive-deps -- recursive reconnect is intentional
             connect();
           }, delay);
-        } else if (reconnectAttempts.current >= maxReconnectAttempts && !wasNormalClosure) {
+        } else if (
+          reconnectAttempts.current >= maxReconnectAttempts &&
+          !wasNormalClosure
+        ) {
           console.error("[useTestingWebSocket] Max reconnect attempts reached");
           messageQueue.current = [];
           if (onError) {
-            onError(new Error("Connection lost after maximum reconnection attempts"));
+            onError(
+              new Error("Connection lost after maximum reconnection attempts")
+            );
           }
         }
       };
@@ -437,7 +480,18 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
         onError(error as Error);
       }
     }
-  }, [enabled, testRunId, handleMessage, onConnect, onDisconnect, onError, stopElapsedTimer, stopHeartbeat, startHeartbeat, flushMessageQueue]);
+  }, [
+    enabled,
+    testRunId,
+    handleMessage,
+    onConnect,
+    onDisconnect,
+    onError,
+    stopElapsedTimer,
+    stopHeartbeat,
+    startHeartbeat,
+    flushMessageQueue,
+  ]);
 
   /**
    * Disconnect from WebSocket

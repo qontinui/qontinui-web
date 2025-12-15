@@ -98,12 +98,21 @@ async def comparison_to_response(
         comparison_algorithm=comparison.comparison_algorithm,
         similarity_score=comparison.similarity_score,
         threshold_used=comparison.threshold_used,
-        status=comparison.status.value if hasattr(comparison.status, 'value') else comparison.status,
+        status=(
+            comparison.status.value
+            if hasattr(comparison.status, "value")
+            else comparison.status
+        ),
         diff_region_count=comparison.diff_region_count,
         execution_time_ms=comparison.execution_time_ms,
         reviewed_by_user_id=comparison.reviewed_by_user_id,
         reviewed_at=comparison.reviewed_at,
-        review_decision=comparison.review_decision.value if comparison.review_decision and hasattr(comparison.review_decision, 'value') else comparison.review_decision,
+        review_decision=(
+            comparison.review_decision.value
+            if comparison.review_decision
+            and hasattr(comparison.review_decision, "value")
+            else comparison.review_decision
+        ),
         review_notes=comparison.review_notes,
         deficiency_id=comparison.deficiency_id,
         error_message=comparison.error_message,
@@ -112,8 +121,8 @@ async def comparison_to_response(
 
     if include_urls:
         try:
-            response.diff_image_url = await visual_comparison_service.get_diff_image_url(
-                comparison
+            response.diff_image_url = (
+                await visual_comparison_service.get_diff_image_url(comparison)
             )
         except Exception as e:
             logger.warning("failed_to_generate_diff_url", error=str(e))
@@ -229,8 +238,12 @@ async def compare_test_run(
         # Calculate stats
         from app.models.visual_comparison_result import VisualComparisonStatus
 
-        passed = sum(1 for c in comparisons if c.status == VisualComparisonStatus.PASSED)
-        failed = sum(1 for c in comparisons if c.status == VisualComparisonStatus.FAILED)
+        passed = sum(
+            1 for c in comparisons if c.status == VisualComparisonStatus.PASSED
+        )
+        failed = sum(
+            1 for c in comparisons if c.status == VisualComparisonStatus.FAILED
+        )
         pending = sum(
             1 for c in comparisons if c.status == VisualComparisonStatus.PENDING_REVIEW
         )

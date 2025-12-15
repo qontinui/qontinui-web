@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import fastapi_users_db_sqlalchemy
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.

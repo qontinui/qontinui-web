@@ -10,7 +10,7 @@
  * - Preview before publishing
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { workflowTemplates } from "@/services/workflow-templates";
 import type { TemplateCategory as MarketplaceCategory } from "@/types/workflow-templates";
@@ -135,7 +135,9 @@ export function PublishTemplateDialog({
       onClose();
     } catch (err) {
       console.error("Failed to publish template:", err);
-      setError(err instanceof Error ? err.message : "Failed to publish template");
+      setError(
+        err instanceof Error ? err.message : "Failed to publish template"
+      );
       setStep("form");
     } finally {
       setLoading(false);
@@ -179,8 +181,8 @@ export function PublishTemplateDialog({
             {step === "preview"
               ? "Preview Template"
               : step === "publishing"
-              ? "Publishing..."
-              : "Publish to Marketplace"}
+                ? "Publishing..."
+                : "Publish to Marketplace"}
           </h2>
           <button
             className="close-button"
@@ -244,7 +246,9 @@ export function PublishTemplateDialog({
                   id="template-category"
                   value={categoryId || ""}
                   onChange={(e) =>
-                    setCategoryId(e.target.value ? Number(e.target.value) : null)
+                    setCategoryId(
+                      e.target.value ? Number(e.target.value) : null
+                    )
                   }
                 >
                   <option value="">Select a category...</option>

@@ -114,9 +114,13 @@ export const createScreenshotSlice: StateCreator<
           state.screenshots = mergedScreenshots;
         });
 
-        projectLogger.info("ScreenshotSlice", "Screenshots synced from backend", {
-          count: response.screenshots.length,
-        });
+        projectLogger.info(
+          "ScreenshotSlice",
+          "Screenshots synced from backend",
+          {
+            count: response.screenshots.length,
+          }
+        );
       }
     } catch (error) {
       projectLogger.error("ScreenshotSlice", "Failed to sync screenshots", {

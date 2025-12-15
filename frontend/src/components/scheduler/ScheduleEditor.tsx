@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useAutomation } from "@/contexts/automation-context";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +27,9 @@ import type {
   TriggerType,
   CheckMode,
   ScheduleType,
-} from "@/contexts/automation-context";
+} from "@/stores/automation";
+import { useWorkflows } from "@/hooks/automation";
+import { useSchedules } from "@/hooks/automation";
 
 interface ScheduleEditorProps {
   schedule: Schedule | null;
@@ -41,7 +42,8 @@ export function ScheduleEditor({
   isOpen,
   onClose,
 }: ScheduleEditorProps) {
-  const { workflows, addSchedule, updateSchedule } = useAutomation();
+  const { workflows } = useWorkflows();
+  const { addSchedule, updateSchedule } = useSchedules();
 
   const [formData, setFormData] = useState<Partial<Schedule>>({
     id: "",

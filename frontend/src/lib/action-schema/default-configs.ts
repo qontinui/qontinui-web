@@ -49,6 +49,16 @@ export function getDefaultConfig<T extends ActionType>(
         duration: 1000,
       } as ActionConfigMap[T];
 
+    case "RAG_FIND":
+      return {
+        target: {
+          type: "stateImage",
+          stateImageId: "",
+        },
+        topK: 1,
+        outputVariable: "",
+      } as ActionConfigMap[T];
+
     // ========================================================================
     // Mouse Actions
     // ========================================================================

@@ -10,7 +10,13 @@ import { TestRunsList } from "@/components/testing/TestRunsList";
 import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";
 import { LiveTestExecution } from "@/components/testing/LiveTestExecution";
-import { BarChart3, TrendingUp, PlayCircle, Activity, ArrowLeft } from "lucide-react";
+import {
+  BarChart3,
+  TrendingUp,
+  PlayCircle,
+  Activity,
+  ArrowLeft,
+} from "lucide-react";
 
 export default function ProjectTestingDashboard() {
   const { user, loading: authLoading } = useAuth();
@@ -64,7 +70,9 @@ export default function ProjectTestingDashboard() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push(`/projects/${projectId}/testing/coverage`)}
+              onClick={() =>
+                router.push(`/projects/${projectId}/testing/coverage`)
+              }
               className="border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
             >
               <TrendingUp className="w-4 h-4 mr-2" />
@@ -73,7 +81,9 @@ export default function ProjectTestingDashboard() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push(`/projects/${projectId}/testing/deficiencies`)}
+              onClick={() =>
+                router.push(`/projects/${projectId}/testing/deficiencies`)
+              }
               className="border-gray-700 hover:border-[#EF4444] hover:text-[#EF4444]"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
@@ -89,7 +99,8 @@ export default function ProjectTestingDashboard() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Test Results Overview</h2>
           <p className="text-gray-400">
-            View historical test results, coverage trends, and deficiency reports
+            View historical test results, coverage trends, and deficiency
+            reports
           </p>
         </div>
 
@@ -146,9 +157,7 @@ export default function ProjectTestingDashboard() {
         </div>
 
         {/* Content based on selected view */}
-        {selectedView === "overview" && (
-          <TestRunsList projectId={projectId} />
-        )}
+        {selectedView === "overview" && <TestRunsList projectId={projectId} />}
 
         {selectedView === "live" && (
           <LiveTestExecution

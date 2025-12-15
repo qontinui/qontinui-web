@@ -9,17 +9,13 @@ Merges two parallel migration branches:
 - cca9ba33dd5c: Runner token and connection models
 """
 
-from typing import Sequence, Union
-
-from alembic import op
-import sqlalchemy as sa
-
+from collections.abc import Sequence
 
 # revision identifiers, used by Alembic.
 revision: str = "20251119_225836"
-down_revision: Union[str, None] = ("20251119_225835", "cca9ba33dd5c")
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = ("20251119_225835", "cca9ba33dd5c")
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

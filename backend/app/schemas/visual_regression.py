@@ -5,14 +5,12 @@ These schemas define request/response models for visual baseline and
 comparison endpoints.
 """
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.schemas.base import IsoDatetime
-
 
 # ============================================================================
 # Ignore Region Schemas
@@ -26,7 +24,9 @@ class IgnoreRegionCreate(BaseModel):
     y: int = Field(..., ge=0, description="Y coordinate of region")
     width: int = Field(..., gt=0, description="Width of region in pixels")
     height: int = Field(..., gt=0, description="Height of region in pixels")
-    name: str | None = Field(None, max_length=100, description="Optional name for region")
+    name: str | None = Field(
+        None, max_length=100, description="Optional name for region"
+    )
 
 
 class IgnoreRegionResponse(BaseModel):

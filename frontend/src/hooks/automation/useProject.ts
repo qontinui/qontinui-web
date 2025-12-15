@@ -11,7 +11,9 @@ export function useProject() {
   const projectName = useAutomationStore((s) => s.projectName);
   const projectId = useAutomationStore((s) => s.projectId);
   const lastSaved = useAutomationStore((s) => s.lastSaved);
-  const isLoadingFromBackend = useAutomationStore((s) => s.isLoadingFromBackend);
+  const isLoadingFromBackend = useAutomationStore(
+    (s) => s.isLoadingFromBackend
+  );
   const categories = useAutomationStore((s) => s.categories);
 
   // Actions

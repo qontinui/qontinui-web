@@ -167,19 +167,26 @@ export class HttpClient {
   }
 
   private async doRefreshToken(): Promise<boolean> {
-    const refreshToken = this.tokenManager.getRefreshToken();
-    if (!refreshToken) return false;
+    // Check if user is authenticated (for HttpOnly cookie-based auth)
+    // Note: getRefreshToken() returns null because tokens are in HttpOnly cookies
+    // We check the is_authenticated flag instead
+    const isAuthenticated = this.tokenManager.isAuthenticated();
+    if (!isAuthenticated) {
+      console.log("[HttpClient] Not authenticated - skipping token refresh");
+      return false;
+    }
 
     try {
       console.log("[HttpClient] Refreshing token at:", ApiConfig.AUTH_REFRESH);
 
+      // Browser automatically sends refresh_token HttpOnly cookie with credentials: 'include'
       const response = await fetch(ApiConfig.AUTH_REFRESH, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        // No body needed - refresh token is in HttpOnly cookie
       });
 
       if (response.ok) {

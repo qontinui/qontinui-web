@@ -254,6 +254,7 @@ export const ACTION_TYPE_TO_CATEGORY: Record<ActionType, ActionCategory> = {
   VANISH: ActionCategory.FIND,
   EXISTS: ActionCategory.FIND,
   WAIT: ActionCategory.FIND,
+  RAG_FIND: ActionCategory.FIND,
 
   // Mouse actions
   CLICK: ActionCategory.MOUSE,

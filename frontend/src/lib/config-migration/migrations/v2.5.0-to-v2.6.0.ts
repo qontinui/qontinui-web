@@ -109,7 +109,10 @@ export const migrationV25ToV26: Migration = {
           for (const action of workflow.actions) {
             if (action.type === "CAPTURE_CONTEXT") {
               // Validate required 'key' field
-              if (!action.config?.key || typeof action.config.key !== "string") {
+              if (
+                !action.config?.key ||
+                typeof action.config.key !== "string"
+              ) {
                 console.error(
                   `Validation failed: CAPTURE_CONTEXT action "${action.id}" requires a 'key' string in config`
                 );

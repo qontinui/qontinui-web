@@ -27,18 +27,22 @@ import { useAutomation } from "@/contexts/automation-context";
 
 interface OutgoingTransitionBuilderProps {
   preselectedWorkflow?: string;
+  preselectedOriginState?: string;
   onClose?: () => void;
 }
 
 export function OutgoingTransitionBuilder({
   preselectedWorkflow,
+  preselectedOriginState,
   onClose,
 }: OutgoingTransitionBuilderProps = {}) {
   const { states, workflows, addTransition } = useAutomation();
-  const [open, setOpen] = useState(!!preselectedWorkflow);
+  const [open, setOpen] = useState(
+    !!preselectedWorkflow || !!preselectedOriginState
+  );
 
   // OutgoingTransition fields
-  const [fromState, setFromState] = useState("");
+  const [fromState, setFromState] = useState(preselectedOriginState || "");
   const [staysVisible, setStaysVisible] = useState(false);
   const [activateStates, setActivateStates] = useState<string[]>([]);
   const [deactivateStates, setDeactivateStates] = useState<string[]>([]);
@@ -144,7 +148,7 @@ export function OutgoingTransitionBuilder({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      {!preselectedWorkflow && (
+      {!preselectedWorkflow && !preselectedOriginState && (
         <DialogTrigger asChild>
           <Button className="w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black">
             <ArrowRightLeft className="w-4 h-4 mr-2" />
@@ -154,7 +158,7 @@ export function OutgoingTransitionBuilder({
       )}
 
       <DialogContent
-        className="bg-[#27272A] border-gray-700"
+        className="bg-[#27272A] border-gray-700 max-h-[90vh] flex flex-col"
         style={{ maxWidth: "1400px", width: "95vw" }}
       >
         <DialogHeader>
@@ -166,7 +170,7 @@ export function OutgoingTransitionBuilder({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto flex-1 px-1">
           <div>
             <Label className="mb-2 block">From State (Origin)</Label>
             <Select value={fromState} onValueChange={handleFromStateChange}>
@@ -451,22 +455,23 @@ export function OutgoingTransitionBuilder({
               </div>
             )}
           </div>
+        </div>
 
-          <div className="flex justify-end gap-3 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setOpen(false)}
-              className="px-8 border-gray-600"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreate}
-              className="px-8 bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
-            >
-              Create Outgoing Transition
-            </Button>
-          </div>
+        {/* Fixed footer with buttons */}
+        <div className="flex justify-end gap-3 pt-4 border-t border-gray-700 mt-4">
+          <Button
+            variant="outline"
+            onClick={() => setOpen(false)}
+            className="px-8 border-gray-600"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreate}
+            className="px-8 bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+          >
+            Create Outgoing Transition
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

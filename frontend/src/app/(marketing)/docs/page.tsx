@@ -80,6 +80,14 @@ export default function DocsHomePage() {
                   label: "Multi-Monitor Setup",
                 },
                 {
+                  href: "/docs/runner/ai-integration",
+                  label: "AI Integration",
+                },
+                {
+                  href: "/docs/runner/workflow-descriptions",
+                  label: "Workflow Descriptions for MCP",
+                },
+                {
                   href: "/docs/runner/troubleshooting",
                   label: "Troubleshooting",
                 },

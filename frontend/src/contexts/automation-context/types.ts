@@ -38,6 +38,8 @@ export interface StateRegion {
 
   // SearchRegion flag
   isSearchRegion?: boolean; // If true, this region can be used as a search region for StateImages
+  // Monitor assignment
+  monitors?: number[]; // Monitor indices where this region should be checked
 
   actionHistory?: ActionHistory;
 }
@@ -81,6 +83,8 @@ export interface StateLocation {
   anchorType?: string; // Position anchor type
   percentW?: number; // Width percentage (0.0-1.0)
   percentH?: number; // Height percentage (0.0-1.0)
+  // Monitor assignment
+  monitors?: number[]; // Monitor indices where this location should be checked
 
   // Metadata and history
   metadata?: Record<string, any>;
@@ -96,6 +100,8 @@ export interface StateString {
   inputText?: boolean; // To be typed (DEFAULT: true)
   expectedText?: boolean; // Validation/expected text flag
   regexPattern?: boolean; // Regex pattern flag
+  // Monitor assignment
+  monitors?: number[]; // Monitor indices where this string should be checked
 }
 
 export interface SearchRegion {
@@ -134,6 +140,10 @@ export interface StateImage {
   source?: "upload" | "pattern-optimization"; // Track how the image was created
   probability?: number; // Mock testing: probability image appears (0.0-1.0)
   searchRegions?: SearchRegion[]; // StateImage-level search regions (precedence level 3)
+  // Monitor assignment
+  monitors?: number[]; // Monitor indices where this image should be searched
+  // RAG Find multi-pattern mode (precedence level 2: between project default and action override)
+  ragMultiPatternMode?: "all" | "combined"; // How to search when StateImage has >1 pattern: "all" = search each pattern separately, "combined" = search using combined vector
 }
 
 export interface State {

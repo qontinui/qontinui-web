@@ -55,7 +55,9 @@ export function VisualDiffViewer({
   const [mode, setMode] = useState<ViewMode>(initialMode);
   const [overlayOpacity, setOverlayOpacity] = useState(0.5);
   const [swipePosition, setSwipePosition] = useState(50);
-  const [blinkState, setBlinkState] = useState<"baseline" | "screenshot">("baseline");
+  const [blinkState, setBlinkState] = useState<"baseline" | "screenshot">(
+    "baseline"
+  );
   const [zoom, setZoom] = useState(1);
   const [showDiffRegions, setShowDiffRegions] = useState(true);
 
@@ -66,7 +68,9 @@ export function VisualDiffViewer({
   useEffect(() => {
     if (mode === "blink") {
       blinkIntervalRef.current = setInterval(() => {
-        setBlinkState((prev) => (prev === "baseline" ? "screenshot" : "baseline"));
+        setBlinkState((prev) =>
+          prev === "baseline" ? "screenshot" : "baseline"
+        );
       }, 500);
     } else {
       if (blinkIntervalRef.current) {
@@ -105,7 +109,12 @@ export function VisualDiffViewer({
 
   if (!baselineUrl && !screenshotUrl) {
     return (
-      <div className={cn("flex items-center justify-center p-8 bg-muted/30 rounded-lg", className)}>
+      <div
+        className={cn(
+          "flex items-center justify-center p-8 bg-muted/30 rounded-lg",
+          className
+        )}
+      >
         <p className="text-muted-foreground">No images available</p>
       </div>
     );
@@ -184,7 +193,9 @@ export function VisualDiffViewer({
           <div className="flex items-center gap-2">
             <Badge
               variant={
-                similarityScore >= (threshold || 0.95) ? "default" : "destructive"
+                similarityScore >= (threshold || 0.95)
+                  ? "default"
+                  : "destructive"
               }
             >
               {(similarityScore * 100).toFixed(1)}% match
@@ -299,7 +310,12 @@ export function VisualDiffViewer({
               </div>
               <div className="relative overflow-hidden rounded-lg border bg-background">
                 {baselineUrl ? (
-                  <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+                  <div
+                    style={{
+                      transform: `scale(${zoom})`,
+                      transformOrigin: "top left",
+                    }}
+                  >
                     <Image
                       src={baselineUrl}
                       alt="Baseline"
@@ -332,7 +348,12 @@ export function VisualDiffViewer({
               </div>
               <div className="relative overflow-hidden rounded-lg border bg-background">
                 {screenshotUrl ? (
-                  <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+                  <div
+                    style={{
+                      transform: `scale(${zoom})`,
+                      transformOrigin: "top left",
+                    }}
+                  >
                     <Image
                       src={screenshotUrl}
                       alt="Screenshot"
@@ -364,7 +385,12 @@ export function VisualDiffViewer({
                   </Button>
                 </div>
                 <div className="relative overflow-hidden rounded-lg border bg-background">
-                  <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+                  <div
+                    style={{
+                      transform: `scale(${zoom})`,
+                      transformOrigin: "top left",
+                    }}
+                  >
                     <Image
                       src={diffUrl}
                       alt="Diff"
@@ -383,7 +409,10 @@ export function VisualDiffViewer({
           <div className="relative p-4">
             <div
               className="relative"
-              style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: "top left",
+              }}
             >
               {/* Baseline as background */}
               <Image
@@ -415,7 +444,10 @@ export function VisualDiffViewer({
           <div className="relative p-4">
             <div
               className="relative overflow-hidden"
-              style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: "top left",
+              }}
             >
               {/* Screenshot full */}
               <Image
@@ -452,7 +484,10 @@ export function VisualDiffViewer({
           <div className="relative p-4">
             <div
               className="relative"
-              style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: "top left",
+              }}
             >
               {blinkState === "baseline" && baselineUrl ? (
                 <Image

@@ -118,7 +118,10 @@ export default function TestRunDetailPage() {
             break;
         }
       } catch (error) {
-        console.error("[TestRunDetail] Failed to parse WebSocket message:", error);
+        console.error(
+          "[TestRunDetail] Failed to parse WebSocket message:",
+          error
+        );
       }
     };
 
@@ -238,7 +241,10 @@ export default function TestRunDetailPage() {
                     </CardTitle>
                     <CardDescription className="text-gray-400">
                       Run ID: {run.id} • Started{" "}
-                      {format(new Date(run.start_time), "MMM dd, yyyy HH:mm:ss")}
+                      {format(
+                        new Date(run.start_time),
+                        "MMM dd, yyyy HH:mm:ss"
+                      )}
                     </CardDescription>
                   </div>
                   <Badge
@@ -639,8 +645,8 @@ export default function TestRunDetailPage() {
                                 {deficiency.transition_from &&
                                   deficiency.transition_to && (
                                     <div>
-                                      Transition: {deficiency.transition_from}{" "}
-                                      → {deficiency.transition_to}
+                                      Transition: {deficiency.transition_from} →{" "}
+                                      {deficiency.transition_to}
                                     </div>
                                   )}
                               </div>
@@ -666,7 +672,9 @@ export default function TestRunDetailPage() {
                                     height={150}
                                     className="rounded border border-gray-700 cursor-pointer hover:border-[#00D9FF]"
                                     onClick={() =>
-                                      setSelectedImage(deficiency.screenshot_url)
+                                      setSelectedImage(
+                                        deficiency.screenshot_url
+                                      )
                                     }
                                   />
                                 </div>

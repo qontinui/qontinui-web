@@ -98,11 +98,11 @@ export function SnapshotImportCard({
   return (
     <Card className="p-6">
       <div className="flex items-center space-x-2 mb-4">
-        <Upload className="w-5 h-5 text-blue-600" />
+        <Upload className="w-5 h-5 text-[#00D9FF]" />
         <h3 className="text-lg font-semibold">Import Snapshot</h3>
       </div>
 
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-gray-400 mb-4">
         Import a recorded snapshot directory to make it available for
         integration testing.
       </p>
@@ -110,7 +110,7 @@ export function SnapshotImportCard({
       <div className="space-y-4">
         {/* Directory Path */}
         <div>
-          <label className="block text-sm font-medium mb-1.5">
+          <label className="block text-sm font-medium text-gray-300 mb-1.5">
             Snapshot Directory *
           </label>
           <div className="flex space-x-2">
@@ -139,7 +139,7 @@ export function SnapshotImportCard({
 
         {/* Tags */}
         <div>
-          <label className="block text-sm font-medium mb-1.5">
+          <label className="block text-sm font-medium text-gray-300 mb-1.5">
             Tags (optional)
           </label>
           <Input
@@ -156,7 +156,7 @@ export function SnapshotImportCard({
 
         {/* Notes */}
         <div>
-          <label className="block text-sm font-medium mb-1.5">
+          <label className="block text-sm font-medium text-gray-300 mb-1.5">
             Notes (optional)
           </label>
           <Textarea
@@ -170,8 +170,8 @@ export function SnapshotImportCard({
 
         {/* Error Display */}
         {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-800">{error.message}</p>
+          <div className="p-3 bg-red-950/30 border border-red-800 rounded-lg">
+            <p className="text-sm text-red-400">{error.message}</p>
           </div>
         )}
 

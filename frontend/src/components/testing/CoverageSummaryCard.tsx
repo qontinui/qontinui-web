@@ -20,10 +20,8 @@ export function CoverageSummaryCard({
     error: graphError,
   } = useStateGraph(projectId, workflowId);
 
-  const {
-    data: trends,
-    isLoading: isTrendsLoading,
-  } = useCoverageTrends(projectId);
+  const { data: trends, isLoading: isTrendsLoading } =
+    useCoverageTrends(projectId);
 
   // Calculate metrics
   const metrics = useMemo(() => {
@@ -45,9 +43,7 @@ export function CoverageSummaryCard({
     ).length;
     const totalTransitions = graphData.edges.length;
     const transitionCoveragePercentage =
-      totalTransitions > 0
-        ? (coveredTransitions / totalTransitions) * 100
-        : 0;
+      totalTransitions > 0 ? (coveredTransitions / totalTransitions) * 100 : 0;
 
     // Count unique paths (approximate by counting distinct edge combinations)
     const uniquePaths = new Set(
@@ -89,7 +85,11 @@ export function CoverageSummaryCard({
 
     return {
       direction:
-        change > 0.5 ? ("up" as const) : change < -0.5 ? ("down" as const) : ("stable" as const),
+        change > 0.5
+          ? ("up" as const)
+          : change < -0.5
+            ? ("down" as const)
+            : ("stable" as const),
       change,
     };
   }, [trends]);
@@ -190,7 +190,9 @@ export function CoverageSummaryCard({
 
           {/* Transition Coverage */}
           <div className="p-4 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-2">Transition Coverage</div>
+            <div className="text-sm text-gray-400 mb-2">
+              Transition Coverage
+            </div>
             <div className="flex items-baseline gap-2">
               <div className="text-3xl font-bold text-[#BD00FF]">
                 {metrics.transitionCoverage.toFixed(1)}%

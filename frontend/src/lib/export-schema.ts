@@ -1,9 +1,23 @@
 /**
  * Qontinui Automation Configuration Schema
- * Version 2.5.0
+ * Version 2.9.0
  *
  * This defines the structure for exported automation configurations
  * that can be consumed by the Qontinui runner.
+ *
+ * CHANGELOG v2.9.0:
+ * - Added searchMode to StateImage for controlling how multiple patterns are searched
+ * - Options: "separate" (search each pattern individually) or "combined" (use combined vector)
+ *
+ * CHANGELOG v2.8.0:
+ * - Added RAG_FIND action type for semantic/AI-powered element search
+ * - Added monitors metadata to StateString elements
+ *
+ * CHANGELOG v2.7.0:
+ * - Added RECURSIVE_VERIFY action for AI-powered recursive state verification
+ *
+ * CHANGELOG v2.6.0:
+ * - Added CAPTURE_CONTEXT action, template variable support, and monitor metadata
  *
  * CHANGELOG v2.5.0:
  * - Added TRIGGER_AI_ANALYSIS action type for autonomous debugging
@@ -148,6 +162,7 @@ export interface Action {
 export type ActionType =
   // Find actions
   | "FIND"
+  | "RAG_FIND"
   // Pure mouse actions
   | "MOUSE_MOVE"
   | "MOUSE_DOWN"
@@ -461,6 +476,8 @@ export interface StateImage {
   probability?: number; // Mock testing: probability image appears (0.0-1.0)
   source?: string; // Track how the image was created
   searchRegions?: SearchRegion[]; // StateImage-level search regions (precedence level 3)
+  monitors?: number[]; // Monitor IDs where this image should be found
+  searchMode?: "separate" | "combined"; // How to search multiple patterns (default: "separate")
 }
 
 export interface StateRegion {
@@ -479,6 +496,7 @@ export interface StateRegion {
   };
   offsetX?: number; // X offset in pixels
   offsetY?: number; // Y offset in pixels
+  monitors?: number[]; // Monitor IDs where this region should be found
 }
 
 export interface StateLocation {
@@ -488,6 +506,7 @@ export interface StateLocation {
   y: number;
   anchor?: boolean; // If true, used as anchor point
   fixed?: boolean; // If true, location is fixed
+  monitors?: number[]; // Monitor IDs where this location should be found
 }
 
 export interface StateString {
@@ -498,6 +517,7 @@ export interface StateString {
   inputText?: boolean; // If true, used as input text
   expectedText?: boolean; // If true, expected to appear in state
   regex?: boolean; // If true, value is a regex pattern
+  monitors?: number[]; // Monitor IDs where this string should be found
 }
 
 export interface SearchRegion {

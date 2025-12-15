@@ -202,7 +202,10 @@ function EditPresetDialog({ preset, onClose, onSave }: EditPresetDialogProps) {
                   type="number"
                   value={options.branchOffset}
                   onChange={(e) =>
-                    updateOption("branchOffset", parseInt(e.target.value) || 150)
+                    updateOption(
+                      "branchOffset",
+                      parseInt(e.target.value) || 150
+                    )
                   }
                   min={0}
                   max={500}

@@ -10,6 +10,7 @@ import {
   Camera,
   Monitor,
   Loader2,
+  Check,
 } from "lucide-react";
 import {
   Screenshot,
@@ -31,6 +32,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Badge } from "../ui/badge";
 import { ScreenshotSelector } from "../screenshot-selector";
 import { toast } from "sonner";
+import { useDebouncedCallback } from "../../hooks/use-debounced-callback";
 
 interface ScreenshotAnnotationTabProps {
   states: any[];
@@ -106,6 +108,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     updateState,
     updateScreenshot,
     addScreenshot,
+    triggerSave,
   } = useAutomation();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [selectedScreenshot, setSelectedScreenshot] =
@@ -121,6 +124,29 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
   const [activeLocationTab, setActiveLocationTab] = useState<string | null>(
     null
   );
+
+  // Auto-save state
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+    "idle"
+  );
+  const saveStatusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Debounced auto-save function (2.5 second delay)
+  const [debouncedSave] = useDebouncedCallback(() => {
+    setSaveStatus("saving");
+    triggerSave();
+
+    // Show "Saved" status for 2 seconds
+    if (saveStatusTimeoutRef.current) {
+      clearTimeout(saveStatusTimeoutRef.current);
+    }
+    saveStatusTimeoutRef.current = setTimeout(() => {
+      setSaveStatus("saved");
+      saveStatusTimeoutRef.current = setTimeout(() => {
+        setSaveStatus("idle");
+      }, 2000);
+    }, 100);
+  }, 2500);
 
   // Screenshot upload/capture state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -562,6 +588,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     if (targetStateId) {
       await syncRegionsToState(targetStateId, updatedScreenshot.regions);
     }
+
+    // Trigger auto-save
+    debouncedSave();
   };
 
   const handleLocationCreate = async (location: ScreenshotLocation) => {
@@ -592,6 +621,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     if (location.stateId) {
       await syncLocationsToState(location.stateId, updatedScreenshot.locations);
     }
+
+    // Trigger auto-save
+    debouncedSave();
   };
 
   const handleRegionUpdate = async (updatedRegion: ScreenshotRegion) => {
@@ -628,6 +660,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     if (targetStateId) {
       await syncRegionsToState(targetStateId, updatedScreenshot.regions);
     }
+
+    // Trigger auto-save
+    debouncedSave();
   };
 
   const handleRegionDelete = async (regionId: string) => {
@@ -705,6 +740,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
         }
       }
     }
+
+    // Trigger auto-save
+    debouncedSave();
   };
 
   const handleLocationUpdate = async (updatedLocation: ScreenshotLocation) => {
@@ -738,6 +776,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
         updatedScreenshot.locations
       );
     }
+
+    // Trigger auto-save
+    debouncedSave();
   };
 
   const handleLocationDelete = async (locationId: string) => {
@@ -782,6 +823,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
         updatedScreenshot.locations
       );
     }
+
+    // Trigger auto-save
+    debouncedSave();
   };
 
   const handleStateAssociation = async (stateIds: string[]) => {
@@ -799,6 +843,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
 
     // Persist to context
     await persistScreenshotToContext(updatedScreenshot);
+
+    // Trigger auto-save
+    debouncedSave();
   };
 
   return (
@@ -813,6 +860,18 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           >
             {screenshots.length} screenshot{screenshots.length !== 1 ? "s" : ""}
           </Badge>
+          {saveStatus === "saving" && (
+            <div className="flex items-center gap-1 text-xs text-gray-400">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Saving...</span>
+            </div>
+          )}
+          {saveStatus === "saved" && (
+            <div className="flex items-center gap-1 text-xs text-[#00FF88]">
+              <Check className="w-3 h-3" />
+              <span>Saved</span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1 bg-[#0A0A0B] rounded p-1">

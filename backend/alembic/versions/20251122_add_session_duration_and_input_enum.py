@@ -9,17 +9,18 @@ Manual migration to add:
 2. input_event_type_enum PostgreSQL enum type
 3. Convert automation_input_events.event_type from VARCHAR to enum
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '20251122_session_input_enum'
-down_revision: Union[str, None] = 'fe6100cf21ca'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "20251122_session_input_enum"
+down_revision: str | None = "fe6100cf21ca"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -38,26 +39,28 @@ def upgrade() -> None:
 
     if "max_duration_seconds" not in columns:
         op.add_column(
-            'automation_sessions',
+            "automation_sessions",
             sa.Column(
-                'max_duration_seconds',
+                "max_duration_seconds",
                 sa.Integer(),
                 nullable=False,
-                server_default='28800'
-            )
+                server_default="28800",
+            ),
         )
 
     # Step 2: Create the input_event_type_enum PostgreSQL enum type
     # Values map to the InputEventType enum NAMES in app/models/automation.py
     # Note: When using native_enum=True with SQLAlchemy, it uses enum.name not enum.value
-    op.execute("""
+    op.execute(
+        """
         CREATE TYPE input_event_type_enum AS ENUM (
             'MOUSE_CLICKED',
             'MOUSE_MOVED',
             'MOUSE_DRAGGED',
             'KEYBOARD_TEXT_TYPED'
         )
-    """)
+    """
+    )
 
     # Step 3: Alter automation_input_events.event_type column to use the enum
     # Since the table is currently empty, we can do a direct type conversion
@@ -68,11 +71,13 @@ def upgrade() -> None:
     #   d) Rename new column to original name
     #
     # But since table is empty, we can use ALTER TYPE with USING clause
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE automation_input_events
         ALTER COLUMN event_type TYPE input_event_type_enum
         USING event_type::text::input_event_type_enum
-    """)
+    """
+    )
 
 
 def downgrade() -> None:
@@ -84,15 +89,17 @@ def downgrade() -> None:
     """
     # Step 1: Convert event_type back to VARCHAR(50)
     # Cast enum values to text first
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE automation_input_events
         ALTER COLUMN event_type TYPE VARCHAR(50)
         USING event_type::text
-    """)
+    """
+    )
 
     # Step 2: Drop the enum type
     # Must be done after converting column away from enum type
     op.execute("DROP TYPE input_event_type_enum")
 
     # Step 3: Remove max_duration_seconds column
-    op.drop_column('automation_sessions', 'max_duration_seconds')
+    op.drop_column("automation_sessions", "max_duration_seconds")

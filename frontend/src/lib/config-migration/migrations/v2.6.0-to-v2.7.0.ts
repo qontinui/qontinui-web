@@ -81,7 +81,10 @@ export const migrationV26ToV27: Migration = {
           for (const action of workflow.actions) {
             if (action.type === "RECURSIVE_VERIFY") {
               // Validate required 'states' array
-              if (!action.config?.states || !Array.isArray(action.config.states)) {
+              if (
+                !action.config?.states ||
+                !Array.isArray(action.config.states)
+              ) {
                 console.error(
                   `Validation failed: RECURSIVE_VERIFY action "${action.id}" requires a 'states' array in config`
                 );
@@ -97,7 +100,10 @@ export const migrationV26ToV27: Migration = {
               }
 
               // Validate goal if specified (should be a string)
-              if (action.config?.goal !== undefined && typeof action.config.goal !== "string") {
+              if (
+                action.config?.goal !== undefined &&
+                typeof action.config.goal !== "string"
+              ) {
                 console.error(
                   `Validation failed: RECURSIVE_VERIFY action "${action.id}" 'goal' must be a string`
                 );

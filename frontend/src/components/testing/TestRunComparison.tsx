@@ -19,11 +19,12 @@ interface TestRunComparisonProps {
   run2Id: string;
 }
 
-export function TestRunComparison({
-  run1Id,
-  run2Id,
-}: TestRunComparisonProps) {
-  const { data: comparison, isLoading, error } = useTestRunComparison(run1Id, run2Id);
+export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
+  const {
+    data: comparison,
+    isLoading,
+    error,
+  } = useTestRunComparison(run1Id, run2Id);
 
   if (isLoading) {
     return (
@@ -90,7 +91,8 @@ export function TestRunComparison({
                   <span className="font-medium text-green-500">
                     {run1.total_transitions > 0
                       ? (
-                          (run1.successful_transitions / run1.total_transitions) *
+                          (run1.successful_transitions /
+                            run1.total_transitions) *
                           100
                         ).toFixed(1)
                       : 0}
@@ -147,7 +149,8 @@ export function TestRunComparison({
                   <span className="font-medium text-green-500">
                     {run2.total_transitions > 0
                       ? (
-                          (run2.successful_transitions / run2.total_transitions) *
+                          (run2.successful_transitions /
+                            run2.total_transitions) *
                           100
                         ).toFixed(1)
                       : 0}
@@ -180,7 +183,8 @@ export function TestRunComparison({
                       <span
                         className={`text-xs ${comp.execution_time_diff.seconds_change > 0 ? "text-red-400" : "text-green-500"}`}
                       >
-                        ({comp.execution_time_diff.seconds_change > 0 ? "+" : ""}
+                        (
+                        {comp.execution_time_diff.seconds_change > 0 ? "+" : ""}
                         {comp.execution_time_diff.seconds_change}s)
                       </span>
                     )}
@@ -210,7 +214,9 @@ export function TestRunComparison({
                   <Clock className="w-4 h-4 text-gray-500" />
                 )}
               </div>
-              <div className={`text-2xl font-bold ${getCoverageColor(comp.coverage_diff.percentage_change)}`}>
+              <div
+                className={`text-2xl font-bold ${getCoverageColor(comp.coverage_diff.percentage_change)}`}
+              >
                 {comp.coverage_diff.percentage_change > 0 ? "+" : ""}
                 {comp.coverage_diff.percentage_change.toFixed(2)}%
               </div>
@@ -227,7 +233,9 @@ export function TestRunComparison({
                   <Clock className="w-4 h-4 text-gray-500" />
                 )}
               </div>
-              <div className={`text-2xl font-bold ${getCoverageColor(comp.coverage_diff.states_gained)}`}>
+              <div
+                className={`text-2xl font-bold ${getCoverageColor(comp.coverage_diff.states_gained)}`}
+              >
                 {comp.coverage_diff.states_gained > 0 ? "+" : ""}
                 {comp.coverage_diff.states_gained}
               </div>
@@ -244,7 +252,9 @@ export function TestRunComparison({
                   <Clock className="w-4 h-4 text-gray-500" />
                 )}
               </div>
-              <div className={`text-2xl font-bold ${getCoverageColor(comp.coverage_diff.transitions_gained)}`}>
+              <div
+                className={`text-2xl font-bold ${getCoverageColor(comp.coverage_diff.transitions_gained)}`}
+              >
                 {comp.coverage_diff.transitions_gained > 0 ? "+" : ""}
                 {comp.coverage_diff.transitions_gained}
               </div>

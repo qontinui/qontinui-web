@@ -161,22 +161,19 @@ function migratePatternImages(
 
         // Check if pattern has embedded image data but no imageId
         // OR if pattern.imageId accidentally contains base64 data (fix for corrupted data)
-        const imageIdIsData = pattern.imageId && pattern.imageId.startsWith("data:image");
+        const imageIdIsData =
+          pattern.imageId && pattern.imageId.startsWith("data:image");
         const hasEmbeddedImage = !pattern.imageId && patternAny.image;
 
         if (hasEmbeddedImage || imageIdIsData) {
           const imageData = imageIdIsData ? pattern.imageId! : patternAny.image;
 
           // Try to find matching image in library
-          let matchingImage = images.find(
-            (img) => img.url === imageData
-          );
+          let matchingImage = images.find((img) => img.url === imageData);
 
           // If not found, also check newImages we've created in this migration
           if (!matchingImage) {
-            matchingImage = newImages.find(
-              (img) => img.url === imageData
-            );
+            matchingImage = newImages.find((img) => img.url === imageData);
           }
 
           // If still not found, create a new image asset
@@ -187,9 +184,7 @@ function migratePatternImages(
               name: pattern.name || stateImage.name || "Migrated Image",
               url: imageData,
               mask: patternAny.mask,
-              size: Math.ceil(
-                ((imageData.split(",")[1] || "").length * 3) / 4
-              ),
+              size: Math.ceil(((imageData.split(",")[1] || "").length * 3) / 4),
               createdAt: new Date(),
               usageCount: 1,
               usage: [],
@@ -1173,8 +1168,16 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
   // Auto-save
   const triggerSave = useCallback(() => {
-    setLastSaved(new Date().toISOString());
-  }, [setLastSaved]);
+    const timestamp = new Date().toISOString();
+    setLastSaved(timestamp);
+
+    // Track local save time to prevent backend from overwriting newer local data
+    // This protects against data loss during session expiry + backend save failures
+    if (typeof window !== "undefined" && projectName) {
+      const saveTimeKey = `qontinui-local-save-time:${projectName}`;
+      localStorage.setItem(saveTimeKey, timestamp);
+    }
+  }, [setLastSaved, projectName]);
 
   // ActionHistory management functions
   const updateStateImageActionHistory = useCallback(
@@ -1296,7 +1299,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     const averageIterationCount =
       executionRecords.length > 0
         ? executionRecords.reduce((sum, r) => sum + r.iterationCount, 0) /
-        executionRecords.length
+          executionRecords.length
         : 0;
 
     return {
@@ -1478,6 +1481,33 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         );
         // Don't clear local data, just return without changes
         return;
+      }
+
+      // SAFETY: Check if local data is newer than backend data
+      // This prevents data loss when session expires and backend saves fail
+      if (typeof window !== "undefined" && newProjectName) {
+        const saveTimeKey = `qontinui-local-save-time:${newProjectName}`;
+        const localSaveTime = localStorage.getItem(saveTimeKey);
+        const backendSaveTime = config.metadata?.lastSaved;
+
+        if (localSaveTime && backendSaveTime) {
+          const localTime = new Date(localSaveTime).getTime();
+          const backendTime = new Date(backendSaveTime).getTime();
+
+          if (localTime > backendTime) {
+            projectLogger.warn(
+              "configLoader",
+              "Local data is newer than backend - preserving local data",
+              {
+                localSaveTime,
+                backendSaveTime,
+                timeDiffSeconds: (localTime - backendTime) / 1000,
+              }
+            );
+            // Don't load from backend, local data is fresher
+            return;
+          }
+        }
       }
 
       // Clear existing data for the old project from IndexedDB

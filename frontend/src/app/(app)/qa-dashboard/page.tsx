@@ -12,7 +12,13 @@ import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";
 import { LiveTestExecution } from "@/components/testing/LiveTestExecution";
 import { RequireProject } from "@/components/require-project";
-import { BarChart3, FileText, TrendingUp, PlayCircle, Activity } from "lucide-react";
+import {
+  BarChart3,
+  FileText,
+  TrendingUp,
+  PlayCircle,
+  Activity,
+} from "lucide-react";
 
 export default function QADashboard() {
   const { user, loading: authLoading } = useAuth();
@@ -26,8 +32,12 @@ export default function QADashboard() {
   const [selectedView, setSelectedView] = useState<
     "overview" | "live" | "trends" | "reliability"
   >(() => (testRunIdParam ? "live" : "overview"));
-  const [liveTestRunId, _setLiveTestRunId] = useState<string | null>(() => testRunIdParam || null);
-  const [liveWorkflowName, _setLiveWorkflowName] = useState<string | null>(() => workflowNameParam || null);
+  const [liveTestRunId, _setLiveTestRunId] = useState<string | null>(
+    () => testRunIdParam || null
+  );
+  const [liveWorkflowName, _setLiveWorkflowName] = useState<string | null>(
+    () => workflowNameParam || null
+  );
 
   useEffect(() => {
     if (!authLoading && !user) {

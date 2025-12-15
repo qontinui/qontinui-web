@@ -10,6 +10,7 @@ import type {
   Deficiency,
   TestRunFilters,
   DeficiencyFilters,
+  TestRunComparisonData,
 } from "@/services/testing-service";
 
 // Query keys for organizing cache
@@ -19,6 +20,8 @@ export const testingKeys = {
   runsList: (filters?: TestRunFilters) =>
     [...testingKeys.runs(), "list", { filters }] as const,
   runDetail: (id: string) => [...testingKeys.runs(), "detail", id] as const,
+  runComparison: (run1Id: string, run2Id: string) =>
+    [...testingKeys.runs(), "comparison", { run1Id, run2Id }] as const,
   deficiencies: () => [...testingKeys.all, "deficiencies"] as const,
   deficienciesList: (filters?: DeficiencyFilters) =>
     [...testingKeys.deficiencies(), "list", { filters }] as const,
@@ -73,6 +76,32 @@ export function useTestRun(id: string, enabled = true) {
       }
     },
     enabled: enabled && !!id,
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+/**
+ * Hook to compare two test runs
+ */
+export function useTestRunComparison(
+  run1Id: string,
+  run2Id: string,
+  enabled = true
+) {
+  return useQuery({
+    queryKey: testingKeys.runComparison(run1Id, run2Id),
+    queryFn: async () => {
+      try {
+        return await testingService.compareTestRuns(run1Id, run2Id);
+      } catch (error) {
+        console.error(
+          "[useTestRunComparison] Error comparing test runs:",
+          error
+        );
+        throw error;
+      }
+    },
+    enabled: enabled && !!run1Id && !!run2Id,
     placeholderData: (previousData) => previousData,
   });
 }

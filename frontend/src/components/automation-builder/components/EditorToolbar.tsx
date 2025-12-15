@@ -17,7 +17,6 @@ import {
   Save,
   Trash2,
   Copy,
-  ArrowLeftRight,
   Play,
   TestTube,
   Undo,
@@ -29,7 +28,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LibraryItem, BuilderMode } from "../types";
-import { isLinearWorkflow } from "../types";
 
 export interface EditorToolbarProps {
   item: LibraryItem | null;
@@ -37,7 +35,6 @@ export interface EditorToolbarProps {
   onSave?: () => void;
   onDelete?: () => void;
   onDuplicate?: () => void;
-  onConvert?: () => void;
   onRun?: () => void;
   onTest?: () => void;
   onUndo?: () => void;
@@ -58,7 +55,6 @@ export function EditorToolbar({
   onSave,
   onDelete,
   onDuplicate,
-  onConvert,
   onRun,
   onTest,
   onUndo,
@@ -73,7 +69,6 @@ export function EditorToolbar({
   className,
 }: EditorToolbarProps) {
   const isSequential = mode === "sequential";
-  const isLinear = item ? isLinearWorkflow(item) : false;
 
   // Color theme based on mode
   const accentColor = isSequential ? "#00D9FF" : "#00FF88";
@@ -257,24 +252,6 @@ export function EditorToolbar({
           </Button>
         )}
 
-        {/* Convert Button */}
-        {item && onConvert && (
-          <Button
-            onClick={onConvert}
-            size="sm"
-            variant="ghost"
-            className="text-gray-400 hover:text-white hover:bg-gray-800"
-            title={
-              isLinear
-                ? "Convert to Graph Workflow"
-                : "Convert to Sequential Workflow"
-            }
-          >
-            <ArrowLeftRight className="w-4 h-4 mr-2" />
-            Convert
-          </Button>
-        )}
-
         {/* Delete Button */}
         {item && onDelete && (
           <Button
@@ -306,7 +283,6 @@ export function CompactToolbar({
   onSave,
   onDelete,
   onDuplicate,
-  onConvert,
   onRun,
   canUndo = false,
   canRedo = false,
@@ -316,7 +292,6 @@ export function CompactToolbar({
   className,
 }: CompactToolbarProps) {
   const isSequential = mode === "sequential";
-  const isLinear = item ? isLinearWorkflow(item) : false;
   const accentColor = isSequential ? "#00D9FF" : "#00FF88";
 
   return (
@@ -396,21 +371,6 @@ export function CompactToolbar({
           title="Duplicate"
         >
           <Copy className="w-4 h-4" />
-        </Button>
-      )}
-
-      {/* Convert */}
-      {item && onConvert && (
-        <Button
-          onClick={onConvert}
-          size="sm"
-          variant="ghost"
-          className="h-8 w-8 p-0"
-          title={
-            isLinear ? "Convert to Workflow" : "Convert to Sequential Workflow"
-          }
-        >
-          <ArrowLeftRight className="w-4 h-4" />
         </Button>
       )}
 

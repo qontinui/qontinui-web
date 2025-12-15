@@ -34,6 +34,7 @@ const ACTION_GROUPS = {
       color: "bg-cyan-500",
       preset: "stateImage",
     },
+    { type: "RAG_FIND", label: "RAG Find", color: "bg-violet-500" },
   ],
   Mouse: [
     { type: "CLICK", label: "Click", color: "bg-green-500" },
@@ -487,6 +488,15 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         maxWaitTime: 5000,
         pollInterval: 500,
       };
+    case "RAG_FIND":
+      return {
+        target: {
+          type: "stateImage",
+          stateImageId: "",
+        },
+        topK: 1,
+        outputVariable: "",
+      };
     case "GO_TO_STATE":
       return { states: [] }; // Array of state IDs for multi-target pathfinding
     case "RUN_WORKFLOW":
@@ -618,7 +628,47 @@ function getActionSummary(
       return "No image selected";
     }
     case "CLICK": {
-      const config = action.config as { mouseButton?: string; target?: string };
+      const config = action.config as {
+        mouseButton?: string;
+        target?: string;
+        stateId?: string;
+        imageIds?: string[];
+      };
+
+      // Handle StateImage target
+      if (config.target === "StateImage") {
+        if (config.stateId) {
+          const state = states.find((s) => s.id === config.stateId);
+          const stateName = state?.name || config.stateId;
+
+          if (config.imageIds && config.imageIds.length > 0) {
+            // Get image names
+            const imageNames = config.imageIds
+              .map((id) => {
+                for (const s of states) {
+                  const img = s.stateImages?.find((si: any) => si.id === id);
+                  if (img)
+                    return img.name.replace(
+                      /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+                      ""
+                    );
+                }
+                return null;
+              })
+              .filter(Boolean);
+
+            if (imageNames.length === 1) {
+              return `${config.mouseButton?.toLowerCase() || "left"} click on ${imageNames[0]} (${stateName})`;
+            } else if (imageNames.length > 1) {
+              return `${config.mouseButton?.toLowerCase() || "left"} click on ${imageNames[0]} +${imageNames.length - 1} more (${stateName})`;
+            }
+          }
+
+          return `${config.mouseButton?.toLowerCase() || "left"} click on any image from ${stateName}`;
+        }
+        return `${config.mouseButton?.toLowerCase() || "left"} click on State Image (no state selected)`;
+      }
+
       return `${config.mouseButton?.toLowerCase() || "left"} click on ${config.target}`;
     }
     case "TYPE": {
@@ -684,11 +734,51 @@ function getActionSummary(
       }
       return "No image selected";
     }
+    case "RAG_FIND": {
+      const config = action.config as {
+        target?: { stateImageId?: string };
+        topK?: number;
+      };
+      const stateImageId = config.target?.stateImageId;
+      if (stateImageId) {
+        // Find StateImage across all states
+        for (const state of states) {
+          const stateImage = state.stateImages?.find(
+            (si: any) => si.id === stateImageId
+          );
+          if (stateImage) {
+            const nameWithoutExtension = stateImage.name.replace(
+              /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+              ""
+            );
+            return `RAG Find: ${nameWithoutExtension}${config.topK && config.topK > 1 ? ` (top ${config.topK})` : ""}`;
+          }
+        }
+        return "StateImage not found";
+      }
+      return "No element selected";
+    }
     case "GO_TO_STATE": {
-      const config = action.config as { stateId?: string };
-      if (config.stateId) {
-        const state = states.find((s) => s.id === config.stateId);
-        return state ? `Target: ${state.name}` : `Target: ${config.stateId}`;
+      const config = action.config as { states?: string[]; stateId?: string };
+      // Support both new format (states array) and legacy format (stateId)
+      const stateIds =
+        config.states || (config.stateId ? [config.stateId] : []);
+
+      if (stateIds.length > 0) {
+        const stateNames = stateIds
+          .map((id) => {
+            const state = states.find((s) => s.id === id);
+            return state ? state.name : id;
+          })
+          .filter(Boolean);
+
+        if (stateNames.length === 0) {
+          return "No state selected";
+        } else if (stateNames.length === 1) {
+          return `Target: ${stateNames[0]}`;
+        } else {
+          return `Targets: ${stateNames.join(", ")}`;
+        }
       }
       return "No state selected";
     }
@@ -830,9 +920,10 @@ function getActionSummary(
       // Show the prompt/command if specified
       if (config.prompt) {
         // Truncate long prompts for display
-        const displayPrompt = config.prompt.length > 40
-          ? config.prompt.substring(0, 40) + "..."
-          : config.prompt;
+        const displayPrompt =
+          config.prompt.length > 40
+            ? config.prompt.substring(0, 40) + "..."
+            : config.prompt;
         return `AI Analysis (${provider}): ${displayPrompt}`;
       }
       if (config.resultsDirectory) {

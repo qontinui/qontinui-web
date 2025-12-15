@@ -27,22 +27,28 @@ rag-config-migration/
 ## Key Features
 
 ### 1. Version Detection
+
 Automatically detects the RAG config version and determines if migration is needed.
 
 ### 2. Migration Path Finding
+
 Uses BFS to find the shortest migration path from the current version to the target version.
 
 ### 3. Re-embedding Detection
+
 Tracks whether migrations require re-embedding of all elements. When embedding model structure or metadata changes, users are notified that they need to re-run the embedding pipeline.
 
 ### 4. Validation
+
 Comprehensive validation ensures:
+
 - Correct structure and types
 - Valid state references in elements
 - Valid workflow references in transitions
 - Valid element references in states
 
 ### 5. Caching
+
 Migration results are cached for performance when importing the same config multiple times.
 
 ## Usage
@@ -50,7 +56,10 @@ Migration results are cached for performance when importing the same config mult
 ### Basic Migration
 
 ```typescript
-import { migrateRAGConfigToLatest, needsRAGMigration } from '@/lib/rag-config-migration';
+import {
+  migrateRAGConfigToLatest,
+  needsRAGMigration,
+} from "@/lib/rag-config-migration";
 
 // Check if migration is needed
 if (needsRAGMigration(config.version)) {
@@ -61,10 +70,12 @@ if (needsRAGMigration(config.version)) {
 
     // Check if re-embedding is required
     if (result.requiresReembedding) {
-      alert('This config requires re-embedding all elements. Please run the embedding pipeline.');
+      alert(
+        "This config requires re-embedding all elements. Please run the embedding pipeline."
+      );
     }
   } else {
-    console.error('Migration failed:', result.context.errors);
+    console.error("Migration failed:", result.context.errors);
   }
 }
 ```
@@ -72,13 +83,13 @@ if (needsRAGMigration(config.version)) {
 ### Preview Migration
 
 ```typescript
-import { previewRAGMigration } from '@/lib/rag-config-migration';
+import { previewRAGMigration } from "@/lib/rag-config-migration";
 
 const preview = await previewRAGMigration(config);
 
-console.log('Migration steps:', preview.migrationSteps);
-console.log('Estimated changes:', preview.estimatedChanges);
-console.log('Requires re-embedding:', preview.requiresReembedding);
+console.log("Migration steps:", preview.migrationSteps);
+console.log("Estimated changes:", preview.estimatedChanges);
+console.log("Requires re-embedding:", preview.requiresReembedding);
 ```
 
 ### Validation
@@ -87,13 +98,13 @@ console.log('Requires re-embedding:', preview.requiresReembedding);
 import {
   validateRAGConfigComprehensive,
   validateStateReferences,
-  validateWorkflowReferences
-} from '@/lib/rag-config-migration';
+  validateWorkflowReferences,
+} from "@/lib/rag-config-migration";
 
 // Comprehensive validation
 const result = validateRAGConfigComprehensive(config);
 if (!result.success) {
-  console.error('Validation errors:', result.errors);
+  console.error("Validation errors:", result.errors);
 }
 
 // Specific validations
@@ -105,16 +116,16 @@ const workflowRefResult = validateWorkflowReferences(config);
 
 ```typescript
 interface RAGConfig {
-  version: string;                              // Semantic version (e.g., "1.0.0")
-  configType: "rag";                           // Always "rag"
-  metadata: RAGMetadata;                        // Project metadata
-  embeddingConfig: EmbeddingConfig;             // Embedding model configuration
-  elements: RAGElement[];                       // UI elements with embeddings
-  states: RAGState[];                          // Application states
-  workflows: RAGWorkflow[];                     // Automation workflows
-  transitions: RAGTransition[];                 // State transitions
+  version: string; // Semantic version (e.g., "1.0.0")
+  configType: "rag"; // Always "rag"
+  metadata: RAGMetadata; // Project metadata
+  embeddingConfig: EmbeddingConfig; // Embedding model configuration
+  elements: RAGElement[]; // UI elements with embeddings
+  states: RAGState[]; // Application states
+  workflows: RAGWorkflow[]; // Automation workflows
+  transitions: RAGTransition[]; // State transitions
   screenshots: Record<string, ScreenshotInfo>; // Screenshot metadata
-  vectorDb?: VectorDBInfo;                     // Vector database info
+  vectorDb?: VectorDBInfo; // Vector database info
 }
 ```
 
@@ -141,7 +152,7 @@ export const migrationV10ToV11: RAGMigration = {
     const migrated = structuredClone(config);
 
     // Add semanticTags field to all elements
-    migrated.elements = migrated.elements.map(element => ({
+    migrated.elements = migrated.elements.map((element) => ({
       ...element,
       semanticTags: [],
     }));
@@ -152,7 +163,7 @@ export const migrationV10ToV11: RAGMigration = {
 
   validate(config: RAGConfig): boolean {
     // Check that all elements have semanticTags
-    return config.elements.every(el =>
+    return config.elements.every((el) =>
       Array.isArray((el as any).semanticTags)
     );
   },
@@ -164,13 +175,11 @@ export const migrationV10ToV11: RAGMigration = {
 Update `migrations/index.ts`:
 
 ```typescript
-import { migrationV10ToV11 } from './v1.0.0-to-v1.1.0';
+import { migrationV10ToV11 } from "./v1.0.0-to-v1.1.0";
 
 export const CURRENT_RAG_VERSION = "1.1.0";
 
-export const RAG_MIGRATIONS: RAGMigration[] = [
-  migrationV10ToV11,
-];
+export const RAG_MIGRATIONS: RAGMigration[] = [migrationV10ToV11];
 ```
 
 ### 3. Update Types
@@ -223,7 +232,7 @@ export const migrationV12ToV13: RAGMigration = {
   description: "Add display names for states",
   requiresReembedding: false, // ← No re-embedding needed
   migrate(config, context) {
-    config.states = config.states.map(state => ({
+    config.states = config.states.map((state) => ({
       ...state,
       displayName: state.name,
     }));
@@ -255,6 +264,7 @@ Each successful migration adds an entry to the config metadata:
 ## Best Practices
 
 ### 1. Always Use structuredClone()
+
 ```typescript
 migrate(config: RAGConfig, context: RAGMigrationContext): RAGConfig {
   const migrated = structuredClone(config); // ← Prevent mutations
@@ -264,11 +274,13 @@ migrate(config: RAGConfig, context: RAGMigrationContext): RAGConfig {
 ```
 
 ### 2. Always Update Version
+
 ```typescript
 migrated.version = "1.1.0"; // ← Always set new version
 ```
 
 ### 3. Add Validation
+
 ```typescript
 validate(config: RAGConfig): boolean {
   // Verify migration succeeded
@@ -277,6 +289,7 @@ validate(config: RAGConfig): boolean {
 ```
 
 ### 4. Handle Edge Cases
+
 ```typescript
 migrate(config: RAGConfig, context: RAGMigrationContext): RAGConfig {
   const migrated = structuredClone(config);
@@ -292,6 +305,7 @@ migrate(config: RAGConfig, context: RAGMigrationContext): RAGConfig {
 ```
 
 ### 5. Document Breaking Changes
+
 ```typescript
 description: "Remove deprecated 'oldField' property (BREAKING: clients must update)",
 ```
@@ -299,7 +313,7 @@ description: "Remove deprecated 'oldField' property (BREAKING: clients must upda
 ## Testing
 
 ```typescript
-import { migrateRAGConfigToLatest } from '@/lib/rag-config-migration';
+import { migrateRAGConfigToLatest } from "@/lib/rag-config-migration";
 
 // Create test config
 const oldConfig: RAGConfig = {
@@ -318,13 +332,13 @@ expect(result.requiresReembedding).toBe(false);
 
 ## Comparison with Workflow Config Migration
 
-| Feature | Workflow Migration | RAG Migration |
-|---------|-------------------|---------------|
-| Version tracking | ✅ | ✅ |
-| BFS path finding | ✅ | ✅ |
-| Validation | ✅ | ✅ |
-| Caching | ✅ | ✅ |
-| Re-embedding flag | ❌ | ✅ |
+| Feature              | Workflow Migration | RAG Migration             |
+| -------------------- | ------------------ | ------------------------- |
+| Version tracking     | ✅                 | ✅                        |
+| BFS path finding     | ✅                 | ✅                        |
+| Validation           | ✅                 | ✅                        |
+| Caching              | ✅                 | ✅                        |
+| Re-embedding flag    | ❌                 | ✅                        |
 | Reference validation | States/Transitions | Elements/States/Workflows |
 
 ## Related Files
