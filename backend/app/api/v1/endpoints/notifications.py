@@ -46,7 +46,7 @@ async def get_notifications(
     current_user: User = Depends(get_current_active_user_async),
     type: str | None = Query(None, description="Filter by notification type"),
     read: bool | None = Query(None, description="Filter by read status"),
-    project_id: int | None = Query(None, description="Filter by project"),
+    project_id: UUID | None = Query(None, description="Filter by project"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> Any:

@@ -915,9 +915,10 @@ async def websocket_testing_runner_endpoint(
             return
 
         # Re-fetch user in this session
+        from typing import cast
         from uuid import UUID as UUIDType
-        user_id: UUIDType = user.id  # type: ignore[assignment]
-        user_result = await db.execute(select(User).where(User.id == user_id))
+        user_id = cast(UUIDType, user.id)
+        user_result = await db.execute(select(User).where(User.id == user_id))  # type: ignore[arg-type]
         user = user_result.scalar_one_or_none()
 
         if not user:
