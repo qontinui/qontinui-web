@@ -884,6 +884,7 @@ class TestNotificationService:
 
             # Create notification for project owner
             from uuid import UUID as UUIDType
+
             owner_id: UUIDType = project.owner_id  # type: ignore[assignment]
             await notification_service.create_notification(
                 db=db,

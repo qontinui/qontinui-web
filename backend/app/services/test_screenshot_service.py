@@ -80,13 +80,13 @@ class TestScreenshotService:
 
             # Step 3: Generate storage key and timestamp
             # Format: tests/{project_id}/{test_run_id}/{transition_id}_{timestamp}.png
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+            datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
             if transition_id:
-                filename = f"{transition_id}_{timestamp}.png"
+                pass
             elif deficiency_id:
-                filename = f"deficiency_{deficiency_id}_{timestamp}.png"
+                pass
             else:
-                filename = f"general_{timestamp}.png"
+                pass
 
             # Step 4: Upload to storage using screenshot_storage service
             # Prepare metadata for storage

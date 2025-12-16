@@ -86,6 +86,7 @@ interface AnnotationSet {
   boundary_width?: number;
   annotations: Annotation[];
   screenshots?: ScreenshotMetadata[]; // Multi-screenshot support
+  created_at?: string;
 }
 
 export default function AnnotationsPage() {
@@ -153,8 +154,8 @@ export default function AnnotationsPage() {
   useEffect(() => {
     if (selectedBox) {
       setLabel(selectedBox.label || "");
-      setDescription((selectedBox as unknown).description || "");
-      setReason((selectedBox as unknown).reason || "");
+      setDescription(selectedBox.description || "");
+      setReason(selectedBox.reason || "");
     } else {
       setLabel("");
       setDescription("");
@@ -398,7 +399,7 @@ export default function AnnotationsPage() {
           label,
           description,
           reason,
-        } as BoundingBox;
+        };
       }
       return box;
     });
@@ -476,7 +477,7 @@ export default function AnnotationsPage() {
         width: number;
         height: number;
       }> = [];
-      const allAnnotations: Array<unknown> = [];
+      const allAnnotations: Annotation[] = [];
 
       for (let i = 0; i < screenshots.length; i++) {
         const screenshot = screenshots[i];
@@ -571,8 +572,8 @@ export default function AnnotationsPage() {
             width: Math.round(box.width),
             height: Math.round(box.height),
             label: box.label,
-            description: (box as unknown).description,
-            reason: (box as unknown).reason,
+            description: box.description,
+            reason: box.reason,
             screenshot_index: i,
           });
         });
@@ -756,8 +757,8 @@ export default function AnnotationsPage() {
           Math.round(box.y + box.height),
         ],
         label: box.label || "",
-        description: (box as unknown).description || "",
-        reason: (box as unknown).reason || "",
+        description: box.description || "",
+        reason: box.reason || "",
         width: Math.round(box.width),
         height: Math.round(box.height),
         area: Math.round(box.width * box.height),
@@ -807,8 +808,8 @@ export default function AnnotationsPage() {
             Math.round(box.y + box.height),
           ],
           label: box.label || "",
-          description: (box as unknown).description || "",
-          reason: (box as unknown).reason || "",
+          description: box.description || "",
+          reason: box.reason || "",
           width: Math.round(box.width),
           height: Math.round(box.height),
           area: Math.round(box.width * box.height),
@@ -1416,9 +1417,9 @@ export default function AnnotationsPage() {
                                 {Math.round(box.width)} ×{" "}
                                 {Math.round(box.height)}px
                               </div>
-                              {(box as unknown).description && (
+                              {box.description && (
                                 <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                  {(box as unknown).description}
+                                  {box.description}
                                 </div>
                               )}
                             </div>
@@ -1594,7 +1595,9 @@ export default function AnnotationsPage() {
                           </div>
                         )}
                         <div className="text-xs text-muted-foreground mt-2">
-                          {new Date((set as unknown).created_at).toLocaleString()}
+                          {set.created_at
+                            ? new Date(set.created_at).toLocaleString()
+                            : "No date"}
                         </div>
                         {isBlobUrl && (
                           <div className="text-xs text-red-500 mt-2">

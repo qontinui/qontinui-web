@@ -400,7 +400,8 @@ function detectMissingConnections(workflow: Workflow): ValidationError[] {
 
     if (action.type === "SWITCH") {
       // SWITCH must have all case branches
-      const cases = (action.config as unknown).cases || [];
+      const cases =
+        (action.config as Record<string, unknown>).cases || [];
       const mainOutputs = connections?.main || [];
 
       if (mainOutputs.length < cases.length + 1) {
@@ -610,7 +611,7 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
     }
 
     // Type-specific validation
-    const config = action.config as unknown;
+    const config = action.config as Record<string, unknown>;
 
     // Type-specific validation using string checks instead of type enum
     if (action.type === "CLICK") {

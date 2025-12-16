@@ -296,7 +296,7 @@ class BaselineManagementService:
         conditions = [
             VisualBaseline.project_id == project_id,
             VisualBaseline.state_name == state_name,
-            VisualBaseline.is_active == True,
+            VisualBaseline.is_active is True,
         ]
 
         # If workflow_id provided, try to find workflow-specific baseline first
@@ -636,7 +636,7 @@ class BaselineManagementService:
         conditions = [
             VisualBaseline.project_id == project_id,
             VisualBaseline.state_name == state_name,
-            VisualBaseline.is_active == True,
+            VisualBaseline.is_active is True,
         ]
 
         if workflow_id:

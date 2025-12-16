@@ -284,13 +284,13 @@ function updateConnectionsForClonedActions(
 
     for (const [type, outputs] of Object.entries(connectionTypes)) {
       if (outputs && Array.isArray(outputs) && isValidConnectionType(type)) {
-        (newConnections[newSourceId] as unknown)[type] = outputs.map(
-          (outputConnections) =>
+        (newConnections[newSourceId] as Record<string, unknown>)[type] =
+          outputs.map((outputConnections) =>
             outputConnections.map((conn) => ({
               ...conn,
               action: oldToNewIdMap.get(conn.action) || conn.action,
             }))
-        );
+          );
       }
     }
   }
@@ -389,7 +389,7 @@ export const useCanvasStore = create<CanvasStore>()(
 
                 for (const type of Object.keys(sourceConnections)) {
                   if (isValidConnectionType(type)) {
-                    const outputs = (sourceConnections as unknown)[type];
+                    const outputs = (sourceConnections as Record<string, unknown>)[type];
                     if (outputs && Array.isArray(outputs)) {
                       const filteredOutputs = outputs.map(
                         (conns: Connection[]) =>
@@ -397,7 +397,7 @@ export const useCanvasStore = create<CanvasStore>()(
                             (conn: Connection) => conn.action !== actionId
                           )
                       );
-                      (sourceConnections as unknown)[type] = filteredOutputs;
+                      (sourceConnections as Record<string, unknown>)[type] = filteredOutputs;
                     }
                   }
                 }
@@ -435,7 +435,7 @@ export const useCanvasStore = create<CanvasStore>()(
 
                 for (const type of Object.keys(sourceConnections)) {
                   if (isValidConnectionType(type)) {
-                    const outputs = (sourceConnections as unknown)[type];
+                    const outputs = (sourceConnections as Record<string, unknown>)[type];
                     if (outputs && Array.isArray(outputs)) {
                       const filteredOutputs = outputs.map(
                         (conns: Connection[]) =>
@@ -443,7 +443,7 @@ export const useCanvasStore = create<CanvasStore>()(
                             (conn: Connection) => !idsSet.has(conn.action)
                           )
                       );
-                      (sourceConnections as unknown)[type] = filteredOutputs;
+                      (sourceConnections as Record<string, unknown>)[type] = filteredOutputs;
                     }
                   }
                 }
@@ -519,11 +519,11 @@ export const useCanvasStore = create<CanvasStore>()(
                 return;
               }
 
-              if (!(sourceConns as unknown)[outputType]) {
-                (sourceConns as unknown)[outputType] = [];
+              if (!(sourceConns as Record<string, unknown>)[outputType]) {
+                (sourceConns as Record<string, unknown>)[outputType] = [];
               }
 
-              const outputArray = (sourceConns as unknown)[outputType];
+              const outputArray = (sourceConns as Record<string, unknown>)[outputType];
               if (!outputArray || !Array.isArray(outputArray)) return;
 
               // Ensure output index array exists
@@ -561,7 +561,7 @@ export const useCanvasStore = create<CanvasStore>()(
                 return;
               }
 
-              const outputs = (sourceConns as unknown)[outputType];
+              const outputs = (sourceConns as Record<string, unknown>)[outputType];
               if (!outputs || !Array.isArray(outputs)) return;
 
               const targetOutputs = outputs[outputIndex];
@@ -727,7 +727,8 @@ export const useCanvasStore = create<CanvasStore>()(
                   Array.isArray(outputs) &&
                   isValidConnectionType(type)
                 ) {
-                  (connectionsToCopy[nodeId] as unknown)[type] = outputs.map(
+                  (connectionsToCopy[nodeId] as Record<string, unknown>)[type] =
+                    outputs.map(
                     (outputConns: Connection[]) =>
                       outputConns.filter((conn: Connection) =>
                         selectedSet.has(conn.action)
@@ -795,7 +796,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     Array.isArray(outputs) &&
                     isValidConnectionType(type)
                   ) {
-                    (sourceConns as unknown)[type] = outputs;
+                    (sourceConns as Record<string, unknown>)[type] = outputs;
                   }
                 }
               }

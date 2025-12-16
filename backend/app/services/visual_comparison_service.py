@@ -523,7 +523,9 @@ class VisualComparisonService:
             .group_by(VisualComparisonResult.status)
         )
 
-        stats: dict[str, int | float] = {status.value: 0 for status in VisualComparisonStatus}
+        stats: dict[str, int | float] = {
+            status.value: 0 for status in VisualComparisonStatus
+        }
         for status, count in result.all():
             stats[status.value] = count
 
@@ -577,7 +579,7 @@ class VisualComparisonService:
             select(func.count(VisualBaseline.id)).where(
                 and_(
                     VisualBaseline.project_id == project_id,
-                    VisualBaseline.is_active == True,
+                    VisualBaseline.is_active is True,
                 )
             )
         )

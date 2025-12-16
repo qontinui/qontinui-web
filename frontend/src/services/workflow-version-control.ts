@@ -919,9 +919,15 @@ export class WorkflowVersionControl {
     ]);
 
     propertyKeys.forEach((key) => {
-      const sourceVal = (sourceWorkflow as unknown)[key];
-      const targetVal = (targetWorkflow as unknown)[key];
-      const baseVal = baseWorkflow ? (baseWorkflow as unknown)[key] : undefined;
+      const sourceVal = (sourceWorkflow as unknown as Record<string, unknown>)[
+        key
+      ];
+      const targetVal = (targetWorkflow as unknown as Record<string, unknown>)[
+        key
+      ];
+      const baseVal = baseWorkflow
+        ? (baseWorkflow as unknown as Record<string, unknown>)[key]
+        : undefined;
 
       if (baseVal !== undefined) {
         const sourceChanged =
@@ -1268,12 +1274,17 @@ export class WorkflowVersionControl {
         a.timestamp.localeCompare(b.timestamp)
       );
       for (const snapshot of sortedSnapshots) {
+        const author =
+          snapshot.metadata?.author &&
+          typeof snapshot.metadata.author === "string"
+            ? snapshot.metadata.author
+            : undefined;
         this.saveVersion(
           workflowId,
           mainBranchId,
           snapshot.workflow,
           snapshot.name,
-          snapshot.metadata?.author
+          author
         );
         migrated++;
       }
@@ -1310,12 +1321,16 @@ export class WorkflowVersionControl {
       }
     }
 
+    const author =
+      snapshot.metadata?.author && typeof snapshot.metadata.author === "string"
+        ? snapshot.metadata.author
+        : undefined;
     return this.saveVersion(
       snapshot.workflowId,
       targetBranchId,
       snapshot.workflow,
       snapshot.name,
-      snapshot.metadata?.author
+      author
     );
   }
 
@@ -1398,13 +1413,15 @@ export class WorkflowVersionControl {
 
   private getChangedFields(obj1: unknown, obj2: unknown): string[] {
     const fields: string[] = [];
+    const record1 = obj1 as Record<string, unknown> | null | undefined;
+    const record2 = obj2 as Record<string, unknown> | null | undefined;
     const allKeys = new Set([
-      ...Object.keys(obj1 || {}),
-      ...Object.keys(obj2 || {}),
+      ...Object.keys(record1 || {}),
+      ...Object.keys(record2 || {}),
     ]);
 
     allKeys.forEach((key) => {
-      if (JSON.stringify(obj1?.[key]) !== JSON.stringify(obj2?.[key])) {
+      if (JSON.stringify(record1?.[key]) !== JSON.stringify(record2?.[key])) {
         fields.push(key);
       }
     });
@@ -1490,16 +1507,18 @@ export class WorkflowVersionControl {
     (["main", "error", "success", "parallel"] as const).forEach((type) => {
       const conns = outputs[type as keyof typeof outputs];
       if (conns) {
-        conns.forEach((outputConns: unknown, outputIndex: number) => {
-          outputConns.forEach((conn: unknown) => {
-            connections.push({
-              source,
-              target: conn.action,
-              type: type,
-              outputIndex,
-              inputIndex: conn.index,
+        conns.forEach((outputConns, outputIndex: number) => {
+          if (Array.isArray(outputConns)) {
+            outputConns.forEach((conn) => {
+              connections.push({
+                source,
+                target: conn.action,
+                type: type,
+                outputIndex,
+                inputIndex: conn.index,
+              });
             });
-          });
+          }
         });
       }
     });
@@ -1523,8 +1542,8 @@ export class WorkflowVersionControl {
     ];
 
     properties.forEach((prop) => {
-      const val1 = (workflow1 as unknown)[prop];
-      const val2 = (workflow2 as unknown)[prop];
+      const val1 = (workflow1 as unknown as Record<string, unknown>)[prop];
+      const val2 = (workflow2 as unknown as Record<string, unknown>)[prop];
 
       if (JSON.stringify(val1) !== JSON.stringify(val2)) {
         changes.push({

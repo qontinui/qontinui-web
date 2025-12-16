@@ -18,13 +18,15 @@ import { ThumbnailCard } from "./ThumbnailCard";
 import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
+import type { BoundingBox } from "@/components/common/ImageCanvas";
+
 export interface ScreenshotData {
   id?: string;
   file?: File;
   url?: string; // Blob URL for display
   permanentUrl?: string; // Permanent URL from backend (for saving)
   dimensions?: { width: number; height: number };
-  annotations?: unknown[];
+  annotations?: Array<BoundingBox & { description?: string; reason?: string }>;
   hasUnsavedChanges?: boolean;
 }
 
