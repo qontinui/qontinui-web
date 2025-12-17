@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from app.models.automation_log import AutomationLog
     from app.models.automation_screenshot import AutomationScreenshot
     from app.models.user import User
+    from app.models.workflow_execution_history import WorkflowExecutionHistory
 
 
 class AutomationSession(Base):

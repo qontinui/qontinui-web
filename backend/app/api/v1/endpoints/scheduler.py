@@ -13,9 +13,27 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.api.deps import current_active_user
 from app.models.user import User
 
 router = APIRouter(tags=["scheduler"], prefix="/scheduler")
+
+
+# Legacy function stub - this endpoint needs database migration
+def load_users() -> dict:
+    """
+    Legacy function stub.
+    This scheduler endpoint was migrated from JSON-based storage but not updated
+    to use the database. It needs to be rewritten to use SQLAlchemy models.
+    """
+    raise HTTPException(
+        status_code=501,
+        detail="Scheduler endpoints not yet migrated to database. Use project configuration directly.",
+    )
+
+
+# Alias for backward compatibility with legacy code
+get_current_user = current_active_user
 
 
 @router.get("/scheduler/statistics/{project_id}")
