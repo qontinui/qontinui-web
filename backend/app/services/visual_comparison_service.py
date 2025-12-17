@@ -67,7 +67,7 @@ class VisualComparisonService:
                 )
         return self._comparator
 
-    async def compare_screenshot(
+    async def compare_screenshot(  # noqa: C901
         self,
         db: AsyncSession,
         screenshot_id: UUID,
@@ -579,7 +579,7 @@ class VisualComparisonService:
             select(func.count(VisualBaseline.id)).where(
                 and_(
                     VisualBaseline.project_id == project_id,
-                    VisualBaseline.is_active is True,
+                    VisualBaseline.is_active.is_(True),
                 )
             )
         )

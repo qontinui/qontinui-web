@@ -542,7 +542,7 @@ export interface TutorialSystemConfig {
  * Type guard to check if a value is a valid AnnotationType
  */
 export function isAnnotationType(value: unknown): value is AnnotationType {
-  return ["highlight", "arrow", "pulse", "label"].includes(value);
+  return ["highlight", "arrow", "pulse", "label"].includes(value as string);
 }
 
 /**
@@ -558,12 +558,12 @@ export function isTryItType(value: unknown): value is TryItType {
     "debug-pattern",
     "optimize-automation",
     "custom",
-  ].includes(value);
+  ].includes(value as string);
 }
 
 /**
  * Type guard to check if a value is a valid DifficultyLevel
  */
 export function isDifficultyLevel(value: unknown): value is DifficultyLevel {
-  return ["beginner", "intermediate", "advanced"].includes(value);
+  return ["beginner", "intermediate", "advanced"].includes(value as string);
 }
