@@ -5,14 +5,19 @@
 import { Region, Coordinates } from "./common-types";
 import { SearchOptions } from "./search-options";
 
+/**
+ * Valid target types that match qontinui-schemas TargetConfig.
+ * Note: "stateImage" is deprecated - use "image" with imageIds instead.
+ */
 export type TargetType =
   | "image"
-  | "stateImage"
+  | "stateImage" // @deprecated - use "image" with imageIds instead
   | "region"
   | "text"
   | "coordinates"
   | "stateString"
   | "currentPosition"
+  | "lastFindResult"
   | "resultIndex"
   | "allResults"
   | "resultByImage";
@@ -29,6 +34,11 @@ export interface ImageTarget {
 /**
  * StateImageTarget - Find any image from a state definition
  * When selected, all images from the state are used for matching
+ *
+ * @deprecated This target type does not exist in qontinui-schemas.
+ * Use ImageTarget with imageIds instead. This type is kept for backward
+ * compatibility when reading legacy configs - it should be converted to
+ * ImageTarget before saving.
  */
 export interface StateImageTarget {
   type: "stateImage";
@@ -67,6 +77,15 @@ export interface CurrentPositionTarget {
 }
 
 /**
+ * LastFindResultTarget - Use the location from the most recent FIND action.
+ * This target type allows actions to reference the result of a previous FIND
+ * action without knowing the exact coordinates at configuration time.
+ */
+export interface LastFindResultTarget {
+  type: "lastFindResult";
+}
+
+/**
  * ResultIndexTarget - Reference a specific match by index from last FIND result
  * Used after a FIND action that returned multiple matches
  */
@@ -92,14 +111,19 @@ export interface ResultByImageTarget {
   imageId: string;
 }
 
+/**
+ * Union of all valid target configurations.
+ * Matches qontinui-schemas TargetConfig (excluding deprecated StateImageTarget).
+ */
 export type TargetConfig =
   | ImageTarget
-  | StateImageTarget
+  | StateImageTarget // @deprecated - kept for backward compatibility reading only
   | RegionTarget
   | TextTarget
   | CoordinatesTarget
   | StateStringTarget
   | CurrentPositionTarget
+  | LastFindResultTarget
   | ResultIndexTarget
   | AllResultsTarget
   | ResultByImageTarget;

@@ -411,8 +411,8 @@ export default function ImageRecognitionDocPage() {
               <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-yellow-900">
                 <strong>Note:</strong> Most users should keep default settings.
-                Only adjust these if you&apos;re experiencing specific recognition
-                issues or need to optimize performance.
+                Only adjust these if you&apos;re experiencing specific
+                recognition issues or need to optimize performance.
               </p>
             </div>
           </div>

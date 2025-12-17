@@ -49,8 +49,9 @@ export function OutgoingTransitionBuilder({
   const [selectedWorkflows, setSelectedWorkflows] = useState<string[]>(
     preselectedWorkflow ? [preselectedWorkflow] : []
   );
-  const [workflowCategoryFilter, setWorkflowCategoryFilter] =
-    useState<string>("Outgoing Transitions");
+  const [workflowCategoryFilter, setWorkflowCategoryFilter] = useState<string>(
+    "Outgoing Transitions"
+  );
 
   // Handle from state selection
   const handleFromStateChange = (stateId: string) => {
@@ -336,13 +337,23 @@ export function OutgoingTransitionBuilder({
                 </SelectTrigger>
                 <SelectContent className="z-[100] bg-[#27272A] border-gray-700">
                   <SelectItem value="All">All Categories</SelectItem>
-                  <SelectItem value="Outgoing Transitions">Outgoing Transitions</SelectItem>
-                  <SelectItem value="Incoming Transitions">Incoming Transitions</SelectItem>
+                  <SelectItem value="Outgoing Transitions">
+                    Outgoing Transitions
+                  </SelectItem>
+                  <SelectItem value="Incoming Transitions">
+                    Incoming Transitions
+                  </SelectItem>
                   <SelectItem value="Main">Main</SelectItem>
                   {Array.from(
                     new Set(workflows.map((w) => w.category || "Main"))
                   )
-                    .filter((c) => c !== "Main" && c !== "Transitions" && c !== "Outgoing Transitions" && c !== "Incoming Transitions")
+                    .filter(
+                      (c) =>
+                        c !== "Main" &&
+                        c !== "Transitions" &&
+                        c !== "Outgoing Transitions" &&
+                        c !== "Incoming Transitions"
+                    )
                     .map((category) => (
                       <SelectItem key={category} value={category}>
                         {category}

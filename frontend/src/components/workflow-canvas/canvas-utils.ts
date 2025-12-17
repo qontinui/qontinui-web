@@ -129,52 +129,54 @@ function connectionsToEdges(
       if (!connectionArray) return;
 
       // Process each output index
-      connectionArray.forEach((outputConnections: unknown, outputIndex: number) => {
-        // Process each connection from this output
-        outputConnections.forEach((conn: unknown, connIndex: number) => {
-          const edgeId = `${sourceActionId}-${connType}-${outputIndex}-${conn.action}-${connIndex}`;
-          const color = getConnectionColor(connType);
-          const style = getConnectionStyle(connType);
+      connectionArray.forEach(
+        (outputConnections: unknown, outputIndex: number) => {
+          // Process each connection from this output
+          outputConnections.forEach((conn: unknown, connIndex: number) => {
+            const edgeId = `${sourceActionId}-${connType}-${outputIndex}-${conn.action}-${connIndex}`;
+            const color = getConnectionColor(connType);
+            const style = getConnectionStyle(connType);
 
-          // Get label based on connection type and output index
-          const label = getEdgeLabel(
-            sourceActionId,
-            outputIndex,
-            connType,
-            actions
-          );
-
-          const edge: CanvasEdge = {
-            id: edgeId,
-            source: sourceActionId,
-            target: conn.action,
-            sourceHandle: `${connType}-${outputIndex}`,
-            targetHandle: "input-0",
-            type: "custom",
-            animated: false,
-            data: {
-              connection: conn,
-              connectionType: connType,
+            // Get label based on connection type and output index
+            const label = getEdgeLabel(
+              sourceActionId,
               outputIndex,
-              label,
-              selected: false,
-              animated: false,
-            } as CanvasEdgeData,
-            style: {
-              ...style,
-              stroke: color,
-            },
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: color,
-              width: 20,
-              height: 20,
-            },
-          };
+              connType,
+              actions
+            );
 
-          edges.push(edge);
-        });
-      });
+            const edge: CanvasEdge = {
+              id: edgeId,
+              source: sourceActionId,
+              target: conn.action,
+              sourceHandle: `${connType}-${outputIndex}`,
+              targetHandle: "input-0",
+              type: "custom",
+              animated: false,
+              data: {
+                connection: conn,
+                connectionType: connType,
+                outputIndex,
+                label,
+                selected: false,
+                animated: false,
+              } as CanvasEdgeData,
+              style: {
+                ...style,
+                stroke: color,
+              },
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+                color: color,
+                width: 20,
+                height: 20,
+              },
+            };
+
+            edges.push(edge);
+          });
+        }
+      );
     });
   });
 

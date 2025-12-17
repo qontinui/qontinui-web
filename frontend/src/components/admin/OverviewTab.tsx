@@ -59,9 +59,9 @@ export default function OverviewTab() {
                 Admin Access Required
               </h3>
               <p className="text-muted-foreground text-center max-w-md mb-4">
-                You don&apos;t have admin privileges. Contact a superuser to grant
-                you admin access, or use the bootstrap endpoint if this is a
-                fresh installation.
+                You don&apos;t have admin privileges. Contact a superuser to
+                grant you admin access, or use the bootstrap endpoint if this is
+                a fresh installation.
               </p>
               <code className="text-xs bg-muted px-3 py-2 rounded mb-4">
                 POST /api/v1/admin/bootstrap-first-admin?email=your@email.com

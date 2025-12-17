@@ -602,3 +602,122 @@ async def generate_description(
         "message": "LLM description generation requires either a connected runner with AI capabilities or an OpenAI/Anthropic API key. API key integration is coming soon.",
         "description": None,
     }
+
+
+# ============================================================================
+# Runner Embedding Results Endpoint
+# ============================================================================
+
+
+class EmbeddingResultItem(BaseModel):
+    """Single embedding result from runner."""
+
+    state_image_id: str
+    success: bool
+    image_embedding: list[float] | None = None
+    text_embedding: list[float] | None = None
+    ocr_text: str | None = None
+    ocr_confidence: float | None = None
+    error: str | None = None
+
+
+class EmbeddingResultsRequest(BaseModel):
+    """Request containing embedding results from runner."""
+
+    project_id: str
+    results: list[EmbeddingResultItem]
+    total_processed: int
+    successful: int
+    failed: int
+
+
+class EmbeddingResultsResponse(BaseModel):
+    """Response after applying embedding results."""
+
+    success: bool
+    message: str
+    applied: int
+    failed: int
+    not_found: int
+
+
+@router.post(
+    "/{project_id}/embedding-results",
+    response_model=EmbeddingResultsResponse,
+)
+async def receive_embedding_results(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    project_id: UUID,
+    request: EmbeddingResultsRequest,
+    current_user: User = Depends(get_current_active_user_async),
+) -> EmbeddingResultsResponse:
+    """
+    Receive embedding results from the runner.
+
+    This endpoint is called by the runner after it has computed embeddings
+    for RAG-enabled StateImages. The embeddings are applied to the project
+    configuration and saved to the database.
+
+    Args:
+        project_id: The project ID
+        request: The embedding results from the runner
+
+    Returns:
+        Statistics about applied results
+    """
+    from app.crud.project import update_project
+    from app.schemas.project import ProjectUpdate
+    from app.services.embedding_service import apply_embedding_results_to_config
+
+    # Verify project exists and user has access
+    project = await get_project(db, project_id=project_id)
+    if not project:
+        raise not_found_error("Project", str(project_id))
+
+    # Check permissions
+    if project.owner_id != current_user.id and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to update this project",
+        )
+
+    # Get current configuration
+    config: dict[str, Any] = project.configuration or {}  # type: ignore[assignment]
+
+    # Convert results to dict format
+    results_dicts = [
+        {
+            "state_image_id": r.state_image_id,
+            "success": r.success,
+            "image_embedding": r.image_embedding,
+            "text_embedding": r.text_embedding,
+            "ocr_text": r.ocr_text,
+            "ocr_confidence": r.ocr_confidence,
+        }
+        for r in request.results
+    ]
+
+    # Apply embedding results to config
+    apply_result = apply_embedding_results_to_config(config, results_dicts)
+
+    # Update project configuration in database
+    project_update = ProjectUpdate(configuration=config)
+    await update_project(db, project, project_update)
+
+    logger.info(
+        "embedding_results_received",
+        project_id=str(project_id),
+        total_received=len(request.results),
+        applied=apply_result["successful"],
+        failed=apply_result["failed"],
+        not_found=apply_result["not_found"],
+    )
+
+    return EmbeddingResultsResponse(
+        success=True,
+        message=f"Applied {apply_result['successful']} embedding results",
+        applied=apply_result["successful"],
+        failed=apply_result["failed"],
+        not_found=apply_result["not_found"],
+    )

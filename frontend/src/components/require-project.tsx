@@ -40,7 +40,9 @@ export function RequireProject({
   const hasLocalImportedData = states && states.length > 0;
 
   // Consider project selected if either context has it, URL has it, or local data was imported
-  const hasProjectSelected = Boolean(projectId || urlProjectId || hasLocalImportedData);
+  const hasProjectSelected = Boolean(
+    projectId || urlProjectId || hasLocalImportedData
+  );
 
   if (isLoading) {
     return (

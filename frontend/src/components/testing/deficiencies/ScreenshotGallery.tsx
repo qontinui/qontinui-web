@@ -125,7 +125,8 @@ export function ScreenshotGallery({
   useEffect(() => {
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", handleKeyDown as unknown);
-      return () => window.removeEventListener("keydown", handleKeyDown as unknown);
+      return () =>
+        window.removeEventListener("keydown", handleKeyDown as unknown);
     }
     return undefined;
   }, [handleKeyDown]);

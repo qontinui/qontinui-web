@@ -60,8 +60,8 @@ export function GetVariableActionProperties({
           className="bg-transparent border-gray-700 font-mono text-sm"
         />
         <p className="text-xs text-gray-500">
-          Value to use if the variable doesn&apos;t exist. Numbers and booleans will
-          be automatically converted.
+          Value to use if the variable doesn&apos;t exist. Numbers and booleans
+          will be automatically converted.
         </p>
       </div>
 

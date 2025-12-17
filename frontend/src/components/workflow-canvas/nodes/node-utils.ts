@@ -204,12 +204,12 @@ export function getNodeSummary(action: Action): string {
 
     // Control Flow Actions
     case "IF":
-      const ifConfig = config as IfActionConfig;
+      const ifConfig = config as unknown as IfActionConfig;
       const conditionType = ifConfig.condition?.type || "expression";
       return `If (${conditionType})`;
 
     case "LOOP":
-      const loopConfig = config as LoopActionConfig;
+      const loopConfig = config as unknown as LoopActionConfig;
       const loopType = loopConfig.loopType || "FOR";
       if (loopType === "FOR" && loopConfig.iterations) {
         return `Loop ${loopConfig.iterations} times`;
@@ -236,7 +236,7 @@ export function getNodeSummary(action: Action): string {
       return `Set ${setVarConfig.variableName || "variable"}`;
 
     case "GET_VARIABLE":
-      const getVarConfig = config as GetVariableActionConfig;
+      const getVarConfig = config as unknown as GetVariableActionConfig;
       return `Get ${getVarConfig.variableName || "variable"}`;
 
     case "SORT":
@@ -428,7 +428,7 @@ export function validateNodeConfig(action: Action): ValidationResult {
       break;
 
     case "IF":
-      const ifConfig = action.config as IfActionConfig;
+      const ifConfig = action.config as unknown as IfActionConfig;
       if (!ifConfig.condition) {
         errors.push("Missing IF condition");
       }
@@ -438,7 +438,7 @@ export function validateNodeConfig(action: Action): ValidationResult {
       break;
 
     case "LOOP":
-      const loopConfig = action.config as LoopActionConfig;
+      const loopConfig = action.config as unknown as LoopActionConfig;
       if (!loopConfig.loopType) {
         errors.push("Missing loop type");
       }
@@ -471,7 +471,7 @@ export function validateNodeConfig(action: Action): ValidationResult {
       break;
 
     case "GET_VARIABLE":
-      const getVarConfig = action.config as GetVariableActionConfig;
+      const getVarConfig = action.config as unknown as GetVariableActionConfig;
       if (!getVarConfig.variableName) {
         errors.push("Missing variable name for GET_VARIABLE");
       }
@@ -536,7 +536,7 @@ export function estimateExecutionTime(action: Action): number {
       return waitConfig.duration || 1000;
 
     case "LOOP":
-      const loopConfig = config as LoopActionConfig;
+      const loopConfig = config as unknown as LoopActionConfig;
       if (loopConfig.loopType === "FOR" && loopConfig.iterations) {
         return loopConfig.iterations * 100; // Rough estimate
       }

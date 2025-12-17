@@ -19,7 +19,11 @@ interface ExecutionDebuggerStore extends ExecutionDebuggerState {
 
   // Action execution tracking
   startAction: (actionIndex: number, action: Action) => void;
-  completeAction: (actionIndex: number, result: unknown, error?: string) => void;
+  completeAction: (
+    actionIndex: number,
+    result: unknown,
+    error?: string
+  ) => void;
   failAction: (actionIndex: number, error: string, stackTrace?: string) => void;
   skipAction: (actionIndex: number, reason: string) => void;
 

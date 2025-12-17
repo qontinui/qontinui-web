@@ -1418,9 +1418,7 @@ export class WorkflowTestingService {
 
       if (aKeys.length !== bKeys.length) return false;
 
-      return aKeys.every((key) =>
-        this.deepEquals(aRecord[key], bRecord[key])
-      );
+      return aKeys.every((key) => this.deepEquals(aRecord[key], bRecord[key]));
     }
 
     return false;

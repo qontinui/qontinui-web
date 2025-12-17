@@ -69,8 +69,8 @@ export function EarlyAccessSignupWarning() {
               </div>
 
               <p className="text-gray-400 italic mt-3">
-                By signing up, you&apos;re joining as an early tester. Your feedback
-                helps shape the product!
+                By signing up, you&apos;re joining as an early tester. Your
+                feedback helps shape the product!
               </p>
             </AlertDescription>
 

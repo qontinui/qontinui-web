@@ -25,7 +25,7 @@ export function ScrollActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Direction</Label>
         <Select
-          value={(action.config.direction as string)}
+          value={action.config.direction as string}
           onValueChange={(value) => updateConfig("direction", value)}
         >
           <SelectTrigger className="bg-transparent border-gray-700">
@@ -45,7 +45,7 @@ export function ScrollActionProperties({
         <Input
           type="number"
           min="1"
-          value={(action.config.amount as number)}
+          value={action.config.amount as number}
           onChange={(e) =>
             updateConfig("amount", Number.parseInt(e.target.value))
           }
@@ -69,7 +69,7 @@ export function ScrollActionProperties({
       <div className="flex items-center space-x-2">
         <Checkbox
           id="smooth_scroll"
-          checked={(action.config.smooth_scroll as boolean)}
+          checked={action.config.smooth_scroll as boolean}
           onCheckedChange={(checked) => updateConfig("smooth_scroll", checked)}
         />
         <Label htmlFor="smooth_scroll" className="text-xs text-gray-400">

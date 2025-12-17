@@ -722,12 +722,14 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           // Remove from Pattern.searchRegions
           const updatedStateImages = state.stateImages.map((image: unknown) => {
             if (deletedRegion.saveToStateImageId === image.id) {
-              const updatedPatterns = image.patterns.map((pattern: unknown) => ({
-                ...pattern,
-                searchRegions: pattern.searchRegions.filter(
-                  (sr: unknown) => sr.id !== regionId
-                ),
-              }));
+              const updatedPatterns = image.patterns.map(
+                (pattern: unknown) => ({
+                  ...pattern,
+                  searchRegions: pattern.searchRegions.filter(
+                    (sr: unknown) => sr.id !== regionId
+                  ),
+                })
+              );
               return { ...image, patterns: updatedPatterns };
             }
             return image;

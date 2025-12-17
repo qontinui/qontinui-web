@@ -176,29 +176,37 @@ export const createStateSlice: StateCreator<
     });
 
     set((state) => {
-      results.embeddings.forEach((embedding: { stateImageId: string; imageEmbedding?: number[]; textEmbedding?: number[]; ocrText?: string; ocrConfidence?: number }) => {
-        // Find state containing this stateImage
-        for (const s of state.states) {
-          const stateImage = s.stateImages.find(
-            (img) => img.id === embedding.stateImageId
-          );
-          if (stateImage) {
-            if (embedding.imageEmbedding) {
-              stateImage.imageEmbedding = embedding.imageEmbedding;
+      results.embeddings.forEach(
+        (embedding: {
+          stateImageId: string;
+          imageEmbedding?: number[];
+          textEmbedding?: number[];
+          ocrText?: string;
+          ocrConfidence?: number;
+        }) => {
+          // Find state containing this stateImage
+          for (const s of state.states) {
+            const stateImage = s.stateImages.find(
+              (img) => img.id === embedding.stateImageId
+            );
+            if (stateImage) {
+              if (embedding.imageEmbedding) {
+                stateImage.imageEmbedding = embedding.imageEmbedding;
+              }
+              if (embedding.textEmbedding) {
+                stateImage.textEmbedding = embedding.textEmbedding;
+              }
+              if (embedding.ocrText !== undefined) {
+                stateImage.ocrText = embedding.ocrText;
+              }
+              if (embedding.ocrConfidence !== undefined) {
+                stateImage.ocrConfidence = embedding.ocrConfidence;
+              }
+              break;
             }
-            if (embedding.textEmbedding) {
-              stateImage.textEmbedding = embedding.textEmbedding;
-            }
-            if (embedding.ocrText !== undefined) {
-              stateImage.ocrText = embedding.ocrText;
-            }
-            if (embedding.ocrConfidence !== undefined) {
-              stateImage.ocrConfidence = embedding.ocrConfidence;
-            }
-            break;
           }
         }
-      });
+      );
     });
 
     get().triggerSave();

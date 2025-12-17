@@ -14,7 +14,101 @@ import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
 
 /**
+ * Helper to get the target type from the config.
+ * Handles both new object format and legacy string format.
+ */
+function getTargetType(config: Record<string, unknown>): string {
+  const target = config.target;
+
+  // New object format: { type: "image", imageIds: [...] }
+  if (target && typeof target === "object" && "type" in target) {
+    const targetType = (target as { type: string }).type;
+    // Map backend types to UI selection values
+    switch (targetType) {
+      case "lastFindResult":
+        return "lastFindResult";
+      case "currentPosition":
+        return "currentPosition";
+      case "coordinates":
+        return "coordinates";
+      case "image":
+        return "image";
+      default:
+        return "lastFindResult";
+    }
+  }
+
+  // Legacy string format: "StateImage", "Last Find Result", etc.
+  if (typeof target === "string") {
+    switch (target) {
+      case "StateImage":
+        return "image";
+      case "Last Find Result":
+        return "lastFindResult";
+      case "Current Position":
+        return "currentPosition";
+      case "Coordinates":
+        return "coordinates";
+      default:
+        return "lastFindResult";
+    }
+  }
+
+  return "lastFindResult";
+}
+
+/**
+ * Helper to get imageIds from target config.
+ * Handles both new object format and legacy format.
+ */
+function getImageIds(config: Record<string, unknown>): string[] {
+  const target = config.target;
+
+  // New format: imageIds inside target object
+  if (target && typeof target === "object" && "imageIds" in target) {
+    return (target as { imageIds: string[] }).imageIds || [];
+  }
+
+  // Legacy format: imageIds at config root level
+  if (Array.isArray(config.imageIds)) {
+    return config.imageIds as string[];
+  }
+
+  return [];
+}
+
+/**
+ * Helper to get coordinates from target config.
+ * Handles both new object format and legacy format.
+ */
+function getCoordinates(config: Record<string, unknown>): {
+  x: number;
+  y: number;
+} {
+  const target = config.target;
+
+  // New format: coordinates inside target object
+  if (target && typeof target === "object" && "coordinates" in target) {
+    const coords = (target as { coordinates: { x: number; y: number } })
+      .coordinates;
+    return { x: coords?.x || 0, y: coords?.y || 0 };
+  }
+
+  // Legacy format: x, y at config root level
+  return {
+    x: (config.x as number) || 0,
+    y: (config.y as number) || 0,
+  };
+}
+
+/**
  * Properties component for CLICK action.
+ *
+ * Generates target configs that match qontinui-schemas TargetConfig types:
+ * - ImageTarget: { type: "image", imageIds: string[] }
+ * - LastFindResultTarget: { type: "lastFindResult" }
+ * - CurrentPositionTarget: { type: "currentPosition" }
+ * - CoordinatesTarget: { type: "coordinates", coordinates: { x, y } }
  */
 export function ClickActionProperties({
   action,
@@ -22,38 +116,77 @@ export function ClickActionProperties({
   images,
   states,
 }: ActionPropertiesComponentProps) {
+  const targetType = getTargetType(action.config);
+  const currentImageIds = getImageIds(action.config);
+  const currentCoords = getCoordinates(action.config);
+
+  const handleTargetTypeChange = (value: string) => {
+    // Clear legacy fields when changing target type
+    updateConfig("imageIds", undefined);
+    updateConfig("x", undefined);
+    updateConfig("y", undefined);
+
+    // Set proper target object based on selection
+    switch (value) {
+      case "lastFindResult":
+        updateConfig("target", { type: "lastFindResult" });
+        break;
+      case "currentPosition":
+        updateConfig("target", { type: "currentPosition" });
+        break;
+      case "coordinates":
+        updateConfig("target", {
+          type: "coordinates",
+          coordinates: { x: 0, y: 0 },
+        });
+        break;
+      case "image":
+        updateConfig("target", { type: "image", imageIds: [] });
+        break;
+      default:
+        updateConfig("target", { type: "lastFindResult" });
+    }
+  };
+
+  const handleImageIdsChange = (imageIds: string[]) => {
+    updateConfig("target", { type: "image", imageIds });
+  };
+
+  const handleCoordinateChange = (axis: "x" | "y", value: number) => {
+    const newCoords = { ...currentCoords, [axis]: value };
+    updateConfig("target", {
+      type: "coordinates",
+      coordinates: newCoords,
+    });
+  };
+
   return (
     <>
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Target</Label>
-        <Select
-          value={(action.config.target as string) || "Last Find Result"}
-          onValueChange={(value) => updateConfig("target", value)}
-        >
+        <Select value={targetType} onValueChange={handleTargetTypeChange}>
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-[#27272A] border-gray-700">
-            <SelectItem value="Last Find Result">Last Find Result</SelectItem>
-            <SelectItem value="Current Position">Current Position</SelectItem>
-            <SelectItem value="Coordinates">Coordinates</SelectItem>
-            <SelectItem value="StateImage">State Image</SelectItem>
-            <SelectItem value="StateRegion">State Region</SelectItem>
-            <SelectItem value="StateLocation">State Location</SelectItem>
+            <SelectItem value="lastFindResult">Last Find Result</SelectItem>
+            <SelectItem value="currentPosition">Current Position</SelectItem>
+            <SelectItem value="coordinates">Coordinates</SelectItem>
+            <SelectItem value="image">Image</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {action.config.target === "StateImage" && (
+      {targetType === "image" && (
         <div className="space-y-2">
           <Label className="text-xs text-gray-400">Select Images</Label>
           <div className="text-xs text-gray-500 mb-2">
-            This will FIND the selected image(s) and CLICK the last one found.
+            This will FIND the selected image(s) and CLICK the best match found.
             Use the state filter to narrow down images.
           </div>
           <ImageSelector
-            selectedImages={(action.config.imageIds as string[]) || []}
-            onSelectImages={(imageIds) => updateConfig("imageIds", imageIds)}
+            selectedImages={currentImageIds}
+            onSelectImages={handleImageIdsChange}
             multiSelect={true}
             images={images as any[]}
             states={states as any[]}
@@ -63,15 +196,18 @@ export function ClickActionProperties({
         </div>
       )}
 
-      {action.config.target === "Coordinates" && (
+      {targetType === "coordinates" && (
         <>
           <div className="space-y-2">
             <Label className="text-xs text-gray-400">X Coordinate</Label>
             <Input
               type="number"
-              value={(action.config.x as number) || 0}
+              value={currentCoords.x}
               onChange={(e) =>
-                updateConfig("x", Number.parseInt(e.target.value))
+                handleCoordinateChange(
+                  "x",
+                  Number.parseInt(e.target.value) || 0
+                )
               }
               className="bg-transparent border-gray-700"
             />
@@ -80,9 +216,12 @@ export function ClickActionProperties({
             <Label className="text-xs text-gray-400">Y Coordinate</Label>
             <Input
               type="number"
-              value={(action.config.y as number) || 0}
+              value={currentCoords.y}
               onChange={(e) =>
-                updateConfig("y", Number.parseInt(e.target.value))
+                handleCoordinateChange(
+                  "y",
+                  Number.parseInt(e.target.value) || 0
+                )
               }
               className="bg-transparent border-gray-700"
             />
@@ -93,7 +232,7 @@ export function ClickActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Mouse Button</Label>
         <Select
-          value={(action.config.mouseButton as string)}
+          value={action.config.mouseButton as string}
           onValueChange={(value) => updateConfig("mouseButton", value)}
         >
           <SelectTrigger className="bg-transparent border-gray-700">
@@ -112,7 +251,7 @@ export function ClickActionProperties({
         <Input
           type="number"
           min="1"
-          value={(action.config.numberOfClicks as number)}
+          value={action.config.numberOfClicks as number}
           onChange={(e) =>
             updateConfig("numberOfClicks", Number.parseInt(e.target.value))
           }
@@ -125,7 +264,7 @@ export function ClickActionProperties({
         <Input
           type="number"
           min="0"
-          value={(action.config.hold_duration as number)}
+          value={action.config.hold_duration as number}
           onChange={(e) =>
             updateConfig("hold_duration", Number.parseInt(e.target.value))
           }

@@ -644,11 +644,13 @@ function getActionSummary(
           const names: string[] = [];
           for (const imgId of config.imageIds) {
             for (const s of states) {
-              const img = (s as { stateImages?: { id: string; name: string }[] }).stateImages?.find(
-                (si) => si.id === imgId
-              );
+              const img = (
+                s as { stateImages?: { id: string; name: string }[] }
+              ).stateImages?.find((si) => si.id === imgId);
               if (img) {
-                names.push(img.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, ""));
+                names.push(
+                  img.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
+                );
                 break;
               }
             }
@@ -663,8 +665,11 @@ function getActionSummary(
 
         // Legacy: check stateId if imageIds not available
         if (config.stateId) {
-          const state = states.find((s: { id: string }) => s.id === config.stateId);
-          const stateName = (state as { name?: string })?.name || config.stateId;
+          const state = states.find(
+            (s: { id: string }) => s.id === config.stateId
+          );
+          const stateName =
+            (state as { name?: string })?.name || config.stateId;
           return `${button} click on any image from ${stateName}`;
         }
 
@@ -710,7 +715,10 @@ function getActionSummary(
       }
     }
     case "DRAG": {
-      const config = action.config as { source?: unknown; destination?: unknown };
+      const config = action.config as {
+        source?: unknown;
+        destination?: unknown;
+      };
       return `Drag from ${config.source || "source"} to ${config.destination || "destination"}`;
     }
     case "SCROLL": {
@@ -787,7 +795,9 @@ function getActionSummary(
     case "RUN_WORKFLOW": {
       const config = action.config as { workflowId?: string };
       if (config.workflowId) {
-        const workflow = workflows.find((w: unknown) => w.id === config.workflowId);
+        const workflow = workflows.find(
+          (w: unknown) => w.id === config.workflowId
+        );
         return workflow ? workflow.name : config.workflowId;
       }
       return "No workflow selected";
@@ -825,7 +835,11 @@ function getActionSummary(
       }
     }
     case "MOUSE_MOVE": {
-      const config = action.config as { target?: unknown; x?: number; y?: number };
+      const config = action.config as {
+        target?: unknown;
+        x?: number;
+        y?: number;
+      };
       if (config.target === "Coordinates") {
         return `Move mouse to (${config.x}, ${config.y})`;
       }

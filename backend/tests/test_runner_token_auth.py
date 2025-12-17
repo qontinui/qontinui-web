@@ -8,7 +8,6 @@ Tests the complete authentication flow:
 4. Token expiration and revocation
 """
 
-
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

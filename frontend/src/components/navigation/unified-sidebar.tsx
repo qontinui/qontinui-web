@@ -268,6 +268,15 @@ const navItems: NavItem[] = [
         color: "#FF6B6B",
       },
       {
+        id: "rag-testing",
+        label: "RAG Testing",
+        description: "Test RAG element matching with SAM3/CLIP",
+        icon: <Target size={22} />,
+        route: "/automation-builder/rag-testing",
+        color: "#9B59B6",
+        badge: "beta",
+      },
+      {
         id: "workflow-runner",
         label: "Workflow Runner",
         description: "Execute and debug workflows",

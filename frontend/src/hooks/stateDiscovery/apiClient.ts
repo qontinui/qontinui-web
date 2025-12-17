@@ -57,7 +57,10 @@ export class StateDiscoveryAPIClient {
     return data;
   }
 
-  async startAnalysis(uploadId: string, config: AnalysisConfig): Promise<unknown> {
+  async startAnalysis(
+    uploadId: string,
+    config: AnalysisConfig
+  ): Promise<unknown> {
     console.log("[APIClient] Starting analysis:", {
       uploadId,
       config,
@@ -151,7 +154,10 @@ export class StateDiscoveryAPIClient {
     return response.json();
   }
 
-  async bulkDeleteStateImages(ids: string[], options?: unknown): Promise<unknown> {
+  async bulkDeleteStateImages(
+    ids: string[],
+    options?: unknown
+  ): Promise<unknown> {
     console.log("[APIClient] Bulk deleting state images:", {
       count: ids.length,
       options,

@@ -1,5 +1,13 @@
-import React, { useState, useEffect } from "react";
-import { Scissors, ImageIcon, Plus, AlertCircle, Edit } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  Scissors,
+  ImageIcon,
+  Plus,
+  AlertCircle,
+  Edit,
+  Library,
+  Layers,
+} from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
 import { useImageExtractionState } from "@/contexts/tab-state";
 import { ScreenshotPicker } from "../common/ScreenshotPicker";
@@ -15,6 +23,11 @@ import {
 import { prepareStateImageCreation } from "@/lib/state-image-creator";
 import { createImageAsset, findImageByData } from "@/lib/image-library-utils";
 import { toast } from "sonner";
+import type {
+  StateImage,
+  Pattern,
+  SearchRegion,
+} from "@/contexts/automation-context/types";
 
 interface Screenshot {
   id: string;
@@ -24,6 +37,14 @@ interface Screenshot {
 }
 
 type ProcessingMode = "none" | "border" | "background";
+type SaveMode = "createStateImage" | "addPattern" | "libraryOnly";
+
+// Helper to flatten all StateImages with their parent state info
+interface StateImageWithContext {
+  stateImage: StateImage;
+  stateId: string;
+  stateName: string;
+}
 
 export const ImageExtractionTab: React.FC = () => {
   const [currentScreenshot, setCurrentScreenshot] = useState<Screenshot | null>(
@@ -33,10 +54,12 @@ export const ImageExtractionTab: React.FC = () => {
   const [tolerance, setTolerance] = useState(10);
   const [extractedResult, setExtractedResult] =
     useState<ProcessedImageResult | null>(null);
-  const [showStateImageDialog, setShowStateImageDialog] = useState(false);
-  const [stateImageName, setStateImageName] = useState("");
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveMode, setSaveMode] = useState<SaveMode>("createStateImage");
+  const [imageName, setImageName] = useState("");
   const [selectedStateId, setSelectedStateId] = useState<string>("");
   const [newStateName, setNewStateName] = useState("");
+  const [selectedStateImageId, setSelectedStateImageId] = useState<string>("");
   const [fixedLocation, setFixedLocation] = useState(true);
   const [showMaskEditor, setShowMaskEditor] = useState(false);
   const [editingMask, setEditingMask] = useState<{
@@ -54,6 +77,21 @@ export const ImageExtractionTab: React.FC = () => {
   } = useAutomation();
   const { state: persistedState, setState: setPersistedState } =
     useImageExtractionState();
+
+  // Flatten all StateImages with their parent state context for the "Add Pattern" dropdown
+  const allStateImages = useMemo((): StateImageWithContext[] => {
+    const result: StateImageWithContext[] = [];
+    for (const state of states) {
+      for (const stateImage of state.stateImages || []) {
+        result.push({
+          stateImage,
+          stateId: state.id,
+          stateName: state.name,
+        });
+      }
+    }
+    return result;
+  }, [states]);
 
   // Load persisted state on mount
   useEffect(() => {
@@ -193,16 +231,27 @@ export const ImageExtractionTab: React.FC = () => {
     toast.success("Mask updated");
   };
 
-  const handleCreateStateImage = async () => {
-    if (!extractedResult || !stateImageName) {
-      toast.error("Missing required fields");
+  const handleSaveImage = async () => {
+    if (!extractedResult || !imageName) {
+      toast.error("Please enter a name for the image");
       return;
     }
 
-    // Validate new state name when creating a new state
-    if (selectedStateId === "new" && !newStateName.trim()) {
-      toast.error("Please enter a name for the new state");
-      return;
+    // Validate based on save mode
+    if (saveMode === "createStateImage") {
+      if (!selectedStateId) {
+        toast.error("Please select a target state");
+        return;
+      }
+      if (selectedStateId === "new" && !newStateName.trim()) {
+        toast.error("Please enter a name for the new state");
+        return;
+      }
+    } else if (saveMode === "addPattern") {
+      if (!selectedStateImageId) {
+        toast.error("Please select a StateImage to add the pattern to");
+        return;
+      }
     }
 
     try {
@@ -211,65 +260,134 @@ export const ImageExtractionTab: React.FC = () => {
       // Step 1: Add image to library first (or find existing)
       // The library is the source of truth for all image data
       let imageAsset = findImageByData(images, imageData);
+      const isNewImage = !imageAsset;
       if (!imageAsset) {
-        imageAsset = createImageAsset(
-          imageData,
-          stateImageName,
-          "image_extraction"
-        );
+        imageAsset = createImageAsset(imageData, imageName, "image_extraction");
         // Add mask to the image asset if present
         if (extractedResult.mask) {
           imageAsset.mask = extractedResult.mask;
         }
         addImage(imageAsset);
-        toast.success("Added to Image Library");
       }
 
-      // Step 2: Prepare search region if fixed location is enabled
-      // Use the cropped bounds (after border/background removal) rather than original selection
-      const searchRegion =
-        fixedLocation && extractedResult.bounds
-          ? {
-              id: `search_region_${Date.now()}`,
-              name: "Extraction Region",
-              x: extractedResult.bounds.x,
-              y: extractedResult.bounds.y,
-              width: extractedResult.bounds.width,
-              height: extractedResult.bounds.height,
-            }
-          : undefined;
+      // Handle based on save mode
+      if (saveMode === "libraryOnly") {
+        // Just save to library - already done above
+        if (isNewImage) {
+          toast.success("Image saved to library");
+        } else {
+          toast.info("Image already exists in library");
+        }
+      } else if (saveMode === "addPattern") {
+        // Add as a new pattern to existing StateImage
+        const stateImageContext = allStateImages.find(
+          (ctx) => ctx.stateImage.id === selectedStateImageId
+        );
 
-      // Step 3: Create StateImage with imageId referencing the library
-      const result = prepareStateImageCreation(
-        {
-          name: stateImageName,
-          imageId: imageAsset.id, // Reference to library image
-          source: "image-extraction",
+        if (!stateImageContext) {
+          toast.error("Selected StateImage not found");
+          return;
+        }
+
+        // Create search region if fixed location is enabled
+        const searchRegion: SearchRegion | undefined =
+          fixedLocation && extractedResult.bounds
+            ? {
+                id: `search_region_${Date.now()}`,
+                name: "Extraction Region",
+                x: extractedResult.bounds.x,
+                y: extractedResult.bounds.y,
+                width: extractedResult.bounds.width,
+                height: extractedResult.bounds.height,
+              }
+            : undefined;
+
+        // Create new pattern
+        const newPattern: Pattern = {
+          id: `pattern_${Date.now()}`,
+          name: imageName,
+          imageId: imageAsset.id,
+          searchRegions: searchRegion ? [searchRegion] : [],
           fixed: fixedLocation,
-          searchRegion: searchRegion,
-        },
-        selectedStateId,
-        states,
-        newStateName.trim() || undefined
-      );
+        };
 
-      if (result.action === "create-state" && result.targetState) {
-        addState(result.targetState);
-        toast.success(`Created new state: ${result.targetState.name}`);
-      } else if (result.action === "update-state" && result.targetState) {
-        updateState(result.targetState);
-        toast.success(`Added StateImage to ${result.targetState.name}`);
+        // Find the state and update the StateImage with the new pattern
+        const state = states.find((s) => s.id === stateImageContext.stateId);
+        if (state) {
+          const updatedStateImages = state.stateImages.map((si) => {
+            if (si.id === selectedStateImageId) {
+              return {
+                ...si,
+                patterns: [...si.patterns, newPattern],
+              };
+            }
+            return si;
+          });
+
+          updateState({
+            ...state,
+            stateImages: updatedStateImages,
+          });
+
+          if (isNewImage) {
+            toast.success(
+              `Added pattern to ${stateImageContext.stateImage.name} (image saved to library)`
+            );
+          } else {
+            toast.success(
+              `Added pattern to ${stateImageContext.stateImage.name}`
+            );
+          }
+        }
+      } else {
+        // createStateImage mode - original behavior
+        // Prepare search region if fixed location is enabled
+        const searchRegion =
+          fixedLocation && extractedResult.bounds
+            ? {
+                id: `search_region_${Date.now()}`,
+                name: "Extraction Region",
+                x: extractedResult.bounds.x,
+                y: extractedResult.bounds.y,
+                width: extractedResult.bounds.width,
+                height: extractedResult.bounds.height,
+              }
+            : undefined;
+
+        // Create StateImage with imageId referencing the library
+        const result = prepareStateImageCreation(
+          {
+            name: imageName,
+            imageId: imageAsset.id,
+            source: "image-extraction",
+            fixed: fixedLocation,
+            searchRegion: searchRegion,
+          },
+          selectedStateId,
+          states,
+          newStateName.trim() || undefined
+        );
+
+        if (result.action === "create-state" && result.targetState) {
+          addState(result.targetState);
+          toast.success(`Created new state: ${result.targetState.name}`);
+        } else if (result.action === "update-state" && result.targetState) {
+          updateState(result.targetState);
+          toast.success(`Added StateImage to ${result.targetState.name}`);
+        }
       }
 
       // Reset dialog
-      setShowStateImageDialog(false);
-      setStateImageName("");
+      setShowSaveDialog(false);
+      setImageName("");
+      setSaveMode("createStateImage");
       setSelectedStateId("");
       setNewStateName("");
+      setSelectedStateImageId("");
       setExtractedResult(null);
     } catch (error) {
-      console.error("Error creating StateImage:", error);
-      toast.error("Failed to create StateImage");
+      console.error("Error saving image:", error);
+      toast.error("Failed to save image");
     }
   };
 
@@ -289,9 +407,9 @@ export const ImageExtractionTab: React.FC = () => {
         </p>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex">
         {/* Left Panel - Screenshot Info */}
-        <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 flex flex-col overflow-hidden">
+        <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 flex flex-col overflow-y-auto">
           <ScreenshotPicker
             currentScreenshot={
               currentScreenshot
@@ -327,7 +445,7 @@ export const ImageExtractionTab: React.FC = () => {
                 </ol>
               </div>
             }
-            className="flex-1 flex flex-col overflow-hidden"
+            className="flex-1 flex flex-col"
           />
         </div>
 
@@ -567,11 +685,11 @@ export const ImageExtractionTab: React.FC = () => {
                     Edit Mask
                   </button>
                   <button
-                    onClick={() => setShowStateImageDialog(true)}
+                    onClick={() => setShowSaveDialog(true)}
                     className="w-full px-4 py-2.5 bg-[#00FF88] text-black rounded-md hover:bg-[#00FF88]/90 font-medium flex items-center justify-center gap-2"
                   >
                     <Plus className="w-4 h-4" />
-                    Create StateImage
+                    Save Image
                   </button>
                 </div>
               </div>
@@ -592,82 +710,186 @@ export const ImageExtractionTab: React.FC = () => {
         </div>
       </div>
 
-      {/* StateImage Creation Dialog */}
-      {showStateImageDialog && extractedResult && (
+      {/* Save Image Dialog */}
+      {showSaveDialog && extractedResult && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-[#27272A] border border-gray-700 rounded-lg p-6 w-96 max-w-full">
+          <div className="bg-[#27272A] border border-gray-700 rounded-lg p-6 w-[450px] max-w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-white mb-4">
-              Create StateImage
+              Save Extracted Image
             </h3>
 
             <div className="space-y-4">
+              {/* Image Name - always required */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">
-                  StateImage Name
+                  Image Name
                 </label>
                 <input
                   type="text"
-                  value={stateImageName}
-                  onChange={(e) => setStateImageName(e.target.value)}
-                  placeholder="Enter name for the StateImage"
+                  value={imageName}
+                  onChange={(e) => setImageName(e.target.value)}
+                  placeholder="Enter a name for the image"
                   className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
                 />
               </div>
 
+              {/* Save Mode Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Add to State
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Save As
                 </label>
-                <select
-                  value={selectedStateId}
-                  onChange={(e) => setSelectedStateId(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
-                >
-                  <option value="">Select a state...</option>
-                  <option value="new">Create New State</option>
-                  {states.map((state) => (
-                    <option key={state.id} value={state.id}>
-                      {state.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-2">
+                  <label className="flex items-start p-3 bg-[#0A0A0B] border border-gray-700 rounded-md cursor-pointer hover:border-gray-600 transition-colors">
+                    <input
+                      type="radio"
+                      checked={saveMode === "createStateImage"}
+                      onChange={() => setSaveMode("createStateImage")}
+                      className="mt-0.5 mr-3"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Plus className="w-4 h-4 text-[#00FF88]" />
+                        <span className="text-sm font-medium text-white">
+                          Create StateImage
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Create a new StateImage and add it to a state
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start p-3 bg-[#0A0A0B] border border-gray-700 rounded-md cursor-pointer hover:border-gray-600 transition-colors">
+                    <input
+                      type="radio"
+                      checked={saveMode === "addPattern"}
+                      onChange={() => setSaveMode("addPattern")}
+                      className="mt-0.5 mr-3"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-[#BD00FF]" />
+                        <span className="text-sm font-medium text-white">
+                          Add Pattern to StateImage
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Add as a pattern variation to an existing StateImage
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start p-3 bg-[#0A0A0B] border border-gray-700 rounded-md cursor-pointer hover:border-gray-600 transition-colors">
+                    <input
+                      type="radio"
+                      checked={saveMode === "libraryOnly"}
+                      onChange={() => setSaveMode("libraryOnly")}
+                      className="mt-0.5 mr-3"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Library className="w-4 h-4 text-[#00D9FF]" />
+                        <span className="text-sm font-medium text-white">
+                          Save to Library Only
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Save to the image library without creating a StateImage
+                      </p>
+                    </div>
+                  </label>
+                </div>
               </div>
 
-              {selectedStateId === "new" && (
+              {/* Conditional fields based on save mode */}
+              {saveMode === "createStateImage" && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">
+                      Add to State
+                    </label>
+                    <select
+                      value={selectedStateId}
+                      onChange={(e) => setSelectedStateId(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
+                    >
+                      <option value="">Select a state...</option>
+                      <option value="new">Create New State</option>
+                      {states.map((state) => (
+                        <option key={state.id} value={state.id}>
+                          {state.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedStateId === "new" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                        New State Name
+                      </label>
+                      <input
+                        type="text"
+                        value={newStateName}
+                        onChange={(e) => setNewStateName(e.target.value)}
+                        placeholder="Enter name for the new state"
+                        className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {saveMode === "addPattern" && (
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">
-                    New State Name
+                    Add Pattern to StateImage
                   </label>
-                  <input
-                    type="text"
-                    value={newStateName}
-                    onChange={(e) => setNewStateName(e.target.value)}
-                    placeholder="Enter name for the new state"
+                  <select
+                    value={selectedStateImageId}
+                    onChange={(e) => setSelectedStateImageId(e.target.value)}
                     className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
-                  />
+                  >
+                    <option value="">Select a StateImage...</option>
+                    {allStateImages.map((ctx) => (
+                      <option key={ctx.stateImage.id} value={ctx.stateImage.id}>
+                        {ctx.stateImage.name} ({ctx.stateName}) -{" "}
+                        {ctx.stateImage.patterns.length} pattern
+                        {ctx.stateImage.patterns.length !== 1 ? "s" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {allStateImages.length === 0 && (
+                    <p className="text-xs text-amber-500 mt-1">
+                      No StateImages exist yet. Create a StateImage first.
+                    </p>
+                  )}
                 </div>
               )}
 
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="fixed-location"
-                  checked={fixedLocation}
-                  onChange={(e) => setFixedLocation(e.target.checked)}
-                  className="h-4 w-4 text-[#00D9FF] focus:ring-[#00D9FF] border-gray-700 rounded"
-                />
-                <label
-                  htmlFor="fixed-location"
-                  className="ml-2 block text-sm text-gray-300"
-                >
-                  Fixed location pattern (saves extraction region as search
-                  region)
-                </label>
-              </div>
+              {/* Fixed location checkbox - shown for StateImage and Pattern modes */}
+              {saveMode !== "libraryOnly" && (
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="fixed-location"
+                    checked={fixedLocation}
+                    onChange={(e) => setFixedLocation(e.target.checked)}
+                    className="h-4 w-4 text-[#00D9FF] focus:ring-[#00D9FF] border-gray-700 rounded"
+                  />
+                  <label
+                    htmlFor="fixed-location"
+                    className="ml-2 block text-sm text-gray-300"
+                  >
+                    Fixed location (saves extraction region as search region)
+                  </label>
+                </div>
+              )}
 
+              {/* Mask info */}
               {extractedResult.mask && (
                 <div className="text-sm text-[#00D9FF] bg-[#00D9FF]/10 border border-[#00D9FF] p-2 rounded">
-                  Mask will be applied to hide background pixels
+                  Mask will be saved with the image
                 </div>
               )}
             </div>
@@ -675,25 +897,33 @@ export const ImageExtractionTab: React.FC = () => {
             <div className="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => {
-                  setShowStateImageDialog(false);
-                  setStateImageName("");
+                  setShowSaveDialog(false);
+                  setImageName("");
+                  setSaveMode("createStateImage");
                   setSelectedStateId("");
                   setNewStateName("");
+                  setSelectedStateImageId("");
                 }}
                 className="px-4 py-2 text-sm text-gray-300 bg-gray-700 rounded-md hover:bg-gray-600"
               >
                 Cancel
               </button>
               <button
-                onClick={handleCreateStateImage}
+                onClick={handleSaveImage}
                 disabled={
-                  !stateImageName ||
-                  !selectedStateId ||
-                  (selectedStateId === "new" && !newStateName.trim())
+                  !imageName ||
+                  (saveMode === "createStateImage" &&
+                    (!selectedStateId ||
+                      (selectedStateId === "new" && !newStateName.trim()))) ||
+                  (saveMode === "addPattern" && !selectedStateImageId)
                 }
                 className="px-4 py-2 text-sm text-black bg-[#00FF88] rounded-md hover:bg-[#00FF88]/90 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
               >
-                Create StateImage
+                {saveMode === "libraryOnly"
+                  ? "Save to Library"
+                  : saveMode === "addPattern"
+                    ? "Add Pattern"
+                    : "Create StateImage"}
               </button>
             </div>
           </div>

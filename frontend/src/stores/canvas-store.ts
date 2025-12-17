@@ -389,7 +389,9 @@ export const useCanvasStore = create<CanvasStore>()(
 
                 for (const type of Object.keys(sourceConnections)) {
                   if (isValidConnectionType(type)) {
-                    const outputs = (sourceConnections as Record<string, unknown>)[type];
+                    const outputs = (
+                      sourceConnections as Record<string, unknown>
+                    )[type];
                     if (outputs && Array.isArray(outputs)) {
                       const filteredOutputs = outputs.map(
                         (conns: Connection[]) =>
@@ -397,7 +399,8 @@ export const useCanvasStore = create<CanvasStore>()(
                             (conn: Connection) => conn.action !== actionId
                           )
                       );
-                      (sourceConnections as Record<string, unknown>)[type] = filteredOutputs;
+                      (sourceConnections as Record<string, unknown>)[type] =
+                        filteredOutputs;
                     }
                   }
                 }
@@ -435,7 +438,9 @@ export const useCanvasStore = create<CanvasStore>()(
 
                 for (const type of Object.keys(sourceConnections)) {
                   if (isValidConnectionType(type)) {
-                    const outputs = (sourceConnections as Record<string, unknown>)[type];
+                    const outputs = (
+                      sourceConnections as Record<string, unknown>
+                    )[type];
                     if (outputs && Array.isArray(outputs)) {
                       const filteredOutputs = outputs.map(
                         (conns: Connection[]) =>
@@ -443,7 +448,8 @@ export const useCanvasStore = create<CanvasStore>()(
                             (conn: Connection) => !idsSet.has(conn.action)
                           )
                       );
-                      (sourceConnections as Record<string, unknown>)[type] = filteredOutputs;
+                      (sourceConnections as Record<string, unknown>)[type] =
+                        filteredOutputs;
                     }
                   }
                 }
@@ -523,7 +529,9 @@ export const useCanvasStore = create<CanvasStore>()(
                 (sourceConns as Record<string, unknown>)[outputType] = [];
               }
 
-              const outputArray = (sourceConns as Record<string, unknown>)[outputType];
+              const outputArray = (sourceConns as Record<string, unknown>)[
+                outputType
+              ];
               if (!outputArray || !Array.isArray(outputArray)) return;
 
               // Ensure output index array exists
@@ -561,7 +569,9 @@ export const useCanvasStore = create<CanvasStore>()(
                 return;
               }
 
-              const outputs = (sourceConns as Record<string, unknown>)[outputType];
+              const outputs = (sourceConns as Record<string, unknown>)[
+                outputType
+              ];
               if (!outputs || !Array.isArray(outputs)) return;
 
               const targetOutputs = outputs[outputIndex];
@@ -728,12 +738,11 @@ export const useCanvasStore = create<CanvasStore>()(
                   isValidConnectionType(type)
                 ) {
                   (connectionsToCopy[nodeId] as Record<string, unknown>)[type] =
-                    outputs.map(
-                    (outputConns: Connection[]) =>
+                    outputs.map((outputConns: Connection[]) =>
                       outputConns.filter((conn: Connection) =>
                         selectedSet.has(conn.action)
                       )
-                  );
+                    );
                 }
               }
             }

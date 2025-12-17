@@ -976,7 +976,8 @@ export default function AuthenticationArchitectureDiagram() {
                   MEDIUM: Cross-Tab Session Sync
                 </div>
                 <div className="text-muted-foreground">
-                  Logout in one tab doesn&apos;t affect others. Use BroadcastChannel.
+                  Logout in one tab doesn&apos;t affect others. Use
+                  BroadcastChannel.
                 </div>
               </div>
             </div>

@@ -553,7 +553,10 @@ export class ConfigExporter {
 
     // Handle target transformation for MOUSE_MOVE, CLICK, and other actions
     // Convert UI string values like "Last Find Result" to proper target objects
-    if ((config as unknown).target && typeof (config as unknown).target === "string") {
+    if (
+      (config as unknown).target &&
+      typeof (config as unknown).target === "string"
+    ) {
       const targetString = (config as unknown).target;
 
       if (targetString === "Last Find Result") {
@@ -579,7 +582,10 @@ export class ConfigExporter {
 
     // Handle target transformation for the 3 new target types
     // These are likely already objects from the UI, but we ensure proper field mapping
-    if ((config as unknown).target && typeof (config as unknown).target === "object") {
+    if (
+      (config as unknown).target &&
+      typeof (config as unknown).target === "object"
+    ) {
       const target = (config as unknown).target;
 
       // ResultIndexTarget: Target specific match by index
@@ -637,7 +643,19 @@ export class ConfigExporter {
       (state.regions || []).forEach((region) => {
         if (!regionIds.has(region.id)) {
           regionIds.add(region.id);
-          stateRegions.push(region);
+          // Include all region properties including monitors
+          // Note: 'fixed' is not present in source type, only in export schema
+          stateRegions.push({
+            id: region.id,
+            name: region.name,
+            bounds: region.bounds,
+            isSearchRegion: region.isSearchRegion,
+            referenceImageId: region.referenceImageId,
+            position: region.position,
+            offsetX: region.offsetX,
+            offsetY: region.offsetY,
+            monitors: region.monitors,
+          });
         }
       });
 
@@ -645,7 +663,18 @@ export class ConfigExporter {
       (state.locations || []).forEach((location) => {
         if (!locationIds.has(location.id)) {
           locationIds.add(location.id);
-          stateLocations.push(location);
+          // Include all location properties including monitors
+          stateLocations.push({
+            id: location.id,
+            name: location.name,
+            x: location.x,
+            y: location.y,
+            anchor: location.anchor,
+            fixed: location.fixed,
+            referenceImageId: location.referenceImageId,
+            position: location.position,
+            monitors: location.monitors,
+          });
         }
       });
 
@@ -664,6 +693,7 @@ export class ConfigExporter {
                   fixed: true,
                   isSearchRegion: region.type === "SearchRegion",
                   isInteractionRegion: region.type === "StateRegion",
+                  monitors: (region as unknown).monitors,
                 });
               }
             });
@@ -681,6 +711,7 @@ export class ConfigExporter {
                   x: location.x,
                   y: location.y,
                   fixed: true,
+                  monitors: (location as unknown).monitors,
                 });
               }
             });
@@ -731,6 +762,9 @@ export class ConfigExporter {
             source: img.source,
             probability: img.probability,
             searchRegions: img.searchRegions || [],
+            // Include monitors for multi-monitor support
+            monitors: img.monitors,
+            searchMode: img.searchMode,
           });
         }
       });
@@ -741,7 +775,17 @@ export class ConfigExporter {
       (state.strings || []).forEach((str) => {
         if (!stringIds.has(str.id)) {
           stringIds.add(str.id);
-          stateStrings.push(str);
+          // Include all string properties including monitors
+          stateStrings.push({
+            id: str.id,
+            name: str.name,
+            value: str.value,
+            identifier: str.identifier,
+            inputText: str.inputText,
+            expectedText: str.expectedText,
+            regexPattern: str.regexPattern,
+            monitors: str.monitors,
+          });
         }
       });
 
@@ -1122,7 +1166,8 @@ export class ConfigExporter {
       (state.stateImages || []).forEach((stateImage) => {
         (stateImage.patterns || []).forEach((pattern) => {
           // Pattern.imageId contains the image ID reference (updated from pattern.image)
-          const imageRef = (pattern as unknown).imageId || (pattern as unknown).image; // Support both for compatibility
+          const imageRef =
+            (pattern as unknown).imageId || (pattern as unknown).image; // Support both for compatibility
           if (imageRef && !validImageIds.has(imageRef)) {
             const location = `State ${state.name || state.id}: StateImage ${stateImage.name}`;
             errors.push(

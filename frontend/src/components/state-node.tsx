@@ -143,10 +143,7 @@ export function StateNode({
                     ? resolvePatternImage(firstPattern)
                     : null;
                   return (
-                    <div
-                      key={stateImage.id}
-                      className="relative"
-                    >
+                    <div key={stateImage.id} className="relative">
                       <div
                         className="w-12 h-12 rounded flex items-center justify-center relative overflow-hidden"
                         style={{
@@ -178,11 +175,14 @@ export function StateNode({
                           onDragStart={(e) => {
                             e.stopPropagation();
                             // Set drag data for the state machine to handle
-                            e.dataTransfer.setData("application/stateimage-drag", JSON.stringify({
-                              sourceStateId: state.id,
-                              stateImageId: stateImage.id,
-                              stateImageName: stateImage.name,
-                            }));
+                            e.dataTransfer.setData(
+                              "application/stateimage-drag",
+                              JSON.stringify({
+                                sourceStateId: state.id,
+                                stateImageId: stateImage.id,
+                                stateImageName: stateImage.name,
+                              })
+                            );
                             e.dataTransfer.effectAllowed = "link";
                             onStartImageDrag(state.id, stateImage.id);
                           }}

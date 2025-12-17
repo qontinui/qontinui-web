@@ -63,7 +63,7 @@ export default function ExecutionDocPage() {
             <PrerequisiteCard
               icon={<CheckCircle2 className="w-5 h-5 text-purple-600" />}
               title="Prepare Target Application"
-              description="Ensure the application you&apos;re automating is running and in the expected initial state."
+              description="Ensure the application you're automating is running and in the expected initial state."
             />
           </div>
         </section>
@@ -191,7 +191,7 @@ export default function ExecutionDocPage() {
               name="action_delay"
               type="Integer (milliseconds)"
               defaultValue="100"
-              description="Delay between consecutive actions. Increase if UI doesn&apos;t have time to respond between actions."
+              description="Delay between consecutive actions. Increase if UI doesn't have time to respond between actions."
             />
 
             <SettingCard

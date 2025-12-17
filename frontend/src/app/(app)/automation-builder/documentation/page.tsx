@@ -1269,8 +1269,9 @@ export default function DocumentationPage() {
                           No Documentation Yet
                         </h3>
                         <p className="text-gray-400 mb-6">
-                          This workflow doesn&apos;t have documentation yet. Create
-                          documentation to help others understand how it works.
+                          This workflow doesn&apos;t have documentation yet.
+                          Create documentation to help others understand how it
+                          works.
                         </p>
                         <div className="flex gap-3 justify-center">
                           <Button

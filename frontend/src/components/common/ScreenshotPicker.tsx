@@ -33,7 +33,10 @@ const DELAY_OPTIONS = [0, 3, 5, 10];
 /**
  * Get position label based on monitor X coordinate relative to others
  */
-function getPositionLabel(monitor: MonitorInfo, allMonitors: MonitorInfo[]): string {
+function getPositionLabel(
+  monitor: MonitorInfo,
+  allMonitors: MonitorInfo[]
+): string {
   if (allMonitors.length === 1) return "";
 
   const sorted = [...allMonitors].sort((a, b) => a.x - b.x);
@@ -79,6 +82,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const screenshotSelectorTriggerRef = useRef<HTMLButtonElement>(null);
   const monitorMenuRef = useRef<HTMLDivElement>(null);
+  const captureButtonRef = useRef<HTMLButtonElement>(null);
 
   const [isCapturing, setIsCapturing] = useState(false);
   const [showMonitorMenu, setShowMonitorMenu] = useState(false);
@@ -86,15 +90,21 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
   const [selectedMonitors, setSelectedMonitors] = useState<number[]>([]);
   const [captureDelay, setCaptureDelay] = useState<number>(0); // Delay in seconds
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
 
   // Close monitor menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        monitorMenuRef.current &&
-        !monitorMenuRef.current.contains(event.target as Node)
-      ) {
+      const target = event.target as Node;
+      const isInsideMenu = monitorMenuRef.current?.contains(target);
+      const isInsideButton = captureButtonRef.current?.contains(target);
+
+      if (!isInsideMenu && !isInsideButton) {
         setShowMonitorMenu(false);
+        setMenuPosition(null);
       }
     };
 
@@ -119,6 +129,14 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
   };
 
   const handleOpenMonitorMenu = async () => {
+    // Calculate position for fixed dropdown
+    if (captureButtonRef.current) {
+      const rect = captureButtonRef.current.getBoundingClientRect();
+      setMenuPosition({
+        top: rect.bottom + 8, // 8px gap below button
+        left: rect.left,
+      });
+    }
     setShowMonitorMenu(true);
     try {
       const apiUrl =
@@ -132,11 +150,15 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
           y: m.y ?? 0,
         }));
         // Sort by x position (left to right)
-        const sortedMonitors = [...monitors].sort((a: MonitorInfo, b: MonitorInfo) => a.x - b.x);
+        const sortedMonitors = [...monitors].sort(
+          (a: MonitorInfo, b: MonitorInfo) => a.x - b.x
+        );
         setAvailableMonitors(sortedMonitors);
         // Default select the primary monitor if nothing selected
         if (selectedMonitors.length === 0) {
-          const primaryMonitor = sortedMonitors.find((m: MonitorInfo) => m.is_primary);
+          const primaryMonitor = sortedMonitors.find(
+            (m: MonitorInfo) => m.is_primary
+          );
           if (primaryMonitor) {
             setSelectedMonitors([primaryMonitor.index]);
           } else if (sortedMonitors.length > 0) {
@@ -181,6 +203,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
     }
 
     setShowMonitorMenu(false);
+    setMenuPosition(null);
     setIsCapturing(true);
 
     try {
@@ -239,7 +262,8 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
       console.error("Screenshot capture failed:", error);
       toast.error("Failed to capture screenshot", {
         description:
-          (error as Error).message || "Make sure qontinui-api is running on port 8001",
+          (error as Error).message ||
+          "Make sure qontinui-api is running on port 8001",
       });
     } finally {
       setIsCapturing(false);
@@ -269,8 +293,9 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
 
           {/* Capture from Screen button */}
           {enableCapture && (
-            <div className="relative" ref={monitorMenuRef}>
+            <div className="relative">
               <button
+                ref={captureButtonRef}
                 onClick={handleOpenMonitorMenu}
                 disabled={isCapturing}
                 className="w-full px-3 py-2 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 text-sm flex items-center justify-center gap-2 font-medium disabled:opacity-50"
@@ -290,8 +315,12 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                 )}
               </button>
 
-              {showMonitorMenu && (
-                <div className="absolute left-0 mt-2 bg-[#27272A] rounded-lg shadow-lg z-50 border border-gray-700 p-3 min-w-full w-max">
+              {showMonitorMenu && menuPosition && (
+                <div
+                  ref={monitorMenuRef}
+                  className="fixed bg-[#27272A] rounded-lg shadow-lg z-50 border border-gray-700 p-3"
+                  style={{ top: menuPosition.top, left: menuPosition.left }}
+                >
                   {/* Delay buttons */}
                   <div className="mb-3">
                     <label className="text-xs text-gray-400 block mb-2">
@@ -327,8 +356,13 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                     ) : (
                       <div className="flex gap-2">
                         {availableMonitors.map((monitor) => {
-                          const isSelected = selectedMonitors.includes(monitor.index);
-                          const position = getPositionLabel(monitor, availableMonitors);
+                          const isSelected = selectedMonitors.includes(
+                            monitor.index
+                          );
+                          const position = getPositionLabel(
+                            monitor,
+                            availableMonitors
+                          );
 
                           return (
                             <button
@@ -342,15 +376,23 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                             >
                               <div className="flex items-center gap-1">
                                 <Monitor className="w-4 h-4" />
-                                <span className="font-medium text-sm">#{monitor.index}</span>
-                                {isSelected && <Check className="w-3 h-3 text-[#BD00FF]" />}
+                                <span className="font-medium text-sm">
+                                  #{monitor.index}
+                                </span>
+                                {isSelected && (
+                                  <Check className="w-3 h-3 text-[#BD00FF]" />
+                                )}
                               </div>
                               <div className="text-xs text-gray-400 space-y-0.5 text-center">
                                 {monitor.is_primary && (
-                                  <div className="text-[#00FF88] font-medium">Primary</div>
+                                  <div className="text-[#00FF88] font-medium">
+                                    Primary
+                                  </div>
                                 )}
                                 {position && <div>{position}</div>}
-                                <div>{monitor.width}×{monitor.height}</div>
+                                <div>
+                                  {monitor.width}×{monitor.height}
+                                </div>
                               </div>
                             </button>
                           );
@@ -361,7 +403,8 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                           <button
                             onClick={handleSelectAllMonitors}
                             className={`flex flex-col items-center justify-center gap-1 p-2 rounded-lg border transition-all min-w-[80px] ${
-                              selectedMonitors.length === availableMonitors.length
+                              selectedMonitors.length ===
+                              availableMonitors.length
                                 ? "bg-[#BD00FF]/20 border-[#BD00FF] text-[#BD00FF] ring-2 ring-[#BD00FF]/30"
                                 : "bg-gray-800 border-gray-600 text-gray-300 hover:border-[#BD00FF]/50 hover:bg-gray-700"
                             }`}
@@ -369,7 +412,8 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                             <div className="flex items-center gap-1">
                               <Monitor className="w-4 h-4" />
                               <span className="font-medium text-sm">All</span>
-                              {selectedMonitors.length === availableMonitors.length && (
+                              {selectedMonitors.length ===
+                                availableMonitors.length && (
                                 <Check className="w-3 h-3 text-[#BD00FF]" />
                               )}
                             </div>
@@ -389,7 +433,10 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                     className="w-full px-3 py-2 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     <Camera className="w-4 h-4" />
-                    Capture {selectedMonitors.length > 1 ? `${selectedMonitors.length} Monitors` : "Screen"}
+                    Capture{" "}
+                    {selectedMonitors.length > 1
+                      ? `${selectedMonitors.length} Monitors`
+                      : "Screen"}
                     {captureDelay > 0 && ` (${captureDelay}s delay)`}
                   </button>
                 </div>

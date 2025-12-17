@@ -113,7 +113,11 @@ export function usePropertyAdapter(actionId: string): PropertyAdapterResult {
    * Update config handler - called by action-properties components
    */
   const updateConfig = useCallback(
-    (key: string, value: unknown, additionalUpdates?: Record<string, unknown>) => {
+    (
+      key: string,
+      value: unknown,
+      additionalUpdates?: Record<string, unknown>
+    ) => {
       if (!canvasAction) return;
 
       const oldValue = (canvasAction.config as unknown)[key];

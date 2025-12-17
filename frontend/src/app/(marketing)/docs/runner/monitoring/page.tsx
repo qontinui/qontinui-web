@@ -178,7 +178,7 @@ export default function MonitoringDocPage() {
               color="text-yellow-600"
               bgColor="bg-yellow-50"
               borderColor="border-yellow-200"
-              description="Warning conditions that don&apos;t prevent execution"
+              description="Warning conditions that don't prevent execution"
               examples={[
                 "Image recognition below threshold",
                 "Retry attempts for failed actions",
@@ -384,7 +384,7 @@ export default function MonitoringDocPage() {
 
             <DebuggingTip
               title="Compare successful vs failed runs"
-              description="If an automation works sometimes and fails other times, compare logs from both scenarios to identify what&apos;s different."
+              description="If an automation works sometimes and fails other times, compare logs from both scenarios to identify what's different."
             />
 
             <DebuggingTip
@@ -512,7 +512,7 @@ export default function MonitoringDocPage() {
 
             <LogPatternCard
               pattern="Failed to parse executor message"
-              meaning="Rust couldn&apos;t parse JSON from Python stdout"
+              meaning="Rust couldn't parse JSON from Python stdout"
               solutions={[
                 "Check for Python print statements (use stderr instead)",
                 "Verify Python is outputting valid JSON",

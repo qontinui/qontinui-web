@@ -129,6 +129,23 @@ export function useProjectLoader(): UseProjectLoaderResult {
           // Still mark as loaded in ref to prevent future redundant checks
           loadedProjectIdRef.current = urlProjectId;
           setProjectId(urlProjectId);
+
+          // IMPORTANT: Ensure Zustand store is synced with context data
+          // This is needed because components like StateStructure use useStates()
+          // which reads from Zustand, not from the React Context
+          const zustandStore = useAutomationStore.getState();
+          const zustandStates = zustandStore.states;
+          if (zustandStates.length === 0 && states.length > 0) {
+            projectLogger.debug(
+              "ProjectLoader",
+              "Syncing context data to Zustand store",
+              { stateCount: states.length, workflowCount: workflows.length }
+            );
+            zustandStore.loadConfiguration({
+              workflows,
+              states,
+            });
+          }
           return;
         }
       }
@@ -227,14 +244,17 @@ export function useProjectLoader(): UseProjectLoaderResult {
         // Pass project ID as string - backend accepts both UUID and numeric IDs
         const project = await projectService.getProject(urlProjectId);
 
-        const config = project.configuration as {
-          workflows?: unknown[];
-          states?: unknown[];
-          transitions?: unknown[];
-          images?: unknown[];
-          categories?: string[];
-          settings?: unknown;
-        } | null | undefined;
+        const config = project.configuration as
+          | {
+              workflows?: unknown[];
+              states?: unknown[];
+              transitions?: unknown[];
+              images?: unknown[];
+              categories?: string[];
+              settings?: unknown;
+            }
+          | null
+          | undefined;
 
         projectLogger.projectLoader("Received project from backend", {
           projectId: project.id,
@@ -270,9 +290,12 @@ export function useProjectLoader(): UseProjectLoaderResult {
           settings: config?.settings,
         });
 
-        projectLogger.configLoader("loadConfiguration completed (both stores)", {
-          projectName: project.name,
-        });
+        projectLogger.configLoader(
+          "loadConfiguration completed (both stores)",
+          {
+            projectName: project.name,
+          }
+        );
 
         // Update project metadata
         setProjectName(project.name);
@@ -329,9 +352,12 @@ export function useProjectLoader(): UseProjectLoaderResult {
     } else if (contextProjectId) {
       // URL has no project ID, but context has one (from localStorage)
       // Load that project instead of resetting
-      projectLogger.urlHandler("No project ID in URL, using context project ID", {
-        contextProjectId,
-      });
+      projectLogger.urlHandler(
+        "No project ID in URL, using context project ID",
+        {
+          contextProjectId,
+        }
+      );
       loadProject(contextProjectId);
     }
     // Note: If neither URL nor context has a project ID, we don't reset anything.

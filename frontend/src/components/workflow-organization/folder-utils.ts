@@ -312,7 +312,9 @@ export function getFolderStats(
 
   const emptyFolders = folders.filter((f) => {
     const hasChildren = folders.some((child) => child.parentId === f.id);
-    const hasWorkflows = workflows.some((w) => (w as unknown).folderId === f.id);
+    const hasWorkflows = workflows.some(
+      (w) => (w as unknown).folderId === f.id
+    );
     return !hasChildren && !hasWorkflows;
   }).length;
 

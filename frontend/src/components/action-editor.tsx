@@ -626,7 +626,11 @@ function getActionSummary(
       // Handle StateImage target - show image names instead of "StateImage"
       if (action.config.target === "StateImage") {
         const clickImageIds = action.config.imageIds;
-        if (clickImageIds && Array.isArray(clickImageIds) && clickImageIds.length > 0) {
+        if (
+          clickImageIds &&
+          Array.isArray(clickImageIds) &&
+          clickImageIds.length > 0
+        ) {
           const names: string[] = [];
           for (const id of clickImageIds) {
             // Look for StateImage across all states

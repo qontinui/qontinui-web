@@ -68,7 +68,10 @@ const getActionIcon = (actionType: string) => {
 };
 
 // Helper to resolve TYPE action text from StateStrings
-const getTypeActionText = (action: Action, states: unknown[]): string | null => {
+const getTypeActionText = (
+  action: Action,
+  states: unknown[]
+): string | null => {
   if (action.type !== "TYPE") return null;
 
   const typeConfig = action.config as unknown;

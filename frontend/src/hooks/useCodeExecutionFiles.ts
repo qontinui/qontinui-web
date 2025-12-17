@@ -98,7 +98,8 @@ export function useCodeExecutionFiles(
       setError(null);
     } catch (err: unknown) {
       console.error("[useCodeExecutionFiles] Error fetching files:", err);
-      const errorMessage = err instanceof Error ? err.message : "Failed to load Python files";
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to load Python files";
       setError(errorMessage);
       setFiles([]);
     } finally {
@@ -152,7 +153,8 @@ export function useCodeExecutionFiles(
         return data;
       } catch (err: unknown) {
         console.error("[useCodeExecutionFiles] Error validating file:", err);
-        const errorMessage = err instanceof Error ? err.message : "Validation error";
+        const errorMessage =
+          err instanceof Error ? err.message : "Validation error";
         return {
           valid: false,
           path: filePath,

@@ -167,8 +167,5 @@ export function CollapsedMenuPopover({
     </>
   );
 
-  console.log("[POPOVER] Creating portal to document.body");
-  const portal = createPortal(popoverContent, document.body);
-  console.log("[POPOVER] Portal created:", portal);
-  return portal;
+  return createPortal(popoverContent, document.body);
 }

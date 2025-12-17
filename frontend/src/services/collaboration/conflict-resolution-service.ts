@@ -260,10 +260,7 @@ export class ConflictDetector {
       ])
     );
     const baseMap = new Map(
-      base.map((item) => [
-        (item as Record<string, unknown>).id as string,
-        item,
-      ])
+      base.map((item) => [(item as Record<string, unknown>).id as string, item])
     );
 
     // Get all IDs
@@ -563,7 +560,11 @@ export class ConflictDetector {
   /**
    * Apply resolution to merged version
    */
-  private applyResolution(target: unknown, path: string[], value: unknown): void {
+  private applyResolution(
+    target: unknown,
+    path: string[],
+    value: unknown
+  ): void {
     if (path.length === 0) return;
 
     let current: unknown = target;

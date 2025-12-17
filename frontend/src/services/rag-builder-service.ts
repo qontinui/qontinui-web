@@ -1,5 +1,6 @@
 import { HttpClient } from "./http-client";
 import type { RAGElement, RAGElementFormData } from "@/types/rag-builder";
+import type { RAGFindRequest, RAGFindResponse } from "@/types/rag-testing";
 
 /**
  * RAG Builder Service
@@ -432,6 +433,34 @@ export class RAGBuilderService {
 
     if (!response.ok) {
       throw new Error(`Failed to import project: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // ==========================================================================
+  // RAG Find (Testing)
+  // ==========================================================================
+
+  /**
+   * Find RAG elements in a screenshot using SAM3 segmentation
+   *
+   * This endpoint segments the screenshot, vectorizes each segment with CLIP,
+   * and matches against indexed element embeddings.
+   */
+  async findElements(
+    projectId: string,
+    request: RAGFindRequest
+  ): Promise<RAGFindResponse> {
+    const url = `${this.apiUrl}/api/rag/projects/${projectId}/find`;
+    const response = await this.httpClient.fetch(url, {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Failed to find elements: ${JSON.stringify(errorData)}`);
     }
 
     return response.json();

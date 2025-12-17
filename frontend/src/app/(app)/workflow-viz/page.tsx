@@ -98,7 +98,9 @@ export default function WorkflowVisualizationPage() {
         // Extract unique project names
         const projectNames = Array.from(
           new Set([
-            ...loadedWorkflows.map((w: unknown) => w.projectName).filter(Boolean),
+            ...loadedWorkflows
+              .map((w: unknown) => w.projectName)
+              .filter(Boolean),
             ...loadedStates.map((s) => s.projectName).filter(Boolean),
           ])
         ) as string[];

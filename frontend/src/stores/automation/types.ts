@@ -79,10 +79,7 @@ export type {
 };
 
 // Re-export enums (need value export, not just type)
-export {
-  MatchingStrategy,
-  OCRMatchMode,
-} from "@/types/rag-builder";
+export { MatchingStrategy, OCRMatchMode } from "@/types/rag-builder";
 
 // ============================================================================
 // Slice Interfaces

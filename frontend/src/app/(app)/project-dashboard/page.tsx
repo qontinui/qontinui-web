@@ -1584,7 +1584,15 @@ function ExportImportPanel() {
 // ============================================================================
 
 // Treemap content renderer
-const TreemapContent = ({ x, y, width, height, index, name, count }: unknown) => {
+const TreemapContent = ({
+  x,
+  y,
+  width,
+  height,
+  index,
+  name,
+  count,
+}: unknown) => {
   if (!x || !y || !width || !height) return null;
   const colors = [
     "#00D9FF",

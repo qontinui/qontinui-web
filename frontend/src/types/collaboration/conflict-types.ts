@@ -559,7 +559,9 @@ export interface ConflictDetectorConfig {
   minimumSeverity: ConflictSeverity;
 
   /** Custom conflict detection rules */
-  customRules?: Array<(local: unknown, remote: unknown, base: unknown) => Conflict | null>;
+  customRules?: Array<
+    (local: unknown, remote: unknown, base: unknown) => Conflict | null
+  >;
 }
 
 /**

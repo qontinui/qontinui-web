@@ -34,6 +34,7 @@ import ProjectScreenshotSelector from "./ProjectScreenshotSelector";
 import SnapshotScreenshotSelector from "./SnapshotScreenshotSelector";
 import { DirectPatternCreation } from "./DirectPatternCreation";
 import { AutoPatternExtraction } from "./AutoPatternExtraction";
+import { MonitorSelector } from "@/components/monitor-selector";
 
 interface ScreenshotUploaderProps {
   onUpload: (files: File[]) => void;
@@ -65,6 +66,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   } | null>(null);
   const [stateFilter, setStateFilter] = useState<string[]>([]);
   const { availableStates, loading: statesLoading } = useAvailableStates();
+  const [selectedMonitors, setSelectedMonitors] = useState<number[]>([0]); // Default to primary monitor
 
   // Load project screenshot hashes on mount
   useEffect(() => {
@@ -239,7 +241,8 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       screenshots.forEach((file) => {
         formData.append("files", file);
       });
-
+      // Add monitors metadata
+      formData.append("monitors", JSON.stringify(selectedMonitors));
       // Use default project ID for now
       const projectId = "default";
 
@@ -276,7 +279,9 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         );
         if (hashResponse.ok) {
           const hashData = await hashResponse.json();
-          const updatedHashes = hashData.screenshots.map((s: unknown) => s.hash);
+          const updatedHashes = hashData.screenshots.map(
+            (s: unknown) => s.hash
+          );
           setProjectHashes(updatedHashes);
         }
       }
@@ -534,6 +539,18 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
             <AutoPatternExtraction />
           </TabsContent>
         </Tabs>
+
+        {/* Monitor Selection */}
+        {screenshots.length > 0 && (
+          <div className="mt-4">
+            <MonitorSelector
+              monitors={selectedMonitors}
+              onChange={setSelectedMonitors}
+              label="Screenshot Monitors"
+              showLabel={true}
+            />
+          </div>
+        )}
 
         {/* Save to Project Button */}
         {screenshots.length > 0 && (

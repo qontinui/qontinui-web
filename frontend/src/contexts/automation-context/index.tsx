@@ -96,7 +96,9 @@ function migrateWorkflows(workflows: Workflow[]): Workflow[] {
 
         // Migrate processRepetition to repetition
         if ((config as unknown).processRepetition) {
-          (config as unknown).repetition = (config as unknown).processRepetition;
+          (config as unknown).repetition = (
+            config as unknown
+          ).processRepetition;
           delete (config as unknown).processRepetition;
         }
 
@@ -667,13 +669,30 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setImages(allImages);
       setScreenshots(loadedScreenshots);
 
+      // Also sync to Zustand store for UI components that read from there
+      // (StateStructure, etc. use useStates() which reads from Zustand, not Context)
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.loadConfiguration({
+        name: currentProjectName,
+        workflows: migratedWorkflows,
+        states: migratedStates,
+        transitions: migratedTransitions,
+        images: allImages,
+        screenshots: loadedScreenshots,
+      });
+
       // Extract unique categories from loaded workflows, always including Main and transition categories
       const workflowCategories = loadedWorkflows
         .map((w) => w.category)
         .filter((cat): cat is string => cat != null && cat !== "");
 
       const uniqueCategories = Array.from(
-        new Set(["Main", "Incoming Transitions", "Outgoing Transitions", ...workflowCategories])
+        new Set([
+          "Main",
+          "Incoming Transitions",
+          "Outgoing Transitions",
+          ...workflowCategories,
+        ])
       );
       setCategories(uniqueCategories);
 
@@ -810,6 +829,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setStates((prev) =>
         StateManager.updateStateWithIdChange(prev, oldId, newState)
       );
+      // Also sync to Zustand store
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.updateStateWithIdChange(oldId, newState);
     },
     []
   );
@@ -821,6 +843,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     setTransitions((prev) =>
       TransitionManager.removeStateFromTransitions(prev, stateId)
     );
+    // Also sync to Zustand store
+    const zustandStore = useAutomationStore.getState();
+    zustandStore.deleteState(stateId);
   }, []);
 
   // Transition management functions
@@ -840,6 +865,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setTransitions((prev) =>
         TransitionManager.addTransition(prev, transitionWithProject)
       );
+
+      // Also sync to Zustand store so UI components see the new transition
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.addTransition(transitionWithProject);
     },
     [projectName]
   );
@@ -849,6 +878,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     setTransitions((prev) =>
       TransitionManager.updateTransition(prev, transition)
     );
+
+    // Also sync to Zustand store so UI components see the update
+    const zustandStore = useAutomationStore.getState();
+    zustandStore.updateTransition(transition);
   }, []);
 
   const deleteTransition = useCallback(async (transitionId: string) => {
@@ -856,6 +889,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     setTransitions((prev) =>
       TransitionManager.deleteTransition(prev, transitionId)
     );
+
+    // Also sync to Zustand store so UI components see the deletion
+    const zustandStore = useAutomationStore.getState();
+    zustandStore.deleteTransition(transitionId);
   }, []);
 
   // Image management functions
@@ -1262,7 +1299,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
   const deleteCategory = useCallback((category: string) => {
     // Protect Main and transition categories from deletion
-    const protectedCategories = ["Main", "Incoming Transitions", "Outgoing Transitions"];
+    const protectedCategories = [
+      "Main",
+      "Incoming Transitions",
+      "Outgoing Transitions",
+    ];
     if (protectedCategories.includes(category)) {
       console.warn(`Cannot delete protected category: ${category}`);
       return;
@@ -1560,11 +1601,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
             );
           }
         } catch (error) {
-          projectLogger.error(
-            "configLoader",
-            "Failed to load from IndexedDB",
-            { error: error instanceof Error ? error.message : "Unknown error" }
-          );
+          projectLogger.error("configLoader", "Failed to load from IndexedDB", {
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
         }
 
         return;
@@ -1587,9 +1626,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       if (typeof window !== "undefined" && newProjectName) {
         const saveTimeKey = `qontinui-local-save-time:${newProjectName}`;
         localStorage.removeItem(saveTimeKey);
-        projectLogger.configLoader("Cleared local save timestamp for new load", {
-          projectName: newProjectName,
-        });
+        projectLogger.configLoader(
+          "Cleared local save timestamp for new load",
+          {
+            projectName: newProjectName,
+          }
+        );
       }
 
       // Clear existing data for the old project from IndexedDB
@@ -1730,7 +1772,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
       if (config.categories && Array.isArray(config.categories)) {
         const uniqueCategories = Array.from(
-          new Set(["Main", "Incoming Transitions", "Outgoing Transitions", ...config.categories])
+          new Set([
+            "Main",
+            "Incoming Transitions",
+            "Outgoing Transitions",
+            ...config.categories,
+          ])
         );
         setCategories(uniqueCategories);
         projectLogger.configLoader("Categories set", {

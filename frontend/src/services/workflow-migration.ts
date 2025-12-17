@@ -52,7 +52,10 @@ export function detectWorkflowVersion(data: unknown): string {
     return "1.0.0"; // Current format
   }
 
-  if (workflowData.format === "sequential" || (!workflowData.format && workflowData.actions)) {
+  if (
+    workflowData.format === "sequential" ||
+    (!workflowData.format && workflowData.actions)
+  ) {
     return "0.9.0"; // Legacy sequential format
   }
 
@@ -144,7 +147,10 @@ export function migrateWorkflow(
     ...currentData,
     version: toVersion,
     metadata: {
-      ...(typeof currentData.metadata === 'object' && currentData.metadata !== null ? currentData.metadata as Record<string, unknown> : {}),
+      ...(typeof currentData.metadata === "object" &&
+      currentData.metadata !== null
+        ? (currentData.metadata as Record<string, unknown>)
+        : {}),
       migratedFrom: fromVersion,
       migratedTo: toVersion,
       migrationDate: new Date().toISOString(),
@@ -239,7 +245,9 @@ function migrateV05ToV09(
     });
   }
 
-  warnings.push(`Converted ${(workflow.actions as unknown[]).length} nodes to actions`);
+  warnings.push(
+    `Converted ${(workflow.actions as unknown[]).length} nodes to actions`
+  );
   warnings.push(
     "Note: Edge information was discarded (not supported in sequential format)"
   );
@@ -279,16 +287,18 @@ function migrateV09ToV10(
 
   // Convert actions and add positions
   if (sourceData.actions && Array.isArray(sourceData.actions)) {
-    workflow.actions = sourceData.actions.map((action: unknown, index: number) => {
-      const actionData = action as Record<string, unknown>;
-      const x = 100 + (index % 4) * 300;
-      const y = 100 + Math.floor(index / 4) * 200;
+    workflow.actions = sourceData.actions.map(
+      (action: unknown, index: number) => {
+        const actionData = action as Record<string, unknown>;
+        const x = 100 + (index % 4) * 300;
+        const y = 100 + Math.floor(index / 4) * 200;
 
-      return {
-        ...actionData,
-        position: [x, y] as [number, number],
-      } as any;
-    });
+        return {
+          ...actionData,
+          position: [x, y] as [number, number],
+        } as any;
+      }
+    );
 
     // Create sequential connections
     for (let i = 0; i < workflow.actions.length - 1; i++) {

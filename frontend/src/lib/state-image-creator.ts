@@ -10,6 +10,7 @@ export interface StateImageCreationOptions {
   source: string; // Source identifier (e.g., 'pattern-optimization', 'image-extraction')
   fixed?: boolean;
   searchRegion?: SearchRegion; // Optional search region to add to the pattern
+  monitors?: number[]; // Monitor indices where this image should be searched (from screenshot capture)
 }
 
 export interface StateImageCreationResult {
@@ -25,7 +26,14 @@ export interface StateImageCreationResult {
 export function createStateImage(
   options: StateImageCreationOptions
 ): StateImage {
-  const { name, imageId, source, fixed = false, searchRegion } = options;
+  const {
+    name,
+    imageId,
+    source,
+    fixed = false,
+    searchRegion,
+    monitors,
+  } = options;
 
   // Create the pattern with search regions - imageId references library
   const searchRegions = searchRegion ? [searchRegion] : [];
@@ -44,6 +52,8 @@ export function createStateImage(
     patterns: [pattern],
     shared: false,
     source: source as "upload" | "pattern-optimization" | undefined,
+    // Set monitors from screenshot capture (defaults to primary monitor if not specified)
+    monitors: monitors ?? [0],
   };
 }
 

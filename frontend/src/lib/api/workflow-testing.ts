@@ -192,7 +192,8 @@ async function executeWorkflowWithInputs(
 
   return {
     variables: { ...inputs, result: "simulated_execution" },
-    executionPath: workflow.actions?.slice(0, 3).map((a: unknown) => a.id) || [],
+    executionPath:
+      workflow.actions?.slice(0, 3).map((a: unknown) => a.id) || [],
     activeStates: [],
     actionsExecuted: Math.min(3, workflow.actions?.length || 0),
   };

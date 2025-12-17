@@ -1889,7 +1889,8 @@ export function StatePropertiesPanel({
 
                 const isExpanded = expandedTransitionId === transition.id;
                 const categoryFilter =
-                  workflowCategoryFilters[transition.id] || "Incoming Transitions";
+                  workflowCategoryFilters[transition.id] ||
+                  "Incoming Transitions";
                 const availableWorkflows = workflows.filter((w) => {
                   const category = w.category || "Main";
                   const matchesCategory =
@@ -2064,7 +2065,11 @@ export function StatePropertiesPanel({
                                 )
                               )
                                 .filter(
-                                  (c) => c !== "Main" && c !== "Transitions" && c !== "Incoming Transitions" && c !== "Outgoing Transitions"
+                                  (c) =>
+                                    c !== "Main" &&
+                                    c !== "Transitions" &&
+                                    c !== "Incoming Transitions" &&
+                                    c !== "Outgoing Transitions"
                                 )
                                 .map((category) => (
                                   <SelectItem key={category} value={category}>

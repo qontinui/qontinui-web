@@ -1,6 +1,5 @@
 """Tests for JSON configuration validator."""
 
-
 from app.services.json_validator import JSONConfigValidator
 
 

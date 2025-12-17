@@ -530,9 +530,12 @@ export class BackendAPI {
       params.set("limit", limit.toString());
     }
 
-    const response = await this.request<unknown[]>(`/api/executions?${params}`, {
-      method: "GET",
-    });
+    const response = await this.request<unknown[]>(
+      `/api/executions?${params}`,
+      {
+        method: "GET",
+      }
+    );
 
     return response.map((record) => {
       const r = record as Record<string, unknown>;

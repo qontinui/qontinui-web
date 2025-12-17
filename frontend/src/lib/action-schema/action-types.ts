@@ -551,7 +551,10 @@ export const MULTI_OUTPUT_ACTIONS = {
 /**
  * Get the number of outputs for a given action type
  */
-export function getActionOutputCount(actionType: string, config?: unknown): number {
+export function getActionOutputCount(
+  actionType: string,
+  config?: unknown
+): number {
   if (actionType === "IF" || actionType === "TRY_CATCH") {
     return MULTI_OUTPUT_ACTIONS[actionType];
   }

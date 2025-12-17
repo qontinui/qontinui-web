@@ -176,6 +176,7 @@ export function DirectPatternCreation() {
             ? currentScreenshot.active_states
             : ["default"],
         timestamp: new Date().toISOString(),
+        monitors: currentScreenshot.monitors || [0], // Inherit from screenshot or default to primary
       };
 
       setExtractedPatterns((prev) => [...prev, pattern]);
@@ -233,6 +234,7 @@ export function DirectPatternCreation() {
             usageCount: 0,
             usage: [],
             source: "image_extraction" as const,
+            monitors: pattern.monitors || [0], // Inherit from pattern
           };
 
           // Add to automation context (this updates the library)

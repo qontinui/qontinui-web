@@ -135,7 +135,9 @@ export class StateDiscoveryWebSocketManager {
       case "error":
         console.error("[WebSocketManager] Error message:", typedMessage.data);
         if (this.callbacks.onError) {
-          const errorData = typedMessage.data as { message?: string } | undefined;
+          const errorData = typedMessage.data as
+            | { message?: string }
+            | undefined;
           this.callbacks.onError(errorData?.message || "Unknown error");
         }
         break;
@@ -145,7 +147,10 @@ export class StateDiscoveryWebSocketManager {
         break;
 
       default:
-        console.log("[WebSocketManager] Unhandled message type:", typedMessage.type);
+        console.log(
+          "[WebSocketManager] Unhandled message type:",
+          typedMessage.type
+        );
         break;
     }
   }

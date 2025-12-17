@@ -25,6 +25,9 @@ class ExportImportService:
         """
         Export a project configuration to standardized JSON format.
 
+        Note: RAG embeddings are computed by the runner when the config is loaded,
+        not during export. The runner will send embedding results back to the web.
+
         Args:
             project: The project to export
             user: The user performing the export (for metadata)

@@ -267,7 +267,8 @@ export function TestCaseEditor({
       const result = await runWorkflowTest(testCaseData, workflow, projectId);
 
       // Store result in test case metadata
-      const existingResults = (testCase?.metadata?.testResults as unknown[]) || [];
+      const existingResults =
+        (testCase?.metadata?.testResults as unknown[]) || [];
       const updatedResults = [result, ...existingResults].slice(0, 100); // Keep last 100 results
 
       // Update test case with result
@@ -357,9 +358,12 @@ export function TestCaseEditor({
     });
   }, []);
 
-  const addExpectedVariable = React.useCallback((key: string, value: unknown) => {
-    setExpectedVariables((prev) => ({ ...prev, [key]: value }));
-  }, []);
+  const addExpectedVariable = React.useCallback(
+    (key: string, value: unknown) => {
+      setExpectedVariables((prev) => ({ ...prev, [key]: value }));
+    },
+    []
+  );
 
   const removeExpectedVariable = React.useCallback((key: string) => {
     setExpectedVariables((prev) => {

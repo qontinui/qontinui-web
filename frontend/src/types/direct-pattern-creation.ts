@@ -11,6 +11,7 @@ export interface ExtractedPattern {
   sourceScreenshotUrl: string;
   sourceSnapshotId: string;
   states: string[];
+  monitors?: number[]; // Inherited from source screenshot
   timestamp: string;
 }
 
@@ -31,6 +32,7 @@ export interface SnapshotScreenshot {
   timestamp: string;
   width?: number;
   height?: number;
+  monitors?: number[]; // Monitor indices for this screenshot (default: [0])
 }
 
 export interface PatternSaveResult {

@@ -596,7 +596,10 @@ export const useTutorialStore = create<TutorialStore>()(
       // Validation Methods
       // ========================================================================
 
-      validateStep: async (stepId: string, context?: unknown): Promise<boolean> => {
+      validateStep: async (
+        stepId: string,
+        context?: unknown
+      ): Promise<boolean> => {
         const currentStep = get().getCurrentStep();
         if (!currentStep || currentStep.id !== stepId) {
           return false;

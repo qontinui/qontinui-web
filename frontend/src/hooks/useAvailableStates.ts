@@ -54,9 +54,11 @@ export function useAvailableStates(): UseAvailableStatesResult {
             const data = await response.json();
 
             // Extract unique states from all screenshots
-            const screenshots = data.screenshots as Array<{
-              active_states?: string[];
-            }> | undefined;
+            const screenshots = data.screenshots as
+              | Array<{
+                  active_states?: string[];
+                }>
+              | undefined;
 
             screenshots?.forEach((screenshot) => {
               screenshot.active_states?.forEach((state: string) => {

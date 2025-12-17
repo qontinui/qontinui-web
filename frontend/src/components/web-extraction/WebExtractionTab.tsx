@@ -23,13 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import {
-  Loader2,
-  AlertCircle,
-  Plus,
-  History,
-  Trash2,
-} from "lucide-react";
+import { Loader2, AlertCircle, Plus, History, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type {
   ExtractionSessionCreate,
@@ -41,10 +35,7 @@ import type {
 
 export default function WebExtractionTab() {
   const { projectId } = useProjectLoader();
-  const { data: extractions } = useExtractions(
-    projectId || "",
-    !!projectId
-  );
+  const { data: extractions } = useExtractions(projectId || "", !!projectId);
   const createExtraction = useCreateExtraction();
 
   const [activeExtractionId, setActiveExtractionId] = useState<string | null>(

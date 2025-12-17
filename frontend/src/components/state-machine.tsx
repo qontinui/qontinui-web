@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Plus, Square, Trash2, Settings, Network } from "lucide-react";
 import {
   ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
   type Node,
   type Edge,
   type Connection,
@@ -57,17 +59,131 @@ const edgeTypes = {
   transitionEdge: TransitionEdge,
 };
 
+// Helper component to calculate transition positions using measured node dimensions
+// Must be rendered inside ReactFlow to access useReactFlow hook
+interface TransitionPositionManagerProps {
+  transitions: OutgoingTransition[];
+  states: State[];
+  updateTransition: (transition: Transition) => void;
+}
+
+function TransitionPositionManager({
+  transitions,
+  states,
+  updateTransition,
+}: TransitionPositionManagerProps) {
+  const { getNodes } = useReactFlow();
+
+  React.useEffect(() => {
+    // Find transitions that need positions to be saved
+    const transitionsNeedingPositions = transitions.filter(
+      (t) =>
+        !t.position &&
+        Array.isArray(t.activateStates) &&
+        t.activateStates.length > 0
+    );
+
+    if (transitionsNeedingPositions.length === 0) return;
+
+    // Get measured nodes from ReactFlow
+    const measuredNodes = getNodes();
+
+    transitionsNeedingPositions.forEach((transition) => {
+      const sourceState = states.find((s) => s.id === transition.fromState);
+      if (!sourceState) return;
+
+      // Get the measured source node to get actual height
+      const sourceNode = measuredNodes.find(
+        (n) => n.id === transition.fromState
+      );
+      const sourceHeight =
+        sourceNode?.measured?.height ?? sourceNode?.height ?? 150;
+      const sourceWidth =
+        sourceNode?.measured?.width ?? sourceNode?.width ?? 200;
+
+      const firstTargetState = states.find(
+        (s) => s.id === transition.activateStates[0]
+      );
+
+      let proposedPosition;
+
+      // Transition node size (p-2 padding + 16px icon = ~32px)
+      // We need to offset so the CENTER of the circle is at the midpoint
+      const transitionNodeSize = 32;
+      const halfNodeSize = transitionNodeSize / 2;
+
+      if (firstTargetState) {
+        // Calculate the midpoint between source bottom handle and target top handle
+        // Using actual measured height for source node
+        const sourceBottomY = sourceState.position.y + sourceHeight;
+        const targetTopY = firstTargetState.position.y;
+        const midpointY = (sourceBottomY + targetTopY) / 2;
+        const midpointX =
+          (sourceState.position.x + firstTargetState.position.x) / 2 +
+          sourceWidth / 2;
+
+        // Offset so the circle's CENTER is at the midpoint (position is top-left corner)
+        proposedPosition = {
+          x: midpointX - halfNodeSize,
+          y: midpointY - halfNodeSize,
+        };
+      } else {
+        // Fallback if target not found - place below center of source
+        proposedPosition = {
+          x: sourceState.position.x + sourceWidth / 2 - halfNodeSize,
+          y: sourceState.position.y + sourceHeight + 50 - halfNodeSize,
+        };
+      }
+
+      // Check if this position is occupied
+      const isOccupied = [
+        ...states,
+        ...transitions.filter((t) => t.position),
+      ].some((item) => {
+        const pos = "position" in item ? item.position : item.position;
+        return (
+          pos &&
+          Math.abs(pos.x - proposedPosition.x) < 100 &&
+          Math.abs(pos.y - proposedPosition.y) < 60
+        );
+      });
+
+      const finalPosition = isOccupied
+        ? { x: sourceState.position.x + 150, y: sourceState.position.y + 50 }
+        : proposedPosition;
+
+      // Save the position
+      updateTransition({
+        ...transition,
+        position: {
+          x: Math.round(finalPosition.x),
+          y: Math.round(finalPosition.y),
+        },
+      });
+    });
+  }, [transitions, states, updateTransition, getNodes]);
+
+  return null; // This component doesn't render anything
+}
+
 export function StateStructure() {
+  // Get states from Zustand (for reading)
+  const { states } = useStates();
+  // Get transitions from Zustand for reading only
+  const { transitions } = useTransitions();
+  // Use state/transition mutations from Context (not Zustand) to ensure both stores are synced
+  // This is critical for export functionality which reads from Context
   const {
-    states,
+    workflows,
+    addWorkflow,
     addState,
     updateState,
     updateStateWithIdChange,
     deleteState,
-  } = useStates();
-  const { transitions, addTransition, updateTransition, deleteTransition } =
-    useTransitions();
-  const { workflows, addWorkflow } = useAutomation();
+    addTransition,
+    updateTransition,
+    deleteTransition,
+  } = useAutomation();
   const { images } = useImages();
 
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -201,71 +317,8 @@ export function StateStructure() {
     [onNodesChange, states, updateState, transitions, updateTransition]
   );
 
-  // Separate effect to ensure transition positions are set (runs once per transition without position)
-  React.useEffect(() => {
-    // Find transitions that need positions to be saved
-    const transitionsNeedingPositions = transitions
-      .filter((t): t is OutgoingTransition => t.type === "OutgoingTransition")
-      .filter(
-        (t) =>
-          !t.position &&
-          Array.isArray(t.activateStates) &&
-          t.activateStates.length > 0
-      );
-
-    if (transitionsNeedingPositions.length === 0) return;
-
-    transitionsNeedingPositions.forEach((transition) => {
-      const sourceState = states.find((s) => s.id === transition.fromState);
-      if (!sourceState) return;
-
-      // Calculate position BETWEEN source and first target
-      const firstTargetState = states.find(
-        (s) => s.id === transition.activateStates[0]
-      );
-      let proposedPosition;
-
-      if (firstTargetState) {
-        // Position transition node midway between source and target
-        proposedPosition = {
-          x: (sourceState.position.x + firstTargetState.position.x) / 2,
-          y: (sourceState.position.y + firstTargetState.position.y) / 2,
-        };
-      } else {
-        // Fallback if target not found
-        proposedPosition = {
-          x: sourceState.position.x,
-          y: sourceState.position.y + 150,
-        };
-      }
-
-      // Check if this position is occupied
-      const isOccupied = [
-        ...states,
-        ...transitions.filter((t) => t.position),
-      ].some((item) => {
-        const pos = "position" in item ? item.position : item.position;
-        return (
-          pos &&
-          Math.abs(pos.x - proposedPosition.x) < 100 &&
-          Math.abs(pos.y - proposedPosition.y) < 60
-        );
-      });
-
-      const finalPosition = isOccupied
-        ? { x: sourceState.position.x + 150, y: sourceState.position.y + 50 }
-        : proposedPosition;
-
-      // Save the position
-      updateTransition({
-        ...transition,
-        position: {
-          x: Math.round(finalPosition.x),
-          y: Math.round(finalPosition.y),
-        },
-      });
-    });
-  }, [transitions, states, updateTransition]);
+  // Note: Transition position calculation is now handled by TransitionPositionManager
+  // component inside ReactFlow, which has access to actual measured node dimensions
 
   // Handler for adding outgoing transition from a state
   const handleAddOutgoingTransition = useCallback((stateId: string) => {
@@ -283,7 +336,10 @@ export function StateStructure() {
 
   // Handler for creating a transition by dropping an image on a target state
   const handleImageDropOnState = useCallback(
-    (targetStateId: string, dragData: { sourceStateId: string; stateImageId: string }) => {
+    (
+      targetStateId: string,
+      dragData: { sourceStateId: string; stateImageId: string }
+    ) => {
       const { sourceStateId, stateImageId } = dragData;
 
       // Don't create transition to the same state
@@ -309,7 +365,10 @@ export function StateStructure() {
       }
 
       // Create the click workflow for the outgoing transition
-      const clickWorkflow = createClickStateImageWorkflow(sourceState, stateImage);
+      const clickWorkflow = createClickStateImageWorkflow(
+        sourceState,
+        stateImage
+      );
       addWorkflow(clickWorkflow);
 
       // Create the find state workflow for the incoming transition
@@ -341,7 +400,10 @@ export function StateStructure() {
         if (!existingIncomingTransition.workflows.includes(findWorkflow.id)) {
           updateTransition({
             ...existingIncomingTransition,
-            workflows: [...existingIncomingTransition.workflows, findWorkflow.id],
+            workflows: [
+              ...existingIncomingTransition.workflows,
+              findWorkflow.id,
+            ],
           });
         }
       } else {
@@ -377,7 +439,9 @@ export function StateStructure() {
       event.preventDefault();
 
       // Try to get the drag data
-      const dragDataStr = event.dataTransfer.getData("application/stateimage-drag");
+      const dragDataStr = event.dataTransfer.getData(
+        "application/stateimage-drag"
+      );
       if (!dragDataStr) {
         return;
       }
@@ -472,26 +536,38 @@ export function StateStructure() {
 
         if (sourceState && activateStates.length > 0) {
           // Create a transition node for all transitions (both single and multi-target)
-          // Use saved position or calculate a temporary position for display
-          // (permanent position is saved in the separate useEffect above)
+          // Use saved position or calculate a temporary position for initial display.
+          // The TransitionPositionManager (inside ReactFlow) will calculate the correct
+          // position using actual measured node dimensions and save it.
           let position = transition.position;
 
+          // Fallback dimensions (only used until TransitionPositionManager calculates correct position)
+          const nodeWidth = 200;
+          const estimatedSourceHeight = 150;
+
           if (!position) {
-            // Calculate temporary position BETWEEN source and first target
+            // Calculate temporary position - midpoint between source bottom and target top
             const firstTargetState = states.find(
               (s) => s.id === activateStates[0]
             );
             if (firstTargetState) {
-              // Position transition node midway between source and target
+              // Calculate the midpoint between source bottom handle and target top handle
+              const sourceBottomY =
+                sourceState.position.y + estimatedSourceHeight;
+              const targetTopY = firstTargetState.position.y;
+              const midpointY = (sourceBottomY + targetTopY) / 2;
+
               position = {
-                x: (sourceState.position.x + firstTargetState.position.x) / 2,
-                y: (sourceState.position.y + firstTargetState.position.y) / 2,
+                x:
+                  (sourceState.position.x + firstTargetState.position.x) / 2 +
+                  nodeWidth / 2,
+                y: midpointY,
               };
             } else {
-              // Fallback if target not found
+              // Fallback if target not found - place below center of source
               position = {
-                x: sourceState.position.x,
-                y: sourceState.position.y + 150,
+                x: sourceState.position.x + nodeWidth / 2,
+                y: sourceState.position.y + 200,
               };
             }
           }
@@ -815,6 +891,7 @@ export function StateStructure() {
       y: 0,
       width: 100,
       height: 100,
+      monitors: [0], // Default to primary monitor
     };
     updateSelectedState({ regions: [...regions, newRegion] });
   };
@@ -863,6 +940,7 @@ export function StateStructure() {
       anchor: false, // Not an anchor by default
       offsetX: 0,
       offsetY: 0,
+      monitors: [0], // Default to primary monitor
     };
     updateSelectedState({ locations: [...locations, newLocation] });
   };
@@ -1124,6 +1202,14 @@ export function StateStructure() {
               color="#333"
             />
             <Controls className="bg-[#27272A] border-gray-700 [&>button]:bg-[#27272A] [&>button]:border-gray-700 [&>button]:text-white [&>button:hover]:bg-gray-600" />
+            {/* Position manager uses measured node dimensions to place transitions */}
+            <TransitionPositionManager
+              transitions={transitions.filter(
+                (t): t is OutgoingTransition => t.type === "OutgoingTransition"
+              )}
+              states={states}
+              updateTransition={updateTransition}
+            />
           </ReactFlow>
         </div>
       </div>

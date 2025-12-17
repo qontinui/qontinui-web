@@ -80,6 +80,7 @@ import {
   type ImageUsageInfo,
 } from "@/components/image-deletion-dialog";
 import { LazyImage } from "./LazyImage";
+import { MonitorSelector } from "@/components/monitor-selector";
 
 // ============================================================================
 // Main Component
@@ -153,6 +154,9 @@ export function EnhancedImageLibrary() {
     states: [],
     processes: [],
   });
+
+  // Monitor selection state
+  const [uploadMonitors, setUploadMonitors] = useState<number[]>([0]); // Default to primary monitor
 
   // Bulk operations state
   // const [showBulkToolbar, setShowBulkToolbar] = useState(false);
@@ -292,6 +296,7 @@ export function EnhancedImageLibrary() {
             projectName: projectName,
             s3_key: result.screenshot.s3Key,
             url_expires_at: result.screenshot.urlExpiresAt,
+            monitors: uploadMonitors,
           };
 
           // Add folder assignment if a folder is selected
@@ -784,6 +789,16 @@ export function EnhancedImageLibrary() {
             Upload
           </Button>
         </div>
+      </div>
+
+      {/* Monitor Selection Panel */}
+      <div className="p-4 bg-gray-800/50 border-b border-gray-700">
+        <MonitorSelector
+          monitors={uploadMonitors}
+          onChange={setUploadMonitors}
+          label="Default Monitors for New Uploads"
+          showLabel={true}
+        />
       </div>
 
       {/* Filter Panel */}

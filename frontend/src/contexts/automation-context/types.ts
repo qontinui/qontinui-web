@@ -4,7 +4,12 @@ import type { ProjectSettings } from "@/types/project-settings";
 import type { Workflow } from "@/lib/action-schema/action-types";
 
 // Re-export types from rag-builder for convenience
-export type { MatchingStrategy, OCRMatchMode, OCRFilter, OCRConfig } from "@/types/rag-builder";
+export type {
+  MatchingStrategy,
+  OCRMatchMode,
+  OCRFilter,
+  OCRConfig,
+} from "@/types/rag-builder";
 
 // RAG embedding result for a single state image
 export interface RAGEmbeddingResult {
@@ -239,6 +244,9 @@ export interface ImageAsset {
   s3_key?: string; // S3 object key
   url_expires_at?: Date; // When presigned URL expires
 
+  // Monitor assignment
+  monitors?: number[]; // Monitor indices where this image should be used (default: [0])
+
   // Versioning support (not yet implemented, but architecture ready)
   version?: number; // Version number (default: 1)
   parentImageId?: string; // ID of the original image if this is a version
@@ -297,6 +305,8 @@ export interface Screenshot {
   regions?: ScreenshotRegionAnnotation[];
   locations?: ScreenshotLocationAnnotation[];
   associatedStates?: string[];
+  // Monitor assignment - which monitor(s) this screenshot is from/for
+  monitors?: number[]; // Monitor indices (default: [0] for primary monitor)
 }
 
 // Scheduler types

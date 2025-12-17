@@ -125,7 +125,9 @@ export function RunWorkflowActionProperties({
               <div className="flex items-start space-x-2">
                 <Checkbox
                   id="repeatUntilSuccess"
-                  checked={(action.config.repeatUntilSuccess as boolean) || false}
+                  checked={
+                    (action.config.repeatUntilSuccess as boolean) || false
+                  }
                   onCheckedChange={(checked) =>
                     updateConfig("repeatUntilSuccess", checked)
                   }

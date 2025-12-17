@@ -1339,7 +1339,9 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
 
     Object.values(workflow.connections).forEach((outputs) => {
       ["main", "error", "success", "parallel"].forEach((type) => {
-        const connections = (outputs as Record<string, Array<Array<{ action: string }>>>)[type];
+        const connections = (
+          outputs as Record<string, Array<Array<{ action: string }>>>
+        )[type];
         if (connections) {
           connections.forEach((conns) => {
             conns.forEach((conn) => hasIncoming.add(conn.action));
@@ -1362,7 +1364,9 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
     // Check workflow variables
     if (workflow.variables) {
       ["local", "process", "global"].forEach((scopeKey) => {
-        const vars = (workflow.variables as Record<string, Record<string, unknown>>)[scopeKey];
+        const vars = (
+          workflow.variables as Record<string, Record<string, unknown>>
+        )[scopeKey];
         if (vars) {
           Object.entries(vars).forEach(([name, value]) => {
             variables.push({
@@ -1422,7 +1426,8 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
 
       // Check for image dependencies
       if ("target" in action.config) {
-        const target = (action.config as { target?: { image?: string } }).target;
+        const target = (action.config as { target?: { image?: string } })
+          .target;
         if (target?.image) {
           dependencies.push({
             type: "resource",

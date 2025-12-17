@@ -527,7 +527,10 @@ export default function ComponentLibraryPage() {
           </div>
 
           {/* Main Content Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as unknown)}>
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as unknown)}
+          >
             <TabsList className="bg-[#1A1A1B]/50 border border-gray-800/50">
               <TabsTrigger
                 value="library"

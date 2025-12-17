@@ -377,7 +377,11 @@ export function UnifiedProcessLibrary({
           {allCategories.map((category) => {
             const categoryItems = itemsByCategory[category] || [];
             const isCollapsed = collapsedCategories.has(category);
-            const protectedCategories = ["Main", "Incoming Transitions", "Outgoing Transitions"];
+            const protectedCategories = [
+              "Main",
+              "Incoming Transitions",
+              "Outgoing Transitions",
+            ];
             const isDeletable = !protectedCategories.includes(category);
 
             return (

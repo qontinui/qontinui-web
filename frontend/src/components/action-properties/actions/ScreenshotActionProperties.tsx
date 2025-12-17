@@ -24,11 +24,15 @@ export function ScreenshotActionProperties({
     <>
       {/* Output Variable */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Output Variable (optional)</Label>
+        <Label className="text-xs text-gray-400">
+          Output Variable (optional)
+        </Label>
         <Input
           type="text"
           value={(action.config.outputVariable as string) || ""}
-          onChange={(e) => updateConfig("outputVariable", e.target.value || undefined)}
+          onChange={(e) =>
+            updateConfig("outputVariable", e.target.value || undefined)
+          }
           className="bg-transparent border-gray-700"
           placeholder="screenshot_data"
         />
@@ -65,7 +69,9 @@ export function ScreenshotActionProperties({
           <div className="space-y-3 pl-4 border-l-2 border-violet-500/30">
             {/* Filename */}
             <div className="space-y-1">
-              <Label className="text-xs text-gray-400">Filename (optional)</Label>
+              <Label className="text-xs text-gray-400">
+                Filename (optional)
+              </Label>
               <Input
                 type="text"
                 value={saveToFile?.filename || ""}
@@ -79,13 +85,16 @@ export function ScreenshotActionProperties({
                 placeholder="screenshot-{{timestamp}}.png"
               />
               <p className="text-xs text-gray-500">
-                Leave empty for auto-generated name. Supports {"{{timestamp}}"} placeholder.
+                Leave empty for auto-generated name. Supports {"{{timestamp}}"}{" "}
+                placeholder.
               </p>
             </div>
 
             {/* Directory */}
             <div className="space-y-1">
-              <Label className="text-xs text-gray-400">Directory (optional)</Label>
+              <Label className="text-xs text-gray-400">
+                Directory (optional)
+              </Label>
               <Input
                 type="text"
                 value={saveToFile?.directory || ""}
@@ -106,8 +115,8 @@ export function ScreenshotActionProperties({
             <div className="flex items-start gap-2 p-2 bg-violet-500/10 rounded text-xs text-violet-300">
               <Camera className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>
-                Screenshots saved here will be available for AI analysis in the recursive
-                automation loop.
+                Screenshots saved here will be available for AI analysis in the
+                recursive automation loop.
               </span>
             </div>
           </div>
@@ -117,7 +126,9 @@ export function ScreenshotActionProperties({
       {/* Capture Region */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">Capture Region (optional)</Label>
+          <Label className="text-xs text-gray-400">
+            Capture Region (optional)
+          </Label>
           <Checkbox
             id="captureRegion"
             checked={hasRegion}
@@ -126,7 +137,12 @@ export function ScreenshotActionProperties({
                 updateConfig("captureRegion", true);
                 // Set default region values
                 if (!action.config.region) {
-                  updateConfig("region", { x: 0, y: 0, width: 800, height: 600 });
+                  updateConfig("region", {
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                  });
                 }
               } else {
                 updateConfig("captureRegion", false);
@@ -148,8 +164,14 @@ export function ScreenshotActionProperties({
                   type="number"
                   min="0"
                   value={
-                    (action.config.region as { x: number; y: number; width: number; height: number })
-                      ?.x || 0
+                    (
+                      action.config.region as {
+                        x: number;
+                        y: number;
+                        width: number;
+                        height: number;
+                      }
+                    )?.x || 0
                   }
                   onChange={(e) =>
                     updateConfig("region", {
@@ -166,8 +188,14 @@ export function ScreenshotActionProperties({
                   type="number"
                   min="0"
                   value={
-                    (action.config.region as { x: number; y: number; width: number; height: number })
-                      ?.y || 0
+                    (
+                      action.config.region as {
+                        x: number;
+                        y: number;
+                        width: number;
+                        height: number;
+                      }
+                    )?.y || 0
                   }
                   onChange={(e) =>
                     updateConfig("region", {
@@ -184,8 +212,14 @@ export function ScreenshotActionProperties({
                   type="number"
                   min="1"
                   value={
-                    (action.config.region as { x: number; y: number; width: number; height: number })
-                      ?.width || 800
+                    (
+                      action.config.region as {
+                        x: number;
+                        y: number;
+                        width: number;
+                        height: number;
+                      }
+                    )?.width || 800
                   }
                   onChange={(e) =>
                     updateConfig("region", {
@@ -202,8 +236,14 @@ export function ScreenshotActionProperties({
                   type="number"
                   min="1"
                   value={
-                    (action.config.region as { x: number; y: number; width: number; height: number })
-                      ?.height || 600
+                    (
+                      action.config.region as {
+                        x: number;
+                        y: number;
+                        width: number;
+                        height: number;
+                      }
+                    )?.height || 600
                   }
                   onChange={(e) =>
                     updateConfig("region", {

@@ -9,7 +9,6 @@ This test suite ensures that:
 5. All required fields are present
 """
 
-
 import pytest
 
 # Import qontinui-schemas Pydantic models

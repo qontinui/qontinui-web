@@ -509,9 +509,9 @@ export class CodePackageService {
       description: pkg.description,
       author_id: pkg.author_id,
       category_id: pkg.category_id,
-      category_name: (pkg.category as Record<string, unknown>)?.name as
-        | string
-        | null || null,
+      category_name:
+        ((pkg.category as Record<string, unknown>)?.name as string | null) ||
+        null,
       license: pkg.license,
       tags: pkg.tags,
       is_verified: pkg.is_verified,

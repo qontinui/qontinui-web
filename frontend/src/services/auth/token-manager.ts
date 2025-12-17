@@ -112,6 +112,14 @@ export class TokenManager {
   }
 
   /**
+   * Check if user is authenticated (has authentication state flag set)
+   * This is used for quick auth checks before making API calls
+   */
+  isAuthenticated(): boolean {
+    return this.storage.isAuthenticated();
+  }
+
+  /**
    * Check if access token is expired
    */
   isAccessTokenExpired(): boolean {

@@ -154,7 +154,9 @@ export function useStateDiscovery() {
                   "[useStateDiscovery] State image found:",
                   stateImage
                 );
-                stateManagerRef.current?.addStateImage(stateImage as StateImage);
+                stateManagerRef.current?.addStateImage(
+                  stateImage as StateImage
+                );
               },
               onComplete: (completeData) => {
                 const typedCompleteData = completeData as {
@@ -169,7 +171,9 @@ export function useStateDiscovery() {
                 setAnalysisResult(completeData);
 
                 if (typedCompleteData.state_images) {
-                  stateManagerRef.current?.setStateImages(typedCompleteData.state_images);
+                  stateManagerRef.current?.setStateImages(
+                    typedCompleteData.state_images
+                  );
                 }
                 if (typedCompleteData.states) {
                   stateManagerRef.current?.setStates(typedCompleteData.states);

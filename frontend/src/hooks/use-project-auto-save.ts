@@ -146,6 +146,46 @@ export function useProjectAutoSave({
     images,
   ]);
 
+  // Save to backend when page is about to unload (refresh, close, navigate away)
+  useEffect(() => {
+    if (!enabled || !projectId) return;
+
+    const handleBeforeUnload = () => {
+      const config = getConfiguration();
+
+      const hasData =
+        (config.workflows?.length ?? 0) > 0 ||
+        (config.states?.length ?? 0) > 0 ||
+        (config.transitions?.length ?? 0) > 0 ||
+        (config.images?.length ?? 0) > 0;
+
+      if (!hasData) return;
+
+      projectLogger.debug("AutoSave", "Saving on beforeunload", { projectId });
+
+      // Use fetch with keepalive for reliable delivery during page unload
+      // keepalive allows the request to outlive the page
+      const backendUrl =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const url = `${backendUrl}/api/v1/projects/${projectId}`;
+
+      fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ configuration: config }),
+        keepalive: true,
+        credentials: "include",
+      }).catch(() => {
+        // Ignore errors during unload - best effort save
+      });
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [enabled, projectId, getConfiguration]);
+
   return {
     saveToBackend,
     isSaving: isSavingRef.current,

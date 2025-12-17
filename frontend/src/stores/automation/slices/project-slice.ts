@@ -8,7 +8,11 @@ import type { StateCreator } from "zustand";
 import type { AutomationStore, ProjectSlice } from "../types";
 import { projectLogger } from "@/lib/project-logger";
 
-const DEFAULT_CATEGORIES = ["Main", "Incoming Transitions", "Outgoing Transitions"];
+const DEFAULT_CATEGORIES = [
+  "Main",
+  "Incoming Transitions",
+  "Outgoing Transitions",
+];
 
 export const createProjectSlice: StateCreator<
   AutomationStore,
