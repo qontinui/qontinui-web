@@ -97,34 +97,46 @@ export class StateDiscoveryWebSocketManager {
   }
 
   private handleMessage(message: unknown): void {
+    // Type guard to ensure message has the expected structure
+    if (!message || typeof message !== "object" || !("type" in message)) {
+      console.error("[WebSocketManager] Invalid message format:", message);
+      return;
+    }
+
+    const typedMessage = message as {
+      type: string;
+      data?: unknown;
+    };
+
     console.log("[WebSocketManager] Handling message:", {
-      type: message.type,
+      type: typedMessage.type,
       analysisId: this.analysisId,
     });
 
-    switch (message.type) {
+    switch (typedMessage.type) {
       case "progress":
         if (this.callbacks.onProgress) {
-          this.callbacks.onProgress(message.data);
+          this.callbacks.onProgress(typedMessage.data);
         }
         break;
 
       case "state_image_found":
         if (this.callbacks.onStateImageFound) {
-          this.callbacks.onStateImageFound(message.data);
+          this.callbacks.onStateImageFound(typedMessage.data);
         }
         break;
 
       case "complete":
         if (this.callbacks.onComplete) {
-          this.callbacks.onComplete(message.data);
+          this.callbacks.onComplete(typedMessage.data);
         }
         break;
 
       case "error":
-        console.error("[WebSocketManager] Error message:", message.data);
+        console.error("[WebSocketManager] Error message:", typedMessage.data);
         if (this.callbacks.onError) {
-          this.callbacks.onError(message.data.message);
+          const errorData = typedMessage.data as { message?: string } | undefined;
+          this.callbacks.onError(errorData?.message || "Unknown error");
         }
         break;
 
@@ -133,7 +145,7 @@ export class StateDiscoveryWebSocketManager {
         break;
 
       default:
-        console.log("[WebSocketManager] Unhandled message type:", message.type);
+        console.log("[WebSocketManager] Unhandled message type:", typedMessage.type);
         break;
     }
   }

@@ -227,12 +227,21 @@ export function useProjectLoader(): UseProjectLoaderResult {
         // Pass project ID as string - backend accepts both UUID and numeric IDs
         const project = await projectService.getProject(urlProjectId);
 
+        const config = project.configuration as {
+          workflows?: unknown[];
+          states?: unknown[];
+          transitions?: unknown[];
+          images?: unknown[];
+          categories?: string[];
+          settings?: unknown;
+        } | null | undefined;
+
         projectLogger.projectLoader("Received project from backend", {
           projectId: project.id,
           projectName: project.name,
           hasConfiguration: !!project.configuration,
-          workflowCount: (project.configuration as unknown)?.workflows?.length ?? 0,
-          stateCount: (project.configuration as unknown)?.states?.length ?? 0,
+          workflowCount: config?.workflows?.length ?? 0,
+          stateCount: config?.states?.length ?? 0,
         });
 
         // Load configuration into context
@@ -250,15 +259,6 @@ export function useProjectLoader(): UseProjectLoaderResult {
 
         // Also load into Zustand store for UI components that read from there
         // (StateStructure, etc. use useStates() which reads from Zustand, not Context)
-        const config = project.configuration as {
-          name?: string;
-          workflows?: unknown[];
-          states?: unknown[];
-          transitions?: unknown[];
-          images?: unknown[];
-          categories?: string[];
-          settings?: unknown;
-        };
         const zustandStore = useAutomationStore.getState();
         await zustandStore.loadConfiguration({
           name: project.name,

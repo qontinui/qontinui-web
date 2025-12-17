@@ -53,10 +53,10 @@ export function useStateDiscovery() {
 
       switch (type) {
         case "stateImages":
-          setStateImages([...data]);
+          setStateImages([...(data as StateImage[])]);
           break;
         case "states":
-          setStates([...data]);
+          setStates([...(data as DiscoveredState[])]);
           break;
         case "clear":
           setStateImages([]);
@@ -85,8 +85,9 @@ export function useStateDiscovery() {
       }
 
       const data = await apiClientRef.current.uploadScreenshots(files);
-      setUploadId(data.upload_id);
-      console.log("[useStateDiscovery] Upload complete:", data.upload_id);
+      const typedData = data as { upload_id: string };
+      setUploadId(typedData.upload_id);
+      console.log("[useStateDiscovery] Upload complete:", typedData.upload_id);
       return data;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Upload failed";
@@ -129,14 +130,18 @@ export function useStateDiscovery() {
 
         // Start analysis via API
         const data = await apiClientRef.current.startAnalysis(uploadId, config);
-        setAnalysisId(data.analysis_id);
+        const typedData = data as {
+          analysis_id: string;
+          websocket_url?: string;
+        };
+        setAnalysisId(typedData.analysis_id);
 
         // Connect WebSocket for progress updates
-        if (data.websocket_url) {
+        if (typedData.websocket_url) {
           console.log("[useStateDiscovery] Setting up WebSocket connection");
 
           wsManagerRef.current.connect(
-            data.analysis_id,
+            typedData.analysis_id,
             API_BASE_URL,
             API_PATH,
             {
@@ -149,21 +154,25 @@ export function useStateDiscovery() {
                   "[useStateDiscovery] State image found:",
                   stateImage
                 );
-                stateManagerRef.current?.addStateImage(stateImage);
+                stateManagerRef.current?.addStateImage(stateImage as StateImage);
               },
-              onComplete: (data) => {
+              onComplete: (completeData) => {
+                const typedCompleteData = completeData as {
+                  states?: DiscoveredState[];
+                  state_images?: StateImage[];
+                };
                 console.log("[useStateDiscovery] Analysis complete:", {
-                  states: data.states?.length || 0,
-                  stateImages: data.state_images?.length || 0,
+                  states: typedCompleteData.states?.length || 0,
+                  stateImages: typedCompleteData.state_images?.length || 0,
                 });
 
-                setAnalysisResult(data);
+                setAnalysisResult(completeData);
 
-                if (data.state_images) {
-                  stateManagerRef.current?.setStateImages(data.state_images);
+                if (typedCompleteData.state_images) {
+                  stateManagerRef.current?.setStateImages(typedCompleteData.state_images);
                 }
-                if (data.states) {
-                  stateManagerRef.current?.setStates(data.states);
+                if (typedCompleteData.states) {
+                  stateManagerRef.current?.setStates(typedCompleteData.states);
                 }
 
                 setIsLoading(false);
@@ -244,8 +253,9 @@ export function useStateDiscovery() {
         options
       );
 
-      if (result.deleted && Array.isArray(result.deleted)) {
-        stateManagerRef.current.bulkRemoveStateImages(result.deleted);
+      const typedResult = result as { deleted?: string[] };
+      if (typedResult.deleted && Array.isArray(typedResult.deleted)) {
+        stateManagerRef.current.bulkRemoveStateImages(typedResult.deleted);
       }
 
       return result;

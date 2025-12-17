@@ -243,9 +243,10 @@ export function formatVariableValue(value: unknown, maxLength = 100): string {
   const type = getValueType(value);
 
   if (type === "string") {
-    return value.length > maxLength
-      ? `${value.substring(0, maxLength)}...`
-      : value;
+    const strValue = value as string;
+    return strValue.length > maxLength
+      ? `${strValue.substring(0, maxLength)}...`
+      : strValue;
   }
 
   if (type === "number" || type === "boolean") {

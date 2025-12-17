@@ -116,6 +116,8 @@ export function useProjectPermissions(
 
   // Compute all permissions in a single memo to avoid unnecessary recalculation
   const permissions = useMemo(() => {
+    // Type assertion to help TypeScript understand the User type
+    const user = currentUser as User | null | undefined;
     if (!project) {
       // No project provided - return no permissions
       return {
@@ -132,14 +134,14 @@ export function useProjectPermissions(
     }
 
     // Get user's permission level
-    const permissionLevel = getPermissionLevel(project, currentUser as unknown);
+    const permissionLevel = getPermissionLevel(project, user);
 
     // Pre-compute all permission checks
-    const canView = canUserView(project, currentUser as unknown);
-    const canComment = canUserComment(project, currentUser as unknown);
-    const canEdit = canUserEdit(project, currentUser as unknown);
-    const canAdmin = canUserAdmin(project, currentUser as unknown);
-    const isOwner = isProjectOwner(project, currentUser as unknown);
+    const canView = canUserView(project, user);
+    const canComment = canUserComment(project, user);
+    const canEdit = canUserEdit(project, user);
+    const canAdmin = canUserAdmin(project, user);
+    const isOwner = isProjectOwner(project, user);
 
     return {
       permissionLevel,
