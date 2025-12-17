@@ -878,9 +878,9 @@ export class WorkflowTestingService {
           if (Array.isArray(actualValue)) {
             passed = actualValue.includes(assertion.expected);
           } else if (typeof actualValue === "string") {
-            passed = actualValue.includes(assertion.expected);
+            passed = actualValue.includes(assertion.expected as string);
           } else if (typeof actualValue === "object" && actualValue !== null) {
-            passed = assertion.expected in actualValue;
+            passed = String(assertion.expected) in actualValue;
           }
           if (!passed) {
             error = `Expected to contain ${JSON.stringify(assertion.expected)}`;
@@ -891,9 +891,9 @@ export class WorkflowTestingService {
           if (Array.isArray(actualValue)) {
             passed = !actualValue.includes(assertion.expected);
           } else if (typeof actualValue === "string") {
-            passed = !actualValue.includes(assertion.expected);
+            passed = !actualValue.includes(assertion.expected as string);
           } else if (typeof actualValue === "object" && actualValue !== null) {
-            passed = !(assertion.expected in actualValue);
+            passed = !(String(assertion.expected) in actualValue);
           }
           if (!passed) {
             error = `Expected not to contain ${JSON.stringify(assertion.expected)}`;
@@ -916,7 +916,8 @@ export class WorkflowTestingService {
 
         case "greaterThan":
           passed =
-            typeof actualValue === "number" && actualValue > assertion.expected;
+            typeof actualValue === "number" &&
+            actualValue > (assertion.expected as number);
           if (!passed) {
             error = `Expected ${actualValue} to be greater than ${assertion.expected}`;
           }
@@ -924,7 +925,8 @@ export class WorkflowTestingService {
 
         case "lessThan":
           passed =
-            typeof actualValue === "number" && actualValue < assertion.expected;
+            typeof actualValue === "number" &&
+            actualValue < (assertion.expected as number);
           if (!passed) {
             error = `Expected ${actualValue} to be less than ${assertion.expected}`;
           }
@@ -1408,13 +1410,17 @@ export class WorkflowTestingService {
     if (a == null || b == null) return false;
     if (typeof a !== typeof b) return false;
 
-    if (typeof a === "object") {
-      const aKeys = Object.keys(a);
-      const bKeys = Object.keys(b);
+    if (typeof a === "object" && typeof b === "object") {
+      const aRecord = a as Record<string, unknown>;
+      const bRecord = b as Record<string, unknown>;
+      const aKeys = Object.keys(aRecord);
+      const bKeys = Object.keys(bRecord);
 
       if (aKeys.length !== bKeys.length) return false;
 
-      return aKeys.every((key) => this.deepEquals(a[key], b[key]));
+      return aKeys.every((key) =>
+        this.deepEquals(aRecord[key], bRecord[key])
+      );
     }
 
     return false;
@@ -1425,11 +1431,11 @@ export class WorkflowTestingService {
    */
   private getValueByPath(obj: unknown, path: string): unknown {
     const parts = path.split(".");
-    let current = obj;
+    let current: unknown = obj;
 
     for (const part of parts) {
       if (current == null) return undefined;
-      current = current[part];
+      current = (current as Record<string, unknown>)[part];
     }
 
     return current;

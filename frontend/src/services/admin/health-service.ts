@@ -150,12 +150,23 @@ class HealthService {
 
   private countCriticalAlerts(data: unknown): number {
     let count = 0;
+    const dataRecord = data as Record<string, unknown>;
 
     // Count critical alerts from various sources
-    if (data.redis?.alert_level === "critical") count++;
-    if (data.database?.alert_level === "critical") count++;
-    if (data.system?.alert_level === "critical") count++;
-    if (data.security?.alert_level === "critical") count++;
+    if ((dataRecord.redis as Record<string, unknown>)?.alert_level === "critical")
+      count++;
+    if (
+      (dataRecord.database as Record<string, unknown>)?.alert_level ===
+      "critical"
+    )
+      count++;
+    if ((dataRecord.system as Record<string, unknown>)?.alert_level === "critical")
+      count++;
+    if (
+      (dataRecord.security as Record<string, unknown>)?.alert_level ===
+      "critical"
+    )
+      count++;
 
     return count;
   }

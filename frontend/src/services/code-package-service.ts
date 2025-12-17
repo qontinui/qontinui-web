@@ -11,6 +11,8 @@ import type {
   PublishVersionRequest,
   InstallPackageRequest,
   RatePackageRequest,
+  PackageLicense,
+  PackageCategory,
 } from "@/types/code-packages";
 
 /**
@@ -269,7 +271,7 @@ export class CodePackageService {
     id: string,
     data: UpdatePackageRequest
   ): Promise<CodePackage> {
-    const updateData: unknown = {};
+    const updateData: Record<string, unknown> = {};
 
     if (data.name !== undefined) updateData.name = data.name;
     if (data.description !== undefined)
@@ -462,7 +464,7 @@ export class CodePackageService {
         verified: pkg.is_verified,
         staff: false,
       },
-      license: pkg.license as unknown,
+      license: pkg.license as PackageLicense,
       visibility: "public" as const,
       latest_version: {
         id: "0",
@@ -507,13 +509,17 @@ export class CodePackageService {
       description: pkg.description,
       author_id: pkg.author_id,
       category_id: pkg.category_id,
-      category_name: pkg.category?.name || null,
+      category_name: (pkg.category as Record<string, unknown>)?.name as
+        | string
+        | null || null,
       license: pkg.license,
       tags: pkg.tags,
       is_verified: pkg.is_verified,
       total_downloads: pkg.total_downloads,
       avg_rating: pkg.avg_rating,
-      latest_version: pkg.latest_version?.version || null,
+      latest_version:
+        ((pkg.latest_version as Record<string, unknown>)?.version as string) ||
+        null,
       created_at: pkg.created_at,
     });
 

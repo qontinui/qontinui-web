@@ -374,29 +374,38 @@ export class BackendAPI {
       `/api/execution/${executionId}/status`,
       { method: "GET" }
     );
+    const responseRecord = response as Record<string, unknown>;
 
     return {
-      executionId: response.execution_id,
-      workflowId: response.workflow_id,
-      status: response.status,
-      startTime: new Date(response.start_time),
-      endTime: response.end_time ? new Date(response.end_time) : undefined,
-      currentAction: response.current_action,
-      progress: response.progress,
-      totalActions: response.total_actions,
-      completedActions: response.completed_actions,
-      failedActions: response.failed_actions,
-      skippedActions: response.skipped_actions,
-      actionStates: response.action_states,
-      error: response.error
+      executionId: responseRecord.execution_id as string,
+      workflowId: responseRecord.workflow_id as string,
+      status: responseRecord.status as string,
+      startTime: new Date(responseRecord.start_time as string),
+      endTime: responseRecord.end_time
+        ? new Date(responseRecord.end_time as string)
+        : undefined,
+      currentAction: responseRecord.current_action as string | undefined,
+      progress: responseRecord.progress as number,
+      totalActions: responseRecord.total_actions as number,
+      completedActions: responseRecord.completed_actions as number,
+      failedActions: responseRecord.failed_actions as number,
+      skippedActions: responseRecord.skipped_actions as number,
+      actionStates: responseRecord.action_states as unknown[],
+      error: responseRecord.error
         ? {
-            message: response.error.message,
-            actionId: response.error.action_id,
-            timestamp: new Date(response.error.timestamp),
-            stack: response.error.stack,
+            message: (responseRecord.error as Record<string, unknown>)
+              .message as string,
+            actionId: (responseRecord.error as Record<string, unknown>)
+              .action_id as string,
+            timestamp: new Date(
+              (responseRecord.error as Record<string, unknown>)
+                .timestamp as string
+            ),
+            stack: (responseRecord.error as Record<string, unknown>)
+              .stack as string,
           }
         : undefined,
-      variables: response.variables,
+      variables: responseRecord.variables as Record<string, unknown>,
     };
   }
 
@@ -486,19 +495,22 @@ export class BackendAPI {
       { method: "GET" }
     );
 
-    return response.map((record) => ({
-      executionId: record.execution_id,
-      workflowId: record.workflow_id,
-      workflowName: record.workflow_name,
-      startTime: new Date(record.start_time),
-      endTime: new Date(record.end_time),
-      status: record.status,
-      duration: record.duration,
-      totalActions: record.total_actions,
-      completedActions: record.completed_actions,
-      failedActions: record.failed_actions,
-      error: record.error,
-    }));
+    return response.map((record) => {
+      const r = record as Record<string, unknown>;
+      return {
+        executionId: r.execution_id as string,
+        workflowId: r.workflow_id as string,
+        workflowName: r.workflow_name as string,
+        startTime: new Date(r.start_time as string),
+        endTime: new Date(r.end_time as string),
+        status: r.status as string,
+        duration: r.duration as number,
+        totalActions: r.total_actions as number,
+        completedActions: r.completed_actions as number,
+        failedActions: r.failed_actions as number,
+        error: r.error as string | undefined,
+      };
+    });
   }
 
   /**
@@ -519,19 +531,22 @@ export class BackendAPI {
       method: "GET",
     });
 
-    return response.map((record) => ({
-      executionId: record.execution_id,
-      workflowId: record.workflow_id,
-      workflowName: record.workflow_name,
-      startTime: new Date(record.start_time),
-      endTime: new Date(record.end_time),
-      status: record.status,
-      duration: record.duration,
-      totalActions: record.total_actions,
-      completedActions: record.completed_actions,
-      failedActions: record.failed_actions,
-      error: record.error,
-    }));
+    return response.map((record) => {
+      const r = record as Record<string, unknown>;
+      return {
+        executionId: r.execution_id as string,
+        workflowId: r.workflow_id as string,
+        workflowName: r.workflow_name as string,
+        startTime: new Date(r.start_time as string),
+        endTime: new Date(r.end_time as string),
+        status: r.status as string,
+        duration: r.duration as number,
+        totalActions: r.total_actions as number,
+        completedActions: r.completed_actions as number,
+        failedActions: r.failed_actions as number,
+        error: r.error as string | undefined,
+      };
+    });
   }
 
   // ==========================================================================

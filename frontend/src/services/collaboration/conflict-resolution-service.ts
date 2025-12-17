@@ -119,9 +119,12 @@ export class ConflictDetector {
     ]);
 
     for (const key of allKeys) {
-      const localValue = local[key];
-      const remoteValue = remote[key];
-      const baseValue = base[key];
+      const localRecord = local as Record<string, unknown>;
+      const remoteRecord = remote as Record<string, unknown>;
+      const baseRecord = base as Record<string, unknown>;
+      const localValue = localRecord[key];
+      const remoteValue = remoteRecord[key];
+      const baseValue = baseRecord[key];
 
       // Check if both modified the same property
       if (
@@ -194,13 +197,17 @@ export class ConflictDetector {
   ): Conflict[] {
     const conflicts: Conflict[] = [];
 
+    const localRecord = local as Record<string, unknown>;
+    const remoteRecord = remote as Record<string, unknown>;
+    const baseRecord = base as Record<string, unknown>;
+
     // Check actions array
-    if (local.actions && remote.actions && base.actions) {
+    if (localRecord.actions && remoteRecord.actions && baseRecord.actions) {
       conflicts.push(
         ...this.detectArrayConflicts(
-          local.actions,
-          remote.actions,
-          base.actions,
+          localRecord.actions as unknown[],
+          remoteRecord.actions as unknown[],
+          baseRecord.actions as unknown[],
           [...path, "actions"],
           "ActionModified"
         )
@@ -208,12 +215,16 @@ export class ConflictDetector {
     }
 
     // Check connections
-    if (local.connections && remote.connections && base.connections) {
+    if (
+      localRecord.connections &&
+      remoteRecord.connections &&
+      baseRecord.connections
+    ) {
       conflicts.push(
         ...this.detectArrayConflicts(
-          local.connections,
-          remote.connections,
-          base.connections,
+          localRecord.connections as unknown[],
+          remoteRecord.connections as unknown[],
+          baseRecord.connections as unknown[],
           [...path, "connections"],
           "ConnectionChanged"
         )
@@ -236,9 +247,24 @@ export class ConflictDetector {
     const conflicts: Conflict[] = [];
 
     // Create maps by id for easier comparison
-    const localMap = new Map(local.map((item) => [item.id, item]));
-    const remoteMap = new Map(remote.map((item) => [item.id, item]));
-    const baseMap = new Map(base.map((item) => [item.id, item]));
+    const localMap = new Map(
+      local.map((item) => [
+        (item as Record<string, unknown>).id as string,
+        item,
+      ])
+    );
+    const remoteMap = new Map(
+      remote.map((item) => [
+        (item as Record<string, unknown>).id as string,
+        item,
+      ])
+    );
+    const baseMap = new Map(
+      base.map((item) => [
+        (item as Record<string, unknown>).id as string,
+        item,
+      ])
+    );
 
     // Get all IDs
     const allIds = new Set([
@@ -481,7 +507,11 @@ export class ConflictDetector {
 
       case "MetadataChanged":
         // Merge metadata objects
-        return { ...baseVersion, ...serverVersion, ...localVersion };
+        return {
+          ...(baseVersion as object),
+          ...(serverVersion as object),
+          ...(localVersion as object),
+        };
 
       default:
         // For other types, default to local version
@@ -536,19 +566,20 @@ export class ConflictDetector {
   private applyResolution(target: unknown, path: string[], value: unknown): void {
     if (path.length === 0) return;
 
-    let current = target;
+    let current: unknown = target;
     for (let i = 0; i < path.length - 1; i++) {
       const key = path[i];
       if (!key) continue;
-      if (!current[key]) {
-        current[key] = {};
+      const currentRecord = current as Record<string, unknown>;
+      if (!currentRecord[key]) {
+        currentRecord[key] = {};
       }
-      current = current[key];
+      current = currentRecord[key];
     }
 
     const lastKey = path[path.length - 1];
     if (lastKey !== undefined) {
-      current[lastKey] = value;
+      (current as Record<string, unknown>)[lastKey] = value;
     }
   }
 
@@ -563,17 +594,21 @@ export class ConflictDetector {
   ): void {
     if (!source || typeof source !== "object") return;
 
-    for (const key in source) {
+    const sourceRecord = source as Record<string, unknown>;
+    const baseRecord = base as Record<string, unknown> | undefined;
+    const targetRecord = target as Record<string, unknown>;
+
+    for (const key in sourceRecord) {
       const hasConflict = conflicts.some(
         (c) => c.path.length > 0 && c.path[0] === key
       );
 
       if (!hasConflict) {
-        const sourceValue = source[key];
-        const baseValue = base?.[key];
+        const sourceValue = sourceRecord[key];
+        const baseValue = baseRecord?.[key];
 
         if (JSON.stringify(sourceValue) !== JSON.stringify(baseValue)) {
-          target[key] = sourceValue;
+          targetRecord[key] = sourceValue;
         }
       }
     }

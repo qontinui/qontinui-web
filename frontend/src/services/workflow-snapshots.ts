@@ -550,10 +550,11 @@ export class WorkflowSnapshotsService {
    * Hash an action for comparison
    */
   private hashAction(action: unknown): string {
+    const actionRecord = action as Record<string, unknown>;
     const str = JSON.stringify({
-      type: action.type,
-      config: action.config,
-      position: action.position,
+      type: actionRecord.type,
+      config: actionRecord.config,
+      position: actionRecord.position,
     });
     let hash = 0;
     for (let i = 0; i < str.length; i++) {

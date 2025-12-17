@@ -52,35 +52,38 @@ export class CaptureService {
 
     // Transform web backend capture sessions to frontend format
     // These are screenshot-based sessions, not video capture sessions
-    const sessions: CaptureSession[] = items.map((item: unknown) => ({
-      id: 0, // UUID-based, using 0 as placeholder
-      sessionId: item.id, // UUID
-      projectId: undefined,
-      workflowId: undefined,
-      name: item.name || `Capture Session`,
-      description: item.description,
-      videoUrl: "", // Screenshot sessions don't have video
-      duration: 0,
-      durationMs: 0,
-      videoWidth: 0,
-      videoHeight: 0,
-      videoFps: 0,
-      totalFrames: item.screenshot_count || 0,
-      isComplete: item.status === "completed",
-      isProcessed: item.status === "completed",
-      createdAt: item.created_at,
-      endedAt: item.completed_at,
-      notes: item.description,
-      tags: [],
-      stats: {
-        totalEvents: 0,
-        mouseClicks: 0,
-        mouseMoves: 0,
-        keyPresses: 0,
-        scrolls: 0,
-        dragOperations: 0,
-      },
-    }));
+    const sessions: CaptureSession[] = items.map((item: unknown) => {
+      const i = item as Record<string, unknown>;
+      return {
+        id: 0, // UUID-based, using 0 as placeholder
+        sessionId: i.id as string, // UUID
+        projectId: undefined,
+        workflowId: undefined,
+        name: (i.name as string) || `Capture Session`,
+        description: i.description as string,
+        videoUrl: "", // Screenshot sessions don't have video
+        duration: 0,
+        durationMs: 0,
+        videoWidth: 0,
+        videoHeight: 0,
+        videoFps: 0,
+        totalFrames: (i.screenshot_count as number) || 0,
+        isComplete: i.status === "completed",
+        isProcessed: i.status === "completed",
+        createdAt: i.created_at as string,
+        endedAt: i.completed_at as string,
+        notes: i.description as string,
+        tags: [],
+        stats: {
+          totalEvents: 0,
+          mouseClicks: 0,
+          mouseMoves: 0,
+          keyPresses: 0,
+          scrolls: 0,
+          dragOperations: 0,
+        },
+      };
+    });
 
     return {
       sessions,
