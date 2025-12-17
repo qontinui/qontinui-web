@@ -525,7 +525,7 @@ export class ConflictDetector {
   threeWayMerge(local: unknown, remote: unknown, base: unknown): MergeResult {
     const conflicts = this.detectConflicts(local, remote, base);
     const resolutions: Resolution[] = [];
-    const mergedVersion = { ...base };
+    const mergedVersion = { ...(base as object) };
 
     // Try to auto-resolve conflicts
     for (const conflict of conflicts) {
