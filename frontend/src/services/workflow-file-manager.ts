@@ -675,7 +675,7 @@ export class WorkflowFileManager {
                 (arr) => arr.length > 0
               );
               if (nonEmptyOutputs.length > 0) {
-                (cleanedConnections[sourceId] as unknown)[type] = nonEmptyOutputs;
+                (cleanedConnections[sourceId] as Record<string, unknown>)[type] = nonEmptyOutputs;
               }
             }
           });

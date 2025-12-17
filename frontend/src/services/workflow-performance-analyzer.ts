@@ -1727,7 +1727,13 @@ export class WorkflowPerformanceAnalyzer {
     severity: "minor" | "moderate" | "severe";
     details: string;
   }> {
-    const regressions: Array<unknown> = [];
+    const regressions: Array<{
+      fromVersion: string;
+      toVersion: string;
+      regressionType: "execution_time" | "bottleneck_score" | "action_count";
+      severity: "minor" | "moderate" | "severe";
+      details: string;
+    }> = [];
 
     for (let i = 1; i < versions.length; i++) {
       const prev = versions[i - 1];

@@ -39,21 +39,24 @@ export interface MigrationOptions {
  * Detect workflow version from data
  */
 export function detectWorkflowVersion(data: unknown): string {
+  // Type guard to safely access properties
+  const workflowData = data as Record<string, unknown>;
+
   // Check explicit version field
-  if (data.version) {
-    return data.version;
+  if (workflowData.version && typeof workflowData.version === "string") {
+    return workflowData.version;
   }
 
   // Detect by structure
-  if (data.format === "graph" && data.connections) {
+  if (workflowData.format === "graph" && workflowData.connections) {
     return "1.0.0"; // Current format
   }
 
-  if (data.format === "sequential" || (!data.format && data.actions)) {
+  if (workflowData.format === "sequential" || (!workflowData.format && workflowData.actions)) {
     return "0.9.0"; // Legacy sequential format
   }
 
-  if (data.nodes && data.edges) {
+  if (workflowData.nodes && workflowData.edges) {
     return "0.5.0"; // Very old node/edge format
   }
 
@@ -136,17 +139,18 @@ export function migrateWorkflow(
   }
 
   // Add migration metadata
+  const currentData = current as Record<string, unknown>;
   const result = {
-    ...current,
+    ...currentData,
     version: toVersion,
     metadata: {
-      ...current.metadata,
+      ...(typeof currentData.metadata === 'object' && currentData.metadata !== null ? currentData.metadata as Record<string, unknown> : {}),
       migratedFrom: fromVersion,
       migratedTo: toVersion,
       migrationDate: new Date().toISOString(),
       migrationWarnings: warnings,
     },
-  } as Workflow;
+  } as unknown as Workflow;
 
   return result;
 }
@@ -207,31 +211,35 @@ function migrateV05ToV09(
   }
 ): unknown {
   const { warnings } = context;
+  const sourceData = data as Record<string, unknown>;
 
   warnings.push("Migrating from node/edge format to sequential format");
 
-  const workflow: unknown = {
-    id: data.id || `workflow-${Date.now()}`,
-    name: data.name || "Untitled Workflow",
+  const workflow: Record<string, unknown> = {
+    id: sourceData.id || `workflow-${Date.now()}`,
+    name: sourceData.name || "Untitled Workflow",
     version: "0.9.0",
     format: "sequential",
     actions: [],
-    metadata: data.metadata || {},
+    metadata: sourceData.metadata || {},
   };
 
   // Convert nodes to actions
-  if (data.nodes && Array.isArray(data.nodes)) {
-    workflow.actions = data.nodes.map((node: unknown, index: number) => ({
-      id: node.id || `action-${index}`,
-      type: node.type,
-      name: node.name,
-      config: node.config || node.data || {},
-      base: node.base,
-      execution: node.execution,
-    }));
+  if (sourceData.nodes && Array.isArray(sourceData.nodes)) {
+    workflow.actions = sourceData.nodes.map((node: unknown, index: number) => {
+      const nodeData = node as Record<string, unknown>;
+      return {
+        id: nodeData.id || `action-${index}`,
+        type: nodeData.type,
+        name: nodeData.name,
+        config: nodeData.config || nodeData.data || {},
+        base: nodeData.base,
+        execution: nodeData.execution,
+      };
+    });
   }
 
-  warnings.push(`Converted ${workflow.actions.length} nodes to actions`);
+  warnings.push(`Converted ${(workflow.actions as unknown[]).length} nodes to actions`);
   warnings.push(
     "Note: Edge information was discarded (not supported in sequential format)"
   );
@@ -252,32 +260,34 @@ function migrateV09ToV10(
   }
 ): unknown {
   const { warnings } = context;
+  const sourceData = data as Record<string, unknown>;
 
   warnings.push("Migrating from sequential format to graph format");
 
   const workflow: Workflow = {
-    id: data.id || `workflow-${Date.now()}`,
-    name: data.name || "Untitled Workflow",
+    id: (sourceData.id as string) || `workflow-${Date.now()}`,
+    name: (sourceData.name as string) || "Untitled Workflow",
     version: "1.0.0",
     format: "graph",
     actions: [],
     connections: {},
-    variables: data.variables,
-    settings: data.settings,
-    metadata: data.metadata || {},
-    tags: data.tags,
+    variables: sourceData.variables as any,
+    settings: sourceData.settings as any,
+    metadata: (sourceData.metadata || {}) as Record<string, unknown>,
+    tags: sourceData.tags as string[] | undefined,
   };
 
   // Convert actions and add positions
-  if (data.actions && Array.isArray(data.actions)) {
-    workflow.actions = data.actions.map((action: unknown, index: number) => {
+  if (sourceData.actions && Array.isArray(sourceData.actions)) {
+    workflow.actions = sourceData.actions.map((action: unknown, index: number) => {
+      const actionData = action as Record<string, unknown>;
       const x = 100 + (index % 4) * 300;
       const y = 100 + Math.floor(index / 4) * 200;
 
       return {
-        ...action,
+        ...actionData,
         position: [x, y] as [number, number],
-      };
+      } as any;
     });
 
     // Create sequential connections
@@ -416,13 +426,14 @@ export function canMigrate(from: string, to: string): boolean {
  * Create backup of workflow before migration
  */
 export function backupWorkflow(workflow: unknown): string {
+  const workflowData = workflow as Record<string, unknown>;
   const backup = {
     workflow,
     timestamp: new Date().toISOString(),
     version: detectWorkflowVersion(workflow),
   };
 
-  const key = `workflow-backup:${workflow.id || Date.now()}:${Date.now()}`;
+  const key = `workflow-backup:${workflowData.id || Date.now()}:${Date.now()}`;
   localStorage.setItem(key, JSON.stringify(backup));
 
   return key;
