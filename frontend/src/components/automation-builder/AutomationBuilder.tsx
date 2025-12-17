@@ -473,7 +473,7 @@ export function AutomationBuilder() {
 
   return (
     <div
-      className="flex h-full"
+      className="flex h-[calc(100vh-4rem)] overflow-hidden"
       data-tutorial-id="automation-builder-container"
     >
       {/* Left Panel - Library */}
@@ -529,8 +529,8 @@ export function AutomationBuilder() {
       <div
         className={`${
           mode === "graph"
-            ? "w-[24rem] xl:w-[27rem] 2xl:w-[30rem]"
-            : "w-[48rem] xl:w-[54rem] 2xl:w-[60rem]"
+            ? "w-[20rem] xl:w-[22rem] 2xl:w-[24rem]"
+            : "w-[22rem] xl:w-[26rem] 2xl:w-[30rem]"
         } flex-shrink-0 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto`}
         data-tutorial-id="properties-panel"
       >

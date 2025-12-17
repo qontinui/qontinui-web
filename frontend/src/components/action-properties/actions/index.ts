@@ -19,6 +19,7 @@ export { ScrollActionProperties } from "./ScrollActionProperties";
 export { VanishActionProperties } from "./VanishActionProperties";
 export { GoToStateActionProperties } from "./GoToStateActionProperties";
 export { RunWorkflowActionProperties } from "./RunWorkflowActionProperties";
+export { ScreenshotActionProperties } from "./ScreenshotActionProperties";
 
 // Import Phase 1 components
 export { GetVariableActionProperties } from "./data-operations/GetVariableActionProperties";
@@ -52,6 +53,7 @@ import { ScrollActionProperties } from "./ScrollActionProperties";
 import { VanishActionProperties } from "./VanishActionProperties";
 import { GoToStateActionProperties } from "./GoToStateActionProperties";
 import { RunWorkflowActionProperties } from "./RunWorkflowActionProperties";
+import { ScreenshotActionProperties } from "./ScreenshotActionProperties";
 
 // Import Phase 1 components
 import { GetVariableActionProperties } from "./data-operations/GetVariableActionProperties";
@@ -98,6 +100,11 @@ actionConfigRegistry.register(
   "RUN_WORKFLOW",
   RunWorkflowActionProperties,
   "RUN_WORKFLOW"
+);
+actionConfigRegistry.register(
+  "SCREENSHOT",
+  ScreenshotActionProperties,
+  "SCREENSHOT"
 );
 
 // Register Phase 1 components

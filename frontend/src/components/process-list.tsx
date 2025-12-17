@@ -75,7 +75,7 @@ export function ProcessList({
   }>({ open: false, processId: "", processName: "" });
 
   // Default categories
-  const defaultCategories = ["Main", "Transitions"];
+  const defaultCategories = ["Main", "Incoming Transitions", "Outgoing Transitions"];
 
   // Get all unique categories from processes
   const processCategories = [

@@ -19,6 +19,7 @@ import { ScreenshotManager } from "./screenshot-manager";
 import { screenshotDB, normalizeUrl } from "@/lib/screenshot-db";
 import { projectDB } from "@/lib/project-db";
 import { projectLogger } from "@/lib/project-logger";
+import { useAutomationStore } from "@/stores/automation";
 import { apiClient } from "@/lib/api-client";
 import type {
   AutomationContextType,
@@ -666,13 +667,13 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setImages(allImages);
       setScreenshots(loadedScreenshots);
 
-      // Extract unique categories from loaded workflows, always including Main and Transitions
+      // Extract unique categories from loaded workflows, always including Main and transition categories
       const workflowCategories = loadedWorkflows
         .map((w) => w.category)
         .filter((cat): cat is string => cat != null && cat !== "");
 
       const uniqueCategories = Array.from(
-        new Set(["Main", "Transitions", ...workflowCategories])
+        new Set(["Main", "Incoming Transitions", "Outgoing Transitions", ...workflowCategories])
       );
       setCategories(uniqueCategories);
 
@@ -705,7 +706,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.addWorkflow(workflowWithProject);
       } catch (error: unknown) {
         // If key already exists, update instead
-        if (error.name === "ConstraintError") {
+        if ((error as Error).name === "ConstraintError") {
           await projectDB.updateWorkflow(workflowWithProject);
         } else {
           throw error;
@@ -764,6 +765,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
       setStates((prev) => StateManager.addState(prev, stateWithProject));
 
+      // Also sync to Zustand store so StateStructure and other components see the new state
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.addState(stateWithProject);
+
       // Auto-create an incoming transition for this state
       // Every state should have exactly one incoming transition
       const incomingTransition: IncomingTransition = {
@@ -779,6 +784,8 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       try {
         await projectDB.addTransition(incomingTransition);
         setTransitions((prev) => [...prev, incomingTransition]);
+        // Also sync transition to Zustand store
+        zustandStore.addTransition(incomingTransition);
       } catch (error: unknown) {
         // If transition already exists, ignore the error
         if (error.name !== "ConstraintError") {
@@ -792,6 +799,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   const updateState = useCallback(async (state: State) => {
     await projectDB.updateState(state);
     setStates((prev) => StateManager.updateState(prev, state));
+    // Also sync to Zustand store
+    const zustandStore = useAutomationStore.getState();
+    zustandStore.updateState(state);
   }, []);
 
   const updateStateWithIdChange = useCallback(
@@ -863,6 +873,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         }
       }
       setImages((prev) => ImageManager.addImage(prev, imageWithProject));
+      // Also sync to Zustand store so StateNode and other components see the new image
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.addImage(imageWithProject);
     },
     [projectName]
   );
@@ -1248,8 +1261,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   }, []);
 
   const deleteCategory = useCallback((category: string) => {
-    // Protect Main and Transitions categories from deletion
-    if (category === "Main" || category === "Transitions") {
+    // Protect Main and transition categories from deletion
+    const protectedCategories = ["Main", "Incoming Transitions", "Outgoing Transitions"];
+    if (protectedCategories.includes(category)) {
       console.warn(`Cannot delete protected category: ${category}`);
       return;
     }
@@ -1468,46 +1482,114 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         configHasData,
       });
 
-      // SAFETY: If backend returns empty config, don&apos;t clear local data
-      // This prevents data loss when backend has been corrupted or reset
+      // SAFETY: If backend returns empty config, try to load from IndexedDB
+      // This handles the case where backend has been corrupted or reset
+      // but we still have data locally (especially important since we skip
+      // IndexedDB load when isLoadingFromBackend is true)
       if (!configHasData) {
         projectLogger.warn(
           "configLoader",
-          "Backend config is empty - preserving local data",
+          "Backend config is empty - attempting to load from IndexedDB",
           {
             newProjectName,
             oldProjectName: projectName,
           }
         );
-        // Don't clear local data, just return without changes
+
+        // Try to load from IndexedDB for this project
+        try {
+          const [
+            loadedWorkflows,
+            loadedStates,
+            loadedTransitions,
+            loadedImages,
+          ] = await Promise.all([
+            projectDB.getWorkflowsByProject(newProjectName),
+            projectDB.getStatesByProject(newProjectName),
+            projectDB.getTransitionsByProject(newProjectName),
+            projectDB.getImagesByProject(newProjectName),
+          ]);
+
+          const hasLocalData =
+            loadedWorkflows.length > 0 ||
+            loadedStates.length > 0 ||
+            loadedTransitions.length > 0 ||
+            loadedImages.length > 0;
+
+          if (hasLocalData) {
+            projectLogger.info(
+              "configLoader",
+              "Found local data in IndexedDB - restoring",
+              {
+                projectName: newProjectName,
+                workflowCount: loadedWorkflows.length,
+                stateCount: loadedStates.length,
+                transitionCount: loadedTransitions.length,
+                imageCount: loadedImages.length,
+              }
+            );
+
+            // Set the data from IndexedDB to React Context
+            setWorkflows(loadedWorkflows);
+            setStates(loadedStates);
+            setTransitions(loadedTransitions);
+            setImages(loadedImages);
+            setProjectName(newProjectName);
+
+            // Also sync to Zustand store for UI components that read from there
+            // (StateStructure, etc. use useStates() which reads from Zustand, not Context)
+            const zustandStore = useAutomationStore.getState();
+            await zustandStore.loadConfiguration({
+              name: newProjectName,
+              workflows: loadedWorkflows,
+              states: loadedStates,
+              transitions: loadedTransitions,
+              images: loadedImages,
+            });
+
+            projectLogger.info(
+              "configLoader",
+              "Synced IndexedDB data to Zustand store",
+              { projectName: newProjectName }
+            );
+          } else {
+            projectLogger.warn(
+              "configLoader",
+              "No local data found in IndexedDB either",
+              { projectName: newProjectName }
+            );
+          }
+        } catch (error) {
+          projectLogger.error(
+            "configLoader",
+            "Failed to load from IndexedDB",
+            { error: error instanceof Error ? error.message : "Unknown error" }
+          );
+        }
+
         return;
       }
 
-      // SAFETY: Check if local data is newer than backend data
-      // This prevents data loss when session expires and backend saves fail
+      // NOTE: Previously had a timestamp safety check here that compared local save time
+      // vs backend save time to prevent data loss. However, this was too aggressive and
+      // blocked legitimate project loads when the user explicitly selected a project.
+      //
+      // The timestamp check has been removed because:
+      // 1. When user clicks on a project, they WANT to load that project's data
+      // 2. When user imports a file, they WANT to load that file's data
+      // 3. Auto-save to backend happens frequently, so data loss is minimal
+      // 4. IndexedDB still has local data as a backup
+      //
+      // If data loss becomes an issue, consider adding back with a user confirmation dialog
+      // instead of silently blocking the load.
+
+      // Clear the local save timestamp when loading new data
       if (typeof window !== "undefined" && newProjectName) {
         const saveTimeKey = `qontinui-local-save-time:${newProjectName}`;
-        const localSaveTime = localStorage.getItem(saveTimeKey);
-        const backendSaveTime = config.metadata?.lastSaved;
-
-        if (localSaveTime && backendSaveTime) {
-          const localTime = new Date(localSaveTime).getTime();
-          const backendTime = new Date(backendSaveTime).getTime();
-
-          if (localTime > backendTime) {
-            projectLogger.warn(
-              "configLoader",
-              "Local data is newer than backend - preserving local data",
-              {
-                localSaveTime,
-                backendSaveTime,
-                timeDiffSeconds: (localTime - backendTime) / 1000,
-              }
-            );
-            // Don't load from backend, local data is fresher
-            return;
-          }
-        }
+        localStorage.removeItem(saveTimeKey);
+        projectLogger.configLoader("Cleared local save timestamp for new load", {
+          projectName: newProjectName,
+        });
       }
 
       // Clear existing data for the old project from IndexedDB
@@ -1648,14 +1730,14 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
       if (config.categories && Array.isArray(config.categories)) {
         const uniqueCategories = Array.from(
-          new Set(["Main", "Transitions", ...config.categories])
+          new Set(["Main", "Incoming Transitions", "Outgoing Transitions", ...config.categories])
         );
         setCategories(uniqueCategories);
         projectLogger.configLoader("Categories set", {
           count: uniqueCategories.length,
         });
       } else {
-        setCategories(["Main", "Transitions"]);
+        setCategories(["Main", "Incoming Transitions", "Outgoing Transitions"]);
         projectLogger.configLoader("Using default categories");
       }
 
@@ -1730,7 +1812,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     setWorkflows([]);
     setStates([]);
     setTransitions([]);
-    setCategories(["Main", "Transitions"]);
+    setCategories(["Main", "Incoming Transitions", "Outgoing Transitions"]);
     setSchedules([]);
     setExecutionRecords([]);
     setLastSaved(null);

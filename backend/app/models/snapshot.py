@@ -2,13 +2,33 @@
 Snapshot and Screenshot Database Models
 
 Models for storing snapshot runs and associated screenshots for integration testing.
+
+This module consolidates snapshot models from both the backend and qontinui-api:
+- SnapshotRun: High-level snapshot run metadata
+- Screenshot: Individual screenshots from snapshot runs
+- Pattern: Visual patterns detected in screenshots
+- SnapshotAction: Individual actions from action logs (from qontinui-api)
+- SnapshotPattern: Pattern statistics and metadata (from qontinui-api)
+- SnapshotMatch: Individual match records for patterns (from qontinui-api)
 """
 
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID as PyUUID
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    ARRAY,
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,6 +102,17 @@ class SnapshotRun(Base):
         back_populates="snapshot_run",
         cascade="all, delete-orphan",
         lazy="selectin",
+    )
+    # Additional relationships for detailed action tracking (from qontinui-api)
+    actions: Mapped[list["SnapshotAction"]] = relationship(
+        "SnapshotAction",
+        back_populates="snapshot_run",
+        cascade="all, delete-orphan",
+    )
+    snapshot_patterns: Mapped[list["SnapshotPattern"]] = relationship(
+        "SnapshotPattern",
+        back_populates="snapshot_run",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
@@ -175,3 +206,190 @@ class Pattern(Base):
 
     def __repr__(self) -> str:
         return f"<Pattern(name='{self.name}', type='{self.type}', confidence={self.confidence})>"
+
+
+# Additional models migrated from qontinui-api for detailed action tracking and pattern matching
+
+
+class SnapshotAction(Base):
+    """
+    Snapshot action records table (migrated from qontinui-api).
+
+    Stores individual actions from the action log with detailed execution data.
+    This is more detailed than Screenshot and tracks action-level execution.
+    """
+
+    __tablename__ = "snapshot_actions"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    # Foreign key
+    snapshot_run_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("snapshot_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Action identifiers
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+
+    # Pattern info
+    pattern_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    pattern_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Result info
+    success: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, index=True
+    )
+    match_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[float | None] = mapped_column(Numeric(10, 3), nullable=True)
+
+    # State and context
+    active_states: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    screenshot_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_start_screenshot: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True
+    )
+
+    # Full action data from action_log.json
+    action_data_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    # Relationship
+    snapshot_run: Mapped["SnapshotRun"] = relationship(
+        "SnapshotRun", back_populates="actions"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index(
+            "idx_snapshot_actions_run_sequence", "snapshot_run_id", "sequence_number"
+        ),
+        Index("idx_snapshot_actions_timestamp", "timestamp"),
+        Index("idx_snapshot_actions_pattern_id", "pattern_id"),
+        Index("idx_snapshot_actions_action_type", "action_type"),
+        Index("idx_snapshot_actions_success", "success"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SnapshotAction(run_id={self.snapshot_run_id}, "
+            f"seq={self.sequence_number}, type='{self.action_type}')>"
+        )
+
+
+class SnapshotPattern(Base):
+    """
+    Pattern statistics table (migrated from qontinui-api).
+
+    Aggregates pattern usage across a snapshot run.
+    This is more detailed than the Pattern model and includes usage statistics.
+    """
+
+    __tablename__ = "snapshot_patterns"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    # Foreign key
+    snapshot_run_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("snapshot_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Pattern identifiers
+    pattern_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    pattern_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Statistics
+    total_finds: Mapped[int] = mapped_column(Integer, default=0)
+    successful_finds: Mapped[int] = mapped_column(Integer, default=0)
+    failed_finds: Mapped[int] = mapped_column(Integer, default=0)
+    total_matches: Mapped[int] = mapped_column(Integer, default=0)
+    avg_duration_ms: Mapped[float | None] = mapped_column(Numeric(10, 3), nullable=True)
+
+    # Full pattern data from patterns/{pattern-id}/metadata.json
+    pattern_data_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    # Relationships
+    snapshot_run: Mapped["SnapshotRun"] = relationship(
+        "SnapshotRun", back_populates="snapshot_patterns"
+    )
+    matches: Mapped[list["SnapshotMatch"]] = relationship(
+        "SnapshotMatch",
+        back_populates="pattern",
+        cascade="all, delete-orphan",
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_snapshot_patterns_run_pattern", "snapshot_run_id", "pattern_id"),
+        Index("idx_snapshot_patterns_pattern_id", "pattern_id"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SnapshotPattern(run_id={self.snapshot_run_id}, "
+            f"pattern_id='{self.pattern_id}')>"
+        )
+
+
+class SnapshotMatch(Base):
+    """
+    Individual match records table (migrated from qontinui-api).
+
+    Stores detailed match information for pattern finds.
+    """
+
+    __tablename__ = "snapshot_matches"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    # Foreign keys
+    pattern_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("snapshot_patterns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    action_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("snapshot_actions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Match info
+    match_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    x: Mapped[int] = mapped_column(Integer, nullable=False)
+    y: Mapped[int] = mapped_column(Integer, nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    score: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+
+    # Full match data from patterns/{pattern-id}/history.json
+    match_data_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    # Relationships
+    pattern: Mapped["SnapshotPattern"] = relationship(
+        "SnapshotPattern", back_populates="matches"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_snapshot_matches_pattern", "pattern_id"),
+        Index("idx_snapshot_matches_action", "action_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<SnapshotMatch(pattern_id={self.pattern_id}, x={self.x}, y={self.y})>"

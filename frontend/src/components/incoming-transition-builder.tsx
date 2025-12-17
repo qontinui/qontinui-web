@@ -41,7 +41,7 @@ export function IncomingTransitionBuilder({
     preselectedWorkflow ? [preselectedWorkflow] : []
   );
   const [workflowCategoryFilter, setWorkflowCategoryFilter] =
-    useState<string>("Transitions");
+    useState<string>("Incoming Transitions");
 
   const handleCreate = () => {
     if (!toState) {
@@ -69,7 +69,7 @@ export function IncomingTransitionBuilder({
     // Reset form
     setToState("");
     setSelectedWorkflows([]);
-    setWorkflowCategoryFilter("Transitions");
+    setWorkflowCategoryFilter("Incoming Transitions");
     setOpen(false);
     onClose?.();
   };
@@ -145,12 +145,13 @@ export function IncomingTransitionBuilder({
                 </SelectTrigger>
                 <SelectContent className="bg-[#27272A] border-gray-700">
                   <SelectItem value="All">All Categories</SelectItem>
-                  <SelectItem value="Transitions">Transitions</SelectItem>
+                  <SelectItem value="Incoming Transitions">Incoming Transitions</SelectItem>
+                  <SelectItem value="Outgoing Transitions">Outgoing Transitions</SelectItem>
                   <SelectItem value="Main">Main</SelectItem>
                   {Array.from(
                     new Set(workflows.map((w) => w.category || "Main"))
                   )
-                    .filter((c) => c !== "Main" && c !== "Transitions")
+                    .filter((c) => c !== "Main" && c !== "Transitions" && c !== "Incoming Transitions" && c !== "Outgoing Transitions")
                     .map((category) => (
                       <SelectItem key={category} value={category}>
                         {category}
@@ -177,8 +178,8 @@ export function IncomingTransitionBuilder({
                   .filter((w) => !selectedWorkflows.includes(w.id)).length ===
                 0 ? (
                   <p className="text-sm text-gray-500 text-center py-4">
-                    {workflowCategoryFilter === "Transitions"
-                      ? "No workflows in Transitions category. Try 'All Categories' to see all workflows."
+                    {workflowCategoryFilter === "Incoming Transitions"
+                      ? "No workflows in Incoming Transitions category. Create one using the workflow editor or try 'All Categories'."
                       : "No available workflows"}
                   </p>
                 ) : (

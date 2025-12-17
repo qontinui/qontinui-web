@@ -488,7 +488,7 @@ export function StatePropertiesPanel({
                                     <div className="flex items-start gap-2">
                                       {/* Pattern image */}
                                       <div
-                                        className="w-48 h-32 bg-gray-800 rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-[#00D9FF] transition-all"
+                                        className="w-24 h-16 bg-gray-800 rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-[#00D9FF] transition-all"
                                         onClick={() =>
                                           setOpenImageSelectorId(
                                             `${stateImage.id}_pattern_${pIdx}`
@@ -1889,7 +1889,7 @@ export function StatePropertiesPanel({
 
                 const isExpanded = expandedTransitionId === transition.id;
                 const categoryFilter =
-                  workflowCategoryFilters[transition.id] || "Transitions";
+                  workflowCategoryFilters[transition.id] || "Incoming Transitions";
                 const availableWorkflows = workflows.filter((w) => {
                   const category = w.category || "Main";
                   const matchesCategory =
@@ -2051,8 +2051,11 @@ export function StatePropertiesPanel({
                               <SelectItem value="All">
                                 All Categories
                               </SelectItem>
-                              <SelectItem value="Transitions">
-                                Transitions
+                              <SelectItem value="Incoming Transitions">
+                                Incoming Transitions
+                              </SelectItem>
+                              <SelectItem value="Outgoing Transitions">
+                                Outgoing Transitions
                               </SelectItem>
                               <SelectItem value="Main">Main</SelectItem>
                               {Array.from(
@@ -2061,7 +2064,7 @@ export function StatePropertiesPanel({
                                 )
                               )
                                 .filter(
-                                  (c) => c !== "Main" && c !== "Transitions"
+                                  (c) => c !== "Main" && c !== "Transitions" && c !== "Incoming Transitions" && c !== "Outgoing Transitions"
                                 )
                                 .map((category) => (
                                   <SelectItem key={category} value={category}>
@@ -2118,8 +2121,8 @@ export function StatePropertiesPanel({
                           </div>
                         ) : (
                           <p className="text-xs text-gray-500 text-center py-2">
-                            {categoryFilter === "Transitions"
-                              ? "No workflows in Transitions category. Try 'All Categories' to see all workflows."
+                            {categoryFilter === "Incoming Transitions"
+                              ? "No workflows in Incoming Transitions category. Use the Quick Helper or try 'All Categories'."
                               : "No available workflows in this category"}
                           </p>
                         )}

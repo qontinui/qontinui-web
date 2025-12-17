@@ -212,5 +212,12 @@ class TestDeficiency(Base):
 
     assigned_to = relationship("User", back_populates="assigned_deficiencies")
 
+    screenshots = relationship(
+        "TestScreenshot",
+        back_populates="deficiency",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
     def __repr__(self) -> str:
         return f"<TestDeficiency(id={self.id}, severity='{self.severity}', status='{self.status}')>"

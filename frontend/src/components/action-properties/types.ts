@@ -33,6 +33,7 @@ export interface Action {
     | "VANISH"
     | "GO_TO_STATE"
     | "RUN_WORKFLOW"
+    | "SCREENSHOT"
     // Control flow actions
     | "IF"
     | "LOOP"

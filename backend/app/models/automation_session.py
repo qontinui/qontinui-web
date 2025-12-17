@@ -95,6 +95,12 @@ class AutomationSession(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    execution_history: Mapped["WorkflowExecutionHistory | None"] = relationship(
+        "WorkflowExecutionHistory",
+        back_populates="session",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     def is_expired(self) -> bool:
         """

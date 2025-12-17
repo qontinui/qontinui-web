@@ -17,6 +17,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { projectService } from "@/services/service-factory";
 import { useAutomation } from "@/contexts/automation-context";
+import { useAutomationStore } from "@/stores/automation";
 import { projectLogger } from "@/lib/project-logger";
 import { toast } from "sonner";
 
@@ -235,13 +236,41 @@ export function useProjectLoader(): UseProjectLoaderResult {
         });
 
         // Load configuration into context
+        // IMPORTANT: Use project.name (from project record) instead of config.name
+        // because config.name might be "Untitled Project" if config is empty or corrupted
         projectLogger.configLoader("Calling loadConfiguration", {
           projectName: project.name,
         });
 
-        await loadConfiguration(project.configuration);
+        const configWithCorrectName = {
+          ...(project.configuration || {}),
+          name: project.name, // Override with correct project name
+        };
+        await loadConfiguration(configWithCorrectName);
 
-        projectLogger.configLoader("loadConfiguration completed", {
+        // Also load into Zustand store for UI components that read from there
+        // (StateStructure, etc. use useStates() which reads from Zustand, not Context)
+        const config = project.configuration as {
+          name?: string;
+          workflows?: unknown[];
+          states?: unknown[];
+          transitions?: unknown[];
+          images?: unknown[];
+          categories?: string[];
+          settings?: unknown;
+        };
+        const zustandStore = useAutomationStore.getState();
+        await zustandStore.loadConfiguration({
+          name: project.name,
+          workflows: config?.workflows,
+          states: config?.states,
+          transitions: config?.transitions,
+          images: config?.images,
+          categories: config?.categories,
+          settings: config?.settings,
+        });
+
+        projectLogger.configLoader("loadConfiguration completed (both stores)", {
           projectName: project.name,
         });
 
@@ -292,18 +321,22 @@ export function useProjectLoader(): UseProjectLoaderResult {
     projectLogger.urlHandler("URL project ID effect triggered", {
       projectIdFromUrl,
       loadedProjectIdRef: loadedProjectIdRef.current,
+      contextProjectId,
     });
 
     if (projectIdFromUrl) {
       loadProject(projectIdFromUrl);
-    } else {
-      // URL has no project ID - reset state
-      projectLogger.urlHandler("No project ID in URL, resetting state");
-      loadedProjectIdRef.current = null;
-      setProjectId(null);
-      setContextProjectId(null);
+    } else if (contextProjectId) {
+      // URL has no project ID, but context has one (from localStorage)
+      // Load that project instead of resetting
+      projectLogger.urlHandler("No project ID in URL, using context project ID", {
+        contextProjectId,
+      });
+      loadProject(contextProjectId);
     }
-  }, [projectIdFromUrl, loadProject, setContextProjectId]);
+    // Note: If neither URL nor context has a project ID, we don't reset anything.
+    // The RequireProject component will show the "No project selected" message.
+  }, [projectIdFromUrl, loadProject, contextProjectId]);
 
   // Manual reload function - forces a backend fetch even if project is already loaded
   const reloadProject = useCallback(async () => {

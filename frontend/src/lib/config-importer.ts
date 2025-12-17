@@ -38,13 +38,16 @@ interface Transition {
 
 export interface ImportResult {
   success: boolean;
+  name?: string; // Project name from config metadata
   images: ImageAsset[];
   workflows: Workflow[];
   states: State[];
   transitions: Transition[];
+  categories?: string[]; // Workflow categories
   settings?: unknown; // QontinuiConfig.settings
   errors: string[];
   warnings: string[];
+  isUserImport?: boolean; // Flag to indicate this is a user-initiated import (bypass timestamp checks)
 }
 
 export class ConfigImporter {
@@ -111,13 +114,16 @@ export class ConfigImporter {
 
       return {
         success: errors.length === 0,
+        name: config.metadata?.name, // Pass through project name for loadConfiguration
         images,
         workflows,
         states,
         transitions,
+        categories: config.categories || [], // Pass through categories
         settings: config.settings, // Pass through settings for backend to apply
         errors,
         warnings,
+        isUserImport: true, // Mark as user-initiated import
       };
     } catch (error) {
       errors.push(
@@ -291,6 +297,12 @@ export class ConfigImporter {
    * Import states from configuration
    */
   private importStates(exportStates: unknown[], images: ImageAsset[]): State[] {
+    // Build a name-to-id map for fallback matching when patterns don't have imageId
+    const imageNameToId = new Map<string, string>();
+    images.forEach((img) => {
+      imageNameToId.set(img.name, img.id);
+    });
+
     return exportStates.map((exportState) => {
       this.updateImageUsage(exportState, images);
 
@@ -304,20 +316,31 @@ export class ConfigImporter {
             id: img.id,
             name: img.name,
             patterns:
-              img.patterns?.map((pattern: unknown) => ({
-                id: pattern.id,
-                name: pattern.name,
-                image: pattern.imageId
-                  ? this.resolveImageId(pattern.imageId, images)
-                  : "",
-                mask: pattern.mask,
-                searchRegions: pattern.searchRegions || [],
-                fixed: pattern.fixed || false,
-                similarity: pattern.similarity,
-                targetPosition: pattern.targetPosition,
-                offsetX: pattern.offsetX,
-                offsetY: pattern.offsetY,
-              })) || [],
+              img.patterns?.map((pattern: unknown) => {
+                // If pattern has imageId, use it; otherwise try to match by name
+                let resolvedImageId = pattern.imageId;
+                if (!resolvedImageId && pattern.name) {
+                  // Fallback: try to match pattern name to image name
+                  resolvedImageId = imageNameToId.get(pattern.name);
+                }
+                if (!resolvedImageId && img.name) {
+                  // Fallback: try to match stateImage name to image name
+                  resolvedImageId = imageNameToId.get(img.name);
+                }
+
+                return {
+                  id: pattern.id,
+                  name: pattern.name,
+                  imageId: resolvedImageId, // Resolved or matched by name
+                  mask: pattern.mask,
+                  searchRegions: pattern.searchRegions || [],
+                  fixed: pattern.fixed || false,
+                  similarity: pattern.similarity,
+                  targetPosition: pattern.targetPosition,
+                  offsetX: pattern.offsetX,
+                  offsetY: pattern.offsetY,
+                };
+              }) || [],
             shared: img.shared || false,
             source: img.source,
             probability: img.probability,

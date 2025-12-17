@@ -8,10 +8,9 @@ import {
 } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ImageIcon, Target, Play, MapPin, Square, Type } from "lucide-react";
+import { ImageIcon, Play, MapPin, Square, Type } from "lucide-react";
 import { StateImageViewer } from "@/components/state-image-viewer";
-import { useAutomation } from "@/contexts/automation-context";
-import type { Pattern } from "@/contexts/automation-context/types";
+import { useImages, type Pattern } from "@/hooks/automation";
 
 interface ImageAsset {
   id: string;
@@ -74,6 +73,7 @@ interface StateNodeData extends Record<string, unknown> {
   incomingTransitions?: IncomingTransition[];
   hasOutgoingTransitions?: boolean;
   onAddOutgoingTransition?: (stateId: string) => void;
+  onStartImageDrag?: (stateId: string, stateImageId: string) => void;
   isSelected: boolean;
   onSelect: (id: string, selected: boolean) => void;
 }
@@ -88,11 +88,12 @@ export function StateNode({
     description: "",
     stateImages: [],
   };
-  const hasIncomingTransitions = data?.hasIncomingTransitions ?? false;
-  const incomingTransitions = data?.incomingTransitions ?? [];
   const hasOutgoingTransitions = data?.hasOutgoingTransitions ?? false;
   const onAddOutgoingTransition = data?.onAddOutgoingTransition;
-  const { resolvePatternImage } = useAutomation();
+  const onStartImageDrag = data?.onStartImageDrag;
+  // Use resolvePatternImage from Zustand store (via useImages hook) -
+  // this ensures we use the same images that StateStructure loaded
+  const { resolvePatternImage } = useImages();
 
   return (
     <div className="min-w-[200px]">
@@ -116,19 +117,6 @@ export function StateNode({
                 <h3 className="font-semibold text-white text-xl text-center">
                   {state.name}
                 </h3>
-                {hasIncomingTransitions && incomingTransitions.length > 0 && (
-                  <Badge
-                    className="absolute -top-2 -right-2 bg-[#00FF88] text-black text-xs px-1.5 py-0.5 flex items-center gap-0.5"
-                    title={`${incomingTransitions.length} IncomingTransition${incomingTransitions.length > 1 ? "s" : ""}`}
-                  >
-                    <Target className="w-3 h-3" />
-                    {incomingTransitions.length > 1 && (
-                      <span className="font-semibold">
-                        {incomingTransitions.length}
-                      </span>
-                    )}
-                  </Badge>
-                )}
                 {state.initial && (
                   <Badge
                     className="absolute -top-2 -left-2 bg-[#FFD700] text-black text-xs px-1.5 py-0.5"
@@ -147,7 +135,7 @@ export function StateNode({
 
             {/* State Images Thumbnail Grid */}
             {state.stateImages && state.stateImages.length > 0 && (
-              <div className="grid grid-cols-3 gap-1 max-w-[150px] mx-auto">
+              <div className="grid grid-cols-3 gap-1 max-w-[150px] mx-auto pb-2">
                 {state.stateImages.slice(0, 6).map((stateImage: unknown) => {
                   // Get first pattern's image from library
                   const firstPattern = stateImage.patterns?.[0];
@@ -157,25 +145,48 @@ export function StateNode({
                   return (
                     <div
                       key={stateImage.id}
-                      className="w-12 h-12 rounded flex items-center justify-center relative overflow-hidden"
-                      style={{
-                        background:
-                          "linear-gradient(45deg, #374151 25%, transparent 25%), linear-gradient(-45deg, #374151 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #374151 75%), linear-gradient(-45deg, transparent 75%, #374151 75%)",
-                        backgroundSize: "6px 6px",
-                        backgroundPosition: "0 0, 0 3px, 3px -3px, -3px 0px",
-                        backgroundColor: "#4B5563",
-                      }}
+                      className="relative"
                     >
-                      {imageData ? (
-                        <StateImageViewer
-                          image={imageData.url}
-                          mask={imageData.mask}
-                          mode={imageData.mask ? "with-mask" : "normal"}
-                          alt={stateImage.name}
-                          className="w-full h-full"
+                      <div
+                        className="w-12 h-12 rounded flex items-center justify-center relative overflow-hidden"
+                        style={{
+                          background:
+                            "linear-gradient(45deg, #374151 25%, transparent 25%), linear-gradient(-45deg, #374151 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #374151 75%), linear-gradient(-45deg, transparent 75%, #374151 75%)",
+                          backgroundSize: "6px 6px",
+                          backgroundPosition: "0 0, 0 3px, 3px -3px, -3px 0px",
+                          backgroundColor: "#4B5563",
+                        }}
+                      >
+                        {imageData ? (
+                          <StateImageViewer
+                            image={imageData.url}
+                            mask={imageData.mask}
+                            mode={imageData.mask ? "with-mask" : "normal"}
+                            alt={stateImage.name}
+                            className="w-full h-full"
+                          />
+                        ) : (
+                          <ImageIcon className="w-4 h-4 text-gray-400" />
+                        )}
+                      </div>
+                      {/* Draggable connection point for creating outgoing transitions */}
+                      {onStartImageDrag && imageData && (
+                        <div
+                          className="nodrag absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 w-3 h-3 rounded-full bg-[#BD00FF]/70 hover:bg-[#BD00FF] cursor-grab hover:scale-125 transition-all z-10 border border-[#BD00FF]"
+                          title={`Drag to create transition from ${stateImage.name}`}
+                          draggable
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            // Set drag data for the state machine to handle
+                            e.dataTransfer.setData("application/stateimage-drag", JSON.stringify({
+                              sourceStateId: state.id,
+                              stateImageId: stateImage.id,
+                              stateImageName: stateImage.name,
+                            }));
+                            e.dataTransfer.effectAllowed = "link";
+                            onStartImageDrag(state.id, stateImage.id);
+                          }}
                         />
-                      ) : (
-                        <ImageIcon className="w-4 h-4 text-gray-400" />
                       )}
                     </div>
                   );

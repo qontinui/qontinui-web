@@ -106,7 +106,8 @@ export function ProcessBuilder() {
   const allCategories = [
     ...new Set([
       "Main",
-      "Transitions",
+      "Incoming Transitions",
+      "Outgoing Transitions",
       ...categories,
       ...workflows.map((w) => w.category || "Main"),
     ]),

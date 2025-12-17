@@ -19,7 +19,10 @@ export type TargetType =
 
 export interface ImageTarget {
   type: "image";
-  imageId: string;
+  /** Single image ID (legacy format) */
+  imageId?: string;
+  /** Multiple image IDs (preferred format for multi-select) */
+  imageIds?: string[];
   searchOptions?: SearchOptions;
 }
 

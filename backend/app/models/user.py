@@ -133,3 +133,8 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     project_images = relationship(
         "ProjectImage", back_populates="user", cascade="all, delete-orphan"
     )
+    embedding_jobs = relationship(
+        "EmbeddingGenerationJob",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )

@@ -190,5 +190,19 @@ class SoftwareTestRun(Base):
         lazy="select",
     )
 
+    screenshots = relationship(
+        "TestScreenshot",
+        back_populates="test_run",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
+    visual_comparison_results = relationship(
+        "VisualComparisonResult",
+        back_populates="test_run",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
     def __repr__(self) -> str:
         return f"<SoftwareTestRun(id={self.id}, status='{self.status}', project_id={self.project_id})>"

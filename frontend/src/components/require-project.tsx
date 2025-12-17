@@ -19,6 +19,7 @@ interface RequireProjectProps {
  * 1. User has no projects - shows "create first project" message
  * 2. User has projects but none selected - shows "select a project" message
  * 3. User has a project selected (via context or URL param) - renders the children
+ * 4. User has imported local data (states exist without projectId) - renders the children
  *
  * Styled to match the dashboard's empty state design.
  */
@@ -27,15 +28,19 @@ export function RequireProject({
   pageName = "this page",
 }: RequireProjectProps) {
   const { data: projects, isLoading, error } = useProjects();
-  const { projectId } = useAutomation();
+  const { projectId, states } = useAutomation();
   const searchParams = useSearchParams();
 
   // Check for project ID in URL (used when navigating from dashboard)
   // searchParams can be null during SSR, so handle that case
   const urlProjectId = searchParams?.get("project") ?? null;
 
-  // Consider project selected if either context has it OR URL has it
-  const hasProjectSelected = Boolean(projectId || urlProjectId);
+  // Check if there's locally imported data (states exist without a backend project ID)
+  // This happens when a user imports a config file
+  const hasLocalImportedData = states && states.length > 0;
+
+  // Consider project selected if either context has it, URL has it, or local data was imported
+  const hasProjectSelected = Boolean(projectId || urlProjectId || hasLocalImportedData);
 
   if (isLoading) {
     return (

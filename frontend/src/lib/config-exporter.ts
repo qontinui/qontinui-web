@@ -253,8 +253,10 @@ export class ConfigExporter {
     }
 
     return workflows.map((workflow) => {
-      // Start with the workflow's existing connections or empty object
-      let connections = workflow.connections || {};
+      // Deep clone connections to avoid mutating frozen Immer state
+      let connections = workflow.connections
+        ? structuredClone(workflow.connections)
+        : {};
 
       // Ensure all actions have connection entries
       workflow.actions.forEach((action) => {
@@ -416,7 +418,8 @@ export class ConfigExporter {
    * Converts internal field names to export schema format
    */
   private transformActionConfig(action: Action, states?: State[]): unknown {
-    const config = { ...action.config };
+    // Deep clone to avoid mutating frozen Immer state
+    const config = action.config ? structuredClone(action.config) : {};
 
     // Handle GO_TO_STATE action: convert 'states' array to 'stateIds' array and add stateNames
     if (action.type === "GO_TO_STATE") {

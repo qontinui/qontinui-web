@@ -24,7 +24,6 @@ import { TransitionEdge } from "@/components/transition-edge";
 import {
   useStates,
   useTransitions,
-  useWorkflows,
   useImages,
   type State,
   type StateRegion,
@@ -36,12 +35,18 @@ import {
   type OutgoingTransition,
   type IncomingTransition,
 } from "@/hooks/automation";
+import { useAutomation } from "@/contexts/automation-context";
 import { StateUpdateCoordinator } from "@/stores/automation";
 import { OutgoingTransitionBuilder } from "@/components/outgoing-transition-builder";
 import { StatePropertiesPanel } from "@/components/state-properties-panel";
 import { TransitionPropertiesPanel } from "@/components/transition-properties-panel";
 import { BatchMonitorSettingsDialog } from "@/components/batch-monitor-settings-dialog";
 import { getLayoutedElements } from "@/lib/layout-utils";
+import {
+  createClickStateImageWorkflow,
+  createFindStateWorkflow,
+} from "@/lib/workflow-helpers";
+import { toast } from "sonner";
 
 const nodeTypes: NodeTypes = {
   stateNode: StateNode,
@@ -62,7 +67,7 @@ export function StateStructure() {
   } = useStates();
   const { transitions, addTransition, updateTransition, deleteTransition } =
     useTransitions();
-  const { workflows, addWorkflow } = useWorkflows();
+  const { workflows, addWorkflow } = useAutomation();
   const { images } = useImages();
 
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -73,6 +78,12 @@ export function StateStructure() {
   const [preselectedOriginState, setPreselectedOriginState] = useState<
     string | null
   >(null);
+
+  // State for tracking image drag operations for creating transitions
+  const [_imageDragData, setImageDragData] = useState<{
+    sourceStateId: string;
+    stateImageId: string;
+  } | null>(null);
 
   // Track pending ID changes to prevent panel from disappearing
   const pendingIdChangeRef = useRef<{ oldId: string; newId: string } | null>(
@@ -262,6 +273,147 @@ export function StateStructure() {
     setOutgoingTransitionDialogOpen(true);
   }, []);
 
+  // Handler for starting an image drag operation
+  const handleStartImageDrag = useCallback(
+    (stateId: string, stateImageId: string) => {
+      setImageDragData({ sourceStateId: stateId, stateImageId });
+    },
+    []
+  );
+
+  // Handler for creating a transition by dropping an image on a target state
+  const handleImageDropOnState = useCallback(
+    (targetStateId: string, dragData: { sourceStateId: string; stateImageId: string }) => {
+      const { sourceStateId, stateImageId } = dragData;
+
+      // Don't create transition to the same state
+      if (targetStateId === sourceStateId) {
+        toast.error("Cannot create a transition to the same state");
+        return;
+      }
+
+      // Find the source state and state image
+      const sourceState = states.find((s) => s.id === sourceStateId);
+      const targetState = states.find((s) => s.id === targetStateId);
+      if (!sourceState || !targetState) {
+        toast.error("Could not find states");
+        return;
+      }
+
+      const stateImage = sourceState.stateImages?.find(
+        (img) => img.id === stateImageId
+      );
+      if (!stateImage) {
+        toast.error("Could not find state image");
+        return;
+      }
+
+      // Create the click workflow for the outgoing transition
+      const clickWorkflow = createClickStateImageWorkflow(sourceState, stateImage);
+      addWorkflow(clickWorkflow);
+
+      // Create the find state workflow for the incoming transition
+      const findWorkflow = createFindStateWorkflow(targetState);
+      addWorkflow(findWorkflow);
+
+      // Create the outgoing transition with the click workflow
+      const outgoingTransition: OutgoingTransition = {
+        id: `transition-${Date.now()}`,
+        type: "OutgoingTransition",
+        fromState: sourceStateId,
+        activateStates: [targetStateId],
+        staysVisible: false,
+        deactivateStates: [],
+        workflows: [clickWorkflow.id],
+        timeout: 30000,
+        retryCount: 0,
+      };
+      addTransition(outgoingTransition);
+
+      // Check if the target state already has an incoming transition
+      const existingIncomingTransition = transitions.find(
+        (t): t is IncomingTransition =>
+          t.type === "IncomingTransition" && t.toState === targetStateId
+      );
+
+      if (existingIncomingTransition) {
+        // Update the existing incoming transition to add the find workflow if not already present
+        if (!existingIncomingTransition.workflows.includes(findWorkflow.id)) {
+          updateTransition({
+            ...existingIncomingTransition,
+            workflows: [...existingIncomingTransition.workflows, findWorkflow.id],
+          });
+        }
+      } else {
+        // Create a new incoming transition with the find workflow
+        const incomingTransition: IncomingTransition = {
+          id: `incoming-${Date.now()}`,
+          type: "IncomingTransition",
+          toState: targetStateId,
+          workflows: [findWorkflow.id],
+          timeout: 10000,
+          retryCount: 3,
+        };
+        addTransition(incomingTransition);
+      }
+
+      toast.success(
+        `Created transition from "${sourceState.name}" to "${targetState.name}" by clicking "${stateImage.name}"`
+      );
+      setImageDragData(null);
+    },
+    [states, transitions, addWorkflow, addTransition, updateTransition]
+  );
+
+  // Handle drag over on the canvas
+  const handleDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "link";
+  }, []);
+
+  // Handle drop on the canvas - determine which state node was targeted
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      // Try to get the drag data
+      const dragDataStr = event.dataTransfer.getData("application/stateimage-drag");
+      if (!dragDataStr) {
+        return;
+      }
+
+      try {
+        const dragData = JSON.parse(dragDataStr);
+
+        // Find which node the drop is over by checking the target
+        // We need to traverse up the DOM to find a state node
+        let target = event.target as HTMLElement;
+        let targetStateId: string | null = null;
+
+        while (target && !targetStateId) {
+          // Check if this element is a ReactFlow node
+          const nodeId = target.getAttribute("data-id");
+          if (nodeId && states.some((s) => s.id === nodeId)) {
+            targetStateId = nodeId;
+            break;
+          }
+          target = target.parentElement as HTMLElement;
+        }
+
+        if (targetStateId) {
+          handleImageDropOnState(targetStateId, dragData);
+        } else {
+          // Clear drag data if dropped on nothing
+          setImageDragData(null);
+        }
+      } catch (e) {
+        console.error("Failed to parse drag data:", e);
+        setImageDragData(null);
+      }
+    },
+    [states, handleImageDropOnState]
+  );
+
   React.useEffect(() => {
     // Skip rebuilding nodes while dragging to prevent node destruction
     if (isDraggingRef.current) {
@@ -298,6 +450,7 @@ export function StateStructure() {
         incomingTransitions: incomingTransitionsByState.get(state.id) || [],
         hasOutgoingTransitions: outgoingTransitionsByState.has(state.id),
         onAddOutgoingTransition: handleAddOutgoingTransition,
+        onStartImageDrag: handleStartImageDrag,
       },
     }));
 
@@ -405,6 +558,7 @@ export function StateStructure() {
     setNodes,
     setEdges,
     handleAddOutgoingTransition,
+    handleStartImageDrag,
   ]);
 
   const handleAddState = () => {
@@ -928,7 +1082,11 @@ export function StateStructure() {
 
       {/* Main Canvas */}
       <div className="flex-1 relative bg-[#0A0A0B] min-h-0">
-        <div className="absolute inset-0">
+        <div
+          className="absolute inset-0"
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}

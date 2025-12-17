@@ -1,0 +1,117 @@
+{
+  "version": "2.0.0",
+  "metadata": {
+    "name": "Test Import Project",
+    "description": "Sample config for testing import functionality",
+    "author": "Test",
+    "created": "2025-01-01T00:00:00.000Z",
+    "modified": "2025-01-01T00:00:00.000Z"
+  },
+  "images": [
+    {
+      "id": "img-test-1",
+      "name": "Test Image 1",
+      "data": "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQzwAEjDAGNzYAAIoaB/5rS1MAAAAASUVORK5CYII=",
+      "format": "png",
+      "width": 10,
+      "height": 10,
+      "hash": "test-hash-1"
+    },
+    {
+      "id": "img-test-2",
+      "name": "Test Image 2",
+      "data": "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNkYPhfz0AEYBzKgAkAFiQD/ylvj0UAAAAASUVORK5CYII=",
+      "format": "png",
+      "width": 10,
+      "height": 10,
+      "hash": "test-hash-2"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "workflow-test-1",
+      "name": "Test Workflow",
+      "description": "A test workflow",
+      "category": "Main",
+      "format": "graph",
+      "version": "2.0.0",
+      "actions": [],
+      "connections": {},
+      "metadata": {}
+    }
+  ],
+  "states": [
+    {
+      "id": "state-test-1",
+      "name": "Test State 1",
+      "description": "First test state",
+      "isInitial": true,
+      "stateImages": [
+        {
+          "id": "state-img-1",
+          "name": "State Image 1",
+          "patterns": [
+            {
+              "id": "pattern-1",
+              "name": "Pattern 1",
+              "imageId": "img-test-1",
+              "searchRegions": [],
+              "fixed": false
+            }
+          ],
+          "shared": false
+        }
+      ],
+      "regions": [],
+      "locations": [],
+      "strings": [],
+      "position": { "x": 100, "y": 100 }
+    },
+    {
+      "id": "state-test-2",
+      "name": "Test State 2",
+      "description": "Second test state",
+      "isInitial": false,
+      "stateImages": [
+        {
+          "id": "state-img-2",
+          "name": "State Image 2",
+          "patterns": [
+            {
+              "id": "pattern-2",
+              "name": "Pattern 2",
+              "imageId": "img-test-2",
+              "searchRegions": [],
+              "fixed": false
+            }
+          ],
+          "shared": false
+        }
+      ],
+      "regions": [],
+      "locations": [],
+      "strings": [],
+      "position": { "x": 300, "y": 100 }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "incoming-state-test-1",
+      "type": "IncomingTransition",
+      "toState": "state-test-1",
+      "workflows": [],
+      "timeout": 10000,
+      "retryCount": 3
+    },
+    {
+      "id": "incoming-state-test-2",
+      "type": "IncomingTransition",
+      "toState": "state-test-2",
+      "workflows": [],
+      "timeout": 10000,
+      "retryCount": 3
+    }
+  ],
+  "categories": ["Main", "Transitions"],
+  "settings": {}
+}

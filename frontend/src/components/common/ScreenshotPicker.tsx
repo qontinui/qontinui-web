@@ -7,6 +7,7 @@ import {
   Camera,
   Monitor,
   Loader2,
+  Check,
 } from "lucide-react";
 import { ScreenshotSelector } from "@/components/screenshot-selector";
 import { toast } from "sonner";
@@ -19,9 +20,32 @@ export interface ScreenshotInfo {
 
 interface MonitorInfo {
   index: number;
+  x: number;
+  y: number;
   width: number;
   height: number;
   is_primary: boolean;
+}
+
+// Delay options in seconds
+const DELAY_OPTIONS = [0, 3, 5, 10];
+
+/**
+ * Get position label based on monitor X coordinate relative to others
+ */
+function getPositionLabel(monitor: MonitorInfo, allMonitors: MonitorInfo[]): string {
+  if (allMonitors.length === 1) return "";
+
+  const sorted = [...allMonitors].sort((a, b) => a.x - b.x);
+  const idx = sorted.findIndex((m) => m.index === monitor.index);
+
+  if (sorted.length === 2) {
+    return idx === 0 ? "Left" : "Right";
+  }
+
+  if (idx === 0) return "Left";
+  if (idx === sorted.length - 1) return "Right";
+  return "Center";
 }
 
 interface ScreenshotPickerProps {
@@ -59,6 +83,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
   const [isCapturing, setIsCapturing] = useState(false);
   const [showMonitorMenu, setShowMonitorMenu] = useState(false);
   const [availableMonitors, setAvailableMonitors] = useState<MonitorInfo[]>([]);
+  const [selectedMonitors, setSelectedMonitors] = useState<number[]>([]);
   const [captureDelay, setCaptureDelay] = useState<number>(0); // Delay in seconds
   const [countdown, setCountdown] = useState<number | null>(null);
 
@@ -101,18 +126,60 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
       const response = await fetch(`${apiUrl}/api/capture/screenshot/monitors`);
       if (response.ok) {
         const data = await response.json();
-        setAvailableMonitors(data.monitors || []);
+        const monitors = (data.monitors || []).map((m: MonitorInfo) => ({
+          ...m,
+          x: m.x ?? 0,
+          y: m.y ?? 0,
+        }));
+        // Sort by x position (left to right)
+        const sortedMonitors = [...monitors].sort((a: MonitorInfo, b: MonitorInfo) => a.x - b.x);
+        setAvailableMonitors(sortedMonitors);
+        // Default select the primary monitor if nothing selected
+        if (selectedMonitors.length === 0) {
+          const primaryMonitor = sortedMonitors.find((m: MonitorInfo) => m.is_primary);
+          if (primaryMonitor) {
+            setSelectedMonitors([primaryMonitor.index]);
+          } else if (sortedMonitors.length > 0) {
+            setSelectedMonitors([sortedMonitors[0].index]);
+          }
+        }
       }
     } catch (error) {
       console.error("Failed to fetch monitors:", error);
       // Default to single monitor if API fails
       setAvailableMonitors([
-        { index: 0, width: 1920, height: 1080, is_primary: true },
+        { index: 0, x: 0, y: 0, width: 1920, height: 1080, is_primary: true },
       ]);
+      if (selectedMonitors.length === 0) {
+        setSelectedMonitors([0]);
+      }
     }
   };
 
-  const handleCaptureFromScreen = async (monitorIndex: number | null) => {
+  const handleMonitorClick = (index: number) => {
+    setSelectedMonitors((prev) => {
+      if (prev.includes(index)) {
+        // Don't allow deselecting if it's the only one selected
+        if (prev.length > 1) {
+          return prev.filter((i) => i !== index);
+        }
+        return prev;
+      } else {
+        return [...prev, index].sort((a, b) => a - b);
+      }
+    });
+  };
+
+  const handleSelectAllMonitors = () => {
+    setSelectedMonitors(availableMonitors.map((m) => m.index));
+  };
+
+  const handleCaptureFromScreen = async () => {
+    if (selectedMonitors.length === 0) {
+      toast.error("No monitors selected");
+      return;
+    }
+
     setShowMonitorMenu(false);
     setIsCapturing(true);
 
@@ -129,48 +196,50 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
 
       const apiUrl =
         process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
-      const monitorParam =
-        monitorIndex !== null ? `&monitor=${monitorIndex}` : "";
-      const response = await fetch(
-        `${apiUrl}/api/capture/screenshot/current?quality=95${monitorParam}`
-      );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          errorText || `Failed to capture screenshot: ${response.statusText}`
+      // Capture from all selected monitors
+      for (const monitorIndex of selectedMonitors) {
+        const monitorParam = `&monitor=${monitorIndex}`;
+        const response = await fetch(
+          `${apiUrl}/api/capture/screenshot/current?quality=95${monitorParam}`
         );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(
+            errorText || `Failed to capture screenshot: ${response.statusText}`
+          );
+        }
+
+        const data = await response.json();
+
+        // Convert base64 to Blob
+        const byteCharacters = atob(data.screenshot_base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: "image/png" });
+
+        // Create File object from Blob
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const monitorLabel = `monitor${monitorIndex}_`;
+        const filename = `screenshot_${monitorLabel}${timestamp}.png`;
+        const file = new File([blob], filename, { type: "image/png" });
+
+        // Pass to upload handler
+        onUploadScreenshot(file);
+
+        toast.success("Screenshot captured", {
+          description: `Monitor ${monitorIndex}: ${data.width}x${data.height} pixels`,
+        });
       }
-
-      const data = await response.json();
-
-      // Convert base64 to Blob
-      const byteCharacters = atob(data.screenshot_base64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: "image/png" });
-
-      // Create File object from Blob
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const monitorLabel =
-        monitorIndex !== null ? `monitor${monitorIndex}_` : "";
-      const filename = `screenshot_${monitorLabel}${timestamp}.png`;
-      const file = new File([blob], filename, { type: "image/png" });
-
-      // Pass to upload handler
-      onUploadScreenshot(file);
-
-      toast.success("Screenshot captured", {
-        description: `${data.width}x${data.height} pixels`,
-      });
     } catch (error: unknown) {
       console.error("Screenshot capture failed:", error);
       toast.error("Failed to capture screenshot", {
         description:
-          error.message || "Make sure qontinui-api is running on port 8001",
+          (error as Error).message || "Make sure qontinui-api is running on port 8001",
       });
     } finally {
       setIsCapturing(false);
@@ -222,77 +291,107 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
               </button>
 
               {showMonitorMenu && (
-                <div className="absolute left-0 right-0 mt-2 bg-[#27272A] rounded-md shadow-lg z-10 border border-gray-700">
-                  <div className="py-1">
-                    {/* Delay input */}
-                    <div className="px-3 py-2 border-b border-gray-700">
-                      <label className="text-xs text-gray-500 block mb-1">
-                        Capture Delay (seconds)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={10}
-                        value={captureDelay}
-                        onChange={(e) =>
-                          setCaptureDelay(
-                            Math.max(
-                              0,
-                              Math.min(10, parseInt(e.target.value) || 0)
-                            )
-                          )
-                        }
-                        className="w-full px-2 py-1 text-sm bg-gray-800 border border-gray-600 rounded text-white focus:outline-none focus:border-[#BD00FF]"
-                        placeholder="0"
-                      />
+                <div className="absolute left-0 mt-2 bg-[#27272A] rounded-lg shadow-lg z-50 border border-gray-700 p-3 min-w-full w-max">
+                  {/* Delay buttons */}
+                  <div className="mb-3">
+                    <label className="text-xs text-gray-400 block mb-2">
+                      Capture Delay
+                    </label>
+                    <div className="flex gap-1">
+                      {DELAY_OPTIONS.map((delay) => (
+                        <button
+                          key={delay}
+                          onClick={() => setCaptureDelay(delay)}
+                          className={`flex-1 px-2 py-1.5 text-xs rounded transition-colors ${
+                            captureDelay === delay
+                              ? "bg-[#BD00FF] text-white"
+                              : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                          }`}
+                        >
+                          {delay}s
+                        </button>
+                      ))}
                     </div>
-                    <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-700">
-                      Select monitor
-                    </div>
+                  </div>
+
+                  {/* Monitor selection */}
+                  <div className="mb-3">
+                    <label className="text-xs text-gray-400 block mb-2">
+                      Select Monitors
+                    </label>
                     {availableMonitors.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-gray-400 flex items-center gap-2">
+                      <div className="flex items-center justify-center gap-2 py-4 text-sm text-gray-400">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading...
+                        Loading monitors...
                       </div>
                     ) : (
-                      <>
-                        {availableMonitors.map((monitor) => (
-                          <button
-                            key={monitor.index}
-                            onClick={() =>
-                              handleCaptureFromScreen(monitor.index)
-                            }
-                            className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
-                          >
-                            <Monitor className="w-4 h-4" />
-                            <span className="flex-1">
-                              Monitor {monitor.index + 1}
-                              {monitor.is_primary && (
-                                <span className="text-xs text-[#00FF88] ml-1">
-                                  (Primary)
-                                </span>
-                              )}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              {monitor.width}×{monitor.height}
-                            </span>
-                          </button>
-                        ))}
-                        {availableMonitors.length > 1 && (
-                          <>
-                            <div className="border-t border-gray-700 my-1"></div>
+                      <div className="flex gap-2">
+                        {availableMonitors.map((monitor) => {
+                          const isSelected = selectedMonitors.includes(monitor.index);
+                          const position = getPositionLabel(monitor, availableMonitors);
+
+                          return (
                             <button
-                              onClick={() => handleCaptureFromScreen(null)}
-                              className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                              key={monitor.index}
+                              onClick={() => handleMonitorClick(monitor.index)}
+                              className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-all min-w-[80px] ${
+                                isSelected
+                                  ? "bg-[#BD00FF]/20 border-[#BD00FF] text-[#BD00FF] ring-2 ring-[#BD00FF]/30"
+                                  : "bg-gray-800 border-gray-600 text-gray-300 hover:border-[#BD00FF]/50 hover:bg-gray-700"
+                              }`}
                             >
-                              <Monitor className="w-4 h-4" />
-                              All Monitors
+                              <div className="flex items-center gap-1">
+                                <Monitor className="w-4 h-4" />
+                                <span className="font-medium text-sm">#{monitor.index}</span>
+                                {isSelected && <Check className="w-3 h-3 text-[#BD00FF]" />}
+                              </div>
+                              <div className="text-xs text-gray-400 space-y-0.5 text-center">
+                                {monitor.is_primary && (
+                                  <div className="text-[#00FF88] font-medium">Primary</div>
+                                )}
+                                {position && <div>{position}</div>}
+                                <div>{monitor.width}×{monitor.height}</div>
+                              </div>
                             </button>
-                          </>
+                          );
+                        })}
+
+                        {/* All button */}
+                        {availableMonitors.length > 1 && (
+                          <button
+                            onClick={handleSelectAllMonitors}
+                            className={`flex flex-col items-center justify-center gap-1 p-2 rounded-lg border transition-all min-w-[80px] ${
+                              selectedMonitors.length === availableMonitors.length
+                                ? "bg-[#BD00FF]/20 border-[#BD00FF] text-[#BD00FF] ring-2 ring-[#BD00FF]/30"
+                                : "bg-gray-800 border-gray-600 text-gray-300 hover:border-[#BD00FF]/50 hover:bg-gray-700"
+                            }`}
+                          >
+                            <div className="flex items-center gap-1">
+                              <Monitor className="w-4 h-4" />
+                              <span className="font-medium text-sm">All</span>
+                              {selectedMonitors.length === availableMonitors.length && (
+                                <Check className="w-3 h-3 text-[#BD00FF]" />
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {availableMonitors.length} monitors
+                            </div>
+                          </button>
                         )}
-                      </>
+                      </div>
                     )}
                   </div>
+
+                  {/* Capture button */}
+                  <button
+                    onClick={handleCaptureFromScreen}
+                    disabled={selectedMonitors.length === 0}
+                    className="w-full px-3 py-2 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Camera className="w-4 h-4" />
+                    Capture {selectedMonitors.length > 1 ? `${selectedMonitors.length} Monitors` : "Screen"}
+                    {captureDelay > 0 && ` (${captureDelay}s delay)`}
+                  </button>
                 </div>
               )}
             </div>

@@ -49,6 +49,7 @@ import { useOrganization } from "@/contexts/organization-context";
 import { useSidebar } from "@/contexts/sidebar-context";
 import { useAuth } from "@/contexts/auth-context";
 import { useAutomation } from "@/contexts/automation-context";
+import { useAutomationStore } from "@/stores/automation";
 import { useProjects, useCreateProject } from "@/hooks/use-projects";
 import { toast } from "sonner";
 import { ConfigExporter } from "@/lib/config-exporter";
@@ -235,8 +236,8 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    id: "test",
-    label: "Test",
+    id: "config-testing",
+    label: "Config Testing",
     icon: <CheckCircle2 size={28} />,
     route: "/automation-builder/pattern-tests",
     color: "#FF6B6B",
@@ -275,20 +276,69 @@ const navItems: NavItem[] = [
         color: "#FF6B6B",
       },
       {
-        id: "test-runs",
-        label: "Test Runs",
-        description: "View test execution history",
-        icon: <TestTube2 size={22} />,
-        route: "/testing",
-        color: "#FF6B6B",
-      },
-      {
         id: "captures",
         label: "Captures",
         description: "Execution recordings with input events",
         icon: <Camera size={22} />,
         route: "/captures",
         color: "#FF6B6B",
+      },
+    ],
+  },
+  {
+    id: "qa-testing",
+    label: "QA Testing",
+    icon: <TestTube2 size={28} />,
+    route: "/qa-dashboard",
+    color: "#F59E0B",
+    children: [
+      {
+        id: "qa-dashboard",
+        label: "Dashboard",
+        description: "QA testing overview and metrics",
+        icon: <LayoutDashboard size={22} />,
+        route: "/qa-dashboard",
+        color: "#F59E0B",
+      },
+      {
+        id: "test-runs",
+        label: "Test Runs",
+        description: "View test execution history",
+        icon: <Play size={22} />,
+        route: "/testing",
+        color: "#F59E0B",
+      },
+      {
+        id: "qa-runs",
+        label: "QA Runs",
+        description: "QA test run history",
+        icon: <TestTube2 size={22} />,
+        route: "/qa-dashboard/runs",
+        color: "#F59E0B",
+      },
+      {
+        id: "coverage",
+        label: "Coverage",
+        description: "Test coverage analysis",
+        icon: <BarChart3 size={22} />,
+        route: "/qa-dashboard/coverage",
+        color: "#F59E0B",
+      },
+      {
+        id: "deficiencies",
+        label: "Deficiencies",
+        description: "Track testing deficiencies",
+        icon: <Target size={22} />,
+        route: "/qa-dashboard/deficiencies",
+        color: "#F59E0B",
+      },
+      {
+        id: "compare",
+        label: "Compare",
+        description: "Compare test results",
+        icon: <GitBranch size={22} />,
+        route: "/qa-dashboard/compare",
+        color: "#F59E0B",
       },
     ],
   },
@@ -563,7 +613,21 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
           });
         }
 
+        // Load configuration into both React Context and Zustand store
+        // The context handles IndexedDB persistence, the store is used by UI components
         loadConfiguration(result);
+
+        // Also load into Zustand store directly for immediate UI updates
+        const zustandStore = useAutomationStore.getState();
+        await zustandStore.loadConfiguration({
+          name: result.name,
+          workflows: result.workflows,
+          states: result.states,
+          transitions: result.transitions,
+          images: result.images,
+          categories: result.categories,
+          settings: result.settings,
+        });
 
         toast.success("Import successful", {
           description: `Loaded ${result.states.length} states, ${result.workflows?.length || 0} workflows`,

@@ -50,7 +50,7 @@ export function OutgoingTransitionBuilder({
     preselectedWorkflow ? [preselectedWorkflow] : []
   );
   const [workflowCategoryFilter, setWorkflowCategoryFilter] =
-    useState<string>("Transitions");
+    useState<string>("Outgoing Transitions");
 
   // Handle from state selection
   const handleFromStateChange = (stateId: string) => {
@@ -126,7 +126,7 @@ export function OutgoingTransitionBuilder({
     setActivateStates([]);
     setDeactivateStates([]);
     setSelectedWorkflows([]);
-    setWorkflowCategoryFilter("Transitions");
+    setWorkflowCategoryFilter("Outgoing Transitions");
     setOpen(false);
     onClose?.();
   };
@@ -336,12 +336,13 @@ export function OutgoingTransitionBuilder({
                 </SelectTrigger>
                 <SelectContent className="z-[100] bg-[#27272A] border-gray-700">
                   <SelectItem value="All">All Categories</SelectItem>
-                  <SelectItem value="Transitions">Transitions</SelectItem>
+                  <SelectItem value="Outgoing Transitions">Outgoing Transitions</SelectItem>
+                  <SelectItem value="Incoming Transitions">Incoming Transitions</SelectItem>
                   <SelectItem value="Main">Main</SelectItem>
                   {Array.from(
                     new Set(workflows.map((w) => w.category || "Main"))
                   )
-                    .filter((c) => c !== "Main" && c !== "Transitions")
+                    .filter((c) => c !== "Main" && c !== "Transitions" && c !== "Outgoing Transitions" && c !== "Incoming Transitions")
                     .map((category) => (
                       <SelectItem key={category} value={category}>
                         {category}
@@ -368,8 +369,8 @@ export function OutgoingTransitionBuilder({
                   .filter((w) => !selectedWorkflows.includes(w.id)).length ===
                 0 ? (
                   <p className="text-sm text-gray-500 text-center py-4">
-                    {workflowCategoryFilter === "Transitions"
-                      ? "No workflows in Transitions category. Try 'All Categories' to see all workflows."
+                    {workflowCategoryFilter === "Outgoing Transitions"
+                      ? "No workflows in Outgoing Transitions category. Drag a StateImage to another state to create one, or try 'All Categories'."
                       : "No available workflows"}
                   </p>
                 ) : (

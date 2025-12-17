@@ -367,7 +367,7 @@ export function resetStore(): void {
     state.screenshots = [];
     state.schedules = [];
     state.executionRecords = [];
-    state.categories = ["Main", "Transitions"];
+    state.categories = ["Main", "Incoming Transitions", "Outgoing Transitions"];
   });
 }
 

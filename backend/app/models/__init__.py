@@ -14,12 +14,19 @@ from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
 from app.models.capture import (
+    ActionFrame,
     CaptureAction,
     CaptureDetectedElement,
     CaptureScreenshot,
     CaptureSession,
+    FrameIndex,
+    HistoricalResult,
+    InputEvent,
+    InputEventType,
     LearnedWorkflow,
     ScreenshotStateMatch,
+    StorageBackend,
+    VideoCaptureSession,
 )
 from app.models.code_package import (
     CodePackage,
@@ -41,6 +48,7 @@ from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
 from app.models.device_session import DeviceSession
 from app.models.edit_command import EditCommand
+from app.models.embedding_generation_job import EmbeddingGenerationJob
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.notification import (
     Notification,
@@ -58,13 +66,21 @@ from app.models.organization import (
 from app.models.path_discovery import PathDiscovery
 from app.models.project import Project
 from app.models.project_assets import ProjectImage, ProjectScreenshot
+from app.models.project_embedding import ProjectEmbedding
 from app.models.project_version import ProjectVersion
 from app.models.runner_connection import RunnerConnection
 from app.models.runner_device import RunnerDevice
 from app.models.runner_token import RunnerToken
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
-from app.models.snapshot import Pattern, Screenshot, SnapshotRun
+from app.models.snapshot import (
+    Pattern,
+    Screenshot,
+    SnapshotAction,
+    SnapshotMatch,
+    SnapshotPattern,
+    SnapshotRun,
+)
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.storage_usage import StorageUsage
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
@@ -101,6 +117,7 @@ from app.models.visual_comparison_result import (
     VisualComparisonResult,
     VisualComparisonStatus,
 )
+from app.models.workflow_execution_history import WorkflowExecutionHistory
 from app.models.workflow_variable import (
     VariableHistory,
     VariableScope,
@@ -154,6 +171,9 @@ __all__ = [
     # Analytics
     "AnalyticsEvent",
     # Automation
+    "EmbeddingGenerationJob",
+    "ProjectEmbedding",
+    "WorkflowExecutionHistory",
     "AutomationSession",
     "AutomationLog",
     "AutomationScreenshot",
@@ -164,6 +184,9 @@ __all__ = [
     "SnapshotRun",
     "Screenshot",
     "Pattern",
+    "SnapshotAction",
+    "SnapshotPattern",
+    "SnapshotMatch",
     # Runner Tokens
     "RunnerToken",
     "RunnerConnection",
@@ -192,6 +215,14 @@ __all__ = [
     "CaptureDetectedElement",
     "ScreenshotStateMatch",
     "LearnedWorkflow",
+    # Video Capture & Historical Data (from qontinui-api)
+    "VideoCaptureSession",
+    "InputEvent",
+    "InputEventType",
+    "FrameIndex",
+    "ActionFrame",
+    "HistoricalResult",
+    "StorageBackend",
     # Software Testing
     "SoftwareTestRun",
     "TestRunStatus",

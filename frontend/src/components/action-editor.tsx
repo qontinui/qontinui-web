@@ -514,11 +514,57 @@ function getActionSummary(
         return "No state selected";
       }
 
-      // Handle new target structure
+      // Handle new target structure - support both imageId (singular) and imageIds (array)
+      const imageIds =
+        action.config.target?.type === "image"
+          ? action.config.target.imageIds
+          : null;
       const imageId =
         action.config.target?.type === "image"
           ? action.config.target.imageId
           : action.config.image;
+
+      // Handle imageIds array (multi-select)
+      if (imageIds && Array.isArray(imageIds) && imageIds.length > 0) {
+        const names: string[] = [];
+        for (const id of imageIds) {
+          // Look for StateImage across all states
+          let found = false;
+          for (const state of states) {
+            const stateImage = state.stateImages?.find(
+              (si: unknown) => si.id === id
+            );
+            if (stateImage) {
+              const nameWithoutExtension = stateImage.name.replace(
+                /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+                ""
+              );
+              names.push(nameWithoutExtension);
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            // Fall back to image library
+            const image = images.find((img) => img.id === id);
+            if (image) {
+              const nameWithoutExtension = image.name.replace(
+                /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+                ""
+              );
+              names.push(nameWithoutExtension);
+            }
+          }
+        }
+        if (names.length === 1) {
+          return `Find ${names[0]}`;
+        } else if (names.length > 1) {
+          return `Find ${names.length} images`;
+        }
+        return "Images not found";
+      }
+
+      // Handle single imageId (legacy format)
       if (imageId) {
         // First look for StateImage across all states
         let stateImageName = null;
@@ -575,8 +621,52 @@ function getActionSummary(
       }
       return "No element selected";
     }
-    case "CLICK":
-      return `${action.config.mouseButton?.toLowerCase() || "left"} click on ${action.config.target}`;
+    case "CLICK": {
+      const button = action.config.mouseButton?.toLowerCase() || "left";
+      // Handle StateImage target - show image names instead of "StateImage"
+      if (action.config.target === "StateImage") {
+        const clickImageIds = action.config.imageIds;
+        if (clickImageIds && Array.isArray(clickImageIds) && clickImageIds.length > 0) {
+          const names: string[] = [];
+          for (const id of clickImageIds) {
+            // Look for StateImage across all states
+            let found = false;
+            for (const state of states) {
+              const stateImage = state.stateImages?.find(
+                (si: unknown) => si.id === id
+              );
+              if (stateImage) {
+                const nameWithoutExtension = stateImage.name.replace(
+                  /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+                  ""
+                );
+                names.push(nameWithoutExtension);
+                found = true;
+                break;
+              }
+            }
+            if (!found) {
+              // Fall back to image library
+              const image = images.find((img) => img.id === id);
+              if (image) {
+                const nameWithoutExtension = image.name.replace(
+                  /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+                  ""
+                );
+                names.push(nameWithoutExtension);
+              }
+            }
+          }
+          if (names.length === 1) {
+            return `${button} click on ${names[0]}`;
+          } else if (names.length > 1) {
+            return `${button} click on ${names.length} images`;
+          }
+        }
+        return `${button} click on StateImage (no image selected)`;
+      }
+      return `${button} click on ${action.config.target}`;
+    }
     case "DOUBLE_CLICK":
       return `Double click on ${action.config.target || "Last Find Result"}`;
     case "RIGHT_CLICK":

@@ -1,13 +1,6 @@
 "use client";
 
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ImageSelector } from "@/components/image-selector";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
@@ -30,50 +23,35 @@ export function FindActionProperties({
 }: ActionPropertiesComponentProps) {
   const targetType = action.config.target?.type;
 
-  // Handle stateImage target type (Find State)
+  // Handle stateImage target type (Find State) - convert to image target type with ImageSelector
+  // This provides a consistent UI with state filtering capabilities
   if (targetType === "stateImage") {
-    const stateId = action.config.target?.stateId || "";
+    const currentImageIds = action.config.target?.imageIds || [];
 
-    const handleStateSelect = (selectedStateId: string) => {
-      // Get all image IDs from the selected state
-      const selectedState = states.find((s) => s.id === selectedStateId);
-      const imageIds =
-        selectedState?.stateImages?.map((si: unknown) => si.id) || [];
-
+    const handleImagesSelect = (selectedImageIds: string[]) => {
+      // Convert to standard image target type for consistency
       updateConfig("target", {
-        type: "stateImage",
-        stateId: selectedStateId,
-        imageIds,
+        type: "image",
+        imageIds: selectedImageIds,
       });
     };
-
-    const selectedState = states.find((s) => s.id === stateId);
 
     return (
       <>
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Select State</Label>
-          <Select value={stateId} onValueChange={handleStateSelect}>
-            <SelectTrigger className="bg-transparent border-gray-700">
-              <SelectValue placeholder="Select a state" />
-            </SelectTrigger>
-            <SelectContent className="bg-[#27272A] border-gray-700">
-              {states.map((state) => (
-                <SelectItem key={state.id} value={state.id}>
-                  {state.name || state.id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {stateId && (
-            <div className="text-xs text-gray-400 mt-2">
-              {selectedState && selectedState.stateImages?.length > 0
-                ? `Will find any of ${selectedState.stateImages.length} image${selectedState.stateImages.length > 1 ? "s" : ""} from ${selectedState.name}`
-                : selectedState
-                  ? `No images defined for ${selectedState.name}`
-                  : "State not found"}
-            </div>
-          )}
+          <Label className="text-xs text-gray-400">
+            Images (use state filter to narrow down)
+          </Label>
+          <ImageSelector
+            selectedImages={currentImageIds}
+            onSelectImages={handleImagesSelect}
+            multiSelect={true}
+            images={images}
+            states={states}
+            placeholder="Select images to find"
+            showStateFilter={true}
+            initialOpen={shouldOpenImageSelector}
+          />
         </div>
 
         <SimilarityThresholdOverride

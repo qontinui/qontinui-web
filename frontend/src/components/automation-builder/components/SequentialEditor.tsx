@@ -634,42 +634,44 @@ function getActionSummary(
         stateId?: string;
         imageIds?: string[];
       };
+      const button = config.mouseButton?.toLowerCase() || "left";
 
       // Handle StateImage target
       if (config.target === "StateImage") {
-        if (config.stateId) {
-          const state = states.find((s) => s.id === config.stateId);
-          const stateName = state?.name || config.stateId;
-
-          if (config.imageIds && config.imageIds.length > 0) {
-            // Get image names
-            const imageNames = config.imageIds
-              .map((id) => {
-                for (const s of states) {
-                  const img = s.stateImages?.find((si: unknown) => si.id === id);
-                  if (img)
-                    return img.name.replace(
-                      /\.(png|jpg|jpeg|gif|webp|svg)$/i,
-                      ""
-                    );
-                }
-                return null;
-              })
-              .filter(Boolean);
-
-            if (imageNames.length === 1) {
-              return `${config.mouseButton?.toLowerCase() || "left"} click on ${imageNames[0]} (${stateName})`;
-            } else if (imageNames.length > 1) {
-              return `${config.mouseButton?.toLowerCase() || "left"} click on ${imageNames[0]} +${imageNames.length - 1} more (${stateName})`;
+        // Check imageIds first (new flow without requiring stateId)
+        if (config.imageIds && config.imageIds.length > 0) {
+          // Get image names from all states
+          const names: string[] = [];
+          for (const imgId of config.imageIds) {
+            for (const s of states) {
+              const img = (s as { stateImages?: { id: string; name: string }[] }).stateImages?.find(
+                (si) => si.id === imgId
+              );
+              if (img) {
+                names.push(img.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, ""));
+                break;
+              }
             }
           }
 
-          return `${config.mouseButton?.toLowerCase() || "left"} click on any image from ${stateName}`;
+          if (names.length === 1) {
+            return `${button} click on ${names[0]}`;
+          } else if (names.length > 1) {
+            return `${button} click on ${names[0]} +${names.length - 1} more`;
+          }
         }
-        return `${config.mouseButton?.toLowerCase() || "left"} click on State Image (no state selected)`;
+
+        // Legacy: check stateId if imageIds not available
+        if (config.stateId) {
+          const state = states.find((s: { id: string }) => s.id === config.stateId);
+          const stateName = (state as { name?: string })?.name || config.stateId;
+          return `${button} click on any image from ${stateName}`;
+        }
+
+        return `${button} click on StateImage (no image selected)`;
       }
 
-      return `${config.mouseButton?.toLowerCase() || "left"} click on ${config.target}`;
+      return `${button} click on ${config.target}`;
     }
     case "TYPE": {
       const config = action.config as {

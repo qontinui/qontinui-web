@@ -1,24 +1,49 @@
 """
 Database models for screenshot capture and workflow learning.
 
-This module handles the capture-to-workflow pipeline:
-1. Users capture screenshots + actions in the runner
-2. Screenshots are uploaded to capture sessions
-3. AI analyzes screenshots to detect UI elements
-4. Elements are matched to known states
-5. Workflows are generated from action sequences
-6. Users review and publish learned workflows
+This module handles two distinct capture systems:
+
+1. WORKFLOW LEARNING CAPTURE (existing):
+   - Users capture screenshots + actions in the runner
+   - Screenshots are uploaded to capture sessions
+   - AI analyzes screenshots to detect UI elements
+   - Elements are matched to known states
+   - Workflows are generated from action sequences
+   - Users review and publish learned workflows
+
+2. VIDEO CAPTURE & HISTORICAL DATA (migrated from qontinui-api):
+   - Video recording sessions with metadata
+   - Input events (mouse, keyboard) as time-series data
+   - Frame index for efficient video frame extraction
+   - Links between automation results and video timestamps
+   - Historical results for integration testing mock data
 """
 
 import uuid
 from datetime import UTC, datetime
+from enum import Enum as PyEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
-from app.db.base_class import Base
+from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -427,3 +452,497 @@ class LearnedWorkflow(Base):
     )
     project: Mapped["Project"] = relationship("Project")
     reviewer: Mapped["User | None"] = relationship("User", foreign_keys=[reviewer_id])
+
+
+# ==================================================================================
+# VIDEO CAPTURE & HISTORICAL DATA MODELS (migrated from qontinui-api)
+# ==================================================================================
+
+
+class StorageBackend(PyEnum):
+    """Storage backend types for video files."""
+
+    LOCAL = "local"
+    S3 = "s3"
+
+
+class InputEventType(PyEnum):
+    """Types of input events."""
+
+    MOUSE_MOVE = "mouse_move"
+    MOUSE_CLICK = "mouse_click"
+    MOUSE_DOWN = "mouse_down"
+    MOUSE_UP = "mouse_up"
+    MOUSE_SCROLL = "mouse_scroll"
+    MOUSE_DRAG = "mouse_drag"
+    KEY_PRESS = "key_press"
+    KEY_DOWN = "key_down"
+    KEY_UP = "key_up"
+
+
+class VideoCaptureSession(Base):
+    """
+    Video capture session metadata (migrated from qontinui-api).
+
+    Represents a single video recording session that captures:
+    - Screen video
+    - Input events (mouse, keyboard)
+    - Automation results (linked via snapshot_run)
+
+    The video file is stored externally (local filesystem or S3),
+    with only the reference stored in the database.
+
+    NOTE: This is different from CaptureSession which is for workflow learning
+    from screenshots. This model is for continuous video recording.
+    """
+
+    __tablename__ = "video_capture_sessions"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    # Unique session identifier (UUID)
+    session_id: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, index=True
+    )
+
+    # Timestamps
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=func.now(), index=True
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    duration_ms: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )  # Total duration in milliseconds
+
+    # Video metadata
+    video_width: Mapped[int] = mapped_column(Integer, nullable=False)
+    video_height: Mapped[int] = mapped_column(Integer, nullable=False)
+    video_fps: Mapped[float] = mapped_column(Float, nullable=False, default=30.0)
+    video_codec: Mapped[str] = mapped_column(String(50), nullable=False, default="h264")
+    video_format: Mapped[str] = mapped_column(String(10), nullable=False, default="mp4")
+    total_frames: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Storage information
+    storage_backend: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="local"
+    )  # 'local' or 's3'
+    video_path: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )  # Local path or S3 key
+    video_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    # Optional compressed/streaming version
+    compressed_video_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    compressed_video_size_bytes: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+
+    # Monitor/display info
+    monitor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    monitor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    monitor_scale_factor: Mapped[float | None] = mapped_column(
+        Float, nullable=True, default=1.0
+    )
+
+    # Association with snapshot run (automation results)
+    snapshot_run_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("snapshot_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Association with workflow (references workflow_id in project JSON, not a FK)
+    workflow_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
+    # Association with project
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # User who created the session
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Session status
+    is_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_processed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )  # Frame index built
+
+    # Additional metadata
+    metadata_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Audit timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    input_events: Mapped[list["InputEvent"]] = relationship(
+        "InputEvent",
+        back_populates="video_capture_session",
+        cascade="all, delete-orphan",
+        lazy="dynamic",  # For efficient querying of large event sets
+    )
+    frame_index: Mapped[list["FrameIndex"]] = relationship(
+        "FrameIndex",
+        back_populates="video_capture_session",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
+    action_frames: Mapped[list["ActionFrame"]] = relationship(
+        "ActionFrame",
+        back_populates="video_capture_session",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("idx_video_capture_sessions_started_at", "started_at"),
+        Index("idx_video_capture_sessions_workflow_id", "workflow_id"),
+        Index("idx_video_capture_sessions_project_id", "project_id"),
+        Index("idx_video_capture_sessions_snapshot_run_id", "snapshot_run_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<VideoCaptureSession(id={self.id}, session_id='{self.session_id}')>"
+
+
+class InputEvent(Base):
+    """
+    Input events (mouse and keyboard) captured during a video session (migrated from qontinui-api).
+
+    Stored as time-series data with millisecond precision timestamps
+    relative to session start. This allows efficient querying for
+    events within a time range and playback synchronization with video.
+    """
+
+    __tablename__ = "input_events"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+
+    # Foreign key to video capture session
+    video_capture_session_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("video_capture_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Timestamp (milliseconds from session start)
+    timestamp_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+
+    # Event type
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+
+    # Mouse position (for mouse events)
+    mouse_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mouse_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Mouse button (for click events): 1=left, 2=middle, 3=right
+    mouse_button: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+
+    # Scroll delta (for scroll events)
+    scroll_dx: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scroll_dy: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Keyboard data
+    key_code: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # Virtual key code
+    key_name: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # Human-readable key name
+    key_char: Mapped[str | None] = mapped_column(
+        String(10), nullable=True
+    )  # Character if printable
+
+    # Modifier keys state
+    shift_pressed: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, default=False
+    )
+    ctrl_pressed: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, default=False
+    )
+    alt_pressed: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, default=False
+    )
+    meta_pressed: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, default=False
+    )  # Win/Cmd key
+
+    # Additional event data (for complex events like drag)
+    event_data_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Relationship
+    video_capture_session: Mapped["VideoCaptureSession"] = relationship(
+        "VideoCaptureSession", back_populates="input_events"
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_input_events_session_timestamp",
+            "video_capture_session_id",
+            "timestamp_ms",
+        ),
+        Index("idx_input_events_type", "event_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<InputEvent(id={self.id}, type={self.event_type}, ts={self.timestamp_ms}ms)>"
+
+
+class FrameIndex(Base):
+    """
+    Index mapping timestamps to video frame positions (migrated from qontinui-api).
+
+    This table enables efficient frame extraction by storing:
+    - Keyframe positions (I-frames) for fast seeking
+    - Timestamp to frame number mapping
+    - Byte offsets for direct seeking (optional)
+
+    Only keyframes and periodic samples are stored to keep the table size manageable.
+    """
+
+    __tablename__ = "frame_index"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+
+    # Foreign key to video capture session
+    video_capture_session_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("video_capture_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Frame information
+    frame_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp_ms: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, index=True
+    )  # Milliseconds from start
+
+    # Video seeking information
+    byte_offset: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )  # Byte position in video file
+    is_keyframe: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True
+    )
+
+    # Frame metadata (optional, for important frames)
+    frame_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )  # For deduplication/comparison
+
+    # Relationship
+    video_capture_session: Mapped["VideoCaptureSession"] = relationship(
+        "VideoCaptureSession", back_populates="frame_index"
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_frame_index_session_timestamp",
+            "video_capture_session_id",
+            "timestamp_ms",
+        ),
+        Index(
+            "idx_frame_index_session_frame", "video_capture_session_id", "frame_number"
+        ),
+        Index("idx_frame_index_keyframes", "video_capture_session_id", "is_keyframe"),
+        UniqueConstraint(
+            "video_capture_session_id",
+            "frame_number",
+            name="uq_frame_index_session_frame",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<FrameIndex(session={self.video_capture_session_id}, frame={self.frame_number})>"
+
+
+class ActionFrame(Base):
+    """
+    Links automation actions to specific video frames (migrated from qontinui-api).
+
+    This table enables:
+    - Retrieving the exact frame when an action occurred
+    - Showing visual context for automation results
+    - Integration test playback with screenshots
+
+    Each automation action (from SnapshotAction) can have multiple
+    associated frames (before, during, after the action).
+    """
+
+    __tablename__ = "action_frames"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    # Foreign keys
+    video_capture_session_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("video_capture_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_action_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("snapshot_actions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Frame timing
+    frame_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    # Frame type relative to action
+    frame_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="action"
+    )  # 'before', 'action', 'after', 'result'
+
+    # Cached frame path (if extracted and cached)
+    cached_frame_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cache_storage_backend: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # 'local' or 's3'
+
+    # Relationship
+    video_capture_session: Mapped["VideoCaptureSession"] = relationship(
+        "VideoCaptureSession", back_populates="action_frames"
+    )
+
+    __table_args__ = (
+        Index("idx_action_frames_session", "video_capture_session_id"),
+        Index("idx_action_frames_action", "snapshot_action_id"),
+        Index("idx_action_frames_type", "frame_type"),
+        UniqueConstraint(
+            "video_capture_session_id",
+            "snapshot_action_id",
+            "frame_type",
+            name="uq_action_frames_session_action_type",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ActionFrame(action={self.snapshot_action_id}, type={self.frame_type})>"
+        )
+
+
+class HistoricalResult(Base):
+    """
+    Queryable historical results for integration testing (migrated from qontinui-api).
+
+    This table aggregates data from snapshot actions in a format
+    optimized for random selection during mock mode execution.
+    It includes denormalized fields for efficient querying without joins.
+
+    Key features:
+    - Indexed by pattern, state, and action type for fast lookups
+    - Links to video capture session for frame retrieval
+    - Stores result data needed for mock responses
+    """
+
+    __tablename__ = "historical_results"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+
+    # Source references
+    snapshot_run_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("snapshot_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_action_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("snapshot_actions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    video_capture_session_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("video_capture_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Denormalized query fields (for efficient selection)
+    pattern_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    pattern_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    active_states: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+
+    # Result data
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
+    match_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    best_match_score: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    duration_ms: Mapped[float | None] = mapped_column(Numeric(10, 3), nullable=True)
+
+    # Match location (for FIND actions)
+    match_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    match_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    match_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    match_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Video frame info (for frame retrieval)
+    frame_timestamp_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    frame_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Full result data for mock responses
+    result_data_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    # Workflow/project context (workflow_id references workflow in project JSON, not a FK)
+    workflow_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Timestamps
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=func.now()
+    )
+
+    __table_args__ = (
+        # Composite indexes for common query patterns
+        Index("idx_historical_pattern_states", "pattern_id", "active_states"),
+        Index("idx_historical_action_type_success", "action_type", "success"),
+        Index("idx_historical_workflow_pattern", "workflow_id", "pattern_id"),
+        Index("idx_historical_project_pattern", "project_id", "pattern_id"),
+        # For random selection within a context
+        Index(
+            "idx_historical_selection",
+            "pattern_id",
+            "action_type",
+            "success",
+            "recorded_at",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<HistoricalResult(id={self.id}, pattern={self.pattern_id}, type={self.action_type})>"

@@ -154,5 +154,12 @@ class TransitionExecution(Base):
         lazy="select",
     )
 
+    screenshots = relationship(
+        "TestScreenshot",
+        back_populates="transition_execution",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
     def __repr__(self) -> str:
         return f"<TransitionExecution(id={self.id}, transition_id='{self.transition_id}', status='{self.status}')>"
