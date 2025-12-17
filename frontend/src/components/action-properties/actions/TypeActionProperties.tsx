@@ -182,7 +182,7 @@ export function TypeActionProperties({
           </div>
           <Textarea
             ref={textAreaRef}
-            value={action.config.text}
+            value={(action.config.text as string)}
             onChange={(e) => updateConfig("text", e.target.value)}
             className="bg-transparent border-gray-700 font-mono text-sm"
             placeholder="Enter text to type..."
@@ -215,7 +215,7 @@ export function TypeActionProperties({
       <div className="flex items-center space-x-2">
         <Checkbox
           id="clear_before"
-          checked={action.config.clear_before}
+          checked={(action.config.clear_before as boolean)}
           onCheckedChange={(checked) => updateConfig("clear_before", checked)}
         />
         <Label htmlFor="clear_before" className="text-xs text-gray-400">
@@ -226,7 +226,7 @@ export function TypeActionProperties({
       <div className="flex items-center space-x-2">
         <Checkbox
           id="press_enter"
-          checked={action.config.press_enter}
+          checked={(action.config.press_enter as boolean)}
           onCheckedChange={(checked) => {
             updateConfig("press_enter", checked);
           }}

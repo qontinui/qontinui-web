@@ -74,7 +74,7 @@ export function ShellActionProperties({
   action,
   updateConfig,
 }: ActionPropertiesComponentProps) {
-  const config = action.config as ShellActionConfig;
+  const config = action.config as unknown as ShellActionConfig;
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
@@ -309,7 +309,7 @@ export function ShellScriptActionProperties({
   action,
   updateConfig,
 }: ActionPropertiesComponentProps) {
-  const config = action.config as ShellScriptActionConfig;
+  const config = action.config as unknown as ShellScriptActionConfig;
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Determine language for Monaco editor based on shell type

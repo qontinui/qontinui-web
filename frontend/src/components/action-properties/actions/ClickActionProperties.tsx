@@ -27,7 +27,7 @@ export function ClickActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Target</Label>
         <Select
-          value={action.config.target || "Last Find Result"}
+          value={(action.config.target as string) || "Last Find Result"}
           onValueChange={(value) => updateConfig("target", value)}
         >
           <SelectTrigger className="bg-transparent border-gray-700">
@@ -52,11 +52,11 @@ export function ClickActionProperties({
             Use the state filter to narrow down images.
           </div>
           <ImageSelector
-            selectedImages={action.config.imageIds || []}
+            selectedImages={(action.config.imageIds as string[]) || []}
             onSelectImages={(imageIds) => updateConfig("imageIds", imageIds)}
             multiSelect={true}
-            images={images}
-            states={states}
+            images={images as any[]}
+            states={states as any[]}
             placeholder="Select images to find and click"
             showStateFilter={true}
           />
@@ -69,7 +69,7 @@ export function ClickActionProperties({
             <Label className="text-xs text-gray-400">X Coordinate</Label>
             <Input
               type="number"
-              value={action.config.x || 0}
+              value={(action.config.x as number) || 0}
               onChange={(e) =>
                 updateConfig("x", Number.parseInt(e.target.value))
               }
@@ -80,7 +80,7 @@ export function ClickActionProperties({
             <Label className="text-xs text-gray-400">Y Coordinate</Label>
             <Input
               type="number"
-              value={action.config.y || 0}
+              value={(action.config.y as number) || 0}
               onChange={(e) =>
                 updateConfig("y", Number.parseInt(e.target.value))
               }
@@ -93,7 +93,7 @@ export function ClickActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Mouse Button</Label>
         <Select
-          value={action.config.mouseButton}
+          value={(action.config.mouseButton as string)}
           onValueChange={(value) => updateConfig("mouseButton", value)}
         >
           <SelectTrigger className="bg-transparent border-gray-700">
@@ -112,7 +112,7 @@ export function ClickActionProperties({
         <Input
           type="number"
           min="1"
-          value={action.config.numberOfClicks}
+          value={(action.config.numberOfClicks as number)}
           onChange={(e) =>
             updateConfig("numberOfClicks", Number.parseInt(e.target.value))
           }
@@ -125,7 +125,7 @@ export function ClickActionProperties({
         <Input
           type="number"
           min="0"
-          value={action.config.hold_duration}
+          value={(action.config.hold_duration as number)}
           onChange={(e) =>
             updateConfig("hold_duration", Number.parseInt(e.target.value))
           }

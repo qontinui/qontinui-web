@@ -379,7 +379,7 @@ export class BackendAPI {
     return {
       executionId: responseRecord.execution_id as string,
       workflowId: responseRecord.workflow_id as string,
-      status: responseRecord.status as string,
+      status: responseRecord.status as ExecutionStatus,
       startTime: new Date(responseRecord.start_time as string),
       endTime: responseRecord.end_time
         ? new Date(responseRecord.end_time as string)
@@ -390,7 +390,10 @@ export class BackendAPI {
       completedActions: responseRecord.completed_actions as number,
       failedActions: responseRecord.failed_actions as number,
       skippedActions: responseRecord.skipped_actions as number,
-      actionStates: responseRecord.action_states as unknown[],
+      actionStates: responseRecord.action_states as Record<
+        string,
+        ActionExecutionStatus
+      >,
       error: responseRecord.error
         ? {
             message: (responseRecord.error as Record<string, unknown>)
@@ -503,7 +506,7 @@ export class BackendAPI {
         workflowName: r.workflow_name as string,
         startTime: new Date(r.start_time as string),
         endTime: new Date(r.end_time as string),
-        status: r.status as string,
+        status: r.status as ExecutionStatus,
         duration: r.duration as number,
         totalActions: r.total_actions as number,
         completedActions: r.completed_actions as number,
@@ -539,7 +542,7 @@ export class BackendAPI {
         workflowName: r.workflow_name as string,
         startTime: new Date(r.start_time as string),
         endTime: new Date(r.end_time as string),
-        status: r.status as string,
+        status: r.status as ExecutionStatus,
         duration: r.duration as number,
         totalActions: r.total_actions as number,
         completedActions: r.completed_actions as number,

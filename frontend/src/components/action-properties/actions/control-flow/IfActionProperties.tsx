@@ -22,7 +22,7 @@ export function IfActionProperties({
   updateConfig,
   images,
 }: ActionPropertiesComponentProps) {
-  const config = action.config as IfActionConfig;
+  const config = action.config as unknown as IfActionConfig;
 
   // Initialize config with defaults if needed
   const condition = config.condition || {

@@ -19,7 +19,7 @@ export function GetVariableActionProperties({
   action,
   updateConfig,
 }: ActionPropertiesComponentProps) {
-  const config = action.config as GetVariableActionConfig;
+  const config = action.config as unknown as GetVariableActionConfig;
 
   return (
     <>

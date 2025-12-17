@@ -28,7 +28,7 @@ export function DragActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">From</Label>
         <Select
-          value={action.config.from}
+          value={(action.config.from as string)}
           onValueChange={(value) => updateConfig("from", value)}
         >
           <SelectTrigger className="bg-transparent border-gray-700">
@@ -90,7 +90,7 @@ export function DragActionProperties({
       <div className="flex items-center space-x-2">
         <Checkbox
           id="smooth_movement"
-          checked={action.config.smooth_movement}
+          checked={(action.config.smooth_movement as boolean)}
           onCheckedChange={(checked) =>
             updateConfig("smooth_movement", checked)
           }

@@ -43,7 +43,7 @@ export function MouseMoveProperties({
             <Label className="text-xs text-gray-400">X Coordinate</Label>
             <Input
               type="number"
-              value={action.config.x || 0}
+              value={(action.config.x as number) || 0}
               onChange={(e) =>
                 updateConfig("x", Number.parseInt(e.target.value))
               }
@@ -54,7 +54,7 @@ export function MouseMoveProperties({
             <Label className="text-xs text-gray-400">Y Coordinate</Label>
             <Input
               type="number"
-              value={action.config.y || 0}
+              value={(action.config.y as number) || 0}
               onChange={(e) =>
                 updateConfig("y", Number.parseInt(e.target.value))
               }
@@ -134,7 +134,7 @@ export function MouseButtonProperties({
             <Label className="text-xs text-gray-400">X Coordinate</Label>
             <Input
               type="number"
-              value={action.config.x || 0}
+              value={(action.config.x as number) || 0}
               onChange={(e) =>
                 updateConfig("x", Number.parseInt(e.target.value))
               }
@@ -145,7 +145,7 @@ export function MouseButtonProperties({
             <Label className="text-xs text-gray-400">Y Coordinate</Label>
             <Input
               type="number"
-              value={action.config.y || 0}
+              value={(action.config.y as number) || 0}
               onChange={(e) =>
                 updateConfig("y", Number.parseInt(e.target.value))
               }
@@ -191,7 +191,7 @@ export function SimpleClickProperties({
             <Label className="text-xs text-gray-400">X Coordinate</Label>
             <Input
               type="number"
-              value={action.config.x || 0}
+              value={(action.config.x as number) || 0}
               onChange={(e) =>
                 updateConfig("x", Number.parseInt(e.target.value))
               }
@@ -202,7 +202,7 @@ export function SimpleClickProperties({
             <Label className="text-xs text-gray-400">Y Coordinate</Label>
             <Input
               type="number"
-              value={action.config.y || 0}
+              value={(action.config.y as number) || 0}
               onChange={(e) =>
                 updateConfig("y", Number.parseInt(e.target.value))
               }

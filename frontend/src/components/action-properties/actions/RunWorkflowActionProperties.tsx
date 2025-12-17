@@ -48,7 +48,7 @@ export function RunWorkflowActionProperties({
           <Label className="text-xs text-gray-400">Repeat Workflow</Label>
           <Checkbox
             id="enableRepeat"
-            checked={action.config.enableRepeat || false}
+            checked={(action.config.enableRepeat as boolean) || false}
             onCheckedChange={(checked) => {
               if (checked) {
                 updateConfig("enableRepeat", true);
@@ -125,7 +125,7 @@ export function RunWorkflowActionProperties({
               <div className="flex items-start space-x-2">
                 <Checkbox
                   id="repeatUntilSuccess"
-                  checked={action.config.repeatUntilSuccess || false}
+                  checked={(action.config.repeatUntilSuccess as boolean) || false}
                   onCheckedChange={(checked) =>
                     updateConfig("repeatUntilSuccess", checked)
                   }

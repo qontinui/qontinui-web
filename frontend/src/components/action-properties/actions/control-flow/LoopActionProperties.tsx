@@ -35,7 +35,7 @@ export function LoopActionProperties({
   updateConfig,
   images,
 }: ActionPropertiesComponentProps) {
-  const config = action.config as LoopActionConfig;
+  const config = action.config as unknown as LoopActionConfig;
 
   // Initialize config with defaults if needed
   const loopType = config.loopType || "FOR";

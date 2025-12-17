@@ -712,8 +712,8 @@ export class CodePackageService {
   /**
    * Map category ID to name
    */
-  private mapCategoryIdToName(categoryId: number): unknown {
-    const idToName: Record<number, string> = {
+  private mapCategoryIdToName(categoryId: number): PackageCategory {
+    const idToName: Record<number, PackageCategory> = {
       1: "automation",
       2: "utilities",
       3: "integrations",
