@@ -1,4 +1,4 @@
-import type { RunnerConnection } from "@/types/runner";
+import type { RunnerConnection, RunnerToken } from "@/types/runner";
 import { formatDuration } from "./formatDuration";
 
 /**
@@ -79,7 +79,7 @@ function escapeCSVField(field: string): string {
  * Export runner tokens as CSV file
  */
 export function exportRunnerTokensCSV(
-  tokens: unknown[],
+  tokens: RunnerToken[],
   filename: string = "runner-tokens.csv"
 ): void {
   if (tokens.length === 0) {

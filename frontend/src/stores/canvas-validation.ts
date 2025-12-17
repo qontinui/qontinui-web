@@ -404,7 +404,7 @@ function detectMissingConnections(workflow: Workflow): ValidationError[] {
         (action.config as Record<string, unknown>).cases || [];
       const mainOutputs = connections?.main || [];
 
-      if (mainOutputs.length < cases.length + 1) {
+      if (Array.isArray(cases) && mainOutputs.length < cases.length + 1) {
         errors.push({
           id: `missing-switch-branch-${action.id}`,
           actionId: action.id,
@@ -678,7 +678,7 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
             details: { actionId: action.id },
           });
         }
-        if (!config.cases || config.cases.length === 0) {
+        if (!config.cases || !Array.isArray(config.cases) || config.cases.length === 0) {
           errors.push({
             id: `missing-switch-cases-${action.id}`,
             actionId: action.id,
