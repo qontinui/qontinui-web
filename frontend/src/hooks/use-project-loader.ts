@@ -94,10 +94,8 @@ export function useProjectLoader(): UseProjectLoaderResult {
 
       // Skip duplicate load checks if force is true (manual reload)
       if (!force) {
-        // Prevent duplicate loads - check both ref and context
-        // The ref check prevents re-fetching within the same component lifecycle
-        // The context check prevents re-fetching when navigating between pages
-        // (preserves local IndexedDB data that hasn't been synced to backend yet)
+        // Prevent duplicate loads - check if we've already loaded this project in this session
+        // The ref tracks which project we've actually fetched from backend
         if (loadedProjectIdRef.current === urlProjectId) {
           projectLogger.debug(
             "ProjectLoader",
@@ -107,47 +105,34 @@ export function useProjectLoader(): UseProjectLoaderResult {
               loadedId: loadedProjectIdRef.current,
             }
           );
-          return;
-        }
 
-        // If context already has this project loaded WITH DATA, skip backend fetch
-        // This preserves local changes that haven't been auto-saved yet
-        // IMPORTANT: Only skip if actual data exists - the projectId alone from
-        // localStorage is not sufficient since the IndexedDB data may not be loaded
-        const hasDataInContext = states.length > 0 || workflows.length > 0;
-        if (contextProjectId === urlProjectId && hasDataInContext) {
-          projectLogger.debug(
-            "ProjectLoader",
-            "Project already in context with data, skipping backend fetch",
-            {
-              urlProjectId,
-              contextProjectId,
-              stateCount: states.length,
-              workflowCount: workflows.length,
-            }
-          );
-          // Still mark as loaded in ref to prevent future redundant checks
-          loadedProjectIdRef.current = urlProjectId;
-          setProjectId(urlProjectId);
-
-          // IMPORTANT: Ensure Zustand store is synced with context data
+          // Ensure Zustand store is synced with context data
           // This is needed because components like StateStructure use useStates()
           // which reads from Zustand, not from the React Context
-          const zustandStore = useAutomationStore.getState();
-          const zustandStates = zustandStore.states;
-          if (zustandStates.length === 0 && states.length > 0) {
-            projectLogger.debug(
-              "ProjectLoader",
-              "Syncing context data to Zustand store",
-              { stateCount: states.length, workflowCount: workflows.length }
-            );
-            zustandStore.loadConfiguration({
-              workflows,
-              states,
-            });
+          const hasDataInContext = states.length > 0 || workflows.length > 0;
+          if (hasDataInContext) {
+            const zustandStore = useAutomationStore.getState();
+            const zustandStates = zustandStore.states;
+            if (zustandStates.length === 0 && states.length > 0) {
+              projectLogger.debug(
+                "ProjectLoader",
+                "Syncing context data to Zustand store",
+                { stateCount: states.length, workflowCount: workflows.length }
+              );
+              zustandStore.loadConfiguration({
+                workflows,
+                states,
+              });
+            }
           }
           return;
         }
+
+        // NOTE: We intentionally DO NOT skip based on contextProjectId matching urlProjectId.
+        // The contextProjectId comes from localStorage and can be updated (via setProjectId)
+        // before the actual project data is loaded. If we skipped based on contextProjectId,
+        // we could end up with states/workflows from a different project.
+        // The loadedProjectIdRef is the source of truth for what we've actually loaded.
       }
 
       // Prevent concurrent loads
