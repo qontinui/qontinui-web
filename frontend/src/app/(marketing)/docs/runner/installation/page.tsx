@@ -86,8 +86,8 @@ export default function InstallationGuidePage() {
                     <Alert className="mt-2 border-amber-300 bg-amber-50">
                       <AlertCircle className="h-4 w-4 text-amber-600" />
                       <AlertDescription className="text-sm">
-                        <strong>Expected warning:</strong> "Windows protected
-                        your PC" - this appears because the app is not yet
+                        <strong>Expected warning:</strong> &quot;Windows protected
+                        your PC&quot; - this appears because the app is not yet
                         code-signed ($200/year). The software is safe and open
                         source.
                       </AlertDescription>
@@ -96,11 +96,11 @@ export default function InstallationGuidePage() {
                       <p className="text-sm font-medium mb-2">To proceed:</p>
                       <ol className="text-sm space-y-1 list-decimal list-inside text-slate-700">
                         <li>
-                          Click <strong>"More info"</strong> on the SmartScreen
+                          Click <strong>&quot;More info&quot;</strong> on the SmartScreen
                           dialog
                         </li>
                         <li>
-                          Click <strong>"Run anyway"</strong>
+                          Click <strong>&quot;Run anyway&quot;</strong>
                         </li>
                       </ol>
                     </div>
@@ -200,7 +200,7 @@ export default function InstallationGuidePage() {
                   <div>
                     <p className="font-medium">Drag to Applications</p>
                     <p className="text-sm text-slate-600">
-                      Drag "Qontinui Runner" to the Applications folder
+                      Drag &quot;Qontinui Runner&quot; to the Applications folder
                     </p>
                   </div>
                 </li>
@@ -215,8 +215,8 @@ export default function InstallationGuidePage() {
                     <Alert className="mt-2 border-amber-300 bg-amber-50">
                       <AlertCircle className="h-4 w-4 text-amber-600" />
                       <AlertDescription className="text-sm">
-                        <strong>Expected:</strong> "Cannot open because
-                        developer cannot be verified" - this is because the app
+                        <strong>Expected:</strong> &quot;Cannot open because
+                        developer cannot be verified&quot; - this is because the app
                         is not yet notarized with Apple ($99/year).
                       </AlertDescription>
                     </Alert>
@@ -231,10 +231,10 @@ export default function InstallationGuidePage() {
                           app
                         </li>
                         <li>
-                          Select <strong>"Open"</strong> from the menu
+                          Select <strong>&quot;Open&quot;</strong> from the menu
                         </li>
                         <li>
-                          Click <strong>"Open"</strong> in the dialog
+                          Click <strong>&quot;Open&quot;</strong> in the dialog
                         </li>
                         <li>Subsequent launches will work normally</li>
                       </ol>
@@ -438,7 +438,7 @@ export default function InstallationGuidePage() {
           <div className="space-y-4">
             <div className="bg-white border border-slate-200 rounded-lg p-6">
               <h3 className="font-semibold mb-2">
-                Windows: "This app can&apos;t run on your PC"
+                Windows: &quot;This app can&apos;t run on your PC&quot;
               </h3>
               <p className="text-sm text-slate-700">
                 You need a 64-bit version of Windows. Qontinui Runner
@@ -448,7 +448,7 @@ export default function InstallationGuidePage() {
 
             <div className="bg-white border border-slate-200 rounded-lg p-6">
               <h3 className="font-semibold mb-2">
-                macOS: "Damaged and can&apos;t be opened"
+                macOS: &quot;Damaged and can&apos;t be opened&quot;
               </h3>
               <p className="text-sm text-slate-700 mb-2">
                 This happens when macOS quarantines downloaded files. Fix with:
@@ -459,7 +459,7 @@ export default function InstallationGuidePage() {
             </div>
 
             <div className="bg-white border border-slate-200 rounded-lg p-6">
-              <h3 className="font-semibold mb-2">Linux: "Permission denied"</h3>
+              <h3 className="font-semibold mb-2">Linux: &quot;Permission denied&quot;</h3>
               <p className="text-sm text-slate-700 mb-2">
                 Make sure the AppImage is executable:
               </p>

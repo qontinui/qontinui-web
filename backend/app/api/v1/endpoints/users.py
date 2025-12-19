@@ -2,16 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    HTTPException,
-    Request,
-    Response,
-    UploadFile,
-    status,
-)
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -53,7 +44,6 @@ router = APIRouter()
 @user_limiter.limit("200 per minute")
 async def read_user_me(
     request: Request,
-    response: Response,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     return current_user
@@ -188,7 +178,6 @@ async def claim_admin(
 async def update_user_me(
     *,
     request: Request,
-    response: Response,
     db: AsyncSession = Depends(get_async_db),
     user_update: UserUpdate,
     current_user: UserModel = Depends(get_current_active_user_async),
@@ -345,7 +334,6 @@ async def delete_user_by_id(
 @user_limiter.limit("60 per minute")
 async def get_user_storage(
     request: Request,
-    response: Response,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:

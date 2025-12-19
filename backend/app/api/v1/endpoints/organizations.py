@@ -14,7 +14,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -125,7 +125,6 @@ def verify_organization_role(
 async def create_organization(
     *,
     request: Request,
-    response: Response,
     db: AsyncSession = Depends(get_async_db),
     organization_in: OrganizationCreate,
     current_user: User = Depends(get_current_active_user_async),

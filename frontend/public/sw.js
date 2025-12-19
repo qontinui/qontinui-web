@@ -192,11 +192,13 @@ self.addEventListener('fetch', (event) => {
         .catch((error) => {
           console.error('[ServiceWorker] Fetch failed:', error);
 
-          // Return offline page for navigation requests
-          if (request.mode === 'navigate') {
+          // Only show offline page if truly offline (not just a network error)
+          if (request.mode === 'navigate' && !navigator.onLine) {
             return caches.match('/offline.html');
           }
 
+          // For other errors (timeout, server error, etc), let them propagate
+          // The app will handle them normally
           throw error;
         });
     })

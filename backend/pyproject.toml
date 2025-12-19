@@ -17,7 +17,7 @@ passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 bcrypt = "^4.0.1"
 python-multipart = ">=0.0.9"
 pydantic-settings = "^2.10.1"
-email-validator = ">=1.1.0,<2.3"
+email-validator = "^2.2"
 slowapi = "^0.1.9"
 aiosmtplib = "^4.0.2"
 pillow = "^11.3.0"

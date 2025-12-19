@@ -87,7 +87,6 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   const [selectedMatch, setSelectedMatch] = useState<MatchResult | null>(null);
 
   // Visualization
-  const [scale] = useState(1);
   const [showMatches, setShowMatches] = useState(true);
   const [showScores, setShowScores] = useState(true); // Always show scores by default
   const [showHeatmap, setShowHeatmap] = useState(false);
@@ -183,7 +182,6 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   }, [
     selectedScreenshot,
     matches,
-    scale,
     selectedMatch,
     showMatches,
     showScores,
@@ -467,7 +465,6 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   }, [
     selectedScreenshot,
     matches,
-    scale,
     selectedMatch,
     showMatches,
     showScores,

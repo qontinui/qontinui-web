@@ -236,7 +236,7 @@ export default function OrganizationSettingsPage() {
           <CardHeader>
             <CardTitle>General Information</CardTitle>
             <CardDescription>
-              Update your organization's basic information
+              Update your organization&apos;s basic information
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

@@ -328,7 +328,7 @@ function AcceptInvitationContent() {
             <div>
               <CardTitle>Organization Invitation</CardTitle>
               <CardDescription>
-                You've been invited to join an organization
+                You&apos;ve been invited to join an organization
               </CardDescription>
             </div>
           </div>

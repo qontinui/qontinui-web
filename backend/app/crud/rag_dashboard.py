@@ -17,7 +17,7 @@ from app.models.project_embedding import ProjectEmbedding
 async def get_dashboard_stats(
     db: AsyncSession,
     project_id: UUID,
-) -> dict:
+) -> dict[str, int]:
     """
     Get summary statistics for RAG dashboard.
 
@@ -119,7 +119,7 @@ async def get_embeddings(
         .limit(limit)
     )
     result = await db.execute(data_query)
-    embeddings = list(result.scalars().all())
+    embeddings: list[ProjectEmbedding] = list(result.scalars().all())  # type: ignore[arg-type]
 
     return embeddings, total
 
@@ -165,7 +165,7 @@ async def get_jobs(
         .limit(limit)
     )
     result = await db.execute(data_query)
-    jobs = list(result.scalars().all())
+    jobs: list[EmbeddingGenerationJob] = list(result.scalars().all())  # type: ignore[arg-type]
 
     return jobs, total
 
@@ -225,7 +225,7 @@ async def semantic_search(
 async def get_unique_states(
     db: AsyncSession,
     project_id: UUID,
-) -> list[dict]:
+) -> list[dict[str, str]]:
     """
     Get list of unique states with embeddings for filter dropdown.
 

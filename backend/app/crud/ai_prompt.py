@@ -529,7 +529,7 @@ async def get_project_categories(db: AsyncSession, project_id: UUID) -> list[str
     )
 
     # Combine and deduplicate
-    all_categories = set()
+    all_categories: set[str] = set()
     all_categories.update(cat for cat in template_categories.scalars().all() if cat)
     all_categories.update(cat for cat in sequence_categories.scalars().all() if cat)
 
@@ -569,7 +569,7 @@ async def get_project_tags(db: AsyncSession, project_id: UUID) -> list[str]:
     return sorted(unique_tags)
 
 
-async def get_project_stats(db: AsyncSession, project_id: UUID) -> dict:
+async def get_project_stats(db: AsyncSession, project_id: UUID) -> dict[str, int]:
     """
     Get statistics for AI prompt library in a project.
 

@@ -1236,7 +1236,7 @@ export default function WorkflowAnalyticsPage() {
                     <Alert className="mb-6">
                       <Info className="h-4 w-4" />
                       <AlertDescription>
-                        This feature is coming soon! You'll be able to compare
+                        This feature is coming soon! You&apos;ll be able to compare
                         execution counts, durations, success rates, and
                         complexity side-by-side.
                       </AlertDescription>

@@ -187,7 +187,7 @@ export default function NewOrganizationPage() {
                   What happens next?
                 </h4>
                 <ul className="text-sm text-gray-400 space-y-1">
-                  <li>• You'll be set as the organization owner</li>
+                  <li>• You&apos;ll be set as the organization owner</li>
                   <li>• You can invite team members to collaborate</li>
                   <li>• All projects can be shared with your organization</li>
                   <li>• You can manage roles and permissions for members</li>

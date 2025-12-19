@@ -2,7 +2,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -28,7 +28,6 @@ router = APIRouter()
 @user_limiter.limit("100 per minute")
 async def read_projects(
     request: Request,
-    response: Response,
     db: AsyncSession = Depends(get_async_db),
     skip: int = 0,
     limit: int = 100,
@@ -144,7 +143,6 @@ async def read_projects(
 async def create_new_project(
     *,
     request: Request,
-    response: Response,
     db: AsyncSession = Depends(get_async_db),
     project_in: ProjectCreate,
     current_user: User = Depends(get_current_active_user_async),
