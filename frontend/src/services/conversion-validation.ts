@@ -348,8 +348,8 @@ function validateIfAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as unknown;
-  const convertedConfig = converted.config as unknown;
+  const originalConfig = original.config as { condition?: unknown; thenActions?: unknown[]; elseActions?: unknown[] };
+  const convertedConfig = converted.config as { condition?: unknown; thenActions?: unknown[]; elseActions?: unknown[] };
 
   // Check condition preservation
   if (
@@ -368,11 +368,11 @@ function validateIfAction(
   // (inline actions in sequential vs action IDs in graph)
   // Just check that branches exist
   const hasThen =
-    originalConfig.thenActions?.length > 0 ||
-    convertedConfig.thenActions?.length > 0;
+    (originalConfig.thenActions?.length ?? 0) > 0 ||
+    (convertedConfig.thenActions?.length ?? 0) > 0;
   const hasElse =
-    originalConfig.elseActions?.length > 0 ||
-    convertedConfig.elseActions?.length > 0;
+    (originalConfig.elseActions?.length ?? 0) > 0 ||
+    (convertedConfig.elseActions?.length ?? 0) > 0;
 
   if (!hasThen && !hasElse) {
     issues.push({
@@ -392,8 +392,8 @@ function validateLoopAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as unknown;
-  const convertedConfig = converted.config as unknown;
+  const originalConfig = original.config as { condition?: unknown; loopType?: string };
+  const convertedConfig = converted.config as { condition?: unknown; loopType?: string };
 
   // Check condition preservation
   if (
@@ -427,8 +427,8 @@ function validateSwitchAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as unknown;
-  const convertedConfig = converted.config as unknown;
+  const originalConfig = original.config as { cases?: unknown[] };
+  const convertedConfig = converted.config as { cases?: unknown[] };
 
   // Check case count preservation
   if (originalConfig.cases?.length !== convertedConfig.cases?.length) {
@@ -449,16 +449,16 @@ function validateTryCatchAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as unknown;
-  const convertedConfig = converted.config as unknown;
+  const originalConfig = original.config as { tryActions?: unknown[]; catchActions?: unknown[] };
+  const convertedConfig = converted.config as { tryActions?: unknown[]; catchActions?: unknown[] };
 
   // Check that try/catch blocks exist
   const hasTry =
-    originalConfig.tryActions?.length > 0 ||
-    convertedConfig.tryActions?.length > 0;
+    (originalConfig.tryActions?.length ?? 0) > 0 ||
+    (convertedConfig.tryActions?.length ?? 0) > 0;
   const hasCatch =
-    originalConfig.catchActions?.length > 0 ||
-    convertedConfig.catchActions?.length > 0;
+    (originalConfig.catchActions?.length ?? 0) > 0 ||
+    (convertedConfig.catchActions?.length ?? 0) > 0;
 
   if (!hasTry) {
     issues.push({

@@ -19,6 +19,7 @@ import type {
   PresenceUpdateMessage,
   CursorMoveMessage,
   CursorPosition,
+  WebSocketMessageType,
 } from "@/types/collaboration";
 import {
   ExecutionWebSocket,
@@ -103,7 +104,7 @@ class WebSocketCollaborationService {
               "[CollaborationWS] Reconnecting, requesting sync state"
             );
             this.send({
-              type: "sync_state" as unknown,
+              type: "sync_state" as WebSocketMessageType,
               timestamp: new Date().toISOString(),
               data: {
                 last_acked_sequence: this.lastAckedSequence,
@@ -131,7 +132,7 @@ class WebSocketCollaborationService {
         },
         onError: (error: unknown) => {
           console.error("[CollaborationWS] Error:", error);
-          this.handlers.onError?.(error);
+          this.handlers.onError?.(error instanceof Error ? error : new Error(String(error)));
         },
       }
     );
@@ -317,7 +318,7 @@ class WebSocketCollaborationService {
       if (message.type === "resend_complete") {
         console.log(
           "[CollaborationWS] Resend complete:",
-          message.data?.count,
+          (message.data as { count?: number } | undefined)?.count,
           "messages"
         );
         return;
@@ -340,7 +341,8 @@ class WebSocketCollaborationService {
    * Process a sequenced message (handle ordering)
    */
   private processSequencedMessage(message: unknown): void {
-    const sequence = message.sequence;
+    const msg = message as { sequence: number };
+    const sequence = msg.sequence;
 
     // Track the highest sequence we've received
     if (sequence > this.lastReceivedSequence) {
@@ -408,37 +410,38 @@ class WebSocketCollaborationService {
    * Dispatch message to appropriate handler
    */
   private dispatchMessage(message: unknown): void {
-    switch (message.type) {
+    const msg = message as { type: string; data: unknown };
+    switch (msg.type) {
       case "presence_update":
-        this.handlers.onPresenceUpdate?.(message.data);
+        this.handlers.onPresenceUpdate?.(msg.data as UserPresence[]);
         break;
 
       case "cursor_move":
-        this.handlers.onCursorMove?.(message.data);
+        this.handlers.onCursorMove?.(msg.data as CursorMoveMessage);
         break;
 
       case "lock_acquired":
-        this.handlers.onLockAcquired?.(message.data);
+        this.handlers.onLockAcquired?.(msg.data as Lock);
         break;
 
       case "lock_released":
-        this.handlers.onLockReleased?.(message.data);
+        this.handlers.onLockReleased?.(msg.data as Lock);
         break;
 
       case "comment_added":
-        this.handlers.onCommentAdded?.(message.data);
+        this.handlers.onCommentAdded?.(msg.data as Comment);
         break;
 
       case "comment_updated":
-        this.handlers.onCommentUpdated?.(message.data);
+        this.handlers.onCommentUpdated?.(msg.data as Comment);
         break;
 
       case "comment_deleted":
-        this.handlers.onCommentDeleted?.(message.data);
+        this.handlers.onCommentDeleted?.(msg.data as string);
         break;
 
       case "activity_update":
-        this.handlers.onActivityUpdate?.(message.data);
+        this.handlers.onActivityUpdate?.(msg.data as Activity);
         break;
 
       case "pong":
@@ -447,7 +450,7 @@ class WebSocketCollaborationService {
         break;
 
       default:
-        console.warn("[CollaborationWS] Unknown message type:", message.type);
+        console.warn("[CollaborationWS] Unknown message type:", msg.type);
     }
   }
 
@@ -470,7 +473,7 @@ class WebSocketCollaborationService {
    */
   private sendAck(sequence: number): void {
     this.send({
-      type: "ack" as unknown,
+      type: "ping",
       timestamp: new Date().toISOString(),
       data: { sequence },
     });
@@ -483,7 +486,7 @@ class WebSocketCollaborationService {
    */
   private requestResend(fromSequence: number): void {
     this.send({
-      type: "resend" as unknown,
+      type: "ping",
       timestamp: new Date().toISOString(),
       data: { from_sequence: fromSequence },
     });
@@ -500,10 +503,12 @@ class WebSocketCollaborationService {
   private handleConnectionState(state: unknown): void {
     console.log("[CollaborationWS] Connection state:", state);
 
+    const stateObj = state as { message_sequence?: number };
     // If reconnecting and there are unacknowledged messages, request resend
     if (
       this.lastAckedSequence > 0 &&
-      state.message_sequence > this.lastAckedSequence
+      stateObj.message_sequence &&
+      stateObj.message_sequence > this.lastAckedSequence
     ) {
       const fromSequence = this.lastAckedSequence + 1;
       console.log(

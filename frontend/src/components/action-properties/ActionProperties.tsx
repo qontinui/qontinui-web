@@ -61,7 +61,7 @@ export function ActionProperties({
     if (key === "__reset__") {
       const updatedAction = {
         ...action,
-        config: value,
+        config: value as typeof action.config,
       };
       onUpdateAction(updatedAction);
       return;
@@ -71,7 +71,7 @@ export function ActionProperties({
     if (key === "__base__") {
       const updatedAction = {
         ...action,
-        base: value,
+        base: value as typeof action.base,
       };
       onUpdateAction(updatedAction);
       return;
@@ -80,11 +80,11 @@ export function ActionProperties({
     if (key === "image") {
       // Remove old image usage
       if (action.config.image) {
-        removeImageUsage(action.config.image, action.id);
+        removeImageUsage(String(action.config.image), action.id);
       }
       // Add new image usage
       if (value) {
-        updateImageUsage(value, {
+        updateImageUsage(String(value), {
           type: "process",
           id: action.id,
           name: `${action.type} Action`,

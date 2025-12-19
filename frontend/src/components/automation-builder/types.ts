@@ -6,7 +6,11 @@
  * sequential workflows are just linear graphs with no branching.
  */
 
-import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import type {
+  Workflow,
+  Action,
+  ActionType,
+} from "@/lib/action-schema/action-types";
 
 /**
  * Builder mode - Sequential for linear workflows, Graph for visual workflows
@@ -89,7 +93,7 @@ export interface GraphEditorProps {
   selectedNode: Action | null;
   onSelectNode: (action: Action | null) => void;
   onUpdateWorkflow: (workflow: Workflow) => void;
-  onAddNode: (nodeType: unknown) => void;
+  onAddNode: (nodeType: ActionType) => void;
 }
 
 /**

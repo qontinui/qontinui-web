@@ -17,6 +17,15 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Image, CheckCircle, Circle, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+interface APIScreenshot {
+  id: string;
+  name: string;
+  hash: string;
+  size: number;
+  created_at: string;
+  thumbnail_url?: string;
+}
+
 
 interface ProjectScreenshot {
   id: string;
@@ -72,8 +81,7 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
       const data = await response.json();
 
       // Map API response to component format
-      const screenshots: ProjectScreenshot[] = data.screenshots.map(
-        (s: unknown) => ({
+      const screenshots: ProjectScreenshot[] = data.screenshots.map((s: APIScreenshot) => ({
           id: s.id,
           name: s.name,
           hash: s.hash,

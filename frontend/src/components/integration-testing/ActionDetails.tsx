@@ -7,7 +7,15 @@ interface ActionDetailsProps {
   action: ActionVisualization;
 }
 
+// Extended action type with optional properties for specific action types
+interface ExtendedAction extends ActionVisualization {
+  direction?: string;
+  amount?: number;
+  state_name?: string;
+}
+
 export function ActionDetails({ action }: ActionDetailsProps) {
+  const extendedAction = action as ExtendedAction;
   return (
     <Card className="p-4">
       <h3 className="font-semibold mb-3">Action Details</h3>
@@ -49,17 +57,17 @@ export function ActionDetails({ action }: ActionDetailsProps) {
           </div>
         )}
 
-        {action.action_type === "SCROLL" && (action as unknown).direction && (
+        {action.action_type === "SCROLL" && extendedAction.direction && (
           <>
             <div>
               <dt className="text-gray-500">Direction</dt>
-              <dd className="font-medium">{(action as unknown).direction}</dd>
+              <dd className="font-medium">{extendedAction.direction}</dd>
             </div>
             <div>
               <dt className="text-gray-500">Amount</dt>
               <dd className="font-medium">
-                {(action as unknown).amount || 1}{" "}
-                {((action as unknown).amount || 1) === 1 ? "unit" : "units"}
+                {extendedAction.amount || 1}{" "}
+                {(extendedAction.amount || 1) === 1 ? "unit" : "units"}
               </dd>
             </div>
           </>
@@ -77,10 +85,10 @@ export function ActionDetails({ action }: ActionDetailsProps) {
         )}
 
         {(action.action_type === "DEFINE" || action.action_type === "VANISH") &&
-          (action as unknown).state_name && (
+          extendedAction.state_name && (
             <div className="col-span-2">
               <dt className="text-gray-500">State Name</dt>
-              <dd className="font-medium">{(action as unknown).state_name}</dd>
+              <dd className="font-medium">{extendedAction.state_name}</dd>
             </div>
           )}
 

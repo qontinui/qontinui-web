@@ -19,7 +19,22 @@ export const migrationV1ToV2: Migration = {
   description: "Migrate legacy formats to modern v2.0.0 graph format",
 
   migrate(config: unknown, context: MigrationContext): unknown {
-    const migrated = structuredClone(config);
+    // Type assertion for config
+    interface LegacyConfig {
+      workflows?: Array<{
+        id: string;
+        format?: string;
+        connections?: unknown;
+        actions?: Array<{
+          position?: unknown;
+          [key: string]: unknown;
+        }>;
+        [key: string]: unknown;
+      }>;
+      version?: string;
+      [key: string]: unknown;
+    }
+    const migrated = structuredClone(config) as LegacyConfig;
 
     // Ensure workflows array exists
     if (!migrated.workflows) {
@@ -54,6 +69,8 @@ export const migrationV1ToV2: Migration = {
       for (let i = 0; i < workflow.actions.length; i++) {
         const action = workflow.actions[i];
 
+        if (!action) continue;
+
         if (
           !action.position ||
           !Array.isArray(action.position) ||
@@ -86,8 +103,9 @@ export const migrationV1ToV2: Migration = {
   },
 
   isApplicable(config: unknown): boolean {
+    const cfg = config as { workflows?: Array<{ format?: string; connections?: unknown; actions?: Array<{ position?: unknown }> }> };
     // Check if any workflows need migration
-    for (const workflow of config.workflows || []) {
+    for (const workflow of cfg.workflows || []) {
       // Check for missing format or non-graph format
       if (!workflow.format || workflow.format !== "graph") {
         return true;

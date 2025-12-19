@@ -172,11 +172,16 @@ class ScreenshotDB {
         const request = store.getAll();
 
         request.onsuccess = () => {
-          const screenshots = request.result.map((s: unknown) => ({
-            ...s,
-            url: normalizeUrl(s.url),
-            uploadedAt: new Date(s.uploadedAt),
-          }));
+          const screenshots = request.result.map((s: unknown) => {
+            const screenshot = s as StoredScreenshot & {
+              uploadedAt: string | Date;
+            };
+            return {
+              ...screenshot,
+              url: normalizeUrl(screenshot.url),
+              uploadedAt: new Date(screenshot.uploadedAt),
+            };
+          });
           resolve(screenshots);
         };
         request.onerror = () => reject(request.error);
@@ -197,11 +202,16 @@ class ScreenshotDB {
         const request = index.getAll(projectName);
 
         request.onsuccess = () => {
-          const screenshots = request.result.map((s: unknown) => ({
-            ...s,
-            url: normalizeUrl(s.url),
-            uploadedAt: new Date(s.uploadedAt),
-          }));
+          const screenshots = request.result.map((s: unknown) => {
+            const screenshot = s as StoredScreenshot & {
+              uploadedAt: string | Date;
+            };
+            return {
+              ...screenshot,
+              url: normalizeUrl(screenshot.url),
+              uploadedAt: new Date(screenshot.uploadedAt),
+            };
+          });
           resolve(screenshots);
         };
         request.onerror = () => reject(request.error);

@@ -29,12 +29,14 @@ from app.api.v1.endpoints.images import (
     validate_image_mime_type,
 )
 from app.config.redis_config import get_redis
+from app.crud import detected_issue as issue_crud
 from app.crud import runner as runner_crud
 from app.models.automation import AutomationInputEvent, InputEventType
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.user import User
+from app.schemas.detected_issue import IssueSource, IssueSyncItem
 from app.services.object_storage import object_storage
 from app.services.runner_connection_manager import get_runner_connection_manager
 from app.services.websocket_manager import get_websocket_manager
@@ -1182,6 +1184,282 @@ async def websocket_runner_endpoint(
                             "timestamp": datetime.utcnow().isoformat() + "Z",
                         }
                     )
+
+                elif message_type == "issue_detected":
+                    # Handle detected issue from runner
+                    # Store in database and relay to frontends
+                    if not session_started:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "No active session. Start session first.",
+                            }
+                        )
+                        continue
+
+                    try:
+                        payload = message.data.get("payload", {})
+                        # Parse source as IssueSource
+                        source_data = payload.get("source", {})
+                        source = IssueSource(
+                            type=source_data.get("type", "other"),
+                            path=source_data.get("path"),
+                            line_range=(
+                                tuple(source_data["line_range"])
+                                if source_data.get("line_range")
+                                else None
+                            ),
+                            description=source_data.get("description"),
+                        )
+
+                        # Create issue sync item
+                        issue_item = IssueSyncItem(
+                            id=payload.get("id", str(uuid.uuid4())),
+                            session_id=(
+                                str(current_session_id)
+                                if current_session_id
+                                else "unknown"
+                            ),
+                            type=payload.get("type", "error"),
+                            severity=payload.get("severity", "medium"),
+                            title=payload.get("title", "Unknown Issue"),
+                            description=payload.get("description"),
+                            file=payload.get("file"),
+                            line=payload.get("line"),
+                            source=source,
+                            status=payload.get("status", "detected"),
+                            resolution=payload.get("resolution"),
+                            detected_at=datetime.fromisoformat(
+                                payload.get(
+                                    "detected_at", datetime.utcnow().isoformat()
+                                ).replace("Z", "+00:00")
+                            ),
+                            resolved_at=(
+                                datetime.fromisoformat(
+                                    payload["resolved_at"].replace("Z", "+00:00")
+                                )
+                                if payload.get("resolved_at")
+                                else None
+                            ),
+                        )
+
+                        # Sync to database
+                        project_id = (
+                            UUID(message.data.get("project_id"))
+                            if message.data.get("project_id")
+                            else None
+                        )
+                        synced, updated, errors = await issue_crud.sync_issues(
+                            db=db,
+                            user_id=user.id,
+                            project_id=project_id,
+                            issues=[issue_item],
+                        )
+
+                        logger.info(
+                            "issue_detected_stored",
+                            user_id=str(user.id),
+                            issue_title=issue_item.title[:50],
+                            synced=synced,
+                            updated=updated,
+                        )
+
+                        # Relay to frontends
+                        if connection_record and runner_manager:
+                            await runner_manager.send_response_to_frontends(
+                                connection_record.id,
+                                {
+                                    "type": "issue_detected",
+                                    **payload,
+                                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                                },
+                            )
+
+                        await websocket.send_json(
+                            {
+                                "type": "issue_detected_ack",
+                                "synced": synced,
+                                "updated": updated,
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                            }
+                        )
+
+                    except Exception as e:
+                        logger.error(
+                            "issue_detected_error",
+                            error=str(e),
+                            error_type=type(e).__name__,
+                        )
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": f"Failed to store issue: {str(e)}",
+                            }
+                        )
+
+                elif message_type == "issue_updated":
+                    # Handle issue status update from runner
+                    if not session_started:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "No active session. Start session first.",
+                            }
+                        )
+                        continue
+
+                    try:
+                        payload = message.data.get("payload", {})
+                        # Note: For updates, we need to match by title/detected_at
+                        # since the runner's client ID might not be the DB UUID
+                        # This is handled by sync_issues deduplication logic
+
+                        logger.info(
+                            "issue_updated_received",
+                            user_id=str(user.id),
+                            issue_id=payload.get("id"),
+                            status=payload.get("status"),
+                        )
+
+                        # Relay to frontends
+                        if connection_record and runner_manager:
+                            await runner_manager.send_response_to_frontends(
+                                connection_record.id,
+                                {
+                                    "type": "issue_updated",
+                                    **payload,
+                                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                                },
+                            )
+
+                        await websocket.send_json(
+                            {
+                                "type": "issue_updated_ack",
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                            }
+                        )
+
+                    except Exception as e:
+                        logger.error(
+                            "issue_updated_error",
+                            error=str(e),
+                            error_type=type(e).__name__,
+                        )
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": f"Failed to update issue: {str(e)}",
+                            }
+                        )
+
+                elif message_type == "issues_sync":
+                    # Handle bulk issues sync from runner
+                    if not session_started:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "No active session. Start session first.",
+                            }
+                        )
+                        continue
+
+                    try:
+                        payload = message.data.get("payload", {})
+                        issues_data = payload.get("issues", [])
+                        project_id = (
+                            UUID(message.data.get("project_id"))
+                            if message.data.get("project_id")
+                            else None
+                        )
+
+                        # Convert to IssueSyncItem list
+                        issue_items = []
+                        for issue_data in issues_data:
+                            source_data = issue_data.get("source", {})
+                            source = IssueSource(
+                                type=source_data.get("type", "other"),
+                                path=source_data.get("path"),
+                                line_range=(
+                                    tuple(source_data["line_range"])
+                                    if source_data.get("line_range")
+                                    else None
+                                ),
+                                description=source_data.get("description"),
+                            )
+
+                            issue_items.append(
+                                IssueSyncItem(
+                                    id=issue_data.get("id", str(uuid.uuid4())),
+                                    session_id=(
+                                        str(current_session_id)
+                                        if current_session_id
+                                        else "unknown"
+                                    ),
+                                    type=issue_data.get("type", "error"),
+                                    severity=issue_data.get("severity", "medium"),
+                                    title=issue_data.get("title", "Unknown Issue"),
+                                    description=issue_data.get("description"),
+                                    file=issue_data.get("file"),
+                                    line=issue_data.get("line"),
+                                    source=source,
+                                    status=issue_data.get("status", "detected"),
+                                    resolution=issue_data.get("resolution"),
+                                    detected_at=datetime.fromisoformat(
+                                        issue_data.get(
+                                            "detected_at", datetime.utcnow().isoformat()
+                                        ).replace("Z", "+00:00")
+                                    ),
+                                    resolved_at=(
+                                        datetime.fromisoformat(
+                                            issue_data["resolved_at"].replace(
+                                                "Z", "+00:00"
+                                            )
+                                        )
+                                        if issue_data.get("resolved_at")
+                                        else None
+                                    ),
+                                )
+                            )
+
+                        # Sync to database
+                        synced, updated, errors = await issue_crud.sync_issues(
+                            db=db,
+                            user_id=user.id,
+                            project_id=project_id,
+                            issues=issue_items,
+                        )
+
+                        logger.info(
+                            "issues_sync_completed",
+                            user_id=str(user.id),
+                            total_issues=len(issues_data),
+                            synced=synced,
+                            updated=updated,
+                            errors=len(errors),
+                        )
+
+                        await websocket.send_json(
+                            {
+                                "type": "issues_sync_ack",
+                                "synced": synced,
+                                "updated": updated,
+                                "errors": errors,
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                            }
+                        )
+
+                    except Exception as e:
+                        logger.error(
+                            "issues_sync_error",
+                            error=str(e),
+                            error_type=type(e).__name__,
+                        )
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": f"Failed to sync issues: {str(e)}",
+                            }
+                        )
 
                 elif message_type == "pong":
                     # Standard WebSocket keepalive response - no action needed

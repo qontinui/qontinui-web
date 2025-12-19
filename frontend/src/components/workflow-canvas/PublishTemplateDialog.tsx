@@ -13,7 +13,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { workflowTemplates } from "@/services/workflow-templates";
-import type { TemplateCategory as MarketplaceCategory } from "@/types/workflow-templates";
 
 // ============================================================================
 // Types
@@ -40,12 +39,12 @@ export function PublishTemplateDialog({
     workflow.metadata?.description || ""
   );
   const [longDescription, setLongDescription] = useState("");
-  const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [tagsInput, setTagsInput] = useState("");
   const [license, setLicense] = useState("MIT");
 
   // UI state
-  const [categories, setCategories] = useState<MarketplaceCategory[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<"form" | "preview" | "publishing">("form");
@@ -55,7 +54,7 @@ export function PublishTemplateDialog({
       const cats = await workflowTemplates.getMarketplaceCategories();
       setCategories(cats);
       if (cats.length > 0 && !categoryId) {
-        setCategoryId(cats[0]!.id);
+        setCategoryId(cats[0]!);
       }
     } catch (err) {
       console.error("Failed to load categories:", err);
@@ -121,16 +120,16 @@ export function PublishTemplateDialog({
 
     try {
       const template = await workflowTemplates.publishToMarketplace(workflow, {
-        name,
+
         description,
-        long_description: longDescription || undefined,
-        category_id: categoryId || undefined,
+
+        categoryId: categoryId ?? "",
         tags: parseTags(),
-        license: license || undefined,
+
       });
 
       if (onPublished) {
-        onPublished(template.id);
+        if (template.id) onPublished(parseInt(template.id, 10));
       }
       onClose();
     } catch (err) {
@@ -157,12 +156,12 @@ export function PublishTemplateDialog({
 
     try {
       await workflowTemplates.saveToMarketplaceDraft(workflow, {
-        name,
+
         description,
-        long_description: longDescription || undefined,
-        category_id: categoryId || undefined,
+
+        categoryId: categoryId ?? "",
         tags: parseTags(),
-        license: license || undefined,
+
       });
       onClose();
     } catch (err) {
@@ -247,14 +246,14 @@ export function PublishTemplateDialog({
                   value={categoryId || ""}
                   onChange={(e) =>
                     setCategoryId(
-                      e.target.value ? Number(e.target.value) : null
+                      e.target.value || null
                     )
                   }
                 >
                   <option value="">Select a category...</option>
                   {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
+                    <option key={cat} value={cat}>
+                      {cat}
                     </option>
                   ))}
                 </select>
@@ -324,7 +323,7 @@ export function PublishTemplateDialog({
                 {categoryId && (
                   <span className="meta-item">
                     <strong>Category:</strong>{" "}
-                    {categories.find((c) => c.id === categoryId)?.name}
+                    {categoryId}
                   </span>
                 )}
                 <span className="meta-item">

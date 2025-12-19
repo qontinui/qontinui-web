@@ -1,10 +1,11 @@
+import { State } from "../../contexts/automation-context/types";
 import React, { useState } from "react";
 import { Link2, Plus, X } from "lucide-react";
 import { Screenshot } from "../../types/Screenshot";
 
 interface StateAssociationPanelProps {
   screenshot: Screenshot;
-  states: unknown[]; // Will be replaced with proper State type
+  states: State[];
   onStateAssociation: (stateIds: string[]) => void;
 }
 
@@ -31,7 +32,7 @@ const StateAssociationPanel: React.FC<StateAssociationPanelProps> = ({
   const getAssociatedStateNames = () => {
     return screenshot.associatedStates
       .map((stateId) => states.find((s) => s.id === stateId))
-      .filter(Boolean)
+      .filter((state): state is NonNullable<typeof state> => state !== undefined)
       .map((state) => state.name);
   };
 

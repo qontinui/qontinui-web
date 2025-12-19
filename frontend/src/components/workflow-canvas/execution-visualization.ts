@@ -471,7 +471,16 @@ export function centerViewportOnNode(
 ): void {
   const { zoom = 1, duration = 300 } = options;
 
-  reactFlowInstance.fitView({
+  const instance = reactFlowInstance as {
+    fitView: (options: {
+      nodes: Array<{ id: string }>;
+      duration: number;
+      padding: number;
+      maxZoom: number;
+    }) => void;
+  };
+
+  instance.fitView({
     nodes: [{ id: nodeId }],
     duration,
     padding: 0.5,

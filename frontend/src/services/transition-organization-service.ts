@@ -1172,11 +1172,12 @@ export class TransitionOrganizationService {
     if (query) {
       const lowerQuery = query.toLowerCase();
       results = results.filter((t) => {
+        const metadata = this.getTransitionMetadata(t.id) as { name?: string; description?: string } | undefined;
         const searchableText = [
           t.id,
           t.workflows.join(" "),
-          this.getTransitionMetadata(t.id)?.name || "",
-          this.getTransitionMetadata(t.id)?.description || "",
+          metadata?.name || "",
+          metadata?.description || "",
         ]
           .join(" ")
           .toLowerCase();
@@ -1268,7 +1269,7 @@ export class TransitionOrganizationService {
 
       if (filters.hasTag) {
         results = results.filter((t) => {
-          const metadata = this.getTransitionMetadata(t.id);
+          const metadata = this.getTransitionMetadata(t.id) as { tags?: string[] } | undefined;
           return metadata?.tags?.includes(filters.hasTag!);
         });
       }
@@ -1724,7 +1725,7 @@ export class TransitionOrganizationService {
           stateIds.add(incoming.toState);
         }
       }
-      exportData.states = states.filter((s) => stateIds.has(s.id));
+      (exportData as { states?: State[] }).states = states.filter((s) => stateIds.has(s.id));
     }
 
     if (options.includeWorkflows) {
@@ -1732,17 +1733,17 @@ export class TransitionOrganizationService {
       for (const transition of selectedTransitions) {
         transition.workflows.forEach((id) => workflowIds.add(id));
       }
-      exportData.workflows = workflows.filter((w) => workflowIds.has(w.id));
+      (exportData as { workflows?: unknown[] }).workflows = workflows.filter((w) => workflowIds.has(w.id));
     }
 
     if (options.includeGroups) {
-      exportData.groups = Array.from(this.groups.values()).filter((g) =>
+      (exportData as { groups?: TransitionGroup[] }).groups = Array.from(this.groups.values()).filter((g) =>
         g.transitionIds.some((id) => transitionIds.includes(id))
       );
     }
 
     if (options.includeMetadata) {
-      exportData.metadata = Object.fromEntries(
+      (exportData as { metadata?: Record<string, unknown> }).metadata = Object.fromEntries(
         Array.from(this.transitionMetadata.entries()).filter(([id]) =>
           transitionIds.includes(id)
         )
@@ -1773,47 +1774,60 @@ export class TransitionOrganizationService {
         }
       }
 
-      const result: unknown = {
+      const importDataObj = importData as {
+        transitions?: Transition[];
+        states?: State[];
+        groups?: TransitionGroup[];
+        metadata?: Record<string, unknown>;
+      };
+
+      const result: {
+        transitions: Transition[];
+        states?: State[];
+        groups?: TransitionGroup[];
+      } = {
         transitions: [],
       };
 
       // Import transitions
-      for (const transition of importData.transitions) {
-        const existingIndex = result.transitions.findIndex(
-          (t: Transition) => t.id === transition.id
-        );
+      if (importDataObj.transitions) {
+        for (const transition of importDataObj.transitions) {
+          const existingIndex = result.transitions.findIndex(
+            (t: Transition) => t.id === transition.id
+          );
 
-        if (existingIndex !== -1) {
-          if (options.skipDuplicates) {
-            continue;
-          } else if (options.mergeStrategy === "replace") {
-            result.transitions[existingIndex] = transition;
-          } else if (options.mergeStrategy === "rename") {
-            transition.id = `${transition.id}-imported-${Date.now()}`;
+          if (existingIndex !== -1) {
+            if (options.skipDuplicates) {
+              continue;
+            } else if (options.mergeStrategy === "replace") {
+              result.transitions[existingIndex] = transition;
+            } else if (options.mergeStrategy === "rename") {
+              transition.id = `${transition.id}-imported-${Date.now()}`;
+              result.transitions.push(transition);
+            }
+          } else {
             result.transitions.push(transition);
           }
-        } else {
-          result.transitions.push(transition);
         }
       }
 
       // Import states if included
-      if (importData.states && options.includeStates) {
-        result.states = importData.states;
+      if (importDataObj.states && options.includeStates) {
+        result.states = importDataObj.states;
       }
 
       // Import groups if included
-      if (importData.groups && options.includeGroups) {
-        result.groups = importData.groups;
-        for (const group of importData.groups) {
+      if (importDataObj.groups && options.includeGroups) {
+        result.groups = importDataObj.groups;
+        for (const group of importDataObj.groups) {
           this.groups.set(group.id, group);
         }
         this.saveGroups();
       }
 
       // Import metadata if included
-      if (importData.metadata && options.includeMetadata) {
-        for (const [id, metadata] of Object.entries(importData.metadata)) {
+      if (importDataObj.metadata && options.includeMetadata) {
+        for (const [id, metadata] of Object.entries(importDataObj.metadata)) {
           this.transitionMetadata.set(id, metadata);
         }
         this.saveMetadata();
@@ -2320,7 +2334,7 @@ export class TransitionOrganizationService {
    */
   private saveMetadata(): void {
     try {
-      const data: unknown = {};
+      const data: Record<string, unknown> = {};
       this.transitionMetadata.forEach((metadata, id) => {
         data[id] = metadata;
       });

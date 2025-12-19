@@ -233,25 +233,29 @@ class SyncQueue {
       }
 
       request.onsuccess = () => {
-        let items = request.result.map((item: unknown) => ({
-          ...item,
-          createdAt: new Date(item.createdAt),
-          updatedAt: new Date(item.updatedAt),
-          syncedAt: item.syncedAt ? new Date(item.syncedAt) : undefined,
-          nextRetryAt: item.nextRetryAt
-            ? new Date(item.nextRetryAt)
-            : undefined,
-        }));
+        let items: SyncQueueItem[] = request.result.map((item: unknown) => {
+          const i = item as SyncQueueItem & {
+            createdAt: string | Date;
+            updatedAt: string | Date;
+            syncedAt?: string | Date;
+            nextRetryAt?: string | Date;
+          };
+          return {
+            ...i,
+            createdAt: new Date(i.createdAt),
+            updatedAt: new Date(i.updatedAt),
+            syncedAt: i.syncedAt ? new Date(i.syncedAt) : undefined,
+            nextRetryAt: i.nextRetryAt ? new Date(i.nextRetryAt) : undefined,
+          } as SyncQueueItem;
+        });
 
         // Apply additional filters
         if (filter?.type && filter?.status) {
-          items = items.filter(
-            (item: SyncQueueItem) => item.type === filter.type
-          );
+          items = items.filter((item) => item.type === filter.type);
         }
 
         // Sort by priority (higher first) then createdAt (older first)
-        items.sort((a: SyncQueueItem, b: SyncQueueItem) => {
+        items.sort((a, b) => {
           if (a.priority !== b.priority) {
             return b.priority - a.priority;
           }

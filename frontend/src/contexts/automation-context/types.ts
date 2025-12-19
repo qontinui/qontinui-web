@@ -405,7 +405,7 @@ export interface AutomationContextType {
 
   // Transition management
   transitions: Transition[];
-  addTransition: (transition: Transition) => void;
+  addTransition: (transition: Transition) => Promise<boolean>;
   updateTransition: (transition: Transition) => void;
   deleteTransition: (transitionId: string) => void;
 

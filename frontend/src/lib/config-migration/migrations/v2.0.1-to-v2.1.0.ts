@@ -18,7 +18,7 @@ export const migrationV201ToV21: Migration = {
     "Consolidate FIND_STATE_IMAGE into FIND with stateImage target type",
 
   migrate(config: unknown, context: MigrationContext): unknown {
-    const migrated = structuredClone(config);
+    const migrated = structuredClone(config) as Record<string, unknown>;
 
     // Track conversion count
     let convertedCount = 0;
@@ -29,24 +29,25 @@ export const migrationV201ToV21: Migration = {
     }
 
     // Migrate each workflow
-    for (const workflow of migrated.workflows) {
+    for (const workflow of migrated.workflows as Array<Record<string, unknown>>) {
       // Ensure actions array exists
       if (!workflow.actions) {
         workflow.actions = [];
       }
 
       // Convert FIND_STATE_IMAGE actions to FIND with stateImage target
-      for (const action of workflow.actions) {
+      for (const action of workflow.actions as Array<Record<string, unknown>>) {
         if (action.type === "FIND_STATE_IMAGE") {
           // Get the stateId from either field name
-          const stateId = action.config?.stateId || action.config?.state || "";
+          const actionConfig = action.config as Record<string, unknown> | undefined;
+          const stateId = actionConfig?.stateId || actionConfig?.state || "";
 
           // Convert action type
           action.type = "FIND";
 
           // Create new target with stateImage type
           action.config = {
-            ...action.config,
+            ...actionConfig,
             target: {
               type: "stateImage",
               stateId: stateId,
@@ -55,9 +56,10 @@ export const migrationV201ToV21: Migration = {
           };
 
           // Remove legacy fields
-          delete action.config.stateId;
-          delete action.config.state;
-          delete action.config.stateName;
+          const newConfig = action.config as Record<string, unknown>;
+          delete newConfig.stateId;
+          delete newConfig.state;
+          delete newConfig.stateName;
 
           convertedCount++;
           context.warnings.push(
@@ -87,12 +89,13 @@ export const migrationV201ToV21: Migration = {
    * Only apply this migration if FIND_STATE_IMAGE actions exist
    */
   isApplicable(config: unknown): boolean {
-    if (!config.workflows) return false;
+    const configObj = config as Record<string, unknown>;
+    if (!configObj.workflows) return false;
 
     // Check if any workflow has FIND_STATE_IMAGE actions
-    for (const workflow of config.workflows) {
+    for (const workflow of configObj.workflows as Array<Record<string, unknown>>) {
       if (workflow.actions) {
-        for (const action of workflow.actions) {
+        for (const action of workflow.actions as Array<Record<string, unknown>>) {
           if (action.type === "FIND_STATE_IMAGE") {
             return true;
           }
@@ -107,11 +110,12 @@ export const migrationV201ToV21: Migration = {
    * Validate the migrated config
    */
   validate(migratedConfig: unknown): boolean {
+    const configObj = migratedConfig as Record<string, unknown>;
     // Ensure no FIND_STATE_IMAGE actions remain
-    if (migratedConfig.workflows) {
-      for (const workflow of migratedConfig.workflows) {
+    if (configObj.workflows) {
+      for (const workflow of configObj.workflows as Array<Record<string, unknown>>) {
         if (workflow.actions) {
-          for (const action of workflow.actions) {
+          for (const action of workflow.actions as Array<Record<string, unknown>>) {
             if (action.type === "FIND_STATE_IMAGE") {
               console.error(
                 "Validation failed: FIND_STATE_IMAGE action still exists after migration"
@@ -124,22 +128,24 @@ export const migrationV201ToV21: Migration = {
     }
 
     // Ensure converted actions have proper stateImage target structure
-    if (migratedConfig.workflows) {
-      for (const workflow of migratedConfig.workflows) {
+    if (configObj.workflows) {
+      for (const workflow of configObj.workflows as Array<Record<string, unknown>>) {
         if (workflow.actions) {
-          for (const action of workflow.actions) {
+          for (const action of workflow.actions as Array<Record<string, unknown>>) {
+            const actionConfig = action.config as Record<string, unknown> | undefined;
+            const target = actionConfig?.target as Record<string, unknown> | undefined;
             if (
               action.type === "FIND" &&
-              action.config?.target?.type === "stateImage"
+              target?.type === "stateImage"
             ) {
               // Validate stateImage target structure
-              if (typeof action.config.target.stateId !== "string") {
+              if (typeof target.stateId !== "string") {
                 console.error(
                   "Validation failed: stateImage target missing stateId"
                 );
                 return false;
               }
-              if (!Array.isArray(action.config.target.imageIds)) {
+              if (!Array.isArray(target.imageIds)) {
                 console.error(
                   "Validation failed: stateImage target missing imageIds array"
                 );

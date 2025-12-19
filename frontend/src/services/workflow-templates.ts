@@ -821,6 +821,56 @@ export class WorkflowTemplatesService {
       localStorage.removeItem("workflow-custom-templates");
     }
   }
+
+  /**
+   * Get marketplace categories (stub - not yet implemented)
+   */
+  async getMarketplaceCategories(): Promise<TemplateCategory[]> {
+    // TODO: Implement marketplace integration
+    return [];
+  }
+
+  /**
+   * Publish template to marketplace (stub - not yet implemented)
+   */
+  async publishToMarketplace(
+    _template: Workflow | WorkflowTemplate,
+    _metadata: { description: string; tags: string[]; categoryId: string | number }
+  ): Promise<{ success: boolean; id?: string; error?: string }> {
+    // TODO: Implement marketplace integration
+    return { success: false, error: "Marketplace not yet implemented" };
+  }
+
+  /**
+   * Save template to marketplace draft (stub - not yet implemented)
+   */
+  async saveToMarketplaceDraft(
+    _template: Workflow | WorkflowTemplate,
+    _metadata: { description: string; tags: string[]; categoryId: string | number }
+  ): Promise<{ success: boolean; id?: string; error?: string }> {
+    // TODO: Implement marketplace integration
+    return { success: false, error: "Marketplace not yet implemented" };
+  }
+
+  /**
+   * Rate a community template (stub - not yet implemented)
+   */
+  async rateCommunityTemplate(
+    _templateId: string | number,
+    _rating: number,
+    _review?: string
+  ): Promise<void> {
+    // TODO: Implement marketplace integration
+    throw new Error("Marketplace not yet implemented");
+  }
+
+  /**
+   * Delete template rating (stub - not yet implemented)
+   */
+  async deleteTemplateRating(_templateId: string | number): Promise<void> {
+    // TODO: Implement marketplace integration
+    throw new Error("Marketplace not yet implemented");
+  }
 }
 
 // ============================================================================

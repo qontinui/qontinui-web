@@ -727,8 +727,8 @@ export function CompleteIntegrationExample() {
 
       // Simulate variable operations
       if (action?.type === "SET_VARIABLE") {
-        const setVarConfig = action.config as unknown;
-        const varName = setVarConfig.variableName;
+        const setVarConfig = action.config as any;
+        const varName = String(setVarConfig.variableName);
         const value = setVarConfig.value;
         setVariable(varName, value, i);
       }

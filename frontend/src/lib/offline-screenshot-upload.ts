@@ -130,9 +130,9 @@ export async function uploadScreenshotOffline(
         syncProcessor.offProgress(syncItem.id);
 
         resolve({
-          imageId: item.metadata.imageId,
-          url: item.metadata.url,
-          s3Key: item.metadata.s3Key,
+          imageId: item.metadata.imageId as string,
+          url: item.metadata.url as string,
+          s3Key: item.metadata.s3Key as string,
         });
       }
 
@@ -323,7 +323,7 @@ export async function cancelScreenshotUpload(
 
   // Optionally delete from IndexedDB
   if (item.metadata.screenshotId) {
-    await screenshotDB.delete(item.metadata.screenshotId);
+    await screenshotDB.delete(item.metadata.screenshotId as string);
   }
 }
 

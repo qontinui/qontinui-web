@@ -140,7 +140,7 @@ export default function ExtractionDetailPage() {
     setLoading(true);
     try {
       const data = await apiClient.getExtractionSession(extractionId);
-      setExtraction(data);
+      setExtraction(data as ExtractionSession);
     } catch (error) {
       console.error("Error loading extraction:", error);
       toast.error("Failed to load extraction session");

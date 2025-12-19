@@ -7,7 +7,7 @@
 
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -64,11 +64,10 @@ const ACTION_GROUPS = {
   Shell: [
     { type: "SHELL", label: "Run Command", color: "bg-slate-500" },
     { type: "SHELL_SCRIPT", label: "Run Script", color: "bg-slate-600" },
-    {
-      type: "TRIGGER_AI_ANALYSIS",
-      label: "AI Analysis",
-      color: "bg-violet-500",
-    },
+  ],
+  AI: [
+    { type: "AI_PROMPT", label: "AI Prompt", color: "bg-violet-500" },
+    { type: "RUN_PROMPT_SEQUENCE", label: "Run Prompt Sequence", color: "bg-violet-600" },
   ],
 } as const;
 
@@ -236,7 +235,7 @@ export function SequentialEditor({
                 (t) => t.type === action.type
               );
               return (
-                <React.Fragment key={action.id}>
+                <div key={action.id}>
                   {/* Compact Insert Button */}
                   <div className="relative h-4 group">
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -372,7 +371,7 @@ export function SequentialEditor({
                       </div>
                     </CardContent>
                   </Card>
-                </React.Fragment>
+                </div>
               );
             })}
 
@@ -547,34 +546,58 @@ function getDefaultConfig(type: Action["type"]): Record<string, unknown> {
         timeout: 60000,
         failOnError: true,
       };
-    case "TRIGGER_AI_ANALYSIS":
+    case "AI_PROMPT":
       return {
         provider: "claude",
         prompt: "",
+        freshContext: true,
         timeout: 600000,
-        failOnIssues: false,
+        failOnError: true,
+      };
+    case "RUN_PROMPT_SEQUENCE":
+      return {
+        sequenceId: "",
       };
     default:
       return {};
   }
 }
 
+interface StateType {
+  id: string;
+  name: string;
+  stateImages?: Array<{ id: string; name: string }>;
+  strings?: Array<{ id: string; value: string; name?: string }>;
+}
+
+interface WorkflowType {
+  id: string;
+  name: string;
+}
+
+interface ImageType {
+  id: string;
+  name: string;
+}
+
 function getActionSummary(
   action: Action,
-  states: unknown[],
-  workflows: unknown[],
-  images: unknown[]
+  states: StateType[],
+  workflows: WorkflowType[],
+  images: ImageType[]
 ): string {
+  const config = action.config as Record<string, unknown>;
+
   switch (action.type) {
     case "FIND": {
-      const config = action.config as unknown;
       if (config.removedImage) {
-        return `[REMOVED: ${config.removedImage}]`;
+        return `[REMOVED: ${config.removedImage as string}]`;
       }
 
       // Handle stateImage target type (Find State)
-      if (config.target?.type === "stateImage") {
-        const stateId = config.target.stateId;
+      const target = config.target as { type?: string; stateId?: string; imageId?: string; imageIds?: string[] } | undefined;
+      if (target?.type === "stateImage") {
+        const stateId = target.stateId;
         if (stateId) {
           const state = states.find((s) => s.id === stateId);
           return state
@@ -586,14 +609,14 @@ function getActionSummary(
 
       // Handle new target structure with imageIds array
       const imageIds =
-        config.target?.type === "image" ? config.target.imageIds : null;
-      const imageId = imageIds?.[0] || config.target?.imageId || config.image;
+        target?.type === "image" ? target.imageIds : null;
+      const imageId = imageIds?.[0] || target?.imageId || (config.image as string | undefined);
 
       if (imageId) {
-        let stateImageName = null;
+        let stateImageName: string | null = null;
         for (const state of states) {
           const stateImage = state.stateImages?.find(
-            (si: unknown) => si.id === imageId
+            (si) => si.id === imageId
           );
           if (stateImage) {
             stateImageName = stateImage.name;
@@ -628,25 +651,23 @@ function getActionSummary(
       return "No image selected";
     }
     case "CLICK": {
-      const config = action.config as {
+      const clickConfig = config as {
         mouseButton?: string;
         target?: string;
         stateId?: string;
         imageIds?: string[];
       };
-      const button = config.mouseButton?.toLowerCase() || "left";
+      const button = clickConfig.mouseButton?.toLowerCase() || "left";
 
       // Handle StateImage target
-      if (config.target === "StateImage") {
+      if (clickConfig.target === "StateImage") {
         // Check imageIds first (new flow without requiring stateId)
-        if (config.imageIds && config.imageIds.length > 0) {
+        if (clickConfig.imageIds && clickConfig.imageIds.length > 0) {
           // Get image names from all states
           const names: string[] = [];
-          for (const imgId of config.imageIds) {
+          for (const imgId of clickConfig.imageIds) {
             for (const s of states) {
-              const img = (
-                s as { stateImages?: { id: string; name: string }[] }
-              ).stateImages?.find((si) => si.id === imgId);
+              const img = s.stateImages?.find((si) => si.id === imgId);
               if (img) {
                 names.push(
                   img.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
@@ -664,35 +685,34 @@ function getActionSummary(
         }
 
         // Legacy: check stateId if imageIds not available
-        if (config.stateId) {
+        if (clickConfig.stateId) {
           const state = states.find(
-            (s: { id: string }) => s.id === config.stateId
+            (s) => s.id === clickConfig.stateId
           );
-          const stateName =
-            (state as { name?: string })?.name || config.stateId;
+          const stateName = state?.name || clickConfig.stateId;
           return `${button} click on any image from ${stateName}`;
         }
 
         return `${button} click on StateImage (no image selected)`;
       }
 
-      return `${button} click on ${config.target}`;
+      return `${button} click on ${clickConfig.target || "target"}`;
     }
     case "TYPE": {
-      const config = action.config as {
+      const typeConfig = config as {
         text?: string;
         textSource?: { stateId: string; stringIds: string[] };
       };
-      if (config.textSource) {
-        const stateId = config.textSource.stateId;
+      if (typeConfig.textSource) {
+        const stateId = typeConfig.textSource.stateId;
         if (!stateId) return "No state selected";
         const state = states.find((s) => s.id === stateId);
         if (!state) return "Invalid state";
-        if (config.textSource.stringIds?.length > 0 && state.strings) {
+        if (typeConfig.textSource.stringIds?.length > 0 && state.strings) {
           const selectedStrings = state.strings
-            .filter((s: unknown) => config.textSource!.stringIds.includes(s.id))
-            .map((s: unknown) => s.value)
-            .filter((v: unknown) => v);
+            .filter((s) => typeConfig.textSource!.stringIds.includes(s.id))
+            .map((s) => s.value)
+            .filter((v) => v);
           if (selectedStrings.length === 0) {
             return `No strings selected from ${state.name || state.id}`;
           }
@@ -706,31 +726,31 @@ function getActionSummary(
           return `No strings selected from ${state.name || state.id}`;
         }
       } else {
-        if (!config.text) return "No text specified";
+        if (!typeConfig.text) return "No text specified";
         const displayText =
-          config.text.length > 30
-            ? config.text.substring(0, 30) + "..."
-            : config.text;
+          typeConfig.text.length > 30
+            ? typeConfig.text.substring(0, 30) + "..."
+            : typeConfig.text;
         return `Type "${displayText.replace(/\n/g, "↵").replace(/\t/g, "→")}"`;
       }
     }
     case "DRAG": {
-      const config = action.config as {
+      const dragConfig = config as {
         source?: unknown;
         destination?: unknown;
       };
-      return `Drag from ${config.source || "source"} to ${config.destination || "destination"}`;
+      return `Drag from ${dragConfig.source || "source"} to ${dragConfig.destination || "destination"}`;
     }
     case "SCROLL": {
-      const config = action.config as { direction?: string; clicks?: number };
-      return `Scroll ${config.direction} ${config.clicks || 1} clicks`;
+      const scrollConfig = config as { direction?: string; clicks?: number };
+      return `Scroll ${scrollConfig.direction} ${scrollConfig.clicks || 1} clicks`;
     }
     case "VANISH": {
-      const config = action.config as {
+      const vanishConfig = config as {
         target?: { type?: string; imageId?: string };
       };
       const vanishImageId =
-        config.target?.type === "image" ? config.target.imageId : undefined;
+        vanishConfig.target?.type === "image" ? vanishConfig.target.imageId : undefined;
       if (vanishImageId) {
         const vanishImage = images.find((img) => img.id === vanishImageId);
         if (vanishImage) {
@@ -745,23 +765,23 @@ function getActionSummary(
       return "No image selected";
     }
     case "RAG_FIND": {
-      const config = action.config as {
+      const ragConfig = config as {
         target?: { stateImageId?: string };
         topK?: number;
       };
-      const stateImageId = config.target?.stateImageId;
+      const stateImageId = ragConfig.target?.stateImageId;
       if (stateImageId) {
         // Find StateImage across all states
         for (const state of states) {
           const stateImage = state.stateImages?.find(
-            (si: unknown) => si.id === stateImageId
+            (si) => si.id === stateImageId
           );
           if (stateImage) {
             const nameWithoutExtension = stateImage.name.replace(
               /\.(png|jpg|jpeg|gif|webp|svg)$/i,
               ""
             );
-            return `RAG Find: ${nameWithoutExtension}${config.topK && config.topK > 1 ? ` (top ${config.topK})` : ""}`;
+            return `RAG Find: ${nameWithoutExtension}${ragConfig.topK && ragConfig.topK > 1 ? ` (top ${ragConfig.topK})` : ""}`;
           }
         }
         return "StateImage not found";
@@ -769,10 +789,10 @@ function getActionSummary(
       return "No element selected";
     }
     case "GO_TO_STATE": {
-      const config = action.config as { states?: string[]; stateId?: string };
+      const gotoConfig = config as { states?: string[]; stateId?: string };
       // Support both new format (states array) and legacy format (stateId)
       const stateIds =
-        config.states || (config.stateId ? [config.stateId] : []);
+        gotoConfig.states || (gotoConfig.stateId ? [gotoConfig.stateId] : []);
 
       if (stateIds.length > 0) {
         const stateNames = stateIds
@@ -793,24 +813,24 @@ function getActionSummary(
       return "No state selected";
     }
     case "RUN_WORKFLOW": {
-      const config = action.config as { workflowId?: string };
-      if (config.workflowId) {
+      const workflowConfig = config as { workflowId?: string };
+      if (workflowConfig.workflowId) {
         const workflow = workflows.find(
-          (w: unknown) => w.id === config.workflowId
+          (w) => w.id === workflowConfig.workflowId
         );
-        return workflow ? workflow.name : config.workflowId;
+        return workflow ? workflow.name : workflowConfig.workflowId;
       }
       return "No workflow selected";
     }
     case "IF": {
-      const config = action.config as {
+      const ifConfig = config as {
         thenActions?: unknown[];
         elseActions?: unknown[];
         condition?: { type?: string };
       };
-      const thenCount = config.thenActions?.length || 0;
-      const elseCount = config.elseActions?.length || 0;
-      const conditionType = config.condition?.type || "not configured";
+      const thenCount = ifConfig.thenActions?.length || 0;
+      const elseCount = ifConfig.elseActions?.length || 0;
+      const conditionType = ifConfig.condition?.type || "not configured";
       if (elseCount > 0) {
         return `${conditionType} condition: ${thenCount} then-actions, ${elseCount} else-actions`;
       } else {
@@ -818,15 +838,15 @@ function getActionSummary(
       }
     }
     case "LOOP": {
-      const config = action.config as {
+      const loopConfig = config as {
         loopType?: string;
         actions?: unknown[];
         iterations?: number;
       };
-      const loopType = config.loopType || "FOR";
-      const actionCount = config.actions?.length || 0;
+      const loopType = loopConfig.loopType || "FOR";
+      const actionCount = loopConfig.actions?.length || 0;
       if (loopType === "FOR") {
-        const iterations = config.iterations || 0;
+        const iterations = loopConfig.iterations || 0;
         return `FOR loop: ${iterations} iterations, ${actionCount} actions`;
       } else if (loopType === "WHILE") {
         return `WHILE loop: ${actionCount} actions`;
@@ -922,30 +942,37 @@ function getActionSummary(
       }
       return "No script specified";
     }
-    case "TRIGGER_AI_ANALYSIS": {
+    case "AI_PROMPT": {
       const config = action.config as {
         provider?: string;
         prompt?: string;
         description?: string;
-        resultsDirectory?: string;
       };
       if (config.description) {
         return config.description;
       }
       const provider = config.provider || "claude";
-      // Show the prompt/command if specified
       if (config.prompt) {
-        // Truncate long prompts for display
         const displayPrompt =
           config.prompt.length > 40
             ? config.prompt.substring(0, 40) + "..."
             : config.prompt;
-        return `AI Analysis (${provider}): ${displayPrompt}`;
+        return `AI Prompt (${provider}): ${displayPrompt}`;
       }
-      if (config.resultsDirectory) {
-        return `AI Analysis (${provider}) - ${config.resultsDirectory}`;
+      return `AI Prompt (${provider})`;
+    }
+    case "RUN_PROMPT_SEQUENCE": {
+      const config = action.config as {
+        sequenceId?: string;
+        description?: string;
+      };
+      if (config.description) {
+        return config.description;
       }
-      return `AI Analysis (${provider})`;
+      if (config.sequenceId) {
+        return `Run sequence: ${config.sequenceId}`;
+      }
+      return "No sequence selected";
     }
     default:
       return "Configure action";

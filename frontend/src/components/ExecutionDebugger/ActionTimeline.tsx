@@ -14,6 +14,7 @@ import { ActionExecutionStatus } from "../../types/debugger/execution-types";
 import { SpecialKeyDisplay } from "../special-keys-selector";
 import { useAutomation } from "../../contexts/automation-context";
 import type { Action } from "../../lib/action-schema/action-types";
+import type { State, StateString } from "../../contexts/automation-context/types";
 
 interface ActionTimelineProps {
   actions: Action[];
@@ -26,7 +27,7 @@ const STATUS_CONFIG: Record<
     color: string;
     bgColor: string;
     borderColor: string;
-    icon: React.ComponentType<unknown>;
+    icon: React.ComponentType<{ className?: string }>;
   }
 > = {
   pending: {
@@ -70,27 +71,28 @@ const getActionIcon = (actionType: string) => {
 // Helper to resolve TYPE action text from StateStrings
 const getTypeActionText = (
   action: Action,
-  states: unknown[]
+  states: State[]
 ): string | null => {
   if (action.type !== "TYPE") return null;
 
-  const typeConfig = action.config as unknown;
+  const typeAction = action as Action<"TYPE">;
+  const typeConfig = typeAction.config;
 
   // If using manual text, return it directly
-  if (!typeConfig.textSource && typeConfig.text) {
+  if (typeConfig.text) {
     return typeConfig.text;
   }
 
   // If using StateString, resolve the values
-  if (typeConfig.textSource && typeConfig.textSource.stateId) {
-    const state = states.find((s) => s.id === typeConfig.textSource.stateId);
+  if (typeConfig.textSource) {
+    const state = states.find((s) => s.id === typeConfig.textSource!.stateId);
     if (!state || !state.strings) return null;
 
-    if (typeConfig.textSource.stringIds?.length > 0) {
+    if (typeConfig.textSource.stringIds && typeConfig.textSource.stringIds.length > 0) {
       const selectedStrings = state.strings
-        .filter((s: unknown) => typeConfig.textSource.stringIds.includes(s.id))
-        .map((s: unknown) => s.value)
-        .filter((v: unknown) => v);
+        .filter((s: StateString) => typeConfig.textSource!.stringIds.includes(s.id))
+        .map((s: StateString) => s.value)
+        .filter((v) => v);
 
       if (selectedStrings.length > 0) {
         return selectedStrings.join(" | ");
@@ -108,7 +110,7 @@ interface ActionItemProps {
   status: ActionExecutionStatus;
   duration?: number;
   executionCount: number;
-  states: unknown[];
+  states: State[];
   onClick?: () => void;
 }
 

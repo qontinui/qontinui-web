@@ -316,7 +316,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                 onChange={(e) =>
                   setExtractionConfig((prev) => ({
                     ...prev,
-                    colorAveraging: e.target.value as unknown,
+                    colorAveraging: e.target.value as "mean" | "median" | "mode" | "weighted",
                   }))
                 }
                 className="w-full text-xs border rounded px-2 py-1"

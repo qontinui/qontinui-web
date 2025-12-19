@@ -6,8 +6,40 @@
 
 import type { StateCreator } from "zustand";
 import type { AutomationStore, TransitionSlice } from "../types";
+import type { Transition } from "@/contexts/automation-context/types";
 import { projectLogger } from "@/lib/project-logger";
 import { TransitionReferenceUpdater } from "@/stores/automation";
+
+/**
+ * Check if a transition is a duplicate of an existing transition.
+ * - OutgoingTransition: duplicate if same fromState AND same activateStates (as a set)
+ * - IncomingTransition: duplicate if same toState
+ */
+function isDuplicateTransition(
+  existing: Transition[],
+  newTransition: Transition
+): boolean {
+  if (newTransition.type === "OutgoingTransition") {
+    const sortedNewActivateStates = [...newTransition.activateStates].sort();
+    return existing.some((t) => {
+      if (t.type !== "OutgoingTransition") return false;
+      if (t.fromState !== newTransition.fromState) return false;
+      const sortedExistingActivateStates = [...t.activateStates].sort();
+      if (sortedExistingActivateStates.length !== sortedNewActivateStates.length)
+        return false;
+      return sortedExistingActivateStates.every(
+        (s, i) => s === sortedNewActivateStates[i]
+      );
+    });
+  } else {
+    // IncomingTransition: duplicate if same toState
+    return existing.some(
+      (t) => t.type === "IncomingTransition" && t.toState === newTransition.toState
+    );
+  }
+}
+
+export { isDuplicateTransition };
 
 export const createTransitionSlice: StateCreator<
   AutomationStore,
@@ -29,6 +61,18 @@ export const createTransitionSlice: StateCreator<
   },
 
   addTransition: (transition) => {
+    const existingTransitions = get().transitions;
+
+    // Check for duplicates before adding
+    if (isDuplicateTransition(existingTransitions, transition)) {
+      projectLogger.warn("TransitionSlice", "addTransition", {
+        id: transition.id,
+        type: transition.type,
+        message: "Duplicate transition detected, skipping",
+      });
+      return false; // Return false to indicate duplicate was not added
+    }
+
     projectLogger.info("TransitionSlice", "addTransition", {
       id: transition.id,
       type: transition.type,
@@ -40,6 +84,7 @@ export const createTransitionSlice: StateCreator<
       });
     });
     get().triggerSave();
+    return true; // Return true to indicate transition was added
   },
 
   updateTransition: (transition) => {

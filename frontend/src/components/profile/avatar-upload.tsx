@@ -59,7 +59,9 @@ export function AvatarUpload({
       toast.success("Avatar uploaded successfully");
     } catch (error: unknown) {
       setPreviewUrl(null);
-      toast.error(error.message || "Failed to upload avatar");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to upload avatar"
+      );
     } finally {
       setIsUploading(false);
     }
@@ -100,7 +102,9 @@ export function AvatarUpload({
       setPreviewUrl(null);
       toast.success("Avatar deleted successfully");
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to delete avatar");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete avatar"
+      );
     }
   };
 

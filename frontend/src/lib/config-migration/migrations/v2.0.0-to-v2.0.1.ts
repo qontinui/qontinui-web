@@ -18,7 +18,7 @@ export const migrationV2ToV201: Migration = {
     "Remove deprecated parallel execution connections (GUI automation is sequential)",
 
   migrate(config: unknown, context: MigrationContext): unknown {
-    const migrated = structuredClone(config);
+    const migrated = structuredClone(config) as Record<string, unknown>;
 
     // Track if any parallel connections were found
     let foundParallelConnections = false;
@@ -29,26 +29,28 @@ export const migrationV2ToV201: Migration = {
     }
 
     // Migrate each workflow
-    for (const workflow of migrated.workflows) {
+    for (const workflow of migrated.workflows as Array<Record<string, unknown>>) {
       // Check and remove parallel connections
       if (workflow.connections) {
         for (const [actionId, outputs] of Object.entries(
-          workflow.connections
+          workflow.connections as Record<string, unknown>
         )) {
           if (outputs && typeof outputs === "object") {
+            const outputsObj = outputs as Record<string, unknown>;
             // Check if parallel field exists and has connections
             if (
-              (outputs as unknown).parallel &&
-              (outputs as unknown).parallel.length > 0
+              outputsObj.parallel &&
+              Array.isArray(outputsObj.parallel) &&
+              outputsObj.parallel.length > 0
             ) {
               foundParallelConnections = true;
               context.warnings.push(
-                `Workflow ${workflow.id} - Action ${actionId}: Removed ${(outputs as unknown).parallel.length} parallel connection(s). GUI automation requires sequential execution.`
+                `Workflow ${workflow.id} - Action ${actionId}: Removed ${outputsObj.parallel.length} parallel connection(s). GUI automation requires sequential execution.`
               );
             }
 
             // Remove parallel field
-            delete (outputs as unknown).parallel;
+            delete outputsObj.parallel;
           }
         }
       }
@@ -74,16 +76,19 @@ export const migrationV2ToV201: Migration = {
    * Optional: Only apply this migration if parallel connections exist
    */
   isApplicable(config: unknown): boolean {
-    if (!config.workflows) return false;
+    const configObj = config as Record<string, unknown>;
+    if (!configObj.workflows) return false;
 
     // Check if any workflow has parallel connections
-    for (const workflow of config.workflows) {
+    for (const workflow of configObj.workflows as Array<Record<string, unknown>>) {
       if (workflow.connections) {
-        for (const outputs of Object.values(workflow.connections)) {
+        for (const outputs of Object.values(workflow.connections as Record<string, unknown>)) {
           if (outputs && typeof outputs === "object") {
+            const outputsObj = outputs as Record<string, unknown>;
             if (
-              (outputs as unknown).parallel &&
-              (outputs as unknown).parallel.length > 0
+              outputsObj.parallel &&
+              Array.isArray(outputsObj.parallel) &&
+              outputsObj.parallel.length > 0
             ) {
               return true;
             }
@@ -120,12 +125,14 @@ export const migrationV2ToV201: Migration = {
     }
 
     // Double-check: ensure no parallel connections remain
-    if (migratedConfig.workflows) {
-      for (const workflow of migratedConfig.workflows) {
+    const configObj = migratedConfig as Record<string, unknown>;
+    if (configObj.workflows) {
+      for (const workflow of configObj.workflows as Array<Record<string, unknown>>) {
         if (workflow.connections) {
-          for (const outputs of Object.values(workflow.connections)) {
+          for (const outputs of Object.values(workflow.connections as Record<string, unknown>)) {
             if (outputs && typeof outputs === "object") {
-              if ((outputs as unknown).parallel !== undefined) {
+              const outputsObj = outputs as Record<string, unknown>;
+              if (outputsObj.parallel !== undefined) {
                 console.error(
                   "Validation failed: parallel field still exists after migration"
                 );

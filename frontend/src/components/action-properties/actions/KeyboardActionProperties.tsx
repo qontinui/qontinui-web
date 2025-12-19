@@ -15,6 +15,8 @@ export function KeyboardActionProperties({
   action,
   updateConfig,
 }: ActionPropertiesComponentProps) {
+  const key = (action.config as any).key as string | undefined;
+
   return (
     <>
       <div className="space-y-2">
@@ -24,15 +26,15 @@ export function KeyboardActionProperties({
             onInsertKey={(key) => updateConfig("key", key)}
           />
         </div>
-        {action.config.key && (
+        {key && (
           <div className="p-2 bg-gray-800/50 rounded-md border border-gray-700">
             <div className="text-xs text-gray-500 mb-1">Selected key:</div>
             <div className="text-sm font-mono text-gray-300">
-              <SpecialKeyDisplay text={action.config.key} />
+              <SpecialKeyDisplay text={key} />
             </div>
           </div>
         )}
-        {!action.config.key && (
+        {!key && (
           <p className="text-xs text-gray-500">
             Select a key from the dropdown above
           </p>

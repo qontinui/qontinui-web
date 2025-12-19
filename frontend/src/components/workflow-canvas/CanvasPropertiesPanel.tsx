@@ -154,6 +154,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
       }
 
       // Get the property component for this action type
+
       const PropertyComponent = actionConfigRegistry.getComponent(
         action.type as any
       );
@@ -197,7 +198,8 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
                   <p className="text-xs text-gray-500 font-mono">{action.id}</p>
                 </div>
                 <Badge variant="secondary" className="text-xs">
-                  {actionConfigRegistry.getDisplayName(action.type as unknown)}
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {actionConfigRegistry.getDisplayName(action.type as any)}
                 </Badge>
               </div>
 
@@ -206,7 +208,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
               {/* Property Editor */}
               <PropertyEditorWrapper
                 actionId={nodeId!}
-                component={PropertyComponent}
+                component={PropertyComponent as React.ComponentType<unknown>}
               />
             </div>
           </TabsContent>

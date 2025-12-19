@@ -10,7 +10,6 @@
 
 "use client";
 
-import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -24,6 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { FileSearch, Component, CheckSquare, Square } from "lucide-react";
+import type { ExtractionAnnotation } from "@/services/extraction-service";
 
 interface StateAnnotation {
   id: string;
@@ -36,16 +36,6 @@ interface StateAnnotation {
   };
   state_type: string;
   element_ids: string[];
-}
-
-interface ExtractionAnnotation {
-  id: string;
-  screenshot_id: string;
-  source_url: string;
-  viewport_width: number;
-  viewport_height: number;
-  elements: unknown[];
-  states: StateAnnotation[];
 }
 
 interface StateListProps {
@@ -61,7 +51,7 @@ export function StateList({
 }: StateListProps) {
   // Collect all states from all annotations
   const allStates = annotations.flatMap((annotation) =>
-    annotation.states.map((state) => ({
+    (annotation.states as StateAnnotation[]).map((state) => ({
       ...state,
       source_url: annotation.source_url,
       viewport: `${annotation.viewport_width}x${annotation.viewport_height}`,

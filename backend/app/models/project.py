@@ -97,3 +97,8 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    detected_issues = relationship(
+        "DetectedIssue",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )

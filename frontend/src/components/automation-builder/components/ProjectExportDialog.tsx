@@ -44,7 +44,7 @@ import {
   MissingMonitorsDialog,
   type MonitorUpdate,
 } from "@/components/export/MissingMonitorsDialog";
-import type { State } from "@/contexts/automation-context/types";
+
 
 export interface ProjectExportDialogProps {
   open: boolean;

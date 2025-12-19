@@ -86,7 +86,14 @@ interface ActivityFeedProps {
   className?: string;
 }
 
-const actionIcons: Record<ActivityAction, React.ComponentType<unknown>> = {
+const actionIcons: Record<
+  ActivityAction,
+  React.ForwardRefExoticComponent<
+    Omit<React.SVGProps<SVGSVGElement>, "ref"> & {
+      size?: string | number;
+    } & React.RefAttributes<SVGSVGElement>
+  >
+> = {
   created: FilePlus,
   updated: FileEdit,
   deleted: FileX,
@@ -397,6 +404,7 @@ export function ActivityFeed({
                           <div className="flex items-start gap-2">
                             <ActionIcon
                               className={cn("h-4 w-4 mt-0.5", actionColor)}
+                              aria-hidden="true"
                             />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm">

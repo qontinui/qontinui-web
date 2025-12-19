@@ -105,8 +105,8 @@ export function EnhancedImageLibrary() {
   const images = useMemo<ImageWithMetadata[]>(() => {
     return contextImages.map((img) => ({
       ...img,
-      folderId: (img as unknown).folderId,
-      tags: (img as unknown).tags || [],
+      folderId: (img as ImageWithMetadata).folderId,
+      tags: (img as ImageWithMetadata).tags || [],
       selected: false,
     }));
   }, [contextImages]);
@@ -128,7 +128,10 @@ export function EnhancedImageLibrary() {
     selectedImageIds,
     toggleImageSelection,
     clearSelection,
-  } = useImageOrganization({ images, onUpdateImage: updateImage as unknown });
+  } = useImageOrganization({
+    images,
+    onUpdateImage: updateImage as (image: ImageWithMetadata) => void,
+  });
 
   // View state
   const [viewMode, setViewMode] = useState<ImageViewMode>("grid");
@@ -301,7 +304,7 @@ export function EnhancedImageLibrary() {
 
           // Add folder assignment if a folder is selected
           if (selectedFolderId) {
-            (imageAsset as unknown).folderId = selectedFolderId;
+            (imageAsset as ImageWithMetadata).folderId = selectedFolderId;
           }
 
           addImage(imageAsset);
@@ -331,8 +334,10 @@ export function EnhancedImageLibrary() {
           return { success: true, fileName: file.name };
         } catch (error: unknown) {
           console.error(`Upload failed for ${file.name}:`, error);
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error occurred";
           toast.error(`Failed to save ${file.name}`, {
-            description: error.message || "Unknown error occurred",
+            description: errorMessage,
           });
           setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
           return { success: false, fileName: file.name };
@@ -484,7 +489,11 @@ export function EnhancedImageLibrary() {
       selectedImageIds.forEach((imageId) => {
         const image = images.find((img) => img.id === imageId);
         if (image) {
-          updateImage({ ...image, folderId: targetFolderId } as unknown);
+          const updatedImage: ImageWithMetadata = {
+            ...image,
+            folderId: targetFolderId,
+          };
+          updateImage(updatedImage as ImageAsset);
         }
       });
       toast.success(`Moved ${selectedImageIds.size} image(s)`);
@@ -533,9 +542,15 @@ export function EnhancedImageLibrary() {
     size: "thumb" | "medium" | "original" = "thumb"
   ): string => {
     // If the image has variants (new format), use them
-    if ((image as unknown).variants) {
-      const variants = (image as unknown).variants as Record<string, string>;
-      return variants[size] || variants.thumb || image.url;
+    const imageWithVariants = image as ImageAsset & {
+      variants?: Record<string, string>;
+    };
+    if (imageWithVariants.variants) {
+      return (
+        imageWithVariants.variants[size] ||
+        imageWithVariants.variants.thumb ||
+        image.url
+      );
     }
 
     // Fallback to legacy URL
@@ -628,7 +643,7 @@ export function EnhancedImageLibrary() {
     workflows.forEach((workflow) => {
       // Check if image is used in any action in the workflow
       const usesImage = workflow.actions.some((action) => {
-        const config = action.config as unknown;
+        const config = action.config as { imageId?: string };
         return config.imageId === selectedImage.id;
       });
       if (usesImage) {
@@ -903,7 +918,7 @@ export function EnhancedImageLibrary() {
         <div className="w-64 border-r border-gray-800 flex flex-col">
           <Tabs
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as unknown)}
+            onValueChange={(v) => setActiveTab(v as "library" | "collections")}
             className="flex-1 flex flex-col"
           >
             <TabsList className="grid w-full grid-cols-2 bg-[#27272A] m-2">
@@ -1044,26 +1059,28 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
         <div>
           <label className="text-xs text-gray-400 mb-2 block">Source</label>
           <div className="flex flex-wrap gap-1">
-            {[
-              "uploaded",
-              "pattern_optimization",
-              "image_extraction",
-              "state_discovery",
-            ].map((source) => (
+            {(
+              [
+                "uploaded",
+                "pattern_optimization",
+                "image_extraction",
+                "state_discovery",
+              ] as const
+            ).map((source) => (
               <Badge
                 key={source}
                 variant="outline"
                 className={cn(
                   "cursor-pointer transition-all",
-                  filter.sources?.includes(source as unknown)
+                  filter.sources?.includes(source)
                     ? "bg-[#00FF88] text-black border-[#00FF88]"
                     : "border-gray-700 hover:border-gray-600"
                 )}
                 onClick={() => {
                   const sources = filter.sources || [];
-                  const newSources = sources.includes(source as unknown)
+                  const newSources = sources.includes(source)
                     ? sources.filter((s) => s !== source)
-                    : [...sources, source as any];
+                    : [...sources, source];
                   onFilterChange({ ...filter, sources: newSources });
                 }}
               >
@@ -1080,7 +1097,7 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
         <div>
           <label className="text-xs text-gray-400 mb-2 block">Usage</label>
           <div className="flex gap-1">
-            {["all", "used", "unused"].map((usage) => (
+            {(["all", "used", "unused"] as const).map((usage) => (
               <Badge
                 key={usage}
                 variant="outline"
@@ -1091,7 +1108,7 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
                     : "border-gray-700 hover:border-gray-600"
                 )}
                 onClick={() =>
-                  onFilterChange({ ...filter, usageFilter: usage as unknown })
+                  onFilterChange({ ...filter, usageFilter: usage })
                 }
               >
                 {usage.charAt(0).toUpperCase() + usage.slice(1)}

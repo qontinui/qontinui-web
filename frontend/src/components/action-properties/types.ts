@@ -7,6 +7,8 @@ import type {
   BaseActionSettings,
   ExecutionSettings,
 } from "@/lib/action-schema/shared/timing-config";
+import type { ImageAsset, State } from "@/contexts/automation-context/types";
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 export interface Action {
   id: string;
@@ -55,7 +57,10 @@ export interface Action {
     | "CUSTOM_FUNCTION"
     // Shell actions
     | "SHELL"
-    | "SHELL_SCRIPT";
+    | "SHELL_SCRIPT"
+    // AI actions
+    | "AI_PROMPT"
+    | "RUN_PROMPT_SEQUENCE";
   config: Record<string, unknown>;
   /** Base settings (timing, logging, etc.) */
   base?: BaseActionSettings;
@@ -72,9 +77,9 @@ export interface ActionPropertiesComponentProps {
     value: unknown,
     additionalUpdates?: Record<string, unknown>
   ) => void;
-  images: unknown[];
-  states: unknown[];
-  processes: unknown[]; // Array of workflows (prop name "processes" for legacy compatibility)
+  images: ImageAsset[];
+  states: State[];
+  processes: Workflow[]; // Array of workflows (prop name "processes" for legacy compatibility)
   textAreaRef?: React.RefObject<HTMLTextAreaElement | null>;
   shouldOpenImageSelector?: boolean;
   onUpdateAction?: (action: Action) => void;

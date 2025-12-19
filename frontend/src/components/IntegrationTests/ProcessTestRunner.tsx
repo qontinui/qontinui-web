@@ -22,6 +22,14 @@ import { useAutomation } from "../../contexts/automation-context";
 import { qontinuiAPI } from "../../lib/qontinui-api-client";
 import { toast } from "sonner";
 
+interface ResultItem {
+  actionId?: string;
+  actionType: string;
+  success: boolean;
+  message?: string;
+  duration: number;
+}
+
 interface TestRun {
   sessionId: string;
   processId: string;
@@ -603,41 +611,43 @@ export const ProcessTestRunner: React.FC = () => {
                       Action Results
                     </h4>
                     {(selectedHistoryRun || activeRun)!.results.map(
-                      (result, index) => (
+                      (result: unknown, index) => {
+                        const r = result as ResultItem;
+                        return (
                         <div
-                          key={`${result.actionId || index}`}
+                          key={`${r.actionId || index}`}
                           className={`flex items-start gap-3 p-3 rounded-lg border ${
-                            result.success
+                            r.success
                               ? "bg-green-50 border-green-200"
                               : "bg-red-50 border-red-200"
                           }`}
                         >
                           <div className="flex-shrink-0 mt-0.5">
-                            {getActionIcon(result.actionType)}
+                            {getActionIcon(r.actionType)}
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm capitalize text-gray-900">
-                                {result.actionType}
+                                {r.actionType}
                               </span>
-                              {result.success ? (
+                              {r.success ? (
                                 <CheckCircle className="w-4 h-4 text-green-500" />
                               ) : (
                                 <XCircle className="w-4 h-4 text-red-500" />
                               )}
                             </div>
-                            {result.message && (
+                            {r.message && (
                               <div className="text-xs text-gray-700 mt-1">
-                                {result.message}
+                                {r.message}
                               </div>
                             )}
                             <div className="text-xs text-gray-500 mt-1">
-                              Duration: {result.duration}ms
+                              Duration: {r.duration}ms
                             </div>
                           </div>
                         </div>
-                      )
-                    )}
+                      );
+                    })}
 
                     {(selectedHistoryRun || activeRun)!.results.length ===
                       0 && (

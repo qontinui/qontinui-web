@@ -154,40 +154,40 @@ function SequentialView({
  * Get a human-readable summary of the action configuration
  */
 function getActionSummary(action: Action): string {
-  const config = action.config as unknown;
+  const config = action.config as Record<string, unknown>;
 
   switch (action.type) {
     case "FIND":
-      return config?.targetName || "Find target";
+      return (config?.targetName as string) || "Find target";
 
     case "CLICK":
-      return `Click ${config?.targetName || "target"}`;
+      return `Click ${(config?.targetName as string) || "target"}`;
 
     case "TYPE":
-      return `Type: "${config?.text?.substring(0, 30) || "..."}"`;
+      return `Type: "${((config?.text as string) || "...").substring(0, 30)}"`;
 
     case "WAIT":
-      return `Wait ${config?.duration || 1000}ms`;
+      return `Wait ${(config?.duration as number) || 1000}ms`;
 
     case "GO_TO_STATE":
-      const stateIds = config?.stateIds || [];
+      const stateIds = (config?.stateIds as string[]) || [];
       return `Activate ${stateIds.length} state(s)`;
 
     case "IF":
-      return `If ${config?.condition || "condition"}`;
+      return `If ${(config?.condition as string) || "condition"}`;
 
     case "LOOP":
-      return `Loop ${config?.iterations || "∞"} times`;
+      return `Loop ${(config?.iterations as number | string) || "∞"} times`;
 
     case "SWITCH":
-      const cases = config?.cases || [];
+      const cases = (config?.cases as unknown[]) || [];
       return `Switch: ${cases.length} case(s)`;
 
     case "SET_VARIABLE":
-      return `Set ${config?.variableName || "variable"}`;
+      return `Set ${(config?.variableName as string) || "variable"}`;
 
     case "GET_VARIABLE":
-      return `Get ${config?.variableName || "variable"}`;
+      return `Get ${(config?.variableName as string) || "variable"}`;
 
     default:
       return action.type.replace(/_/g, " ").toLowerCase();

@@ -93,7 +93,7 @@ export function AIActionSearch({
         id: `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         type: result.type,
         name: result.name,
-        config: result.parameters || ({} as unknown),
+        config: (result.parameters || {}) as Action["config"],
         position: position || [100, 100],
       };
 

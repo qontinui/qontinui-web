@@ -128,7 +128,9 @@ export function ConflictResolutionDialog({
         onOpenChange(false);
       }
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to resolve conflict");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to resolve conflict"
+      );
     } finally {
       setLoading(false);
     }
@@ -149,7 +151,11 @@ export function ConflictResolutionDialog({
       toast.success(`All conflicts resolved with ${resolution} changes`);
       onOpenChange(false);
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to resolve all conflicts");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to resolve all conflicts"
+      );
     } finally {
       setLoading(false);
     }
@@ -386,7 +392,10 @@ export function ConflictResolutionDialog({
         )}
 
         {/* View Mode Toggle */}
-        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as unknown)}>
+        <Tabs
+          value={viewMode}
+          onValueChange={(v) => setViewMode(v as "split" | "unified")}
+        >
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="split">Split View</TabsTrigger>
             <TabsTrigger value="unified">Unified View</TabsTrigger>

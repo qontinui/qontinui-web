@@ -56,8 +56,8 @@ export function StateStructureReview({
   );
   const [accepting, setAccepting] = useState(false);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   // Load state structure
   useEffect(() => {
@@ -74,8 +74,8 @@ export function StateStructureReview({
       const flowNodes = createFlowNodes(data.states);
       const flowEdges = createFlowEdges(data.transitions);
 
-      setNodes(flowNodes as unknown);
-      setEdges(flowEdges as unknown);
+      setNodes(flowNodes);
+      setEdges(flowEdges);
 
       // Select all by default
       setSelectedStateIds(new Set(data.states.map((s) => s.id)));
@@ -264,7 +264,9 @@ export function StateStructureReview({
       }, 2000);
     } catch (error: unknown) {
       console.error("Failed to accept structure:", error);
-      toast.error(error.message || "Failed to accept structure");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to accept structure"
+      );
     } finally {
       setAccepting(false);
     }
@@ -292,7 +294,9 @@ export function StateStructureReview({
       }, 2000);
     } catch (error: unknown) {
       console.error("Failed to accept structure:", error);
-      toast.error(error.message || "Failed to accept structure");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to accept structure"
+      );
     } finally {
       setAccepting(false);
     }

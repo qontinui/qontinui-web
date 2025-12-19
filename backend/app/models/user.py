@@ -138,3 +138,8 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    detected_issues = relationship(
+        "DetectedIssue",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )

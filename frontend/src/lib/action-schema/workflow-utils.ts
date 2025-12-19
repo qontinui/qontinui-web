@@ -69,11 +69,13 @@ export function getNextActions(
 
   types.forEach((type) => {
     const typeConnections = connections[type as keyof typeof connections];
-    if (typeConnections) {
-      typeConnections.forEach((outputConnections: unknown) => {
-        outputConnections.forEach((conn: unknown) => {
-          nextActionIds.add(conn.action);
-        });
+    if (typeConnections && Array.isArray(typeConnections)) {
+      typeConnections.forEach((outputConnections) => {
+        if (Array.isArray(outputConnections)) {
+          outputConnections.forEach((conn) => {
+            nextActionIds.add(conn.action);
+          });
+        }
       });
     }
   });
@@ -384,7 +386,7 @@ export function processToWorkflow(process: LegacyProcess): Workflow {
   // Convert actions and add positions
   process.actions.forEach((oldAction, index) => {
     const action: Action = {
-      ...oldAction,
+      ...(oldAction as Partial<Action>),
       position: [100, 100 + index * 150], // Vertical layout with 150px spacing
     } as Action;
 
@@ -442,7 +444,7 @@ export function workflowToProcess(workflow: Workflow): LegacyProcess | null {
       id: action.id,
       type: action.type,
       config: action.config,
-    })),
+    })) as { id: string; type: string; config: Record<string, unknown> }[],
     initialScreenshotId: workflow.initialScreenshotId,
     initialStateIds: workflow.initialStateIds,
   };

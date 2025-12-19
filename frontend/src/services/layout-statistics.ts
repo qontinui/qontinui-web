@@ -467,9 +467,9 @@ function calculateSpatialMetrics(
 }
 
 function calculateQualityMetrics(
-  nodeMetrics: unknown,
-  edgeMetrics: unknown,
-  spatialMetrics: unknown
+  nodeMetrics: { overlapping: number },
+  edgeMetrics: { crossings: number },
+  spatialMetrics: { utilization: number }
 ) {
   // Compactness: prefer smaller bounding box (normalized)
   const compactness = Math.max(0, Math.min(1, spatialMetrics.utilization));

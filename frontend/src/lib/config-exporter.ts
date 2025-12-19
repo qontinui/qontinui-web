@@ -6,8 +6,11 @@ import {
   State as ExportState,
   Transition as ExportTransition,
   OutgoingTransition as ExportOutgoingTransition,
-  IncomingTransition as ExportIncomingTransition,
   ConfigSettings,
+  Action as ExportAction,
+  ActionConfig as ExportActionConfig,
+  WorkflowConnections,
+  ActionOutputs,
 } from "./export-schema";
 
 import { validateWorkflowConnections } from "./workflow-validator";
@@ -23,6 +26,7 @@ import type {
   Transition,
 } from "../contexts/automation-context/types";
 import { Screenshot } from "../types/Screenshot";
+import type { ProjectSettings } from "../types/project-settings";
 
 export class ConfigExporter {
   private version = CURRENT_VERSION;
@@ -37,7 +41,7 @@ export class ConfigExporter {
     transitions: Transition[],
     categories: string[],
     metadata?: Partial<ConfigMetadata>,
-    _settings?: unknown,
+    _settings?: Partial<ProjectSettings>,
     screenshots?: Screenshot[]
   ): Promise<QontinuiConfig> {
     const now = new Date().toISOString();
@@ -52,10 +56,25 @@ export class ConfigExporter {
     // Collect helper workflows from transitions and add to main workflows array
     const allWorkflows = [...(workflows || [])];
     (transitions || []).forEach((transition) => {
-      if ((transition as unknown).inlineWorkflows) {
-        allWorkflows.push(...(transition as unknown).inlineWorkflows);
+      const transitionWithWorkflows = transition as Transition & {
+        inlineWorkflows?: Workflow[];
+      };
+      if (transitionWithWorkflows.inlineWorkflows) {
+        allWorkflows.push(...transitionWithWorkflows.inlineWorkflows);
       }
     });
+
+    // Ensure settings is properly converted to ConfigSettings
+    // Check if settings is already ConfigSettings (has defaultTimeout instead of default_timeout)
+    const configSettings =
+      settings &&
+      typeof settings === "object" &&
+      "execution" in settings &&
+      typeof settings.execution === "object" &&
+      settings.execution &&
+      "defaultTimeout" in settings.execution
+        ? (settings as ConfigSettings)
+        : this.convertSettings(settings as Partial<ProjectSettings> | undefined);
 
     const config: QontinuiConfig = {
       version: this.version,
@@ -77,7 +96,7 @@ export class ConfigExporter {
       states: this.exportStates(states || [], screenshots, base64ToImageId),
       transitions: this.exportTransitions(transitions || []),
       categories: categories || ["Main"],
-      settings: this.convertSettings(settings) || this.getDefaultSettings(),
+      settings: configSettings,
     };
 
     return config;
@@ -86,7 +105,9 @@ export class ConfigExporter {
   /**
    * Convert ProjectSettings to ConfigSettings format
    */
-  private convertSettings(projectSettings: unknown): ConfigSettings {
+  private convertSettings(
+    projectSettings: Partial<ProjectSettings> | undefined
+  ): ConfigSettings {
     if (!projectSettings) {
       return this.getDefaultSettings();
     }
@@ -254,7 +275,7 @@ export class ConfigExporter {
 
     return workflows.map((workflow) => {
       // Deep clone connections to avoid mutating frozen Immer state
-      let connections = workflow.connections
+      let connections: WorkflowConnections = workflow.connections
         ? structuredClone(workflow.connections)
         : {};
 
@@ -277,7 +298,7 @@ export class ConfigExporter {
 
         // Check if connections have actual chains (not just empty arrays)
         const hasActualConnections = Object.values(connections).some(
-          (outputs) => {
+          (outputs: ActionOutputs) => {
             if (!outputs || typeof outputs !== "object") return false;
             // Check if any output has non-empty connection arrays
             return Object.values(outputs).some((conns) => {
@@ -296,7 +317,7 @@ export class ConfigExporter {
           );
 
           // Generate sequential chain: action1 -> action2 -> action3 -> ...
-          const generatedConnections: unknown = {};
+          const generatedConnections: WorkflowConnections = {};
           for (let i = 0; i < workflow.actions.length - 1; i++) {
             const currentAction = workflow.actions[i];
             const nextAction = workflow.actions[i + 1];
@@ -336,7 +357,7 @@ export class ConfigExporter {
         }
       }
 
-      const exported: unknown = {
+      const exported: ExportWorkflow = {
         id: workflow.id,
         name: workflow.name,
         description: workflow.description,
@@ -361,7 +382,7 @@ export class ConfigExporter {
    * Export actions to the correct format
    * Actions already have the correct structure from the new schema
    */
-  private exportActions(actions: Action[], states?: State[]): unknown[] {
+  private exportActions(actions: Action[], states?: State[]): ExportAction[] {
     if (!actions || !Array.isArray(actions)) {
       return [];
     }
@@ -370,9 +391,18 @@ export class ConfigExporter {
     return actions
       .filter((action) => action != null)
       .map((action) => {
-        const exported: unknown = {
+        const actionWithExtras = action as Action & {
+          base?: Record<string, unknown>;
+          execution?: Record<string, unknown>;
+          timeout?: number;
+          retryCount?: number;
+          continueOnError?: boolean;
+        };
+
+        const exported: ExportAction = {
           id: action.id,
-          type: action.type,
+          type: action.type as ExportAction["type"],
+          config: this.transformActionConfig(action, states),
         };
 
         // Add optional name if present
@@ -380,33 +410,20 @@ export class ConfigExporter {
           exported.name = action.name;
         }
 
-        // Transform config for specific action types
-        exported.config = this.transformActionConfig(action, states);
-
         // Export position for graph visualization
         if (action.position) {
           exported.position = action.position;
         }
 
-        // Export base settings if present
-        if ((action as unknown).base) {
-          exported.base = (action as unknown).base;
-        }
-
-        // Export execution settings if present
-        if ((action as unknown).execution) {
-          exported.execution = (action as unknown).execution;
-        }
-
         // Export timeout and retry settings
-        if ((action as unknown).timeout !== undefined) {
-          exported.timeout = (action as unknown).timeout;
+        if (actionWithExtras.timeout !== undefined) {
+          exported.timeout = actionWithExtras.timeout;
         }
-        if ((action as unknown).retryCount !== undefined) {
-          exported.retryCount = (action as unknown).retryCount;
+        if (actionWithExtras.retryCount !== undefined) {
+          exported.retryCount = actionWithExtras.retryCount;
         }
-        if ((action as unknown).continueOnError !== undefined) {
-          exported.continueOnError = (action as unknown).continueOnError;
+        if (actionWithExtras.continueOnError !== undefined) {
+          exported.continueOnError = actionWithExtras.continueOnError;
         }
 
         return exported;
@@ -417,21 +434,26 @@ export class ConfigExporter {
    * Transform action config for export
    * Converts internal field names to export schema format
    */
-  private transformActionConfig(action: Action, states?: State[]): unknown {
+  private transformActionConfig(
+    action: Action,
+    states?: State[]
+  ): ExportActionConfig {
     // Deep clone to avoid mutating frozen Immer state
-    const config = action.config ? structuredClone(action.config) : {};
+    const config = action.config
+      ? (structuredClone(action.config) as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
 
     // Handle GO_TO_STATE action: convert 'states' array to 'stateIds' array and add stateNames
     if (action.type === "GO_TO_STATE") {
       let targetStateIds: string[] = [];
 
       // Get state IDs from either 'states' or 'stateIds' field
-      if ((config as unknown).states) {
-        targetStateIds = (config as unknown).states as string[];
-        (config as unknown).stateIds = targetStateIds;
-        delete (config as unknown).states;
-      } else if ((config as unknown).stateIds) {
-        targetStateIds = (config as unknown).stateIds as string[];
+      if (config.states && Array.isArray(config.states)) {
+        targetStateIds = config.states as string[];
+        config.stateIds = targetStateIds;
+        delete config.states;
+      } else if (config.stateIds && Array.isArray(config.stateIds)) {
+        targetStateIds = config.stateIds as string[];
       }
 
       // Always add stateNames array for the runner
@@ -440,61 +462,61 @@ export class ConfigExporter {
           const state = states?.find((s) => s.id === stateId);
           return state ? state.name : stateId;
         });
-        (config as unknown).stateNames = stateNames;
+        config.stateNames = stateNames;
       } else {
         // Ensure stateNames exists even if empty
-        (config as unknown).stateNames = [];
+        config.stateNames = [];
       }
     }
 
     // Handle TYPE action: convert UI textSource format to schema format
     if (action.type === "TYPE") {
       // If textSource is the string "stateString", convert to TextSource object
-      if ((config as unknown).textSource === "stateString") {
+      if (config.textSource === "stateString") {
         // Create TextSource object from UI fields
-        if ((config as unknown).selectedState) {
-          (config as unknown).textSource = {
-            stateId: (config as unknown).selectedState,
-            stringIds: (config as unknown).selectedStateStrings || [],
-            useAll: (config as unknown).useAllStateStrings || false,
+        if (config.selectedState) {
+          config.textSource = {
+            stateId: config.selectedState as string,
+            stringIds: (config.selectedStateStrings as string[]) || [],
+            useAll: (config.useAllStateStrings as boolean) || false,
           };
         } else {
           // No state selected, remove textSource
-          delete (config as unknown).textSource;
+          delete config.textSource;
         }
 
         // Clean up UI-specific fields
-        delete (config as unknown).selectedState;
-        delete (config as unknown).selectedStateStrings;
-        delete (config as unknown).useAllStateStrings;
-      } else if ((config as unknown).textSource === "manual") {
+        delete config.selectedState;
+        delete config.selectedStateStrings;
+        delete config.useAllStateStrings;
+      } else if (config.textSource === "manual") {
         // Manual text mode - remove textSource field, keep text field only if non-empty
-        delete (config as unknown).textSource;
+        delete config.textSource;
 
         // Remove empty text field
-        if ((config as unknown).text !== undefined) {
-          const textValue = (config as unknown).text;
+        if (config.text !== undefined) {
+          const textValue = config.text;
           if (
             !textValue ||
             (typeof textValue === "string" && !textValue.trim())
           ) {
-            delete (config as unknown).text;
+            delete config.text;
           }
         }
       }
 
       // If textSource is an object (already converted), remove empty text field
       if (
-        typeof (config as unknown).textSource === "object" &&
-        (config as unknown).textSource !== null
+        typeof config.textSource === "object" &&
+        config.textSource !== null
       ) {
-        if ((config as unknown).text !== undefined) {
-          const textValue = (config as unknown).text;
+        if (config.text !== undefined) {
+          const textValue = config.text;
           if (
             !textValue ||
             (typeof textValue === "string" && !textValue.trim())
           ) {
-            delete (config as unknown).text;
+            delete config.text;
           }
         }
       }
@@ -504,77 +526,73 @@ export class ConfigExporter {
     if (action.type === "RUN_WORKFLOW") {
       // Transform enableRepeat/maxRepeats/repeatDelay/repeatUntilSuccess -> repetition object
       if (
-        (config as unknown).enableRepeat !== undefined ||
-        (config as unknown).maxRepeats !== undefined ||
-        (config as unknown).repeatDelay !== undefined ||
-        (config as unknown).repeatUntilSuccess !== undefined
+        config.enableRepeat !== undefined ||
+        config.maxRepeats !== undefined ||
+        config.repeatDelay !== undefined ||
+        config.repeatUntilSuccess !== undefined
       ) {
-        const enabled = (config as unknown).enableRepeat ?? false;
+        const enabled = (config.enableRepeat as boolean) ?? false;
 
         // Only include repetition object if enabled or if any repeat fields are set
         if (
           enabled ||
-          (config as unknown).maxRepeats ||
-          (config as unknown).repeatDelay ||
-          (config as unknown).repeatUntilSuccess
+          config.maxRepeats ||
+          config.repeatDelay ||
+          config.repeatUntilSuccess
         ) {
-          (config as unknown).repetition = {
+          config.workflowRepetition = {
             enabled: enabled,
-            maxRepeats: (config as unknown).maxRepeats ?? 10,
-            ...((config as unknown).repeatDelay !== undefined && {
-              delay: (config as unknown).repeatDelay,
+            maxRepeats: (config.maxRepeats as number) ?? 10,
+            ...(config.repeatDelay !== undefined && {
+              delay: config.repeatDelay as number,
             }),
-            ...((config as unknown).repeatUntilSuccess !== undefined && {
-              untilSuccess: (config as unknown).repeatUntilSuccess,
+            ...(config.repeatUntilSuccess !== undefined && {
+              untilSuccess: config.repeatUntilSuccess as boolean,
             }),
           };
         }
 
         // Remove old UI field names
-        delete (config as unknown).enableRepeat;
-        delete (config as unknown).maxRepeats;
-        delete (config as unknown).repeatDelay;
-        delete (config as unknown).repeatUntilSuccess;
+        delete config.enableRepeat;
+        delete config.maxRepeats;
+        delete config.repeatDelay;
+        delete config.repeatUntilSuccess;
       }
     }
 
     // Handle stateImage target: add stateName for readability in exported JSON
-    if (
-      action.type === "FIND" &&
-      (config as unknown).target?.type === "stateImage" &&
-      (config as unknown).target?.stateId
-    ) {
-      const stateId = (config as unknown).target.stateId;
-      const state = states?.find((s) => s.id === stateId);
-      if (state) {
-        (config as unknown).target.stateName = state.name;
+    if (action.type === "FIND" && config.target && typeof config.target === "object") {
+      const target = config.target as Record<string, unknown>;
+      if (target.type === "stateImage" && target.stateId) {
+        const stateId = target.stateId as string;
+        const state = states?.find((s) => s.id === stateId);
+        if (state) {
+          target.stateName = state.name;
+        }
       }
     }
 
     // Handle target transformation for MOUSE_MOVE, CLICK, and other actions
     // Convert UI string values like "Last Find Result" to proper target objects
-    if (
-      (config as unknown).target &&
-      typeof (config as unknown).target === "string"
-    ) {
-      const targetString = (config as unknown).target;
+    if (config.target && typeof config.target === "string") {
+      const targetString = config.target;
 
       if (targetString === "Last Find Result") {
-        (config as unknown).target = { type: "lastFindResult" };
+        config.target = { type: "lastFindResult" };
       } else if (targetString === "Current Position") {
-        (config as unknown).target = { type: "currentPosition" };
+        config.target = { type: "currentPosition" };
       } else if (targetString === "Coordinates") {
         // Convert to coordinates target with x, y values
-        (config as unknown).target = {
+        config.target = {
           type: "coordinates",
           coordinates: {
-            x: (config as unknown).x || 0,
-            y: (config as unknown).y || 0,
+            x: (config.x as number) || 0,
+            y: (config.y as number) || 0,
           },
         };
         // Remove flat x, y fields
-        delete (config as unknown).x;
-        delete (config as unknown).y;
+        delete config.x;
+        delete config.y;
       }
       // Note: StateImage, StateRegion, StateLocation would need more complex handling
       // with additional data from the UI, not implemented here yet
@@ -582,11 +600,8 @@ export class ConfigExporter {
 
     // Handle target transformation for the 3 new target types
     // These are likely already objects from the UI, but we ensure proper field mapping
-    if (
-      (config as unknown).target &&
-      typeof (config as unknown).target === "object"
-    ) {
-      const target = (config as unknown).target;
+    if (config.target && typeof config.target === "object") {
+      const target = config.target as Record<string, unknown>;
 
       // ResultIndexTarget: Target specific match by index
       if (target.type === "resultIndex") {
@@ -617,7 +632,7 @@ export class ConfigExporter {
       }
     }
 
-    return config;
+    return config as ExportActionConfig;
   }
 
   /**
@@ -634,8 +649,8 @@ export class ConfigExporter {
 
     return states.map((state) => {
       // Collect state objects from state definition and screenshots with deduplication
-      const stateRegions: unknown[] = [];
-      const stateLocations: unknown[] = [];
+      const stateRegions: Array<Record<string, unknown>> = [];
+      const stateLocations: Array<Record<string, unknown>> = [];
       const regionIds = new Set<string>();
       const locationIds = new Set<string>();
 
@@ -686,6 +701,9 @@ export class ConfigExporter {
             screenshot.regions.forEach((region) => {
               if (region.stateId === state.id && !regionIds.has(region.id)) {
                 regionIds.add(region.id);
+                const regionWithMonitors = region as typeof region & {
+                  monitors?: number[];
+                };
                 stateRegions.push({
                   id: region.id,
                   name: region.name,
@@ -693,7 +711,7 @@ export class ConfigExporter {
                   fixed: true,
                   isSearchRegion: region.type === "SearchRegion",
                   isInteractionRegion: region.type === "StateRegion",
-                  monitors: (region as unknown).monitors,
+                  monitors: regionWithMonitors.monitors,
                 });
               }
             });
@@ -705,13 +723,16 @@ export class ConfigExporter {
                 !locationIds.has(location.id)
               ) {
                 locationIds.add(location.id);
+                const locationWithMonitors = location as typeof location & {
+                  monitors?: number[];
+                };
                 stateLocations.push({
                   id: location.id,
                   name: location.name,
                   x: location.x,
                   y: location.y,
                   fixed: true,
-                  monitors: (location as unknown).monitors,
+                  monitors: locationWithMonitors.monitors,
                 });
               }
             });
@@ -720,44 +741,50 @@ export class ConfigExporter {
       }
 
       // Deduplicate stateImages
-      const stateImages: unknown[] = [];
+      const stateImages: Array<Record<string, unknown>> = [];
       const imageIds = new Set<string>();
       (state.stateImages || []).forEach((img) => {
         if (!imageIds.has(img.id)) {
           imageIds.add(img.id);
+          const patternWithExtras = img.patterns.map((pattern) => {
+            // Convert embedded base64 data to imageId reference
+            let imageIdRef = pattern.imageId;
+
+            // If pattern.imageId is a base64 data URL, look it up in the image map
+            if (base64ToImageId && pattern.imageId) {
+              const matchedImageId = base64ToImageId.get(pattern.imageId);
+              if (matchedImageId) {
+                imageIdRef = matchedImageId;
+              } else {
+                // Log a warning if we can't find a matching image
+                console.warn(
+                  `State "${state.name}": Pattern "${pattern.name || img.name}" has embedded base64 data that doesn't match any exported image`
+                );
+              }
+            }
+
+            const patternWithMask = pattern as typeof pattern & {
+              mask?: string;
+            };
+
+            return {
+              id: pattern.id,
+              name: pattern.name,
+              imageId: imageIdRef, // Use imageId instead of image
+              mask: patternWithMask.mask,
+              searchRegions: pattern.searchRegions || [],
+              fixed: pattern.fixed,
+              similarity: pattern.similarity,
+              targetPosition: pattern.targetPosition,
+              offsetX: pattern.offsetX,
+              offsetY: pattern.offsetY,
+            };
+          });
+
           stateImages.push({
             id: img.id,
             name: img.name,
-            patterns: img.patterns.map((pattern) => {
-              // Convert embedded base64 data to imageId reference
-              let imageIdRef = pattern.imageId;
-
-              // If pattern.imageId is a base64 data URL, look it up in the image map
-              if (base64ToImageId && pattern.imageId) {
-                const matchedImageId = base64ToImageId.get(pattern.imageId);
-                if (matchedImageId) {
-                  imageIdRef = matchedImageId;
-                } else {
-                  // Log a warning if we can't find a matching image
-                  console.warn(
-                    `State "${state.name}": Pattern "${pattern.name || img.name}" has embedded base64 data that doesn't match any exported image`
-                  );
-                }
-              }
-
-              return {
-                id: pattern.id,
-                name: pattern.name,
-                imageId: imageIdRef, // Use imageId instead of image
-                mask: (pattern as unknown).mask,
-                searchRegions: pattern.searchRegions || [],
-                fixed: pattern.fixed,
-                similarity: pattern.similarity,
-                targetPosition: pattern.targetPosition,
-                offsetX: pattern.offsetX,
-                offsetY: pattern.offsetY,
-              };
-            }),
+            patterns: patternWithExtras,
             shared: img.shared,
             source: img.source,
             probability: img.probability,
@@ -770,7 +797,7 @@ export class ConfigExporter {
       });
 
       // Deduplicate strings
-      const stateStrings: unknown[] = [];
+      const stateStrings: Array<Record<string, unknown>> = [];
       const stringIds = new Set<string>();
       (state.strings || []).forEach((str) => {
         if (!stringIds.has(str.id)) {
@@ -793,10 +820,10 @@ export class ConfigExporter {
         id: state.id,
         name: state.name,
         description: state.description,
-        stateImages,
-        regions: stateRegions,
-        locations: stateLocations,
-        strings: stateStrings,
+        stateImages: stateImages as unknown as ExportState["stateImages"],
+        regions: stateRegions as unknown as ExportState["regions"],
+        locations: stateLocations as unknown as ExportState["locations"],
+        strings: stateStrings as unknown as ExportState["strings"],
         position: {
           x: Math.round(state.position.x),
           y: Math.round(state.position.y),
@@ -820,7 +847,7 @@ export class ConfigExporter {
       // (both regular workflows and helper workflows)
       const workflows = transition.workflows || [];
 
-      const baseTransition: unknown = {
+      const baseTransition = {
         id: transition.id,
         workflows,
         timeout: transition.timeout,
@@ -829,29 +856,41 @@ export class ConfigExporter {
 
       // Export OutgoingTransition
       if (transition.type === "OutgoingTransition") {
-        const fromState = transition.fromState || "";
-        const activateStates = transition.activateStates || [];
+        const outgoing = transition as Transition & {
+          fromState?: string;
+          toState?: string;
+          staysVisible?: boolean;
+          activateStates?: string[];
+          deactivateStates?: string[];
+        };
+
+        const fromState = outgoing.fromState || "";
+        const activateStates = outgoing.activateStates || [];
         const toState =
-          transition.toState ||
+          outgoing.toState ||
           (activateStates.length > 0 ? activateStates[0] : "");
 
         return {
           ...baseTransition,
-          type: "OutgoingTransition",
+          type: "OutgoingTransition" as const,
           fromState,
           toState,
-          staysVisible: transition.staysVisible || false,
+          staysVisible: outgoing.staysVisible || false,
           activateStates: activateStates,
-          deactivateStates: transition.deactivateStates || [],
-        } as ExportOutgoingTransition;
+          deactivateStates: outgoing.deactivateStates || [],
+        };
       }
       // Export IncomingTransition
       else {
+        const incoming = transition as Transition & {
+          toState?: string;
+        };
+
         return {
           ...baseTransition,
-          type: "IncomingTransition",
-          toState: transition.toState || "",
-        } as ExportIncomingTransition;
+          type: "IncomingTransition" as const,
+          toState: incoming.toState || "",
+        };
       }
     });
   }
@@ -1150,7 +1189,9 @@ export class ConfigExporter {
     // Check workflow actions for image references
     (config.workflows || []).forEach((workflow) => {
       (workflow.actions || []).forEach((action) => {
-        const imageId = this.extractImageIdFromAction(action);
+        const imageId = this.extractImageIdFromAction(
+          action as unknown as Record<string, unknown>
+        );
         if (imageId && !validImageIds.has(imageId)) {
           const location = `Workflow ${workflow.name || workflow.id}: Action ${action.type}`;
           errors.push(
@@ -1166,8 +1207,16 @@ export class ConfigExporter {
       (state.stateImages || []).forEach((stateImage) => {
         (stateImage.patterns || []).forEach((pattern) => {
           // Pattern.imageId contains the image ID reference (updated from pattern.image)
+          const patternWithImageId = pattern as unknown as Record<
+            string,
+            unknown
+          > & {
+            imageId?: string;
+            image?: string;
+            name?: string;
+          };
           const imageRef =
-            (pattern as unknown).imageId || (pattern as unknown).image; // Support both for compatibility
+            patternWithImageId.imageId || patternWithImageId.image; // Support both for compatibility
           if (imageRef && !validImageIds.has(imageRef)) {
             const location = `State ${state.name || state.id}: StateImage ${stateImage.name}`;
             errors.push(
@@ -1176,7 +1225,7 @@ export class ConfigExporter {
             missingRefs.push({
               location,
               imageId: imageRef,
-              imageName: pattern.name || stateImage.name,
+              imageName: patternWithImageId.name || stateImage.name,
             });
           }
         });
@@ -1189,17 +1238,22 @@ export class ConfigExporter {
   /**
    * Extract image ID from action config (if any)
    */
-  private extractImageIdFromAction(action: unknown): string | null {
+  private extractImageIdFromAction(
+    action: Record<string, unknown>
+  ): string | null {
     if (!action || !action.config) return null;
 
+    const config = action.config as Record<string, unknown>;
+
     // FIND, CLICK, EXISTS, VANISH actions may have imageId
-    if (action.config.imageId) {
-      return action.config.imageId;
+    if (config.imageId && typeof config.imageId === "string") {
+      return config.imageId;
     }
 
     // Some actions may have target.imageId
-    if (action.config.target && action.config.target.imageId) {
-      return action.config.target.imageId;
+    const target = config.target as Record<string, unknown> | undefined;
+    if (target?.imageId && typeof target.imageId === "string") {
+      return target.imageId;
     }
 
     return null;

@@ -24,9 +24,9 @@ export function processToWorkflow(process: Process): Workflow {
   // Convert actions to graph format (add positions)
   const actions: WorkflowAction[] = process.actions.map(
     (action: unknown, index: number) => ({
-      ...action,
+      ...(action as Partial<WorkflowAction>),
       position: [100 + index * 250, 100] as [number, number], // Horizontal layout
-    })
+    }) as WorkflowAction
   );
 
   // Create linear connections (sequential flow)
@@ -147,7 +147,8 @@ function topologicalSort(
 
   // Handle orphaned nodes (not connected)
   actions.forEach((action) => {
-    if (!sorted.find((a) => a.id === action.id)) {
+    const sortedAction = sorted.find((a) => (a as WorkflowAction).id === action.id);
+    if (!sortedAction) {
       const { position, ...actionWithoutPosition } = action;
       sorted.push(actionWithoutPosition);
     }

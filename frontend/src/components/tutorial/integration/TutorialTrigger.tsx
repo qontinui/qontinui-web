@@ -302,9 +302,10 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
   // Listen for custom tutorial trigger events
   useEffect(() => {
     const handleCustomTrigger = (
-      event: CustomEvent<{ tutorialId: string }>
+      event: Event
     ) => {
-      const tutorial = tutorials.find((t) => t.id === event.detail.tutorialId);
+      const customEvent = event as CustomEvent<{ tutorialId: string }>;
+      const tutorial = tutorials.find((t) => t.id === customEvent.detail.tutorialId);
 
       if (tutorial && shouldTriggerTutorial(tutorial)) {
         triggerTutorial(tutorial);
@@ -312,14 +313,14 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
     };
 
     window.addEventListener(
-      "trigger-tutorial" as unknown,
-      handleCustomTrigger as EventListener
+      "trigger-tutorial",
+      handleCustomTrigger
     );
 
     return () => {
       window.removeEventListener(
-        "trigger-tutorial" as unknown,
-        handleCustomTrigger as EventListener
+        "trigger-tutorial",
+        handleCustomTrigger
       );
     };
   }, [tutorials, shouldTriggerTutorial, triggerTutorial]);

@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Plus, Square, Trash2, Settings, Network } from "lucide-react";
 import {
   ReactFlow,
-  ReactFlowProvider,
   useReactFlow,
   type Node,
   type Edge,
   type Connection,
+  type NodeChange,
   useNodesState,
   useEdgesState,
   Controls,
@@ -265,9 +265,9 @@ export function StateStructure() {
 
   // Handle node position changes
   const handleNodesChange = useCallback(
-    (changes: unknown) => {
+    (changes: NodeChange[]) => {
       // Track drag start/end to prevent node destruction during drag
-      changes.forEach((change: unknown) => {
+      changes.forEach((change) => {
         if (change.type === "position") {
           if (change.dragging === true) {
             isDraggingRef.current = true;
@@ -281,13 +281,14 @@ export function StateStructure() {
       onNodesChange(changes);
 
       // Update positions when nodes finish dragging (dragging === false means drag ended)
-      changes.forEach((change: unknown) => {
+      changes.forEach((change) => {
         if (
           change.type === "position" &&
           change.dragging === false &&
-          change.position
+          change.position &&
+          change.id
         ) {
-          // Check if it&apos;s a state node
+          // Check if it's a state node
           const state = states.find((s) => s.id === change.id);
           if (state) {
             updateState({
@@ -336,7 +337,7 @@ export function StateStructure() {
 
   // Handler for creating a transition by dropping an image on a target state
   const handleImageDropOnState = useCallback(
-    (
+    async (
       targetStateId: string,
       dragData: { sourceStateId: string; stateImageId: string }
     ) => {
@@ -387,7 +388,14 @@ export function StateStructure() {
         timeout: 30000,
         retryCount: 0,
       };
-      addTransition(outgoingTransition);
+      const outgoingWasAdded = await addTransition(outgoingTransition);
+      if (!outgoingWasAdded) {
+        toast.error(
+          `A transition from "${sourceState.name}" to "${targetState.name}" already exists`
+        );
+        setImageDragData(null);
+        return;
+      }
 
       // Check if the target state already has an incoming transition
       const existingIncomingTransition = transitions.find(
@@ -416,7 +424,7 @@ export function StateStructure() {
           timeout: 10000,
           retryCount: 3,
         };
-        addTransition(incomingTransition);
+        await addTransition(incomingTransition);
       }
 
       toast.success(
@@ -730,7 +738,7 @@ export function StateStructure() {
   }, [states.length, transitions.length, applyAutoLayout]);
 
   const onConnect = useCallback(
-    (params: Connection) => {
+    async (params: Connection) => {
       if (!params.source || !params.target) return;
 
       const newTransition: OutgoingTransition = {
@@ -745,7 +753,10 @@ export function StateStructure() {
         retryCount: 0,
       };
 
-      addTransition(newTransition);
+      const wasAdded = await addTransition(newTransition);
+      if (!wasAdded) {
+        toast.error("A transition between these states already exists");
+      }
     },
     [addTransition]
   );

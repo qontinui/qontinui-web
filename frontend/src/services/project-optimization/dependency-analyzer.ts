@@ -87,9 +87,9 @@ export function getImpactAnalysis(
     // Find workflows using this image
     workflows.forEach((workflow) => {
       const usesImage = workflow.actions.some((action) => {
-        const config = action.config as unknown;
+        const config = action.config as Record<string, unknown>;
         return (
-          config.target?.image === resourceId || config.imageId === resourceId
+          (config.target as { image?: string } | undefined)?.image === resourceId || config.imageId as string | undefined === resourceId
         );
       });
       if (usesImage) {
@@ -101,8 +101,8 @@ export function getImpactAnalysis(
     workflows.forEach((workflow) => {
       const usesState = workflow.actions.some((action) => {
         if (action.type === "GO_TO_STATE") {
-          const config = action.config as unknown;
-          return config.stateId === resourceId;
+          const config = action.config as Record<string, unknown>;
+          return config.stateId as string | undefined === resourceId;
         }
         return false;
       });

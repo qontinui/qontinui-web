@@ -766,8 +766,8 @@ class GlobalSearchService {
       if (stored) {
         const parsed = JSON.parse(stored);
         this.recentSearches = parsed.map((s: unknown) => ({
-          ...s,
-          timestamp: new Date(s.timestamp),
+          ...(s as object),
+          timestamp: new Date((s as { timestamp: string }).timestamp),
         }));
       }
     } catch (error) {

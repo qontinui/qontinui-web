@@ -120,7 +120,7 @@ export function usePropertyAdapter(actionId: string): PropertyAdapterResult {
     ) => {
       if (!canvasAction) return;
 
-      const oldValue = (canvasAction.config as unknown)[key];
+      const oldValue = (canvasAction.config as Record<string, unknown>)[key];
 
       // Record change for tracking
       recordChange(actionId, `config.${key}`, oldValue, value);
@@ -165,7 +165,9 @@ export function usePropertyAdapter(actionId: string): PropertyAdapterResult {
 
       // Record changes for each updated property
       for (const [key, value] of Object.entries(updates)) {
-        const oldValue = (canvasAction as unknown)[key];
+        const oldValue = (canvasAction as unknown as Record<string, unknown>)[
+          key
+        ];
         recordChange(actionId, key, oldValue, value);
       }
 
@@ -263,9 +265,12 @@ export function useMultiPropertyAdapter(
     (key: string): unknown | undefined => {
       if (canvasActions.length === 0) return undefined;
 
-      const firstValue = (canvasActions[0]!.config as unknown)[key];
+      const firstValue = (canvasActions[0]!.config as Record<string, unknown>)[
+        key
+      ];
       const allSame = canvasActions.every(
-        (action) => (action.config as unknown)[key] === firstValue
+        (action) =>
+          (action.config as Record<string, unknown>)[key] === firstValue
       );
 
       return allSame ? firstValue : undefined;
@@ -289,7 +294,7 @@ export function useMultiPropertyAdapter(
   const updateCommonConfig = useCallback(
     (key: string, value: unknown) => {
       canvasActions.forEach((action) => {
-        const oldValue = (action.config as unknown)[key];
+        const oldValue = (action.config as Record<string, unknown>)[key];
         recordChange(action.id, `config.${key}`, oldValue, value);
 
         updateActionInCanvas(action.id, {
@@ -373,8 +378,11 @@ export function PropertyEditorWrapper({
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ComponentAny = Component as any;
+
   return (
-    <Component
+    <ComponentAny
       action={action}
       updateConfig={updateConfig}
       images={images}

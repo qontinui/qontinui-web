@@ -44,7 +44,7 @@ export function IncomingTransitionBuilder({
     "Incoming Transitions"
   );
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!toState) {
       toast.error("Please select a state");
       return;
@@ -64,7 +64,11 @@ export function IncomingTransitionBuilder({
       retryCount: 0,
     };
 
-    addTransition(newTransition);
+    const wasAdded = await addTransition(newTransition);
+    if (!wasAdded) {
+      toast.error("An incoming transition for this state already exists");
+      return;
+    }
     toast.success("Incoming transition created");
 
     // Reset form

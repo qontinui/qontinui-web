@@ -35,6 +35,29 @@ import SnapshotScreenshotSelector from "./SnapshotScreenshotSelector";
 import { DirectPatternCreation } from "./DirectPatternCreation";
 import { AutoPatternExtraction } from "./AutoPatternExtraction";
 import { MonitorSelector } from "@/components/monitor-selector";
+interface APIProjectScreenshot {
+  hash: string;
+}
+
+// @ts-expect-error - Interface kept for backwards compatibility but not directly used
+interface APIDetailedScreenshot {
+  id: string;
+  name: string;
+  hash: string;
+  size: number;
+  created_at: string;
+  thumbnail_url?: string;
+  image_data: string;
+}
+
+interface ProjectScreenshot {
+  id: string;
+  name: string;
+  hash: string;
+  size: number;
+  createdAt: string;
+  thumbnailUrl?: string;
+}
 
 interface ScreenshotUploaderProps {
   onUpload: (files: File[]) => void;
@@ -79,7 +102,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
         if (response.ok) {
           const data = await response.json();
-          const hashes = data.screenshots.map((s: unknown) => s.hash);
+          const hashes = data.screenshots.map((s: APIProjectScreenshot) => s.hash);
           setProjectHashes(hashes);
         }
       } catch (error) {
@@ -279,8 +302,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         );
         if (hashResponse.ok) {
           const hashData = await hashResponse.json();
-          const updatedHashes = hashData.screenshots.map(
-            (s: unknown) => s.hash
+          const updatedHashes = hashData.screenshots.map((s: APIProjectScreenshot) => s.hash
           );
           setProjectHashes(updatedHashes);
         }
@@ -297,7 +319,9 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   };
 
   // Handle selecting project screenshots
-  const handleSelectProjectScreenshots = async (selected: unknown[]) => {
+  const handleSelectProjectScreenshots = async (
+    selected: ProjectScreenshot[]
+  ) => {
     // Convert project screenshots to File objects
     // Selected project screenshots
 

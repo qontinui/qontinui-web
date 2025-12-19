@@ -68,11 +68,12 @@ import {
   CustomFunctionActionConfig,
 } from "./configs/code-actions";
 
+import { ShellActionConfig, ShellScriptActionConfig } from "./configs/shell-actions";
+
 import {
-  ShellActionConfig,
-  ShellScriptActionConfig,
-  TriggerAiAnalysisActionConfig,
-} from "./configs/shell-actions";
+  AIPromptActionConfig,
+  RunPromptSequenceActionConfig,
+} from "./configs/ai-actions";
 
 // ============================================================================
 // Action Types
@@ -117,7 +118,9 @@ export type StateActionType = "GO_TO_STATE" | "RUN_WORKFLOW" | "SCREENSHOT";
 
 export type CodeActionType = "CODE_BLOCK" | "CUSTOM_FUNCTION";
 
-export type ShellActionType = "SHELL" | "SHELL_SCRIPT" | "TRIGGER_AI_ANALYSIS";
+export type ShellActionType = "SHELL" | "SHELL_SCRIPT";
+
+export type AIActionType = "AI_PROMPT" | "RUN_PROMPT_SEQUENCE";
 
 export type ActionType =
   | FindActionType
@@ -127,7 +130,8 @@ export type ActionType =
   | DataActionType
   | StateActionType
   | CodeActionType
-  | ShellActionType;
+  | ShellActionType
+  | AIActionType;
 
 // ============================================================================
 // Action Configuration Map
@@ -186,7 +190,10 @@ export interface ActionConfigMap {
   // Shell actions
   SHELL: ShellActionConfig;
   SHELL_SCRIPT: ShellScriptActionConfig;
-  TRIGGER_AI_ANALYSIS: TriggerAiAnalysisActionConfig;
+
+  // AI actions
+  AI_PROMPT: AIPromptActionConfig;
+  RUN_PROMPT_SEQUENCE: RunPromptSequenceActionConfig;
 }
 
 // ============================================================================
@@ -559,8 +566,11 @@ export function getActionOutputCount(
     return MULTI_OUTPUT_ACTIONS[actionType];
   }
 
-  if (actionType === "SWITCH" && config?.cases) {
-    return config.cases.length + 1;
+  if (actionType === "SWITCH") {
+    const switchConfig = config as { cases?: unknown[] } | undefined;
+    if (switchConfig?.cases && Array.isArray(switchConfig.cases)) {
+      return switchConfig.cases.length + 1;
+    }
   }
 
   return 1;

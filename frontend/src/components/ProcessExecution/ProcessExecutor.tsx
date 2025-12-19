@@ -157,13 +157,13 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         case "TYPE":
           await new Promise((resolve) => setTimeout(resolve, 800));
           success = true;
-          const typeConfig = action.config as unknown;
-          addLog(`Typed text: "${typeConfig.text || ""}"`, "success");
+          const typeConfig = action.config as Record<string, unknown>;
+          addLog(`Typed text: "${(typeConfig.text as string) || ""}"`, "success");
           break;
 
         case "WAIT":
-          const waitConfig = action.config as unknown;
-          const waitTime = waitConfig.duration || 1000;
+          const waitConfig = action.config as Record<string, unknown>;
+          const waitTime = (waitConfig.duration as number) || 1000;
           await new Promise((resolve) => setTimeout(resolve, waitTime));
           success = true;
           addLog(`Waited ${waitTime}ms`, "success");
@@ -172,10 +172,11 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         case "GO_TO_STATE":
           await new Promise((resolve) => setTimeout(resolve, 400));
           success = Math.random() > 0.1; // 90% success rate
-          const goToStateConfig = action.config as unknown;
+          const goToStateConfig = action.config as Record<string, unknown>;
           if (success) {
+            const stateIds = goToStateConfig.stateIds as string[] | undefined;
             addLog(
-              `Transitioned to state: ${goToStateConfig.stateIds?.[0] || "unknown"}`,
+              `Transitioned to state: ${stateIds?.[0] || "unknown"}`,
               "success"
             );
           } else {
@@ -187,9 +188,9 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         case "RUN_WORKFLOW":
           await new Promise((resolve) => setTimeout(resolve, 1000));
           success = true;
-          const runWorkflowConfig = action.config as unknown;
+          const runWorkflowConfig = action.config as Record<string, unknown>;
           addLog(
-            `Running sub-workflow: ${runWorkflowConfig.workflowId}`,
+            `Running sub-workflow: ${runWorkflowConfig.workflowId as string}`,
             "info"
           );
           break;
@@ -209,9 +210,9 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
       // Handle SET_VARIABLE action for debugger
       if (debugEnabled && action.type === "SET_VARIABLE") {
-        const setVarConfig = action.config as unknown;
+        const setVarConfig = action.config as Record<string, unknown>;
         if (setVarConfig.variableName) {
-          setVariable(setVarConfig.variableName, setVarConfig.value, index);
+          setVariable(setVarConfig.variableName as string, setVarConfig.value, index);
         }
       }
 
@@ -595,7 +596,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         <div className="border-t">
           {/* Action List */}
           <div className="max-h-64 overflow-y-auto">
-            {process.actions.map((action: unknown, index: number) => {
+            {process.actions.map((action, index) => {
               const result = status.results.find(
                 (r) => r.actionIndex === index
               );
@@ -613,9 +614,9 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
                       {index + 1}
                     </span>
                     <span className="text-sm font-medium">{action.type}</span>
-                    {action.config.description && (
+                    {action.config && typeof action.config === "object" && "description" in action.config && (
                       <span className="text-sm text-gray-600">
-                        {action.config.description}
+                        {String(action.config.description)}
                       </span>
                     )}
                   </div>

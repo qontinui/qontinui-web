@@ -43,7 +43,6 @@ import {
   FileCode,
   Terminal,
   FileTerminal,
-  Brain,
 } from "lucide-react";
 
 // ============================================================================
@@ -559,23 +558,39 @@ export const NODE_METADATA: Record<ActionType, NodeMetadata> = {
     ],
     tags: ["shell", "script", "system"],
   },
-  TRIGGER_AI_ANALYSIS: {
-    type: "TRIGGER_AI_ANALYSIS",
-    displayName: "AI Analysis",
-    description: "Trigger AI to analyze automation results and fix issues",
+  AI_PROMPT: {
+    type: "AI_PROMPT",
+    displayName: "AI Prompt",
+    description: "Execute an AI prompt with context isolation",
     category: "code",
-    icon: Brain,
+    icon: Sparkles,
     keywords: [
       "ai",
-      "analysis",
+      "prompt",
       "claude",
-      "debug",
-      "fix",
-      "error",
-      "autonomous",
+      "assistant",
       "intelligent",
+      "autonomous",
+      "template",
     ],
-    tags: ["ai", "analysis", "debug"],
+    tags: ["ai", "prompt", "automation"],
+  },
+  RUN_PROMPT_SEQUENCE: {
+    type: "RUN_PROMPT_SEQUENCE",
+    displayName: "Prompt Sequence",
+    description: "Execute a sequence of AI prompts with context isolation",
+    category: "code",
+    icon: RotateCw,
+    keywords: [
+      "ai",
+      "sequence",
+      "multi-step",
+      "pipeline",
+      "workflow",
+      "claude",
+      "batch",
+    ],
+    tags: ["ai", "sequence", "pipeline"],
   },
 };
 
@@ -716,14 +731,14 @@ export function getRecommendedNodes(
     return ["FIND", "CLICK", "TYPE", "IF"];
   }
 
-  const recommendations: Record<ActionType, ActionType[]> = {
+  const recommendations: Partial<Record<ActionType, ActionType[]>> = {
     FIND: ["CLICK", "EXISTS", "WAIT"],
     CLICK: ["TYPE", "WAIT", "FIND"],
     TYPE: ["KEY_PRESS", "CLICK", "WAIT"],
     IF: ["FIND", "EXISTS", "GET_VARIABLE"],
     LOOP: ["BREAK", "CONTINUE", "FIND"],
     // ... add more recommendations
-  } as unknown;
+  };
 
   return recommendations[currentNodeType] || [];
 }

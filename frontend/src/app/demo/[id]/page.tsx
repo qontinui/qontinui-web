@@ -50,7 +50,7 @@ export default function DemoProjectPage() {
 
         const data = await response.json();
         setProject(data);
-      } catch (err: unknown) {
+      } catch (err: any) {
         setError(err.message || "An error occurred");
       } finally {
         setLoading(false);
@@ -91,8 +91,8 @@ export default function DemoProjectPage() {
     );
   }
 
-  const workflows = project.configuration?.workflows || [];
-  const actions = project.configuration?.actions || [];
+  const workflows = (project.configuration as any)?.workflows || [];
+  const actions = (project.configuration as any)?.actions || [];
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -177,7 +177,7 @@ export default function DemoProjectPage() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {workflows.map((workflow: unknown, index: number) => (
+                    {workflows.map((workflow: any, index: number) => (
                       <div
                         key={index}
                         className="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4"
@@ -221,7 +221,7 @@ export default function DemoProjectPage() {
                   <div className="space-y-2">
                     {actions
                       .slice(0, 10)
-                      .map((action: unknown, index: number) => (
+                      .map((action: any, index: number) => (
                         <div
                           key={index}
                           className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-md"

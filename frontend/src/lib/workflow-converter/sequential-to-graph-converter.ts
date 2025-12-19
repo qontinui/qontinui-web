@@ -9,7 +9,7 @@
  * const graphWorkflow = converter.convert(sequentialActions);
  */
 
-import { Action, ActionType } from "../action-schema/action-types";
+import { Action, ActionType, Connection } from "../action-schema/action-types";
 import { Workflow, Connections } from "../action-schema/action-types";
 import {
   IfActionConfig,
@@ -397,15 +397,19 @@ export class SequentialToGraphConverter {
       this.connections[sourceId] = {};
     }
 
-    if (
-      !this.connections[sourceId]![
-        type as keyof (typeof this.connections)[typeof sourceId]
-      ]
-    ) {
-      (this.connections[sourceId] as unknown)[type] = [];
+    const sourceConnections = this.connections[sourceId];
+    if (!sourceConnections) {
+      return;
     }
 
-    const outputs = (this.connections[sourceId] as unknown)[type]!;
+    if (!sourceConnections[type as keyof typeof sourceConnections]) {
+      (sourceConnections as Record<string, Connection[][]>)[type] = [];
+    }
+
+    const outputs = (sourceConnections as Record<string, Connection[][]>)[type];
+    if (!outputs) {
+      return;
+    }
 
     // Ensure output array exists
     while (outputs.length <= outputIndex) {
@@ -413,6 +417,9 @@ export class SequentialToGraphConverter {
     }
 
     // Add connection
+    if (!outputs[outputIndex]) {
+      outputs[outputIndex] = [];
+    }
     outputs[outputIndex].push({
       action: targetId,
       type,

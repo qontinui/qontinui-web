@@ -20,6 +20,7 @@ import {
   downloadPythonStateCode,
 } from "../../lib/state-exporter";
 import { useAutomation } from "../../contexts/automation-context";
+import { State } from "../../contexts/automation-context/types";
 import { apiClient } from "@/lib/api-client";
 import { normalizeUrl } from "@/lib/screenshot-db";
 import {
@@ -40,7 +41,7 @@ import {
 } from "../qontinui";
 
 interface ScreenshotUploadTabProps {
-  states: unknown[];
+  states: State[];
   onExport: (screenshots: Screenshot[]) => void;
 }
 
@@ -229,7 +230,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           "manual_upload",
           undefined,
           (progress: number) => {
-            setUploadingFiles((prev: unknown[]) =>
+            setUploadingFiles((prev: UploadingImage[]) =>
               prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
             );
           }
@@ -283,7 +284,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
         console.error(`Upload failed for ${file.name}:`, error);
 
         // Show user-friendly error message
-        const errorMsg = error.message || "Unknown error occurred";
+        const errorMsg = error instanceof Error ? error.message : String(error);
         if (errorMsg.includes("quota") || errorMsg.includes("Quota")) {
           toast.error("Storage quota exceeded", {
             description: "Please upgrade your plan or delete unused images.",
@@ -503,7 +504,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
       console.error("Screenshot capture failed:", error);
       toast.error("Failed to capture screenshot", {
         description:
-          error.message || "Make sure qontinui-api is running on port 8001",
+          error instanceof Error ? error.message : "Make sure qontinui-api is running on port 8001",
       });
     } finally {
       setIsCapturing(false);

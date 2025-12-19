@@ -205,7 +205,9 @@ export function FormatSwitcherDialog({
         setError(result.errors?.[0]?.message || "Conversion failed");
       }
     } catch (err: unknown) {
-      setError(err.message || "Conversion failed");
+      const errorMessage =
+        err instanceof Error ? err.message : "Conversion failed";
+      setError(errorMessage);
     } finally {
       setIsConverting(false);
     }

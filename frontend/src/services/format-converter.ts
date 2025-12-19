@@ -229,7 +229,7 @@ export class FormatConverter {
           {
             code: "CONVERSION_FAILED",
             message:
-              error.message || "Failed to convert workflow to graph format",
+              (error as Error).message || "Failed to convert workflow to graph format",
             details: error,
           },
         ],
@@ -354,7 +354,7 @@ export class FormatConverter {
           {
             code: "CONVERSION_FAILED",
             message:
-              error.message ||
+              (error as Error).message ||
               "Failed to convert workflow to sequential format",
             details: error,
           },

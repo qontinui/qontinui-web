@@ -61,7 +61,8 @@ export function QueryProvider({ children }: QueryProviderProps) {
       {process.env.NODE_ENV === "development" && (
         <ReactQueryDevtools
           initialIsOpen={false}
-          position={"bottom-right" as unknown}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          position={"bottom-right" as any}
         />
       )}
     </QueryClientProvider>

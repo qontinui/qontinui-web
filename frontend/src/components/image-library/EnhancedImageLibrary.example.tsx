@@ -51,6 +51,7 @@ import { useImageOrganization } from "./useImageOrganization";
 import { useAutomation } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import type { ImageWithMetadata } from "./types";
 
 export function CustomOrganizationExample() {
   const { images, updateImage } = useAutomation();
@@ -68,10 +69,10 @@ export function CustomOrganizationExample() {
   } = useImageOrganization({
     images: images.map((img) => ({
       ...img,
-      folderId: (img as unknown).folderId,
-      tags: (img as unknown).tags || [],
+      folderId: (img as ImageWithMetadata).folderId,
+      tags: (img as ImageWithMetadata).tags || [],
     })),
-    onUpdateImage: updateImage as unknown,
+    onUpdateImage: updateImage as (image: ImageWithMetadata) => void,
   });
 
   return (
@@ -142,25 +143,27 @@ export function CustomOrganizationExample() {
               className="w-full px-3 py-2 border rounded"
             />
             <div className="flex gap-1 flex-wrap">
-              {[
-                "uploaded",
-                "pattern_optimization",
-                "image_extraction",
-                "state_discovery",
-              ].map((source) => (
+              {(
+                [
+                  "uploaded",
+                  "pattern_optimization",
+                  "image_extraction",
+                  "state_discovery",
+                ] as const
+              ).map((source) => (
                 <Badge
                   key={source}
                   variant={
-                    currentFilter.sources?.includes(source as unknown)
+                    currentFilter.sources?.includes(source)
                       ? "default"
                       : "outline"
                   }
                   className="cursor-pointer"
                   onClick={() => {
                     const sources = currentFilter.sources || [];
-                    const newSources = sources.includes(source as unknown)
+                    const newSources = sources.includes(source)
                       ? sources.filter((s) => s !== source)
-                      : [...sources, source as any];
+                      : [...sources, source];
                     setCurrentFilter({ ...currentFilter, sources: newSources });
                   }}
                 >
@@ -193,10 +196,10 @@ export function ProgrammaticExample() {
   } = useImageOrganization({
     images: images.map((img) => ({
       ...img,
-      folderId: (img as unknown).folderId,
-      tags: (img as unknown).tags || [],
+      folderId: (img as ImageWithMetadata).folderId,
+      tags: (img as ImageWithMetadata).tags || [],
     })),
-    onUpdateImage: updateImage as unknown,
+    onUpdateImage: updateImage as (image: ImageWithMetadata) => void,
   });
 
   const handleOrganizeImages = () => {
@@ -214,9 +217,17 @@ export function ProgrammaticExample() {
     // Auto-organize by name patterns
     images.forEach((image) => {
       if (image.name.toLowerCase().includes("button")) {
-        updateImage({ ...image, folderId: buttonsFolder.id } as unknown);
+        const updatedImage: ImageWithMetadata = {
+          ...image,
+          folderId: buttonsFolder.id,
+        };
+        updateImage(updatedImage);
       } else if (image.name.toLowerCase().includes("icon")) {
-        updateImage({ ...image, folderId: iconsFolder.id } as unknown);
+        const updatedImage: ImageWithMetadata = {
+          ...image,
+          folderId: iconsFolder.id,
+        };
+        updateImage(updatedImage);
       }
     });
 

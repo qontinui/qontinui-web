@@ -53,7 +53,9 @@ class JSONConfigValidator:
         # Shell actions
         "SHELL",
         "SHELL_SCRIPT",
-        "TRIGGER_AI_ANALYSIS",
+        # AI actions
+        "AI_PROMPT",
+        "RUN_PROMPT_SEQUENCE",
         # Other actions
         "WAIT",
         "VANISH",
@@ -460,7 +462,8 @@ class JSONConfigValidator:
             if not isinstance(transition, dict):
                 continue
             # v1 uses processes, v2 uses workflows
-            for wf_id in transition.get("processes", transition.get("workflows", [])):
+            wf_ids = transition.get("processes") or transition.get("workflows") or []
+            for wf_id in wf_ids:
                 if wf_id not in workflow_ids:
                     errors.append(
                         f"Transition references non-existent workflow: {wf_id}"

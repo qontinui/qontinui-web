@@ -2,10 +2,58 @@ import {
   QontinuiConfig,
   ImageAsset as ExportImageAsset,
   Workflow as ExportWorkflow,
+  State as ExportState,
+  Transition as ExportTransition,
+  Action as ExportAction,
 } from "./export-schema";
-import { Workflow } from "./action-schema";
+import { Workflow, Action } from "./action-schema";
 import { migrateConfigToLatest, needsMigration } from "./config-migration";
 import { CURRENT_VERSION } from "./config-migration/migrations";
+
+// Type guards for runtime validation
+function isQontinuiConfig(value: unknown): value is QontinuiConfig {
+  if (!value || typeof value !== "object") return false;
+  const config = value as Partial<QontinuiConfig>;
+  return (
+    typeof config.version === "string" &&
+    typeof config.metadata === "object" &&
+    Array.isArray(config.images) &&
+    Array.isArray(config.workflows) &&
+    Array.isArray(config.states) &&
+    Array.isArray(config.transitions)
+  );
+}
+
+function isExportAction(value: unknown): value is ExportAction {
+  if (!value || typeof value !== "object") return false;
+  const action = value as Partial<ExportAction>;
+  return (
+    typeof action.id === "string" &&
+    typeof action.type === "string" &&
+    typeof action.config === "object"
+  );
+}
+
+function isExportState(value: unknown): value is ExportState {
+  if (!value || typeof value !== "object") return false;
+  const state = value as Partial<ExportState>;
+  return (
+    typeof state.id === "string" &&
+    typeof state.name === "string" &&
+    Array.isArray(state.stateImages)
+  );
+}
+
+function isExportTransition(value: unknown): value is ExportTransition {
+  if (!value || typeof value !== "object") return false;
+  const transition = value as Partial<ExportTransition>;
+  return (
+    typeof transition.id === "string" &&
+    (transition.type === "OutgoingTransition" ||
+      transition.type === "IncomingTransition") &&
+    Array.isArray(transition.workflows)
+  );
+}
 
 // Types that match the automation context
 interface ImageAsset {
@@ -57,7 +105,7 @@ export class ConfigImporter {
    * Import a Qontinui configuration from JSON
    */
   async importConfiguration(
-    configJson: string | QontinuiConfig | any
+    configJson: string | QontinuiConfig | unknown
   ): Promise<ImportResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -66,6 +114,13 @@ export class ConfigImporter {
       // Parse JSON if string
       let config: unknown =
         typeof configJson === "string" ? JSON.parse(configJson) : configJson;
+
+      // Validate basic structure before migration
+      if (!isQontinuiConfig(config)) {
+        throw new Error(
+          "Invalid configuration format. Missing required fields (version, metadata, images, workflows, states, transitions)."
+        );
+      }
 
       // Migrate config if needed
       if (needsMigration(config.version)) {
@@ -87,7 +142,14 @@ export class ConfigImporter {
         }
 
         // Migration succeeded - use migrated config and collect warnings
-        config = migrationResult.config;
+        const migratedConfig = migrationResult.config;
+
+        // Validate migrated config
+        if (!isQontinuiConfig(migratedConfig)) {
+          throw new Error("Migration produced invalid configuration");
+        }
+
+        config = migratedConfig;
         warnings.push(...migrationResult.context.warnings);
 
         // Add migration summary
@@ -96,31 +158,34 @@ export class ConfigImporter {
         );
       }
 
+      // After migration and validation, we can safely cast to QontinuiConfig
+      const validatedConfig = config as QontinuiConfig;
+
       // Validate version
-      if (config.version !== this.SUPPORTED_VERSION) {
+      if (validatedConfig.version !== this.SUPPORTED_VERSION) {
         throw new Error(
-          `Unsupported configuration version: ${config.version}. Only version ${this.SUPPORTED_VERSION} is supported.`
+          `Unsupported configuration version: ${validatedConfig.version}. Only version ${this.SUPPORTED_VERSION} is supported.`
         );
       }
 
       // Import components
-      const images = await this.importImages(config.images);
-      const workflows = this.importWorkflows(config.workflows || []);
-      const states = this.importStates(config.states || [], images);
-      const transitions = this.importTransitions(config.transitions || []);
+      const images = await this.importImages(validatedConfig.images);
+      const workflows = this.importWorkflows(validatedConfig.workflows);
+      const states = this.importStates(validatedConfig.states, images);
+      const transitions = this.importTransitions(validatedConfig.transitions);
 
       // Validate references
       this.validateReferences(states, workflows, transitions, errors);
 
       return {
         success: errors.length === 0,
-        name: config.metadata?.name, // Pass through project name for loadConfiguration
+        name: validatedConfig.metadata?.name, // Pass through project name for loadConfiguration
         images,
         workflows,
         states,
         transitions,
-        categories: config.categories || [], // Pass through categories
-        settings: config.settings, // Pass through settings for backend to apply
+        categories: validatedConfig.categories || [], // Pass through categories
+        settings: validatedConfig.settings, // Pass through settings for backend to apply
         errors,
         warnings,
         isUserImport: true, // Mark as user-initiated import
@@ -180,7 +245,29 @@ export class ConfigImporter {
    */
   private importWorkflows(exportWorkflows: ExportWorkflow[]): Workflow[] {
     return exportWorkflows.map((exportWorkflow) => {
-      const workflow: unknown = {
+      // Convert connections from export format to action-schema format
+      // The main difference is Connection.type must be narrowed from string to specific types
+      const connections: Workflow["connections"] = {};
+
+      for (const [actionId, outputs] of Object.entries(exportWorkflow.connections || {})) {
+        const convertedOutputs: Workflow["connections"][string] = {};
+
+        for (const [outputType, connectionArrays] of Object.entries(outputs)) {
+          if (Array.isArray(connectionArrays)) {
+            convertedOutputs[outputType as "main" | "error" | "success"] = connectionArrays.map(
+              (connArray) => connArray.map((conn) => ({
+                action: conn.action,
+                type: conn.type as "main" | "error" | "success" | "parallel",
+                index: conn.index,
+              }))
+            );
+          }
+        }
+
+        connections[actionId] = convertedOutputs;
+      }
+
+      const workflow: Workflow = {
         id: exportWorkflow.id,
         name: exportWorkflow.name,
         description: exportWorkflow.description || "",
@@ -190,16 +277,13 @@ export class ConfigImporter {
         actions:
           exportWorkflow.actions?.map((action) => this.importAction(action)) ||
           [],
-        connections: (exportWorkflow.connections as unknown) || {},
+        connections,
         metadata: exportWorkflow.metadata || {},
       };
 
       // Import initialStateIds if present (for Main category workflows)
-      if (
-        (exportWorkflow as unknown).initialStateIds &&
-        Array.isArray((exportWorkflow as unknown).initialStateIds)
-      ) {
-        workflow.initialStateIds = (exportWorkflow as unknown).initialStateIds;
+      if (exportWorkflow.initialStateIds && Array.isArray(exportWorkflow.initialStateIds)) {
+        workflow.initialStateIds = exportWorkflow.initialStateIds;
       }
 
       return workflow;
@@ -213,19 +297,30 @@ export class ConfigImporter {
    * (v2.0.1-to-v2.1.0 migration). This method assumes the config has
    * already been migrated to the latest version.
    */
-  private importAction(action: unknown): unknown {
-    const imported: unknown = {
+  private importAction(action: ExportAction): Action {
+    if (!isExportAction(action)) {
+      throw new Error(`Invalid action format: missing required fields`);
+    }
+
+    const imported: Action = {
       id: action.id,
-      type: action.type,
-      config: this.importActionConfig(action),
+      type: action.type as Action["type"],
+      config: this.importActionConfig(action) as Action["config"],
+      position: action.position || [0, 0],
     };
 
-    if (action.position) imported.position = action.position;
-    if (action.timeout !== undefined) imported.timeout = action.timeout;
-    if (action.retryCount !== undefined)
-      imported.retryCount = action.retryCount;
-    if (action.continueOnError !== undefined)
-      imported.continueOnError = action.continueOnError;
+    if (action.timeout !== undefined) {
+      if (!imported.execution) imported.execution = {};
+      (imported.execution as Record<string, unknown>).timeout = action.timeout;
+    }
+    if (action.retryCount !== undefined) {
+      if (!imported.execution) imported.execution = {};
+      (imported.execution as Record<string, unknown>).retryCount = action.retryCount;
+    }
+    if (action.continueOnError !== undefined) {
+      if (!imported.execution) imported.execution = {};
+      (imported.execution as Record<string, unknown>).continueOnError = action.continueOnError;
+    }
 
     return imported;
   }
@@ -233,44 +328,42 @@ export class ConfigImporter {
   /**
    * Import action configuration
    */
-  private importActionConfig(action: unknown): Record<string, unknown> {
+  private importActionConfig(action: ExportAction): Record<string, unknown> {
     const config: Record<string, unknown> = { ...action.config };
 
     // Handle target conversions - only FIND supports multiple images (imageIds)
-    if (config.target?.type === "image" && action.type === "FIND") {
-      if (config.target.imageId && !config.target.imageIds) {
-        config.target.imageIds = [config.target.imageId];
-        delete config.target.imageId;
+    const target = config.target as Record<string, unknown> | undefined;
+    if (target && typeof target === "object" && target.type === "image" && action.type === "FIND") {
+      if (target.imageId && !target.imageIds) {
+        target.imageIds = [target.imageId];
+        delete target.imageId;
       }
-      if (config.target.imageIds && !Array.isArray(config.target.imageIds)) {
-        config.target.imageIds = [config.target.imageIds];
+      if (target.imageIds && !Array.isArray(target.imageIds)) {
+        target.imageIds = [target.imageIds];
       }
     }
 
     // Handle target object to string conversion for UI
     // Convert proper target objects back to UI string format
-    if (
-      config.target &&
-      typeof config.target === "object" &&
-      config.target.type
-    ) {
-      const targetType = config.target.type;
+    if (target && typeof target === "object" && target.type) {
+      const targetType = target.type;
 
       if (targetType === "lastFindResult") {
         config.target = "Last Find Result";
       } else if (targetType === "currentPosition") {
         config.target = "Current Position";
-      } else if (targetType === "coordinates" && config.target.coordinates) {
+      } else if (targetType === "coordinates" && typeof target.coordinates === "object") {
+        const coords = target.coordinates as Record<string, unknown>;
         config.target = "Coordinates";
-        config.x = config.target.coordinates.x;
-        config.y = config.target.coordinates.y;
+        config.x = coords.x;
+        config.y = coords.y;
       }
       // Handle the 3 new multi-result target types
       // These are imported as objects and stay as objects in the UI
       else if (targetType === "resultIndex") {
         // ResultIndexTarget: Ensure index field exists (default to 0)
-        if (config.target.index === undefined) {
-          config.target.index = 0;
+        if (target.index === undefined) {
+          target.index = 0;
         }
       } else if (targetType === "allResults") {
         // AllResultsTarget: No additional processing needed
@@ -278,7 +371,7 @@ export class ConfigImporter {
       } else if (targetType === "resultByImage") {
         // ResultByImageTarget: Ensure imageId field exists
         // The JSON format uses imageId (camelCase), which matches UI expectation
-        if (!config.target.imageId) {
+        if (!target.imageId) {
           console.warn("ResultByImageTarget missing imageId field");
         }
       }
@@ -296,7 +389,7 @@ export class ConfigImporter {
   /**
    * Import states from configuration
    */
-  private importStates(exportStates: unknown[], images: ImageAsset[]): State[] {
+  private importStates(exportStates: ExportState[], images: ImageAsset[]): State[] {
     // Build a name-to-id map for fallback matching when patterns don't have imageId
     const imageNameToId = new Map<string, string>();
     images.forEach((img) => {
@@ -304,51 +397,38 @@ export class ConfigImporter {
     });
 
     return exportStates.map((exportState) => {
+      if (!isExportState(exportState)) {
+        throw new Error(`Invalid state format: missing required fields`);
+      }
+
       this.updateImageUsage(exportState, images);
+
+      // Convert ExportState's complex StateImage[] to simple { image, threshold }[]
+      const stateImages = exportState.stateImages?.map((img) => {
+        // For the simplified format, we use the first pattern's imageId and similarity
+        const firstPattern = img.patterns?.[0];
+        let imageId = firstPattern?.imageId || "";
+
+        // If pattern has imageId, use it; otherwise try to match by name
+        if (!imageId && firstPattern?.name) {
+          imageId = imageNameToId.get(firstPattern.name) || "";
+        }
+        if (!imageId && img.name) {
+          imageId = imageNameToId.get(img.name) || "";
+        }
+
+        return {
+          image: imageId,
+          threshold: firstPattern?.similarity || 0.8,
+        };
+      }) || [];
 
       return {
         id: exportState.id,
         name: exportState.name,
         description: exportState.description || "",
         initial: exportState.isInitial || false,
-        stateImages:
-          exportState.stateImages?.map((img: unknown) => ({
-            id: img.id,
-            name: img.name,
-            patterns:
-              img.patterns?.map((pattern: unknown) => {
-                // If pattern has imageId, use it; otherwise try to match by name
-                let resolvedImageId = pattern.imageId;
-                if (!resolvedImageId && pattern.name) {
-                  // Fallback: try to match pattern name to image name
-                  resolvedImageId = imageNameToId.get(pattern.name);
-                }
-                if (!resolvedImageId && img.name) {
-                  // Fallback: try to match stateImage name to image name
-                  resolvedImageId = imageNameToId.get(img.name);
-                }
-
-                return {
-                  id: pattern.id,
-                  name: pattern.name,
-                  imageId: resolvedImageId, // Resolved or matched by name
-                  mask: pattern.mask,
-                  searchRegions: pattern.searchRegions || [],
-                  fixed: pattern.fixed || false,
-                  similarity: pattern.similarity,
-                  targetPosition: pattern.targetPosition,
-                  offsetX: pattern.offsetX,
-                  offsetY: pattern.offsetY,
-                };
-              }) || [],
-            shared: img.shared || false,
-            source: img.source,
-            probability: img.probability,
-            searchRegions: img.searchRegions || [],
-          })) || [],
-        regions: exportState.regions || [],
-        locations: exportState.locations || [],
-        strings: exportState.strings || [],
+        stateImages,
         position: exportState.position,
       };
     });
@@ -357,17 +437,20 @@ export class ConfigImporter {
   /**
    * Import transitions from configuration
    */
-  private importTransitions(exportTransitions: unknown[]): Transition[] {
+  private importTransitions(exportTransitions: ExportTransition[]): Transition[] {
     return exportTransitions.map((exportTransition) => {
-      const type: "OutgoingTransition" | "IncomingTransition" =
-        exportTransition.type;
+      if (!isExportTransition(exportTransition)) {
+        throw new Error(`Invalid transition format: missing required fields`);
+      }
+
+      const type = exportTransition.type;
 
       // Keep workflows as string[] array to match export format
       const workflows: string[] = Array.isArray(exportTransition.workflows)
         ? exportTransition.workflows
         : [];
 
-      const transition: Transition = {
+      const baseTransition: Transition = {
         id: exportTransition.id,
         type: type,
         workflows: workflows,
@@ -375,25 +458,40 @@ export class ConfigImporter {
         retryCount: exportTransition.retryCount || 0,
       };
 
-      if (type === "OutgoingTransition") {
-        transition.fromState = exportTransition.fromState;
-        transition.toState = exportTransition.toState;
-        transition.staysVisible = exportTransition.staysVisible;
-        transition.activateStates = Array.isArray(
-          exportTransition.activateStates
-        )
-          ? exportTransition.activateStates
-          : [];
-        transition.deactivateStates = Array.isArray(
-          exportTransition.deactivateStates
-        )
-          ? exportTransition.deactivateStates
-          : [];
-      } else if (type === "IncomingTransition") {
-        transition.toState = exportTransition.toState;
+      if (type === "OutgoingTransition" && "fromState" in exportTransition) {
+        // Type assertion to OutgoingTransition for proper type checking
+        const outgoing = exportTransition as ExportTransition & {
+          fromState: string;
+          toState: string;
+          staysVisible: boolean;
+          activateStates?: string[];
+          deactivateStates?: string[];
+        };
+
+        return {
+          ...baseTransition,
+          fromState: outgoing.fromState,
+          toState: outgoing.toState,
+          staysVisible: outgoing.staysVisible,
+          activateStates: Array.isArray(outgoing.activateStates)
+            ? outgoing.activateStates
+            : [],
+          deactivateStates: Array.isArray(outgoing.deactivateStates)
+            ? outgoing.deactivateStates
+            : [],
+        };
+      } else if (type === "IncomingTransition" && "toState" in exportTransition) {
+        const incoming = exportTransition as ExportTransition & {
+          toState: string;
+        };
+
+        return {
+          ...baseTransition,
+          toState: incoming.toState,
+        };
       }
 
-      return transition;
+      return baseTransition;
     });
   }
 
@@ -422,22 +520,27 @@ export class ConfigImporter {
         });
       }
 
-      // Check state references
+      // Check state references - use type narrowing
       if (transition.type === "OutgoingTransition") {
-        if (transition.fromState && !stateIds.has(transition.fromState)) {
+        const fromState = (transition as Transition & { fromState?: string }).fromState;
+        const toState = (transition as Transition & { toState?: string }).toState;
+
+        if (fromState && !stateIds.has(fromState)) {
           errors.push(
-            `Transition ${transition.id} references unknown fromState: ${transition.fromState}`
+            `Transition ${transition.id} references unknown fromState: ${fromState}`
           );
         }
-        if (transition.toState && !stateIds.has(transition.toState)) {
+        if (toState && !stateIds.has(toState)) {
           errors.push(
-            `Transition ${transition.id} references unknown toState: ${transition.toState}`
+            `Transition ${transition.id} references unknown toState: ${toState}`
           );
         }
       } else if (transition.type === "IncomingTransition") {
-        if (transition.toState && !stateIds.has(transition.toState)) {
+        const toState = (transition as Transition & { toState?: string }).toState;
+
+        if (toState && !stateIds.has(toState)) {
           errors.push(
-            `Transition ${transition.id} references unknown toState: ${transition.toState}`
+            `Transition ${transition.id} references unknown toState: ${toState}`
           );
         }
       }
@@ -462,25 +565,13 @@ export class ConfigImporter {
     return Math.round(data.length * 0.75);
   }
 
-  /**
-   * Resolve image ID to base64 data URL
-   */
-  private resolveImageId(imageId: string, images: ImageAsset[]): string {
-    const imageAsset = images.find((img) => img.id === imageId);
-
-    if (!imageAsset) {
-      throw new Error(`Pattern references unknown image ID: ${imageId}`);
-    }
-
-    return imageAsset.url;
-  }
 
   /**
    * Update image usage tracking for patterns in a state
    */
-  private updateImageUsage(exportState: unknown, images: ImageAsset[]): void {
-    exportState.stateImages?.forEach((stateImage: unknown) => {
-      stateImage.patterns?.forEach((pattern: unknown) => {
+  private updateImageUsage(exportState: ExportState, images: ImageAsset[]): void {
+    exportState.stateImages?.forEach((stateImage) => {
+      stateImage.patterns?.forEach((pattern) => {
         const image = images.find((img) => img.id === pattern.imageId);
 
         if (image) {
@@ -523,18 +614,30 @@ export class ConfigImporter {
   validateBeforeImport(config: unknown): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
 
+    if (!config || typeof config !== "object") {
+      errors.push("Configuration must be an object");
+      return { valid: false, errors };
+    }
+
+    const cfg = config as Record<string, unknown>;
+
     // Check required fields
-    if (!config.version) errors.push("Version is required");
-    if (!config.metadata?.name) errors.push("Configuration name is required");
-    if (!Array.isArray(config.images)) errors.push("Images must be an array");
-    if (!Array.isArray(config.workflows))
+    if (!cfg.version) errors.push("Version is required");
+    if (!cfg.metadata || typeof cfg.metadata !== "object") {
+      errors.push("Metadata is required");
+    } else {
+      const metadata = cfg.metadata as Record<string, unknown>;
+      if (!metadata.name) errors.push("Configuration name is required");
+    }
+    if (!Array.isArray(cfg.images)) errors.push("Images must be an array");
+    if (!Array.isArray(cfg.workflows))
       errors.push("Workflows must be an array");
-    if (!Array.isArray(config.states)) errors.push("States must be an array");
-    if (!Array.isArray(config.transitions))
+    if (!Array.isArray(cfg.states)) errors.push("States must be an array");
+    if (!Array.isArray(cfg.transitions))
       errors.push("Transitions must be an array");
 
     // Check for at least one state
-    if (config.states?.length === 0) {
+    if (Array.isArray(cfg.states) && cfg.states.length === 0) {
       errors.push("At least one state is required");
     }
 
@@ -577,16 +680,20 @@ export class ConfigImporter {
       idMap.set(workflow.id, newId);
 
       // Update image references in actions
-      const updatedActions = workflow.actions.map((action) => ({
-        ...action,
-        config: {
-          ...action.config,
-          imageId: (action.config as unknown).imageId
-            ? idMap.get((action.config as unknown).imageId) ||
-              (action.config as unknown).imageId
-            : undefined,
-        },
-      }));
+      const updatedActions = workflow.actions.map((action) => {
+        const config = action.config as Record<string, unknown>;
+        const imageId = config.imageId;
+
+        return {
+          ...action,
+          config: {
+            ...config,
+            imageId: typeof imageId === "string"
+              ? idMap.get(imageId) || imageId
+              : undefined,
+          } as Action["config"],
+        };
+      });
 
       mergedWorkflows.push({
         ...workflow,
@@ -601,16 +708,17 @@ export class ConfigImporter {
       const newId = `imported_${Date.now()}_${state.id}`;
       idMap.set(state.id, newId);
 
-      // Update image references
-      const updatedImages = state.stateImages.map((img) => ({
-        ...img,
-        image: idMap.get(img.image) || img.image,
+      // Update image references in stateImages
+      // Note: stateImages is { image: string, threshold: number }[]
+      const updatedStateImages = state.stateImages.map((stateImg) => ({
+        ...stateImg,
+        image: idMap.get(stateImg.image) || stateImg.image,
       }));
 
       mergedStates.push({
         ...state,
         id: newId,
-        stateImages: updatedImages,
+        stateImages: updatedStateImages,
       });
     });
 
@@ -624,41 +732,56 @@ export class ConfigImporter {
         (wid) => idMap.get(wid) || wid
       );
 
-      const updatedTransition: Transition = {
-        ...transition,
-        id: newId,
-        workflows: updatedWorkflows,
-      };
-
-      // Update state references
+      // Update state references with proper type handling
       if (transition.type === "OutgoingTransition") {
-        if (transition.fromState) {
-          updatedTransition.fromState =
-            idMap.get(transition.fromState) || transition.fromState;
-        }
-        if (transition.toState) {
-          updatedTransition.toState =
-            idMap.get(transition.toState) || transition.toState;
-        }
-        if (transition.activateStates) {
-          updatedTransition.activateStates = transition.activateStates.map(
-            (sid: unknown) => idMap.get(sid) || sid
-          );
-        }
-        if (transition.deactivateStates) {
-          updatedTransition.deactivateStates = transition.deactivateStates.map(
-            (sid: unknown) => idMap.get(sid) || sid
-          );
-        }
-      } else if (
-        transition.type === "IncomingTransition" &&
-        transition.toState
-      ) {
-        updatedTransition.toState =
-          idMap.get(transition.toState) || transition.toState;
-      }
+        const outgoing = transition as Transition & {
+          fromState?: string;
+          toState?: string;
+          staysVisible?: boolean;
+          activateStates?: string[];
+          deactivateStates?: string[];
+        };
 
-      mergedTransitions.push(updatedTransition);
+        const updatedTransition: Transition & typeof outgoing = {
+          ...transition,
+          id: newId,
+          workflows: updatedWorkflows,
+          fromState: outgoing.fromState
+            ? idMap.get(outgoing.fromState) || outgoing.fromState
+            : undefined,
+          toState: outgoing.toState
+            ? idMap.get(outgoing.toState) || outgoing.toState
+            : undefined,
+          activateStates: outgoing.activateStates?.map(
+            (sid) => idMap.get(sid) || sid
+          ),
+          deactivateStates: outgoing.deactivateStates?.map(
+            (sid) => idMap.get(sid) || sid
+          ),
+        };
+
+        mergedTransitions.push(updatedTransition);
+      } else if (transition.type === "IncomingTransition") {
+        const incoming = transition as Transition & { toState?: string };
+
+        const updatedTransition: Transition & typeof incoming = {
+          ...transition,
+          id: newId,
+          workflows: updatedWorkflows,
+          toState: incoming.toState
+            ? idMap.get(incoming.toState) || incoming.toState
+            : undefined,
+        };
+
+        mergedTransitions.push(updatedTransition);
+      } else {
+        // Base transition without state references
+        mergedTransitions.push({
+          ...transition,
+          id: newId,
+          workflows: updatedWorkflows,
+        });
+      }
     });
 
     return {

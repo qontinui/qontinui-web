@@ -742,7 +742,7 @@ function ParameterEditor({
             <Label>Default Value</Label>
             <Input
               placeholder="Default value..."
-              value={parameter.defaultValue || ""}
+              value={String(parameter.defaultValue || "")}
               onChange={(e) => onUpdate({ defaultValue: e.target.value })}
             />
           </div>

@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     admin_ws,
+    ai_prompts,
     analytics,
     annotations,
     audit_logs,
@@ -24,6 +25,7 @@ from app.api.v1.endpoints import (
     health,
     images,
     integration_testing,
+    issues,
     notifications,
     organizations,
     pattern_optimization,
@@ -32,6 +34,8 @@ from app.api.v1.endpoints import (
     project_screenshots,
     projects,
     public,
+    rag_builder,
+    rag_dashboard,
     recordings,
     runner_command_ws,
     runner_devices,
@@ -124,6 +128,7 @@ api_router.include_router(
     code_packages.router, prefix="/code-packages", tags=["code-packages"]
 )
 api_router.include_router(custom_functions.router, tags=["custom-functions"])
+api_router.include_router(ai_prompts.router, tags=["ai-prompts"])
 api_router.include_router(capture.router, prefix="/capture", tags=["capture-sessions"])
 api_router.include_router(testing.router, prefix="/testing", tags=["testing"])
 api_router.include_router(
@@ -141,3 +146,8 @@ api_router.include_router(
     runner_command_ws.router, prefix="/automation", tags=["runner-command-websockets"]
 )
 api_router.include_router(runner_status_ws.router, tags=["runner-status-websockets"])
+api_router.include_router(rag_builder.router, prefix="/rag", tags=["rag-builder"])
+api_router.include_router(
+    rag_dashboard.router, prefix="/projects", tags=["rag-dashboard"]
+)
+api_router.include_router(issues.router, prefix="/issues", tags=["issues"])

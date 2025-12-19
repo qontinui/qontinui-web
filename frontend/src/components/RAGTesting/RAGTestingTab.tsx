@@ -41,6 +41,7 @@ import {
   X,
   ChevronRight,
   Image as ImageIcon,
+  Maximize2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -59,9 +60,13 @@ import type {
 } from "@/types/rag-testing";
 import type { RAGElement } from "@/types/rag-builder";
 
-// Qontinui API base URL
+// Qontinui API base URL (for RAG matching)
 const QONTINUI_API_URL =
   process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+
+// Runner API base URL (for local SAM3 segmentation)
+const RUNNER_API_URL =
+  process.env.NEXT_PUBLIC_RUNNER_API_URL || "http://localhost:9876";
 
 // Score color based on confidence
 function getScoreColor(score: number): string {
@@ -106,11 +111,13 @@ export function RAGTestingTab() {
   const [showLabels, setShowLabels] = useState(true);
   const [highlightMatches, setHighlightMatches] = useState(true);
 
-  // Canvas state
+  // Canvas state (zoom/pan like Extract Images page)
   const [zoom, setZoom] = useState(1);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
+    null
+  );
 
   // UI state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -248,22 +255,32 @@ export function RAGTestingTab() {
     }
   }, [segments]);
 
-  // Draw canvas
+  // Draw canvas with zoom/pan transforms (like Extract Images page)
   useEffect(() => {
-    if (!canvasRef.current || !currentScreenshot?.url) return;
+    if (!canvasRef.current || !containerRef.current || !currentScreenshot?.url)
+      return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    const container = containerRef.current;
     const img = new Image();
     img.onload = () => {
-      // Set canvas size
-      canvas.width = img.width;
-      canvas.height = img.height;
+      // Set canvas size to container size (fixed display area)
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
 
-      // Clear and draw image
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Clear canvas with background
+      ctx.fillStyle = "#1A1A1B";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Apply zoom/pan transforms
+      ctx.save();
+      ctx.translate(pan.x, pan.y);
+      ctx.scale(zoom, zoom);
+
+      // Draw image
       ctx.drawImage(img, 0, 0);
 
       // Draw segments with pixel masks
@@ -369,23 +386,26 @@ export function RAGTestingTab() {
           }
         }
 
-        // Draw label
+        // Draw label (scale font with zoom)
         if (showLabels && (isSelected || isHovered) && segment.bestMatch) {
           const label = segment.bestMatch.element_name;
           const scoreText = formatScore(segment.bestMatch.score);
 
-          ctx.font = "12px Inter, sans-serif";
+          ctx.font = `${12 / zoom}px Inter, sans-serif`;
           const textWidth = ctx.measureText(`${label} (${scoreText})`).width;
 
           // Background
           ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-          ctx.fillRect(bbox.x, bbox.y - 22, textWidth + 12, 20);
+          ctx.fillRect(bbox.x, bbox.y - 22 / zoom, textWidth + 12 / zoom, 20 / zoom);
 
           // Text
           ctx.fillStyle = color;
-          ctx.fillText(`${label} (${scoreText})`, bbox.x + 6, bbox.y - 8);
+          ctx.fillText(`${label} (${scoreText})`, bbox.x + 6 / zoom, bbox.y - 8 / zoom);
         }
       });
+
+      // Restore context after drawing
+      ctx.restore();
     };
     img.src = currentScreenshot.url;
   }, [
@@ -398,90 +418,169 @@ export function RAGTestingTab() {
     highlightMatches,
     maskImages,
     zoom,
-    panOffset,
+    pan,
   ]);
 
-  // Handle canvas click
+  // Redraw on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      // Force redraw by updating a dependency - the drawing useEffect will handle it
+      if (canvasRef.current && containerRef.current && currentScreenshot?.url) {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          // Trigger redraw by touching zoom state
+          setZoom((z) => z);
+        }
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [currentScreenshot?.url]);
+
+  // Get mouse position in image coordinates (accounting for zoom/pan)
+  const getImageCoords = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!canvasRef.current) return null;
+
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+
+      // Transform from screen coordinates to image coordinates
+      const x = (e.clientX - rect.left - pan.x) / zoom;
+      const y = (e.clientY - rect.top - pan.y) / zoom;
+
+      return { x, y };
+    },
+    [pan, zoom]
+  );
+
+  // Handle canvas click (left-click for selection)
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (!canvasRef.current || segments.length === 0) return;
 
-      const rect = canvasRef.current.getBoundingClientRect();
-      const scaleX = canvasRef.current.width / rect.width;
-      const scaleY = canvasRef.current.height / rect.height;
-      const x = (e.clientX - rect.left) * scaleX;
-      const y = (e.clientY - rect.top) * scaleY;
+      const coords = getImageCoords(e);
+      if (!coords) return;
 
       // Find clicked segment
       const clickedSegment = segments.find(
         (seg) =>
-          x >= seg.bbox.x &&
-          x <= seg.bbox.x + seg.bbox.width &&
-          y >= seg.bbox.y &&
-          y <= seg.bbox.y + seg.bbox.height
+          coords.x >= seg.bbox.x &&
+          coords.x <= seg.bbox.x + seg.bbox.width &&
+          coords.y >= seg.bbox.y &&
+          coords.y <= seg.bbox.y + seg.bbox.height
       );
 
       setSelectedSegmentId(clickedSegment?.id ?? null);
     },
-    [segments]
+    [segments, getImageCoords]
   );
 
-  // Handle canvas hover
+  // Handle canvas hover and panning
   const handleCanvasMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!canvasRef.current || segments.length === 0) return;
+      if (!canvasRef.current) return;
 
-      if (isDragging) {
-        setPanOffset({
-          x: panOffset.x + (e.clientX - dragStart.x) / zoom,
-          y: panOffset.y + (e.clientY - dragStart.y) / zoom,
+      // Handle panning
+      if (isPanning && dragStart) {
+        setPan({
+          x: e.clientX - dragStart.x,
+          y: e.clientY - dragStart.y,
         });
-        setDragStart({ x: e.clientX, y: e.clientY });
         return;
       }
 
-      const rect = canvasRef.current.getBoundingClientRect();
-      const scaleX = canvasRef.current.width / rect.width;
-      const scaleY = canvasRef.current.height / rect.height;
-      const x = (e.clientX - rect.left) * scaleX;
-      const y = (e.clientY - rect.top) * scaleY;
+      // Handle hover
+      if (segments.length === 0) return;
+
+      const coords = getImageCoords(e);
+      if (!coords) return;
 
       // Find hovered segment
       const hoveredSeg = segments.find(
         (seg) =>
-          x >= seg.bbox.x &&
-          x <= seg.bbox.x + seg.bbox.width &&
-          y >= seg.bbox.y &&
-          y <= seg.bbox.y + seg.bbox.height
+          coords.x >= seg.bbox.x &&
+          coords.x <= seg.bbox.x + seg.bbox.width &&
+          coords.y >= seg.bbox.y &&
+          coords.y <= seg.bbox.y + seg.bbox.height
       );
 
       setHoveredSegmentId(hoveredSeg?.id ?? null);
     },
-    [segments, isDragging, panOffset, dragStart, zoom]
+    [segments, isPanning, dragStart, getImageCoords]
   );
 
-  // Handle mouse down for panning
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.shiftKey) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX, y: e.clientY });
-    }
-  }, []);
+  // Handle mouse down (right-click for panning)
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Right-click for panning
+      if (e.button === 2) {
+        e.preventDefault();
+        setIsPanning(true);
+        setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      }
+    },
+    [pan]
+  );
 
   // Handle mouse up
   const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
+    setIsPanning(false);
+    setDragStart(null);
   }, []);
 
-  // Run analysis
+  // Handle mouse wheel zoom
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLCanvasElement>) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.min(Math.max(0.1, zoom * delta), 5);
+      setZoom(newZoom);
+    },
+    [zoom]
+  );
+
+  // Reset view to default
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  // Convert image URL to base64 data URL
+  const urlToBase64 = useCallback(async (url: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Failed to get canvas context"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        const dataUrl = canvas.toDataURL("image/png");
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.src = url;
+    });
+  }, []);
+
+  // Run analysis using runner for SAM3 segmentation
   const runAnalysis = async () => {
-    if (!projectId) {
-      toast.error("Please select a project first");
+    if (!currentScreenshot?.url) {
+      toast.error("Please select a screenshot first");
       return;
     }
 
-    if (!currentScreenshot?.url) {
-      toast.error("Please select a screenshot first");
+    // In segmentation-only mode, we don't need a project ID
+    if (!isSegmentationOnly && !projectId) {
+      toast.error("Please select a project first");
       return;
     }
 
@@ -492,82 +591,161 @@ export function RAGTestingTab() {
     setMaskImages(new Map());
 
     try {
-      const request: RAGFindRequest = {
-        screenshot_base64: currentScreenshot.url,
-        element_ids:
-          searchMode === "specific" && selectedElementIds.length > 0
-            ? selectedElementIds
-            : undefined,
-        similarity_threshold: similarityThreshold,
-        matching_strategy: matchingStrategy,
-        use_ocr: useOCR,
-        return_segments: true,
-        max_results: 50,
-      };
+      // Convert URL to base64 data URL for the API
+      const screenshotBase64 = await urlToBase64(currentScreenshot.url);
 
-      const fetchResponse = await fetch(
-        `${QONTINUI_API_URL}/api/rag/projects/${projectId}/find`,
-        {
+      // Step 1: Call runner for SAM3 segmentation
+      let runnerSegments: Array<{
+        id: string;
+        bbox: number[];
+        area: number;
+        image_base64?: string;
+      }> = [];
+
+      try {
+        const segmentResponse = await fetch(`${RUNNER_API_URL}/rag/segment`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(request),
+          body: JSON.stringify({
+            screenshot_base64: screenshotBase64,
+            min_area: 100,
+          }),
+        });
+
+        if (!segmentResponse.ok) {
+          const errorData = await segmentResponse.json().catch(() => ({}));
+          throw new Error(
+            errorData.error ||
+              `Segmentation failed: ${segmentResponse.statusText}`
+          );
+        }
+
+        const segmentResult = await segmentResponse.json();
+        if (segmentResult.data?.success) {
+          runnerSegments = segmentResult.data.segments || [];
+          console.log(
+            `SAM3 segmentation: ${runnerSegments.length} segments found`
+          );
+        } else if (segmentResult.data?.error) {
+          throw new Error(segmentResult.data.error);
+        }
+      } catch (err) {
+        // If runner is not available, show error and stop
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to connect to runner for segmentation";
+        toast.error(
+          `Runner segmentation failed: ${message}. Make sure the desktop runner is running.`
+        );
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // Convert runner segments to the expected format
+      const processedSegments: SegmentWithMatches[] = runnerSegments.map(
+        (seg, idx) => {
+          const [x, y, width, height] = seg.bbox;
+          return {
+            id: seg.id || `segment_${idx}`,
+            bbox: { x: x ?? 0, y: y ?? 0, width: width ?? 0, height: height ?? 0 },
+            mask_density: 1.0, // Runner segments are already filtered
+            mask_data: seg.image_base64
+              ? `data:image/png;base64,${seg.image_base64}`
+              : null,
+            text_description: null, // Runner doesn't provide text description
+            matches: [],
+            bestMatch: null,
+          };
         }
       );
 
-      if (!fetchResponse.ok) {
-        const errorData = await fetchResponse.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `Analysis failed: ${fetchResponse.statusText}`
-        );
+      // Step 2: If we have RAG elements, do matching via qontinui-api
+      let matches: RAGFindMatch[] = [];
+      let matchProcessingTime = 0;
+
+      if (!isSegmentationOnly && projectId) {
+        try {
+          const request: RAGFindRequest = {
+            screenshot_base64: screenshotBase64,
+            element_ids:
+              searchMode === "specific" && selectedElementIds.length > 0
+                ? selectedElementIds
+                : undefined,
+            similarity_threshold: similarityThreshold,
+            matching_strategy: matchingStrategy,
+            use_ocr: useOCR,
+            return_segments: false, // We already have segments from runner
+            max_results: 50,
+          };
+
+          const fetchResponse = await fetch(
+            `${QONTINUI_API_URL}/api/rag/projects/${projectId}/find`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(request),
+            }
+          );
+
+          if (fetchResponse.ok) {
+            const response: RAGFindResponse = await fetchResponse.json();
+            if (response.success) {
+              matches = response.matches;
+              matchProcessingTime = response.processing_time_ms;
+            }
+          }
+        } catch (matchErr) {
+          console.warn("RAG matching failed:", matchErr);
+          // Continue without matching - segmentation still works
+        }
       }
 
-      const response: RAGFindResponse = await fetchResponse.json();
+      // Associate matches with segments
+      const segmentsWithMatches: SegmentWithMatches[] = processedSegments.map(
+        (seg) => {
+          // Find matches for this segment (by bbox overlap)
+          const segMatches = matches.filter((match) => {
+            const mb = match.bounding_box;
+            const sb = seg.bbox;
+            // Check if bounding boxes overlap significantly
+            const overlapX = Math.max(
+              0,
+              Math.min(mb.x + mb.width, sb.x + sb.width) - Math.max(mb.x, sb.x)
+            );
+            const overlapY = Math.max(
+              0,
+              Math.min(mb.y + mb.height, sb.y + sb.height) - Math.max(mb.y, sb.y)
+            );
+            const overlapArea = overlapX * overlapY;
+            const segArea = sb.width * sb.height;
+            return overlapArea > segArea * 0.5; // 50% overlap threshold
+          });
 
-      if (!response.success) {
-        throw new Error(response.error || "Analysis failed");
-      }
+          // Sort by score and get best match
+          segMatches.sort((a, b) => b.score - a.score);
 
-      // Process segments and associate matches
-      const segmentsWithMatches: SegmentWithMatches[] = (
-        response.segments || []
-      ).map((seg) => {
-        // Find matches for this segment (by bbox overlap)
-        const segMatches = response.matches.filter((match) => {
-          const mb = match.bounding_box;
-          const sb = seg.bbox;
-          // Check if bounding boxes overlap significantly
-          const overlapX = Math.max(
-            0,
-            Math.min(mb.x + mb.width, sb.x + sb.width) - Math.max(mb.x, sb.x)
-          );
-          const overlapY = Math.max(
-            0,
-            Math.min(mb.y + mb.height, sb.y + sb.height) - Math.max(mb.y, sb.y)
-          );
-          const overlapArea = overlapX * overlapY;
-          const segArea = sb.width * sb.height;
-          return overlapArea > segArea * 0.5; // 50% overlap threshold
-        });
-
-        // Sort by score and get best match
-        segMatches.sort((a, b) => b.score - a.score);
-
-        return {
-          ...seg,
-          matches: segMatches,
-          bestMatch: segMatches[0] || null,
-        };
-      });
+          return {
+            ...seg,
+            matches: segMatches,
+            bestMatch: segMatches[0] || null,
+          };
+        }
+      );
 
       setSegments(segmentsWithMatches);
-      setAllMatches(response.matches);
-      setProcessingTime(response.processing_time_ms);
+      setAllMatches(matches);
+      setProcessingTime(matchProcessingTime);
 
-      const matchCount = response.matches.length;
-      const segmentCount = response.segment_count;
-      toast.success(
-        `Found ${matchCount} matches in ${segmentCount} segments (${response.processing_time_ms.toFixed(0)}ms)`
-      );
+      const matchCount = matches.length;
+      const segmentCount = segmentsWithMatches.length;
+      if (isSegmentationOnly) {
+        toast.success(`Found ${segmentCount} segments`);
+      } else {
+        toast.success(
+          `Found ${matchCount} matches in ${segmentCount} segments`
+        );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Analysis failed";
       toast.error(message);
@@ -885,56 +1063,58 @@ export function RAGTestingTab() {
       </div>
 
       {/* Center Panel - Canvas */}
-      <div
-        ref={containerRef}
-        className="flex-1 flex flex-col overflow-hidden bg-[#1A1A1B]"
-      >
+      <div className="flex-1 flex flex-col overflow-hidden bg-[#1A1A1B]">
         {/* Toolbar */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-[#27272A]/50">
+        <div className="bg-white border-b p-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setZoom((z) => Math.min(z * 1.25, 5))}
-              className="h-8 w-8 p-0"
+            <div className="text-sm text-gray-600 px-2">
+              <span className="font-medium">Left Click:</span> Select Segment •{" "}
+              <span className="font-medium">Right Click:</span> Pan
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setZoom(Math.min(zoom * 1.2, 5))}
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+              title="Zoom in"
             >
               <ZoomIn className="w-4 h-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setZoom((z) => Math.max(z / 1.25, 0.25))}
-              className="h-8 w-8 p-0"
+            </button>
+            <span className="text-sm text-gray-600 font-mono min-w-[60px] text-center">
+              {(zoom * 100).toFixed(0)}%
+            </span>
+            <button
+              onClick={() => setZoom(Math.max(zoom * 0.8, 0.1))}
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+              title="Zoom out"
             >
               <ZoomOut className="w-4 h-4" />
-            </Button>
-            <span className="text-xs text-gray-400 ml-2">
-              {Math.round(zoom * 100)}%
-            </span>
+            </button>
+            <button
+              onClick={resetView}
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+              title="Reset view"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
           </div>
-          <div className="text-xs text-gray-400">Shift+Click+Drag to pan</div>
         </div>
 
-        {/* Canvas Area */}
-        <div className="flex-1 overflow-auto p-4">
+        {/* Canvas Container - Fixed size display area */}
+        <div ref={containerRef} className="flex-1 overflow-hidden">
           {currentScreenshot?.url ? (
-            <div
-              style={{
-                transform: `scale(${zoom}) translate(${panOffset.x}px, ${panOffset.y}px)`,
-                transformOrigin: "top left",
-              }}
-            >
-              <canvas
-                ref={canvasRef}
-                onClick={handleCanvasClick}
-                onMouseMove={handleCanvasMove}
-                onMouseDown={handleMouseDown}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-                className="cursor-crosshair"
-                style={{ maxWidth: "none" }}
-              />
-            </div>
+            <canvas
+              ref={canvasRef}
+              onClick={handleCanvasClick}
+              onMouseMove={handleCanvasMove}
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onWheel={handleWheel}
+              onContextMenu={(e) => e.preventDefault()}
+              className="w-full h-full cursor-crosshair"
+            />
           ) : (
             <div className="h-full flex items-center justify-center text-gray-500">
               <div className="text-center">

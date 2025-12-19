@@ -185,7 +185,7 @@ export class IntegrationTestEngine {
       const failureSnapshot: ActionSnapshot = {
         id: generateId(),
         timestamp: new Date(),
-        actionType: actionType as unknown,
+        actionType: actionType as ActionSnapshot["actionType"],
         actionConfig: config,
         matches: [],
         stateName: activeStates[0] || "UNKNOWN",
@@ -379,7 +379,11 @@ export class SnapshotRecorder {
 
   async recordAction(
     actionType: ActionSnapshot["actionType"],
-    matches: unknown[],
+    matches: Array<{
+      region: { x: number; y: number; width: number; height: number };
+      score: number;
+      stateImageId?: string;
+    }>,
     nextScreenshot?: Screenshot
   ): Promise<ActionSnapshot> {
     if (!this.currentScreenshot) throw new Error("No current screenshot");

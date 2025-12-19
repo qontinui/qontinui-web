@@ -21,7 +21,6 @@ import {
 import { useTestStream } from "@/hooks/useTestStream";
 import { TestStepTimeline } from "./TestStepTimeline";
 import { CoverageHeatmap } from "./CoverageHeatmap";
-import { DeficiencyList } from "./DeficiencyList";
 
 interface LiveTestDashboardProps {
   testRunId?: string;
@@ -354,7 +353,35 @@ export function LiveTestDashboard({
           <CoverageHeatmap coverage={coverage} />
 
           {/* Deficiency List */}
-          <DeficiencyList deficiencies={deficiencies} maxHeight="500px" />
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Issues Detected</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                {deficiencies.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No issues detected
+                  </p>
+                ) : (
+                  deficiencies.map((deficiency, index) => (
+                    <div
+                      key={index}
+                      className="flex items-start gap-2 p-2 rounded-lg border border-border"
+                    >
+                      <AlertCircle className="w-4 h-4 text-destructive mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{deficiency.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {deficiency.description}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

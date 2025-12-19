@@ -86,7 +86,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               <Label className="text-xs">Target</Label>
               <Input
                 ref={inputRef}
-                value={action.config.target || ""}
+                value={(action.config as Record<string, string | number>).target || ""}
                 onChange={(e) => updateConfig("target", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
@@ -97,7 +97,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               <Label className="text-xs">Number of Clicks</Label>
               <Input
                 type="number"
-                value={action.config.numberOfClicks || 1}
+                value={(action.config as Record<string, string | number>).numberOfClicks || 1}
                 onChange={(e) =>
                   updateConfig("numberOfClicks", Number(e.target.value))
                 }
@@ -116,7 +116,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               <Label className="text-xs">Text to Type</Label>
               <Input
                 ref={inputRef}
-                value={action.config.text || ""}
+                value={(action.config as Record<string, string | number>).text || ""}
                 onChange={(e) => updateConfig("text", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
@@ -127,7 +127,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               <Label className="text-xs">Delay (ms)</Label>
               <Input
                 type="number"
-                value={action.config.delay || 0}
+                value={(action.config as Record<string, string | number>).delay || 0}
                 onChange={(e) => updateConfig("delay", Number(e.target.value))}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
@@ -144,7 +144,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
             <Input
               ref={inputRef}
               type="number"
-              value={action.config.duration || 1000}
+              value={(action.config as Record<string, string | number>).duration || 1000}
               onChange={(e) => updateConfig("duration", Number(e.target.value))}
               onKeyDown={handleKeyDown}
               className="h-8 text-sm"
@@ -159,7 +159,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
             <Label className="text-xs">Condition</Label>
             <Input
               ref={inputRef}
-              value={action.config.condition || ""}
+              value={(action.config as Record<string, string | number>).condition || ""}
               onChange={(e) => updateConfig("condition", e.target.value)}
               onKeyDown={handleKeyDown}
               className="h-8 text-sm"
@@ -175,7 +175,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               <Label className="text-xs">Variable Name</Label>
               <Input
                 ref={inputRef}
-                value={action.config.variableName || ""}
+                value={(action.config as Record<string, string | number>).variableName || ""}
                 onChange={(e) => updateConfig("variableName", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm font-mono"
@@ -185,7 +185,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
             <div className="space-y-1.5">
               <Label className="text-xs">Value</Label>
               <Input
-                value={action.config.value || ""}
+                value={(action.config as Record<string, string | number>).value || ""}
                 onChange={(e) => updateConfig("value", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
@@ -202,18 +202,18 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               <Label className="text-xs">Loop Type</Label>
               <Input
                 ref={inputRef}
-                value={action.config.loopType || "count"}
+                value={(action.config as Record<string, string | number>).loopType || "count"}
                 onChange={(e) => updateConfig("loopType", e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
               />
             </div>
-            {action.config.loopType === "count" && (
+            {(action.config as Record<string, string | number>).loopType === "count" && (
               <div className="space-y-1.5">
                 <Label className="text-xs">Count</Label>
                 <Input
                   type="number"
-                  value={action.config.count || 1}
+                  value={(action.config as Record<string, string | number>).count || 1}
                   onChange={(e) =>
                     updateConfig("count", Number(e.target.value))
                   }

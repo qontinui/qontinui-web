@@ -309,12 +309,21 @@ export function getDefaultConfig<T extends ActionType>(
         failOnError: true,
       } as unknown as ActionConfigMap[T];
 
-    case "TRIGGER_AI_ANALYSIS":
+    // ========================================================================
+    // AI Actions
+    // ========================================================================
+    case "AI_PROMPT":
       return {
         provider: "claude",
         prompt: "",
+        freshContext: true,
         timeout: 600000,
-        failOnIssues: false,
+        failOnError: true,
+      } as unknown as ActionConfigMap[T];
+
+    case "RUN_PROMPT_SEQUENCE":
+      return {
+        sequenceId: "",
       } as unknown as ActionConfigMap[T];
 
     default:
@@ -330,19 +339,23 @@ export function isValidConfig<T extends ActionType>(
   config: unknown
 ): config is ActionConfigMap[T] {
   // Basic validation - could be expanded
+  const configObj = config as Record<string, unknown> | null | undefined;
+
   switch (type) {
     case "FIND":
     case "EXISTS":
-    case "VANISH":
-      return config?.target?.type === "image";
+    case "VANISH": {
+      const target = configObj?.target as Record<string, unknown> | undefined;
+      return target?.type === "image";
+    }
 
     case "TYPE":
-      return typeof config?.text === "string";
+      return typeof configObj?.text === "string";
 
     case "KEY_PRESS":
     case "KEY_DOWN":
     case "KEY_UP":
-      return typeof config?.key === "string";
+      return typeof configObj?.key === "string";
 
     default:
       return true; // Assume valid for other types

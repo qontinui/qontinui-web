@@ -202,9 +202,12 @@ export function RecordingUploadPage() {
       setState((prev) => ({
         ...prev,
         uploading: false,
-        error: error.message || "Failed to upload recording",
+        error:
+          error instanceof Error ? error.message : "Failed to upload recording",
       }));
-      toast.error(error.message || "Failed to upload recording");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to upload recording"
+      );
     }
   };
 

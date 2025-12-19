@@ -7,6 +7,7 @@ import { TimingProperties } from "../TimingProperties";
 import { SimilarityThresholdOverride } from "../SimilarityThresholdOverride";
 import { SearchStrategyOverride } from "../SearchStrategyOverride";
 import { DurationOverride } from "../DurationOverride";
+import type { FindActionConfig } from "@/lib/action-schema/configs/find-actions";
 
 /**
  * Properties component for FIND action.
@@ -21,12 +22,13 @@ export function FindActionProperties({
   states,
   shouldOpenImageSelector,
 }: ActionPropertiesComponentProps) {
-  const targetType = action.config.target?.type;
+  const config = action.config as unknown as FindActionConfig;
+  const targetType = config.target?.type;
 
   // Handle stateImage target type (Find State) - convert to image target type with ImageSelector
   // This provides a consistent UI with state filtering capabilities
   if (targetType === "stateImage") {
-    const currentImageIds = action.config.target?.imageIds || [];
+    const currentImageIds = (config.target as any)?.imageIds || [];
 
     const handleImagesSelect = (selectedImageIds: string[]) => {
       // Convert to standard image target type for consistency
@@ -66,8 +68,8 @@ export function FindActionProperties({
 
   // Default: Handle image target type
   const imageIds =
-    action.config.target?.type === "image"
-      ? action.config.target.imageIds
+    config.target?.type === "image"
+      ? (config.target as any).imageIds
       : null;
 
   const hasImageIds = imageIds && Array.isArray(imageIds);
@@ -85,17 +87,17 @@ export function FindActionProperties({
         <Label className="text-xs text-gray-400">
           Images (multi-select enabled)
         </Label>
-        {action.config.removedImage && (
+        {(action.config as any).removedImage && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
             <span className="font-medium">Removed Image:</span>{" "}
-            {action.config.removedImage}
+            {(action.config as any).removedImage as string}
             <p className="text-xs text-red-400 mt-1">
               This image was deleted. Please select new images.
             </p>
           </div>
         )}
         <ImageSelector
-          selectedImages={hasImageIds ? imageIds : []}
+          selectedImages={hasImageIds ? (imageIds as string[]) : []}
           onSelectImages={handleImagesSelect}
           multiSelect={true}
           images={images}

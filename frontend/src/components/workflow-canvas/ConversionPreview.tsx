@@ -235,11 +235,15 @@ export function ConversionPreview({
                   <div className="warning-content">
                     <div className="warning-code">{warning.code}</div>
                     <div className="warning-message">{warning.message}</div>
-                    {warning.details && (
+                    {warning.details ? (
                       <div className="warning-details">
-                        {JSON.stringify(warning.details, null, 2)}
+                        <pre>
+                          {typeof warning.details === "object" && warning.details !== null
+                            ? JSON.stringify(warning.details, null, 2)
+                            : String(warning.details)}
+                        </pre>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               ))}

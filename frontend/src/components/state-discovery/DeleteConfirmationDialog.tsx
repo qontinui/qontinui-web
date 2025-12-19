@@ -164,7 +164,9 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
                   </Label>
                   <RadioGroup
                     value={orphanStrategy}
-                    onValueChange={(value: unknown) => setOrphanStrategy(value)}
+                    onValueChange={(value) =>
+                      setOrphanStrategy(value as "keep" | "delete" | "merge")
+                    }
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="keep" id="keep" />

@@ -434,7 +434,9 @@ function WorkflowCanvasInner({
             label = outputIndex === 0 ? "loop" : "exit";
             break;
           case "SWITCH": {
-            const switchConfig = sourceAction.config as unknown;
+            const switchConfig = sourceAction.config as {
+              cases?: Array<{ value?: unknown }>;
+            };
             if (
               switchConfig?.cases &&
               Array.isArray(switchConfig.cases) &&

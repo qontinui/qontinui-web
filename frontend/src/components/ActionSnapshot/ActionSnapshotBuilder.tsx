@@ -24,6 +24,7 @@ interface ActionSnapshotBuilderProps {
   onCancel: () => void;
 }
 
+interface Match {  region: { x: number; y: number; width: number; height: number };  score: number;  stateImageId?: string;}
 export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
   currentScreenshot,
   screenshots,
@@ -42,7 +43,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
   const [resultSuccess, setResultSuccess] = useState(true);
   const [duration, setDuration] = useState(100);
   const [text, setText] = useState<string>("");
-  const [matches, setMatches] = useState<unknown[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
   const [showScreenshotSelector, setShowScreenshotSelector] = useState(false);
 
   // Action configuration
@@ -71,17 +72,17 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
     setMatches([...matches, newMatch]);
   };
 
-  const handleUpdateMatch = (index: number, field: string, value: unknown) => {
+  const handleUpdateMatch = (index: number, field: string, value: number | string) => {
     const updated = [...matches];
     if (field.includes(".")) {
       const parts = field.split(".");
       const parent = parts[0];
       const child = parts[1];
       if (parent && child) {
-        updated[index][parent][child] = value;
+        (updated[index] as any)[parent][child] = value;
       }
     } else {
-      updated[index][field] = value;
+      (updated[index] as any)[field] = value;
     }
     setMatches(updated);
   };

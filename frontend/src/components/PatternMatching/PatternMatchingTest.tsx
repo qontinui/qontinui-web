@@ -22,6 +22,7 @@ import { useAutomation } from "../../contexts/automation-context";
 import { usePatternMatchingState } from "../../contexts/tab-state";
 import { qontinuiAPI } from "../../lib/qontinui-api-client";
 import { ScreenshotPicker } from "../common/ScreenshotPicker";
+import { ScreenshotRegion } from "../../types/Screenshot";
 
 interface PatternMatchingTestProps {
   screenshots: Screenshot[];
@@ -538,20 +539,23 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                 bounds: searchRegion,
                 id: "search-region",
                 name: "Search Region",
-              } as unknown)
+                screenshotId: selectedScreenshot.id,
+                stateId: "",
+                type: "SearchRegion" as const,
+              } as ScreenshotRegion)
             : undefined
         );
 
         console.log("[PatternMatching] findAll result:", result);
 
         if (result.found && result.matches) {
-          const matchResults: MatchResult[] = result.matches.map(
-            (m: unknown, idx: number) => ({
-              region: m.region,
+          const matchResults: MatchResult[] = result.matches
+            .filter((m) => m.region !== undefined)
+            .map((m, idx) => ({
+              region: m.region!,
               score: m.score,
               index: idx + 1,
-            })
-          );
+            }));
           console.log("[PatternMatching] Found matches:", matchResults.length);
           setMatches(matchResults);
         } else {
@@ -568,7 +572,10 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                 bounds: searchRegion,
                 id: "search-region",
                 name: "Search Region",
-              } as unknown)
+                screenshotId: selectedScreenshot.id,
+                stateId: "",
+                type: "SearchRegion" as const,
+              } as ScreenshotRegion)
             : undefined
         );
 

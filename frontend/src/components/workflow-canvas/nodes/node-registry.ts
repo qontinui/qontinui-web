@@ -82,7 +82,10 @@ export const NODE_TYPES: Record<ActionType, NodeComponent> = {
   // Shell Actions
   SHELL: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for shell
   SHELL_SCRIPT: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for shell script
-  TRIGGER_AI_ANALYSIS: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for AI analysis
+
+  // AI Actions
+  AI_PROMPT: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for AI prompt
+  RUN_PROMPT_SEQUENCE: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for prompt sequence
 };
 
 /**
@@ -111,7 +114,7 @@ export function registerNodeType(
   if (NODE_TYPES[actionType]) {
     console.warn(`Overwriting existing node component for: ${actionType}`);
   }
-  (NODE_TYPES as unknown)[actionType] = component;
+  (NODE_TYPES as Record<string, NodeComponent>)[actionType] = component;
 }
 
 /**

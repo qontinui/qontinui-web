@@ -2,15 +2,13 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { DeficiencyList } from "@/components/testing/DeficiencyList";
 import { ArrowLeft } from "lucide-react";
 import { RequireProject } from "@/components/require-project";
-import { useDeficiencies } from "@/hooks/useTesting";
-import type { DeficiencyAlert } from "@/hooks/useTestStream";
 
 export default function DeficienciesPage() {
   const { user, loading: authLoading } = useAuth();
@@ -19,33 +17,13 @@ export default function DeficienciesPage() {
   const projectId = searchParams.get("project");
   const testRunId = searchParams.get("run");
 
-  // Fetch deficiencies with filters
-  const { data: deficienciesResponse, isLoading: deficienciesLoading } =
-    useDeficiencies({
-      project_id: projectId || undefined,
-      test_run_id: testRunId || undefined,
-    });
-
-  // Convert Deficiency[] to DeficiencyAlert[] format
-  const deficiencyAlerts: DeficiencyAlert[] = useMemo(() => {
-    if (!deficienciesResponse?.items) return [];
-    return deficienciesResponse.items.map((d) => ({
-      id: d.id,
-      severity: d.severity,
-      title: d.title,
-      description: d.description,
-      stateName: d.state_name,
-      timestamp: d.created_at,
-    }));
-  }, [deficienciesResponse]);
-
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/");
     }
   }, [user, authLoading, router]);
 
-  if (authLoading || deficienciesLoading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -91,7 +69,7 @@ export default function DeficienciesPage() {
             </p>
           </div>
 
-          <DeficiencyList deficiencies={deficiencyAlerts} />
+          <DeficiencyList projectId={projectId || undefined} testRunId={testRunId || undefined} />
         </main>
       </div>
     </RequireProject>

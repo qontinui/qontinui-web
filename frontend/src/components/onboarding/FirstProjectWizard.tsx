@@ -196,7 +196,9 @@ export function FirstProjectWizard({
       router.push(`/automation-builder?project=${newProject.id}`);
     } catch (error: unknown) {
       console.error("Failed to create project:", error);
-      toast.error(error.message || "Failed to create project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create project"
+      );
     }
   };
 

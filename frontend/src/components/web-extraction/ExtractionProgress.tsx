@@ -74,7 +74,7 @@ export function ExtractionProgress({ session }: ExtractionProgressProps) {
     if (session.status === "failed") return 0;
 
     // Estimate progress based on pages extracted
-    const maxPages = session.config.max_pages || 100;
+    const maxPages = (session.config.max_pages as number | undefined) || 100;
     const pagesExtracted = session.stats.pages_extracted || 0;
     return Math.min((pagesExtracted / maxPages) * 100, 95); // Cap at 95% until completed
   };

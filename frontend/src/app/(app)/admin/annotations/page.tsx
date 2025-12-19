@@ -567,6 +567,7 @@ export default function AnnotationsPage() {
         // Add annotations for this screenshot with correct screenshot_index
         screenshot.annotations?.forEach((box) => {
           allAnnotations.push({
+            id: box.id || `${i}-${box.x}-${box.y}`,
             x: Math.round(box.x),
             y: Math.round(box.y),
             width: Math.round(box.width),

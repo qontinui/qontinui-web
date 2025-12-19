@@ -21,6 +21,7 @@ import type {
   OutgoingTransition,
   StateImage,
   StateRegion,
+  SearchRegion,
   StateLocation,
   StateString,
 } from "@/contexts/automation-context/types";
@@ -1590,7 +1591,7 @@ export class StateOrganizationService {
   /**
    * Create StateImage from template
    */
-  private createStateImageFromTemplate(template: unknown): StateImage {
+  private createStateImageFromTemplate(template: { name: string; patterns: number; shared: boolean; searchRegions?: unknown[] }): StateImage {
     return {
       id: this.generateId("image"),
       name: template.name,
@@ -1602,10 +1603,10 @@ export class StateOrganizationService {
       })),
       shared: template.shared,
       searchRegions:
-        template.searchRegions?.map((sr: unknown) => ({
+        (template.searchRegions?.map((sr: unknown) => ({
           id: this.generateId("searchregion"),
-          ...sr,
-        })) || [],
+          ...(sr as object),
+        })) as SearchRegion[]) || [],
     };
   }
 

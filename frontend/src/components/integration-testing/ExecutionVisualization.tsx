@@ -155,8 +155,8 @@ export function ExecutionVisualization({
             <ScrollVisualization
               actionRegion={currentAction.action_region}
               location={currentAction.action_location}
-              direction={(currentAction as unknown).direction}
-              amount={(currentAction as unknown).amount}
+              direction={(currentAction as { direction?: string }).direction}
+              amount={(currentAction as { amount?: number }).amount}
             />
           )}
 
@@ -172,7 +172,7 @@ export function ExecutionVisualization({
             <DefineVisualization
               actionRegion={currentAction.action_region}
               location={currentAction.action_location}
-              stateName={(currentAction as unknown).state_name}
+              stateName={(currentAction as { state_name?: string }).state_name}
             />
           )}
 
@@ -180,7 +180,7 @@ export function ExecutionVisualization({
             <VanishVisualization
               actionRegion={currentAction.action_region}
               location={currentAction.action_location}
-              stateName={(currentAction as unknown).state_name}
+              stateName={(currentAction as { state_name?: string }).state_name}
             />
           )}
         </div>

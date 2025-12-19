@@ -154,7 +154,7 @@ export interface TransitionSlice {
 
   // Actions
   setTransitions: (transitions: Transition[]) => void;
-  addTransition: (transition: Transition) => void;
+  addTransition: (transition: Transition) => boolean;
   updateTransition: (transition: Transition) => void;
   deleteTransition: (transitionId: string) => void;
 

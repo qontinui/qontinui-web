@@ -144,7 +144,9 @@ export function getNodeSummary(action: Action): string {
     // Find Actions
     case "FIND":
       // Check if this is a stateImage target type
-      const findConfig = config as unknown;
+      const findConfig = config as {
+        target?: { type?: string };
+      };
       if (findConfig?.target?.type === "stateImage") {
         return "Find any image from state";
       }
@@ -157,7 +159,7 @@ export function getNodeSummary(action: Action): string {
       return "Check if element exists";
 
     case "WAIT":
-      const waitConfig = config as unknown;
+      const waitConfig = config as { duration?: number };
       return `Wait ${waitConfig.duration || 1000}ms`;
 
     // Mouse Actions

@@ -59,7 +59,8 @@ export class MigrationEngine {
    * Automatically finds the migration path and applies all necessary migrations
    */
   async migrateToLatest(config: unknown): Promise<MigrationResult> {
-    const configVersion = config.version;
+    const configObj = config as Record<string, unknown>;
+    const configVersion = configObj.version as string;
 
     // Validate version format
     if (!isValidVersion(configVersion)) {
@@ -135,7 +136,7 @@ export class MigrationEngine {
     }
 
     // Apply migrations sequentially
-    let currentConfig = structuredClone(config); // Deep clone to avoid mutations
+    let currentConfig = structuredClone(config) as Record<string, unknown>; // Deep clone to avoid mutations
     const context: MigrationContext = {
       fromVersion: configVersion,
       toVersion: this.currentVersion,
@@ -157,7 +158,7 @@ export class MigrationEngine {
 
         // Apply migration
         const beforeVersion = currentConfig.version;
-        currentConfig = migration.migrate(currentConfig, context);
+        currentConfig = migration.migrate(currentConfig, context) as Record<string, unknown>;
 
         // Ensure version was updated
         if (!currentConfig.version || currentConfig.version === beforeVersion) {
@@ -207,7 +208,7 @@ export class MigrationEngine {
     // Build adjacency list (graph of version transitions)
     const graph = new Map<string, Migration[]>();
 
-    for (const migration of this.migrations.values()) {
+    for (const migration of Array.from(this.migrations.values())) {
       if (!graph.has(migration.fromVersion)) {
         graph.set(migration.fromVersion, []);
       }
@@ -252,14 +253,16 @@ export class MigrationEngine {
     originalVersion: string,
     path: Migration[]
   ): void {
+    const configObj = config as Record<string, unknown>;
     // Ensure metadata exists
-    if (!config.metadata) {
-      config.metadata = {};
+    if (!configObj.metadata) {
+      configObj.metadata = {};
     }
 
+    const metadata = configObj.metadata as Record<string, unknown>;
     // Initialize migration history array
-    if (!config.metadata.migrationHistory) {
-      config.metadata.migrationHistory = [];
+    if (!metadata.migrationHistory) {
+      metadata.migrationHistory = [];
     }
 
     // Create history entry
@@ -270,7 +273,7 @@ export class MigrationEngine {
       path: path.map((m) => `${m.fromVersion}→${m.toVersion}`),
     };
 
-    config.metadata.migrationHistory.push(historyEntry);
+    (metadata.migrationHistory as MigrationHistoryEntry[]).push(historyEntry);
   }
 
   /**
@@ -292,7 +295,8 @@ export class MigrationEngine {
    * Uses version + content hash for uniqueness
    */
   private getCacheKey(config: unknown): string {
-    const version = config.version || "unknown";
+    const configObj = config as Record<string, unknown>;
+    const version = configObj.version || "unknown";
     // Simple hash using JSON stringify (fast for small configs)
     // For large configs, could use a proper hash function
     const configStr = JSON.stringify(config);
@@ -356,7 +360,8 @@ export class MigrationEngine {
     }>;
     estimatedChanges: string[];
   }> {
-    const configVersion = config.version;
+    const configObj = config as Record<string, unknown>;
+    const configVersion = configObj.version as string;
 
     // Check if migration is needed
     if (!this.needsMigration(configVersion)) {
@@ -391,7 +396,7 @@ export class MigrationEngine {
 
     // Estimate changes by checking isApplicable for each migration
     const estimatedChanges: string[] = [];
-    const previewConfig = structuredClone(config);
+    const previewConfig = structuredClone(config) as Record<string, unknown>;
 
     for (const migration of path) {
       if (migration.isApplicable && !migration.isApplicable(previewConfig)) {

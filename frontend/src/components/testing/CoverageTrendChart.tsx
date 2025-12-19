@@ -110,13 +110,6 @@ export function CoverageTrendChart({
               }}
               labelStyle={{ color: "#fff", marginBottom: "8px" }}
               itemStyle={{ color: "#fff" }}
-              formatter={(value: unknown, name: string) => {
-                if (name === "coverage")
-                  return [`${value.toFixed(1)}%`, "Coverage"];
-                if (name === "statesCovered") return [value, "States Covered"];
-                if (name === "testRuns") return [value, "Test Runs"];
-                return [value, name];
-              }}
             />
             <Legend
               wrapperStyle={{ paddingTop: "20px" }}

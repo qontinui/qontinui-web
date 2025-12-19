@@ -83,19 +83,19 @@ export function ProjectManager({
       const project = await createProject.mutateAsync({
         name: newProjectName,
         description: newProjectDescription,
-        configuration: currentConfiguration,
+        configuration: currentConfiguration as Record<string, unknown>,
       });
       setSelectedProject({
         ...project,
-        configuration: project.configuration ?? {},
-      });
+        configuration: (project.configuration ?? {}) as Record<string, unknown>,
+      } as Project);
       setSaveDialogOpen(false);
       setNewProjectName("");
       setNewProjectDescription("");
       setIsPublic(false);
       toast.success("Project saved successfully");
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to save project");
+      toast.error(error instanceof Error ? error.message : "Failed to save project");
     }
   };
 
@@ -105,15 +105,15 @@ export function ProjectManager({
     try {
       const updated = await updateProject.mutateAsync({
         id: selectedProject.id,
-        data: { configuration: currentConfiguration },
+        data: { configuration: currentConfiguration as Record<string, unknown> },
       });
       setSelectedProject({
         ...updated,
-        configuration: updated.configuration ?? {},
-      });
+        configuration: updated.configuration as Record<string, unknown>,
+      } as Project);
       toast.success("Project updated successfully");
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to update project");
+      toast.error(error instanceof Error ? error.message : "Failed to update project");
     }
   };
 
@@ -126,7 +126,7 @@ export function ProjectManager({
       setLoadDialogOpen(false);
       toast.success(`Loaded project: ${project.name}`);
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to load project");
+      toast.error(error instanceof Error ? error.message : "Failed to load project");
     }
   };
 
@@ -150,7 +150,7 @@ export function ProjectManager({
       setDeleteDialogOpen(false);
       setProjectToDelete(null);
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to delete project");
+      toast.error(error instanceof Error ? error.message : "Failed to delete project");
     }
   };
 

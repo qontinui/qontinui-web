@@ -216,8 +216,8 @@ export function analyzeImages(
     // Check workflows (actions with image configs)
     workflows.forEach((workflow) => {
       const usedInWorkflow = workflow.actions.some((action) => {
-        const config = action.config as unknown;
-        return config.target?.image === image.id || config.imageId === image.id;
+        const config = action.config as Record<string, unknown>;
+        return (config.target as { image?: string } | undefined)?.image === image.id || (config.imageId as string | undefined) === image.id;
       });
       if (usedInWorkflow) {
         usedIn.push({ type: "workflow", id: workflow.id, name: workflow.name });
@@ -425,8 +425,7 @@ function isTransitionCircular(
 
     const outgoing = allTransitions.filter(
       (t) => t.type === "OutgoingTransition" && t.fromState === fromState
-    ) as unknown[];
-
+    ) as Array<{ fromState?: string; toState?: string }>;
     for (const t of outgoing) {
       if (t.toState === transition.fromState) return true;
       if (t.toState && checkCircular(t.toState)) return true;

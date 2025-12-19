@@ -22,8 +22,14 @@ interface StateGraphVisualizationProps {
   workflowId: string;
 }
 
+interface StateNodeData {
+  label: string;
+  visit_count: number;
+  success_rate: number;
+}
+
 // Custom node component for state nodes
-function StateNode({ data }: unknown) {
+function StateNode({ data }: { data: StateNodeData }) {
   const getSuccessRateColor = (rate: number) => {
     if (rate >= 90) return "border-green-500 bg-green-500/20";
     if (rate >= 70) return "border-yellow-500 bg-yellow-500/20";

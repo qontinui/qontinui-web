@@ -18,6 +18,7 @@ import {
   Connection,
   ReactFlow,
 } from "@xyflow/react";
+import { Action, ActionType } from "@/lib/action-schema/action-types";
 import { NODE_TYPES } from "./node-registry";
 import { BaseNodeData } from "./BaseNode";
 import "@xyflow/react/dist/style.css";
@@ -36,7 +37,7 @@ export function SimpleWorkflowExample() {
         action: {
           id: "1",
           type: "CLICK",
-          config: {} as unknown,
+          config: {} as Action["config"],
           position: [100, 100],
         },
         executionState: "idle",
@@ -68,7 +69,7 @@ export function SimpleWorkflowExample() {
           type: "WAIT",
           config: {
             duration: 1000,
-          } as unknown,
+          } as Action["config"],
           position: [500, 100],
         },
         executionState: "idle",
@@ -121,7 +122,7 @@ export function ConditionalWorkflowExample() {
         action: {
           id: "1",
           type: "FIND",
-          config: {} as unknown,
+          config: {} as Action["config"],
           position: [100, 150],
         },
       },
@@ -141,7 +142,7 @@ export function ConditionalWorkflowExample() {
             },
             thenActions: ["3"],
             elseActions: ["4"],
-          } as unknown,
+          } as Action["config"],
           position: [300, 150],
         },
       },
@@ -156,7 +157,7 @@ export function ConditionalWorkflowExample() {
           type: "SCREENSHOT",
           config: {
             region: "fullscreen" as unknown,
-          } as unknown,
+          } as Action["config"],
           position: [500, 50],
         },
       },
@@ -171,7 +172,7 @@ export function ConditionalWorkflowExample() {
           type: "WAIT",
           config: {
             duration: 2000,
-          } as unknown,
+          } as Action["config"],
           position: [500, 250],
         },
       },
@@ -253,7 +254,7 @@ export function LoopWorkflowExample() {
         action: {
           id: "3",
           type: "CLICK",
-          config: {} as unknown,
+          config: {} as Action["config"],
           position: [500, 100],
         },
       },
@@ -268,7 +269,7 @@ export function LoopWorkflowExample() {
           type: "SCREENSHOT",
           config: {
             region: "fullscreen" as unknown,
-          } as unknown,
+          } as Action["config"],
           position: [500, 200],
         },
       },
@@ -316,7 +317,7 @@ export function InteractiveWorkflowExample() {
         action: {
           id: "1",
           type: "CLICK",
-          config: {} as unknown,
+          config: {} as Action["config"],
           position: [100, 100],
         },
         executionState: "idle",
@@ -331,7 +332,7 @@ export function InteractiveWorkflowExample() {
         action: {
           id: "2",
           type: "WAIT",
-          config: { duration: 1000 } as unknown,
+          config: { duration: 1000 } as Action["config"],
           position: [300, 100],
         },
         executionState: "idle",
@@ -503,23 +504,22 @@ export function AllNodeTypesShowcase() {
     },
   ];
 
-  const allNodes: Node<BaseNodeData>[] = categories.flatMap(
-    (category, catIndex) =>
-      category.nodes.map((nodeInfo, nodeIndex) => ({
-        id: `${catIndex}-${nodeIndex}`,
-        type: nodeInfo.type,
-        position: { x: nodeInfo.x, y: nodeInfo.y },
-        data: {
-          action: {
-            id: `${catIndex}-${nodeIndex}`,
-            type: nodeInfo.type as unknown,
-            config: {} as unknown,
-            position: [nodeInfo.x, nodeInfo.y],
-          },
-          executionState: "idle" as const,
+  const allNodes = categories.flatMap((category, catIndex) =>
+    category.nodes.map((nodeInfo, nodeIndex) => ({
+      id: `${catIndex}-${nodeIndex}`,
+      type: nodeInfo.type,
+      position: { x: nodeInfo.x, y: nodeInfo.y },
+      data: {
+        action: {
+          id: `${catIndex}-${nodeIndex}`,
+          type: nodeInfo.type as ActionType,
+          config: {} as Action["config"],
+          position: [nodeInfo.x, nodeInfo.y],
         },
-      }))
-  );
+        executionState: "idle" as const,
+      },
+    }))
+  ) as Node<BaseNodeData>[];
 
   return (
     <div style={{ width: "100%", height: "800px" }}>

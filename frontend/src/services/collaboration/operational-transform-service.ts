@@ -687,12 +687,12 @@ export class OperationalTransformService {
    * Apply insert operation
    */
   private applyInsert(doc: unknown, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1));
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<string, unknown>;
     const key = op.path[op.path.length - 1];
 
     if (key !== undefined) {
       if (Array.isArray(parent[key])) {
-        parent[key].splice(op.position ?? 0, 0, op.value);
+        (parent[key] as unknown[]).splice(op.position ?? 0, 0, op.value);
       } else {
         parent[key] = op.value;
       }
@@ -703,12 +703,12 @@ export class OperationalTransformService {
    * Apply delete operation
    */
   private applyDelete(doc: unknown, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1));
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<string, unknown>;
     const key = op.path[op.path.length - 1];
 
     if (key !== undefined) {
       if (Array.isArray(parent[key])) {
-        parent[key].splice(op.position ?? 0, 1);
+        (parent[key] as unknown[]).splice(op.position ?? 0, 1);
       } else {
         delete parent[key];
       }
@@ -719,7 +719,7 @@ export class OperationalTransformService {
    * Apply update operation
    */
   private applyUpdate(doc: unknown, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1));
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<string, unknown>;
     const key = op.path[op.path.length - 1];
     if (key !== undefined) {
       parent[key] = op.value;
@@ -730,12 +730,12 @@ export class OperationalTransformService {
    * Apply move operation
    */
   private applyMove(doc: unknown, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1));
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<string, unknown>;
     const key = op.path[op.path.length - 1];
 
     if (key !== undefined && Array.isArray(parent[key])) {
-      const item = parent[key].splice(op.position ?? 0, 1)[0];
-      parent[key].splice(op.newPosition ?? 0, 0, item);
+      const item = (parent[key] as unknown[]).splice(op.position ?? 0, 1)[0];
+      (parent[key] as unknown[]).splice(op.newPosition ?? 0, 0, item);
     }
   }
 
@@ -743,15 +743,16 @@ export class OperationalTransformService {
    * Apply connect operation
    */
   private applyConnect(doc: unknown, op: Operation): void {
-    if (!doc.connections) {
-      doc.connections = [];
+    const docWithConnections = doc as { connections?: Array<{ id: string; source?: string; target?: string }> };
+    if (!docWithConnections.connections) {
+      docWithConnections.connections = [];
     }
 
-    doc.connections.push({
+    docWithConnections.connections.push({
       id: op.operationId,
       source: op.sourceId,
       target: op.targetId,
-      ...op.value,
+      ...(op.value as Record<string, unknown>),
     });
   }
 
@@ -759,10 +760,11 @@ export class OperationalTransformService {
    * Apply disconnect operation
    */
   private applyDisconnect(doc: unknown, op: Operation): void {
-    if (!doc.connections) return;
+    const docWithConnections = doc as { connections?: Array<{ source?: string; target?: string }> };
+    if (!docWithConnections.connections) return;
 
-    doc.connections = doc.connections.filter(
-      (conn: unknown) =>
+    docWithConnections.connections = docWithConnections.connections.filter(
+      (conn) =>
         !(conn.source === op.sourceId && conn.target === op.targetId)
     );
   }
@@ -770,14 +772,14 @@ export class OperationalTransformService {
   /**
    * Navigate to a path in the document
    */
-  private navigateToPath(doc: unknown, path: string[]): unknown {
-    let current = doc;
+  private navigateToPath(doc: unknown, path: string[]): Record<string, unknown> {
+    let current = doc as Record<string, unknown>;
 
     for (const segment of path) {
       if (!current[segment]) {
         current[segment] = {};
       }
-      current = current[segment];
+      current = current[segment] as Record<string, unknown>;
     }
 
     return current;

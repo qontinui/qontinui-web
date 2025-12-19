@@ -149,7 +149,7 @@ function getWorkflowDependencies(workflow: Workflow): string[] {
 
   workflow.actions.forEach((action) => {
     if (action.type === "RUN_WORKFLOW") {
-      const config = action.config as unknown;
+      const config = action.config as { workflowId?: string };
       if (config.workflowId) {
         dependencies.add(config.workflowId);
       }
@@ -933,7 +933,7 @@ function DependencyGraphInner({
           const runWorkflowAction = workflow?.actions.find(
             (a) =>
               a.type === "RUN_WORKFLOW" &&
-              (a.config as unknown).workflowId === depId
+              (a.config as { workflowId?: string }).workflowId === depId
           );
 
           const isHighlighted =
@@ -1192,7 +1192,11 @@ function DependencyGraphInner({
               {/* Filter */}
               <Select
                 value={selectedFilter}
-                onValueChange={(v) => setSelectedFilter(v as unknown)}
+                onValueChange={(v) =>
+                  setSelectedFilter(
+                    v as "all" | "critical" | "unused" | "dependencies" | "dependents"
+                  )
+                }
               >
                 <SelectTrigger className="w-40">
                   <Filter className="h-4 w-4 mr-2" />

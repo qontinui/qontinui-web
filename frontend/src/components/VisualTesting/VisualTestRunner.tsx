@@ -359,13 +359,16 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
                         >
                           {result.message}
                         </p>
-                        {result.details && (
+                        {result.details !== undefined && (
                           <details className="mt-1">
                             <summary className="text-xs text-gray-500 cursor-pointer">
                               View Details
                             </summary>
                             <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto">
-                              {JSON.stringify(result.details, null, 2)}
+                              {(() => {
+                                const details = result.details;
+                                return typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+                              })()}
                             </pre>
                           </details>
                         )}

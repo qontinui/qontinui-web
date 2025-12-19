@@ -78,8 +78,8 @@ export function TransitionFilters({
 
       <Select
         value={filters.actionType}
-        onValueChange={(value: unknown) =>
-          onFiltersChange({ ...filters, actionType: value })
+        onValueChange={(value) =>
+          onFiltersChange({ ...filters, actionType: value as "all" | "with_workflow" | "without_workflow" })
         }
       >
         <SelectTrigger className="bg-transparent border-gray-700">

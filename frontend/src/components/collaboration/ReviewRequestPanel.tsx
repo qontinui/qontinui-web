@@ -182,7 +182,11 @@ export function ReviewRequestPanel({
       createForm.reset();
       setSelectedReviewers([]);
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to create review request");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to create review request"
+      );
     } finally {
       setLoading(false);
     }
@@ -195,7 +199,9 @@ export function ReviewRequestPanel({
       toast.success("Review submitted");
       reviewForm.reset();
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to submit review");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to submit review"
+      );
     } finally {
       setLoading(false);
     }
@@ -210,7 +216,9 @@ export function ReviewRequestPanel({
       await onCancelReview();
       toast.success("Review request cancelled");
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to cancel review");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to cancel review"
+      );
     } finally {
       setLoading(false);
     }

@@ -73,7 +73,7 @@ export function StorageBreakdown({ data }: StorageBreakdownProps) {
                     borderRadius: "8px",
                     color: "#fff",
                   }}
-                  formatter={(value: number) => formatBytes(value)}
+                  formatter={(value) => formatBytes(Number(value))}
                 />
               </PieChart>
             </ResponsiveContainer>

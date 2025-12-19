@@ -175,6 +175,6 @@ export function isValidationError(
     typeof response === "object" &&
     response !== null &&
     "detail" in response &&
-    Array.isArray((response as unknown).detail)
+    Array.isArray((response as { detail?: unknown }).detail)
   );
 }

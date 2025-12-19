@@ -94,9 +94,11 @@ const StateDiscoveryTab: React.FC = () => {
     stateImages,
     states,
     analysisResult,
-    uploadId,
+    uploadId: uploadIdRaw,
     error,
   } = useStateDiscovery();
+
+  const uploadId = uploadIdRaw as string;
 
   // Automation context for Image Library
   const { images, addImage } = useAutomation();
@@ -302,8 +304,9 @@ const StateDiscoveryTab: React.FC = () => {
     try {
       await startAnalysis(
         config,
-        (progress) => {
-          setAnalysisProgress(progress.percentage);
+        (progress: unknown) => {
+          const typedProgress = progress as { percentage: number };
+          setAnalysisProgress(typedProgress.percentage);
         },
         () => {
           // Analysis completed
@@ -545,24 +548,23 @@ const StateDiscoveryTab: React.FC = () => {
             className="w-full mt-4"
             onClick={handleStartAnalysis}
             disabled={screenshots.length < 2 || isAnalyzing}
-            title={!uploadId ? "Upload screenshots first" : "Start analysis"}
+            title={Boolean(!uploadId) ? "Upload screenshots first" : "Start analysis"}
           >
             <Play className="mr-2 h-4 w-4" />
             Run Analysis {selectedRegion ? "(Region)" : ""}
           </Button>
 
-          {/* Upload status indicator */}
           {screenshots.length > 0 && (
-            <div className="mt-2 text-xs text-center">
-              {uploadId ? (
+            uploadId ? (
+              <div className="mt-2 text-xs text-center">
                 <span className="text-green-600">✓ Screenshots uploaded</span>
-              ) : (
+              </div>
+            ) : (
+              <div className="mt-2 text-xs text-center">
                 <span className="text-yellow-600">⚠ Upload pending...</span>
-              )}
-            </div>
+              </div>
+            )
           )}
-
-          {/* Analysis Status */}
           {isAnalyzing && (
             <div className="mt-4">
               <Progress value={analysisProgress} className="mb-2" />
@@ -599,11 +601,16 @@ const StateDiscoveryTab: React.FC = () => {
                 </div>
                 <div>
                   Stability Score:{" "}
-                  {analysisResult.statistics?.pixel_stability_score
-                    ? (
-                        analysisResult.statistics.pixel_stability_score * 100
-                      ).toFixed(1) + "%"
-                    : "N/A"}
+                  {(() => {
+                    const result = analysisResult as {
+                      statistics?: { pixel_stability_score?: number };
+                    };
+                    return result.statistics?.pixel_stability_score
+                      ? (result.statistics.pixel_stability_score * 100).toFixed(
+                          1
+                        ) + "%"
+                      : "N/A";
+                  })()}
                 </div>
               </CardContent>
             </Card>
@@ -746,7 +753,7 @@ const StateDiscoveryTab: React.FC = () => {
             <div className="flex items-center gap-4 mb-4">
               <Tabs
                 value={viewMode}
-                onValueChange={(v) => setViewMode(v as unknown)}
+                onValueChange={(v) => setViewMode(v as "all" | "selected" | "state")}
               >
                 <TabsList>
                   <TabsTrigger value="all">All StateImages</TabsTrigger>

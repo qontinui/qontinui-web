@@ -21,7 +21,11 @@ export const migrationV23ToV24: Migration = {
   description: "Add SHELL and SHELL_SCRIPT action types for command execution",
 
   migrate(config: unknown, context: MigrationContext): unknown {
-    const migrated = structuredClone(config);
+    interface ConfigMigration {
+      version?: string;
+      [key: string]: unknown;
+    }
+    const migrated = structuredClone(config) as ConfigMigration;
 
     // This migration is purely additive - no transformation needed
     // SHELL and SHELL_SCRIPT are new action types that can now be used
@@ -50,8 +54,27 @@ export const migrationV23ToV24: Migration = {
    * - If SHELL or SHELL_SCRIPT actions exist, validate their configs
    */
   validate(migratedConfig: unknown): boolean {
-    if (migratedConfig.workflows && Array.isArray(migratedConfig.workflows)) {
-      for (const workflow of migratedConfig.workflows) {
+    interface ValidateConfig {
+      workflows?: Array<{
+        name?: string;
+        id: string;
+        actions?: Array<{
+          type: string;
+          id: string;
+          config?: {
+            command?: string;
+            script?: string;
+            shell?: string;
+            outputFormat?: string;
+            provider?: string;
+            timeout?: number;
+          };
+        }>;
+      }>;
+    }
+    const cfg = migratedConfig as ValidateConfig;
+    if (cfg.workflows && Array.isArray(cfg.workflows)) {
+      for (const workflow of cfg.workflows) {
         if (workflow.actions && Array.isArray(workflow.actions)) {
           for (const action of workflow.actions) {
             if (action.type === "SHELL") {

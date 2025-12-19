@@ -93,7 +93,12 @@ export function SemanticAnalysisTab() {
         description_model: descriptionModel,
       };
 
-      const requestBody: unknown = {
+      const requestBody: {
+        image: string;
+        strategy: string;
+        options: unknown;
+        text_prompt?: string;
+      } = {
         image: selectedImage,
         strategy,
         options,
@@ -827,7 +832,7 @@ export function SemanticAnalysisTab() {
                       </div>
                       <div className="text-xs text-gray-400">
                         Area:{" "}
-                        {selectedObject.attributes.area ||
+                        {(selectedObject.attributes as { area?: number }).area ||
                           selectedObject.bounding_box.width *
                             selectedObject.bounding_box.height}{" "}
                         px²

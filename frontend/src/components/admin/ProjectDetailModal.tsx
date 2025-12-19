@@ -165,7 +165,7 @@ export default function ProjectDetailModal({
               <TabsContent value="states" className="space-y-4">
                 {project.states && project.states.length > 0 ? (
                   <div className="space-y-4">
-                    {project.states.map((state: unknown, index: number) => (
+                    {project.states.map((state, index: number) => (
                       <Card key={state.id || index}>
                         <CardHeader>
                           <div className="flex items-center justify-between">
@@ -193,7 +193,7 @@ export default function ProjectDetailModal({
                               </p>
                               <div className="grid gap-2">
                                 {state.transitions.map(
-                                  (transition: unknown, tIndex: number) => (
+                                  (transition: any, tIndex: number) => (
                                     <div
                                       key={transition.id || tIndex}
                                       className="flex items-center gap-2 p-2 rounded-md bg-muted/50 text-sm"
@@ -239,14 +239,14 @@ export default function ProjectDetailModal({
                 {project.image_library && project.image_library.length > 0 ? (
                   <div className="grid grid-cols-2 gap-4">
                     {project.image_library.map(
-                      (item: unknown, index: number) => (
+                      (item, index: number) => (
                         <Card key={index}>
                           <CardHeader>
                             <div className="flex items-center gap-2">
                               <ImageIcon className="h-4 w-4" />
                               <CardTitle className="text-sm">
                                 {item.source === "image_library"
-                                  ? item.image.name || `Image ${index + 1}`
+                                  ? item.image?.name || `Image ${index + 1}`
                                   : item.state_name ||
                                     `State Image ${index + 1}`}
                               </CardTitle>
@@ -286,7 +286,7 @@ export default function ProjectDetailModal({
                                         <span className="font-medium">
                                           Type:
                                         </span>{" "}
-                                        {item.image.source.replace(/_/g, " ")}
+                                        {(item.image.source as string).replace(/_/g, " ")}
                                       </p>
                                     )}
                                   </>
@@ -306,8 +306,8 @@ export default function ProjectDetailModal({
                                         <span className="font-medium">
                                           Coordinates:
                                         </span>{" "}
-                                        ({item.image.coordinates.x},{" "}
-                                        {item.image.coordinates.y})
+                                        ({(item.image.coordinates as { x: number; y: number }).x},{" "}
+                                        {(item.image.coordinates as { x: number; y: number }).y})
                                       </p>
                                     )}
                                     {item.image.pixelHash && (
@@ -315,7 +315,7 @@ export default function ProjectDetailModal({
                                         <span className="font-medium">
                                           Hash:
                                         </span>{" "}
-                                        {item.image.pixelHash}
+                                        {item.image.pixelHash as string}
                                       </p>
                                     )}
                                     {item.image.stabilityScore !==
@@ -326,13 +326,13 @@ export default function ProjectDetailModal({
                                         </span>
                                         <Badge
                                           variant={
-                                            item.image.stabilityScore > 0.8
+                                            (item.image.stabilityScore as number) > 0.8
                                               ? "default"
                                               : "secondary"
                                           }
                                         >
                                           {(
-                                            item.image.stabilityScore * 100
+                                            (item.image.stabilityScore as number) * 100
                                           ).toFixed(1)}
                                           %
                                         </Badge>

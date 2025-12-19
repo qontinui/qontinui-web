@@ -48,7 +48,7 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
 
   // Progressive image loading based on zoom level
   const effectiveZoom = scale * manualZoom;
-  const screenshotVariants = (screenshot as unknown).variants as
+  const screenshotVariants = (screenshot as { variants?: unknown }).variants as
     | {
         thumb?: string;
         medium?: string;

@@ -61,7 +61,7 @@ interface StatePropertiesPanelProps {
   incomingTransitions: IncomingTransition[];
   workflows: Workflow[];
   updateState: (updates: Partial<State>) => void;
-  addTransition: (transition: Transition) => void;
+  addTransition: (transition: Transition) => Promise<boolean>;
   updateTransition: (transition: Transition) => void;
   deleteTransition: (transitionId: string) => void;
   addWorkflow: (workflow: Workflow) => void;
@@ -111,9 +111,6 @@ export function StatePropertiesPanel({
   removeString,
   updateRegion,
   updateLocation,
-  addRegion,
-  addLocation,
-  deleteTransition,
 }: StatePropertiesPanelProps) {
   const { resolvePatternImage } = useImages();
 
@@ -219,7 +216,10 @@ export function StatePropertiesPanel({
         updateTransition({ ...transition, workflows: newWorkflows });
       } else {
         // Create new transition with the helper workflow reference
-        addTransition({ ...transition, workflows: newWorkflows });
+        const wasAdded = await addTransition({ ...transition, workflows: newWorkflows });
+        if (!wasAdded) {
+          console.warn("Duplicate transition detected, skipping");
+        }
       }
     } catch (error) {
       console.error("Failed to create helper workflow:", error);
@@ -820,7 +820,7 @@ export function StatePropertiesPanel({
                                                           } = pattern;
                                                           updatedPatterns[
                                                             pIdx
-                                                          ] = rest as unknown;
+                                                          ] = rest as Pattern;
                                                         }
                                                         updateStateImage(
                                                           index,
@@ -1144,12 +1144,13 @@ export function StatePropertiesPanel({
                                     Pattern Search Mode
                                   </Label>
                                   <Select
-                                    value={stateImage.searchMode || "separate"}
-                                    onValueChange={(
-                                      value: "separate" | "combined"
-                                    ) =>
+                                    value={stateImage.searchMode || "default"}
+                                    onValueChange={(value) =>
                                       updateStateImage(index, {
-                                        searchMode: value,
+                                        searchMode: value as
+                                          | "default"
+                                          | "rag"
+                                          | "template",
                                       })
                                     }
                                   >
@@ -1157,18 +1158,23 @@ export function StatePropertiesPanel({
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent className="bg-[#27272A] border-gray-700">
-                                      <SelectItem value="separate">
-                                        Search patterns separately
+                                      <SelectItem value="default">
+                                        Default search mode
                                       </SelectItem>
-                                      <SelectItem value="combined">
-                                        Search using combined vector
+                                      <SelectItem value="rag">
+                                        RAG search mode
+                                      </SelectItem>
+                                      <SelectItem value="template">
+                                        Template search mode
                                       </SelectItem>
                                     </SelectContent>
                                   </Select>
                                   <p className="text-xs text-gray-500 italic">
-                                    {stateImage.searchMode === "combined"
-                                      ? "RAG will search using a single combined embedding of all patterns"
-                                      : "RAG will search for each pattern individually (default)"}
+                                    {(stateImage.searchMode as string) === "rag"
+                                      ? "RAG search mode enabled"
+                                      : (stateImage.searchMode as string) === "template"
+                                        ? "Template search mode enabled"
+                                        : "Using default search mode"}
                                   </p>
                                 </div>
                               )}
@@ -1326,7 +1332,7 @@ export function StatePropertiesPanel({
                                                     ...rest
                                                   } = pattern;
                                                   updatedPatterns[pIdx] =
-                                                    rest as unknown;
+                                                    rest as Pattern;
                                                 }
                                                 updateStateImage(index, {
                                                   patterns: updatedPatterns,

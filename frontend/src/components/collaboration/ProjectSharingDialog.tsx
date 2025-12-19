@@ -124,7 +124,9 @@ export function ProjectSharingDialog({
       toast.success(`Shared with ${emailInput}`);
       setEmailInput("");
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to share project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to share project"
+      );
     } finally {
       setLoading(false);
     }
@@ -143,7 +145,9 @@ export function ProjectSharingDialog({
       toast.success(`Shared with ${org?.name}`);
       setSelectedOrg("");
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to share project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to share project"
+      );
     } finally {
       setLoading(false);
     }
@@ -158,7 +162,9 @@ export function ProjectSharingDialog({
       await onChangePermission(collaboratorId, permission);
       toast.success("Permission updated");
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to update permission");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to update permission"
+      );
     } finally {
       setActionLoading(null);
     }
@@ -174,7 +180,9 @@ export function ProjectSharingDialog({
       await onRevoke(collaboratorId);
       toast.success("Access revoked");
     } catch (error: unknown) {
-      toast.error(error.message || "Failed to revoke access");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to revoke access"
+      );
     } finally {
       setActionLoading(null);
     }
@@ -191,7 +199,9 @@ export function ProjectSharingDialog({
         toast.success("Link copied to clipboard");
         setTimeout(() => setLinkCopied(false), 2000);
       } catch (error: unknown) {
-        toast.error(error.message || "Failed to generate link");
+        toast.error(
+          error instanceof Error ? error.message : "Failed to generate link"
+        );
       } finally {
         setLoading(false);
       }

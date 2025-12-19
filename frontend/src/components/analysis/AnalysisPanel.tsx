@@ -318,9 +318,9 @@ export function AnalysisPanel({
                                   {typeof defaultValue === "boolean" ? (
                                     <Switch
                                       checked={
-                                        analyzerConfigs[analyzer.name]?.[
+                                        (analyzerConfigs[analyzer.name]?.[
                                           param
-                                        ] ?? defaultValue
+                                        ] ?? defaultValue) as boolean | undefined
                                       }
                                       onCheckedChange={(checked) =>
                                         updateAnalyzerConfig(
@@ -335,9 +335,9 @@ export function AnalysisPanel({
                                       <Input
                                         type="number"
                                         value={
-                                          analyzerConfigs[analyzer.name]?.[
+                                          (analyzerConfigs[analyzer.name]?.[
                                             param
-                                          ] ?? defaultValue
+                                          ] ?? defaultValue) as string | number | readonly string[] | undefined
                                         }
                                         onChange={(e) =>
                                           updateAnalyzerConfig(
@@ -356,9 +356,9 @@ export function AnalysisPanel({
                                     <Input
                                       type="text"
                                       value={
-                                        analyzerConfigs[analyzer.name]?.[
+                                        String(analyzerConfigs[analyzer.name]?.[
                                           param
-                                        ] ?? defaultValue
+                                        ] ?? defaultValue)
                                       }
                                       onChange={(e) =>
                                         updateAnalyzerConfig(

@@ -121,7 +121,7 @@ class DevDebugLogger {
     for (const { method, level } of levels) {
       const original =
         this.originalConsole[method as keyof typeof this.originalConsole];
-      (console as unknown)[method] = (...args: unknown[]) => {
+      (console as unknown as Record<string, (...args: unknown[]) => void>)[method] = (...args: unknown[]) => {
         // Call original
         original(...args);
 
@@ -376,5 +376,5 @@ export const devDebugLogger = new DevDebugLogger();
 
 // Expose to window for debugging
 if (typeof window !== "undefined") {
-  (window as unknown).devDebugLogger = devDebugLogger;
+  (window as unknown as Window & { devDebugLogger: DevDebugLogger }).devDebugLogger = devDebugLogger;
 }

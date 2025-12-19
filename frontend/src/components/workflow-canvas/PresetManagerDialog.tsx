@@ -513,7 +513,8 @@ export function PresetManagerDialog({
     input.type = "file";
     input.accept = ".json";
     input.onchange = (e: unknown) => {
-      const file = e.target?.files?.[0];
+      const event = e as { target: { files?: FileList } };
+      const file = event.target?.files?.[0];
       if (!file) return;
 
       const reader = new FileReader();

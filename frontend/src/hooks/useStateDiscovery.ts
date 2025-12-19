@@ -18,7 +18,7 @@ const API_PATH = "/api";
 export function useStateDiscovery() {
   const [stateImages, setStateImages] = useState<StateImage[]>([]);
   const [states, setStates] = useState<DiscoveredState[]>([]);
-  const [analysisResult, setAnalysisResult] = useState<unknown>(null);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [uploadId, setUploadId] = useState<string>("");
   const [analysisId, setAnalysisId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);

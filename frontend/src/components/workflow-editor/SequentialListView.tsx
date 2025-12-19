@@ -14,7 +14,7 @@
  * - Visual connection lines for nesting
  */
 
-import React, { useState } from "react";
+import { useState } from "react";
 import type { Workflow, Action } from "@/lib/action-schema/action-types";
 
 // ============================================================================
@@ -121,7 +121,7 @@ export function SequentialListView({
 
       <div className="actions-list">
         {actionTree.map((node, index) => (
-          <React.Fragment key={node.action.id}>
+          <div key={node.action.id}>
             <ActionItem
               node={node}
               globalIndex={index}
@@ -144,7 +144,7 @@ export function SequentialListView({
                 visible={dropIndex === index}
               />
             )}
-          </React.Fragment>
+          </div>
         ))}
       </div>
 
@@ -357,24 +357,27 @@ function buildActionTree(
       collapsed: !expandedActions.has(action.id),
     };
 
+    const config = action.config as Record<string, unknown>;
+
     // Check for nested actions
     if (action.type === "IF") {
-      const ifConfig = action.config as unknown;
       const children: ActionTreeNode[] = [];
 
       // Then branch
-      if (ifConfig.thenActions && Array.isArray(ifConfig.thenActions)) {
+      const thenActions = config.thenActions as Action[] | undefined;
+      if (thenActions && Array.isArray(thenActions)) {
         children.push(
-          ...ifConfig.thenActions.map((a: Action) =>
+          ...thenActions.map((a: Action) =>
             processAction(a, level + 1)
           )
         );
       }
 
       // Else branch
-      if (ifConfig.elseActions && Array.isArray(ifConfig.elseActions)) {
+      const elseActions = config.elseActions as Action[] | undefined;
+      if (elseActions && Array.isArray(elseActions)) {
         children.push(
-          ...ifConfig.elseActions.map((a: Action) =>
+          ...elseActions.map((a: Action) =>
             processAction(a, level + 1)
           )
         );
@@ -384,27 +387,28 @@ function buildActionTree(
         node.children = children;
       }
     } else if (action.type === "LOOP") {
-      const loopConfig = action.config as unknown;
-      if (loopConfig.loopActions && Array.isArray(loopConfig.loopActions)) {
-        node.children = loopConfig.loopActions.map((a: Action) =>
+      const loopActions = config.loopActions as Action[] | undefined;
+      if (loopActions && Array.isArray(loopActions)) {
+        node.children = loopActions.map((a: Action) =>
           processAction(a, level + 1)
         );
       }
     } else if (action.type === "TRY_CATCH") {
-      const tryConfig = action.config as unknown;
       const children: ActionTreeNode[] = [];
 
-      if (tryConfig.tryActions && Array.isArray(tryConfig.tryActions)) {
+      const tryActions = config.tryActions as Action[] | undefined;
+      if (tryActions && Array.isArray(tryActions)) {
         children.push(
-          ...tryConfig.tryActions.map((a: Action) =>
+          ...tryActions.map((a: Action) =>
             processAction(a, level + 1)
           )
         );
       }
 
-      if (tryConfig.catchActions && Array.isArray(tryConfig.catchActions)) {
+      const catchActions = config.catchActions as Action[] | undefined;
+      if (catchActions && Array.isArray(catchActions)) {
         children.push(
-          ...tryConfig.catchActions.map((a: Action) =>
+          ...catchActions.map((a: Action) =>
             processAction(a, level + 1)
           )
         );
@@ -453,43 +457,53 @@ function getActionSummary(action: Action): string {
   }
 
   // Generate summary based on action type and config
-  const config = action.config as unknown;
+  const config = action.config as Record<string, unknown>;
 
   switch (action.type) {
-    case "CLICK":
-      if (config.target?.image) {
-        return `Click "${config.target.image}"`;
-      } else if (config.target?.selector) {
-        return `Click "${config.target.selector}"`;
+    case "CLICK": {
+      const target = config.target as { image?: string; selector?: string } | undefined;
+      if (target?.image) {
+        return `Click "${target.image}"`;
+      } else if (target?.selector) {
+        return `Click "${target.selector}"`;
       }
       return "Click element";
+    }
 
-    case "TYPE":
-      if (config.text) {
+    case "TYPE": {
+      const text = config.text as string | undefined;
+      if (text) {
         const truncated =
-          config.text.length > 30
-            ? config.text.substring(0, 30) + "..."
-            : config.text;
+          text.length > 30
+            ? text.substring(0, 30) + "..."
+            : text;
         return `Type "${truncated}"`;
       }
       return "Type text";
+    }
 
-    case "WAIT":
-      if (config.duration) {
-        return `Wait ${config.duration}ms`;
+    case "WAIT": {
+      const duration = config.duration as number | undefined;
+      if (duration) {
+        return `Wait ${duration}ms`;
       }
       return "Wait";
+    }
 
-    case "SCREENSHOT":
-      return config.filename
-        ? `Screenshot "${config.filename}"`
+    case "SCREENSHOT": {
+      const filename = config.filename as string | undefined;
+      return filename
+        ? `Screenshot "${filename}"`
         : "Take screenshot";
+    }
 
     case "IF":
       return "If condition";
 
-    case "LOOP":
-      return config.iterations ? `Loop ${config.iterations} times` : "Loop";
+    case "LOOP": {
+      const iterations = config.iterations as number | undefined;
+      return iterations ? `Loop ${iterations} times` : "Loop";
+    }
 
     case "TRY_CATCH":
       return "Try-Catch block";
@@ -503,11 +517,15 @@ function getActionSummary(action: Action): string {
     case "RAG_FIND":
       return "RAG Find element";
 
-    case "GET_VARIABLE":
-      return config.variable ? `Get "${config.variable}"` : "Get variable";
+    case "GET_VARIABLE": {
+      const getVar = config.variable as string | undefined;
+      return getVar ? `Get "${getVar}"` : "Get variable";
+    }
 
-    case "SET_VARIABLE":
-      return config.variable ? `Set "${config.variable}"` : "Set variable";
+    case "SET_VARIABLE": {
+      const setVar = config.variable as string | undefined;
+      return setVar ? `Set "${setVar}"` : "Set variable";
+    }
 
     case "FILTER":
       return "Filter data";

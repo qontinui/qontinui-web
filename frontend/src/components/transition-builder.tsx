@@ -78,7 +78,7 @@ export function TransitionBuilder() {
   // Common fields
   const [selectedProcess, setSelectedProcess] = useState<string>("");
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (transitionType === "OutgoingTransition") {
       if (!fromState) {
         toast.error("Please select the origin state");
@@ -104,9 +104,13 @@ export function TransitionBuilder() {
         retryCount: 3,
       };
 
-      addTransition(
+      const wasAdded = await addTransition(
         transition as import("@/contexts/automation-context/types").Transition
       );
+      if (!wasAdded) {
+        toast.error("A transition with the same origin and target states already exists");
+        return;
+      }
       toast.success("OutgoingTransition created");
     } else {
       if (!incomingTransitionState) {
@@ -123,9 +127,13 @@ export function TransitionBuilder() {
         retryCount: 3,
       };
 
-      addTransition(
+      const wasAdded = await addTransition(
         transition as import("@/contexts/automation-context/types").Transition
       );
+      if (!wasAdded) {
+        toast.error("An incoming transition for this state already exists");
+        return;
+      }
       toast.success("IncomingTransition created");
     }
 
@@ -196,7 +204,7 @@ export function TransitionBuilder() {
 
         <Tabs
           value={transitionType}
-          onValueChange={(v) => setTransitionType(v as unknown)}
+          onValueChange={(v) => setTransitionType(v as "IncomingTransition" | "OutgoingTransition")}
         >
           <TabsList className="grid w-[400px] mx-auto grid-cols-2 bg-gray-800">
             <TabsTrigger

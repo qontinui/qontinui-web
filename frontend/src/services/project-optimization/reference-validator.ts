@@ -63,7 +63,7 @@ export function findBrokenWorkflowReferences(
   workflow.actions.forEach((action) => {
     // Check RUN_WORKFLOW actions
     if (action.type === "RUN_WORKFLOW") {
-      const config = action.config as unknown;
+      const config = action.config as { workflowId?: string };
       if (config.workflowId && !workflowIds.has(config.workflowId)) {
         broken.push({
           type: "workflow",
@@ -77,7 +77,7 @@ export function findBrokenWorkflowReferences(
 
     // Check GO_TO_STATE actions
     if (action.type === "GO_TO_STATE") {
-      const config = action.config as unknown;
+      const config = action.config as { stateId?: string };
       if (config.stateId && !stateIds.has(config.stateId)) {
         broken.push({
           type: "state",
@@ -90,7 +90,7 @@ export function findBrokenWorkflowReferences(
     }
 
     // Check image references in action configs
-    const config = action.config as unknown;
+    const config = action.config as { target?: { image?: string }; imageId?: string };
     if (config.target?.image && !imageIds.has(config.target.image)) {
       broken.push({
         type: "image",

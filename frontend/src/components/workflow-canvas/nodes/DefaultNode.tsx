@@ -136,7 +136,7 @@ export const DefaultNode = memo(
               whiteSpace: "nowrap",
             }}
           >
-            {getConfigPreview(action.type, action.config)}
+            {getConfigPreview(action.type, action.config as Record<string, unknown>)}
           </div>
         )}
 
@@ -216,38 +216,55 @@ DefaultNode.displayName = "DefaultNode";
 /**
  * Get preview text for action config
  */
-function getConfigPreview(actionType: string, config: unknown): string {
+function getConfigPreview(actionType: string, config: Record<string, unknown>): string {
   switch (actionType) {
     case "CLICK":
     case "DOUBLE_CLICK":
     case "RIGHT_CLICK":
-      return config.findBy
-        ? `Find by ${config.findBy}: ${config.text || config.image || ""}`
-        : "Click action";
+      if (config.findBy && typeof config.findBy === "string") {
+        const findValue = typeof config.text === "string" ? config.text : (typeof config.image === "string" ? config.image : "");
+        return `Find by ${config.findBy}: ${findValue}`;
+      }
+      return "Click action";
 
     case "TYPE":
-      return config.text
-        ? `Type: "${config.text.substring(0, 30)}..."`
-        : "Type text";
+      if (config.text && typeof config.text === "string") {
+        return `Type: "${config.text.substring(0, 30)}..."`;
+      }
+      return "Type text";
 
     case "WAIT":
-      return config.duration ? `Wait ${config.duration}ms` : "Wait";
+      if (config.duration && typeof config.duration === "number") {
+        return `Wait ${config.duration}ms`;
+      }
+      return "Wait";
 
     case "IF":
-      return config.condition ? `If ${config.condition}` : "Condition";
+      if (config.condition && typeof config.condition === "string") {
+        return `If ${config.condition}`;
+      }
+      return "Condition";
 
     case "LOOP":
-      return config.iterations
-        ? `Loop ${config.iterations}x`
-        : config.condition
-          ? `While ${config.condition}`
-          : "Loop";
+      if (config.iterations && typeof config.iterations === "number") {
+        return `Loop ${config.iterations}x`;
+      }
+      if (config.condition && typeof config.condition === "string") {
+        return `While ${config.condition}`;
+      }
+      return "Loop";
 
     case "SET_VARIABLE":
-      return config.name ? `Set ${config.name}` : "Set variable";
+      if (config.name && typeof config.name === "string") {
+        return `Set ${config.name}`;
+      }
+      return "Set variable";
 
     case "GET_VARIABLE":
-      return config.name ? `Get ${config.name}` : "Get variable";
+      if (config.name && typeof config.name === "string") {
+        return `Get ${config.name}`;
+      }
+      return "Get variable";
 
     default:
       return "";

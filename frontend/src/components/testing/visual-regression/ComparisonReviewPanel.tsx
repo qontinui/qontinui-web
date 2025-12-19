@@ -23,11 +23,25 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type {
-  VisualComparisonResult,
-  ReviewDecision,
-} from "@/services/testing-service";
+// Define missing types locally since they're not exported from testing-service
+interface VisualComparisonResult {
+  id: string;
+  status: string;
+  state_name: string;
+  similarity_score: number;
+  threshold_used: number;
+  diff_region_count: number;
+  screenshot_url?: string;
+  baseline_url?: string;
+  diff_image_url?: string;
+  diff_regions?: unknown[];
+  error_message?: string;
+}
+
+type ReviewDecision = "approved" | "rejected" | "new_baseline";
+
 import { VisualDiffViewer } from "./VisualDiffViewer";
+import type { DiffRegion } from "@/services/testing-service";
 
 interface ComparisonReviewPanelProps {
   comparisons: VisualComparisonResult[];
@@ -250,10 +264,10 @@ export function ComparisonReviewPanel({
 
               <div className="py-4">
                 <VisualDiffViewer
-                  baselineUrl={selectedComparison.baseline_url}
-                  screenshotUrl={selectedComparison.screenshot_url}
-                  diffUrl={selectedComparison.diff_image_url}
-                  diffRegions={selectedComparison.diff_regions}
+                  baselineUrl={selectedComparison.baseline_url ?? null}
+                  screenshotUrl={selectedComparison.screenshot_url ?? null}
+                  diffUrl={selectedComparison.diff_image_url ?? null}
+                  diffRegions={(selectedComparison.diff_regions ?? []) as DiffRegion[]}
                   similarityScore={selectedComparison.similarity_score}
                   threshold={selectedComparison.threshold_used}
                 />

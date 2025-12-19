@@ -31,50 +31,11 @@ import { OutgoingTransitionBuilder } from "@/components/outgoing-transition-buil
 import { IncomingTransitionBuilder } from "@/components/incoming-transition-builder";
 import { FormatConversionDialog } from "@/components/format-conversion-dialog";
 import { toast } from "sonner";
-
-interface Process {
-  id: string;
-  name: string;
-  description: string;
-  category?: string;
-  actions: Action[];
-  initialScreenshotId?: string;
-  initialStateIds?: string[];
-}
-
-interface Action {
-  id: string;
-  type: // Pure mouse actions
-    | "MOUSE_MOVE"
-    | "MOUSE_DOWN"
-    | "MOUSE_UP"
-    | "MOUSE_SCROLL"
-    // Pure keyboard actions
-    | "KEY_DOWN"
-    | "KEY_UP"
-    | "KEY_PRESS"
-    // Combined mouse actions
-    | "CLICK"
-    | "DOUBLE_CLICK"
-    | "RIGHT_CLICK"
-    | "DRAG"
-    | "SCROLL"
-    // Combined keyboard actions
-    | "TYPE"
-    // Control flow actions
-    | "IF"
-    | "LOOP"
-    // Other actions
-    | "FIND"
-    | "VANISH"
-    | "GO_TO_STATE"
-    | "RUN_WORKFLOW";
-  config: Record<string, unknown>;
-}
+import type { Workflow, Action } from "@/lib/action-schema/action-types";
 
 type LibraryItem =
-  | { type: "process"; data: Process }
-  | { type: "workflow"; data: unknown };
+  | { type: "process"; data: Workflow }
+  | { type: "workflow"; data: Workflow };
 
 export function ProcessBuilder() {
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
@@ -118,14 +79,14 @@ export function ProcessBuilder() {
     if (selectedProcess) {
       const updatedProcess = workflows.find((w) => w.id === selectedProcess.id);
       if (updatedProcess && updatedProcess !== selectedProcess) {
-        setSelectedItem({ type: "process", data: updatedProcess } as unknown);
+        setSelectedItem({ type: "process", data: updatedProcess });
         // Also update selectedAction if it exists
         if (selectedAction) {
           const updatedAction = updatedProcess.actions.find(
             (a) => a.id === selectedAction.id
           );
           if (updatedAction) {
-            setSelectedAction(updatedAction as unknown);
+            setSelectedAction(updatedAction);
           }
         }
       }
@@ -133,19 +94,22 @@ export function ProcessBuilder() {
   }, [workflows, selectedProcess?.id, selectedAction?.id]);
 
   const createNewProcess = (category: string = "Main") => {
-    const newProcess: Process = {
+    const newProcess: Workflow = {
       id: `workflow-${Date.now()}`,
       name: "New Workflow",
+      version: "1.0.0",
+      format: "graph" as const,
       description: "",
       category,
       actions: [],
+      connections: {},
     };
-    addWorkflow(newProcess as unknown);
-    setSelectedItem({ type: "process", data: newProcess } as unknown);
+    addWorkflow(newProcess);
+    setSelectedItem({ type: "process", data: newProcess });
   };
 
-  const handleUpdateProcess = (updatedProcess: Process) => {
-    updateWorkflow(updatedProcess as unknown);
+  const handleUpdateProcess = (updatedProcess: Workflow) => {
+    updateWorkflow(updatedProcess);
     // Don't set selectedItem here - let useEffect handle it
   };
 
@@ -176,7 +140,7 @@ export function ProcessBuilder() {
   };
 
   const handleConversionComplete = (
-    converted: Process | any,
+    converted: Workflow | any,
     originalType: "process" | "workflow"
   ) => {
     // Both types are stored as workflows, just update the existing one
@@ -445,10 +409,10 @@ export function ProcessBuilder() {
             </div>
 
             <ActionEditor
-              process={selectedProcess}
-              selectedAction={selectedAction}
-              onSelectAction={setSelectedAction}
-              onUpdateProcess={handleUpdateProcess}
+              process={selectedProcess as any}
+              selectedAction={selectedAction as any}
+              onSelectAction={setSelectedAction as any}
+              onUpdateProcess={handleUpdateProcess as any}
             />
           </div>
         ) : (
@@ -465,8 +429,8 @@ export function ProcessBuilder() {
       {/* Right Panel - Action Properties */}
       <div className="flex-[2] min-w-[300px] max-w-[600px] border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
         <ActionProperties
-          action={selectedAction}
-          onUpdateAction={(updated) => {
+          action={selectedAction as any}
+          onUpdateAction={(updated: any) => {
             if (selectedProcess && selectedAction) {
               const updatedProcess = {
                 ...selectedProcess,
@@ -474,7 +438,7 @@ export function ProcessBuilder() {
                   a.id === updated.id ? updated : a
                 ),
               };
-              handleUpdateProcess(updatedProcess as unknown);
+              handleUpdateProcess(updatedProcess as any);
               // useEffect will handle updating selectedAction
             }
           }}

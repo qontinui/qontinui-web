@@ -80,7 +80,7 @@ class SyncProcessor {
 
           if (result.success) {
             // Mark as completed
-            await syncQueue.markCompleted(item.id, result.data);
+            await syncQueue.markCompleted(item.id, result.data as Record<string, unknown> | undefined);
             processedCount++;
           } else {
             // Mark as failed
@@ -152,7 +152,22 @@ class SyncProcessor {
   private async processScreenshotUpload(
     item: SyncQueueItem
   ): Promise<SyncResult> {
-    const { file, projectId, name, description, tags } = item.data;
+    const itemData = item.data as Record<string, unknown>;
+    const { file, projectId, name, description, tags } = itemData as {
+      file: File | undefined;
+      projectId: number;
+      name?: string;
+      description?: string;
+      tags?: string[];
+    };
+
+
+    if (!file) {
+      return {
+        success: false,
+        error: "No file provided for upload",
+      };
+    }
 
     try {
       // Upload to server with progress tracking
@@ -209,12 +224,18 @@ class SyncProcessor {
   private async processMultipleScreenshotUploads(
     item: SyncQueueItem
   ): Promise<SyncResult> {
-    const { files, projectId } = item.data;
+    const itemData = item.data as Record<string, unknown>;
+    const { files, projectId } = itemData as {
+      files: (File | undefined)[];
+      projectId: number;
+    };
     const results = [];
     const errors = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+
+      if (!file) continue;
 
       try {
         const result = await apiClient.uploadProjectImage(
@@ -278,7 +299,11 @@ class SyncProcessor {
   private async processScreenshotDelete(
     item: SyncQueueItem
   ): Promise<SyncResult> {
-    const { screenshotId, projectId } = item.data;
+    const itemData = item.data as Record<string, unknown>;
+    const { screenshotId, projectId } = itemData as {
+      screenshotId: string;
+      projectId: number;
+    };
 
     try {
       // Delete from server
@@ -302,7 +327,11 @@ class SyncProcessor {
   private async processScreenshotUpdate(
     item: SyncQueueItem
   ): Promise<SyncResult> {
-    const { screenshotId, updates } = item.data;
+    const itemData = item.data as Record<string, unknown>;
+    const { screenshotId, updates } = itemData as {
+      screenshotId: string;
+      updates: Record<string, unknown>;
+    };
 
     try {
       // Update on server (if API exists)

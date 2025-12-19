@@ -65,9 +65,21 @@ export function SessionHistory() {
   const loadSessions = async () => {
     try {
       setLoading(true);
-      const params: unknown = { limit: 50 };
+      const params: {
+        limit: number;
+        status?:
+          | "active"
+          | "completed"
+          | "failed"
+          | "disconnected"
+          | undefined;
+      } = { limit: 50 };
       if (filterStatus !== "all") {
-        params.status = filterStatus;
+        params.status = filterStatus as
+          | "active"
+          | "completed"
+          | "failed"
+          | "disconnected";
       }
       const data = await apiClient.listAutomationSessions(params);
       setSessions(data.sessions);

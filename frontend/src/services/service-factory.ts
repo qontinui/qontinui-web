@@ -20,6 +20,9 @@ import { RecordingService } from "./recording-service";
 import { CaptureService } from "./capture-service";
 import { CodePackageService } from "./code-package-service";
 import { ExtractionService } from "./extraction-service";
+import { RAGExportService } from "./rag-export-service";
+import { RAGDashboardService } from "./rag-dashboard-service";
+import { IssuesService } from "./issues-service";
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -50,6 +53,9 @@ export class ServiceFactory {
   public readonly captureService: CaptureService;
   public readonly codePackageService: CodePackageService;
   public readonly extractionService: ExtractionService;
+  public readonly ragExportService: RAGExportService;
+  public readonly ragDashboardService: RAGDashboardService;
+  public readonly issuesService: IssuesService;
 
   private constructor() {
     // Initialize auth services in dependency order
@@ -97,6 +103,11 @@ export class ServiceFactory {
 
     // Initialize extraction service
     this.extractionService = new ExtractionService(this.httpClient);
+    this.ragExportService = new RAGExportService(this.httpClient);
+    this.ragDashboardService = new RAGDashboardService(this.httpClient);
+
+    // Initialize issues service
+    this.issuesService = new IssuesService(this.httpClient);
 
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
@@ -140,3 +151,6 @@ export const recordingService = factory.recordingService;
 export const captureService = factory.captureService;
 export const codePackageService = factory.codePackageService;
 export const extractionService = factory.extractionService;
+export const ragExportService = factory.ragExportService;
+export const ragDashboardService = factory.ragDashboardService;
+export const issuesService = factory.issuesService;

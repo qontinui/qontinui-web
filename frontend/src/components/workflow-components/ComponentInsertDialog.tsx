@@ -310,7 +310,7 @@ export function ComponentInsertDialog({
 
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as unknown)}
+          onValueChange={(v) => setActiveTab(v as "parameters" | "preview")}
           className="flex-1 flex flex-col min-h-0"
         >
           <TabsList>
@@ -613,7 +613,7 @@ function ParameterInput({
             placeholder={
               parameter.defaultValue?.toString() || "Enter a number..."
             }
-            value={value || ""}
+            value={value !== undefined && value !== null ? String(value) : ""}
             onChange={(e) => onChange(e.target.value)}
             aria-invalid={!!error}
             min={parameter.validation?.min}
@@ -641,7 +641,7 @@ function ParameterInput({
         // String or any type
         if (parameter.validation?.enum) {
           return (
-            <Select value={value || ""} onValueChange={onChange}>
+            <Select value={value !== undefined && value !== null ? String(value) : ""} onValueChange={onChange}>
               <SelectTrigger id={inputId} aria-invalid={!!error}>
                 <SelectValue placeholder="Select an option..." />
               </SelectTrigger>
@@ -662,7 +662,7 @@ function ParameterInput({
             placeholder={
               parameter.defaultValue?.toString() || "Enter a value..."
             }
-            value={value || ""}
+            value={value !== undefined && value !== null ? String(value) : ""}
             onChange={(e) => onChange(e.target.value)}
             aria-invalid={!!error}
           />

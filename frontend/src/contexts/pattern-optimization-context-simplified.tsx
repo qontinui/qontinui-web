@@ -431,8 +431,8 @@ export function PatternOptimizationProvider({
         } catch (fetchError: unknown) {
           clearTimeout(timeoutId);
           console.error("[PatternOptimization] Fetch error:", fetchError);
-          console.error("[PatternOptimization] Error stack:", fetchError.stack);
-          if (fetchError.name === "AbortError") {
+          console.error("[PatternOptimization] Error stack:", fetchError instanceof Error ? fetchError.stack : "");
+          if (fetchError instanceof Error && fetchError.name === "AbortError") {
             throw new Error("Request timed out after 60 seconds");
           }
           throw fetchError;
@@ -529,16 +529,16 @@ export function PatternOptimizationProvider({
       } catch (error: unknown) {
         console.error("[PatternOptimization] Extraction failed:", error);
 
-        if (error.name === "AbortError") {
+        if (error instanceof Error && error.name === "AbortError") {
           console.error(
             "[PatternOptimization] Request timed out after 60 seconds"
           );
         }
 
         console.error("[PatternOptimization] Error details:", {
-          name: error.name,
-          message: error.message,
-          stack: error.stack,
+          name: error instanceof Error ? error.name : "unknown",
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : "",
         });
         setSession((prev) => (prev ? { ...prev, status: "error" } : prev));
         throw error;

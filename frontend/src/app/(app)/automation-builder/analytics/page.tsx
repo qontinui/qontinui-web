@@ -266,14 +266,14 @@ function ExecutionTable({ executions, onRowClick }: ExecutionTableProps) {
       let bVal: unknown = b[sortBy];
 
       if (sortBy === "startTime") {
-        aVal = new Date(aVal).getTime();
-        bVal = new Date(bVal).getTime();
+        aVal = new Date(aVal as string | number | Date).getTime();
+        bVal = new Date(bVal as string | number | Date).getTime();
       }
 
       if (sortOrder === "asc") {
-        return aVal > bVal ? 1 : -1;
+        return (aVal as number) > (bVal as number) ? 1 : -1;
       } else {
-        return aVal < bVal ? 1 : -1;
+        return (aVal as number) < (bVal as number) ? 1 : -1;
       }
     });
   }, [executions, sortBy, sortOrder]);
@@ -757,7 +757,7 @@ export default function WorkflowAnalyticsPage() {
                 <Select
                   value={filters.status}
                   onValueChange={(v) =>
-                    setFilters({ ...filters, status: v as unknown })
+                    setFilters({ ...filters, status: v as "success" | "failure" | "all" })
                   }
                 >
                   <SelectTrigger className="w-[150px] bg-[#0A0A0B] border-gray-700">

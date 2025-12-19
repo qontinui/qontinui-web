@@ -38,6 +38,8 @@ import {
   Download,
   Upload,
   User,
+  Database,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsedMenuPopover } from "./collapsed-menu-popover";
@@ -352,6 +354,13 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    id: "issues",
+    label: "Issues",
+    icon: <AlertCircle size={28} />,
+    route: "/issues",
+    color: "#EF4444",
+  },
+  {
     id: "project-tools",
     label: "Project Tools",
     icon: <Box size={28} />,
@@ -422,6 +431,14 @@ const navItems: NavItem[] = [
         icon: <Monitor size={22} />,
         route: "/monitor",
         color: "#10B981",
+      },
+      {
+        id: "rag-preprocessing",
+        label: "RAG Results",
+        description: "View RAG pre-processing results",
+        icon: <Database size={22} />,
+        route: "/projects/:projectId/rag",
+        color: "#00D9FF",
       },
     ],
   },
@@ -686,7 +703,9 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       toast.success("Project created successfully");
     } catch (error: unknown) {
       console.error("Failed to create project:", error);
-      toast.error(error.message || "Failed to create project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create project"
+      );
     }
   };
 
@@ -754,6 +773,16 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   };
 
   const buildRoute = (route: string): string => {
+    // Handle routes with :projectId placeholder (path parameter)
+    if (route.includes(":projectId")) {
+      if (!projectId) {
+        // If no project selected, redirect to dashboard
+        return "/dashboard";
+      }
+      return route.replace(":projectId", projectId);
+    }
+
+    // Handle routes with query parameter
     if (!projectId) return route;
 
     if (route.includes("?")) {

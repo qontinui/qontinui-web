@@ -32,6 +32,12 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Development auto-login credentials
+const DEV_AUTO_LOGIN = {
+  username: "josh",
+  password: "admin123",
+};
+
 // Cross-tab auth event types
 type AuthBroadcastMessage =
   | { type: "LOGIN"; user: User }
@@ -43,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const channelRef = useRef<BroadcastChannel | null>(null);
+  const hasAttemptedDevLogin = useRef(false);
 
   useEffect(() => {
     checkAuth();
@@ -166,6 +173,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   };
+
+  /**
+   * Development mode auto-login
+   * Automatically logs in with dev credentials when not authenticated in dev mode
+   */
+  useEffect(() => {
+    // Only run in development mode
+    if (process.env.NODE_ENV !== "development") {
+      return;
+    }
+
+    // Only attempt once to avoid infinite loops
+    if (hasAttemptedDevLogin.current) {
+      return;
+    }
+
+    // Wait for auth check to complete
+    if (loading) {
+      return;
+    }
+
+    // If already authenticated, no need to auto-login
+    if (user) {
+      console.log(
+        "[AuthContext] Dev mode: Already authenticated, skipping auto-login"
+      );
+      return;
+    }
+
+    // Auto-login in development
+    console.log(
+      "[AuthContext] Dev mode: Not authenticated, attempting auto-login..."
+    );
+    hasAttemptedDevLogin.current = true;
+
+    authService
+      .login({
+        username: DEV_AUTO_LOGIN.username,
+        password: DEV_AUTO_LOGIN.password,
+      })
+      .then((loggedInUser) => {
+        console.log("[AuthContext] Dev mode auto-login successful");
+        setUser(loggedInUser);
+      })
+      .catch((err) => {
+        console.error("[AuthContext] Dev mode auto-login failed:", err);
+      });
+  }, [loading, user]);
 
   const login = async (
     username: string,

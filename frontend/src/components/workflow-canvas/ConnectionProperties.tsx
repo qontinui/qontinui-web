@@ -64,9 +64,20 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
   // Get connection details
   const connection =
     outputType && sourceId
-      ? (workflow.connections[sourceId] as unknown)?.[outputType]?.[
-          Number(outputIndex)
-        ]?.find((c: unknown) => c.action === targetId)
+      ? (
+          workflow.connections[sourceId] as Record<
+            string,
+            Array<
+              Array<{
+                action: string;
+                type: "main" | "error" | "success" | "parallel";
+                index: number;
+              }>
+            >
+          >
+        )?.[outputType]?.[Number(outputIndex)]?.find(
+          (c) => c.action === targetId
+        )
       : undefined;
 
   if (!connection) {

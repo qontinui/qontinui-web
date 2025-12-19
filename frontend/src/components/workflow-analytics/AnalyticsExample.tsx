@@ -9,7 +9,7 @@
 
 import React, { useState, useMemo } from "react";
 import { Workflow } from "@/lib/action-schema/action-types";
-import { workflowAnalyticsService } from "@/services/workflow-analytics-service";
+import { workflowAnalyticsService, WorkflowMetrics } from "@/services/workflow-analytics-service";
 import { workflowComplexityAnalyzer } from "@/services/workflow-complexity-analyzer";
 import { AnalyticsDashboard } from "./AnalyticsDashboard";
 import { WorkflowMetricsPanel } from "./WorkflowMetricsPanel";
@@ -117,7 +117,7 @@ export function WorkflowAnalyticsExample() {
 
   // Get all metrics
   const allMetrics = useMemo(() => {
-    const metricsMap: Record<string, unknown> = {};
+    const metricsMap: Record<string, WorkflowMetrics> = {};
 
     workflows.forEach((workflow) => {
       metricsMap[workflow.id] = workflowAnalyticsService.getWorkflowMetrics(
@@ -242,10 +242,10 @@ export function WorkflowAnalyticsExample() {
             </Select>
           </Card>
 
-          {selectedWorkflow && complexityMetrics && (
+          {selectedWorkflow && complexityMetrics && allMetrics[selectedWorkflow.id] && (
             <WorkflowMetricsPanel
               workflow={selectedWorkflow}
-              metrics={allMetrics[selectedWorkflow.id]}
+              metrics={allMetrics[selectedWorkflow.id]!}
               complexityMetrics={complexityMetrics}
               executionHistory={executionHistory}
             />

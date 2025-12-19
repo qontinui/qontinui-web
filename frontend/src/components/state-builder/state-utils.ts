@@ -232,7 +232,9 @@ export function analyzeStateUsage(
         action.config &&
         "target" in action.config
       ) {
-        const findConfig = action.config as unknown;
+        const findConfig = action.config as {
+          target?: { type?: string; stateId?: string };
+        };
         if (findConfig.target?.type === "state") {
           return findConfig.target.stateId === state.id;
         }

@@ -2,15 +2,12 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { DeficiencyList } from "@/components/testing/DeficiencyList";
-import { useDeficiencies } from "@/hooks/useTesting";
 import { ArrowLeft, TrendingUp, BarChart3 } from "lucide-react";
-import type { DeficiencyAlert } from "@/hooks/useTestStream";
 
 export default function ProjectDeficienciesPage() {
   const { user, loading: authLoading } = useAuth();
@@ -20,31 +17,13 @@ export default function ProjectDeficienciesPage() {
   const projectId = params.projectId as string;
   const testRunId = searchParams.get("run");
 
-  const { data: deficienciesResponse, isLoading } = useDeficiencies({
-    project_id: projectId,
-    test_run_id: testRunId || undefined,
-  });
-
-  // Convert Deficiency[] to DeficiencyAlert[] format
-  const deficiencyAlerts: DeficiencyAlert[] = useMemo(() => {
-    if (!deficienciesResponse?.items) return [];
-    return deficienciesResponse.items.map((d) => ({
-      id: d.id,
-      severity: d.severity,
-      title: d.title,
-      description: d.description,
-      stateName: d.state_name,
-      timestamp: d.created_at,
-    }));
-  }, [deficienciesResponse]);
-
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/");
     }
   }, [user, authLoading, router]);
 
-  if (authLoading || isLoading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -110,17 +89,7 @@ export default function ProjectDeficienciesPage() {
           </p>
         </div>
 
-        {deficiencyAlerts.length > 0 ? (
-          <DeficiencyList deficiencies={deficiencyAlerts} />
-        ) : (
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
-            <CardContent className="p-12 text-center">
-              <div className="text-gray-400">
-                No deficiencies found for this project
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <DeficiencyList projectId={projectId} testRunId={testRunId || undefined} />
       </main>
     </div>
   );

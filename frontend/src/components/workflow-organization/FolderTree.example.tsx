@@ -104,7 +104,7 @@ export function WorkflowBrowserExample() {
     selectedFolderId === null
       ? workflows
       : selectedFolderId === "uncategorized"
-        ? workflows.filter((w) => !(w as unknown).folderId)
+        ? workflows.filter((w) => !(w as { folderId?: string }).folderId)
         : getWorkflowsInFolder(selectedFolderId, workflows, folders, true);
 
   // Handle folder creation
@@ -123,7 +123,7 @@ export function WorkflowBrowserExample() {
           return {
             ...w,
             folderId: folderId || undefined,
-          } as unknown;
+          } as Workflow;
         }
         return w;
       })
@@ -302,11 +302,14 @@ export function FolderTreeWithPersistence() {
       try {
         const parsed = JSON.parse(saved);
         setFolders(
-          parsed.map((f: unknown) => ({
-            ...f,
-            createdAt: new Date(f.createdAt),
-            updatedAt: new Date(f.updatedAt),
-          }))
+          parsed.map((f: unknown) => {
+            const folder = f as { createdAt: string; updatedAt: string };
+            return {
+              ...(f as Record<string, unknown>),
+              createdAt: new Date(folder.createdAt),
+              updatedAt: new Date(folder.updatedAt),
+            };
+          })
         );
       } catch (error) {
         console.error("Failed to load folders:", error);

@@ -141,5 +141,5 @@ export const projectLogger = new ProjectLogger();
 
 // Enable/disable via window for debugging
 if (typeof window !== "undefined") {
-  (window as unknown).projectLogger = projectLogger;
+  (window as { projectLogger?: ProjectLogger }).projectLogger = projectLogger;
 }

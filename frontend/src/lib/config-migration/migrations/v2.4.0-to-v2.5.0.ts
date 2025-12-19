@@ -21,7 +21,11 @@ export const migrationV24ToV25: Migration = {
     "Add TRIGGER_AI_ANALYSIS action type for autonomous debugging with AI assistants",
 
   migrate(config: unknown, context: MigrationContext): unknown {
-    const migrated = structuredClone(config);
+    interface ConfigMigration {
+      version?: string;
+      [key: string]: unknown;
+    }
+    const migrated = structuredClone(config) as ConfigMigration;
 
     // This migration is purely additive - no transformation needed
     // TRIGGER_AI_ANALYSIS is a new action type that can now be used
@@ -50,8 +54,27 @@ export const migrationV24ToV25: Migration = {
    * - If TRIGGER_AI_ANALYSIS actions exist, validate their configs
    */
   validate(migratedConfig: unknown): boolean {
-    if (migratedConfig.workflows && Array.isArray(migratedConfig.workflows)) {
-      for (const workflow of migratedConfig.workflows) {
+    interface ValidateConfig {
+      workflows?: Array<{
+        name?: string;
+        id: string;
+        actions?: Array<{
+          type: string;
+          id: string;
+          config?: {
+            command?: string;
+            script?: string;
+            shell?: string;
+            outputFormat?: string;
+            provider?: string;
+            timeout?: number;
+          };
+        }>;
+      }>;
+    }
+    const cfg = migratedConfig as ValidateConfig;
+    if (cfg.workflows && Array.isArray(cfg.workflows)) {
+      for (const workflow of cfg.workflows) {
         if (workflow.actions && Array.isArray(workflow.actions)) {
           for (const action of workflow.actions) {
             if (action.type === "TRIGGER_AI_ANALYSIS") {

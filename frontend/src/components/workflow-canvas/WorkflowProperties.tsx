@@ -303,7 +303,9 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
               <div className="flex gap-2">
                 <Select
                   value={newVarScope}
-                  onValueChange={(v: unknown) => setNewVarScope(v)}
+                  onValueChange={(v) =>
+                    setNewVarScope(v as "local" | "global" | "process")
+                  }
                 >
                   <SelectTrigger className="w-[120px] bg-transparent border-gray-700 text-gray-200">
                     <SelectValue />

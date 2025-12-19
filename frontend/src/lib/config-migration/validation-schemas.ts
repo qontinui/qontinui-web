@@ -206,7 +206,8 @@ export function validateConfig(
   success: boolean;
   errors: string[];
 } {
-  const targetVersion = version || config.version;
+  const cfg = config as { version?: string };
+  const targetVersion = version || cfg.version;
 
   // Get schema for version
   const schema = versionSchemas[targetVersion as keyof typeof versionSchemas];
@@ -252,8 +253,17 @@ export function validateWorkflows(config: unknown): {
   success: boolean;
   errors: string[];
 } {
-  const version = config.version;
-  const workflows = config.workflows || [];
+  const cfg = config as {
+    version?: string;
+    workflows?: Array<{
+      name?: string;
+      format?: string;
+      connections?: Record<string, { parallel?: unknown }>;
+      actions?: Array<{ position?: unknown; name?: string }>;
+    }>;
+  };
+  const version = cfg.version || "";
+  const workflows = cfg.workflows || [];
 
   if (workflows.length === 0) {
     return { success: true, errors: [] };
@@ -288,13 +298,14 @@ export function validateWorkflows(config: unknown): {
 
       // v2.0.1+ specific: no parallel connections
       if (version === "2.0.1" && workflow.connections) {
-        for (const [actionId, outputs] of Object.entries(
-          workflow.connections
-        )) {
-          if ((outputs as unknown).parallel) {
+        const connections = workflow.connections;
+        if (connections) {
+          for (const [actionId, outputs] of Object.entries(connections)) {
+            if ((outputs as { parallel?: unknown }).parallel) {
             errors.push(
               `Workflow "${workflow.name}", Action ${actionId}: parallel connections not allowed in v2.0.1+`
             );
+            }
           }
         }
       }

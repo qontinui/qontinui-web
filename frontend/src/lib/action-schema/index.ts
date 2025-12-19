@@ -26,6 +26,9 @@ export * from "./configs/keyboard-actions";
 export * from "./configs/control-flow-actions";
 export * from "./configs/data-actions";
 export * from "./configs/state-actions";
+export * from "./configs/code-actions";
+export * from "./configs/shell-actions";
+export * from "./configs/ai-actions";
 
 // Re-export key action types for convenience
 export type {

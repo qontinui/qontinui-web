@@ -461,7 +461,7 @@ function MetricCard({
   color,
   trend,
 }: {
-  icon: unknown;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   label: string;
   value: string | number;
   color: string;
@@ -1237,7 +1237,7 @@ function StorageAnalysis({
               border: "1px solid #333",
               borderRadius: "8px",
             }}
-            formatter={(value: number) => `${value.toFixed(1)} MB`}
+            formatter={(value) => `${Number(value).toFixed(1)} MB`}
           />
         </RechartsPieChart>
       </ResponsiveContainer>
@@ -1592,7 +1592,15 @@ const TreemapContent = ({
   index,
   name,
   count,
-}: unknown) => {
+}: {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  index?: number;
+  name?: string;
+  count?: number;
+}) => {
   if (!x || !y || !width || !height) return null;
   const colors = [
     "#00D9FF",
@@ -1610,7 +1618,7 @@ const TreemapContent = ({
         width={width}
         height={height}
         style={{
-          fill: colors[index % colors.length],
+          fill: colors[(index || 0) % colors.length],
           fillOpacity: 0.9,
           stroke: "#1A1A1B",
           strokeWidth: 2,

@@ -158,7 +158,9 @@ export function ConversionWizard({
         setError(result.errors?.[0]?.message || "Failed to generate preview");
       }
     } catch (err: unknown) {
-      setError(err.message || "Failed to generate preview");
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to generate preview";
+      setError(errorMessage);
     }
   };
 
@@ -171,7 +173,9 @@ export function ConversionWizard({
         onComplete(previewWorkflow, targetFormat);
       }
     } catch (err: unknown) {
-      setError(err.message || "Conversion failed");
+      const errorMessage =
+        err instanceof Error ? err.message : "Conversion failed";
+      setError(errorMessage);
     } finally {
       setIsConverting(false);
     }

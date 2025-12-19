@@ -115,7 +115,7 @@ export async function runWorkflowTest(
       testCaseId: testCase.id,
       testCaseName: testCase.name,
       workflowId: workflow.id,
-      workflowName: workflow.name,
+      workflowName: workflow.name || "",
       passed: allAssertionsPassed,
       startTime,
       endTime,
@@ -162,7 +162,7 @@ export async function runWorkflowTest(
       testCaseId: testCase.id,
       testCaseName: testCase.name,
       workflowId: workflow.id,
-      workflowName: workflow.name,
+      workflowName: workflow.name || "",
       passed: false,
       startTime,
       endTime,
@@ -193,7 +193,7 @@ async function executeWorkflowWithInputs(
   return {
     variables: { ...inputs, result: "simulated_execution" },
     executionPath:
-      workflow.actions?.slice(0, 3).map((a: unknown) => a.id) || [],
+      workflow.actions?.slice(0, 3).map((a: unknown) => (a as { id: string }).id) || [],
     activeStates: [],
     actionsExecuted: Math.min(3, workflow.actions?.length || 0),
   };
@@ -203,40 +203,41 @@ async function executeWorkflowWithInputs(
  * Evaluate an assertion against a value
  */
 function evaluateAssertion(assertion: unknown, actualValue: unknown): boolean {
-  switch (assertion.type) {
+  const assertionObj = assertion as Record<string, unknown>;
+  switch (assertionObj.type) {
     case "equals":
-      return deepEquals(actualValue, assertion.expected);
+      return deepEquals(actualValue, assertionObj.expected);
     case "notEquals":
-      return !deepEquals(actualValue, assertion.expected);
+      return !deepEquals(actualValue, assertionObj.expected);
     case "exists":
       return actualValue !== undefined && actualValue !== null;
     case "notExists":
       return actualValue === undefined || actualValue === null;
     case "contains":
       if (Array.isArray(actualValue)) {
-        return actualValue.includes(assertion.expected);
+        return actualValue.includes(assertionObj.expected);
       } else if (typeof actualValue === "string") {
-        return actualValue.includes(assertion.expected);
+        return actualValue.includes(assertionObj.expected as string);
       }
       return false;
     case "notContains":
       if (Array.isArray(actualValue)) {
-        return !actualValue.includes(assertion.expected);
+        return !actualValue.includes(assertionObj.expected);
       } else if (typeof actualValue === "string") {
-        return !actualValue.includes(assertion.expected);
+        return !actualValue.includes(assertionObj.expected as string);
       }
       return true;
     case "greaterThan":
       return (
-        typeof actualValue === "number" && actualValue > assertion.expected
+        typeof actualValue === "number" && typeof assertionObj.expected === "number" && actualValue > assertionObj.expected
       );
     case "lessThan":
       return (
-        typeof actualValue === "number" && actualValue < assertion.expected
+        typeof actualValue === "number" && typeof assertionObj.expected === "number" && actualValue < assertionObj.expected
       );
     case "regex":
-      if (assertion.pattern) {
-        const regex = new RegExp(assertion.pattern);
+      if (assertionObj.pattern && typeof assertionObj.pattern === "string") {
+        const regex = new RegExp(assertionObj.pattern);
         return regex.test(String(actualValue));
       }
       return false;
@@ -251,10 +252,10 @@ function evaluateAssertion(assertion: unknown, actualValue: unknown): boolean {
 function getValueByPath(obj: unknown, path: string): unknown {
   if (!path) return obj;
   const parts = path.split(".");
-  let current = obj;
+  let current: unknown = obj;
   for (const part of parts) {
     if (current == null) return undefined;
-    current = current[part];
+    current = (current as Record<string, unknown>)[part];
   }
   return current;
 }
@@ -267,11 +268,13 @@ function deepEquals(a: unknown, b: unknown): boolean {
   if (a == null || b == null) return false;
   if (typeof a !== typeof b) return false;
 
-  if (typeof a === "object") {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
+  if (typeof a === "object" && typeof b === "object") {
+    const aObj = a as Record<string, unknown>;
+    const bObj = b as Record<string, unknown>;
+    const aKeys = Object.keys(aObj);
+    const bKeys = Object.keys(bObj);
     if (aKeys.length !== bKeys.length) return false;
-    return aKeys.every((key) => deepEquals(a[key], b[key]));
+    return aKeys.every((key) => deepEquals(aObj[key], bObj[key]));
   }
 
   return false;

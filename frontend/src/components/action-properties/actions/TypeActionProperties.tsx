@@ -18,6 +18,8 @@ import {
 } from "@/components/special-keys-selector";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
+import type { State, StateString } from "@/contexts/automation-context/types";
+import type { Action } from "@/lib/action-schema/action-types";
 
 /**
  * Properties component for TYPE action.
@@ -28,10 +30,15 @@ export function TypeActionProperties({
   states,
   textAreaRef,
 }: ActionPropertiesComponentProps) {
+  // Type assertion for TYPE action - assuming component is only used for TYPE actions
+  const typeAction = action as unknown as Action<"TYPE">;
+  const config = typeAction.config;
+
   // Initialize textSource to default value if not set
   useEffect(() => {
-    if (!action.config.textSource) {
-      updateConfig("textSource", "stateString");
+    if (!config.textSource && !config.text) {
+      // Default to manual text mode
+      updateConfig("text", "");
     }
   }, []);
 
@@ -40,17 +47,25 @@ export function TypeActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Text Source</Label>
         <Select
-          value={action.config.textSource || "stateString"}
+          value={config.textSource ? "stateString" : "manual"}
           onValueChange={(value) => {
-            updateConfig("textSource", value);
-            // If switching to stateString and no state selected, try to select the first available state
-            if (value === "stateString" && !action.config.selectedState) {
-              const statesWithStrings = states.filter(
+            if (value === "stateString") {
+              // Switch to state string mode
+              const statesWithStrings = (states as State[]).filter(
                 (s) => s.strings && s.strings.length > 0
               );
-              if (statesWithStrings.length > 0) {
-                updateConfig("selectedState", statesWithStrings[0].id);
+              if (statesWithStrings.length > 0 && statesWithStrings[0]) {
+                updateConfig("textSource", {
+                  stateId: statesWithStrings[0].id,
+                  stringIds: [],
+                  useAll: false,
+                });
+                updateConfig("text", undefined);
               }
+            } else {
+              // Switch to manual text mode
+              updateConfig("textSource", undefined);
+              updateConfig("text", "");
             }
           }}
         >
@@ -64,26 +79,29 @@ export function TypeActionProperties({
         </Select>
       </div>
 
-      {action.config.textSource === "stateString" ||
-      !action.config.textSource ? (
+      {config.textSource ? (
         <>
           <div className="space-y-2">
             <Label className="text-xs text-gray-400">Select State</Label>
             <Select
-              value={action.config.selectedState || "none"}
+              value={config.textSource.stateId || "none"}
               onValueChange={(value) => {
-                const stateValue = value === "none" ? null : value;
-                // Update both selectedState and selectedStateStrings in one call
-                updateConfig("selectedState", stateValue, {
-                  selectedStateStrings: [],
-                });
+                if (value === "none") {
+                  updateConfig("textSource", undefined);
+                } else {
+                  updateConfig("textSource", {
+                    stateId: value,
+                    stringIds: [],
+                    useAll: false,
+                  });
+                }
               }}
             >
               <SelectTrigger className="bg-transparent border-gray-700">
                 <SelectValue placeholder="Select a state" />
               </SelectTrigger>
               <SelectContent className="bg-[#27272A] border-gray-700">
-                {states.filter((s) => s.strings && s.strings.length > 0)
+                {(states as State[]).filter((s) => s.strings && s.strings.length > 0)
                   .length === 0 ? (
                   <SelectItem value="none" disabled>
                     No states with strings defined
@@ -91,7 +109,7 @@ export function TypeActionProperties({
                 ) : (
                   <>
                     <SelectItem value="none">Select a state...</SelectItem>
-                    {states
+                    {(states as State[])
                       .filter((s) => s.strings && s.strings.length > 0)
                       .map((state) => (
                         <SelectItem key={state.id} value={state.id}>
@@ -105,10 +123,10 @@ export function TypeActionProperties({
             </Select>
           </div>
 
-          {action.config.selectedState &&
+          {config.textSource &&
             (() => {
-              const selectedState = states.find(
-                (s) => s.id === action.config.selectedState
+              const selectedState = (states as State[]).find(
+                (s) => s.id === config.textSource!.stateId
               );
               if (
                 !selectedState ||
@@ -129,7 +147,7 @@ export function TypeActionProperties({
                   </Label>
                   <div className="space-y-2 max-h-48 overflow-y-auto p-2 bg-gray-800/50 rounded border border-gray-700">
                     {selectedState.strings.map(
-                      (str: unknown, index: number) => (
+                      (str: StateString, index: number) => (
                         <div
                           key={str.id}
                           className="flex items-start space-x-2"
@@ -137,24 +155,21 @@ export function TypeActionProperties({
                           <Checkbox
                             id={`string-${str.id}`}
                             checked={
-                              action.config.selectedStateStrings?.includes(
-                                str.id
-                              ) || false
+                              config.textSource?.stringIds?.includes(str.id) || false
                             }
                             onCheckedChange={(checked) => {
-                              const current =
-                                action.config.selectedStateStrings || [];
-                              if (checked) {
-                                updateConfig("selectedStateStrings", [
-                                  ...current,
-                                  str.id,
-                                ]);
-                              } else {
-                                updateConfig(
-                                  "selectedStateStrings",
-                                  current.filter((id: string) => id !== str.id)
-                                );
-                              }
+                              const currentSource = config.textSource;
+                              if (!currentSource) return;
+
+                              const currentIds = currentSource.stringIds || [];
+                              const newIds = checked
+                                ? [...currentIds, str.id]
+                                : currentIds.filter((id) => id !== str.id);
+
+                              updateConfig("textSource", {
+                                ...currentSource,
+                                stringIds: newIds,
+                              });
                             }}
                           />
                           <div className="flex-1">
@@ -187,17 +202,17 @@ export function TypeActionProperties({
           </div>
           <Textarea
             ref={textAreaRef}
-            value={action.config.text as string}
+            value={config.text || ""}
             onChange={(e) => updateConfig("text", e.target.value)}
             className="bg-transparent border-gray-700 font-mono text-sm"
             placeholder="Enter text to type..."
             rows={4}
           />
-          {action.config.text && (
+          {config.text && (
             <div className="p-2 bg-gray-800/50 rounded-md border border-gray-700">
               <div className="text-xs text-gray-500 mb-1">Preview:</div>
               <div className="text-sm font-mono text-gray-300 break-all">
-                <SpecialKeyDisplay text={action.config.text} />
+                <SpecialKeyDisplay text={config.text} />
               </div>
             </div>
           )}
@@ -209,9 +224,9 @@ export function TypeActionProperties({
         <Input
           type="number"
           min="0"
-          value={action.config.typing_delay}
+          value={config.typeDelay || 0}
           onChange={(e) =>
-            updateConfig("typing_delay", Number.parseInt(e.target.value))
+            updateConfig("typeDelay", Number.parseInt(e.target.value))
           }
           className="bg-transparent border-gray-700"
         />
@@ -220,8 +235,8 @@ export function TypeActionProperties({
       <div className="flex items-center space-x-2">
         <Checkbox
           id="clear_before"
-          checked={action.config.clear_before as boolean}
-          onCheckedChange={(checked) => updateConfig("clear_before", checked)}
+          checked={config.clearBefore || false}
+          onCheckedChange={(checked) => updateConfig("clearBefore", checked)}
         />
         <Label htmlFor="clear_before" className="text-xs text-gray-400">
           Clear before typing
@@ -231,9 +246,9 @@ export function TypeActionProperties({
       <div className="flex items-center space-x-2">
         <Checkbox
           id="press_enter"
-          checked={action.config.press_enter as boolean}
+          checked={config.pressEnter || false}
           onCheckedChange={(checked) => {
-            updateConfig("press_enter", checked);
+            updateConfig("pressEnter", checked);
           }}
         />
         <Label htmlFor="press_enter" className="text-xs text-gray-400">

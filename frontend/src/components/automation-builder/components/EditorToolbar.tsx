@@ -35,6 +35,7 @@ export interface EditorToolbarProps {
   onSave?: () => void;
   onDelete?: () => void;
   onDuplicate?: () => void;
+  onConvert?: () => void;
   onRun?: () => void;
   onTest?: () => void;
   onUndo?: () => void;

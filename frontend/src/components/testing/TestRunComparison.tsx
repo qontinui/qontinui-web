@@ -73,9 +73,9 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
             <div className="space-y-4">
               <div>
                 <div className="text-sm text-gray-400 mb-1">Baseline Run</div>
-                <div className="font-medium text-lg">{run1.name}</div>
+                <div className="font-medium text-lg">{run1.workflow_name}</div>
                 <div className="text-xs text-gray-500">
-                  {format(new Date(run1.started_at), "MMM dd, yyyy HH:mm")}
+                  {format(new Date(run1.start_time), "MMM dd, yyyy HH:mm")}
                 </div>
               </div>
 
@@ -108,7 +108,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-400">Duration</span>
                   <span className="font-medium">
-                    {formatDuration(run1.duration_seconds)}
+                    {formatDuration(run1.duration_seconds || 0)}
                   </span>
                 </div>
               </div>
@@ -123,9 +123,9 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
             <div className="space-y-4">
               <div>
                 <div className="text-sm text-gray-400 mb-1">Comparison Run</div>
-                <div className="font-medium text-lg">{run2.name}</div>
+                <div className="font-medium text-lg">{run2.workflow_name}</div>
                 <div className="text-xs text-gray-500">
-                  {format(new Date(run2.started_at), "MMM dd, yyyy HH:mm")}
+                  {format(new Date(run2.start_time), "MMM dd, yyyy HH:mm")}
                 </div>
               </div>
 
@@ -177,7 +177,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
                   <span className="text-sm text-gray-400">Duration</span>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">
-                      {formatDuration(run2.duration_seconds)}
+                      {formatDuration(run2.duration_seconds || 0)}
                     </span>
                     {comp.execution_time_diff.seconds_change !== 0 && (
                       <span

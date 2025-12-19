@@ -158,7 +158,7 @@ export function TestSuiteManager({
           | unknown[]
           | undefined;
         if (testResults && testResults.length > 0) {
-          const latestResult = testResults[0]; // Results are stored most recent first
+          const latestResult = testResults[0] as { passed?: boolean }; // Results are stored most recent first
           totalWithResults++;
           if (latestResult.passed) {
             passedCount++;
@@ -173,7 +173,7 @@ export function TestSuiteManager({
       return {
         totalTests: suiteTestCases.length,
         passRate,
-        lastRun: suite.metadata?.lastRun,
+        lastRun: suite.metadata?.lastRun ? String(suite.metadata.lastRun) : undefined,
       };
     },
     [testCases]

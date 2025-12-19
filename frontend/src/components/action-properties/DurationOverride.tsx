@@ -19,19 +19,21 @@ export function DurationOverride({
   action,
   updateConfig,
 }: DurationOverrideProps) {
+  const timeout = (action.config as any).timeout as number | null | undefined;
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label className="text-xs text-gray-400">
           Find Duration Override (ms)
         </Label>
-        {action.config.timeout !== undefined ? (
+        {timeout !== undefined && timeout !== null ? (
           <Button
             variant="ghost"
             size="sm"
             className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
             onClick={() => {
-              const { timeout, ...rest } = action.config;
+              const { timeout, ...rest } = action.config as any;
               updateConfig("__reset__", rest);
             }}
             title="Remove override (use project default)"
@@ -42,13 +44,13 @@ export function DurationOverride({
           <span className="text-xs text-gray-500">(using project default)</span>
         )}
       </div>
-      {action.config.timeout !== undefined && (
+      {timeout !== undefined && timeout !== null && (
         <div className="space-y-2">
           <Input
             type="number"
             min="0"
             step="100"
-            value={action.config.timeout}
+            value={timeout as number}
             onChange={(e) =>
               updateConfig("timeout", Number.parseInt(e.target.value) || 0)
             }
@@ -60,7 +62,7 @@ export function DurationOverride({
           </div>
         </div>
       )}
-      {action.config.timeout === undefined && (
+      {(timeout === undefined || timeout === null) && (
         <Button
           variant="ghost"
           size="sm"

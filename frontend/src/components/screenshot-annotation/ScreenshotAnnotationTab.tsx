@@ -27,6 +27,9 @@ import { useAutomation } from "../../contexts/automation-context";
 import {
   StateRegion as ContextStateRegion,
   StateLocation as ContextStateLocation,
+  State,
+  StateImage,
+  Pattern,
 } from "../../contexts/automation-context/types";
 import { ScrollArea } from "../ui/scroll-area";
 import { Badge } from "../ui/badge";
@@ -35,7 +38,7 @@ import { toast } from "sonner";
 import { useDebouncedCallback } from "../../hooks/use-debounced-callback";
 
 interface ScreenshotAnnotationTabProps {
-  states: unknown[];
+  states: State[];
 }
 
 // Helper function to convert AnchorType to PositionName - currently unused
@@ -292,9 +295,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       });
     } catch (error: unknown) {
       console.error("Screenshot capture failed:", error);
+      const errorMessage = error instanceof Error ? error.message : "Make sure qontinui-api is running on port 8001";
       toast.error("Failed to capture screenshot", {
-        description:
-          error.message || "Make sure qontinui-api is running on port 8001",
+        description: errorMessage,
       });
     } finally {
       setIsCapturing(false);
@@ -319,7 +322,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                   uploadedAt: ps.uploadedAt,
                   associatedStates: ps.associatedStates || [],
                   regions: ps.regions || [],
-                  locations: (ps.locations || []) as unknown,
+                  locations: (ps.locations || []) as ScreenshotLocation[],
                 });
               };
               img.onerror = () => {
@@ -332,7 +335,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                   uploadedAt: ps.uploadedAt,
                   associatedStates: ps.associatedStates || [],
                   regions: ps.regions || [],
-                  locations: (ps.locations || []) as unknown,
+                  locations: (ps.locations || []) as ScreenshotLocation[],
                 });
               };
               img.src = ps.url;
@@ -472,7 +475,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     ];
 
     // Handle SearchRegions - they belong to Patterns, not State.regions
-    const updatedStateImages = state.stateImages.map((image: unknown) => {
+    const updatedStateImages = state.stateImages.map((image: StateImage) => {
       // Find SearchRegions for this StateImage using saveToStateImageId
       const searchRegionsForImage = searchRegions.filter(
         (r: ScreenshotRegion) => r.saveToStateImageId === image.id
@@ -482,7 +485,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
 
       // Add/update SearchRegions in the first pattern
       const updatedPatterns = image.patterns.map(
-        (pattern: unknown, idx: number) => {
+        (pattern: Pattern, idx: number) => {
           if (idx === 0) {
             // Convert screenshot SearchRegions to Pattern SearchRegions
             const patternSearchRegions = searchRegionsForImage.map(
@@ -500,7 +503,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
             // Merge with existing search regions
             const mergedSearchRegions = [
               ...pattern.searchRegions.filter(
-                (sr: unknown) =>
+                (sr) =>
                   !patternSearchRegions.find((psr) => psr.id === sr.id)
               ),
               ...patternSearchRegions,
@@ -720,13 +723,13 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           });
         } else if (deletedRegion.type === "SearchRegion") {
           // Remove from Pattern.searchRegions
-          const updatedStateImages = state.stateImages.map((image: unknown) => {
+          const updatedStateImages = state.stateImages.map((image: StateImage) => {
             if (deletedRegion.saveToStateImageId === image.id) {
               const updatedPatterns = image.patterns.map(
-                (pattern: unknown) => ({
+                (pattern: Pattern) => ({
                   ...pattern,
                   searchRegions: pattern.searchRegions.filter(
-                    (sr: unknown) => sr.id !== regionId
+                    (sr) => sr.id !== regionId
                   ),
                 })
               );

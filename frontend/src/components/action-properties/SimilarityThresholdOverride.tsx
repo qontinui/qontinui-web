@@ -18,19 +18,21 @@ export function SimilarityThresholdOverride({
   action,
   updateConfig,
 }: SimilarityThresholdOverrideProps) {
+  const similarity = (action.config as any).similarity as number | null | undefined;
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label className="text-xs text-gray-400">
           Similarity Threshold Override
         </Label>
-        {action.config.similarity !== undefined ? (
+        {similarity !== undefined && similarity !== null ? (
           <Button
             variant="ghost"
             size="sm"
             className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
             onClick={() => {
-              const { similarity, ...rest } = action.config;
+              const { similarity, ...rest } = action.config as any;
               updateConfig("__reset__", rest);
             }}
             title="Remove override (use project default)"
@@ -41,13 +43,13 @@ export function SimilarityThresholdOverride({
           <span className="text-xs text-gray-500">(using project default)</span>
         )}
       </div>
-      {action.config.similarity !== undefined && (
+      {similarity !== undefined && similarity !== null && (
         <>
           <Slider
             min={0}
             max={100}
             step={1}
-            value={[action.config.similarity * 100]}
+            value={[(similarity as number) * 100]}
             onValueChange={(values) => {
               const value = values[0];
               if (value !== undefined) {
@@ -59,13 +61,13 @@ export function SimilarityThresholdOverride({
           <div className="flex justify-between text-xs text-gray-500">
             <span>70%</span>
             <span className="text-gray-400">
-              {(action.config.similarity * 100).toFixed(0)}%
+              {((similarity as number) * 100).toFixed(0)}%
             </span>
             <span>100%</span>
           </div>
         </>
       )}
-      {action.config.similarity === undefined && (
+      {(similarity === undefined || similarity === null) && (
         <Button
           variant="ghost"
           size="sm"

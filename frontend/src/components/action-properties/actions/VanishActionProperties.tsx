@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { ImageSelector } from "@/components/image-selector";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
+import type { VanishActionConfig } from "@/lib/action-schema/configs/find-actions";
 
 /**
  * Properties component for VANISH action.
@@ -15,10 +16,12 @@ export function VanishActionProperties({
   updateConfig,
   images,
 }: ActionPropertiesComponentProps) {
+  const config = action.config as unknown as VanishActionConfig;
+
   // Extract imageId from the new target structure
   const imageId =
-    action.config.target?.type === "image"
-      ? action.config.target.imageId
+    config.target?.type === "image"
+      ? (config.target as any).imageId
       : null;
 
   const handleImageSelect = (selectedImageId: string | null) => {
@@ -34,17 +37,17 @@ export function VanishActionProperties({
     <>
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Image to Wait For</Label>
-        {action.config.removedImage && (
+        {(action.config as any).removedImage && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
             <span className="font-medium">Removed Image:</span>{" "}
-            {action.config.removedImage}
+            {(action.config as any).removedImage as string}
             <p className="text-xs text-red-400 mt-1">
               This image was deleted. Please select a new image.
             </p>
           </div>
         )}
         <ImageSelector
-          selectedImage={imageId}
+          selectedImage={imageId as string | null}
           onSelectImage={handleImageSelect}
           images={images}
           placeholder="Select image to wait for disappearance"
@@ -56,7 +59,7 @@ export function VanishActionProperties({
         <Input
           type="number"
           min="0"
-          value={action.config.maxWaitTime || 5000}
+          value={config.maxWaitTime || 5000}
           onChange={(e) =>
             updateConfig("maxWaitTime", Number.parseInt(e.target.value))
           }
@@ -69,7 +72,7 @@ export function VanishActionProperties({
         <Input
           type="number"
           min="0"
-          value={action.config.pollInterval || 500}
+          value={config.pollInterval || 500}
           onChange={(e) =>
             updateConfig("pollInterval", Number.parseInt(e.target.value))
           }

@@ -21,24 +21,7 @@ import {
   type UploadingImage,
 } from "@/components/ImageUploadProgress";
 
-interface ImageAsset {
-  id: string;
-  name: string;
-  url: string;
-  mask?: string;
-  size: number;
-  createdAt: Date;
-  usageCount: number;
-  usedIn: Array<{ type: "process" | "state"; id: string; name: string }>;
-  source:
-    | "uploaded"
-    | "pattern_optimization"
-    | "image_extraction"
-    | "state_discovery";
-  projectName?: string;
-  s3_key?: string;
-  url_expires_at?: Date;
-}
+import type { ImageAsset } from "@/contexts/automation-context";
 
 export function ImagesManager() {
   const {
@@ -170,7 +153,7 @@ export function ImagesManager() {
             size: file.size,
             createdAt: new Date(result.screenshot.uploadedAt),
             usageCount: 0,
-            usedIn: [],
+            usage: [],
             source: "uploaded",
             projectName: projectName,
             // S3 fields (matching ImageAsset type in context)
@@ -210,7 +193,7 @@ export function ImagesManager() {
           console.error(`Upload failed for ${file.name}:`, error);
 
           // Show user-friendly error message
-          const errorMsg = error.message || "Unknown error occurred";
+          const errorMsg = error instanceof Error ? error.message : "Unknown error occurred";
           if (errorMsg.includes("quota") || errorMsg.includes("Quota")) {
             toast.error("Storage quota exceeded", {
               description: "Please upgrade your plan or delete unused images.",
@@ -262,7 +245,7 @@ export function ImagesManager() {
 
     // Get usage information
     const usageInfo = getImageUsage(imageId);
-    setImageToDelete(image as unknown);
+    setImageToDelete(image);
     setDeletionUsageInfo(usageInfo);
     setShowDeletionDialog(true);
   };
@@ -618,7 +601,7 @@ export function ImagesManager() {
                         variant="ghost"
                         size="sm"
                         className="text-purple-400 hover:text-purple-300 hover:bg-purple-400/20 h-6 w-6 p-0"
-                        onClick={() => handleEditMask(image as unknown)}
+                        onClick={() => handleEditMask(image)}
                         title="Edit Mask"
                       >
                         <Edit className="w-3 h-3" />

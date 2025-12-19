@@ -9,7 +9,7 @@ import React, { useState } from "react";
 import { AdvancedSearch } from "./AdvancedSearch";
 import { BulkOperations } from "./BulkOperations";
 import { WorkflowFolder, SearchFilter, SavedFilter } from "./types";
-import { Workflow } from "../../lib/action-schema/action-types";
+import { Workflow, Action } from "../../lib/action-schema/action-types";
 
 // ============================================================================
 // Example Component
@@ -47,7 +47,9 @@ export function WorkflowManagementExample() {
   const handleMoveToFolder = (folderId: string) => {
     setWorkflows(
       workflows.map((w) =>
-        selectedWorkflowIds.includes(w.id) ? ({ ...w, folderId } as unknown) : w
+        selectedWorkflowIds.includes(w.id)
+          ? ({ ...w, folderId } as Workflow)
+          : w
       )
     );
     setSelectedWorkflowIds([]);
@@ -278,19 +280,19 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
       {
         id: "action-1",
         type: "FIND",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
       {
         id: "action-2",
         type: "CLICK",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
       {
         id: "action-3",
         type: "TYPE",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
     ],
@@ -315,19 +317,19 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
       {
         id: "action-1",
         type: "MAP",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
       {
         id: "action-2",
         type: "FILTER",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
       {
         id: "action-3",
         type: "REDUCE",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
     ],
@@ -352,25 +354,25 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
       {
         id: "action-1",
         type: "IF",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
       {
         id: "action-2",
         type: "FIND",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
       {
         id: "action-3",
         type: "CLICK",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
       {
         id: "action-4",
         type: "EXISTS",
-        config: {} as unknown,
+        config: {} as Action["config"],
         position: [0, 0],
       },
     ],
@@ -385,7 +387,7 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
         ],
       },
       "action-2": { main: [[{ action: "action-3", type: "main", index: 0 }]] },
-    } as unknown,
+    } as Action["config"],
     category: "Testing",
     description: "Comprehensive UI testing",
     tags: ["testing", "ui", "validation"],

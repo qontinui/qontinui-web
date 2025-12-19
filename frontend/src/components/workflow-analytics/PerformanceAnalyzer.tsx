@@ -641,7 +641,7 @@ export function PerformanceAnalyzer({
                   />
                   <YAxis tickFormatter={formatDuration} />
                   <Tooltip
-                    formatter={(value: number) => formatDuration(value)}
+                    formatter={(value) => formatDuration(Number(value))}
                   />
                   <Bar dataKey="duration" radius={[8, 8, 0, 0]}>
                     {heatmapData.map((entry, index) => (

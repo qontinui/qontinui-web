@@ -50,7 +50,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
     setSeverityFilter(value);
     setFilters((prev) => ({
       ...prev,
-      severity: value === "all" ? undefined : (value as unknown),
+      severity: value === "all" ? undefined : (value as "low" | "medium" | "high" | "critical"),
       page: 1,
     }));
   };
@@ -59,7 +59,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
     setStatusFilter(value);
     setFilters((prev) => ({
       ...prev,
-      status: value === "all" ? undefined : (value as unknown),
+      status: value === "all" ? undefined : (value as "open" | "in_progress" | "resolved" | "wont_fix"),
       page: 1,
     }));
   };

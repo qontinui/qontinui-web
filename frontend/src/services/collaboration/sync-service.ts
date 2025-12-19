@@ -27,6 +27,7 @@ import {
   ResourceType,
   OfflineQueueState,
   SyncServiceConfig,
+  Operation,
 } from "../../types/collaboration/conflict-types";
 import { operationalTransformService } from "./operational-transform-service";
 import { conflictResolutionService } from "./conflict-resolution-service";
@@ -408,8 +409,8 @@ export class SyncService {
       const remoteOp = this.changeToOperation(update.change);
 
       const [, remoteTransformed] = operationalTransformService.transform(
-        localOp,
-        remoteOp
+        localOp as Operation,
+        remoteOp as Operation
       );
 
       // Apply transformed remote change
@@ -718,7 +719,7 @@ export class SyncService {
   /**
    * Convert change to operation
    */
-  private changeToOperation(change: Change): unknown {
+  private changeToOperation(change: Change): Operation {
     return {
       type: change.type,
       path: change.path,
@@ -737,12 +738,12 @@ export class SyncService {
    * @param resourceId - The resource ID
    */
   private operationToChange(
-    operation: unknown,
+    operation: Operation,
     resourceType: ResourceType,
     resourceId: string
   ): Change {
     return {
-      id: operation.operationId,
+      id: operation.operationId || "",
       type: operation.type,
       resourceType,
       resourceId,

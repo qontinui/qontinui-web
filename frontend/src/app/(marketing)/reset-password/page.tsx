@@ -68,7 +68,7 @@ export default function ResetPassword() {
       setTimeout(() => {
         router.push("/login");
       }, 3000);
-    } catch (error: unknown) {
+    } catch (error: any) {
       toast.error("Failed to reset password", {
         description:
           error.message || "The reset link may be invalid or expired.",

@@ -16,24 +16,25 @@ export const migrationV21ToV22: Migration = {
   description: "Normalize state and transition positions to integers",
 
   migrate(config: unknown, context: MigrationContext): unknown {
-    const migrated = structuredClone(config);
+    const migrated = structuredClone(config) as Record<string, unknown>;
 
     let statesNormalized = 0;
     let transitionsNormalized = 0;
 
     // Normalize state positions
     if (migrated.states && Array.isArray(migrated.states)) {
-      for (const state of migrated.states) {
+      for (const state of migrated.states as Array<Record<string, unknown>>) {
         if (state.position) {
-          const oldX = state.position.x;
-          const oldY = state.position.y;
+          const position = state.position as Record<string, unknown>;
+          const oldX = position.x;
+          const oldY = position.y;
 
           if (typeof oldX === "number" && !Number.isInteger(oldX)) {
-            state.position.x = Math.round(oldX);
+            position.x = Math.round(oldX);
             statesNormalized++;
           }
           if (typeof oldY === "number" && !Number.isInteger(oldY)) {
-            state.position.y = Math.round(oldY);
+            position.y = Math.round(oldY);
             if (statesNormalized === 0) statesNormalized++;
           }
         }
@@ -42,17 +43,18 @@ export const migrationV21ToV22: Migration = {
 
     // Normalize transition positions (if they have position data)
     if (migrated.transitions && Array.isArray(migrated.transitions)) {
-      for (const transition of migrated.transitions) {
+      for (const transition of migrated.transitions as Array<Record<string, unknown>>) {
         if (transition.position) {
-          const oldX = transition.position.x;
-          const oldY = transition.position.y;
+          const position = transition.position as Record<string, unknown>;
+          const oldX = position.x;
+          const oldY = position.y;
 
           if (typeof oldX === "number" && !Number.isInteger(oldX)) {
-            transition.position.x = Math.round(oldX);
+            position.x = Math.round(oldX);
             transitionsNormalized++;
           }
           if (typeof oldY === "number" && !Number.isInteger(oldY)) {
-            transition.position.y = Math.round(oldY);
+            position.y = Math.round(oldY);
             if (transitionsNormalized === 0) transitionsNormalized++;
           }
         }
@@ -89,13 +91,15 @@ export const migrationV21ToV22: Migration = {
    * Validate the migrated config - ensure all positions are integers
    */
   validate(migratedConfig: unknown): boolean {
+    const configObj = migratedConfig as Record<string, unknown>;
     // Check state positions
-    if (migratedConfig.states && Array.isArray(migratedConfig.states)) {
-      for (const state of migratedConfig.states) {
+    if (configObj.states && Array.isArray(configObj.states)) {
+      for (const state of configObj.states as Array<Record<string, unknown>>) {
         if (state.position) {
+          const position = state.position as Record<string, unknown>;
           if (
-            typeof state.position.x === "number" &&
-            !Number.isInteger(state.position.x)
+            typeof position.x === "number" &&
+            !Number.isInteger(position.x)
           ) {
             console.error(
               `Validation failed: State "${state.name || state.id}" has non-integer x position`
@@ -103,8 +107,8 @@ export const migrationV21ToV22: Migration = {
             return false;
           }
           if (
-            typeof state.position.y === "number" &&
-            !Number.isInteger(state.position.y)
+            typeof position.y === "number" &&
+            !Number.isInteger(position.y)
           ) {
             console.error(
               `Validation failed: State "${state.name || state.id}" has non-integer y position`
@@ -117,14 +121,15 @@ export const migrationV21ToV22: Migration = {
 
     // Check transition positions
     if (
-      migratedConfig.transitions &&
-      Array.isArray(migratedConfig.transitions)
+      configObj.transitions &&
+      Array.isArray(configObj.transitions)
     ) {
-      for (const transition of migratedConfig.transitions) {
+      for (const transition of configObj.transitions as Array<Record<string, unknown>>) {
         if (transition.position) {
+          const position = transition.position as Record<string, unknown>;
           if (
-            typeof transition.position.x === "number" &&
-            !Number.isInteger(transition.position.x)
+            typeof position.x === "number" &&
+            !Number.isInteger(position.x)
           ) {
             console.error(
               `Validation failed: Transition "${transition.id}" has non-integer x position`
@@ -132,8 +137,8 @@ export const migrationV21ToV22: Migration = {
             return false;
           }
           if (
-            typeof transition.position.y === "number" &&
-            !Number.isInteger(transition.position.y)
+            typeof position.y === "number" &&
+            !Number.isInteger(position.y)
           ) {
             console.error(
               `Validation failed: Transition "${transition.id}" has non-integer y position`

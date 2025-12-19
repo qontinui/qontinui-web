@@ -272,7 +272,7 @@ export class GraphToSequentialConverter {
   ): Action[] {
     return actions.map((action) => {
       // Create a new action without graph-specific properties
-      const cleaned: unknown = {
+      const cleaned: Record<string, unknown> = {
         id: action.id,
         type: action.type,
         config: action.config,
@@ -293,7 +293,7 @@ export class GraphToSequentialConverter {
       // Remove position property (graph-specific)
       // Position is optional in the Action type, so we don't include it
 
-      return cleaned as Action;
+      return cleaned as unknown as Action;
     });
   }
 
@@ -330,17 +330,17 @@ export class GraphToSequentialConverter {
     // Validate control flow references
     actions.forEach((action) => {
       if (action.type === "IF") {
-        const config = action.config as unknown;
-        if (config.thenActions) {
-          this.validateActionReferences(config.thenActions, ids, action.id);
+        const config = action.config as Record<string, unknown>;
+        if (config.thenActions && Array.isArray(config.thenActions)) {
+          this.validateActionReferences(config.thenActions as string[], ids, action.id);
         }
-        if (config.elseActions) {
-          this.validateActionReferences(config.elseActions, ids, action.id);
+        if (config.elseActions && Array.isArray(config.elseActions)) {
+          this.validateActionReferences(config.elseActions as string[], ids, action.id);
         }
       } else if (action.type === "LOOP") {
-        const config = action.config as unknown;
-        if (config.actions) {
-          this.validateActionReferences(config.actions, ids, action.id);
+        const config = action.config as Record<string, unknown>;
+        if (config.actions && Array.isArray(config.actions)) {
+          this.validateActionReferences(config.actions as string[], ids, action.id);
         }
       }
     });

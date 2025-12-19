@@ -39,14 +39,18 @@ const VariableNode: React.FC<VariableNodeProps> = ({
 
     switch (type) {
       case "string":
-        return <span className="text-green-600">"{value}"</span>;
+        return <span className="text-green-600">"{String(value)}"</span>;
       case "number":
-        return <span className="text-blue-600">{value}</span>;
+        return <span className="text-blue-600">{String(value)}</span>;
       case "boolean":
         return <span className="text-purple-600">{String(value)}</span>;
       case "object":
         if (isArray) {
-          return <span className="text-gray-600">[{value.length} items]</span>;
+          return (
+            <span className="text-gray-600">
+              [{(value as unknown[]).length} items]
+            </span>
+          );
         }
         return <span className="text-gray-600">{"{...}"}</span>;
       default:

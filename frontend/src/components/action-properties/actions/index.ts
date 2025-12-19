@@ -35,8 +35,15 @@ export { CodeBlockActionProperties } from "./code-execution/CodeBlockActionPrope
 export {
   ShellActionProperties,
   ShellScriptActionProperties,
-  TriggerAiAnalysisActionProperties,
 } from "./shell/ShellActionProperties";
+
+// Import AI Prompt components
+export {
+  AIPromptActionProperties,
+} from "./ai-prompts/AIPromptActionProperties";
+export {
+  RunPromptSequenceActionProperties,
+} from "./ai-prompts/RunPromptSequenceActionProperties";
 
 // Register components with the registry
 import { FindActionProperties } from "./FindActionProperties";
@@ -69,8 +76,15 @@ import { CodeBlockActionProperties } from "./code-execution/CodeBlockActionPrope
 import {
   ShellActionProperties,
   ShellScriptActionProperties,
-  TriggerAiAnalysisActionProperties,
 } from "./shell/ShellActionProperties";
+
+// Import AI Prompt components
+import {
+  AIPromptActionProperties,
+} from "./ai-prompts/AIPromptActionProperties";
+import {
+  RunPromptSequenceActionProperties,
+} from "./ai-prompts/RunPromptSequenceActionProperties";
 
 // Register all action types with their components
 actionConfigRegistry.register("FIND", FindActionProperties, "FIND");
@@ -120,24 +134,31 @@ actionConfigRegistry.register("LOOP", LoopActionProperties, "LOOP");
 
 // Register Code Execution components
 actionConfigRegistry.register(
-  "CODE_BLOCK" as unknown,
+  "CODE_BLOCK",
   CodeBlockActionProperties,
-  "CODE_BLOCK" as unknown
+  "CODE_BLOCK"
 );
 
 // Register Shell Execution components
 actionConfigRegistry.register(
-  "SHELL" as unknown,
+  "SHELL",
   ShellActionProperties,
-  "SHELL" as unknown
+  "SHELL"
 );
 actionConfigRegistry.register(
-  "SHELL_SCRIPT" as unknown,
+  "SHELL_SCRIPT",
   ShellScriptActionProperties,
-  "SHELL_SCRIPT" as unknown
+  "SHELL_SCRIPT"
+);
+
+// Register AI Prompt components
+actionConfigRegistry.register(
+  "AI_PROMPT",
+  AIPromptActionProperties,
+  "AI_PROMPT"
 );
 actionConfigRegistry.register(
-  "TRIGGER_AI_ANALYSIS" as unknown,
-  TriggerAiAnalysisActionProperties,
-  "TRIGGER_AI_ANALYSIS" as unknown
+  "RUN_PROMPT_SEQUENCE",
+  RunPromptSequenceActionProperties,
+  "RUN_PROMPT_SEQUENCE"
 );

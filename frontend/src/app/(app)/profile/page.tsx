@@ -14,7 +14,8 @@ import { StorageUsageCard } from "@/components/profile/storage-usage-card";
 import { ActivityFeed } from "@/components/profile/activity-feed";
 import { ArrowLeft, Crown, Shield, Cable } from "lucide-react";
 import { toast } from "sonner";
-import type { StorageUsage, ActivityLog } from "@/services/profile-service";
+import type { StorageUsage, ActivityLog, ProfileUpdateData } from "@/services/profile-service";
+import type { User } from "@/types/auth-types";
 
 export default function ProfilePage() {
   const { user, loading: authLoading, updateUser } = useAuth();
@@ -58,9 +59,9 @@ export default function ProfilePage() {
     }
   };
 
-  const handleUpdateProfile = async (data: unknown) => {
+  const handleUpdateProfile = async (data: ProfileUpdateData) => {
     await profileService.updateProfile(data);
-    await updateUser(data);
+    await updateUser(data as Partial<User>);
   };
 
   const handleUploadAvatar = async (file: File) => {

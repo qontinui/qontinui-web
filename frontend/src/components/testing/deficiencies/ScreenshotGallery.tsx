@@ -124,9 +124,9 @@ export function ScreenshotGallery({
   // Add keyboard listener
   useEffect(() => {
     if (typeof window !== "undefined") {
-      window.addEventListener("keydown", handleKeyDown as unknown);
-      return () =>
-        window.removeEventListener("keydown", handleKeyDown as unknown);
+      const listener = (e: Event) => handleKeyDown(e as KeyboardEvent);
+      window.addEventListener("keydown", listener);
+      return () => window.removeEventListener("keydown", listener);
     }
     return undefined;
   }, [handleKeyDown]);

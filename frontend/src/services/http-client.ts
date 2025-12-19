@@ -141,7 +141,7 @@ export class HttpClient {
     } catch (error: unknown) {
       clearTimeout(timeoutId);
 
-      if (error.name === "AbortError") {
+      if ((error as Error).name === "AbortError") {
         throw new Error(
           "Request timeout - backend may be starting up. Please try again."
         );

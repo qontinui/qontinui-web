@@ -5,6 +5,7 @@ This package contains all SQLAlchemy models for the application.
 """
 
 from app.models.admin_notification_settings import AdminNotificationSettings
+from app.models.ai_prompt import AIPromptTemplate, PromptSequence
 from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
 from app.models.audit_log import AuditLog
@@ -46,6 +47,7 @@ from app.models.collaboration import (
 )
 from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
+from app.models.detected_issue import DetectedIssue
 from app.models.device_session import DeviceSession
 from app.models.edit_command import EditCommand
 from app.models.embedding_generation_job import EmbeddingGenerationJob
@@ -131,6 +133,9 @@ __all__ = [
     "Project",
     "ProjectScreenshot",
     "ProjectImage",
+    # AI Prompt Library
+    "AIPromptTemplate",
+    "PromptSequence",
     # Organizations and Teams
     "Organization",
     "TeamMember",
@@ -170,6 +175,8 @@ __all__ = [
     "AuditLog",
     # Analytics
     "AnalyticsEvent",
+    # Detected Issues
+    "DetectedIssue",
     # Automation
     "EmbeddingGenerationJob",
     "ProjectEmbedding",

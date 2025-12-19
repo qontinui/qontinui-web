@@ -80,7 +80,7 @@ export function IfActionProperties({
             onChange={handleConditionChange}
             label=""
             allowEmpty={false}
-            images={images}
+            images={images.map(img => ({ id: img.id, name: img.name }))}
           />
         </div>
         <p className="text-xs text-gray-500">

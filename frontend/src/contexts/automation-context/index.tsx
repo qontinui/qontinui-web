@@ -20,6 +20,7 @@ import { screenshotDB, normalizeUrl } from "@/lib/screenshot-db";
 import { projectDB } from "@/lib/project-db";
 import { projectLogger } from "@/lib/project-logger";
 import { useAutomationStore } from "@/stores/automation";
+import { isDuplicateTransition } from "@/stores/automation/slices/transition-slice";
 import { apiClient } from "@/lib/api-client";
 import type {
   AutomationContextType,
@@ -35,6 +36,15 @@ import type {
   ExecutionRecord,
   SchedulerStatistics,
 } from "./types";
+
+// Type for legacy config during migration
+interface LegacyActionConfig extends Record<string, any> {
+  processId?: string;
+  workflowId?: string;
+  processRepetition?: any;
+  repetition?: any;
+}
+
 import type { ProjectSettings } from "@/types/project-settings";
 import type { Workflow } from "@/lib/action-schema/action-types";
 
@@ -86,25 +96,23 @@ function migrateWorkflows(workflows: Workflow[]): Workflow[] {
     const migratedActions = workflow.actions.map((action) => {
       // Migrate RUN_PROCESS to RUN_WORKFLOW (legacy migration)
       if ((action.type as string) === "RUN_PROCESS") {
-        const config = { ...action.config };
+        const config = { ...action.config } as LegacyActionConfig;
 
         // Migrate processId to workflowId
-        if ((config as unknown).processId) {
-          (config as unknown).workflowId = (config as unknown).processId;
-          delete (config as unknown).processId;
+        if (config.processId) {
+          config.workflowId = config.processId;
+          delete config.processId;
         }
 
         // Migrate processRepetition to repetition
-        if ((config as unknown).processRepetition) {
-          (config as unknown).repetition = (
-            config as unknown
-          ).processRepetition;
-          delete (config as unknown).processRepetition;
+        if (config.processRepetition) {
+          config.repetition = config.processRepetition;
+          delete config.processRepetition;
         }
 
         return {
           ...action,
-          type: "RUN_WORKFLOW" as unknown,
+          type: "RUN_WORKFLOW" as any,
           config,
         };
       }
@@ -114,7 +122,7 @@ function migrateWorkflows(workflows: Workflow[]): Workflow[] {
 
     return {
       ...workflow,
-      actions: migratedActions,
+      actions: migratedActions as any,
     };
   });
 }
@@ -160,13 +168,13 @@ function migratePatternImages(
       }
 
       const migratedPatterns = stateImage.patterns.map((pattern) => {
-        const patternAny = pattern as unknown;
+        const patternAny = pattern as any;
 
         // Check if pattern has embedded image data but no imageId
         // OR if pattern.imageId accidentally contains base64 data (fix for corrupted data)
         const imageIdIsData =
           pattern.imageId && pattern.imageId.startsWith("data:image");
-        const hasEmbeddedImage = !pattern.imageId && patternAny.image;
+        const hasEmbeddedImage = !pattern.imageId && "image" in patternAny && patternAny.image;
 
         if (hasEmbeddedImage || imageIdIsData) {
           const imageData = imageIdIsData ? pattern.imageId! : patternAny.image;
@@ -186,7 +194,7 @@ function migratePatternImages(
               id: imageId,
               name: pattern.name || stateImage.name || "Migrated Image",
               url: imageData,
-              mask: patternAny.mask,
+              mask: "mask" in patternAny ? patternAny.mask : undefined,
               size: Math.ceil(((imageData.split(",")[1] || "").length * 3) / 4),
               createdAt: new Date(),
               usageCount: 1,
@@ -203,7 +211,7 @@ function migratePatternImages(
 
           // Return pattern with imageId, removing embedded data
           // If imageId was the data, it gets overwritten here
-          const { image, mask, ...rest } = patternAny;
+          const { image, mask, ...rest } = patternAny as any;
           return {
             ...rest,
             imageId: matchingImage.id,
@@ -725,7 +733,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.addWorkflow(workflowWithProject);
       } catch (error: unknown) {
         // If key already exists, update instead
-        if ((error as Error).name === "ConstraintError") {
+        if (error && typeof error === 'object' && 'name' in error && (error as any).name === "ConstraintError") {
           await projectDB.updateWorkflow(workflowWithProject);
         } else {
           throw error;
@@ -776,7 +784,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.addState(stateWithProject);
       } catch (error: unknown) {
         // If key already exists, update instead
-        if (error.name === "ConstraintError") {
+        if (error && typeof error === 'object' && 'name' in error && error.name === "ConstraintError") {
           await projectDB.updateState(stateWithProject);
         } else {
           throw error;
@@ -807,7 +815,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         zustandStore.addTransition(incomingTransition);
       } catch (error: unknown) {
         // If transition already exists, ignore the error
-        if (error.name !== "ConstraintError") {
+        if (!(error && typeof error === 'object' && 'name' in error && (error as any).name === "ConstraintError")) {
           console.error("Failed to create incoming transition:", error);
         }
       }
@@ -850,13 +858,24 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
   // Transition management functions
   const addTransition = useCallback(
-    async (transition: Transition) => {
+    async (transition: Transition): Promise<boolean> => {
       const transitionWithProject = { ...transition, projectName };
+
+      // Check for duplicates before adding
+      if (isDuplicateTransition(transitions, transitionWithProject)) {
+        projectLogger.warn("AutomationContext", "addTransition", {
+          id: transition.id,
+          type: transition.type,
+          message: "Duplicate transition detected, skipping",
+        });
+        return false;
+      }
+
       try {
         await projectDB.addTransition(transitionWithProject);
       } catch (error: unknown) {
         // If key already exists, update instead
-        if (error.name === "ConstraintError") {
+        if (error && typeof error === 'object' && 'name' in error && error.name === "ConstraintError") {
           await projectDB.updateTransition(transitionWithProject);
         } else {
           throw error;
@@ -869,8 +888,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       // Also sync to Zustand store so UI components see the new transition
       const zustandStore = useAutomationStore.getState();
       zustandStore.addTransition(transitionWithProject);
+      return true;
     },
-    [projectName]
+    [projectName, transitions]
   );
 
   const updateTransition = useCallback(async (transition: Transition) => {
@@ -903,7 +923,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.addImage(imageWithProject);
       } catch (error: unknown) {
         // If key already exists, update instead
-        if (error.name === "ConstraintError") {
+        if (error && typeof error === 'object' && 'name' in error && error.name === "ConstraintError") {
           await projectDB.updateImage(imageWithProject);
         } else {
           throw error;
@@ -1502,24 +1522,24 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
   // Load a complete configuration
   const loadConfiguration = useCallback(
-    async (config: unknown) => {
-      const newProjectName = config.name || "Untitled Project";
+    async (config: any) => {
+      const newProjectName = config?.name || "Untitled Project";
 
       // Check if the incoming config has any data
       const configHasData =
-        (config.workflows?.length ?? 0) > 0 ||
-        (config.states?.length ?? 0) > 0 ||
-        (config.transitions?.length ?? 0) > 0 ||
-        (config.images?.length ?? 0) > 0;
+        (config?.workflows?.length ?? 0) > 0 ||
+        (config?.states?.length ?? 0) > 0 ||
+        (config?.transitions?.length ?? 0) > 0 ||
+        (config?.images?.length ?? 0) > 0;
 
       projectLogger.configLoader("loadConfiguration START", {
         newProjectName,
         oldProjectName: projectName,
-        hasWorkflows: !!config.workflows,
-        workflowCount: config.workflows?.length ?? 0,
-        stateCount: config.states?.length ?? 0,
-        transitionCount: config.transitions?.length ?? 0,
-        imageCount: config.images?.length ?? 0,
+        hasWorkflows: !!config?.workflows,
+        workflowCount: config?.workflows?.length ?? 0,
+        stateCount: config?.states?.length ?? 0,
+        transitionCount: config?.transitions?.length ?? 0,
+        imageCount: config?.images?.length ?? 0,
         configHasData,
       });
 
@@ -1647,29 +1667,29 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         screenshotsDeleted: currentScreenshots.length,
       });
 
-      if (config.name) {
+      if (config?.name) {
         projectLogger.configLoader("Setting project name", {
           from: projectName,
-          to: config.name,
+          to: config?.name,
         });
-        setProjectName(config.name);
+        setProjectName(config?.name);
       }
 
       // Load workflows to IndexedDB
-      if (config.workflows && Array.isArray(config.workflows)) {
+      if (config?.workflows && Array.isArray(config?.workflows)) {
         projectLogger.configLoader("Loading workflows", {
-          count: config.workflows.length,
+          count: config?.workflows.length,
         });
-        const workflowsWithProject = config.workflows.map((w: Workflow) => ({
+        const workflowsWithProject = config?.workflows.map((w: Workflow) => ({
           ...w,
           projectName: newProjectName,
         })) as Array<Workflow & { projectName: string }>;
         for (const workflow of workflowsWithProject) {
           await projectDB.updateWorkflow(workflow);
         }
-        setWorkflows(config.workflows);
+        setWorkflows(config?.workflows);
         projectLogger.configLoader("Workflows loaded and state set", {
-          count: config.workflows.length,
+          count: config?.workflows.length,
         });
       } else {
         projectLogger.configLoader(
@@ -1679,11 +1699,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
 
       // Load states to IndexedDB
-      if (config.states && Array.isArray(config.states)) {
+      if (config?.states && Array.isArray(config?.states)) {
         projectLogger.configLoader("Loading states", {
-          count: config.states.length,
+          count: config?.states.length,
         });
-        const statesWithProject = config.states.map((s: State) => ({
+        const statesWithProject = config?.states.map((s: State) => ({
           ...s,
           projectName: newProjectName,
         }));
@@ -1700,11 +1720,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
 
       // Load transitions to IndexedDB
-      if (config.transitions && Array.isArray(config.transitions)) {
+      if (config?.transitions && Array.isArray(config?.transitions)) {
         projectLogger.configLoader("Loading transitions", {
-          count: config.transitions.length,
+          count: config?.transitions.length,
         });
-        const transitionsWithProject = config.transitions.map(
+        const transitionsWithProject = config?.transitions.map(
           (t: Transition) => ({
             ...t,
             projectName: newProjectName,
@@ -1725,11 +1745,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
 
       // Load images to IndexedDB
-      if (config.images && Array.isArray(config.images)) {
+      if (config?.images && Array.isArray(config?.images)) {
         projectLogger.configLoader("Loading images", {
-          count: config.images.length,
+          count: config?.images.length,
         });
-        const imagesWithProject = config.images.map((img: ImageAsset) => ({
+        const imagesWithProject = config?.images.map((img: ImageAsset) => ({
           ...img,
           projectName: newProjectName,
         }));
@@ -1746,11 +1766,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
 
       // Load screenshots to IndexedDB
-      if (config.screenshots && Array.isArray(config.screenshots)) {
+      if (config?.screenshots && Array.isArray(config?.screenshots)) {
         projectLogger.configLoader("Loading screenshots", {
-          count: config.screenshots.length,
+          count: config?.screenshots.length,
         });
-        const screenshotsWithProject = config.screenshots.map(
+        const screenshotsWithProject = config?.screenshots.map(
           (s: Screenshot) => ({
             ...s,
             projectName: newProjectName,
@@ -1770,13 +1790,13 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         setScreenshots([]);
       }
 
-      if (config.categories && Array.isArray(config.categories)) {
+      if (config?.categories && Array.isArray(config?.categories)) {
         const uniqueCategories = Array.from(
           new Set([
             "Main",
             "Incoming Transitions",
             "Outgoing Transitions",
-            ...config.categories,
+            ...config?.categories,
           ])
         );
         setCategories(uniqueCategories);
@@ -1789,11 +1809,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
 
       // Load schedules
-      if (config.schedules && Array.isArray(config.schedules)) {
+      if (config?.schedules && Array.isArray(config?.schedules)) {
         projectLogger.configLoader("Loading schedules", {
-          count: config.schedules.length,
+          count: config?.schedules.length,
         });
-        const schedulesWithProject = config.schedules.map((s: Schedule) => ({
+        const schedulesWithProject = config?.schedules.map((s: Schedule) => ({
           ...s,
           projectName: newProjectName,
           createdAt: s.createdAt ? new Date(s.createdAt) : undefined,
@@ -1805,8 +1825,8 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
 
       // Load execution records
-      if (config.executionRecords && Array.isArray(config.executionRecords)) {
-        const recordsWithDates = config.executionRecords.map(
+      if (config?.executionRecords && Array.isArray(config?.executionRecords)) {
+        const recordsWithDates = config?.executionRecords.map(
           (r: ExecutionRecord) => ({
             ...r,
             startTime: new Date(r.startTime),

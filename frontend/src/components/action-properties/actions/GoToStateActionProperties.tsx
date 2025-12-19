@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
+import type { GoToStateActionConfig } from "@/lib/action-schema/configs/state-actions";
 
 /**
  * Properties component for GO_TO_STATE action.
@@ -14,7 +15,8 @@ export function GoToStateActionProperties({
   updateConfig,
   states,
 }: ActionPropertiesComponentProps) {
-  const selectedStates = (action.config.states as string[]) || [];
+  const config = action.config as unknown as GoToStateActionConfig;
+  const selectedStates = (config.stateIds as string[]) || [];
 
   const handleStateToggle = (stateId: string, checked: boolean) => {
     const newStates = checked

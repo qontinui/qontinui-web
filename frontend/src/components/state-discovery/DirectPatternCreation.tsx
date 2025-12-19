@@ -22,6 +22,14 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
+interface APIScreenshot {
+  screenshot_path: string;
+  active_states?: string[];
+  timestamp: string;
+  width?: number;
+  height?: number;
+}
+
 
 import { SnapshotMultiSelector } from "@/components/integration-testing/SnapshotMultiSelector";
 import { DirectPatternRegionSelector } from "./DirectPatternRegionSelector";
@@ -83,8 +91,7 @@ export function DirectPatternCreation() {
 
           const data = await response.json();
 
-          const screenshotList: SnapshotScreenshot[] = data.screenshots.map(
-            (s: unknown, idx: number) => ({
+          const screenshotList: SnapshotScreenshot[] = data.screenshots.map((s: APIScreenshot, idx: number) => ({
               id: `${snapshot.run_id}_${idx}`,
               path: s.screenshot_path,
               url: `/api/integration-testing/snapshots/${snapshot.run_id}/screenshot/${s.screenshot_path}`,

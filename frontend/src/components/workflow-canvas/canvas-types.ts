@@ -301,7 +301,10 @@ export const ACTION_TYPE_TO_CATEGORY: Record<ActionType, ActionCategory> = {
   // Shell actions
   SHELL: ActionCategory.DATA,
   SHELL_SCRIPT: ActionCategory.DATA,
-  TRIGGER_AI_ANALYSIS: ActionCategory.DATA,
+
+  // AI actions
+  AI_PROMPT: ActionCategory.DATA,
+  RUN_PROMPT_SEQUENCE: ActionCategory.DATA,
 };
 
 /**

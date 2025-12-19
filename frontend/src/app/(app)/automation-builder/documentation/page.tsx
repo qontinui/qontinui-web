@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Workflow } from "@/lib/action-schema/action-types";
+import { Workflow, Action, ActionType, Connections } from "@/lib/action-schema/action-types";
 import {
   WorkflowDocumentation,
   WorkflowDocumentationService,
@@ -137,12 +137,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "CLICK" as unknown,
+          type: "CLICK" as ActionType,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as unknown[],
-      connections: {} as unknown,
+        })) as Action<ActionType>[],
+      connections: {} as Connections,
       variables: {},
     },
     {
@@ -155,12 +155,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "TYPE" as unknown,
+          type: "TYPE" as ActionType,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as unknown[],
-      connections: {} as unknown,
+        })) as Action<ActionType>[],
+      connections: {} as Connections,
       variables: {},
     },
     {
@@ -173,12 +173,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "CLICK" as unknown,
+          type: "CLICK" as ActionType,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as unknown[],
-      connections: {} as unknown,
+        })) as Action<ActionType>[],
+      connections: {} as Connections,
       variables: {},
     },
     {
@@ -191,12 +191,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "WAIT" as unknown,
+          type: "WAIT" as ActionType,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as unknown[],
-      connections: {} as unknown,
+        })) as Action<ActionType>[],
+      connections: {} as Connections,
       variables: {},
     },
     {
@@ -209,12 +209,12 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "TYPE" as unknown,
+          type: "TYPE" as ActionType,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
-        })) as unknown[],
-      connections: {} as unknown,
+        })) as Action<ActionType>[],
+      connections: {} as Connections,
       variables: {},
     },
   ];
@@ -489,8 +489,8 @@ function DocumentationNavigator({
         <div className="flex flex-col gap-2">
           <Select
             value={filter.status}
-            onValueChange={(value: unknown) =>
-              onFilterChange({ ...filter, status: value })
+            onValueChange={(value) =>
+              onFilterChange({ ...filter, status: value as "all" | "documented" | "undocumented" })
             }
           >
             <SelectTrigger className="h-9 bg-gray-900/50 border-gray-700">

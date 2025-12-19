@@ -23,7 +23,7 @@ import {
   Keyboard,
   MousePointerClick,
 } from "lucide-react";
-import type { Workflow } from "@/lib/action-schema/action-types";
+import type { Workflow, Action } from "@/lib/action-schema/action-types";
 
 export interface WorkflowStepListProps {
   workflow: Workflow;
@@ -35,7 +35,7 @@ export interface WorkflowStepListProps {
  * Get an appropriate icon for each action type
  */
 function getActionIcon(actionType: string) {
-  const iconMap: Record<string, React.ComponentType<unknown>> = {
+  const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
     CLICK: MousePointerClick,
     DOUBLE_CLICK: MousePointerClick,
     RIGHT_CLICK: MousePointerClick,
@@ -64,7 +64,7 @@ function getActionIcon(actionType: string) {
 /**
  * Get a display-friendly name for the action
  */
-function getActionDisplayName(action: unknown, _index: number): string {
+function getActionDisplayName(action: Action, _index: number): string {
   // Use custom name if provided
   if (action.name) {
     return action.name;
@@ -72,45 +72,49 @@ function getActionDisplayName(action: unknown, _index: number): string {
 
   // Generate a descriptive name based on action type and config
   const type = action.type;
-  const config = action.config || {};
 
   switch (type) {
     case "CLICK":
-    case "DOUBLE_CLICK":
-    case "RIGHT_CLICK":
-      return `${type.replace("_", " ")} Action`;
+      return "Click Action";
 
-    case "TYPE":
-      if (config.text) {
+    case "TYPE": {
+      const typeAction = action as Action<"TYPE">;
+      if (typeAction.config.text) {
         const truncated =
-          config.text.length > 20
-            ? config.text.substring(0, 20) + "..."
-            : config.text;
+          typeAction.config.text.length > 20
+            ? typeAction.config.text.substring(0, 20) + "..."
+            : typeAction.config.text;
         return `Type "${truncated}"`;
       }
       return "Type Text";
+    }
 
-    case "FIND":
-      // Check if this is a stateImage find (Find State)
-      if (config?.target?.type === "stateImage") {
+    case "FIND": {
+      const findAction = action as Action<"FIND">;
+      if (findAction.config.target?.type === "stateImage") {
         return "Find State";
       }
       return "Find Element";
+    }
 
-    case "WAIT":
-      if (config.duration) {
-        return `Wait ${config.duration}s`;
+    case "WAIT": {
+      const waitAction = action as Action<"WAIT">;
+      if (waitAction.config.duration) {
+        return `Wait ${waitAction.config.duration}s`;
       }
       return "Wait";
+    }
 
     case "VANISH":
       return "Wait for Vanish";
 
-    case "GO_TO_STATE":
-      if (config.stateNames && config.stateNames.length > 0) {
-        return `Go to ${config.stateNames[0]}`;
+    case "GO_TO_STATE": {
+      const gotoAction = action as Action<"GO_TO_STATE">;
+      if (gotoAction.config.stateIds && gotoAction.config.stateIds.length > 0) {
+        return `Go to ${gotoAction.config.stateIds[0]}`;
       }
       return "Go to State";
+    }
 
     case "RUN_WORKFLOW":
       return "Run Workflow";
@@ -118,8 +122,10 @@ function getActionDisplayName(action: unknown, _index: number): string {
     case "DRAG":
       return "Drag";
 
-    case "SCROLL":
-      return `Scroll ${config.direction || "down"}`;
+    case "SCROLL": {
+      const scrollAction = action as Action<"SCROLL">;
+      return `Scroll ${scrollAction.config.direction || "down"}`;
+    }
 
     case "IF":
       return "If Condition";

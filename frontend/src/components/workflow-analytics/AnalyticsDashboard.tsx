@@ -672,7 +672,7 @@ export function AnalyticsDashboard({
                   <XAxis type="number" />
                   <YAxis type="category" dataKey="name" width={150} />
                   <Tooltip
-                    formatter={(value: number) => formatDuration(value)}
+                    formatter={(value) => formatDuration(Number(value))}
                     labelFormatter={(label) => `Workflow: ${label}`}
                   />
                   <Legend />

@@ -342,7 +342,7 @@ export function DeficiencyDashboard() {
           activities={activities}
           open={!!selectedDeficiency}
           onOpenChange={(open) => !open && setSelectedDeficiency(null)}
-          onStatusChange={handleStatusChange}
+          onStatusChange={(newStatus) => handleStatusChange(newStatus as DeficiencyStatus)}
           onAssignmentChange={handleAssignmentChange}
           onCommentAdd={handleCommentAdd}
           onExport={() => setExportOpen(true)}

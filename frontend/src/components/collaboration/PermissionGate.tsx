@@ -11,6 +11,7 @@ import {
   getPermissionLevel,
 } from "@/lib/permissions";
 import { useAuth } from "@/contexts/auth-context";
+import type { User as SchemaUser } from "@/lib/schemas";
 
 /**
  * Legacy permission type for backward compatibility
@@ -133,7 +134,10 @@ export function PermissionGate({
   const hasPermission = React.useMemo(() => {
     // New API - using project
     if (project && requiredPermission) {
-      const userLevel = getPermissionLevel(project, currentUser as unknown);
+      const userLevel = getPermissionLevel(
+        project,
+        (currentUser as SchemaUser | null) ?? null
+      );
       const required = Array.isArray(requiredPermission)
         ? requiredPermission
         : [requiredPermission];
@@ -233,7 +237,10 @@ export function usePermission(
   // New API - using project
   const projectPermissionLevel = React.useMemo(() => {
     if (project) {
-      return getPermissionLevel(project, currentUser as unknown);
+      return getPermissionLevel(
+        project,
+        (currentUser as SchemaUser | null) ?? null
+      );
     }
     return "none" as PermissionLevel;
   }, [project, currentUser]);

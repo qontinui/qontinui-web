@@ -19,8 +19,12 @@
  * CHANGELOG v2.6.0:
  * - Added CAPTURE_CONTEXT action, template variable support, and monitor metadata
  *
+ * CHANGELOG v2.10.0:
+ * - Replaced TRIGGER_AI_ANALYSIS with AI_PROMPT action type
+ * - Added RUN_PROMPT_SEQUENCE action type for multi-step AI prompts
+ *
  * CHANGELOG v2.5.0:
- * - Added TRIGGER_AI_ANALYSIS action type for autonomous debugging
+ * - Added AI_PROMPT action type for autonomous debugging (originally named TRIGGER_AI_ANALYSIS)
  * - Invokes AI assistants to analyze automation results and fix issues
  * - Supports provider selection (currently: claude)
  *
@@ -183,7 +187,9 @@ export type ActionType =
   // Shell actions
   | "SHELL"
   | "SHELL_SCRIPT"
-  | "TRIGGER_AI_ANALYSIS"
+  // AI actions
+  | "AI_PROMPT"
+  | "RUN_PROMPT_SEQUENCE"
   // Other actions
   | "WAIT"
   | "VANISH"
@@ -395,10 +401,13 @@ export interface ActionConfig {
   condition?: ConditionConfig;
   loop?: LoopConfig;
 
-  // === TRIGGER_AI_ANALYSIS Options ===
+  // === AI_PROMPT Options ===
   aiProvider?: "claude"; // AI provider to use (currently: claude)
+  prompt?: string; // AI prompt text
+  freshContext?: boolean; // Start fresh AI session
+  aiTimeout?: number; // AI execution timeout
+  outputVariable?: string; // Variable to store output
   resultsDirectory?: string; // Path to automation results directory
-  failOnIssues?: boolean; // Whether to fail if AI reports issues
 }
 
 export interface Region {

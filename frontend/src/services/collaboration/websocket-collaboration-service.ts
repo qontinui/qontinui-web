@@ -386,50 +386,50 @@ export class WebSocketCollaborationService {
       switch (message.type) {
         case "presence_update":
           if (this.callbacks.onPresenceUpdate) {
-            this.callbacks.onPresenceUpdate(message.data);
+            this.callbacks.onPresenceUpdate(message.data as UserPresence);
           }
           break;
 
         case "cursor_move":
           if (this.callbacks.onCursorMove) {
-            this.callbacks.onCursorMove(message.data);
+            this.callbacks.onCursorMove(message.data as CursorMoveMessage);
           }
           break;
 
         case "lock_acquired":
         case "lock_released":
           if (this.callbacks.onLockUpdate) {
-            this.callbacks.onLockUpdate(message.data);
+            this.callbacks.onLockUpdate(message.data as LockUpdateMessage);
           }
           break;
 
         case "resource_update":
           if (this.callbacks.onResourceUpdate) {
-            this.callbacks.onResourceUpdate(message.data);
+            this.callbacks.onResourceUpdate(message.data as ResourceUpdateMessage);
           }
           break;
 
         case "comment_added":
           if (this.callbacks.onCommentAdded) {
-            this.callbacks.onCommentAdded(message.data);
+            this.callbacks.onCommentAdded(message.data as Comment);
           }
           break;
 
         case "comment_updated":
           if (this.callbacks.onCommentUpdated) {
-            this.callbacks.onCommentUpdated(message.data);
+            this.callbacks.onCommentUpdated(message.data as Comment);
           }
           break;
 
         case "comment_deleted":
           if (this.callbacks.onCommentDeleted) {
-            this.callbacks.onCommentDeleted(message.data.comment_id);
+            this.callbacks.onCommentDeleted((message.data as { comment_id: string }).comment_id);
           }
           break;
 
         case "activity_update":
           if (this.callbacks.onActivityUpdate) {
-            this.callbacks.onActivityUpdate(message.data);
+            this.callbacks.onActivityUpdate(message.data as Activity);
           }
           break;
 

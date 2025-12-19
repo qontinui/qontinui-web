@@ -95,7 +95,7 @@ export function OutgoingTransitionBuilder({
     }
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!fromState) {
       toast.error("Please select an origin state");
       return;
@@ -118,7 +118,11 @@ export function OutgoingTransitionBuilder({
       retryCount: 0,
     };
 
-    addTransition(newTransition);
+    const wasAdded = await addTransition(newTransition);
+    if (!wasAdded) {
+      toast.error("A transition with the same origin and target states already exists");
+      return;
+    }
     toast.success("Outgoing transition created");
 
     // Reset form

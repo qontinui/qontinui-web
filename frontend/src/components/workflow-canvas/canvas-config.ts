@@ -113,7 +113,9 @@ export function getActionOutputCount(
     case "SWITCH":
       // SWITCH has multiple outputs based on cases
       // Default to 3 if config not provided (case 1, case 2, default)
-      return config?.cases?.length ? config.cases.length + 1 : 3;
+      return (config as { cases?: unknown[] } | undefined)?.cases?.length
+        ? (config as { cases: unknown[] }).cases.length + 1
+        : 3;
 
     case "TRY_CATCH":
       // TRY_CATCH has 2 outputs: success and error
@@ -569,8 +571,9 @@ export const MINIMAP_CONFIG = {
 
   /** Node color in minimap */
   nodeColor: (node: unknown) => {
-    if (node.data?.action?.type) {
-      return getActionTypeColor(node.data.action.type);
+    const nodeData = node as { data?: { action?: { type?: ActionType } } };
+    if (nodeData.data?.action?.type) {
+      return getActionTypeColor(nodeData.data.action.type);
     }
     return COLORS.primary;
   },

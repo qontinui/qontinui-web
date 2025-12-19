@@ -399,7 +399,7 @@ export default function MonitoringDocPage() {
 
             <DebuggingTip
               title="Review AI chat logs for context"
-              description="The ai-output.jsonl file contains all AI interactions. This is useful for understanding what the AI agent was trying to do during TRIGGER_AI_ANALYSIS actions."
+              description="The ai-output.jsonl file contains all AI interactions. This is useful for understanding what the AI agent was trying to do during AI_PROMPT actions."
             />
           </div>
         </section>

@@ -6,7 +6,7 @@ import {
 import { toast } from "sonner";
 
 interface UseTransitionOperationsProps {
-  addTransition: (transition: Transition) => void;
+  addTransition: (transition: Transition) => Promise<boolean>;
   updateTransition: (transition: Transition) => void;
   deleteTransition: (id: string) => void;
 }
@@ -25,9 +25,24 @@ export function useTransitionOperations({
   );
 
   const handleBulkCreate = useCallback(
-    (newTransitions: Transition[]) => {
-      newTransitions.forEach((t) => addTransition(t));
-      toast.success(`Created ${newTransitions.length} transition(s)`);
+    async (newTransitions: Transition[]) => {
+      let addedCount = 0;
+      let duplicateCount = 0;
+      for (const t of newTransitions) {
+        const wasAdded = await addTransition(t);
+        if (wasAdded) {
+          addedCount++;
+        } else {
+          duplicateCount++;
+        }
+      }
+      if (duplicateCount > 0) {
+        toast.warning(
+          `Created ${addedCount} transition(s), skipped ${duplicateCount} duplicate(s)`
+        );
+      } else {
+        toast.success(`Created ${addedCount} transition(s)`);
+      }
     },
     [addTransition]
   );

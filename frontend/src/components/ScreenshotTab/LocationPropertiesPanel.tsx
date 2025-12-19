@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { X, Check } from "lucide-react";
 import { ScreenshotLocation, AnchorType } from "../../types/Screenshot";
-import { StateImage } from "../../contexts/automation-context/types";
+import { StateImage, State } from "../../contexts/automation-context/types";
 
 interface LocationPropertiesPanelProps {
   selectedLocation: ScreenshotLocation;
-  states: unknown[]; // Will be replaced with proper State type
+  states: State[];
   onUpdate: (location: ScreenshotLocation) => void;
   onDelete: (locationId: string) => void;
 }
@@ -220,8 +220,8 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
               {/* Reference Image */}
               {location.referenceStateId &&
-                states.find((s) => s.id === location.referenceStateId)
-                  ?.stateImages?.length > 0 && (
+                (states.find((s) => s.id === location.referenceStateId)
+                  ?.stateImages?.length ?? 0) > 0 && (
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">
                       Reference Image

@@ -81,7 +81,9 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
       } else {
         setValidationStatus("invalid");
         setValidationError(
-          result.errors.map((e: unknown) => e.message).join("; ")
+          result.errors
+            .map((e: unknown) => (e as { message: string }).message)
+            .join("; ")
         );
       }
     } catch (error) {

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
+import type { RunWorkflowActionConfig } from "@/lib/action-schema/configs/state-actions";
 
 /**
  * Properties component for RUN_WORKFLOW action.
@@ -21,12 +22,14 @@ export function RunWorkflowActionProperties({
   updateConfig,
   processes,
 }: ActionPropertiesComponentProps) {
+  const config = action.config as unknown as RunWorkflowActionConfig;
+
   return (
     <>
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Workflow to Run</Label>
         <Select
-          value={action.config.workflowId || ""}
+          value={(config.workflowId as string) || ""}
           onValueChange={(value) => updateConfig("workflowId", value)}
         >
           <SelectTrigger className="bg-transparent border-gray-700">
@@ -48,12 +51,12 @@ export function RunWorkflowActionProperties({
           <Label className="text-xs text-gray-400">Repeat Workflow</Label>
           <Checkbox
             id="enableRepeat"
-            checked={(action.config.enableRepeat as boolean) || false}
+            checked={((config as any).enableRepeat as boolean) || false}
             onCheckedChange={(checked) => {
               if (checked) {
                 updateConfig("enableRepeat", true);
                 // Set default values when enabling repeat
-                if (action.config.maxRepeats === undefined) {
+                if ((config as any).maxRepeats === undefined) {
                   updateConfig("maxRepeats", 10);
                 }
               } else {
@@ -64,14 +67,14 @@ export function RunWorkflowActionProperties({
                   repeatDelay,
                   repeatUntilSuccess,
                   ...rest
-                } = action.config;
+                } = config as any;
                 updateConfig("__reset__", rest);
               }
             }}
           />
         </div>
 
-        {action.config.enableRepeat && (
+        {(config as any).enableRepeat && (
           <>
             <div className="space-y-2 pl-4 border-l-2 border-[#BD00FF]/30">
               {/* Max Repeats */}
@@ -81,7 +84,7 @@ export function RunWorkflowActionProperties({
                   type="number"
                   min="1"
                   max="1000"
-                  value={action.config.maxRepeats || 10}
+                  value={((config as any).maxRepeats as number) || 10}
                   onChange={(e) =>
                     updateConfig(
                       "maxRepeats",
@@ -92,7 +95,7 @@ export function RunWorkflowActionProperties({
                   placeholder="10"
                 />
                 <p className="text-xs text-gray-500">
-                  {action.config.repeatUntilSuccess
+                  {(config as any).repeatUntilSuccess
                     ? "Maximum attempts before giving up"
                     : "How many times to repeat (1 = run once more)"}
                 </p>
@@ -106,7 +109,7 @@ export function RunWorkflowActionProperties({
                 <Input
                   type="number"
                   min="0"
-                  value={action.config.repeatDelay || 0}
+                  value={((config as any).repeatDelay as number) || 0}
                   onChange={(e) =>
                     updateConfig(
                       "repeatDelay",
@@ -126,7 +129,7 @@ export function RunWorkflowActionProperties({
                 <Checkbox
                   id="repeatUntilSuccess"
                   checked={
-                    (action.config.repeatUntilSuccess as boolean) || false
+                    ((config as any).repeatUntilSuccess as boolean) || false
                   }
                   onCheckedChange={(checked) =>
                     updateConfig("repeatUntilSuccess", checked)

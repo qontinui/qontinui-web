@@ -191,7 +191,11 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
 
         // Convert to our format
         const screenshotList: SnapshotScreenshot[] = data.screenshots.map(
-          (s: unknown) => ({
+          (s: {
+            screenshot_path: string;
+            active_states: string[];
+            timestamp: string;
+          }) => ({
             path: s.screenshot_path,
             url: `/api/integration-testing/snapshots/${selectedSnapshot.run_id}/screenshot/${s.screenshot_path}`,
             active_states: s.active_states,
