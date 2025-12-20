@@ -447,16 +447,22 @@ export class ConfigTemplates {
             },
             {
               id: "double-click-icon",
-              type: "DOUBLE_CLICK",
-              config: {},
+              type: "CLICK",
+              config: {
+                numberOfClicks: 2,
+              },
               timeout: 1000,
               retryCount: 1,
             },
             {
               id: "wait-for-launch",
-              type: "WAIT",
+              type: "FIND",
               config: {
-                duration: 3000,
+                target: {
+                  type: "image",
+                  threshold: 0.9,
+                },
+                timeout: 3000,
               },
               timeout: 3000,
               retryCount: 1,
@@ -722,9 +728,13 @@ export class ConfigTemplates {
             },
             {
               id: "wait-for-load",
-              type: "WAIT",
+              type: "FIND",
               config: {
-                duration: 2000,
+                target: {
+                  type: "image",
+                  threshold: 0.9,
+                },
+                timeout: 2000,
               },
               timeout: 2000,
               retryCount: 1,

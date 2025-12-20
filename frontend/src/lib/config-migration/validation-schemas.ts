@@ -302,9 +302,9 @@ export function validateWorkflows(config: unknown): {
         if (connections) {
           for (const [actionId, outputs] of Object.entries(connections)) {
             if ((outputs as { parallel?: unknown }).parallel) {
-            errors.push(
-              `Workflow "${workflow.name}", Action ${actionId}: parallel connections not allowed in v2.0.1+`
-            );
+              errors.push(
+                `Workflow "${workflow.name}", Action ${actionId}: parallel connections not allowed in v2.0.1+`
+              );
             }
           }
         }

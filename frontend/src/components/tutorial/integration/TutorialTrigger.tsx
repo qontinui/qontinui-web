@@ -301,27 +301,21 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
 
   // Listen for custom tutorial trigger events
   useEffect(() => {
-    const handleCustomTrigger = (
-      event: Event
-    ) => {
+    const handleCustomTrigger = (event: Event) => {
       const customEvent = event as CustomEvent<{ tutorialId: string }>;
-      const tutorial = tutorials.find((t) => t.id === customEvent.detail.tutorialId);
+      const tutorial = tutorials.find(
+        (t) => t.id === customEvent.detail.tutorialId
+      );
 
       if (tutorial && shouldTriggerTutorial(tutorial)) {
         triggerTutorial(tutorial);
       }
     };
 
-    window.addEventListener(
-      "trigger-tutorial",
-      handleCustomTrigger
-    );
+    window.addEventListener("trigger-tutorial", handleCustomTrigger);
 
     return () => {
-      window.removeEventListener(
-        "trigger-tutorial",
-        handleCustomTrigger
-      );
+      window.removeEventListener("trigger-tutorial", handleCustomTrigger);
     };
   }, [tutorials, shouldTriggerTutorial, triggerTutorial]);
 

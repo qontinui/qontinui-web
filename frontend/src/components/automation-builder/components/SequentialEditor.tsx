@@ -67,7 +67,11 @@ const ACTION_GROUPS = {
   ],
   AI: [
     { type: "AI_PROMPT", label: "AI Prompt", color: "bg-violet-500" },
-    { type: "RUN_PROMPT_SEQUENCE", label: "Run Prompt Sequence", color: "bg-violet-600" },
+    {
+      type: "RUN_PROMPT_SEQUENCE",
+      label: "Run Prompt Sequence",
+      color: "bg-violet-600",
+    },
   ],
 } as const;
 
@@ -595,7 +599,14 @@ function getActionSummary(
       }
 
       // Handle stateImage target type (Find State)
-      const target = config.target as { type?: string; stateId?: string; imageId?: string; imageIds?: string[] } | undefined;
+      const target = config.target as
+        | {
+            type?: string;
+            stateId?: string;
+            imageId?: string;
+            imageIds?: string[];
+          }
+        | undefined;
       if (target?.type === "stateImage") {
         const stateId = target.stateId;
         if (stateId) {
@@ -608,16 +619,16 @@ function getActionSummary(
       }
 
       // Handle new target structure with imageIds array
-      const imageIds =
-        target?.type === "image" ? target.imageIds : null;
-      const imageId = imageIds?.[0] || target?.imageId || (config.image as string | undefined);
+      const imageIds = target?.type === "image" ? target.imageIds : null;
+      const imageId =
+        imageIds?.[0] ||
+        target?.imageId ||
+        (config.image as string | undefined);
 
       if (imageId) {
         let stateImageName: string | null = null;
         for (const state of states) {
-          const stateImage = state.stateImages?.find(
-            (si) => si.id === imageId
-          );
+          const stateImage = state.stateImages?.find((si) => si.id === imageId);
           if (stateImage) {
             stateImageName = stateImage.name;
             break;
@@ -686,9 +697,7 @@ function getActionSummary(
 
         // Legacy: check stateId if imageIds not available
         if (clickConfig.stateId) {
-          const state = states.find(
-            (s) => s.id === clickConfig.stateId
-          );
+          const state = states.find((s) => s.id === clickConfig.stateId);
           const stateName = state?.name || clickConfig.stateId;
           return `${button} click on any image from ${stateName}`;
         }
@@ -750,7 +759,9 @@ function getActionSummary(
         target?: { type?: string; imageId?: string };
       };
       const vanishImageId =
-        vanishConfig.target?.type === "image" ? vanishConfig.target.imageId : undefined;
+        vanishConfig.target?.type === "image"
+          ? vanishConfig.target.imageId
+          : undefined;
       if (vanishImageId) {
         const vanishImage = images.find((img) => img.id === vanishImageId);
         if (vanishImage) {

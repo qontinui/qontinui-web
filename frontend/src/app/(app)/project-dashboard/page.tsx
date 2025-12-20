@@ -461,7 +461,10 @@ function MetricCard({
   color,
   trend,
 }: {
-  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  icon: React.ComponentType<{
+    className?: string;
+    style?: React.CSSProperties;
+  }>;
   label: string;
   value: string | number;
   color: string;

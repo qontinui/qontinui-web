@@ -18,37 +18,37 @@ export const metadata = {
 
 export default function MonitoringDocPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         {/* Header */}
         <div className="mb-12">
           <Link
             href="/docs"
-            className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+            className="text-primary hover:text-primary/80 text-sm mb-4 inline-block"
           >
             ← Back to Documentation
           </Link>
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             Monitoring &amp; Logs
           </h1>
-          <p className="text-xl text-slate-600">
+          <p className="text-xl text-muted-foreground">
             Monitor execution, analyze logs, and debug automation issues
           </p>
         </div>
 
         {/* Overview */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">Overview</h2>
-          <p className="text-slate-700 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">Overview</h2>
+          <p className="text-foreground mb-4">
             Qontinui Runner provides comprehensive logging and monitoring
             capabilities to help you understand what your automation is doing,
             diagnose issues, and optimize performance.
           </p>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-4">
             <div className="flex items-start gap-2">
-              <Activity className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <Activity className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm text-blue-900">
+                <p className="text-sm text-foreground">
                   <strong>Three Types of Logs:</strong> Runner maintains
                   separate logs for general execution (info, warnings, errors),
                   image recognition results, and action execution details.
@@ -60,13 +60,13 @@ export default function MonitoringDocPage() {
 
         {/* Log File Locations */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Log File Locations
           </h2>
 
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             In development mode, logs are stored in the{" "}
-            <code className="bg-slate-100 px-2 py-1 rounded text-sm">
+            <code className="bg-muted px-2 py-1 rounded text-sm">
               .dev-logs/
             </code>{" "}
             directory at the project root. In production, logs are stored in
@@ -104,32 +104,32 @@ export default function MonitoringDocPage() {
 
             <LogFileCard
               name="ai-output.jsonl"
-              icon={<Database className="w-5 h-5 text-blue-600" />}
+              icon={<Database className="w-5 h-5 text-primary" />}
               description="AI chat logs in JSONL format (prompts and responses)"
               location=".dev-logs/ai-output.jsonl"
             />
           </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mt-6">
-            <h4 className="font-semibold text-slate-900 mb-2 text-sm">
+          <div className="bg-muted border border-border rounded-lg p-4 mt-6">
+            <h4 className="font-semibold text-foreground mb-2 text-sm">
               Production Log Locations
             </h4>
-            <ul className="space-y-1 text-sm text-slate-700">
+            <ul className="space-y-1 text-sm text-foreground">
               <li>
                 <strong>Windows:</strong>{" "}
-                <code className="bg-slate-100 px-1 rounded text-xs">
+                <code className="bg-card px-1 rounded text-xs">
                   %LOCALAPPDATA%\qontinui-runner\logs\
                 </code>
               </li>
               <li>
                 <strong>macOS:</strong>{" "}
-                <code className="bg-slate-100 px-1 rounded text-xs">
+                <code className="bg-card px-1 rounded text-xs">
                   ~/Library/Application Support/qontinui-runner/logs/
                 </code>
               </li>
               <li>
                 <strong>Linux:</strong>{" "}
-                <code className="bg-slate-100 px-1 rounded text-xs">
+                <code className="bg-card px-1 rounded text-xs">
                   ~/.local/share/qontinui-runner/logs/
                 </code>
               </li>
@@ -139,9 +139,11 @@ export default function MonitoringDocPage() {
 
         {/* Log Levels */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">Log Levels</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-6">
+            Log Levels
+          </h2>
 
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             Logs are categorized by severity level. You can filter logs by level
             in the Runner UI or when viewing log files.
           </p>
@@ -149,9 +151,9 @@ export default function MonitoringDocPage() {
           <div className="space-y-3">
             <LogLevelCard
               level="DEBUG"
-              color="text-slate-600"
-              bgColor="bg-slate-50"
-              borderColor="border-slate-200"
+              color="text-muted-foreground"
+              bgColor="bg-muted"
+              borderColor="border-border"
               description="Detailed diagnostic information for debugging"
               examples={[
                 "Python executor message parsing",
@@ -162,9 +164,9 @@ export default function MonitoringDocPage() {
 
             <LogLevelCard
               level="INFO"
-              color="text-blue-600"
-              bgColor="bg-blue-50"
-              borderColor="border-blue-200"
+              color="text-primary"
+              bgColor="bg-primary/10"
+              borderColor="border-primary/30"
               description="Normal execution information and progress updates"
               examples={[
                 "Workflow started/completed",
@@ -176,8 +178,8 @@ export default function MonitoringDocPage() {
             <LogLevelCard
               level="WARN"
               color="text-yellow-600"
-              bgColor="bg-yellow-50"
-              borderColor="border-yellow-200"
+              bgColor="bg-yellow-500/10"
+              borderColor="border-yellow-500/30"
               description="Warning conditions that don't prevent execution"
               examples={[
                 "Image recognition below threshold",
@@ -189,8 +191,8 @@ export default function MonitoringDocPage() {
             <LogLevelCard
               level="ERROR"
               color="text-red-600"
-              bgColor="bg-red-50"
-              borderColor="border-red-200"
+              bgColor="bg-red-500/10"
+              borderColor="border-red-500/30"
               description="Error conditions that cause failures"
               examples={[
                 "Python process crashed",
@@ -200,18 +202,18 @@ export default function MonitoringDocPage() {
             />
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-4 mt-6">
             <div className="flex items-start gap-2">
-              <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm text-blue-900 mb-2">
+                <p className="text-sm text-foreground mb-2">
                   <strong>Adjusting Log Levels:</strong> Set the{" "}
-                  <code className="bg-blue-100 px-1 rounded text-xs">
+                  <code className="bg-muted px-1 rounded text-xs">
                     RUST_LOG
                   </code>{" "}
                   environment variable to control log verbosity.
                 </p>
-                <code className="block bg-blue-100 px-2 py-1 rounded text-xs text-blue-900 mt-2">
+                <code className="block bg-muted px-2 py-1 rounded text-xs text-foreground mt-2">
                   RUST_LOG=qontinui_runner=debug,tauri=info
                 </code>
               </div>
@@ -221,11 +223,11 @@ export default function MonitoringDocPage() {
 
         {/* Real-Time Monitoring */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Real-Time Monitoring
           </h2>
 
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             Monitor automation execution in real-time through the Runner
             UI&apos;s Logs tab, which provides three specialized log views.
           </p>
@@ -233,7 +235,7 @@ export default function MonitoringDocPage() {
           <div className="space-y-6">
             <MonitoringViewCard
               title="General Logs"
-              icon={<FileText className="w-6 h-6 text-blue-600" />}
+              icon={<FileText className="w-6 h-6 text-primary" />}
               description="View all execution events, errors, and system messages in real-time"
               features={[
                 "Filter by log level (Debug, Info, Warn, Error)",
@@ -274,11 +276,11 @@ export default function MonitoringDocPage() {
 
         {/* Health Monitoring */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Health Monitoring
           </h2>
 
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             Runner includes an automatic health monitoring system that tracks
             the Python executor&apos;s responsiveness.
           </p>
@@ -318,7 +320,7 @@ export default function MonitoringDocPage() {
 
         {/* Viewing Logs */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Viewing Logs
           </h2>
 
@@ -332,7 +334,7 @@ export default function MonitoringDocPage() {
                 "Use filters to narrow down by level or keyword",
                 "Click actions for detailed information",
               ]}
-              icon={<Terminal className="w-8 h-8 text-blue-600" />}
+              icon={<Terminal className="w-8 h-8 text-primary" />}
             />
 
             <ViewMethodCard
@@ -362,7 +364,7 @@ export default function MonitoringDocPage() {
 
         {/* Debugging Tips */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Debugging Tips
           </h2>
 
@@ -406,11 +408,11 @@ export default function MonitoringDocPage() {
 
         {/* Performance Monitoring */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Performance Monitoring
           </h2>
 
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             Use logs to identify performance bottlenecks and optimize automation
             execution speed.
           </p>
@@ -444,7 +446,7 @@ export default function MonitoringDocPage() {
 
         {/* Log Management */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Log Management
           </h2>
 
@@ -483,7 +485,7 @@ export default function MonitoringDocPage() {
 
         {/* Common Log Patterns */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Common Log Patterns
           </h2>
 
@@ -536,7 +538,7 @@ export default function MonitoringDocPage() {
 
         {/* Best Practices */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Best Practices
           </h2>
 
@@ -574,8 +576,10 @@ export default function MonitoringDocPage() {
         </section>
 
         {/* Next Steps */}
-        <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
+        <section className="border-t border-border pt-12">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
+            Next Steps
+          </h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="Troubleshooting Guide"
@@ -603,15 +607,15 @@ interface LogFileCardProps {
 
 function LogFileCard({ name, icon, description, location }: LogFileCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4">
+    <div className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-start gap-3 mb-2">
         <div className="flex-shrink-0 mt-1">{icon}</div>
         <div className="flex-grow">
-          <h4 className="font-mono font-semibold text-slate-900 text-sm">
+          <h4 className="font-mono font-semibold text-foreground text-sm">
             {name}
           </h4>
-          <p className="text-sm text-slate-600 mt-1">{description}</p>
-          <code className="block bg-slate-50 px-2 py-1 rounded text-xs text-slate-700 mt-2 font-mono">
+          <p className="text-sm text-muted-foreground mt-1">{description}</p>
+          <code className="block bg-muted px-2 py-1 rounded text-xs text-foreground mt-2 font-mono">
             {location}
           </code>
         </div>
@@ -642,8 +646,8 @@ function LogLevelCard({
       <div className="flex items-center gap-2 mb-2">
         <span className={`font-mono font-bold ${color} text-sm`}>{level}</span>
       </div>
-      <p className="text-sm text-slate-700 mb-2">{description}</p>
-      <div className="text-xs text-slate-600 space-y-1">
+      <p className="text-sm text-foreground mb-2">{description}</p>
+      <div className="text-xs text-muted-foreground space-y-1">
         <p className="font-semibold">Examples:</p>
         <ul className="space-y-1 ml-4">
           {examples.map((example, idx) => (
@@ -671,17 +675,17 @@ function MonitoringViewCard({
   features,
 }: MonitoringViewCardProps) {
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
+    <div className="bg-muted border border-border rounded-lg p-6">
       <div className="flex items-start gap-4 mb-3">
         <div className="flex-shrink-0 mt-1">{icon}</div>
         <div>
-          <h3 className="text-lg font-bold text-slate-900 mb-1">{title}</h3>
-          <p className="text-sm text-slate-600 mb-3">{description}</p>
+          <h3 className="text-lg font-bold text-foreground mb-1">{title}</h3>
+          <p className="text-sm text-muted-foreground mb-3">{description}</p>
           <ul className="space-y-1">
             {features.map((feature, idx) => (
               <li
                 key={idx}
-                className="flex items-start gap-2 text-sm text-slate-700"
+                className="flex items-start gap-2 text-sm text-foreground"
               >
                 <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
                 <span>{feature}</span>
@@ -706,16 +710,16 @@ function HealthFeatureCard({
   details,
 }: HealthFeatureCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4">
-      <h4 className="font-semibold text-slate-900 mb-2">{title}</h4>
-      <p className="text-sm text-slate-600 mb-3">{description}</p>
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h4 className="font-semibold text-foreground mb-2">{title}</h4>
+      <p className="text-sm text-muted-foreground mb-3">{description}</p>
       <ul className="space-y-1">
         {details.map((detail, idx) => (
           <li
             key={idx}
-            className="flex items-start gap-2 text-sm text-slate-700"
+            className="flex items-start gap-2 text-sm text-foreground"
           >
-            <span className="text-blue-600">•</span>
+            <span className="text-primary">•</span>
             <span>{detail}</span>
           </li>
         ))}
@@ -738,19 +742,19 @@ function ViewMethodCard({
   icon,
 }: ViewMethodCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-6">
+    <div className="bg-card border border-border rounded-lg p-6">
       <div className="flex items-start gap-4 mb-4">
         <div className="flex-shrink-0">{icon}</div>
         <div>
-          <h3 className="text-lg font-bold text-slate-900 mb-1">{title}</h3>
-          <p className="text-sm text-slate-600 mb-3">{description}</p>
+          <h3 className="text-lg font-bold text-foreground mb-1">{title}</h3>
+          <p className="text-sm text-muted-foreground mb-3">{description}</p>
           <div className="space-y-2">
             {steps.map((step, idx) => (
               <div key={idx} className="flex items-start gap-2">
-                <span className="text-blue-600 font-semibold text-sm">
+                <span className="text-primary font-semibold text-sm">
                   {idx + 1}.
                 </span>
-                <code className="text-xs bg-slate-100 px-2 py-1 rounded flex-grow">
+                <code className="text-xs bg-muted px-2 py-1 rounded flex-grow">
                   {step}
                 </code>
               </div>
@@ -769,9 +773,9 @@ interface DebuggingTipProps {
 
 function DebuggingTip({ title, description }: DebuggingTipProps) {
   return (
-    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-      <h4 className="font-semibold text-green-900 mb-2">{title}</h4>
-      <p className="text-sm text-green-800">{description}</p>
+    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+      <h4 className="font-semibold text-foreground mb-2">{title}</h4>
+      <p className="text-sm text-foreground">{description}</p>
     </div>
   );
 }
@@ -788,11 +792,11 @@ function PerformanceMetricCard({
   howToUse,
 }: PerformanceMetricCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4">
-      <h4 className="font-semibold text-slate-900 mb-1">{metric}</h4>
-      <p className="text-sm text-slate-600 mb-2">{description}</p>
-      <div className="bg-blue-50 border border-blue-200 rounded px-3 py-2">
-        <p className="text-xs text-blue-900">
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h4 className="font-semibold text-foreground mb-1">{metric}</h4>
+      <p className="text-sm text-muted-foreground mb-2">{description}</p>
+      <div className="bg-primary/10 border border-primary/30 rounded px-3 py-2">
+        <p className="text-xs text-foreground">
           <strong>How to use:</strong> {howToUse}
         </p>
       </div>
@@ -812,16 +816,16 @@ function LogManagementCard({
   actions,
 }: LogManagementCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4">
-      <h4 className="font-semibold text-slate-900 mb-2">{title}</h4>
-      <p className="text-sm text-slate-600 mb-3">{description}</p>
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h4 className="font-semibold text-foreground mb-2">{title}</h4>
+      <p className="text-sm text-muted-foreground mb-3">{description}</p>
       <ul className="space-y-1">
         {actions.map((action, idx) => (
           <li
             key={idx}
-            className="flex items-start gap-2 text-sm text-slate-700"
+            className="flex items-start gap-2 text-sm text-foreground"
           >
-            <span className="text-blue-600">•</span>
+            <span className="text-primary">•</span>
             <span>{action}</span>
           </li>
         ))}
@@ -838,24 +842,24 @@ interface LogPatternCardProps {
 
 function LogPatternCard({ pattern, meaning, solutions }: LogPatternCardProps) {
   return (
-    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-6">
       <div className="flex items-start gap-3 mb-3">
         <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
         <div>
-          <code className="font-mono font-semibold text-yellow-900 text-sm block mb-2">
+          <code className="font-mono font-semibold text-foreground text-sm block mb-2">
             {pattern}
           </code>
-          <p className="text-sm text-yellow-800 mb-3">
+          <p className="text-sm text-foreground mb-3">
             <strong>Meaning:</strong> {meaning}
           </p>
-          <p className="text-xs font-semibold text-yellow-700 mb-2">
+          <p className="text-xs font-semibold text-foreground mb-2">
             Solutions:
           </p>
           <ul className="space-y-2">
             {solutions.map((solution, idx) => (
               <li
                 key={idx}
-                className="flex items-start gap-2 text-sm text-yellow-900"
+                className="flex items-start gap-2 text-sm text-foreground"
               >
                 <span className="text-yellow-600 font-bold">•</span>
                 <span>{solution}</span>
@@ -875,9 +879,9 @@ interface BestPracticeProps {
 
 function BestPractice({ title, description }: BestPracticeProps) {
   return (
-    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-      <h4 className="font-semibold text-green-900 mb-2">{title}</h4>
-      <p className="text-sm text-green-800">{description}</p>
+    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+      <h4 className="font-semibold text-foreground mb-2">{title}</h4>
+      <p className="text-sm text-foreground">{description}</p>
     </div>
   );
 }
@@ -892,10 +896,10 @@ function NextStepCard({ title, description, href }: NextStepCardProps) {
   return (
     <Link
       href={href}
-      className="block bg-slate-50 border border-slate-200 rounded-lg p-6 hover:shadow-md hover:border-blue-300 transition-all"
+      className="block bg-muted border border-border rounded-lg p-6 hover:shadow-md hover:border-primary/50 transition-all"
     >
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600">{description}</p>
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </Link>
   );
 }

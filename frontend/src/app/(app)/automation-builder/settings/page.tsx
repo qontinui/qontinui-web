@@ -526,8 +526,9 @@ export default function SettingsPage() {
                 Settings are saved locally
               </p>
               <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                Your preferences are stored in your browser&apos;s local storage.
-                Export your settings to back them up or share across devices.
+                Your preferences are stored in your browser&apos;s local
+                storage. Export your settings to back them up or share across
+                devices.
               </p>
             </div>
           </CardContent>

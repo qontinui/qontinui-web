@@ -757,7 +757,10 @@ export default function WorkflowAnalyticsPage() {
                 <Select
                   value={filters.status}
                   onValueChange={(v) =>
-                    setFilters({ ...filters, status: v as "success" | "failure" | "all" })
+                    setFilters({
+                      ...filters,
+                      status: v as "success" | "failure" | "all",
+                    })
                   }
                 >
                   <SelectTrigger className="w-[150px] bg-[#0A0A0B] border-gray-700">
@@ -1236,8 +1239,8 @@ export default function WorkflowAnalyticsPage() {
                     <Alert className="mb-6">
                       <Info className="h-4 w-4" />
                       <AlertDescription>
-                        This feature is coming soon! You&apos;ll be able to compare
-                        execution counts, durations, success rates, and
+                        This feature is coming soon! You&apos;ll be able to
+                        compare execution counts, durations, success rates, and
                         complexity side-by-side.
                       </AlertDescription>
                     </Alert>

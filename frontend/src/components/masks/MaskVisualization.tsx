@@ -219,7 +219,11 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
             <label className="text-xs text-gray-600">Mask Type:</label>
             <select
               value={maskType}
-              onChange={(e) => setMaskType(e.target.value as "edge" | "full" | "stability" | "saliency")}
+              onChange={(e) =>
+                setMaskType(
+                  e.target.value as "edge" | "full" | "stability" | "saliency"
+                )
+              }
               className="w-full text-xs border rounded px-1 py-0.5"
             >
               <option value="full">Full Rectangle</option>

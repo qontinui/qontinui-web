@@ -194,7 +194,9 @@ export function AIPromptActionProperties({
           />
           <p className="text-xs text-gray-500">
             Enter a natural language prompt or slash command (e.g.,{" "}
-            <code className="bg-gray-700 px-1 rounded">/analyze-automation</code>
+            <code className="bg-gray-700 px-1 rounded">
+              /analyze-automation
+            </code>
             )
           </p>
         </div>
@@ -261,8 +263,7 @@ export function AIPromptActionProperties({
           {/* Results Directory (legacy) */}
           <div className="space-y-2">
             <Label className="text-xs text-gray-400">
-              Results Directory{" "}
-              <span className="text-gray-600">(legacy)</span>
+              Results Directory <span className="text-gray-600">(legacy)</span>
             </Label>
             <Input
               type="text"

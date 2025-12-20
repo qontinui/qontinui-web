@@ -1,13 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  Clock,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Ban,
-} from "lucide-react";
+import { Clock, Loader2, CheckCircle2, XCircle, Ban } from "lucide-react";
 import type { JobStatus } from "@/types/rag-dashboard";
 
 interface JobStatusBadgeProps {

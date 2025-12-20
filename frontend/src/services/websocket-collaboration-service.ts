@@ -132,7 +132,9 @@ class WebSocketCollaborationService {
         },
         onError: (error: unknown) => {
           console.error("[CollaborationWS] Error:", error);
-          this.handlers.onError?.(error instanceof Error ? error : new Error(String(error)));
+          this.handlers.onError?.(
+            error instanceof Error ? error : new Error(String(error))
+          );
         },
       }
     );

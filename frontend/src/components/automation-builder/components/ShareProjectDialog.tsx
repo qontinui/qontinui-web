@@ -131,7 +131,9 @@ export function ShareProjectDialog({
       setEmailInput("");
       setExpirationDate("");
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to share project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to share project"
+      );
     } finally {
       setLoading(false);
     }
@@ -155,7 +157,9 @@ export function ShareProjectDialog({
       setSelectedOrg("");
       setExpirationDate("");
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to share project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to share project"
+      );
     } finally {
       setLoading(false);
     }
@@ -170,7 +174,9 @@ export function ShareProjectDialog({
       await onChangePermission(collaboratorId, permission);
       toast.success("Permission updated");
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to update permission");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to update permission"
+      );
     } finally {
       setActionLoading(null);
     }
@@ -185,7 +191,9 @@ export function ShareProjectDialog({
       await onRevoke(collaboratorId);
       toast.success(`Revoked access for ${collaboratorEmail}`);
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to revoke access");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to revoke access"
+      );
     } finally {
       setActionLoading(null);
     }
@@ -207,7 +215,9 @@ export function ShareProjectDialog({
         toast.success("Link copied to clipboard");
         setTimeout(() => setLinkCopied(false), 2000);
       } catch (error: unknown) {
-        toast.error(error instanceof Error ? error.message : "Failed to generate link");
+        toast.error(
+          error instanceof Error ? error.message : "Failed to generate link"
+        );
       } finally {
         setLoading(false);
       }

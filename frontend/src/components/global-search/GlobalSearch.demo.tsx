@@ -111,9 +111,12 @@ const mockWorkflows: Workflow[] = [
       },
       {
         id: "a3",
-        type: "WAIT",
+        type: "FIND",
         name: "Wait for Download",
-        config: { waitFor: "time", duration: 5000 },
+        config: {
+          target: { type: "image", imageId: "img-5" },
+          searchOptions: { timeout: 5000 },
+        },
         position: [100, 400],
       },
     ],

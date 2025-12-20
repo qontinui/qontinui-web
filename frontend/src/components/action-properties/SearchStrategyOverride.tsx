@@ -28,7 +28,9 @@ export function SearchStrategyOverride({
 }: SearchStrategyOverrideProps) {
   // Strategy is nested in target.searchOptions.searchStrategy
   const target = (action.config as any).target as any;
-  const currentStrategy = target?.searchOptions?.searchStrategy as string | undefined;
+  const currentStrategy = target?.searchOptions?.searchStrategy as
+    | string
+    | undefined;
 
   const handleStrategyChange = (value: string) => {
     const currentTarget = target || {

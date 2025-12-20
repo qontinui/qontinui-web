@@ -435,9 +435,78 @@ export function StateStructure() {
     [states, transitions, addWorkflow, addTransition, updateTransition]
   );
 
+  // Handler for moving a StateImage to another state via Alt+drag
+  const handleImageMoveToState = useCallback(
+    (
+      targetStateId: string,
+      dragData: {
+        sourceStateId: string;
+        stateImageId: string;
+        stateImageName: string;
+      }
+    ) => {
+      const { sourceStateId, stateImageId, stateImageName } = dragData;
+
+      // Don't move to the same state
+      if (targetStateId === sourceStateId) {
+        toast.error("Cannot move to the same state");
+        return;
+      }
+
+      // Find the source and target states
+      const sourceState = states.find((s) => s.id === sourceStateId);
+      const targetState = states.find((s) => s.id === targetStateId);
+      if (!sourceState || !targetState) {
+        toast.error("Could not find states");
+        return;
+      }
+
+      // Find the StateImage index
+      const stateImageIndex = sourceState.stateImages?.findIndex(
+        (img) => img.id === stateImageId
+      );
+      if (stateImageIndex === undefined || stateImageIndex === -1) {
+        toast.error("Could not find state image");
+        return;
+      }
+
+      // Get the StateImage to move
+      const stateImageToMove = sourceState.stateImages?.[stateImageIndex];
+      if (!stateImageToMove) {
+        toast.error("Could not find state image");
+        return;
+      }
+
+      // Remove from source state
+      const updatedSourceStateImages = (sourceState.stateImages || []).filter(
+        (_, i) => i !== stateImageIndex
+      );
+      updateState({
+        ...sourceState,
+        stateImages: updatedSourceStateImages,
+      });
+
+      // Add to target state
+      const updatedTargetStateImages: typeof sourceState.stateImages = [
+        ...(targetState.stateImages || []),
+        stateImageToMove,
+      ];
+      updateState({
+        ...targetState,
+        stateImages: updatedTargetStateImages,
+      });
+
+      toast.success(`Moved "${stateImageName}" to "${targetState.name}"`);
+      setImageDragData(null);
+    },
+    [states, updateState]
+  );
+
   // Handle drag over on the canvas
   const handleDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
+    // Check if this is a move operation by looking at the drag data
+    // We can't access the actual data during dragover, so we rely on effectAllowed
     event.dataTransfer.dropEffect = "link";
   }, []);
 
@@ -473,7 +542,12 @@ export function StateStructure() {
         }
 
         if (targetStateId) {
-          handleImageDropOnState(targetStateId, dragData);
+          // Check if this is a move operation (Alt+drag)
+          if (dragData.isMoveOperation) {
+            handleImageMoveToState(targetStateId, dragData);
+          } else {
+            handleImageDropOnState(targetStateId, dragData);
+          }
         } else {
           // Clear drag data if dropped on nothing
           setImageDragData(null);
@@ -483,7 +557,7 @@ export function StateStructure() {
         setImageDragData(null);
       }
     },
-    [states, handleImageDropOnState]
+    [states, handleImageDropOnState, handleImageMoveToState]
   );
 
   React.useEffect(() => {
@@ -888,6 +962,44 @@ export function StateStructure() {
     updateSelectedState({ stateImages: updatedStateImages });
   };
 
+  const moveStateImage = (stateImageIndex: number, targetStateId: string) => {
+    if (!selectedNode) return;
+
+    const sourceState = states.find((s) => s.id === selectedNode);
+    const targetState = states.find((s) => s.id === targetStateId);
+    if (!sourceState || !targetState) return;
+    if (
+      !sourceState.stateImages ||
+      stateImageIndex >= sourceState.stateImages.length
+    )
+      return;
+
+    // Get the StateImage to move
+    const stateImageToMove = sourceState.stateImages[stateImageIndex];
+    if (!stateImageToMove) return;
+
+    // Remove from source state
+    const updatedSourceStateImages = sourceState.stateImages.filter(
+      (_, i) => i !== stateImageIndex
+    );
+    updateState({
+      ...sourceState,
+      stateImages: updatedSourceStateImages,
+    });
+
+    // Add to target state
+    const updatedTargetStateImages: typeof sourceState.stateImages = [
+      ...(targetState.stateImages || []),
+      stateImageToMove,
+    ];
+    updateState({
+      ...targetState,
+      stateImages: updatedTargetStateImages,
+    });
+
+    toast.success(`Moved "${stateImageToMove.name}" to "${targetState.name}"`);
+  };
+
   // Region management
   const addRegion = () => {
     if (!selectedNode) return;
@@ -1246,6 +1358,7 @@ export function StateStructure() {
             addStateImage={addStateImage}
             updateStateImage={updateStateImage}
             removeStateImage={removeStateImage}
+            moveStateImage={moveStateImage}
             addRegion={addRegion}
             updateRegion={updateRegion}
             removeRegion={removeRegion}

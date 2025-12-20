@@ -219,23 +219,21 @@ export default function DemoProjectPage() {
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {actions
-                      .slice(0, 10)
-                      .map((action: any, index: number) => (
-                        <div
-                          key={index}
-                          className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-md"
-                        >
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                              {action.name || `Action ${index + 1}`}
-                            </p>
-                            <p className="text-xs text-zinc-500">
-                              Type: {action.type || "Unknown"}
-                            </p>
-                          </div>
+                    {actions.slice(0, 10).map((action: any, index: number) => (
+                      <div
+                        key={index}
+                        className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-md"
+                      >
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                            {action.name || `Action ${index + 1}`}
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            Type: {action.type || "Unknown"}
+                          </p>
                         </div>
-                      ))}
+                      </div>
+                    ))}
                     {actions.length > 10 && (
                       <p className="text-sm text-zinc-500 text-center pt-2">
                         and {actions.length - 10} more actions...

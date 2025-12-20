@@ -173,7 +173,9 @@ export function TestSuiteManager({
       return {
         totalTests: suiteTestCases.length,
         passRate,
-        lastRun: suite.metadata?.lastRun ? String(suite.metadata.lastRun) : undefined,
+        lastRun: suite.metadata?.lastRun
+          ? String(suite.metadata.lastRun)
+          : undefined,
       };
     },
     [testCases]

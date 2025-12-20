@@ -30,7 +30,6 @@ interface APIScreenshot {
   height?: number;
 }
 
-
 import { SnapshotMultiSelector } from "@/components/integration-testing/SnapshotMultiSelector";
 import { DirectPatternRegionSelector } from "./DirectPatternRegionSelector";
 import { PatternPreviewCard } from "./PatternPreviewCard";
@@ -91,7 +90,8 @@ export function DirectPatternCreation() {
 
           const data = await response.json();
 
-          const screenshotList: SnapshotScreenshot[] = data.screenshots.map((s: APIScreenshot, idx: number) => ({
+          const screenshotList: SnapshotScreenshot[] = data.screenshots.map(
+            (s: APIScreenshot, idx: number) => ({
               id: `${snapshot.run_id}_${idx}`,
               path: s.screenshot_path,
               url: `/api/integration-testing/snapshots/${snapshot.run_id}/screenshot/${s.screenshot_path}`,

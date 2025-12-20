@@ -548,14 +548,16 @@ const StateDiscoveryTab: React.FC = () => {
             className="w-full mt-4"
             onClick={handleStartAnalysis}
             disabled={screenshots.length < 2 || isAnalyzing}
-            title={Boolean(!uploadId) ? "Upload screenshots first" : "Start analysis"}
+            title={
+              Boolean(!uploadId) ? "Upload screenshots first" : "Start analysis"
+            }
           >
             <Play className="mr-2 h-4 w-4" />
             Run Analysis {selectedRegion ? "(Region)" : ""}
           </Button>
 
-          {screenshots.length > 0 && (
-            uploadId ? (
+          {screenshots.length > 0 &&
+            (uploadId ? (
               <div className="mt-2 text-xs text-center">
                 <span className="text-green-600">✓ Screenshots uploaded</span>
               </div>
@@ -563,8 +565,7 @@ const StateDiscoveryTab: React.FC = () => {
               <div className="mt-2 text-xs text-center">
                 <span className="text-yellow-600">⚠ Upload pending...</span>
               </div>
-            )
-          )}
+            ))}
           {isAnalyzing && (
             <div className="mt-4">
               <Progress value={analysisProgress} className="mb-2" />
@@ -753,7 +754,9 @@ const StateDiscoveryTab: React.FC = () => {
             <div className="flex items-center gap-4 mb-4">
               <Tabs
                 value={viewMode}
-                onValueChange={(v) => setViewMode(v as "all" | "selected" | "state")}
+                onValueChange={(v) =>
+                  setViewMode(v as "all" | "selected" | "state")
+                }
               >
                 <TabsList>
                   <TabsTrigger value="all">All StateImages</TabsTrigger>

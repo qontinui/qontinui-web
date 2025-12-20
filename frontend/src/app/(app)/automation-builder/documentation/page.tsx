@@ -2,7 +2,12 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Workflow, Action, ActionType, Connections } from "@/lib/action-schema/action-types";
+import {
+  Workflow,
+  Action,
+  ActionType,
+  Connections,
+} from "@/lib/action-schema/action-types";
 import {
   WorkflowDocumentation,
   WorkflowDocumentationService,
@@ -191,7 +196,7 @@ function generateMockWorkflows(): Workflow[] {
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
-          type: "WAIT" as ActionType,
+          type: "FIND" as ActionType,
           name: `Action ${i + 1}`,
           config: {},
           position: [0, 0] as [number, number],
@@ -490,7 +495,10 @@ function DocumentationNavigator({
           <Select
             value={filter.status}
             onValueChange={(value) =>
-              onFilterChange({ ...filter, status: value as "all" | "documented" | "undocumented" })
+              onFilterChange({
+                ...filter,
+                status: value as "all" | "documented" | "undocumented",
+              })
             }
           >
             <SelectTrigger className="h-9 bg-gray-900/50 border-gray-700">

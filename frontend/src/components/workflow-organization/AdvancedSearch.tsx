@@ -146,7 +146,7 @@ function matchesFilter(
   if (filter.folderIds && filter.folderIds.length > 0) {
     const workflowFolderId =
       (workflow as { folderId?: string | null }).folderId || null;
-    if (!filter.folderIds.some(id => id === workflowFolderId)) {
+    if (!filter.folderIds.some((id) => id === workflowFolderId)) {
       return false;
     }
   }
@@ -1003,9 +1003,9 @@ export function AdvancedSearch({
                     placeholder="From"
                     value={
                       filter.lastRunDateRange?.from
-                        ? filter.lastRunDateRange.from
+                        ? (filter.lastRunDateRange.from
                             .toISOString()
-                            .split("T")[0] ?? ""
+                            .split("T")[0] ?? "")
                         : ""
                     }
                     onChange={(e) => {

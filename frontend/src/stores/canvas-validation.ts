@@ -640,19 +640,6 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
         }
         break;
 
-      case "WAIT":
-        if (!config.duration && !config.condition) {
-          errors.push({
-            id: `missing-wait-param-${action.id}`,
-            actionId: action.id,
-            type: "invalid_config",
-            severity: "error",
-            message: `WAIT action "${action.name || action.id}" must have duration or condition`,
-            details: { actionId: action.id },
-          });
-        }
-        break;
-
       case "IF":
         if (!config.condition) {
           errors.push({

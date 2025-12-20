@@ -354,9 +354,7 @@ export class WorkflowPerformanceAnalyzer {
     Record<ActionType, number>
   > = {
     FIND: 500,
-    EXISTS: 200,
     VANISH: 500,
-    WAIT: 1000,
     CLICK: 100,
     MOUSE_MOVE: 50,
     MOUSE_DOWN: 50,
@@ -477,24 +475,18 @@ export class WorkflowPerformanceAnalyzer {
       }
     }
 
-    // 2. Unnecessary waits
+    // 2. Unnecessary waits (deprecated - WAIT action type removed)
+    // This section is kept for backward compatibility but does nothing
     const unnecessaryWaits = this.getUnnecessaryWaits(workflow);
     if (unnecessaryWaits.length > 0) {
-      const totalWaitTime = unnecessaryWaits.reduce(
-        (sum, w) => sum + (w.config.duration || 0),
-        0
-      );
+      // Should never reach here since getUnnecessaryWaits returns empty array
       bottlenecks.push({
         type: "unnecessary_wait",
-        severity: Math.min(100, unnecessaryWaits.length * 20),
-        actionIds: unnecessaryWaits.map((w) => w.id),
-        description: `${unnecessaryWaits.length} fixed WAIT actions totaling ${totalWaitTime}ms could be made dynamic`,
-        estimatedImpact: totalWaitTime * 0.5, // Assume 50% savings
-        suggestions: [
-          "Replace fixed WAITs with FIND actions",
-          "Use WAIT with conditions instead of fixed durations",
-          "Consider using EXISTS checks instead of WAITs",
-        ],
+        severity: 0,
+        actionIds: [],
+        description: `Deprecated bottleneck type - WAIT action no longer exists`,
+        estimatedImpact: 0,
+        suggestions: [],
       });
     }
 
@@ -590,32 +582,10 @@ export class WorkflowPerformanceAnalyzer {
   /**
    * Get unnecessary wait actions
    */
-  getUnnecessaryWaits(workflow: Workflow): Action<"WAIT">[] {
-    const unnecessaryWaits: Action<"WAIT">[] = [];
-
-    for (const action of workflow.actions) {
-      if (action.type === "WAIT") {
-        const waitAction = action as Action<"WAIT">;
-
-        // Fixed time waits are often unnecessary
-        if (
-          waitAction.config.waitFor === "time" &&
-          waitAction.config.duration
-        ) {
-          // Check if there's a FIND action right after this
-          const nextActions = this.getNextActions(workflow, action.id);
-          const hasFind = nextActions.some(
-            (a) => a.type === "FIND" || a.type === "EXISTS"
-          );
-
-          if (hasFind) {
-            unnecessaryWaits.push(waitAction);
-          }
-        }
-      }
-    }
-
-    return unnecessaryWaits;
+  getUnnecessaryWaits(_workflow: Workflow): Action[] {
+    // No WAIT action type exists anymore - this method is now deprecated
+    // Keeping for backward compatibility but returns empty array
+    return [];
   }
 
   /**
@@ -1012,13 +982,6 @@ export class WorkflowPerformanceAnalyzer {
       WorkflowPerformanceAnalyzer.ACTION_TIME_ESTIMATES[action.type] || 100;
 
     // Adjust for specific configurations
-    if (action.type === "WAIT") {
-      const waitAction = action as Action<"WAIT">;
-      if (waitAction.config.waitFor === "time" && waitAction.config.duration) {
-        return waitAction.config.duration;
-      }
-    }
-
     if (action.type === "LOOP") {
       const loopAction = action as Action<"LOOP">;
       const iterations = loopAction.config.maxIterations || 10;
@@ -1031,17 +994,16 @@ export class WorkflowPerformanceAnalyzer {
   /**
    * Count WAIT actions
    */
-  countWaitActions(workflow: Workflow): number {
-    return workflow.actions.filter((a) => a.type === "WAIT").length;
+  countWaitActions(_workflow: Workflow): number {
+    // WAIT action type has been removed - returns 0
+    return 0;
   }
 
   /**
    * Count FIND actions
    */
   countFindActions(workflow: Workflow): number {
-    return workflow.actions.filter(
-      (a) => a.type === "FIND" || a.type === "EXISTS"
-    ).length;
+    return workflow.actions.filter((a) => a.type === "FIND").length;
   }
 
   /**
@@ -1091,63 +1053,24 @@ export class WorkflowPerformanceAnalyzer {
    * Analyze wait actions
    */
   analyzeWaitActions(workflow: Workflow): WaitAnalysis {
-    const waitActions = this.getActionsByType(workflow, "WAIT");
-    let totalWaitTime = 0;
+    // WAIT action type has been removed - return empty analysis
+    const totalWaitTime = 0;
     const fixedWaits: WaitAnalysis["fixedWaits"] = [];
     const longWaits: WaitAnalysis["longWaits"] = [];
     const missingWaits: WaitAnalysis["missingWaits"] = [];
     const waitFindPatterns: WaitAnalysis["waitFindPatterns"] = [];
 
-    // Analyze existing waits
-    for (const waitAction of waitActions) {
-      if (waitAction.config.waitFor === "time" && waitAction.config.duration) {
-        const duration = waitAction.config.duration;
-        totalWaitTime += duration;
-
-        // Fixed wait that could be dynamic
-        fixedWaits.push({
-          actionId: waitAction.id,
-          duration,
-          suggestion:
-            "Consider replacing with condition-based wait or FIND action",
-        });
-
-        // Long wait
-        if (duration > 5000) {
-          longWaits.push({
-            actionId: waitAction.id,
-            duration,
-            suggestion: `${duration}ms is quite long. Consider reducing or making dynamic.`,
-          });
-        }
-
-        // Check for WAIT + FIND pattern
-        const nextActions = this.getNextActions(workflow, waitAction.id);
-        const findAction = nextActions.find((a) => a.type === "FIND");
-
-        if (findAction) {
-          waitFindPatterns.push({
-            waitActionId: waitAction.id,
-            findActionId: findAction.id,
-            suggestion: "FIND action could replace WAIT with built-in waiting",
-          });
-        }
-      }
-    }
-
-    // Find missing waits
+    // Find missing FIND actions before interactions
     for (const action of workflow.actions) {
-      // Actions that might need waits before them
+      // Actions that might need FIND before them
       if (action.type === "CLICK" || action.type === "TYPE") {
         const prevActions = this.getPreviousActions(workflow, action.id);
-        const hasWaitOrFind = prevActions.some(
-          (a) => a.type === "WAIT" || a.type === "FIND"
-        );
+        const hasFind = prevActions.some((a) => a.type === "FIND");
 
-        if (!hasWaitOrFind && prevActions.length > 0) {
+        if (!hasFind && prevActions.length > 0) {
           missingWaits.push({
             actionId: action.id,
-            reason: `${action.type} action might need a WAIT or FIND before it to ensure UI is ready`,
+            reason: `${action.type} action might need a FIND before it to ensure UI is ready`,
           });
         }
       }
@@ -1155,7 +1078,7 @@ export class WorkflowPerformanceAnalyzer {
 
     return {
       totalWaitTime,
-      waitCount: waitActions.length,
+      waitCount: 0,
       fixedWaits,
       longWaits,
       missingWaits,
@@ -1410,24 +1333,13 @@ export class WorkflowPerformanceAnalyzer {
       }
     }
 
-    // 2. Wait replacement suggestions
-    const unnecessaryWaits = this.getUnnecessaryWaits(workflow);
-    for (const waitAction of unnecessaryWaits) {
-      suggestions.push({
-        type: "replace_wait",
-        priority: 4,
-        actionIds: [waitAction.id],
-        title: "Replace fixed WAIT with dynamic condition",
-        description:
-          "This WAIT action uses a fixed duration. Consider using a FIND action or condition-based wait instead.",
-        difficulty: 1,
-      });
-    }
+    // 2. Wait replacement suggestions (deprecated - WAIT action type removed)
+    // This section is kept for backward compatibility but does nothing
 
     // 3. Loop optimization suggestions
     suggestions.push(...this.suggestLoopOptimizations(workflow));
 
-    // 4. Screenshot reduction
+    // 3. Screenshot reduction
     const screenshotCount = this.getActionsByType(
       workflow,
       "SCREENSHOT"
@@ -1445,7 +1357,7 @@ export class WorkflowPerformanceAnalyzer {
       });
     }
 
-    // 5. Workflow splitting
+    // 4. Workflow splitting
     if (workflow.actions.length > 50) {
       suggestions.push({
         type: "split_workflow",
@@ -1457,7 +1369,7 @@ export class WorkflowPerformanceAnalyzer {
       });
     }
 
-    // 6. Error handling
+    // 5. Error handling
     const actionsWithoutErrorHandling = workflow.actions.filter(
       (a) => !this.hasErrorHandling(workflow, a.id)
     );
@@ -1473,7 +1385,7 @@ export class WorkflowPerformanceAnalyzer {
       });
     }
 
-    // 7. Redundant operations
+    // 6. Redundant operations
     const redundantGroups = this.getRedundantOperations(workflow);
     for (const group of redundantGroups) {
       suggestions.push({
@@ -1486,7 +1398,7 @@ export class WorkflowPerformanceAnalyzer {
       });
     }
 
-    // 8. Sequential FIND actions
+    // 7. Sequential FIND actions
     const findSequences = this.findSequentialFindActions(workflow);
     if (findSequences.length > 3) {
       suggestions.push({
@@ -1500,14 +1412,14 @@ export class WorkflowPerformanceAnalyzer {
       });
     }
 
-    // 9. Missing waits
+    // 8. Missing FIND actions
     const waitAnalysis = this.analyzeWaitActions(workflow);
     for (const missing of waitAnalysis.missingWaits) {
       suggestions.push({
         type: "add_wait",
         priority: 2,
         actionIds: [missing.actionId],
-        title: "Consider adding wait or find action",
+        title: "Consider adding FIND action",
         description: missing.reason,
         difficulty: 1,
       });
@@ -2205,30 +2117,6 @@ export class WorkflowPerformanceAnalyzer {
     }
 
     return chains;
-  }
-
-  /**
-   * Get next actions
-   */
-  private getNextActions(workflow: Workflow, actionId: string): Action[] {
-    const nextActions: Action[] = [];
-    const outputs = workflow.connections[actionId];
-
-    if (outputs) {
-      for (const outputType of Object.values(outputs)) {
-        if (!outputType) continue;
-        for (const connections of outputType) {
-          for (const conn of connections) {
-            const action = workflow.actions.find((a) => a.id === conn.action);
-            if (action) {
-              nextActions.push(action);
-            }
-          }
-        }
-      }
-    }
-
-    return nextActions;
   }
 
   /**

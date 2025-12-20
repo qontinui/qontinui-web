@@ -367,7 +367,9 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
                             <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto">
                               {(() => {
                                 const details = result.details;
-                                return typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+                                return typeof details === "string"
+                                  ? details
+                                  : JSON.stringify(details, null, 2);
                               })()}
                             </pre>
                           </details>

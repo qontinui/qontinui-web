@@ -158,7 +158,10 @@ export class MigrationEngine {
 
         // Apply migration
         const beforeVersion = currentConfig.version;
-        currentConfig = migration.migrate(currentConfig, context) as Record<string, unknown>;
+        currentConfig = migration.migrate(currentConfig, context) as Record<
+          string,
+          unknown
+        >;
 
         // Ensure version was updated
         if (!currentConfig.version || currentConfig.version === beforeVersion) {

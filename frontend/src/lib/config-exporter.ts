@@ -74,7 +74,9 @@ export class ConfigExporter {
       settings.execution &&
       "defaultTimeout" in settings.execution
         ? (settings as ConfigSettings)
-        : this.convertSettings(settings as Partial<ProjectSettings> | undefined);
+        : this.convertSettings(
+            settings as Partial<ProjectSettings> | undefined
+          );
 
     const config: QontinuiConfig = {
       version: this.version,
@@ -506,10 +508,7 @@ export class ConfigExporter {
       }
 
       // If textSource is an object (already converted), remove empty text field
-      if (
-        typeof config.textSource === "object" &&
-        config.textSource !== null
-      ) {
+      if (typeof config.textSource === "object" && config.textSource !== null) {
         if (config.text !== undefined) {
           const textValue = config.text;
           if (
@@ -561,7 +560,11 @@ export class ConfigExporter {
     }
 
     // Handle stateImage target: add stateName for readability in exported JSON
-    if (action.type === "FIND" && config.target && typeof config.target === "object") {
+    if (
+      action.type === "FIND" &&
+      config.target &&
+      typeof config.target === "object"
+    ) {
       const target = config.target as Record<string, unknown>;
       if (target.type === "stateImage" && target.stateId) {
         const stateId = target.stateId as string;

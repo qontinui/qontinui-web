@@ -12,8 +12,6 @@ import {
   MousePointer2,
   Type,
   Search,
-  Clock,
-  Eye,
   EyeOff,
   GitBranch,
   RotateCw,
@@ -41,7 +39,6 @@ function getActionIcon(actionType: string) {
     RIGHT_CLICK: MousePointerClick,
     TYPE: Type,
     FIND: Search,
-    WAIT: Clock,
     VANISH: EyeOff,
     GO_TO_STATE: Navigation,
     RUN_WORKFLOW: Play,
@@ -55,7 +52,6 @@ function getActionIcon(actionType: string) {
     KEY_UP: Keyboard,
     IF: GitBranch,
     LOOP: RotateCw,
-    EXISTS: Eye,
   };
 
   return iconMap[actionType] || Play;
@@ -95,14 +91,6 @@ function getActionDisplayName(action: Action, _index: number): string {
         return "Find State";
       }
       return "Find Element";
-    }
-
-    case "WAIT": {
-      const waitAction = action as Action<"WAIT">;
-      if (waitAction.config.duration) {
-        return `Wait ${waitAction.config.duration}s`;
-      }
-      return "Wait";
     }
 
     case "VANISH":

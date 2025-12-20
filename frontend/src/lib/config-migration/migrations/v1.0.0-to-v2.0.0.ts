@@ -103,7 +103,13 @@ export const migrationV1ToV2: Migration = {
   },
 
   isApplicable(config: unknown): boolean {
-    const cfg = config as { workflows?: Array<{ format?: string; connections?: unknown; actions?: Array<{ position?: unknown }> }> };
+    const cfg = config as {
+      workflows?: Array<{
+        format?: string;
+        connections?: unknown;
+        actions?: Array<{ position?: unknown }>;
+      }>;
+    };
     // Check if any workflows need migration
     for (const workflow of cfg.workflows || []) {
       // Check for missing format or non-graph format

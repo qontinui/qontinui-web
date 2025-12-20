@@ -26,7 +26,6 @@ interface APIScreenshot {
   thumbnail_url?: string;
 }
 
-
 interface ProjectScreenshot {
   id: string;
   name: string;
@@ -81,7 +80,8 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
       const data = await response.json();
 
       // Map API response to component format
-      const screenshots: ProjectScreenshot[] = data.screenshots.map((s: APIScreenshot) => ({
+      const screenshots: ProjectScreenshot[] = data.screenshots.map(
+        (s: APIScreenshot) => ({
           id: s.id,
           name: s.name,
           hash: s.hash,

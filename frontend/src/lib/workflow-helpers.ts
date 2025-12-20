@@ -14,7 +14,7 @@ function generateId(prefix: string): string {
 
 /**
  * Create a helper workflow that finds any state image in the given state.
- * This workflow tries to find each state image in sequence using IF + EXISTS checks.
+ * This workflow tries to find each state image in sequence using IF checks.
  * If any image is found, the workflow succeeds and returns true.
  *
  * @param state - The state whose images should be searched for
@@ -25,14 +25,7 @@ export function createFindAnyStateImageWorkflow(state: State): Workflow {
   const stateImages = state.stateImages || [];
 
   if (stateImages.length === 0) {
-    // If no state images, create a simple workflow that immediately succeeds
-    const action: Action = {
-      id: generateId("action"),
-      type: "WAIT",
-      config: { waitFor: "time", duration: 1 },
-      position: [250, 100],
-    };
-
+    // If no state images, workflow has no actions (empty workflow)
     return {
       id: workflowId,
       name: `Find Any Image: ${state.name}`,
@@ -40,7 +33,7 @@ export function createFindAnyStateImageWorkflow(state: State): Workflow {
       format: "graph",
       category: "Incoming Transitions",
       description: `Helper workflow to check if any state image from "${state.name}" is visible. Auto-generated helper workflow.`,
-      actions: [action],
+      actions: [],
       connections: {},
       metadata: {
         viewMode: "sequential",
@@ -115,38 +108,7 @@ export function createFindAnyStateImageWorkflow(state: State): Workflow {
     xPos += xSpacing;
   });
 
-  // Add a final action that executes if no images were found
-  // This could be a simple LOG or RETURN action
-  const finalActionId = generateId("final");
-  const finalAction: Action = {
-    id: finalActionId,
-    type: "WAIT",
-    config: { waitFor: "time", duration: 1 },
-    position: [xPos, yPos],
-  };
-  actions.push(finalAction);
-
-  // Connect last IF's false branch to final action
-  if (actions.length > 1) {
-    const lastIf = actions[actions.length - 2];
-    if (lastIf) {
-      if (!connections[lastIf.id]) {
-        connections[lastIf.id] = {};
-      }
-      const lastConn = connections[lastIf.id];
-      if (lastConn) {
-        lastConn["false"] = [
-          [
-            {
-              action: finalActionId,
-              type: "false",
-              index: 0,
-            },
-          ],
-        ];
-      }
-    }
-  }
+  // No final action needed - if all IF checks fail, workflow ends
 
   return {
     id: workflowId,
@@ -250,14 +212,7 @@ export function createFindStateWorkflow(targetState: State): Workflow {
   const stateImages = targetState.stateImages || [];
 
   if (stateImages.length === 0) {
-    // If no state images, create a simple workflow that immediately succeeds
-    const action: Action = {
-      id: generateId("action"),
-      type: "WAIT",
-      config: { waitFor: "time", duration: 100 },
-      position: [250, 100],
-    };
-
+    // If no state images, workflow has no actions (empty workflow)
     return {
       id: workflowId,
       name: `Find State: ${targetState.name}`,
@@ -265,7 +220,7 @@ export function createFindStateWorkflow(targetState: State): Workflow {
       format: "graph",
       category: "Incoming Transitions",
       description: `Verifies that state "${targetState.name}" is visible. No images to check.`,
-      actions: [action],
+      actions: [],
       connections: {},
       metadata: {
         viewMode: "sequential",

@@ -20,27 +20,27 @@ export const metadata = {
 
 export default function TroubleshootingPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         {/* Header */}
         <div className="mb-12">
           <Link
             href="/docs/runner"
-            className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+            className="text-primary hover:text-primary/80 text-sm mb-4 inline-block"
           >
             &larr; Back to Runner Documentation
           </Link>
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             Troubleshooting
           </h1>
-          <p className="text-xl text-slate-600">
+          <p className="text-xl text-muted-foreground">
             Common issues and solutions for Qontinui Runner
           </p>
         </div>
 
         {/* Quick Diagnostics */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Quick Diagnostics
           </h2>
           <div className="grid md:grid-cols-2 gap-4">
@@ -50,7 +50,7 @@ export default function TroubleshootingPage() {
               description="Console output shows detailed error messages and stack traces"
             />
             <DiagnosticCard
-              icon={<Monitor className="w-6 h-6 text-blue-600" />}
+              icon={<Monitor className="w-6 h-6 text-primary" />}
               title="Verify Display"
               description="Ensure target application is visible on the correct monitor"
             />
@@ -69,7 +69,7 @@ export default function TroubleshootingPage() {
 
         {/* Installation Issues */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-2">
             <HardDrive className="w-7 h-7 text-red-600" />
             Installation Issues
           </h2>
@@ -161,7 +161,7 @@ export default function TroubleshootingPage() {
 
         {/* Connection Issues */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-2">
             <Lock className="w-7 h-7 text-yellow-600" />
             Connection Issues
           </h2>
@@ -231,7 +231,7 @@ export default function TroubleshootingPage() {
 
         {/* Execution Issues */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-2">
             <Zap className="w-7 h-7 text-orange-600" />
             Execution Issues
           </h2>
@@ -390,7 +390,7 @@ export default function TroubleshootingPage() {
 
         {/* Performance Issues */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-2">
             <AlertTriangle className="w-7 h-7 text-amber-600" />
             Performance Issues
           </h2>
@@ -453,8 +453,8 @@ export default function TroubleshootingPage() {
 
         {/* Platform-Specific Issues */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-            <Monitor className="w-7 h-7 text-blue-600" />
+          <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-2">
+            <Monitor className="w-7 h-7 text-primary" />
             Platform-Specific Issues
           </h2>
 
@@ -526,13 +526,13 @@ export default function TroubleshootingPage() {
 
         {/* Error Codes Reference */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-            <Code className="w-7 h-7 text-slate-600" />
+          <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-2">
+            <Code className="w-7 h-7 text-muted-foreground" />
             Error Codes Reference
           </h2>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-            <p className="text-sm text-slate-700 mb-4">
+          <div className="bg-muted border border-border rounded-lg p-6">
+            <p className="text-sm text-foreground mb-4">
               Runner uses structured error codes for easier debugging. Look for
               these in console logs:
             </p>
@@ -556,7 +556,7 @@ export default function TroubleshootingPage() {
 
         {/* Advanced Debugging */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Advanced Debugging
           </h2>
 
@@ -604,13 +604,13 @@ export default function TroubleshootingPage() {
         </section>
 
         {/* Still Having Issues */}
-        <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+        <section className="border-t border-border pt-12">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Still Having Issues?
           </h2>
 
-          <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-8">
-            <p className="text-slate-700 mb-6">
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-8">
+            <p className="text-foreground mb-6">
               If you&apos;ve tried the solutions above and still need help:
             </p>
 
@@ -647,8 +647,8 @@ export default function TroubleshootingPage() {
             </div>
           </div>
 
-          <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <p className="text-sm text-amber-900">
+          <div className="mt-6 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+            <p className="text-sm text-foreground">
               <strong>When reporting issues:</strong> Include your OS version,
               Runner version, error codes from logs, and steps to reproduce.
               This helps us fix problems faster.
@@ -668,11 +668,11 @@ interface DiagnosticCardProps {
 
 function DiagnosticCard({ icon, title, description }: DiagnosticCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-start gap-3">
+    <div className="bg-card border border-border rounded-lg p-4 flex items-start gap-3">
       <div className="flex-shrink-0 mt-1">{icon}</div>
       <div>
-        <h3 className="font-semibold text-slate-900 mb-1">{title}</h3>
-        <p className="text-sm text-slate-600">{description}</p>
+        <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
       </div>
     </div>
   );
@@ -703,23 +703,23 @@ function TroubleshootingCard({
   const severityConfig = {
     error: {
       icon: <XCircle className="w-5 h-5 text-red-600" />,
-      bgColor: "bg-red-50",
-      borderColor: "border-red-200",
-      textColor: "text-red-900",
+      bgColor: "bg-red-500/10",
+      borderColor: "border-red-500/30",
+      textColor: "text-foreground",
       badgeColor: "bg-red-100 text-red-800",
     },
     warning: {
       icon: <AlertTriangle className="w-5 h-5 text-amber-600" />,
-      bgColor: "bg-amber-50",
-      borderColor: "border-amber-200",
-      textColor: "text-amber-900",
+      bgColor: "bg-yellow-500/10",
+      borderColor: "border-yellow-500/30",
+      textColor: "text-foreground",
       badgeColor: "bg-amber-100 text-amber-800",
     },
     info: {
-      icon: <AlertCircle className="w-5 h-5 text-blue-600" />,
-      bgColor: "bg-blue-50",
-      borderColor: "border-blue-200",
-      textColor: "text-blue-900",
+      icon: <AlertCircle className="w-5 h-5 text-primary" />,
+      bgColor: "bg-primary/10",
+      borderColor: "border-primary/30",
+      textColor: "text-foreground",
       badgeColor: "bg-blue-100 text-blue-800",
     },
   };
@@ -782,15 +782,15 @@ function TroubleshootingCard({
 
           {/* Technical Details */}
           {technicalDetails && (
-            <div className="mb-4 bg-white/50 border border-slate-200 rounded p-3">
-              <p className="text-xs font-semibold text-slate-700 mb-2">
+            <div className="mb-4 bg-background/50 border border-border rounded p-3">
+              <p className="text-xs font-semibold text-foreground mb-2">
                 {technicalDetails.title}
               </p>
               <ul className="space-y-1">
                 {technicalDetails.details.map((detail, idx) => (
                   <li
                     key={idx}
-                    className="flex items-start gap-2 text-xs text-slate-600"
+                    className="flex items-start gap-2 text-xs text-muted-foreground"
                   >
                     <span>•</span>
                     <span>{detail}</span>
@@ -804,7 +804,7 @@ function TroubleshootingCard({
           {relatedDocs && (
             <Link
               href={relatedDocs}
-              className="inline-block text-sm font-semibold text-blue-600 hover:text-blue-700 underline"
+              className="inline-block text-sm font-semibold text-primary hover:text-primary/80 underline"
             >
               Related Documentation &rarr;
             </Link>
@@ -825,13 +825,15 @@ interface PlatformCardProps {
 
 function PlatformCard({ platform, issues }: PlatformCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-6">
-      <h3 className="text-lg font-bold text-slate-900 mb-4">{platform}</h3>
+    <div className="bg-card border border-border rounded-lg p-6">
+      <h3 className="text-lg font-bold text-foreground mb-4">{platform}</h3>
       <div className="space-y-4">
         {issues.map((issue, idx) => (
-          <div key={idx} className="border-l-4 border-blue-500 pl-4">
-            <p className="font-semibold text-slate-900 mb-1">{issue.problem}</p>
-            <p className="text-sm text-slate-700">{issue.solution}</p>
+          <div key={idx} className="border-l-4 border-primary pl-4">
+            <p className="font-semibold text-foreground mb-1">
+              {issue.problem}
+            </p>
+            <p className="text-sm text-foreground">{issue.solution}</p>
           </div>
         ))}
       </div>
@@ -847,10 +849,10 @@ interface ErrorCodeItemProps {
 function ErrorCodeItem({ code, meaning }: ErrorCodeItemProps) {
   return (
     <div className="flex items-center gap-2">
-      <code className="bg-slate-200 px-2 py-1 rounded font-mono text-xs font-semibold text-slate-900">
+      <code className="bg-muted px-2 py-1 rounded font-mono text-xs font-semibold text-foreground">
         {code}
       </code>
-      <span className="text-slate-700">{meaning}</span>
+      <span className="text-foreground">{meaning}</span>
     </div>
   );
 }
@@ -862,15 +864,15 @@ interface DebugTechniqueProps {
 
 function DebugTechnique({ title, steps }: DebugTechniqueProps) {
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg p-5">
-      <h3 className="font-semibold text-slate-900 mb-3">{title}</h3>
+    <div className="bg-muted border border-border rounded-lg p-5">
+      <h3 className="font-semibold text-foreground mb-3">{title}</h3>
       <ol className="space-y-2">
         {steps.map((step, idx) => (
           <li
             key={idx}
-            className="flex items-start gap-2 text-sm text-slate-700"
+            className="flex items-start gap-2 text-sm text-foreground"
           >
-            <span className="font-semibold text-blue-600">{idx + 1}.</span>
+            <span className="font-semibold text-primary">{idx + 1}.</span>
             <span>{step}</span>
           </li>
         ))}
@@ -895,12 +897,12 @@ function SupportOption({
   external,
 }: SupportOptionProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4">
-      <h3 className="font-semibold text-slate-900 mb-1">{title}</h3>
-      <p className="text-sm text-slate-600 mb-2">{description}</p>
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+      <p className="text-sm text-muted-foreground mb-2">{description}</p>
       <Link
         href={link}
-        className="inline-block text-sm font-semibold text-blue-600 hover:text-blue-700 underline"
+        className="inline-block text-sm font-semibold text-primary hover:text-primary/80 underline"
         target={external ? "_blank" : undefined}
         rel={external ? "noopener noreferrer" : undefined}
       >

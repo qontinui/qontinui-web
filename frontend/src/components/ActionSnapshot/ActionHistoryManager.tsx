@@ -10,7 +10,6 @@ import {
   MousePointer,
   Type,
   Move,
-  Clock,
   Camera,
   ArrowRight,
 } from "lucide-react";
@@ -93,8 +92,8 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
         return <Move className="w-3 h-3" />;
       case "SCROLL":
         return <Move className="w-3 h-3 rotate-90" />;
-      case "WAIT":
-        return <Clock className="w-3 h-3" />;
+      default:
+        return <Target className="w-3 h-3" />;
     }
   };
 

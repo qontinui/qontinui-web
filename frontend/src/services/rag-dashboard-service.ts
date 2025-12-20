@@ -35,7 +35,9 @@ export class RAGDashboardService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `Failed to fetch RAG dashboard: ${response.status}`);
+      throw new Error(
+        error.detail || `Failed to fetch RAG dashboard: ${response.status}`
+      );
     }
 
     return response.json();
@@ -51,7 +53,8 @@ export class RAGDashboardService {
     const searchParams = new URLSearchParams();
     if (params.page) searchParams.set("page", String(params.page));
     if (params.limit) searchParams.set("limit", String(params.limit));
-    if (params.state_filter) searchParams.set("state_filter", params.state_filter);
+    if (params.state_filter)
+      searchParams.set("state_filter", params.state_filter);
 
     const queryString = searchParams.toString();
     const url = `${this.apiUrl}/api/v1/projects/${projectId}/rag/embeddings${
@@ -62,7 +65,9 @@ export class RAGDashboardService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `Failed to fetch embeddings: ${response.status}`);
+      throw new Error(
+        error.detail || `Failed to fetch embeddings: ${response.status}`
+      );
     }
 
     return response.json();
@@ -71,11 +76,15 @@ export class RAGDashboardService {
   /**
    * Get paginated list of embedding generation jobs.
    */
-  async getJobs(projectId: string, params: JobsParams = {}): Promise<JobListResponse> {
+  async getJobs(
+    projectId: string,
+    params: JobsParams = {}
+  ): Promise<JobListResponse> {
     const searchParams = new URLSearchParams();
     if (params.page) searchParams.set("page", String(params.page));
     if (params.limit) searchParams.set("limit", String(params.limit));
-    if (params.status_filter) searchParams.set("status_filter", params.status_filter);
+    if (params.status_filter)
+      searchParams.set("status_filter", params.status_filter);
 
     const queryString = searchParams.toString();
     const url = `${this.apiUrl}/api/v1/projects/${projectId}/rag/jobs${
@@ -86,7 +95,9 @@ export class RAGDashboardService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `Failed to fetch jobs: ${response.status}`);
+      throw new Error(
+        error.detail || `Failed to fetch jobs: ${response.status}`
+      );
     }
 
     return response.json();
@@ -123,7 +134,9 @@ export class RAGDashboardService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `Failed to fetch states: ${response.status}`);
+      throw new Error(
+        error.detail || `Failed to fetch states: ${response.status}`
+      );
     }
 
     return response.json();

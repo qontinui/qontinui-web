@@ -67,12 +67,7 @@ export function SessionHistory() {
       setLoading(true);
       const params: {
         limit: number;
-        status?:
-          | "active"
-          | "completed"
-          | "failed"
-          | "disconnected"
-          | undefined;
+        status?: "active" | "completed" | "failed" | "disconnected" | undefined;
       } = { limit: 50 };
       if (filterStatus !== "all") {
         params.status = filterStatus as

@@ -32,7 +32,9 @@ const StateAssociationPanel: React.FC<StateAssociationPanelProps> = ({
   const getAssociatedStateNames = () => {
     return screenshot.associatedStates
       .map((stateId) => states.find((s) => s.id === stateId))
-      .filter((state): state is NonNullable<typeof state> => state !== undefined)
+      .filter(
+        (state): state is NonNullable<typeof state> => state !== undefined
+      )
       .map((state) => state.name);
   };
 

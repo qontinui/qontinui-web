@@ -72,13 +72,13 @@ function createLinearWorkflow(): Workflow {
     name: "Click Button",
   });
 
-  const wait = createAction(
-    "WAIT",
-    { waitFor: "time", duration: 1000 },
+  const find = createAction(
+    "FIND",
+    { target: { type: "text", text: "element" } },
     [100, 250],
     {
       id: "action-2",
-      name: "Wait 1 Second",
+      name: "Find Element",
     }
   );
 
@@ -92,7 +92,7 @@ function createLinearWorkflow(): Workflow {
     name: "Linear Workflow",
     version: "1.0.0",
     format: "graph",
-    actions: [click1, wait, click2],
+    actions: [click1, find, click2],
     connections: {
       "action-1": {
         main: [[{ action: "action-2", type: "main", index: 0 }]],
@@ -113,8 +113,11 @@ function createLinearWorkflow(): Workflow {
  */
 function createConditionalWorkflow(): Workflow {
   const find = createAction(
-    "EXISTS",
-    { target: { type: "image", imageId: "element.png" } },
+    "FIND",
+    {
+      target: { type: "image", imageId: "element.png" },
+      searchOptions: { strategy: "FIRST" },
+    },
     [100, 100],
     { id: "check", name: "Check if Element Exists" }
   );
@@ -187,13 +190,16 @@ function createLoopWorkflow(): Workflow {
     name: "Click Button",
   });
 
-  const wait = createAction(
-    "WAIT",
-    { waitFor: "time", duration: 500 },
+  const pause = createAction(
+    "FIND",
+    {
+      target: { type: "text", text: "element" },
+      searchOptions: { timeout: 500 },
+    },
     [300, 250],
     {
-      id: "loop-wait",
-      name: "Wait 500ms",
+      id: "loop-pause",
+      name: "Find Element",
     }
   );
 
@@ -207,7 +213,7 @@ function createLoopWorkflow(): Workflow {
     name: "Loop Workflow",
     version: "1.0.0",
     format: "graph",
-    actions: [loop, click, wait, done],
+    actions: [loop, click, pause, done],
     connections: {
       "loop-1": {
         main: [[{ action: "loop-action", type: "main", index: 0 }]],
@@ -215,7 +221,7 @@ function createLoopWorkflow(): Workflow {
       "loop-action": {
         main: [[{ action: "loop-wait", type: "main", index: 0 }]],
       },
-      "loop-wait": {
+      "loop-pause": {
         main: [[{ action: "loop-1", type: "main", index: 0 }]], // Loop back
       },
       // When loop completes, go to done
@@ -835,7 +841,11 @@ export class WorkflowTemplatesService {
    */
   async publishToMarketplace(
     _template: Workflow | WorkflowTemplate,
-    _metadata: { description: string; tags: string[]; categoryId: string | number }
+    _metadata: {
+      description: string;
+      tags: string[];
+      categoryId: string | number;
+    }
   ): Promise<{ success: boolean; id?: string; error?: string }> {
     // TODO: Implement marketplace integration
     return { success: false, error: "Marketplace not yet implemented" };
@@ -846,7 +856,11 @@ export class WorkflowTemplatesService {
    */
   async saveToMarketplaceDraft(
     _template: Workflow | WorkflowTemplate,
-    _metadata: { description: string; tags: string[]; categoryId: string | number }
+    _metadata: {
+      description: string;
+      tags: string[];
+      categoryId: string | number;
+    }
   ): Promise<{ success: boolean; id?: string; error?: string }> {
     // TODO: Implement marketplace integration
     return { success: false, error: "Marketplace not yet implemented" };

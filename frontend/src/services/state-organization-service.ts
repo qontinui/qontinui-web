@@ -1591,7 +1591,12 @@ export class StateOrganizationService {
   /**
    * Create StateImage from template
    */
-  private createStateImageFromTemplate(template: { name: string; patterns: number; shared: boolean; searchRegions?: unknown[] }): StateImage {
+  private createStateImageFromTemplate(template: {
+    name: string;
+    patterns: number;
+    shared: boolean;
+    searchRegions?: unknown[];
+  }): StateImage {
     return {
       id: this.generateId("image"),
       name: template.name,

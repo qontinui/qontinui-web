@@ -396,11 +396,20 @@ export function RAGTestingTab() {
 
           // Background
           ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-          ctx.fillRect(bbox.x, bbox.y - 22 / zoom, textWidth + 12 / zoom, 20 / zoom);
+          ctx.fillRect(
+            bbox.x,
+            bbox.y - 22 / zoom,
+            textWidth + 12 / zoom,
+            20 / zoom
+          );
 
           // Text
           ctx.fillStyle = color;
-          ctx.fillText(`${label} (${scoreText})`, bbox.x + 6 / zoom, bbox.y - 8 / zoom);
+          ctx.fillText(
+            `${label} (${scoreText})`,
+            bbox.x + 6 / zoom,
+            bbox.y - 8 / zoom
+          );
         }
       });
 
@@ -648,7 +657,12 @@ export function RAGTestingTab() {
           const [x, y, width, height] = seg.bbox;
           return {
             id: seg.id || `segment_${idx}`,
-            bbox: { x: x ?? 0, y: y ?? 0, width: width ?? 0, height: height ?? 0 },
+            bbox: {
+              x: x ?? 0,
+              y: y ?? 0,
+              width: width ?? 0,
+              height: height ?? 0,
+            },
             mask_density: 1.0, // Runner segments are already filtered
             mask_data: seg.image_base64
               ? `data:image/png;base64,${seg.image_base64}`
@@ -715,7 +729,8 @@ export function RAGTestingTab() {
             );
             const overlapY = Math.max(
               0,
-              Math.min(mb.y + mb.height, sb.y + sb.height) - Math.max(mb.y, sb.y)
+              Math.min(mb.y + mb.height, sb.y + sb.height) -
+                Math.max(mb.y, sb.y)
             );
             const overlapArea = overlapX * overlapY;
             const segArea = sb.width * sb.height;

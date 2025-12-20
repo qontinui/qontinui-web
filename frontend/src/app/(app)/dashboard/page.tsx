@@ -50,7 +50,11 @@ interface Project {
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
-  const { projectId: contextProjectId, setProjectId } = useAutomation();
+  const {
+    projectId: contextProjectId,
+    setProjectId,
+    setProjectName,
+  } = useAutomation();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -192,7 +196,9 @@ export default function Dashboard() {
       setShowCreateDialog(false);
 
       // Select the newly created project (stays on dashboard)
+      // IMPORTANT: Set both projectId AND projectName to ensure data isolation
       setProjectId(newProject.id);
+      setProjectName(name);
       router.push(`/dashboard?project=${newProject.id}`);
       toast.success("Project created and selected");
     } catch (error: any) {
@@ -334,10 +340,13 @@ export default function Dashboard() {
     return `${diffInDays} days ago`;
   };
 
-  const handleOpenProject = (projectId: string) => {
+  const handleOpenProject = (projectId: string, projectName: string) => {
     // Select the project without navigating away from the dashboard
     // The project will appear in the sidebar's project switcher
+    // IMPORTANT: Set both projectId AND projectName to ensure data isolation
+    // The projectName is used by IndexedDB to filter states/workflows by project
     setProjectId(projectId);
+    setProjectName(projectName);
     // Update URL to include project parameter (stays on dashboard)
     router.push(`/dashboard?project=${projectId}`);
     toast.success("Project selected");
@@ -544,7 +553,9 @@ export default function Dashboard() {
                         <div className="flex items-center gap-2">
                           <Button
                             size="sm"
-                            onClick={() => handleOpenProject(project.id)}
+                            onClick={() =>
+                              handleOpenProject(project.id, project.name)
+                            }
                             className={`flex-1 ${
                               isSelected
                                 ? "bg-[#00D9FF]/30 text-[#00D9FF] border border-[#00D9FF]/50"

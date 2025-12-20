@@ -166,14 +166,16 @@ export function StateNode({
                           <ImageIcon className="w-4 h-4 text-gray-400" />
                         )}
                       </div>
-                      {/* Draggable connection point for creating outgoing transitions */}
+                      {/* Draggable connection point for creating outgoing transitions or moving */}
                       {onStartImageDrag && imageData && (
                         <div
                           className="nodrag absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 w-3 h-3 rounded-full bg-[#BD00FF]/70 hover:bg-[#BD00FF] cursor-grab hover:scale-125 transition-all z-10 border border-[#BD00FF]"
-                          title={`Drag to create transition from ${stateImage.name}`}
+                          title={`Drag to create transition • Alt+drag to move`}
                           draggable
                           onDragStart={(e) => {
                             e.stopPropagation();
+                            // Check if Alt key is pressed for move operation
+                            const isMoveOperation = e.altKey;
                             // Set drag data for the state machine to handle
                             e.dataTransfer.setData(
                               "application/stateimage-drag",
@@ -181,9 +183,12 @@ export function StateNode({
                                 sourceStateId: state.id,
                                 stateImageId: stateImage.id,
                                 stateImageName: stateImage.name,
+                                isMoveOperation,
                               })
                             );
-                            e.dataTransfer.effectAllowed = "link";
+                            e.dataTransfer.effectAllowed = isMoveOperation
+                              ? "move"
+                              : "link";
                             onStartImageDrag(state.id, stateImage.id);
                           }}
                         />

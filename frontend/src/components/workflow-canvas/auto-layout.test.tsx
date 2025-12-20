@@ -66,7 +66,7 @@ function createTestWorkflow(): Workflow {
       },
       {
         id: "a3",
-        type: "WAIT",
+        type: "FIND",
         config: {} as unknown,
         position: [100, 300],
       },
@@ -133,7 +133,7 @@ function createBranchingWorkflow(): Workflow {
       },
       {
         id: "a4",
-        type: "WAIT",
+        type: "FIND",
         config: {} as unknown,
         position: [200, 300],
       },

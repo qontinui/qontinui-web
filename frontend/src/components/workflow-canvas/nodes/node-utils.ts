@@ -15,7 +15,6 @@ import {
   getActionOutputCount,
 } from "@/lib/action-schema/action-types";
 import type { ClickActionConfig } from "@/lib/action-schema/configs/mouse-actions";
-import type { WaitActionConfig } from "@/lib/action-schema/configs/find-actions";
 import type { TypeActionConfig } from "@/lib/action-schema/configs/keyboard-actions";
 import type {
   IfActionConfig,
@@ -52,7 +51,7 @@ export type NodeCategory =
  */
 export function getNodeCategory(actionType: ActionType): NodeCategory {
   // Find actions
-  if (["FIND", "VANISH", "EXISTS", "WAIT"].includes(actionType)) {
+  if (["FIND", "VANISH"].includes(actionType)) {
     return "find";
   }
 
@@ -154,13 +153,6 @@ export function getNodeSummary(action: Action): string {
 
     case "VANISH":
       return "Wait for element to vanish";
-
-    case "EXISTS":
-      return "Check if element exists";
-
-    case "WAIT":
-      const waitConfig = config as { duration?: number };
-      return `Wait ${waitConfig.duration || 1000}ms`;
 
     // Mouse Actions
     case "CLICK":
@@ -361,7 +353,7 @@ export function getNodeDimensions(action: Action): NodeDimensions {
   }
 
   // Compact nodes for simple actions
-  if (["BREAK", "CONTINUE", "WAIT"].includes(type)) {
+  if (["BREAK", "CONTINUE"].includes(type)) {
     return { width: 160, height: 70 };
   }
 
@@ -533,10 +525,6 @@ export function estimateExecutionTime(action: Action): number {
   const { type, config } = action;
 
   switch (type) {
-    case "WAIT":
-      const waitConfig = config as WaitActionConfig;
-      return waitConfig.duration || 1000;
-
     case "LOOP":
       const loopConfig = config as unknown as LoopActionConfig;
       if (loopConfig.loopType === "FOR" && loopConfig.iterations) {
@@ -546,7 +534,6 @@ export function estimateExecutionTime(action: Action): number {
 
     case "FIND":
     case "VANISH":
-    case "EXISTS":
       return 2000; // Image matching can take time
 
     case "CODE_BLOCK":

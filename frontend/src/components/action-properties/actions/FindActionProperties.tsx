@@ -68,9 +68,7 @@ export function FindActionProperties({
 
   // Default: Handle image target type
   const imageIds =
-    config.target?.type === "image"
-      ? (config.target as any).imageIds
-      : null;
+    config.target?.type === "image" ? (config.target as any).imageIds : null;
 
   const hasImageIds = imageIds && Array.isArray(imageIds);
 

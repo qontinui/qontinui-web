@@ -136,7 +136,8 @@ function buildFolderTree(
   // Count workflows per folder
   const workflowCounts = new Map<string, number>();
   workflows.forEach((workflow) => {
-    const folderId = (workflow as { folderId?: string | null }).folderId || null;
+    const folderId =
+      (workflow as { folderId?: string | null }).folderId || null;
     if (folderId) {
       workflowCounts.set(folderId, (workflowCounts.get(folderId) || 0) + 1);
     }

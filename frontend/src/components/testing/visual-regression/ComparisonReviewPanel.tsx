@@ -267,7 +267,9 @@ export function ComparisonReviewPanel({
                   baselineUrl={selectedComparison.baseline_url ?? null}
                   screenshotUrl={selectedComparison.screenshot_url ?? null}
                   diffUrl={selectedComparison.diff_image_url ?? null}
-                  diffRegions={(selectedComparison.diff_regions ?? []) as DiffRegion[]}
+                  diffRegions={
+                    (selectedComparison.diff_regions ?? []) as DiffRegion[]
+                  }
                   similarityScore={selectedComparison.similarity_score}
                   threshold={selectedComparison.threshold_used}
                 />

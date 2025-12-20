@@ -388,7 +388,7 @@ export class WorkflowDocumentationService {
       ["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(t)
     );
     const hasUI = Array.from(actionTypes).some((t) =>
-      ["CLICK", "TYPE", "FIND", "EXISTS"].includes(t)
+      ["CLICK", "TYPE", "FIND"].includes(t)
     );
     const hasData = Array.from(actionTypes).some((t) =>
       ["FILTER", "MAP", "REDUCE", "SORT"].includes(t)

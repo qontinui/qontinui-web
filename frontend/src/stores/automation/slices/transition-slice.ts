@@ -25,7 +25,9 @@ function isDuplicateTransition(
       if (t.type !== "OutgoingTransition") return false;
       if (t.fromState !== newTransition.fromState) return false;
       const sortedExistingActivateStates = [...t.activateStates].sort();
-      if (sortedExistingActivateStates.length !== sortedNewActivateStates.length)
+      if (
+        sortedExistingActivateStates.length !== sortedNewActivateStates.length
+      )
         return false;
       return sortedExistingActivateStates.every(
         (s, i) => s === sortedNewActivateStates[i]
@@ -34,7 +36,8 @@ function isDuplicateTransition(
   } else {
     // IncomingTransition: duplicate if same toState
     return existing.some(
-      (t) => t.type === "IncomingTransition" && t.toState === newTransition.toState
+      (t) =>
+        t.type === "IncomingTransition" && t.toState === newTransition.toState
     );
   }
 }

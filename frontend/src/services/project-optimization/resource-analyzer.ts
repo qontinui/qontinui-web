@@ -217,7 +217,10 @@ export function analyzeImages(
     workflows.forEach((workflow) => {
       const usedInWorkflow = workflow.actions.some((action) => {
         const config = action.config as Record<string, unknown>;
-        return (config.target as { image?: string } | undefined)?.image === image.id || (config.imageId as string | undefined) === image.id;
+        return (
+          (config.target as { image?: string } | undefined)?.image ===
+            image.id || (config.imageId as string | undefined) === image.id
+        );
       });
       if (usedInWorkflow) {
         usedIn.push({ type: "workflow", id: workflow.id, name: workflow.name });

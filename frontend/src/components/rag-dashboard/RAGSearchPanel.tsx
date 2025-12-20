@@ -100,8 +100,8 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
             <div className="text-sm">
               <p className="text-yellow-500 font-medium">Coming Soon</p>
               <p className="text-yellow-500/80">
-                Semantic search requires text-to-embedding generation. The backend
-                currently returns placeholder results.
+                Semantic search requires text-to-embedding generation. The
+                backend currently returns placeholder results.
               </p>
             </div>
           </div>
@@ -122,7 +122,10 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
           <CardHeader>
             <CardTitle className="text-white flex items-center justify-between">
               <span>Results</span>
-              <Badge variant="outline" className="border-gray-700 text-gray-400">
+              <Badge
+                variant="outline"
+                className="border-gray-700 text-gray-400"
+              >
                 {data.total_found} found
               </Badge>
             </CardTitle>
@@ -133,7 +136,8 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
                 <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-400 text-lg">No results found</p>
                 <p className="text-gray-500 text-sm mt-1">
-                  Try adjusting your search query or lowering the similarity threshold
+                  Try adjusting your search query or lowering the similarity
+                  threshold
                 </p>
               </div>
             ) : (
@@ -151,7 +155,8 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
                     </div>
                     <div className="flex-1">
                       <p className="font-medium text-white">
-                        {result.embedding.pattern_name || result.embedding.pattern_id}
+                        {result.embedding.pattern_name ||
+                          result.embedding.pattern_id}
                       </p>
                       <p className="text-sm text-gray-400">
                         State: {result.embedding.state_name}
@@ -162,8 +167,8 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
                         result.similarity_score > 0.8
                           ? "bg-[#00FF88]/20 text-[#00FF88] border-[#00FF88]/50"
                           : result.similarity_score > 0.6
-                          ? "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/50"
-                          : "bg-yellow-500/20 text-yellow-500 border-yellow-500/50"
+                            ? "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/50"
+                            : "bg-yellow-500/20 text-yellow-500 border-yellow-500/50"
                       }`}
                       variant="outline"
                     >

@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { Globe, Box, Zap, GitBranch, Play } from "lucide-react";
+import {
+  Globe,
+  Box,
+  Zap,
+  GitBranch,
+  Play,
+  Keyboard,
+  Sparkles,
+} from "lucide-react";
 
 export const metadata = {
   title: "Qontinui Web Documentation - Visual Automation Builder",
@@ -9,20 +17,20 @@ export const metadata = {
 
 export default function WebDocsPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         {/* Header */}
         <div className="mb-12">
           <Link
             href="/docs"
-            className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+            className="text-primary hover:text-primary/80 text-sm mb-4 inline-block"
           >
             ← Back to Documentation
           </Link>
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             Qontinui Web
           </h1>
-          <p className="text-xl text-slate-600">
+          <p className="text-xl text-muted-foreground">
             Visual configuration builder for creating intelligent GUI automation
             workflows
           </p>
@@ -30,37 +38,37 @@ export default function WebDocsPage() {
 
         {/* What is Qontinui Web */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             What is Qontinui Web?
           </h2>
-          <p className="text-slate-700 mb-4">
+          <p className="text-foreground mb-4">
             Qontinui Web is a browser-based visual builder that lets you create
             sophisticated GUI automation workflows without writing code. It uses
             a <strong>model-based approach</strong> where you define:
           </p>
-          <ul className="space-y-2 text-slate-700 ml-6">
+          <ul className="space-y-2 text-foreground ml-6">
             <li className="flex items-start gap-2">
-              <span className="text-blue-600 font-bold">•</span>
+              <span className="text-primary font-bold">•</span>
               <span>
                 <strong>States</strong> - Different screens or conditions in
                 your application
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-blue-600 font-bold">•</span>
+              <span className="text-primary font-bold">•</span>
               <span>
                 <strong>Actions</strong> - Operations to perform (click, type,
                 wait, etc.)
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-blue-600 font-bold">•</span>
+              <span className="text-primary font-bold">•</span>
               <span>
                 <strong>Transitions</strong> - How to navigate between states
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-blue-600 font-bold">•</span>
+              <span className="text-primary font-bold">•</span>
               <span>
                 <strong>Images</strong> - Visual elements for state
                 identification and targeting
@@ -68,8 +76,8 @@ export default function WebDocsPage() {
             </li>
           </ul>
 
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-6">
-            <p className="text-sm text-green-900">
+          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mt-6">
+            <p className="text-sm text-foreground">
               <strong>Mock Execution:</strong> Test your automation logic
               directly in the browser without requiring a real GUI environment.
               Perfect for rapid iteration and development.
@@ -79,7 +87,7 @@ export default function WebDocsPage() {
 
         {/* Documentation Sections */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Documentation Sections
           </h2>
           <div className="grid gap-4">
@@ -96,6 +104,12 @@ export default function WebDocsPage() {
               href="/docs/web/actions"
             />
             <DocLink
+              icon={<Sparkles className="w-5 h-5" />}
+              title="AI Actions"
+              description="Integrate AI-powered automation: prompts, sequences, and checkpoint workflows"
+              href="/docs/web/ai-actions"
+            />
+            <DocLink
               icon={<GitBranch className="w-5 h-5" />}
               title="State Transitions"
               description="Connect states with transitions and build your automation flow"
@@ -107,12 +121,18 @@ export default function WebDocsPage() {
               description="Test your automation logic in the browser before deploying"
               href="/docs/web/testing"
             />
+            <DocLink
+              icon={<Keyboard className="w-5 h-5" />}
+              title="Keyboard Shortcuts"
+              description="Master shortcuts and modifier keys for efficient workflow building"
+              href="/docs/web/keyboard-shortcuts"
+            />
           </div>
         </section>
 
         {/* Key Concepts */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Key Concepts
           </h2>
 
@@ -154,7 +174,7 @@ export default function WebDocsPage() {
 
         {/* Workflow */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             Typical Workflow
           </h2>
           <div className="space-y-4">
@@ -193,7 +213,7 @@ export default function WebDocsPage() {
 
         {/* Features */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Advanced Features
           </h2>
           <div className="grid md:grid-cols-2 gap-6">
@@ -217,18 +237,18 @@ export default function WebDocsPage() {
         </section>
 
         {/* Getting Started CTA */}
-        <section className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-lg p-8">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+        <section className="bg-primary/5 border border-primary/20 rounded-lg p-8">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             Ready to Build Your First Automation?
           </h2>
-          <p className="text-slate-700 mb-6">
+          <p className="text-muted-foreground mb-6">
             Sign up for free and start building intelligent GUI automation
             workflows today.
           </p>
           <div className="flex flex-wrap gap-4">
             <Link
               href="https://qontinui.com"
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+              className="inline-flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3 rounded-lg font-semibold transition-colors"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -237,7 +257,7 @@ export default function WebDocsPage() {
             </Link>
             <Link
               href="/docs/getting-started"
-              className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-900 border border-slate-300 px-6 py-3 rounded-lg font-semibold transition-colors"
+              className="inline-flex items-center gap-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border px-6 py-3 rounded-lg font-semibold transition-colors"
             >
               Getting Started Guide →
             </Link>
@@ -259,13 +279,13 @@ function DocLink({ icon, title, description, href }: DocLinkProps) {
   return (
     <Link
       href={href}
-      className="block bg-slate-50 border border-slate-200 rounded-lg p-6 hover:shadow-md hover:border-blue-300 transition-all"
+      className="block bg-card border border-border rounded-lg p-6 hover:shadow-md hover:border-primary/50 transition-all"
     >
       <div className="flex items-start gap-4">
-        <div className="text-blue-600 mt-1">{icon}</div>
+        <div className="text-primary mt-1">{icon}</div>
         <div>
-          <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-          <p className="text-sm text-slate-600">{description}</p>
+          <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+          <p className="text-sm text-muted-foreground">{description}</p>
         </div>
       </div>
     </Link>
@@ -281,12 +301,12 @@ interface ConceptSectionProps {
 function ConceptSection({ title, description, points }: ConceptSectionProps) {
   return (
     <div>
-      <h3 className="text-lg font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-slate-700 mb-3">{description}</p>
+      <h3 className="text-lg font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-muted-foreground mb-3">{description}</p>
       <ul className="space-y-1 ml-6">
         {points.map((point, idx) => (
-          <li key={idx} className="text-slate-700 flex items-start gap-2">
-            <span className="text-blue-600">•</span>
+          <li key={idx} className="text-foreground flex items-start gap-2">
+            <span className="text-primary">•</span>
             <span>{point}</span>
           </li>
         ))}
@@ -304,12 +324,12 @@ interface WorkflowStepProps {
 function WorkflowStep({ number, title, description }: WorkflowStepProps) {
   return (
     <div className="flex gap-4">
-      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
+      <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
         {number}
       </div>
       <div>
-        <h3 className="font-semibold text-slate-900 mb-1">{title}</h3>
-        <p className="text-sm text-slate-700">{description}</p>
+        <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
       </div>
     </div>
   );
@@ -322,9 +342,9 @@ interface FeatureCardProps {
 
 function FeatureCard({ title, description }: FeatureCardProps) {
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600">{description}</p>
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }

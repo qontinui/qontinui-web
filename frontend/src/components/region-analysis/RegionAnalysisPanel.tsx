@@ -340,7 +340,8 @@ export function RegionAnalysisPanel({
                                       checked={
                                         (analyzerConfigs[analyzer.name]?.[
                                           param
-                                        ] as boolean | undefined) ?? defaultValue
+                                        ] as boolean | undefined) ??
+                                        defaultValue
                                       }
                                       onCheckedChange={(checked) =>
                                         updateAnalyzerConfig(
@@ -357,7 +358,8 @@ export function RegionAnalysisPanel({
                                         value={
                                           (analyzerConfigs[analyzer.name]?.[
                                             param
-                                          ] as number | undefined) ?? defaultValue
+                                          ] as number | undefined) ??
+                                          defaultValue
                                         }
                                         onChange={(e) =>
                                           updateAnalyzerConfig(
@@ -375,11 +377,11 @@ export function RegionAnalysisPanel({
                                   ) : (
                                     <Input
                                       type="text"
-                                      value={
-                                        String(analyzerConfigs[analyzer.name]?.[
+                                      value={String(
+                                        analyzerConfigs[analyzer.name]?.[
                                           param
-                                        ] ?? defaultValue)
-                                      }
+                                        ] ?? defaultValue
+                                      )}
                                       onChange={(e) =>
                                         updateAnalyzerConfig(
                                           analyzer.name,

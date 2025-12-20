@@ -108,7 +108,9 @@ export function TransitionBuilder() {
         transition as import("@/contexts/automation-context/types").Transition
       );
       if (!wasAdded) {
-        toast.error("A transition with the same origin and target states already exists");
+        toast.error(
+          "A transition with the same origin and target states already exists"
+        );
         return;
       }
       toast.success("OutgoingTransition created");
@@ -204,7 +206,9 @@ export function TransitionBuilder() {
 
         <Tabs
           value={transitionType}
-          onValueChange={(v) => setTransitionType(v as "IncomingTransition" | "OutgoingTransition")}
+          onValueChange={(v) =>
+            setTransitionType(v as "IncomingTransition" | "OutgoingTransition")
+          }
         >
           <TabsList className="grid w-[400px] mx-auto grid-cols-2 bg-gray-800">
             <TabsTrigger

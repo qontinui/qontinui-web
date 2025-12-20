@@ -32,7 +32,12 @@ const mockWorkflow: Workflow = {
       id: "action-1",
     }),
     createAction("TYPE", { text: "test" }, [100, 250], { id: "action-2" }),
-    createAction("WAIT", { duration: 1000 }, [100, 400], { id: "action-3" }),
+    createAction(
+      "FIND",
+      { target: { image: "result.png" }, strategy: "FIRST" },
+      [100, 400],
+      { id: "action-3" }
+    ),
   ],
   connections: {
     "action-1": {
@@ -251,7 +256,7 @@ describe("SequentialListView", () => {
 
     expect(screen.getByText("CLICK")).toBeDefined();
     expect(screen.getByText("TYPE")).toBeDefined();
-    expect(screen.getByText("WAIT")).toBeDefined();
+    expect(screen.getByText("FIND")).toBeDefined();
   });
 
   it("calls onActionClick when action is clicked", () => {

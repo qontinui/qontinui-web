@@ -524,7 +524,8 @@ export function WorkflowMetricsPanel({
                       <YAxis />
                       <Tooltip
                         formatter={(value, name) => {
-                          if (name === "duration") return formatDuration(Number(value));
+                          if (name === "duration")
+                            return formatDuration(Number(value));
                           return value;
                         }}
                         labelFormatter={(label) => `Run #${label}`}
@@ -616,7 +617,9 @@ export function WorkflowMetricsPanel({
                   <LineChart data={performanceTrendData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="run" />
-                    <YAxis tickFormatter={(value) => formatDuration(Number(value))} />
+                    <YAxis
+                      tickFormatter={(value) => formatDuration(Number(value))}
+                    />
                     <Tooltip
                       formatter={(value) => formatDuration(Number(value))}
                       labelFormatter={(label) => `Run ${label}`}

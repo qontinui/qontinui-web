@@ -124,7 +124,9 @@ export class IssuesService {
     }
 
     const queryString = params.toString();
-    const url = queryString ? `${BASE_URL}/stats?${queryString}` : `${BASE_URL}/stats`;
+    const url = queryString
+      ? `${BASE_URL}/stats?${queryString}`
+      : `${BASE_URL}/stats`;
 
     return this.httpClient.get<IssueStats>(url);
   }
@@ -133,6 +135,9 @@ export class IssuesService {
    * Sync issues from runner
    */
   async syncIssues(request: IssuesSyncRequest): Promise<IssuesSyncResponse> {
-    return this.httpClient.post<IssuesSyncResponse>(`${BASE_URL}/sync`, request);
+    return this.httpClient.post<IssuesSyncResponse>(
+      `${BASE_URL}/sync`,
+      request
+    );
   }
 }

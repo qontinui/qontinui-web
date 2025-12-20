@@ -131,7 +131,9 @@ export function countWorkflowsInFolder(
     return 0;
   }
 
-  return workflows.filter((w) => (w as { folderId?: string }).folderId === folderId).length;
+  return workflows.filter(
+    (w) => (w as { folderId?: string }).folderId === folderId
+  ).length;
 }
 
 /**

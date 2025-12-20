@@ -295,7 +295,10 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       });
     } catch (error: unknown) {
       console.error("Screenshot capture failed:", error);
-      const errorMessage = error instanceof Error ? error.message : "Make sure qontinui-api is running on port 8001";
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Make sure qontinui-api is running on port 8001";
       toast.error("Failed to capture screenshot", {
         description: errorMessage,
       });
@@ -503,8 +506,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
             // Merge with existing search regions
             const mergedSearchRegions = [
               ...pattern.searchRegions.filter(
-                (sr) =>
-                  !patternSearchRegions.find((psr) => psr.id === sr.id)
+                (sr) => !patternSearchRegions.find((psr) => psr.id === sr.id)
               ),
               ...patternSearchRegions,
             ];
@@ -723,20 +725,22 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           });
         } else if (deletedRegion.type === "SearchRegion") {
           // Remove from Pattern.searchRegions
-          const updatedStateImages = state.stateImages.map((image: StateImage) => {
-            if (deletedRegion.saveToStateImageId === image.id) {
-              const updatedPatterns = image.patterns.map(
-                (pattern: Pattern) => ({
-                  ...pattern,
-                  searchRegions: pattern.searchRegions.filter(
-                    (sr) => sr.id !== regionId
-                  ),
-                })
-              );
-              return { ...image, patterns: updatedPatterns };
+          const updatedStateImages = state.stateImages.map(
+            (image: StateImage) => {
+              if (deletedRegion.saveToStateImageId === image.id) {
+                const updatedPatterns = image.patterns.map(
+                  (pattern: Pattern) => ({
+                    ...pattern,
+                    searchRegions: pattern.searchRegions.filter(
+                      (sr) => sr.id !== regionId
+                    ),
+                  })
+                );
+                return { ...image, patterns: updatedPatterns };
+              }
+              return image;
             }
-            return image;
-          });
+          );
 
           await updateState({
             ...state,

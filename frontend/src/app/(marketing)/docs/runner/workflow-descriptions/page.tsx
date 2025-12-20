@@ -15,23 +15,23 @@ export const metadata = {
 
 export default function WorkflowDescriptionsPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         {/* Header */}
         <div className="mb-12">
           <Link
             href="/docs/runner"
-            className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+            className="text-primary hover:text-primary/80 text-sm mb-4 inline-block"
           >
             &larr; Back to Runner Documentation
           </Link>
           <div className="flex items-center gap-3 mb-4">
-            <FileText className="w-10 h-10 text-blue-600" />
-            <h1 className="text-4xl font-bold text-slate-900">
+            <FileText className="w-10 h-10 text-primary" />
+            <h1 className="text-4xl font-bold text-foreground">
               Writing Workflow Descriptions
             </h1>
           </div>
-          <p className="text-xl text-slate-600">
+          <p className="text-xl text-muted-foreground">
             Create structured descriptions that enable AI to intelligently
             select and execute your automation workflows
           </p>
@@ -39,12 +39,12 @@ export default function WorkflowDescriptionsPage() {
 
         {/* Overview */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">Overview</h2>
-          <p className="text-slate-700 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">Overview</h2>
+          <p className="text-foreground mb-4">
             When AI assistants like Claude control Qontinui Runner through the
             MCP (Model Context Protocol) server, they need to understand:
           </p>
-          <ul className="space-y-2 text-slate-700 mb-4">
+          <ul className="space-y-2 text-foreground mb-4">
             <li className="flex items-start gap-2">
               <span className="text-purple-600 font-bold">•</span>
               <span>What each workflow does</span>
@@ -62,7 +62,7 @@ export default function WorkflowDescriptionsPage() {
               <span>How to verify success or diagnose failures</span>
             </li>
           </ul>
-          <p className="text-slate-700">
+          <p className="text-foreground">
             <strong>Structured workflow descriptions</strong> provide this
             context in a format that both humans and AI can easily understand
             and parse.
@@ -71,24 +71,24 @@ export default function WorkflowDescriptionsPage() {
 
         {/* Why It Matters */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             Why This Matters
           </h2>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-            <h3 className="font-semibold text-slate-900 mb-3">
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-6">
+            <h3 className="font-semibold text-foreground mb-3">
               Example: AI-Driven Verification
             </h3>
-            <p className="text-slate-700 mb-4">
+            <p className="text-foreground mb-4">
               You make code changes to the web extraction feature and ask
               Claude:
               <em className="block mt-2 italic">
                 &ldquo;Verify the extraction feature works end-to-end&rdquo;
               </em>
             </p>
-            <p className="text-slate-700 mb-4">
+            <p className="text-foreground mb-4">
               With good workflow descriptions, Claude will:
             </p>
-            <ol className="space-y-2 text-slate-700">
+            <ol className="space-y-2 text-foreground">
               <li className="flex items-start gap-2">
                 <span className="font-bold">1.</span>
                 <span>Load your workflow config and read all descriptions</span>
@@ -127,13 +127,13 @@ export default function WorkflowDescriptionsPage() {
 
         {/* Description Format */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             Structured Description Format
           </h2>
-          <p className="text-slate-700 mb-4">
+          <p className="text-foreground mb-4">
             Use the existing{" "}
-            <code className="bg-slate-100 px-1 rounded">description</code> field
-            in your workflow JSON. No schema changes or additional fields are
+            <code className="bg-muted px-1 rounded">description</code> field in
+            your workflow JSON. No schema changes or additional fields are
             required. Structure your description using this natural language
             format:
           </p>
@@ -150,116 +150,108 @@ Success indicators: [How to know the workflow succeeded]
 Failure indicators: [Signs that something went wrong]`}</pre>
           </div>
 
-          <h3 className="text-lg font-semibold text-slate-900 mb-3">
+          <h3 className="text-lg font-semibold text-foreground mb-3">
             Field Reference
           </h3>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-slate-100">
-                  <th className="border border-slate-300 px-4 py-2 text-left font-semibold">
+                <tr className="bg-muted">
+                  <th className="border border-border px-4 py-2 text-left font-semibold">
                     Field
                   </th>
-                  <th className="border border-slate-300 px-4 py-2 text-left font-semibold">
+                  <th className="border border-border px-4 py-2 text-left font-semibold">
                     Required
                   </th>
-                  <th className="border border-slate-300 px-4 py-2 text-left font-semibold">
+                  <th className="border border-border px-4 py-2 text-left font-semibold">
                     Purpose
                   </th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Summary
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
+                  <td className="border border-border px-4 py-2">
                     <span className="text-green-600 font-semibold">Yes</span>
                   </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2 text-foreground">
                     First line, clear action-oriented description of what the
                     workflow does
                   </td>
                 </tr>
-                <tr className="bg-slate-50">
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                <tr className="bg-muted">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Use when
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
+                  <td className="border border-border px-4 py-2">
                     <span className="text-green-600 font-semibold">Yes</span>
                   </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2 text-foreground">
                     Conditions or situations when AI should choose this workflow
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Verifies
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
+                  <td className="border border-border px-4 py-2">
                     Recommended
                   </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2 text-foreground">
                     What features or functionality this workflow tests or
                     validates
                   </td>
                 </tr>
-                <tr className="bg-slate-50">
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                <tr className="bg-muted">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Prerequisites
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
+                  <td className="border border-border px-4 py-2">
                     Recommended
                   </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2 text-foreground">
                     Required state before running (services running, apps open,
                     login state, etc.)
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Produces
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
-                    Optional
-                  </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2">Optional</td>
+                  <td className="border border-border px-4 py-2 text-foreground">
                     Side effects or outputs (new data created, state changes,
                     files written)
                   </td>
                 </tr>
-                <tr className="bg-slate-50">
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                <tr className="bg-muted">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Depends on
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
-                    Optional
-                  </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2">Optional</td>
+                  <td className="border border-border px-4 py-2 text-foreground">
                     Other workflow names that must run first (use exact names,
                     case-sensitive)
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Success indicators
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
-                    Optional
-                  </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2">Optional</td>
+                  <td className="border border-border px-4 py-2 text-foreground">
                     Observable indicators that the workflow succeeded (visible
                     UI elements, log messages, data created)
                   </td>
                 </tr>
-                <tr className="bg-slate-50">
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                <tr className="bg-muted">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Failure indicators
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
-                    Optional
-                  </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2">Optional</td>
+                  <td className="border border-border px-4 py-2 text-foreground">
                     Signs that something went wrong (error messages, missing
                     elements, API failures)
                   </td>
@@ -271,15 +263,15 @@ Failure indicators: [Signs that something went wrong]`}</pre>
 
         {/* Examples */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">Examples</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-6">Examples</h2>
 
           {/* Example 1 */}
           <div className="mb-8">
-            <h3 className="text-lg font-semibold text-slate-900 mb-3 flex items-center gap-2">
-              <Workflow className="w-5 h-5 text-blue-600" />
+            <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Workflow className="w-5 h-5 text-primary" />
               Example 1: Navigation Workflow
             </h3>
-            <p className="text-slate-700 mb-3 text-sm">
+            <p className="text-foreground mb-3 text-sm">
               A simple workflow that navigates to a page and verifies it loads
               correctly.
             </p>
@@ -296,11 +288,11 @@ Failure indicators: 404 error, blank page, canvas doesn&apos;t render, console e
 
           {/* Example 2 */}
           <div className="mb-8">
-            <h3 className="text-lg font-semibold text-slate-900 mb-3 flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
               <Workflow className="w-5 h-5 text-green-600" />
               Example 2: Data-Producing Workflow
             </h3>
-            <p className="text-slate-700 mb-3 text-sm">
+            <p className="text-foreground mb-3 text-sm">
               A workflow that creates new data which other workflows may depend
               on.
             </p>
@@ -318,11 +310,11 @@ Failure indicators: Extraction hangs or times out, no states detected ("0 items 
 
           {/* Example 3 */}
           <div className="mb-8">
-            <h3 className="text-lg font-semibold text-slate-900 mb-3 flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
               <Workflow className="w-5 h-5 text-purple-600" />
               Example 3: Verification Workflow with Dependencies
             </h3>
-            <p className="text-slate-700 mb-3 text-sm">
+            <p className="text-foreground mb-3 text-sm">
               A workflow that depends on data from another workflow.
             </p>
             <div className="bg-slate-900 text-slate-100 rounded-lg p-6 font-mono text-sm overflow-x-auto">
@@ -340,42 +332,42 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
 
         {/* Multi-Workflow Sequences */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             Multi-Workflow Sequences
           </h2>
-          <p className="text-slate-700 mb-4">
+          <p className="text-foreground mb-4">
             For complex verification tasks that require multiple workflows, the{" "}
-            <code className="bg-slate-100 px-1 rounded">Depends on</code> field
+            <code className="bg-muted px-1 rounded">Depends on</code> field
             enables AI to understand ordering requirements and execute workflows
             in the correct sequence.
           </p>
 
-          <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
-            <h3 className="font-semibold text-slate-900 mb-3">
+          <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-6">
+            <h3 className="font-semibold text-foreground mb-3">
               How AI Chains Workflows
             </h3>
-            <p className="text-slate-700 mb-4">
+            <p className="text-foreground mb-4">
               When you ask:{" "}
               <em>&ldquo;Verify web extraction works end-to-end&rdquo;</em>
             </p>
             <div className="space-y-3">
               <div className="flex items-start gap-3">
-                <div className="bg-purple-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+                <div className="bg-purple-600 text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
                   1
                 </div>
                 <div>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     <strong>Load and analyze:</strong> AI loads the workflow
                     config and reads all descriptions
                   </p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="bg-purple-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+                <div className="bg-purple-600 text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
                   2
                 </div>
                 <div>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     <strong>Identify relevant workflows:</strong> Finds
                     &ldquo;Start New Web Extraction&rdquo; and &ldquo;Navigate
                     to Web Extraction Page&rdquo; based on &ldquo;Use
@@ -384,11 +376,11 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="bg-purple-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+                <div className="bg-purple-600 text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
                   3
                 </div>
                 <div>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     <strong>Determine order:</strong> Sees that page
                     verification &ldquo;Depends on&rdquo; extraction workflow
                     (which &ldquo;Produces&rdquo; data)
@@ -396,33 +388,33 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="bg-purple-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+                <div className="bg-purple-600 text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
                   4
                 </div>
                 <div>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     <strong>Execute in sequence:</strong> Runs extraction first
                     (produces data), then page verification (consumes data)
                   </p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="bg-purple-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+                <div className="bg-purple-600 text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
                   5
                 </div>
                 <div>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     <strong>Verify results:</strong> Checks success/failure
                     indicators in logs, screenshots, and API responses
                   </p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="bg-purple-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+                <div className="bg-purple-600 text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
                   6
                 </div>
                 <div>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     <strong>Report or fix:</strong> Reports findings and can
                     autonomously fix issues discovered during verification
                   </p>
@@ -434,18 +426,18 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
 
         {/* Best Practices */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Best Practices
           </h2>
 
           <div className="grid md:grid-cols-2 gap-6">
             {/* Do's */}
-            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+            <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-6">
               <h3 className="font-semibold text-green-800 mb-4 flex items-center gap-2">
                 <CheckCircle className="w-5 h-5" />
                 Do
               </h3>
-              <ul className="space-y-3 text-slate-700">
+              <ul className="space-y-3 text-foreground">
                 <li className="flex items-start gap-2">
                   <span className="text-green-600 mt-0.5">✓</span>
                   <span>
@@ -499,12 +491,12 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
             </div>
 
             {/* Don'ts */}
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6">
               <h3 className="font-semibold text-red-800 mb-4 flex items-center gap-2">
                 <AlertCircle className="w-5 h-5" />
                 Don&apos;t
               </h3>
-              <ul className="space-y-3 text-slate-700">
+              <ul className="space-y-3 text-foreground">
                 <li className="flex items-start gap-2">
                   <span className="text-red-600 mt-0.5">✗</span>
                   <span>
@@ -561,49 +553,49 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
 
         {/* Writing Tips */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             <Lightbulb className="inline w-6 h-6 mr-2 text-yellow-500" />
             Writing Tips
           </h2>
 
           <div className="space-y-6">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-              <h3 className="font-semibold text-slate-900 mb-2">
+            <div className="bg-muted border border-border rounded-lg p-6">
+              <h3 className="font-semibold text-foreground mb-2">
                 1. Start with the Action
               </h3>
-              <p className="text-slate-700 mb-3">
+              <p className="text-foreground mb-3">
                 Begin your summary with an active verb that describes what the
                 workflow does.
               </p>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
-                <div className="bg-green-50 border border-green-200 rounded p-3">
+                <div className="bg-green-500/10 border border-green-500/30 rounded p-3">
                   <p className="font-semibold text-green-800 mb-1">Good</p>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     &ldquo;Clicks the Submit button and verifies the form
                     submits&rdquo;
                   </p>
                 </div>
-                <div className="bg-red-50 border border-red-200 rounded p-3">
+                <div className="bg-red-500/10 border border-red-500/30 rounded p-3">
                   <p className="font-semibold text-red-800 mb-1">Bad</p>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     &ldquo;Form submission workflow&rdquo;
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-              <h3 className="font-semibold text-slate-900 mb-2">
+            <div className="bg-muted border border-border rounded-lg p-6">
+              <h3 className="font-semibold text-foreground mb-2">
                 2. Be Specific About State
               </h3>
-              <p className="text-slate-700 mb-3">
+              <p className="text-foreground mb-3">
                 Clearly describe what state the system should be in before and
                 after the workflow.
               </p>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
-                <div className="bg-green-50 border border-green-200 rounded p-3">
+                <div className="bg-green-500/10 border border-green-500/30 rounded p-3">
                   <p className="font-semibold text-green-800 mb-1">Good</p>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     Prerequisites: User logged in with admin role, database
                     contains test data
                     <br />
@@ -611,9 +603,9 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                     &ldquo;active&rdquo;
                   </p>
                 </div>
-                <div className="bg-red-50 border border-red-200 rounded p-3">
+                <div className="bg-red-500/10 border border-red-500/30 rounded p-3">
                   <p className="font-semibold text-red-800 mb-1">Bad</p>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     Prerequisites: Logged in
                     <br />
                     Produces: New project
@@ -622,18 +614,18 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
               </div>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-              <h3 className="font-semibold text-slate-900 mb-2">
+            <div className="bg-muted border border-border rounded-lg p-6">
+              <h3 className="font-semibold text-foreground mb-2">
                 3. Make Indicators Observable
               </h3>
-              <p className="text-slate-700 mb-3">
+              <p className="text-foreground mb-3">
                 Success and failure indicators should be things AI can verify in
                 logs, screenshots, or API responses.
               </p>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
-                <div className="bg-green-50 border border-green-200 rounded p-3">
+                <div className="bg-green-500/10 border border-green-500/30 rounded p-3">
                   <p className="font-semibold text-green-800 mb-1">Good</p>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     Success: &ldquo;Success message appears&rdquo;, API returns
                     200 status, log shows &ldquo;Project created&rdquo;
                     <br />
@@ -641,9 +633,9 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
                     &ldquo;Cannot read property&rdquo;
                   </p>
                 </div>
-                <div className="bg-red-50 border border-red-200 rounded p-3">
+                <div className="bg-red-500/10 border border-red-500/30 rounded p-3">
                   <p className="font-semibold text-red-800 mb-1">Bad</p>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     Success: It works
                     <br />
                     Failure: Something broke
@@ -652,25 +644,25 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
               </div>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-              <h3 className="font-semibold text-slate-900 mb-2">
+            <div className="bg-muted border border-border rounded-lg p-6">
+              <h3 className="font-semibold text-foreground mb-2">
                 4. Link Related Workflows
               </h3>
-              <p className="text-slate-700 mb-3">
+              <p className="text-foreground mb-3">
                 Use &ldquo;Depends on&rdquo; to create workflow chains.
                 Reference the exact workflow name as it appears in the config.
               </p>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
-                <div className="bg-green-50 border border-green-200 rounded p-3">
+                <div className="bg-green-500/10 border border-green-500/30 rounded p-3">
                   <p className="font-semibold text-green-800 mb-1">Good</p>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     Depends on: &ldquo;Create Test User&rdquo; (if no test user
                     exists), &ldquo;Start Backend Server&rdquo;
                   </p>
                 </div>
-                <div className="bg-red-50 border border-red-200 rounded p-3">
+                <div className="bg-red-500/10 border border-red-500/30 rounded p-3">
                   <p className="font-semibold text-red-800 mb-1">Bad</p>
-                  <p className="text-slate-700">
+                  <p className="text-foreground">
                     Depends on: The user workflow
                   </p>
                 </div>
@@ -681,12 +673,12 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
 
         {/* JSON Format */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             JSON Format Example
           </h2>
-          <p className="text-slate-700 mb-4">
+          <p className="text-foreground mb-4">
             The description is stored as a single string field in the workflow
-            JSON. Use <code className="bg-slate-100 px-1 rounded">\n</code> for
+            JSON. Use <code className="bg-muted px-1 rounded">\n</code> for
             newlines:
           </p>
           <div className="bg-slate-900 text-slate-100 rounded-lg p-6 font-mono text-sm overflow-x-auto">
@@ -709,81 +701,81 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
 
         {/* Workflow Categories */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             Workflow Categories
           </h2>
-          <p className="text-slate-700 mb-4">
+          <p className="text-foreground mb-4">
             Organize workflows into categories to help AI understand their
             purpose and whether they can be executed directly:
           </p>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-slate-100">
-                  <th className="border border-slate-300 px-4 py-2 text-left font-semibold">
+                <tr className="bg-muted">
+                  <th className="border border-border px-4 py-2 text-left font-semibold">
                     Category
                   </th>
-                  <th className="border border-slate-300 px-4 py-2 text-left font-semibold">
+                  <th className="border border-border px-4 py-2 text-left font-semibold">
                     Purpose
                   </th>
-                  <th className="border border-slate-300 px-4 py-2 text-left font-semibold">
+                  <th className="border border-border px-4 py-2 text-left font-semibold">
                     Executable
                   </th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Main
                   </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2 text-foreground">
                     Primary workflows for execution
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
+                  <td className="border border-border px-4 py-2">
                     <span className="text-green-600 font-semibold">Yes</span>
                   </td>
                 </tr>
-                <tr className="bg-slate-50">
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                <tr className="bg-muted">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Testing
                   </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2 text-foreground">
                     Test verification workflows
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
+                  <td className="border border-border px-4 py-2">
                     <span className="text-green-600 font-semibold">Yes</span>
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     UI Automation
                   </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2 text-foreground">
                     UI interaction workflows
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
+                  <td className="border border-border px-4 py-2">
                     <span className="text-green-600 font-semibold">Yes</span>
                   </td>
                 </tr>
-                <tr className="bg-slate-50">
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                <tr className="bg-muted">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Utilities
                   </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2 text-foreground">
                     Helper workflows
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
+                  <td className="border border-border px-4 py-2">
                     <span className="text-green-600 font-semibold">Yes</span>
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-slate-300 px-4 py-2 font-mono text-sm">
+                  <td className="border border-border px-4 py-2 font-mono text-sm">
                     Transitions
                   </td>
-                  <td className="border border-slate-300 px-4 py-2 text-slate-700">
+                  <td className="border border-border px-4 py-2 text-foreground">
                     State machine transitions
                   </td>
-                  <td className="border border-slate-300 px-4 py-2">
+                  <td className="border border-border px-4 py-2">
                     Via state machine only
                   </td>
                 </tr>
@@ -793,33 +785,33 @@ Failure indicators: Empty state list, broken image icons, "No extractions found"
         </section>
 
         {/* Related Documentation */}
-        <section className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-8">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+        <section className="bg-gradient-to-r from-primary/10 to-purple-500/10 border border-primary/30 rounded-lg p-8">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             Related Documentation
           </h2>
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             Learn more about AI-powered automation with Qontinui Runner:
           </p>
           <div className="grid sm:grid-cols-2 gap-4">
             <Link
               href="/docs/runner/ai-integration"
-              className="block bg-white border border-slate-200 rounded-lg p-4 hover:shadow-md hover:border-purple-300 transition-all"
+              className="block bg-card border border-border rounded-lg p-4 hover:shadow-md hover:border-primary/50 transition-all"
             >
-              <h3 className="font-semibold text-slate-900 mb-1">
+              <h3 className="font-semibold text-foreground mb-1">
                 AI Integration Overview
               </h3>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-muted-foreground">
                 Learn how AI assistants use workflow descriptions
               </p>
             </Link>
             <Link
               href="/docs/runner/execution"
-              className="block bg-white border border-slate-200 rounded-lg p-4 hover:shadow-md hover:border-purple-300 transition-all"
+              className="block bg-card border border-border rounded-lg p-4 hover:shadow-md hover:border-primary/50 transition-all"
             >
-              <h3 className="font-semibold text-slate-900 mb-1">
+              <h3 className="font-semibold text-foreground mb-1">
                 Running Automations
               </h3>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-muted-foreground">
                 Execute workflows via Runner or MCP server
               </p>
             </Link>

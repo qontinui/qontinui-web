@@ -14,7 +14,10 @@ import { ActionExecutionStatus } from "../../types/debugger/execution-types";
 import { SpecialKeyDisplay } from "../special-keys-selector";
 import { useAutomation } from "../../contexts/automation-context";
 import type { Action } from "../../lib/action-schema/action-types";
-import type { State, StateString } from "../../contexts/automation-context/types";
+import type {
+  State,
+  StateString,
+} from "../../contexts/automation-context/types";
 
 interface ActionTimelineProps {
   actions: Action[];
@@ -69,10 +72,7 @@ const getActionIcon = (actionType: string) => {
 };
 
 // Helper to resolve TYPE action text from StateStrings
-const getTypeActionText = (
-  action: Action,
-  states: State[]
-): string | null => {
+const getTypeActionText = (action: Action, states: State[]): string | null => {
   if (action.type !== "TYPE") return null;
 
   const typeAction = action as Action<"TYPE">;
@@ -88,9 +88,14 @@ const getTypeActionText = (
     const state = states.find((s) => s.id === typeConfig.textSource!.stateId);
     if (!state || !state.strings) return null;
 
-    if (typeConfig.textSource.stringIds && typeConfig.textSource.stringIds.length > 0) {
+    if (
+      typeConfig.textSource.stringIds &&
+      typeConfig.textSource.stringIds.length > 0
+    ) {
       const selectedStrings = state.strings
-        .filter((s: StateString) => typeConfig.textSource!.stringIds.includes(s.id))
+        .filter((s: StateString) =>
+          typeConfig.textSource!.stringIds.includes(s.id)
+        )
         .map((s: StateString) => s.value)
         .filter((v) => v);
 

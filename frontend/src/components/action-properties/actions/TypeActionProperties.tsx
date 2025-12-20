@@ -101,8 +101,9 @@ export function TypeActionProperties({
                 <SelectValue placeholder="Select a state" />
               </SelectTrigger>
               <SelectContent className="bg-[#27272A] border-gray-700">
-                {(states as State[]).filter((s) => s.strings && s.strings.length > 0)
-                  .length === 0 ? (
+                {(states as State[]).filter(
+                  (s) => s.strings && s.strings.length > 0
+                ).length === 0 ? (
                   <SelectItem value="none" disabled>
                     No states with strings defined
                   </SelectItem>
@@ -155,7 +156,8 @@ export function TypeActionProperties({
                           <Checkbox
                             id={`string-${str.id}`}
                             checked={
-                              config.textSource?.stringIds?.includes(str.id) || false
+                              config.textSource?.stringIds?.includes(str.id) ||
+                              false
                             }
                             onCheckedChange={(checked) => {
                               const currentSource = config.textSource;

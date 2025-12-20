@@ -35,20 +35,6 @@ export function getDefaultConfig<T extends ActionType>(
         pollInterval: 500,
       } as ActionConfigMap[T];
 
-    case "EXISTS":
-      return {
-        target: {
-          type: "image",
-          imageId: null as unknown,
-        },
-      } as ActionConfigMap[T];
-
-    case "WAIT":
-      return {
-        waitFor: "time",
-        duration: 1000,
-      } as ActionConfigMap[T];
-
     case "RAG_FIND":
       return {
         target: {
@@ -260,7 +246,7 @@ export function getDefaultConfig<T extends ActionType>(
     case "GO_TO_STATE":
       return {
         stateId: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "RUN_WORKFLOW":
       return {
@@ -326,6 +312,15 @@ export function getDefaultConfig<T extends ActionType>(
         sequenceId: "",
       } as unknown as ActionConfigMap[T];
 
+    case "CHECKPOINT_WORKFLOW":
+      return {
+        phases: [],
+        checkpointFile: "",
+        maxIterations: 10,
+        timeout: 3600000,
+        failOnError: true,
+      } as unknown as ActionConfigMap[T];
+
     default:
       return {} as ActionConfigMap[T];
   }
@@ -343,7 +338,6 @@ export function isValidConfig<T extends ActionType>(
 
   switch (type) {
     case "FIND":
-    case "EXISTS":
     case "VANISH": {
       const target = configObj?.target as Record<string, unknown> | undefined;
       return target?.type === "image";

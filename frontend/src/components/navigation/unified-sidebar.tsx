@@ -541,7 +541,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   className,
   projectId: propProjectId,
 }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, loading: authLoading } = useAuth();
   const { isCollapsed, setIsCollapsed } = useSidebar();
   const [openFlyout, setOpenFlyout] = useState<string | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -557,6 +557,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   const {
     projectId: contextProjectId,
     setProjectId: setContextProjectId,
+    setProjectName,
     projectName,
     images,
     workflows,
@@ -683,7 +684,13 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
 
   // Handle project selection - updates context only, no navigation
   const handleProjectChange = (newProjectId: string) => {
+    // IMPORTANT: Set both projectId AND projectName to ensure data isolation
+    // The projectName is used by IndexedDB to filter states/workflows by project
+    const newProject = projects.find((p) => p.id === newProjectId);
     setContextProjectId(newProjectId);
+    if (newProject) {
+      setProjectName(newProject.name);
+    }
     // Update URL to include project parameter (preserves current page)
     const url = new URL(window.location.href);
     url.searchParams.set("project", newProjectId);
@@ -710,9 +717,18 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   };
 
   // Filter nav items based on admin status
+  // IMPORTANT: During auth loading OR when user is null, we exclude admin-only items
+  // to ensure consistent server/client rendering and avoid hydration mismatches.
+  // On the server, user is always null. On the client, authLoading starts as true.
   const filterNavItems = (items: NavItem[]): NavItem[] => {
     return items
-      .filter((item) => !item.adminOnly || user?.is_superuser === true)
+      .filter((item) => {
+        // Exclude admin-only items when auth is loading or user not available
+        // This ensures SSR and initial client render match
+        if (authLoading || !user) return !item.adminOnly;
+        // After auth loads with user data, filter based on actual user status
+        return !item.adminOnly || user.is_superuser === true;
+      })
       .map((item) => ({
         ...item,
         children: item.children ? filterNavItems(item.children) : undefined,

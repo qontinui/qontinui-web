@@ -504,7 +504,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
       console.error("Screenshot capture failed:", error);
       toast.error("Failed to capture screenshot", {
         description:
-          error instanceof Error ? error.message : "Make sure qontinui-api is running on port 8001",
+          error instanceof Error
+            ? error.message
+            : "Make sure qontinui-api is running on port 8001",
       });
     } finally {
       setIsCapturing(false);

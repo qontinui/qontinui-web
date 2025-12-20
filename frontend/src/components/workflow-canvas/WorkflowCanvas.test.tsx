@@ -41,9 +41,13 @@ const simpleWorkflow: Workflow = {
       { id: "action-1" }
     ),
     createAction(
-      "WAIT",
+      "VANISH",
       {
-        duration: 1000,
+        findBy: "text",
+        text: "Button",
+        searchMultiple: false,
+        searchRegions: [],
+        timeout: 1000,
       },
       [100, 250],
       { id: "action-2" }
@@ -398,7 +402,7 @@ describe("autoLayout", () => {
     expect(layoutedActions[0].id).toBe("action-1");
     expect(layoutedActions[1].id).toBe("action-2");
     expect(layoutedActions[0].type).toBe("CLICK");
-    expect(layoutedActions[1].type).toBe("WAIT");
+    expect(layoutedActions[1].type).toBe("VANISH");
   });
 });
 

@@ -5,7 +5,6 @@ import {
   ChevronRight,
   CheckCircle,
   XCircle,
-  Clock,
   Target,
   MousePointer,
   Type,
@@ -153,8 +152,8 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
         return <Move className="w-4 h-4" />;
       case "SCROLL":
         return <Move className="w-4 h-4 rotate-90" />;
-      case "WAIT":
-        return <Clock className="w-4 h-4" />;
+      default:
+        return <Target className="w-4 h-4" />;
     }
   };
 
@@ -223,7 +222,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
             <option value="TYPE">Type</option>
             <option value="DRAG">Drag</option>
             <option value="SCROLL">Scroll</option>
-            <option value="WAIT">Wait</option>
+            <option value="VANISH">Vanish</option>
           </select>
 
           <label className="flex items-center gap-2 text-sm">

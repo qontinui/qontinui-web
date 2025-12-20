@@ -15,8 +15,6 @@ import type {
 import {
   FindActionConfig,
   VanishActionConfig,
-  ExistsActionConfig,
-  WaitActionConfig,
   RagFindActionConfig,
 } from "./configs/find-actions";
 
@@ -68,18 +66,22 @@ import {
   CustomFunctionActionConfig,
 } from "./configs/code-actions";
 
-import { ShellActionConfig, ShellScriptActionConfig } from "./configs/shell-actions";
+import {
+  ShellActionConfig,
+  ShellScriptActionConfig,
+} from "./configs/shell-actions";
 
 import {
   AIPromptActionConfig,
   RunPromptSequenceActionConfig,
+  CheckpointWorkflowActionConfig,
 } from "./configs/ai-actions";
 
 // ============================================================================
 // Action Types
 // ============================================================================
 
-export type FindActionType = "FIND" | "VANISH" | "EXISTS" | "WAIT" | "RAG_FIND";
+export type FindActionType = "FIND" | "VANISH" | "RAG_FIND";
 
 export type MouseActionType =
   | "CLICK"
@@ -120,7 +122,10 @@ export type CodeActionType = "CODE_BLOCK" | "CUSTOM_FUNCTION";
 
 export type ShellActionType = "SHELL" | "SHELL_SCRIPT";
 
-export type AIActionType = "AI_PROMPT" | "RUN_PROMPT_SEQUENCE";
+export type AIActionType =
+  | "AI_PROMPT"
+  | "RUN_PROMPT_SEQUENCE"
+  | "CHECKPOINT_WORKFLOW";
 
 export type ActionType =
   | FindActionType
@@ -141,8 +146,6 @@ export interface ActionConfigMap {
   // Find actions
   FIND: FindActionConfig;
   VANISH: VanishActionConfig;
-  EXISTS: ExistsActionConfig;
-  WAIT: WaitActionConfig;
   RAG_FIND: RagFindActionConfig;
 
   // Mouse actions
@@ -194,6 +197,7 @@ export interface ActionConfigMap {
   // AI actions
   AI_PROMPT: AIPromptActionConfig;
   RUN_PROMPT_SEQUENCE: RunPromptSequenceActionConfig;
+  CHECKPOINT_WORKFLOW: CheckpointWorkflowActionConfig;
 }
 
 // ============================================================================

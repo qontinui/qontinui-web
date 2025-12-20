@@ -405,7 +405,9 @@ export class WebSocketCollaborationService {
 
         case "resource_update":
           if (this.callbacks.onResourceUpdate) {
-            this.callbacks.onResourceUpdate(message.data as ResourceUpdateMessage);
+            this.callbacks.onResourceUpdate(
+              message.data as ResourceUpdateMessage
+            );
           }
           break;
 
@@ -423,7 +425,9 @@ export class WebSocketCollaborationService {
 
         case "comment_deleted":
           if (this.callbacks.onCommentDeleted) {
-            this.callbacks.onCommentDeleted((message.data as { comment_id: string }).comment_id);
+            this.callbacks.onCommentDeleted(
+              (message.data as { comment_id: string }).comment_id
+            );
           }
           break;
 

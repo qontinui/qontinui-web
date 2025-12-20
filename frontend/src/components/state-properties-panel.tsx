@@ -18,6 +18,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Plus,
   Trash2,
   Map,
@@ -31,6 +36,7 @@ import {
   Link2,
   Target,
   Sparkles,
+  ArrowRightLeft,
 } from "lucide-react";
 import { ImageSelector } from "@/components/image-selector";
 import { ImageStatsDisplay } from "@/components/image-stats-display";
@@ -68,6 +74,7 @@ interface StatePropertiesPanelProps {
   addStateImage: () => void;
   updateStateImage: (index: number, updates: Partial<StateImage>) => void;
   removeStateImage: (index: number) => void;
+  moveStateImage: (stateImageIndex: number, targetStateId: string) => void;
   addRegion: () => void;
   updateRegion: (
     index: number,
@@ -104,6 +111,7 @@ export function StatePropertiesPanel({
   addStateImage,
   updateStateImage,
   removeStateImage,
+  moveStateImage,
   removeRegion,
   removeLocation,
   addString,
@@ -216,7 +224,10 @@ export function StatePropertiesPanel({
         updateTransition({ ...transition, workflows: newWorkflows });
       } else {
         // Create new transition with the helper workflow reference
-        const wasAdded = await addTransition({ ...transition, workflows: newWorkflows });
+        const wasAdded = await addTransition({
+          ...transition,
+          workflows: newWorkflows,
+        });
         if (!wasAdded) {
           console.warn("Duplicate transition detected, skipping");
         }
@@ -376,6 +387,52 @@ export function StatePropertiesPanel({
                             className="flex-1 h-6 bg-gray-900 border-gray-600 text-gray-200 text-xs px-2"
                             placeholder="StateImage name"
                           />
+                          {/* Move button with popover */}
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-[#00D9FF] hover:text-[#00D9FF]/80"
+                                title="Move to another state"
+                                disabled={allStates.length <= 1}
+                              >
+                                <ArrowRightLeft className="w-3 h-3" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-56 p-2 bg-[#27272A] border-gray-700"
+                              align="end"
+                            >
+                              <div className="space-y-2">
+                                <p className="text-xs text-gray-400 font-medium px-1">
+                                  Move to state:
+                                </p>
+                                <div className="max-h-48 overflow-y-auto space-y-1">
+                                  {allStates
+                                    .filter((s) => s.id !== state.id)
+                                    .map((targetState) => (
+                                      <button
+                                        key={targetState.id}
+                                        className="w-full text-left px-2 py-1.5 text-xs text-gray-200 hover:bg-[#00D9FF]/20 hover:text-[#00D9FF] rounded transition-colors"
+                                        onClick={() => {
+                                          moveStateImage(index, targetState.id);
+                                        }}
+                                      >
+                                        {targetState.name || targetState.id}
+                                      </button>
+                                    ))}
+                                </div>
+                                {allStates.filter((s) => s.id !== state.id)
+                                  .length === 0 && (
+                                  <p className="text-xs text-gray-500 italic px-1">
+                                    No other states available
+                                  </p>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1172,7 +1229,8 @@ export function StatePropertiesPanel({
                                   <p className="text-xs text-gray-500 italic">
                                     {(stateImage.searchMode as string) === "rag"
                                       ? "RAG search mode enabled"
-                                      : (stateImage.searchMode as string) === "template"
+                                      : (stateImage.searchMode as string) ===
+                                          "template"
                                         ? "Template search mode enabled"
                                         : "Using default search mode"}
                                   </p>

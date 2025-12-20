@@ -9,41 +9,41 @@ export const metadata = {
 
 export default function TransitionsDocPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         {/* Header */}
         <div className="mb-12">
           <Link
             href="/docs/web"
-            className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+            className="text-primary hover:text-primary/80 text-sm mb-4 inline-block"
           >
             ← Back to Qontinui Web Docs
           </Link>
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             State Transitions
           </h1>
-          <p className="text-xl text-slate-600">
+          <p className="text-xl text-muted-foreground">
             Connect states and define automation workflows with transitions
           </p>
         </div>
 
         {/* What is a Transition */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             What is a Transition?
           </h2>
-          <p className="text-slate-700 mb-4">
+          <p className="text-foreground mb-4">
             A <strong>Transition</strong> is a connection between two states
             that defines how automation moves from one state to another.
             Transitions are the edges in your state machine graph, while states
             are the nodes.
           </p>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-            <h3 className="font-semibold text-blue-900 mb-3">
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-6 mb-6">
+            <h3 className="font-semibold text-foreground mb-3">
               Key Concept: Transitions = Navigation Logic
             </h3>
-            <p className="text-sm text-blue-900">
+            <p className="text-sm text-foreground">
               Each transition defines <strong>what actions to perform</strong>{" "}
               (via a process) and{" "}
               <strong>which states become active/inactive</strong> after the
@@ -52,38 +52,38 @@ export default function TransitionsDocPage() {
             </p>
           </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-            <h3 className="font-semibold text-slate-900 mb-3">
+          <div className="bg-muted border border-border rounded-lg p-6">
+            <h3 className="font-semibold text-foreground mb-3">
               How Transitions Work
             </h3>
-            <ol className="space-y-3 text-sm text-slate-700">
+            <ol className="space-y-3 text-sm text-foreground">
               <li className="flex items-start gap-2">
-                <span className="font-bold text-blue-600">1.</span>
+                <span className="font-bold text-primary">1.</span>
                 <span>
                   Automation is in the source state (e.g., "Login Screen")
                 </span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="font-bold text-blue-600">2.</span>
+                <span className="font-bold text-primary">2.</span>
                 <span>
                   Transition's process executes (e.g., type username, click
                   submit)
                 </span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="font-bold text-blue-600">3.</span>
+                <span className="font-bold text-primary">3.</span>
                 <span>
                   Destination state becomes active (e.g., "Dashboard")
                 </span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="font-bold text-blue-600">4.</span>
+                <span className="font-bold text-primary">4.</span>
                 <span>
                   Source state deactivates (unless stays_visible is true)
                 </span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="font-bold text-blue-600">5.</span>
+                <span className="font-bold text-primary">5.</span>
                 <span>Additional states activate/deactivate as specified</span>
               </li>
             </ol>
@@ -92,13 +92,13 @@ export default function TransitionsDocPage() {
 
         {/* Transition Types */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Types of Transitions
           </h2>
 
           <div className="space-y-6">
             <TransitionTypeCard
-              icon={<ArrowRight className="w-6 h-6 text-blue-600" />}
+              icon={<ArrowRight className="w-6 h-6 text-primary" />}
               title="Outgoing Transition"
               description="Defines navigation FROM one state TO another state"
               details={[
@@ -137,7 +137,7 @@ export default function TransitionsDocPage() {
 
         {/* Creating Transitions */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Creating a Transition
           </h2>
 
@@ -170,7 +170,7 @@ export default function TransitionsDocPage() {
 
         {/* Transition Properties */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Transition Properties
           </h2>
 
@@ -234,11 +234,11 @@ export default function TransitionsDocPage() {
 
         {/* Parallel States & Visibility */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Managing Parallel States
           </h2>
 
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             Qontinui supports multiple states being active simultaneously. This
             is useful for scenarios like dialog boxes appearing over background
             screens, or multi-panel UIs with independent sections.
@@ -285,7 +285,7 @@ export default function TransitionsDocPage() {
 
         {/* Best Practices */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Best Practices
           </h2>
 
@@ -323,8 +323,10 @@ export default function TransitionsDocPage() {
         </section>
 
         {/* Next Steps */}
-        <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
+        <section className="border-t border-border pt-12">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
+            Next Steps
+          </h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="Action Types"
@@ -352,12 +354,12 @@ interface StepCardProps {
 function StepCard({ number, title, description }: StepCardProps) {
   return (
     <div className="flex gap-4">
-      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
+      <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
         {number}
       </div>
       <div>
-        <h3 className="font-semibold text-slate-900 mb-1">{title}</h3>
-        <p className="text-sm text-slate-700">{description}</p>
+        <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+        <p className="text-sm text-foreground">{description}</p>
       </div>
     </div>
   );
@@ -383,33 +385,33 @@ function TransitionTypeCard({
   example,
 }: TransitionTypeCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-6">
+    <div className="bg-card border border-border rounded-lg p-6">
       <div className="flex items-start gap-4 mb-4">
         <div className="flex-shrink-0 mt-1">{icon}</div>
         <div>
-          <h3 className="text-xl font-bold text-slate-900 mb-2">{title}</h3>
-          <p className="text-slate-600 mb-4">{description}</p>
+          <h3 className="text-xl font-bold text-foreground mb-2">{title}</h3>
+          <p className="text-muted-foreground mb-4">{description}</p>
           <ul className="space-y-2 mb-4">
             {details.map((detail, idx) => (
               <li
                 key={idx}
-                className="flex items-start gap-2 text-sm text-slate-700"
+                className="flex items-start gap-2 text-sm text-foreground"
               >
-                <span className="text-blue-600 font-bold">•</span>
+                <span className="text-primary font-bold">•</span>
                 <span>{detail}</span>
               </li>
             ))}
           </ul>
         </div>
       </div>
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-        <p className="text-xs font-semibold text-slate-600 mb-2">
+      <div className="bg-muted border border-border rounded-lg p-4">
+        <p className="text-xs font-semibold text-muted-foreground mb-2">
           {example.title}
         </p>
-        <p className="text-sm text-slate-800 font-mono mb-1">
+        <p className="text-sm text-foreground font-mono mb-1">
           {example.description}
         </p>
-        <p className="text-xs text-slate-600">{example.process}</p>
+        <p className="text-xs text-muted-foreground">{example.process}</p>
       </div>
     </div>
   );
@@ -431,11 +433,11 @@ function PropertyCard({
   isRequired,
 }: PropertyCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4">
+    <div className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-start justify-between mb-2">
-        <h4 className="font-mono font-semibold text-slate-900">{name}</h4>
+        <h4 className="font-mono font-semibold text-foreground">{name}</h4>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">
+          <span className="text-xs font-mono bg-muted px-2 py-1 rounded text-muted-foreground">
             {type}
           </span>
           {isRequired && (
@@ -445,11 +447,11 @@ function PropertyCard({
           )}
         </div>
       </div>
-      <p className="text-sm text-slate-700 mb-2">{description}</p>
+      <p className="text-sm text-foreground mb-2">{description}</p>
       {defaultValue && (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Default:{" "}
-          <span className="font-mono bg-slate-100 px-1 rounded">
+          <span className="font-mono bg-muted px-1 rounded">
             {defaultValue}
           </span>
         </p>
@@ -479,44 +481,44 @@ function ParallelStateExample({
   result,
 }: ParallelStateExampleProps) {
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600 mb-4">{description}</p>
-      <div className="bg-white border border-slate-200 rounded p-3 font-mono text-xs mb-3">
+    <div className="bg-muted border border-border rounded-lg p-6">
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground mb-4">{description}</p>
+      <div className="bg-card border border-border rounded p-3 font-mono text-xs mb-3">
         <div className="space-y-1">
           <div>
-            <span className="text-blue-600">from_state:</span> "
+            <span className="text-primary">from_state:</span> "
             {config.from_state}"
           </div>
           <div>
-            <span className="text-blue-600">to_state:</span> "{config.to_state}"
+            <span className="text-primary">to_state:</span> "{config.to_state}"
           </div>
           {config.stays_visible !== undefined && (
             <div>
-              <span className="text-blue-600">stays_visible:</span>{" "}
+              <span className="text-primary">stays_visible:</span>{" "}
               {config.stays_visible.toString()}
             </div>
           )}
           {config.activate_states && (
             <div>
-              <span className="text-blue-600">activate_states:</span> [
+              <span className="text-primary">activate_states:</span> [
               {config.activate_states.map((s) => `"${s}"`).join(", ")}]
             </div>
           )}
           {config.deactivate_states && (
             <div>
-              <span className="text-blue-600">deactivate_states:</span> [
+              <span className="text-primary">deactivate_states:</span> [
               {config.deactivate_states.map((s) => `"${s}"`).join(", ")}]
             </div>
           )}
           <div>
-            <span className="text-blue-600">process:</span> "{config.process}"
+            <span className="text-primary">process:</span> "{config.process}"
           </div>
         </div>
       </div>
-      <div className="bg-green-50 border border-green-200 rounded p-3">
-        <p className="text-xs font-semibold text-green-900 mb-1">Result:</p>
-        <p className="text-sm text-green-800">{result}</p>
+      <div className="bg-green-500/10 border border-green-500/30 rounded p-3">
+        <p className="text-xs font-semibold text-foreground mb-1">Result:</p>
+        <p className="text-sm text-foreground">{result}</p>
       </div>
     </div>
   );
@@ -529,9 +531,9 @@ interface BestPracticeProps {
 
 function BestPractice({ title, description }: BestPracticeProps) {
   return (
-    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-      <h4 className="font-semibold text-green-900 mb-2">{title}</h4>
-      <p className="text-sm text-green-800">{description}</p>
+    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+      <h4 className="font-semibold text-foreground mb-2">{title}</h4>
+      <p className="text-sm text-foreground">{description}</p>
     </div>
   );
 }
@@ -546,10 +548,10 @@ function NextStepCard({ title, description, href }: NextStepCardProps) {
   return (
     <Link
       href={href}
-      className="block bg-slate-50 border border-slate-200 rounded-lg p-6 hover:shadow-md hover:border-blue-300 transition-all"
+      className="block bg-muted border border-border rounded-lg p-6 hover:shadow-md hover:border-primary/50 transition-all"
     >
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600">{description}</p>
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </Link>
   );
 }

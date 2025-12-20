@@ -228,9 +228,7 @@ function SuccessCriteriaDisplay({
     } else if (isCustomCriteria(criteria)) {
       return `Custom: ${criteria.custom_expression}`;
     }
-    return (
-      (criteria as { type?: string }).type || "Unknown criteria"
-    );
+    return (criteria as { type?: string }).type || "Unknown criteria";
   };
 
   return (

@@ -373,7 +373,8 @@ export class WorkflowComponentsService {
       });
 
       if (Object.keys(filteredConnections).length > 0) {
-        connections[sourceId] = filteredConnections as typeof connections[string];
+        connections[sourceId] =
+          filteredConnections as (typeof connections)[string];
       }
     });
 
@@ -405,12 +406,12 @@ export class WorkflowComponentsService {
 
       // Infer from FIND/CLICK actions with images
       if (
-        (action.type === "FIND" ||
-          action.type === "CLICK" ||
-          action.type === "EXISTS") &&
+        (action.type === "FIND" || action.type === "CLICK") &&
         "target" in action.config
       ) {
-        const target = (action.config as { target?: { image?: string; selector?: string } }).target;
+        const target = (
+          action.config as { target?: { image?: string; selector?: string } }
+        ).target;
         if (target?.image && !seen.has("targetImage")) {
           parameters.push({
             name: "targetImage",
@@ -431,25 +432,10 @@ export class WorkflowComponentsService {
         }
       }
 
-      // Infer from WAIT actions
-      if (action.type === "WAIT" && "duration" in action.config) {
-        const duration = (action.config as { duration?: number }).duration;
-        if (duration && !seen.has("waitDuration")) {
-          parameters.push({
-            name: "waitDuration",
-            type: "number",
-            required: false,
-            defaultValue: duration,
-            description: "Wait duration in milliseconds",
-            min: 0,
-          });
-          seen.add("waitDuration");
-        }
-      }
-
       // Infer from LOOP actions
       if (action.type === "LOOP" && "iterations" in action.config) {
-        const iterations = (action.config as { iterations?: number }).iterations;
+        const iterations = (action.config as { iterations?: number })
+          .iterations;
         if (iterations && !seen.has("iterations")) {
           parameters.push({
             name: "iterations",
@@ -808,10 +794,13 @@ export class WorkflowComponentsService {
 
       if (typeof value === "string") {
         // Replace ${paramName} placeholders
-        configObj[key] = value.replace(/\$\{(\w+)\}/g, (match: string, paramName: string): string => {
-          const replacement = values[paramName];
-          return replacement !== undefined ? String(replacement) : match;
-        });
+        configObj[key] = value.replace(
+          /\$\{(\w+)\}/g,
+          (match: string, paramName: string): string => {
+            const replacement = values[paramName];
+            return replacement !== undefined ? String(replacement) : match;
+          }
+        );
       } else if (typeof value === "object" && value !== null) {
         this.replaceParametersInConfig(value, values);
       }
@@ -915,7 +904,8 @@ export class WorkflowComponentsService {
     // Check for RUN_WORKFLOW actions that reference other components
     component.actions.forEach((action) => {
       if (action.type === "RUN_WORKFLOW" && "workflowId" in action.config) {
-        const workflowId = (action.config as { workflowId?: string }).workflowId!;
+        const workflowId = (action.config as { workflowId?: string })
+          .workflowId!;
         const referencedComponent = this.components.get(workflowId);
 
         if (referencedComponent) {
@@ -1320,16 +1310,6 @@ export class WorkflowComponentsService {
       { id: "retry-loop", name: "Retry Loop" }
     );
 
-    const wait = createAction(
-      "WAIT",
-      { waitFor: "time", duration: 1000 },
-      [300, 100],
-      {
-        id: "retry-wait",
-        name: "Wait Between Retries",
-      }
-    );
-
     const component: WorkflowComponent = {
       id: "builtin-retry-logic",
       name: "Retry Logic",
@@ -1337,12 +1317,8 @@ export class WorkflowComponentsService {
       category: "control-flow",
       version: "1.0.0",
       tags: ["retry", "loop", "resilience"],
-      actions: [loop, wait],
-      connections: {
-        "retry-loop": {
-          main: [[{ action: "retry-wait", type: "main", index: 0 }]],
-        },
-      },
+      actions: [loop],
+      connections: {},
       parameters: [
         {
           name: "maxAttempts",
@@ -1352,14 +1328,6 @@ export class WorkflowComponentsService {
           description: "Maximum number of retry attempts",
           min: 1,
           max: 10,
-        },
-        {
-          name: "retryDelay",
-          type: "number",
-          required: false,
-          defaultValue: 1000,
-          description: "Delay between retries in milliseconds",
-          min: 0,
         },
       ],
       builtin: true,
@@ -1377,12 +1345,15 @@ export class WorkflowComponentsService {
    * Built-in: Wait for Element (FIND with retry)
    */
   private createBuiltinWaitForElement(): void {
-    const exists = createAction(
-      "EXISTS",
-      { target: { type: "image", imageId: "${targetImage}" } },
+    const find = createAction(
+      "FIND",
+      {
+        target: { type: "image", imageId: "${targetImage}" },
+        searchOptions: { strategy: "FIRST" },
+      },
       [100, 100],
       {
-        id: "wait-exists",
+        id: "wait-find",
         name: "Wait for Element",
         execution: { timeout: 10000 },
       }
@@ -1394,8 +1365,8 @@ export class WorkflowComponentsService {
       description: "Wait for an element to appear on screen with timeout",
       category: "verification",
       version: "1.0.0",
-      tags: ["wait", "find", "exists", "timeout"],
-      actions: [exists],
+      tags: ["wait", "find", "timeout"],
+      actions: [find],
       connections: {},
       parameters: [
         {
@@ -1425,7 +1396,7 @@ export class WorkflowComponentsService {
   }
 
   /**
-   * Built-in: Click and Wait (CLICK + WAIT sequence)
+   * Built-in: Click and Wait (CLICK only, use execution timeout for delay)
    */
   private createBuiltinClickAndWait(): void {
     const click = createAction(
@@ -1435,43 +1406,21 @@ export class WorkflowComponentsService {
       { id: "click", name: "Click Element" }
     );
 
-    const wait = createAction(
-      "WAIT",
-      { waitFor: "time", duration: 500 },
-      [100, 250],
-      {
-        id: "wait",
-        name: "Wait After Click",
-      }
-    );
-
     const component: WorkflowComponent = {
       id: "builtin-click-and-wait",
-      name: "Click and Wait",
-      description: "Click an element and wait for the action to complete",
+      name: "Click",
+      description: "Click an element",
       category: "interaction",
       version: "1.0.0",
-      tags: ["click", "wait", "interaction"],
-      actions: [click, wait],
-      connections: {
-        click: {
-          main: [[{ action: "wait", type: "main", index: 0 }]],
-        },
-      },
+      tags: ["click", "interaction"],
+      actions: [click],
+      connections: {},
       parameters: [
         {
           name: "targetImage",
           type: "image",
           required: true,
           description: "Element to click",
-        },
-        {
-          name: "waitDuration",
-          type: "number",
-          required: false,
-          defaultValue: 500,
-          description: "Wait duration after click in milliseconds",
-          min: 0,
         },
       ],
       builtin: true,
@@ -1641,15 +1590,18 @@ export class WorkflowComponentsService {
   }
 
   /**
-   * Built-in: Safe Click (EXISTS check + CLICK + verification)
+   * Built-in: Safe Click (FIND check + CLICK + verification)
    */
   private createBuiltinSafeClick(): void {
-    const exists = createAction(
-      "EXISTS",
-      { target: { type: "image", imageId: "${targetImage}" } },
+    const find = createAction(
+      "FIND",
+      {
+        target: { type: "image", imageId: "${targetImage}" },
+        searchOptions: { strategy: "FIRST" },
+      },
       [100, 100],
       {
-        id: "check-exists",
+        id: "check-find",
         name: "Check Element Exists",
         execution: { timeout: 5000 },
       }
@@ -1660,13 +1612,13 @@ export class WorkflowComponentsService {
       {
         condition: {
           type: "expression" as const,
-          expression: "check-exists.found",
+          expression: "check-find.found",
         },
         thenActions: [],
         elseActions: [],
       },
       [100, 250],
-      { id: "if-exists", name: "If Element Exists" }
+      { id: "if-found", name: "If Element Found" }
     );
 
     const click = createAction(
@@ -1683,13 +1635,13 @@ export class WorkflowComponentsService {
         "Safely click an element with existence check and verification",
       category: "interaction",
       version: "1.0.0",
-      tags: ["click", "safe", "exists", "verification"],
-      actions: [exists, ifAction, click],
+      tags: ["click", "safe", "find", "verification"],
+      actions: [find, ifAction, click],
       connections: {
-        "check-exists": {
-          main: [[{ action: "if-exists", type: "main", index: 0 }]],
+        "check-find": {
+          main: [[{ action: "if-found", type: "main", index: 0 }]],
         },
-        "if-exists": {
+        "if-found": {
           main: [[{ action: "click-element", type: "main", index: 0 }]],
         },
       },

@@ -167,15 +167,14 @@ export type ActionType =
   // Find actions
   | "FIND"
   | "RAG_FIND"
+  | "VANISH"
   // Pure mouse actions
   | "MOUSE_MOVE"
   | "MOUSE_DOWN"
   | "MOUSE_UP"
   | "MOUSE_SCROLL"
-  // Combined mouse actions
+  // Combined mouse actions (use CLICK with config for double/right click)
   | "CLICK"
-  | "DOUBLE_CLICK"
-  | "RIGHT_CLICK"
   | "DRAG"
   | "SCROLL"
   // Pure keyboard actions
@@ -184,21 +183,37 @@ export type ActionType =
   | "KEY_UP"
   // Combined keyboard actions
   | "TYPE"
+  | "HOTKEY"
   // Shell actions
   | "SHELL"
   | "SHELL_SCRIPT"
   // AI actions
   | "AI_PROMPT"
   | "RUN_PROMPT_SEQUENCE"
-  // Other actions
-  | "WAIT"
-  | "VANISH"
+  | "CHECKPOINT_WORKFLOW"
+  // State/navigation actions
   | "GO_TO_STATE"
   | "RUN_WORKFLOW"
-  | "EXISTS"
   | "SCREENSHOT"
-  | "CONDITION"
-  | "LOOP";
+  // Control flow actions
+  | "IF"
+  | "LOOP"
+  | "BREAK"
+  | "CONTINUE"
+  | "SWITCH"
+  | "TRY_CATCH"
+  // Data actions
+  | "SET_VARIABLE"
+  | "GET_VARIABLE"
+  | "SORT"
+  | "FILTER"
+  | "MAP"
+  | "REDUCE"
+  | "STRING_OPERATION"
+  | "MATH_OPERATION"
+  // Code actions
+  | "CODE_BLOCK"
+  | "CUSTOM_FUNCTION";
 
 export interface ActionConfig {
   // === Base ActionConfig Properties (inherited by all actions) ===

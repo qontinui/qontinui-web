@@ -15,33 +15,33 @@ export const metadata = {
 
 export default function ExecutionDocPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         {/* Header */}
         <div className="mb-12">
           <Link
             href="/docs"
-            className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+            className="text-primary hover:text-primary/80 text-sm mb-4 inline-block"
           >
             ← Back to Documentation
           </Link>
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             Running Automations
           </h1>
-          <p className="text-xl text-slate-600">
+          <p className="text-xl text-muted-foreground">
             Execute your automation workflows with Qontinui Runner
           </p>
         </div>
 
         {/* Prerequisites */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             Before You Begin
           </h2>
 
           <div className="space-y-4">
             <PrerequisiteCard
-              icon={<FileJson className="w-5 h-5 text-blue-600" />}
+              icon={<FileJson className="w-5 h-5 text-primary" />}
               title="Export Configuration from Qontinui Web"
               description="Download your automation configuration as a JSON file from Qontinui Web."
               steps={[
@@ -70,7 +70,7 @@ export default function ExecutionDocPage() {
 
         {/* Loading Configuration */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Loading Your Configuration
           </h2>
 
@@ -94,16 +94,16 @@ export default function ExecutionDocPage() {
             />
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-4 mt-6">
             <div className="flex items-start gap-2">
-              <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm text-blue-900 mb-2">
+                <p className="text-sm text-foreground mb-2">
                   <strong>Configuration Validation:</strong> Runner
                   automatically validates your configuration on load. Check for
                   warnings or errors in the console output.
                 </p>
-                <p className="text-xs text-blue-800">
+                <p className="text-xs text-foreground">
                   Common issues: missing images, invalid state references,
                   malformed processes
                 </p>
@@ -114,7 +114,7 @@ export default function ExecutionDocPage() {
 
         {/* Execution Modes */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Execution Modes
           </h2>
 
@@ -133,7 +133,7 @@ export default function ExecutionDocPage() {
             />
 
             <ModeCard
-              icon={<Play className="w-6 h-6 text-blue-600" />}
+              icon={<Play className="w-6 h-6 text-primary" />}
               title="Run Specific Process"
               description="Execute a single process by ID without state machine navigation"
               details={[
@@ -162,11 +162,11 @@ export default function ExecutionDocPage() {
 
         {/* Execution Settings */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Execution Settings
           </h2>
 
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             Configure how Qontinui Runner executes your automation. These
             settings are typically defined in your JSON configuration but can
             sometimes be overridden in Runner.
@@ -205,7 +205,7 @@ export default function ExecutionDocPage() {
 
         {/* Monitoring Execution */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Monitoring Execution
           </h2>
 
@@ -248,7 +248,7 @@ export default function ExecutionDocPage() {
 
         {/* Common Execution Issues */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Troubleshooting Execution Issues
           </h2>
 
@@ -313,7 +313,7 @@ export default function ExecutionDocPage() {
 
         {/* Best Practices */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Best Practices
           </h2>
 
@@ -356,8 +356,10 @@ export default function ExecutionDocPage() {
         </section>
 
         {/* Next Steps */}
-        <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
+        <section className="border-t border-border pt-12">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
+            Next Steps
+          </h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="Monitoring & Logs"
@@ -394,19 +396,17 @@ function PrerequisiteCard({
   linkText,
 }: PrerequisiteCardProps) {
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
+    <div className="bg-muted border border-border rounded-lg p-6">
       <div className="flex items-start gap-4 mb-3">
         <div className="flex-shrink-0 mt-1">{icon}</div>
         <div className="flex-grow">
-          <h3 className="font-semibold text-slate-900 mb-1">{title}</h3>
-          <p className="text-sm text-slate-600 mb-3">{description}</p>
+          <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+          <p className="text-sm text-muted-foreground mb-3">{description}</p>
           {steps && (
-            <ol className="text-sm text-slate-700 space-y-1">
+            <ol className="text-sm text-foreground space-y-1">
               {steps.map((step, idx) => (
                 <li key={idx} className="flex items-start gap-2">
-                  <span className="text-blue-600 font-semibold">
-                    {idx + 1}.
-                  </span>
+                  <span className="text-primary font-semibold">{idx + 1}.</span>
                   <span>{step}</span>
                 </li>
               ))}
@@ -415,7 +415,7 @@ function PrerequisiteCard({
           {link && (
             <Link
               href={link}
-              className="inline-block mt-3 text-sm text-blue-600 hover:text-blue-700 font-semibold"
+              className="inline-block mt-3 text-sm text-primary hover:text-primary/80 font-semibold"
             >
               {linkText} →
             </Link>
@@ -435,12 +435,12 @@ interface StepCardProps {
 function StepCard({ number, title, description }: StepCardProps) {
   return (
     <div className="flex gap-4">
-      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
+      <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
         {number}
       </div>
       <div>
-        <h3 className="font-semibold text-slate-900 mb-1">{title}</h3>
-        <p className="text-sm text-slate-700">{description}</p>
+        <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+        <p className="text-sm text-foreground">{description}</p>
       </div>
     </div>
   );
@@ -462,25 +462,25 @@ function ModeCard({
   bestFor,
 }: ModeCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-6">
+    <div className="bg-card border border-border rounded-lg p-6">
       <div className="flex items-start gap-4 mb-4">
         <div className="flex-shrink-0 mt-1">{icon}</div>
         <div>
-          <h3 className="text-lg font-bold text-slate-900 mb-1">{title}</h3>
-          <p className="text-slate-600 text-sm mb-3">{description}</p>
+          <h3 className="text-lg font-bold text-foreground mb-1">{title}</h3>
+          <p className="text-muted-foreground text-sm mb-3">{description}</p>
           <ul className="space-y-1 mb-3">
             {details.map((detail, idx) => (
               <li
                 key={idx}
-                className="flex items-start gap-2 text-sm text-slate-700"
+                className="flex items-start gap-2 text-sm text-foreground"
               >
-                <span className="text-blue-600">•</span>
+                <span className="text-primary">•</span>
                 <span>{detail}</span>
               </li>
             ))}
           </ul>
-          <div className="bg-green-50 border border-green-200 rounded px-3 py-2">
-            <p className="text-xs text-green-900">
+          <div className="bg-green-500/10 border border-green-500/30 rounded px-3 py-2">
+            <p className="text-xs text-foreground">
               <strong>Best for:</strong> {bestFor}
             </p>
           </div>
@@ -504,19 +504,17 @@ function SettingCard({
   description,
 }: SettingCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4">
+    <div className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-start justify-between mb-2">
-        <h4 className="font-mono font-semibold text-slate-900">{name}</h4>
-        <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">
+        <h4 className="font-mono font-semibold text-foreground">{name}</h4>
+        <span className="text-xs font-mono bg-muted px-2 py-1 rounded text-muted-foreground">
           {type}
         </span>
       </div>
-      <p className="text-sm text-slate-700 mb-2">{description}</p>
-      <p className="text-xs text-slate-500">
+      <p className="text-sm text-foreground mb-2">{description}</p>
+      <p className="text-xs text-muted-foreground">
         Default:{" "}
-        <span className="font-mono bg-slate-100 px-1 rounded">
-          {defaultValue}
-        </span>
+        <span className="font-mono bg-muted px-1 rounded">{defaultValue}</span>
       </p>
     </div>
   );
@@ -534,14 +532,14 @@ function MonitoringFeature({
   items,
 }: MonitoringFeatureProps) {
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600 mb-3">{description}</p>
+    <div className="bg-muted border border-border rounded-lg p-6">
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground mb-3">{description}</p>
       <ul className="space-y-1">
         {items.map((item, idx) => (
           <li
             key={idx}
-            className="flex items-start gap-2 text-sm text-slate-700"
+            className="flex items-start gap-2 text-sm text-foreground"
           >
             <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
             <span>{item}</span>
@@ -584,9 +582,9 @@ interface BestPracticeProps {
 
 function BestPractice({ title, description }: BestPracticeProps) {
   return (
-    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-      <h4 className="font-semibold text-green-900 mb-2">{title}</h4>
-      <p className="text-sm text-green-800">{description}</p>
+    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+      <h4 className="font-semibold text-foreground mb-2">{title}</h4>
+      <p className="text-sm text-foreground">{description}</p>
     </div>
   );
 }
@@ -601,10 +599,10 @@ function NextStepCard({ title, description, href }: NextStepCardProps) {
   return (
     <Link
       href={href}
-      className="block bg-slate-50 border border-slate-200 rounded-lg p-6 hover:shadow-md hover:border-blue-300 transition-all"
+      className="block bg-muted border border-border rounded-lg p-6 hover:shadow-md hover:border-primary/50 transition-all"
     >
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600">{description}</p>
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </Link>
   );
 }

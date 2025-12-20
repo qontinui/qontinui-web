@@ -261,7 +261,8 @@ export function TestCaseEditor({
       const { runWorkflowTest } = await import("@/lib/api/workflow-testing");
 
       // Get project ID from workflow or default
-      const projectId = (workflow as { projectId?: string }).projectId || "default-project";
+      const projectId =
+        (workflow as { projectId?: string }).projectId || "default-project";
 
       // Execute the test
       const result = await runWorkflowTest(testCaseData, workflow, projectId);
@@ -873,7 +874,11 @@ function AssertionEditor({
           <div className="space-y-2">
             <Label>Expected Value</Label>
             <Input
-              value={assertion.expected !== undefined && assertion.expected !== null ? String(assertion.expected) : ""}
+              value={
+                assertion.expected !== undefined && assertion.expected !== null
+                  ? String(assertion.expected)
+                  : ""
+              }
               onChange={(e) => {
                 // Try to parse as JSON for complex values
                 try {
@@ -952,7 +957,13 @@ function KeyValueEditor({
         <div key={key} className="flex items-center gap-2">
           <Input value={key} disabled className="flex-1" />
           <Input
-            value={typeof value === "object" && value !== null ? JSON.stringify(value) : value !== undefined && value !== null ? String(value) : ""}
+            value={
+              typeof value === "object" && value !== null
+                ? JSON.stringify(value)
+                : value !== undefined && value !== null
+                  ? String(value)
+                  : ""
+            }
             disabled
             className="flex-1"
           />

@@ -349,7 +349,7 @@ export const QuickActionsPanel: React.FC<QuickActionsPanelProps> = ({
           NODE_METADATA.CLICK,
           NODE_METADATA.TYPE,
           NODE_METADATA.IF,
-          NODE_METADATA.WAIT,
+          NODE_METADATA.VANISH,
           NODE_METADATA.LOOP,
         ].slice(0, maxItems);
 

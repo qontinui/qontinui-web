@@ -307,11 +307,6 @@ const ACTION_VALIDATORS: Partial<Record<ActionType, ValidatorFunction[]>> = {
     minValue("timeout", 0, "Timeout cannot be negative"),
   ],
 
-  WAIT: [
-    required("duration", "Wait duration is required"),
-    minValue("duration", 0, "Duration cannot be negative"),
-  ],
-
   IF: [
     required("condition", "Condition is required"),
     stringLength("condition", 1, undefined, "Condition cannot be empty"),

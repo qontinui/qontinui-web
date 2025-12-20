@@ -35,8 +35,6 @@ export function Timeline({
         return "👆";
       case "TYPE":
         return "⌨️";
-      case "WAIT":
-        return "⏱️";
       case "SCROLL":
         return "📜";
       case "MOVE_MOUSE":

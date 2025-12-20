@@ -431,7 +431,10 @@ export function PatternOptimizationProvider({
         } catch (fetchError: unknown) {
           clearTimeout(timeoutId);
           console.error("[PatternOptimization] Fetch error:", fetchError);
-          console.error("[PatternOptimization] Error stack:", fetchError instanceof Error ? fetchError.stack : "");
+          console.error(
+            "[PatternOptimization] Error stack:",
+            fetchError instanceof Error ? fetchError.stack : ""
+          );
           if (fetchError instanceof Error && fetchError.name === "AbortError") {
             throw new Error("Request timed out after 60 seconds");
           }

@@ -102,7 +102,9 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
         if (response.ok) {
           const data = await response.json();
-          const hashes = data.screenshots.map((s: APIProjectScreenshot) => s.hash);
+          const hashes = data.screenshots.map(
+            (s: APIProjectScreenshot) => s.hash
+          );
           setProjectHashes(hashes);
         }
       } catch (error) {
@@ -302,7 +304,8 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         );
         if (hashResponse.ok) {
           const hashData = await hashResponse.json();
-          const updatedHashes = hashData.screenshots.map((s: APIProjectScreenshot) => s.hash
+          const updatedHashes = hashData.screenshots.map(
+            (s: APIProjectScreenshot) => s.hash
           );
           setProjectHashes(updatedHashes);
         }

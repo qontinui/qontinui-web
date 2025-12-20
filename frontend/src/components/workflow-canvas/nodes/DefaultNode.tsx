@@ -136,7 +136,10 @@ export const DefaultNode = memo(
               whiteSpace: "nowrap",
             }}
           >
-            {getConfigPreview(action.type, action.config as Record<string, unknown>)}
+            {getConfigPreview(
+              action.type,
+              action.config as Record<string, unknown>
+            )}
           </div>
         )}
 
@@ -216,13 +219,21 @@ DefaultNode.displayName = "DefaultNode";
 /**
  * Get preview text for action config
  */
-function getConfigPreview(actionType: string, config: Record<string, unknown>): string {
+function getConfigPreview(
+  actionType: string,
+  config: Record<string, unknown>
+): string {
   switch (actionType) {
     case "CLICK":
     case "DOUBLE_CLICK":
     case "RIGHT_CLICK":
       if (config.findBy && typeof config.findBy === "string") {
-        const findValue = typeof config.text === "string" ? config.text : (typeof config.image === "string" ? config.image : "");
+        const findValue =
+          typeof config.text === "string"
+            ? config.text
+            : typeof config.image === "string"
+              ? config.image
+              : "";
         return `Find by ${config.findBy}: ${findValue}`;
       }
       return "Click action";
@@ -232,12 +243,6 @@ function getConfigPreview(actionType: string, config: Record<string, unknown>): 
         return `Type: "${config.text.substring(0, 30)}..."`;
       }
       return "Type text";
-
-    case "WAIT":
-      if (config.duration && typeof config.duration === "number") {
-        return `Wait ${config.duration}ms`;
-      }
-      return "Wait";
 
     case "IF":
       if (config.condition && typeof config.condition === "string") {

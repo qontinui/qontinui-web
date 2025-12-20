@@ -641,7 +641,10 @@ function ParameterInput({
         // String or any type
         if (parameter.validation?.enum) {
           return (
-            <Select value={value !== undefined && value !== null ? String(value) : ""} onValueChange={onChange}>
+            <Select
+              value={value !== undefined && value !== null ? String(value) : ""}
+              onValueChange={onChange}
+            >
               <SelectTrigger id={inputId} aria-invalid={!!error}>
                 <SelectValue placeholder="Select an option..." />
               </SelectTrigger>

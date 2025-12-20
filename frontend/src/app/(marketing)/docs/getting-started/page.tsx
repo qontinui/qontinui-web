@@ -28,7 +28,9 @@ export default function GettingStartedPage() {
         {/* Overview */}
         <section className="mb-12">
           <div className="bg-primary/10 border border-primary/30 rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-3">What You&apos;ll Learn</h2>
+            <h2 className="text-xl font-semibold mb-3">
+              What You&apos;ll Learn
+            </h2>
             <ul className="space-y-2">
               <li className="flex items-start gap-2">
                 <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
@@ -88,7 +90,10 @@ export default function GettingStartedPage() {
               </h3>
               <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
                 <li>Click &quot;New Project&quot; in your dashboard</li>
-                <li>Give your project a name (e.g., &quot;My First Automation&quot;)</li>
+                <li>
+                  Give your project a name (e.g., &quot;My First
+                  Automation&quot;)
+                </li>
                 <li>Click &quot;Create&quot; to open the automation builder</li>
               </ol>
             </div>
@@ -167,7 +172,9 @@ export default function GettingStartedPage() {
               directly in the browser:
             </p>
             <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
-              <li>Click the &quot;Test&quot; button in the automation builder</li>
+              <li>
+                Click the &quot;Test&quot; button in the automation builder
+              </li>
               <li>Select your starting process or state</li>
               <li>Watch as Qontinui simulates the execution flow</li>
               <li>Review the execution log to verify your logic</li>
@@ -176,8 +183,8 @@ export default function GettingStartedPage() {
               <p className="text-sm">
                 <strong>Why Mock Testing?</strong> Mock execution lets you
                 validate your state machine and automation logic without
-                requiring a real GUI environment. It&apos;s fast, safe, and perfect
-                for iterating on your design.
+                requiring a real GUI environment. It&apos;s fast, safe, and
+                perfect for iterating on your design.
               </p>
             </div>
             <div className="bg-card border border-border rounded-lg p-4">
@@ -225,7 +232,9 @@ export default function GettingStartedPage() {
                 Export Your Configuration
               </h3>
               <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
-                <li>In Qontinui Web, click &quot;Export&quot; in your project</li>
+                <li>
+                  In Qontinui Web, click &quot;Export&quot; in your project
+                </li>
                 <li>Save the JSON configuration file to your computer</li>
                 <li>Note the location of the downloaded file</li>
               </ol>
@@ -235,9 +244,13 @@ export default function GettingStartedPage() {
               <h3 className="text-lg font-semibold mb-3">Load and Execute</h3>
               <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
                 <li>Open Qontinui Runner</li>
-                <li>Click &quot;Load Configuration&quot; and select your JSON file</li>
+                <li>
+                  Click &quot;Load Configuration&quot; and select your JSON file
+                </li>
                 <li>Select the process you want to run</li>
-                <li>Click &quot;Start Execution&quot; to run your automation</li>
+                <li>
+                  Click &quot;Start Execution&quot; to run your automation
+                </li>
               </ol>
             </div>
 

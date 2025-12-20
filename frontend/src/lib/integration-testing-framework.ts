@@ -17,7 +17,7 @@ export interface ActionSnapshot {
   // Core ActionRecord fields
   id: string;
   timestamp: Date;
-  actionType: "FIND" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "WAIT";
+  actionType: "FIND" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH";
   actionConfig: unknown; // Action configuration used
 
   // Match results

@@ -100,10 +100,11 @@ describe("Canvas Store", () => {
     it("should add action", () => {
       const newAction: Action = {
         id: "action-3",
-        type: "WAIT",
+        type: "FIND",
         position: [100, 300],
         config: {
-          duration: 1000,
+          target: { image: "element.png" },
+          strategy: "FIRST",
         },
       };
 
@@ -338,9 +339,9 @@ describe("Canvas Store", () => {
       // Add action-3
       useCanvasStore.getState().addAction({
         id: "action-3",
-        type: "WAIT",
+        type: "FIND",
         position: [100, 300],
-        config: { duration: 1000 },
+        config: { target: { image: "element.png" }, strategy: "FIRST" },
       });
 
       addConnection("action-2", "main", 0, "action-3", 0);

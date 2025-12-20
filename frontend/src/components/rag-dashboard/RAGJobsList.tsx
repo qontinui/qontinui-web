@@ -30,7 +30,9 @@ interface RAGJobsListProps {
 
 export function RAGJobsList({ projectId }: RAGJobsListProps) {
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<JobStatus | undefined>(undefined);
+  const [statusFilter, setStatusFilter] = useState<JobStatus | undefined>(
+    undefined
+  );
   const limit = 20;
 
   const { data, isLoading, error } = useRAGJobs(projectId, {
@@ -130,8 +132,8 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
                               job.status === "completed"
                                 ? "bg-[#00FF88]"
                                 : job.status === "failed"
-                                ? "bg-red-500"
-                                : "bg-[#00D9FF]"
+                                  ? "bg-red-500"
+                                  : "bg-[#00D9FF]"
                             }`}
                             style={{ width: `${job.progress_percent}%` }}
                           />
@@ -142,7 +144,9 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="text-gray-300">{formatDuration(job)}</span>
+                      <span className="text-gray-300">
+                        {formatDuration(job)}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <span className="text-gray-400 text-sm">

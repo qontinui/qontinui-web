@@ -89,7 +89,10 @@ export default function ProjectDeficienciesPage() {
           </p>
         </div>
 
-        <DeficiencyList projectId={projectId} testRunId={testRunId || undefined} />
+        <DeficiencyList
+          projectId={projectId}
+          testRunId={testRunId || undefined}
+        />
       </main>
     </div>
   );

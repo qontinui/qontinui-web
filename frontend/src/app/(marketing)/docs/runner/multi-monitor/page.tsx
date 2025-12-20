@@ -15,28 +15,28 @@ export const metadata = {
 
 export default function MultiMonitorDocPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         {/* Header */}
         <div className="mb-12">
           <Link
             href="/docs"
-            className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+            className="text-primary hover:text-primary/80 text-sm mb-4 inline-block"
           >
             ← Back to Documentation
           </Link>
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             Multi-Monitor Support
           </h1>
-          <p className="text-xl text-slate-600">
+          <p className="text-xl text-muted-foreground">
             Automate workflows across multiple displays with Qontinui Runner
           </p>
         </div>
 
         {/* Overview */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">Overview</h2>
-          <p className="text-slate-700 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">Overview</h2>
+          <p className="text-foreground mb-4">
             Qontinui Runner provides full support for multi-monitor setups,
             allowing you to target specific displays or automate across multiple
             screens simultaneously. Whether you have a dual-monitor setup, a
@@ -44,11 +44,11 @@ export default function MultiMonitorDocPage() {
             handles coordinate mapping and screen capture seamlessly.
           </p>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-4">
             <div className="flex items-start gap-2">
-              <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <Info className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm text-blue-900 mb-2">
+                <p className="text-sm text-foreground mb-2">
                   <strong>Key Capability:</strong> The Runner can capture and
                   automate across the bounding region of multiple selected
                   monitors, treating them as a unified workspace.
@@ -60,7 +60,7 @@ export default function MultiMonitorDocPage() {
 
         {/* How It Works */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             How Multi-Monitor Works
           </h2>
 
@@ -105,11 +105,11 @@ export default function MultiMonitorDocPage() {
 
         {/* Selecting Monitors */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Selecting Monitors
           </h2>
 
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             There are several ways to specify which monitor(s) to use for
             automation:
           </p>
@@ -156,7 +156,7 @@ export default function MultiMonitorDocPage() {
 
         {/* Configuration */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Configuration Examples
           </h2>
 
@@ -214,7 +214,7 @@ export default function MultiMonitorDocPage() {
 
         {/* Use Cases */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Common Use Cases
           </h2>
 
@@ -251,7 +251,7 @@ export default function MultiMonitorDocPage() {
 
         {/* Best Practices */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Best Practices
           </h2>
 
@@ -290,7 +290,7 @@ export default function MultiMonitorDocPage() {
 
         {/* Troubleshooting */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Troubleshooting
           </h2>
 
@@ -339,25 +339,25 @@ export default function MultiMonitorDocPage() {
 
         {/* Technical Details */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Technical Details
           </h2>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-            <h3 className="font-semibold text-slate-900 mb-4">
+          <div className="bg-muted border border-border rounded-lg p-6">
+            <h3 className="font-semibold text-foreground mb-4">
               Coordinate System Internals
             </h3>
-            <p className="text-sm text-slate-700 mb-4">
+            <p className="text-sm text-foreground mb-4">
               Understanding how Qontinui Runner handles multi-monitor
               coordinates:
             </p>
 
             <div className="space-y-4 text-sm">
               <div>
-                <h4 className="font-semibold text-slate-900 mb-1">
+                <h4 className="font-semibold text-foreground mb-1">
                   1. Virtual Desktop Origin
                 </h4>
-                <p className="text-slate-700 mb-2">
+                <p className="text-foreground mb-2">
                   The Runner calculates the virtual desktop origin as the
                   minimum X and minimum Y coordinates across all monitors. This
                   is NOT necessarily (0, 0).
@@ -374,10 +374,10 @@ Virtual Desktop Size:    7680 x 2160`}
               </div>
 
               <div>
-                <h4 className="font-semibold text-slate-900 mb-1">
+                <h4 className="font-semibold text-foreground mb-1">
                   2. Screenshot Capture
                 </h4>
-                <p className="text-slate-700">
+                <p className="text-foreground">
                   When finding images, the Runner captures the entire bounding
                   region of selected monitors. Image coordinates are relative to
                   the virtual desktop origin, ensuring clicks land correctly
@@ -386,10 +386,10 @@ Virtual Desktop Size:    7680 x 2160`}
               </div>
 
               <div>
-                <h4 className="font-semibold text-slate-900 mb-1">
+                <h4 className="font-semibold text-foreground mb-1">
                   3. Coordinate Translation
                 </h4>
-                <p className="text-slate-700">
+                <p className="text-foreground">
                   The Python executor (qontinui library) handles coordinate
                   translation using MSS (multi-monitor screenshot library),
                   ensuring consistency between screenshot capture and mouse
@@ -401,8 +401,10 @@ Virtual Desktop Size:    7680 x 2160`}
         </section>
 
         {/* Next Steps */}
-        <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
+        <section className="border-t border-border pt-12">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
+            Next Steps
+          </h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="Running Automations"
@@ -435,25 +437,25 @@ function ConceptCard({
   example,
 }: ConceptCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-6">
-      <h3 className="text-lg font-bold text-slate-900 mb-2">{title}</h3>
-      <p className="text-slate-700 mb-3">{description}</p>
+    <div className="bg-card border border-border rounded-lg p-6">
+      <h3 className="text-lg font-bold text-foreground mb-2">{title}</h3>
+      <p className="text-foreground mb-3">{description}</p>
       {details && (
         <ul className="space-y-1 mb-3">
           {details.map((detail, idx) => (
             <li
               key={idx}
-              className="flex items-start gap-2 text-sm text-slate-600"
+              className="flex items-start gap-2 text-sm text-muted-foreground"
             >
-              <span className="text-blue-600">•</span>
+              <span className="text-primary">•</span>
               <span>{detail}</span>
             </li>
           ))}
         </ul>
       )}
       {example && (
-        <div className="bg-blue-50 border border-blue-200 rounded px-3 py-2">
-          <p className="text-xs text-blue-900">
+        <div className="bg-primary/10 border border-primary/30 rounded px-3 py-2">
+          <p className="text-xs text-foreground">
             <strong>Example:</strong> {example}
           </p>
         </div>
@@ -480,14 +482,14 @@ function MethodCard({
   example,
 }: MethodCardProps) {
   const badgeColors = {
-    green: "bg-green-100 text-green-800",
-    blue: "bg-blue-100 text-blue-800",
+    green: "bg-green-500/10 text-green-700 border border-green-500/30",
+    blue: "bg-primary/10 text-primary border border-primary/30",
   };
 
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
+    <div className="bg-muted border border-border rounded-lg p-6">
       <div className="flex items-start justify-between mb-3">
-        <h3 className="font-semibold text-slate-900">{title}</h3>
+        <h3 className="font-semibold text-foreground">{title}</h3>
         {badge && (
           <span
             className={`text-xs font-semibold px-2 py-1 rounded ${badgeColors[badgeColor]}`}
@@ -496,14 +498,14 @@ function MethodCard({
           </span>
         )}
       </div>
-      <p className="text-sm text-slate-600 mb-3">{description}</p>
+      <p className="text-sm text-muted-foreground mb-3">{description}</p>
       <ul className="space-y-1 mb-3">
         {steps.map((step, idx) => (
           <li
             key={idx}
-            className="flex items-start gap-2 text-sm text-slate-700"
+            className="flex items-start gap-2 text-sm text-foreground"
           >
-            <span className="text-blue-600">•</span>
+            <span className="text-primary">•</span>
             <span>{step}</span>
           </li>
         ))}
@@ -525,9 +527,9 @@ interface CodeExampleProps {
 
 function CodeExample({ title, description, code }: CodeExampleProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-6">
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600 mb-3">{description}</p>
+    <div className="bg-card border border-border rounded-lg p-6">
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground mb-3">{description}</p>
       <code className="block bg-slate-900 text-slate-100 p-4 rounded font-mono text-xs whitespace-pre">
         {code}
       </code>
@@ -549,14 +551,14 @@ function UseCaseCard({
   benefit,
 }: UseCaseCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-6">
+    <div className="bg-card border border-border rounded-lg p-6">
       <div className="flex items-start gap-3 mb-3">
-        <Monitor className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <Monitor className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
         <div>
-          <h3 className="font-semibold text-slate-900 mb-1">{title}</h3>
-          <p className="text-sm text-slate-700 mb-2">{description}</p>
+          <h3 className="font-semibold text-foreground mb-1">{title}</h3>
+          <p className="text-sm text-foreground mb-2">{description}</p>
           <div className="flex gap-4 text-xs">
-            <span className="text-slate-600">
+            <span className="text-muted-foreground">
               <strong>Monitors:</strong> {monitors}
             </span>
             <span className="text-green-700">
@@ -577,12 +579,12 @@ interface BestPracticeProps {
 
 function BestPractice({ title, description, icon }: BestPracticeProps) {
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+    <div className="bg-muted border border-border rounded-lg p-4">
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-0.5">{icon}</div>
         <div>
-          <h4 className="font-semibold text-slate-900 mb-2">{title}</h4>
-          <p className="text-sm text-slate-700">{description}</p>
+          <h4 className="font-semibold text-foreground mb-2">{title}</h4>
+          <p className="text-sm text-foreground">{description}</p>
         </div>
       </div>
     </div>
@@ -624,10 +626,10 @@ function NextStepCard({ title, description, href }: NextStepCardProps) {
   return (
     <Link
       href={href}
-      className="block bg-slate-50 border border-slate-200 rounded-lg p-6 hover:shadow-md hover:border-blue-300 transition-all"
+      className="block bg-muted border border-border rounded-lg p-6 hover:shadow-md hover:border-primary/50 transition-all"
     >
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600">{description}</p>
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </Link>
   );
 }

@@ -73,9 +73,9 @@ export function ActionDetails({ action }: ActionDetailsProps) {
           </>
         )}
 
-        {action.action_type === "WAIT" && (
+        {action.action_type === "VANISH" && (
           <div>
-            <dt className="text-gray-500">Wait Duration</dt>
+            <dt className="text-gray-500">Timeout</dt>
             <dd className="font-medium">
               {action.duration_ms >= 1000
                 ? `${(action.duration_ms / 1000).toFixed(1)}s`

@@ -120,12 +120,10 @@ export function PublishTemplateDialog({
 
     try {
       const template = await workflowTemplates.publishToMarketplace(workflow, {
-
         description,
 
         categoryId: categoryId ?? "",
         tags: parseTags(),
-
       });
 
       if (onPublished) {
@@ -156,12 +154,10 @@ export function PublishTemplateDialog({
 
     try {
       await workflowTemplates.saveToMarketplaceDraft(workflow, {
-
         description,
 
         categoryId: categoryId ?? "",
         tags: parseTags(),
-
       });
       onClose();
     } catch (err) {
@@ -244,11 +240,7 @@ export function PublishTemplateDialog({
                 <select
                   id="template-category"
                   value={categoryId || ""}
-                  onChange={(e) =>
-                    setCategoryId(
-                      e.target.value || null
-                    )
-                  }
+                  onChange={(e) => setCategoryId(e.target.value || null)}
                 >
                   <option value="">Select a category...</option>
                   {categories.map((cat) => (
@@ -322,8 +314,7 @@ export function PublishTemplateDialog({
               <div className="preview-meta">
                 {categoryId && (
                   <span className="meta-item">
-                    <strong>Category:</strong>{" "}
-                    {categoryId}
+                    <strong>Category:</strong> {categoryId}
                   </span>
                 )}
                 <span className="meta-item">

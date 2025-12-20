@@ -249,18 +249,21 @@ export class ConfigImporter {
       // The main difference is Connection.type must be narrowed from string to specific types
       const connections: Workflow["connections"] = {};
 
-      for (const [actionId, outputs] of Object.entries(exportWorkflow.connections || {})) {
+      for (const [actionId, outputs] of Object.entries(
+        exportWorkflow.connections || {}
+      )) {
         const convertedOutputs: Workflow["connections"][string] = {};
 
         for (const [outputType, connectionArrays] of Object.entries(outputs)) {
           if (Array.isArray(connectionArrays)) {
-            convertedOutputs[outputType as "main" | "error" | "success"] = connectionArrays.map(
-              (connArray) => connArray.map((conn) => ({
-                action: conn.action,
-                type: conn.type as "main" | "error" | "success" | "parallel",
-                index: conn.index,
-              }))
-            );
+            convertedOutputs[outputType as "main" | "error" | "success"] =
+              connectionArrays.map((connArray) =>
+                connArray.map((conn) => ({
+                  action: conn.action,
+                  type: conn.type as "main" | "error" | "success" | "parallel",
+                  index: conn.index,
+                }))
+              );
           }
         }
 
@@ -282,7 +285,10 @@ export class ConfigImporter {
       };
 
       // Import initialStateIds if present (for Main category workflows)
-      if (exportWorkflow.initialStateIds && Array.isArray(exportWorkflow.initialStateIds)) {
+      if (
+        exportWorkflow.initialStateIds &&
+        Array.isArray(exportWorkflow.initialStateIds)
+      ) {
         workflow.initialStateIds = exportWorkflow.initialStateIds;
       }
 
@@ -315,11 +321,13 @@ export class ConfigImporter {
     }
     if (action.retryCount !== undefined) {
       if (!imported.execution) imported.execution = {};
-      (imported.execution as Record<string, unknown>).retryCount = action.retryCount;
+      (imported.execution as Record<string, unknown>).retryCount =
+        action.retryCount;
     }
     if (action.continueOnError !== undefined) {
       if (!imported.execution) imported.execution = {};
-      (imported.execution as Record<string, unknown>).continueOnError = action.continueOnError;
+      (imported.execution as Record<string, unknown>).continueOnError =
+        action.continueOnError;
     }
 
     return imported;
@@ -333,7 +341,12 @@ export class ConfigImporter {
 
     // Handle target conversions - only FIND supports multiple images (imageIds)
     const target = config.target as Record<string, unknown> | undefined;
-    if (target && typeof target === "object" && target.type === "image" && action.type === "FIND") {
+    if (
+      target &&
+      typeof target === "object" &&
+      target.type === "image" &&
+      action.type === "FIND"
+    ) {
       if (target.imageId && !target.imageIds) {
         target.imageIds = [target.imageId];
         delete target.imageId;
@@ -352,7 +365,10 @@ export class ConfigImporter {
         config.target = "Last Find Result";
       } else if (targetType === "currentPosition") {
         config.target = "Current Position";
-      } else if (targetType === "coordinates" && typeof target.coordinates === "object") {
+      } else if (
+        targetType === "coordinates" &&
+        typeof target.coordinates === "object"
+      ) {
         const coords = target.coordinates as Record<string, unknown>;
         config.target = "Coordinates";
         config.x = coords.x;
@@ -389,7 +405,10 @@ export class ConfigImporter {
   /**
    * Import states from configuration
    */
-  private importStates(exportStates: ExportState[], images: ImageAsset[]): State[] {
+  private importStates(
+    exportStates: ExportState[],
+    images: ImageAsset[]
+  ): State[] {
     // Build a name-to-id map for fallback matching when patterns don't have imageId
     const imageNameToId = new Map<string, string>();
     images.forEach((img) => {
@@ -404,24 +423,25 @@ export class ConfigImporter {
       this.updateImageUsage(exportState, images);
 
       // Convert ExportState's complex StateImage[] to simple { image, threshold }[]
-      const stateImages = exportState.stateImages?.map((img) => {
-        // For the simplified format, we use the first pattern's imageId and similarity
-        const firstPattern = img.patterns?.[0];
-        let imageId = firstPattern?.imageId || "";
+      const stateImages =
+        exportState.stateImages?.map((img) => {
+          // For the simplified format, we use the first pattern's imageId and similarity
+          const firstPattern = img.patterns?.[0];
+          let imageId = firstPattern?.imageId || "";
 
-        // If pattern has imageId, use it; otherwise try to match by name
-        if (!imageId && firstPattern?.name) {
-          imageId = imageNameToId.get(firstPattern.name) || "";
-        }
-        if (!imageId && img.name) {
-          imageId = imageNameToId.get(img.name) || "";
-        }
+          // If pattern has imageId, use it; otherwise try to match by name
+          if (!imageId && firstPattern?.name) {
+            imageId = imageNameToId.get(firstPattern.name) || "";
+          }
+          if (!imageId && img.name) {
+            imageId = imageNameToId.get(img.name) || "";
+          }
 
-        return {
-          image: imageId,
-          threshold: firstPattern?.similarity || 0.8,
-        };
-      }) || [];
+          return {
+            image: imageId,
+            threshold: firstPattern?.similarity || 0.8,
+          };
+        }) || [];
 
       return {
         id: exportState.id,
@@ -437,7 +457,9 @@ export class ConfigImporter {
   /**
    * Import transitions from configuration
    */
-  private importTransitions(exportTransitions: ExportTransition[]): Transition[] {
+  private importTransitions(
+    exportTransitions: ExportTransition[]
+  ): Transition[] {
     return exportTransitions.map((exportTransition) => {
       if (!isExportTransition(exportTransition)) {
         throw new Error(`Invalid transition format: missing required fields`);
@@ -480,7 +502,10 @@ export class ConfigImporter {
             ? outgoing.deactivateStates
             : [],
         };
-      } else if (type === "IncomingTransition" && "toState" in exportTransition) {
+      } else if (
+        type === "IncomingTransition" &&
+        "toState" in exportTransition
+      ) {
         const incoming = exportTransition as ExportTransition & {
           toState: string;
         };
@@ -522,8 +547,10 @@ export class ConfigImporter {
 
       // Check state references - use type narrowing
       if (transition.type === "OutgoingTransition") {
-        const fromState = (transition as Transition & { fromState?: string }).fromState;
-        const toState = (transition as Transition & { toState?: string }).toState;
+        const fromState = (transition as Transition & { fromState?: string })
+          .fromState;
+        const toState = (transition as Transition & { toState?: string })
+          .toState;
 
         if (fromState && !stateIds.has(fromState)) {
           errors.push(
@@ -536,7 +563,8 @@ export class ConfigImporter {
           );
         }
       } else if (transition.type === "IncomingTransition") {
-        const toState = (transition as Transition & { toState?: string }).toState;
+        const toState = (transition as Transition & { toState?: string })
+          .toState;
 
         if (toState && !stateIds.has(toState)) {
           errors.push(
@@ -565,11 +593,13 @@ export class ConfigImporter {
     return Math.round(data.length * 0.75);
   }
 
-
   /**
    * Update image usage tracking for patterns in a state
    */
-  private updateImageUsage(exportState: ExportState, images: ImageAsset[]): void {
+  private updateImageUsage(
+    exportState: ExportState,
+    images: ImageAsset[]
+  ): void {
     exportState.stateImages?.forEach((stateImage) => {
       stateImage.patterns?.forEach((pattern) => {
         const image = images.find((img) => img.id === pattern.imageId);
@@ -688,9 +718,10 @@ export class ConfigImporter {
           ...action,
           config: {
             ...config,
-            imageId: typeof imageId === "string"
-              ? idMap.get(imageId) || imageId
-              : undefined,
+            imageId:
+              typeof imageId === "string"
+                ? idMap.get(imageId) || imageId
+                : undefined,
           } as Action["config"],
         };
       });

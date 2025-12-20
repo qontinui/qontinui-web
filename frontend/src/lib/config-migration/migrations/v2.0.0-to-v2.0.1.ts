@@ -29,7 +29,9 @@ export const migrationV2ToV201: Migration = {
     }
 
     // Migrate each workflow
-    for (const workflow of migrated.workflows as Array<Record<string, unknown>>) {
+    for (const workflow of migrated.workflows as Array<
+      Record<string, unknown>
+    >) {
       // Check and remove parallel connections
       if (workflow.connections) {
         for (const [actionId, outputs] of Object.entries(
@@ -80,9 +82,13 @@ export const migrationV2ToV201: Migration = {
     if (!configObj.workflows) return false;
 
     // Check if any workflow has parallel connections
-    for (const workflow of configObj.workflows as Array<Record<string, unknown>>) {
+    for (const workflow of configObj.workflows as Array<
+      Record<string, unknown>
+    >) {
       if (workflow.connections) {
-        for (const outputs of Object.values(workflow.connections as Record<string, unknown>)) {
+        for (const outputs of Object.values(
+          workflow.connections as Record<string, unknown>
+        )) {
           if (outputs && typeof outputs === "object") {
             const outputsObj = outputs as Record<string, unknown>;
             if (
@@ -127,9 +133,13 @@ export const migrationV2ToV201: Migration = {
     // Double-check: ensure no parallel connections remain
     const configObj = migratedConfig as Record<string, unknown>;
     if (configObj.workflows) {
-      for (const workflow of configObj.workflows as Array<Record<string, unknown>>) {
+      for (const workflow of configObj.workflows as Array<
+        Record<string, unknown>
+      >) {
         if (workflow.connections) {
-          for (const outputs of Object.values(workflow.connections as Record<string, unknown>)) {
+          for (const outputs of Object.values(
+            workflow.connections as Record<string, unknown>
+          )) {
             if (outputs && typeof outputs === "object") {
               const outputsObj = outputs as Record<string, unknown>;
               if (outputsObj.parallel !== undefined) {

@@ -389,10 +389,10 @@ export default function DatasetsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Dataset</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete &quot;{deleteConfirm?.name}&quot;? This will
-              permanently remove all {deleteConfirm?.total_images} images and{" "}
-              {deleteConfirm?.total_annotations} annotations. This action cannot
-              be undone.
+              Are you sure you want to delete &quot;{deleteConfirm?.name}&quot;?
+              This will permanently remove all {deleteConfirm?.total_images}{" "}
+              images and {deleteConfirm?.total_annotations} annotations. This
+              action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

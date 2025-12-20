@@ -1264,7 +1264,10 @@ export class ProjectOptimizationService {
       // Check workflows (actions with image configs)
       workflows.forEach((workflow) => {
         const usedInWorkflow = workflow.actions.some((action) => {
-          const config = action.config as { target?: { image?: string }; imageId?: string };
+          const config = action.config as {
+            target?: { image?: string };
+            imageId?: string;
+          };
           return (
             config.target?.image === image.id || config.imageId === image.id
           );
@@ -1987,7 +1990,10 @@ export class ProjectOptimizationService {
       }
 
       // Check image references in action configs
-      const config = action.config as { target?: { image?: string }; imageId?: string };
+      const config = action.config as {
+        target?: { image?: string };
+        imageId?: string;
+      };
       if (config.target?.image && !imageIds.has(config.target.image)) {
         broken.push({
           type: "image",
@@ -2504,7 +2510,10 @@ export class ProjectOptimizationService {
       // Find workflows using this image
       workflows.forEach((workflow) => {
         const usesImage = workflow.actions.some((action) => {
-          const config = action.config as { target?: { image?: string }; imageId?: string };
+          const config = action.config as {
+            target?: { image?: string };
+            imageId?: string;
+          };
           return (
             config.target?.image === resourceId || config.imageId === resourceId
           );
@@ -2690,9 +2699,7 @@ export class ProjectOptimizationService {
     const actionTypes = workflow.actions.map((a) => a.type);
 
     // UI testing
-    if (
-      actionTypes.some((t) => ["CLICK", "TYPE", "FIND", "EXISTS"].includes(t))
-    ) {
+    if (actionTypes.some((t) => ["CLICK", "TYPE", "FIND"].includes(t))) {
       return "UI Testing";
     }
 

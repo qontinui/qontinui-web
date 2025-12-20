@@ -9,7 +9,10 @@
 
 import React, { useState, useMemo } from "react";
 import { Workflow } from "@/lib/action-schema/action-types";
-import { workflowAnalyticsService, WorkflowMetrics } from "@/services/workflow-analytics-service";
+import {
+  workflowAnalyticsService,
+  WorkflowMetrics,
+} from "@/services/workflow-analytics-service";
 import { workflowComplexityAnalyzer } from "@/services/workflow-complexity-analyzer";
 import { AnalyticsDashboard } from "./AnalyticsDashboard";
 import { WorkflowMetricsPanel } from "./WorkflowMetricsPanel";
@@ -69,8 +72,12 @@ export function WorkflowAnalyticsExample() {
           },
           {
             id: "a4",
-            type: "WAIT",
-            config: { duration: 1000 },
+            type: "FIND",
+            config: {
+              pattern: "submit-button",
+              similarity: 0.85,
+              strategy: "FIRST",
+            },
             position: [100, 550],
           },
         ],
@@ -242,14 +249,16 @@ export function WorkflowAnalyticsExample() {
             </Select>
           </Card>
 
-          {selectedWorkflow && complexityMetrics && allMetrics[selectedWorkflow.id] && (
-            <WorkflowMetricsPanel
-              workflow={selectedWorkflow}
-              metrics={allMetrics[selectedWorkflow.id]!}
-              complexityMetrics={complexityMetrics}
-              executionHistory={executionHistory}
-            />
-          )}
+          {selectedWorkflow &&
+            complexityMetrics &&
+            allMetrics[selectedWorkflow.id] && (
+              <WorkflowMetricsPanel
+                workflow={selectedWorkflow}
+                metrics={allMetrics[selectedWorkflow.id]!}
+                complexityMetrics={complexityMetrics}
+                executionHistory={executionHistory}
+              />
+            )}
         </TabsContent>
 
         {/* Performance Tab */}

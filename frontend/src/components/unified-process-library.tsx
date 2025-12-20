@@ -23,7 +23,10 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAutomation } from "@/contexts/automation-context";
+import {
+  useAutomation,
+  DEFAULT_CATEGORIES,
+} from "@/contexts/automation-context";
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog";
 import { DeleteWorkflowDialog } from "@/components/delete-process-dialog";
 import type { Workflow } from "@/lib/action-schema/action-types";
@@ -377,12 +380,9 @@ export function UnifiedProcessLibrary({
           {allCategories.map((category) => {
             const categoryItems = itemsByCategory[category] || [];
             const isCollapsed = collapsedCategories.has(category);
-            const protectedCategories = [
-              "Main",
-              "Incoming Transitions",
-              "Outgoing Transitions",
-            ];
-            const isDeletable = !protectedCategories.includes(category);
+            const isDeletable = !DEFAULT_CATEGORIES.includes(
+              category as (typeof DEFAULT_CATEGORIES)[number]
+            );
 
             return (
               <div

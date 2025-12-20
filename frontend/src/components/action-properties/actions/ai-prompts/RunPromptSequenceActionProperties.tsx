@@ -271,9 +271,9 @@ export function RunPromptSequenceActionProperties({
           <p className="font-medium mb-1">Sequence Execution</p>
           <p>
             Each step in the sequence runs in a fresh AI context to avoid
-            overflow. Results are persisted between steps via
-            files/variables. Perfect for complex multi-stage workflows like code
-            quality pipelines.
+            overflow. Results are persisted between steps via files/variables.
+            Perfect for complex multi-stage workflows like code quality
+            pipelines.
           </p>
         </div>
       </div>

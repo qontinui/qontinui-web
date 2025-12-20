@@ -82,6 +82,13 @@ export { StateIdManager } from "./state-id-manager";
 export { TransitionReferenceUpdater } from "./transition-reference-updater";
 export { StateUpdateCoordinator } from "./state-update-coordinator";
 
+// Default workflow categories that always appear, even when empty
+export const DEFAULT_CATEGORIES = [
+  "Main",
+  "Incoming Transitions",
+  "Outgoing Transitions",
+] as const;
+
 // ============================================================================
 // Data Migration Functions
 // ============================================================================
@@ -174,7 +181,8 @@ function migratePatternImages(
         // OR if pattern.imageId accidentally contains base64 data (fix for corrupted data)
         const imageIdIsData =
           pattern.imageId && pattern.imageId.startsWith("data:image");
-        const hasEmbeddedImage = !pattern.imageId && "image" in patternAny && patternAny.image;
+        const hasEmbeddedImage =
+          !pattern.imageId && "image" in patternAny && patternAny.image;
 
         if (hasEmbeddedImage || imageIdIsData) {
           const imageData = imageIdIsData ? pattern.imageId! : patternAny.image;
@@ -313,7 +321,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   );
 
   // Categories are now stored per-project in the database, not in global localStorage
-  const [categories, setCategories] = useState<string[]>([]);
+  // Initialize with default categories so they appear immediately for new projects
+  const [categories, setCategories] = useState<string[]>([
+    ...DEFAULT_CATEGORIES,
+  ]);
 
   // Settings are now per-project using the project name in the key
   const settingsKey = `qontinui-settings-v2-${projectName.replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase()}`;
@@ -689,18 +700,13 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         screenshots: loadedScreenshots,
       });
 
-      // Extract unique categories from loaded workflows, always including Main and transition categories
+      // Extract unique categories from loaded workflows, always including defaults
       const workflowCategories = loadedWorkflows
         .map((w) => w.category)
         .filter((cat): cat is string => cat != null && cat !== "");
 
       const uniqueCategories = Array.from(
-        new Set([
-          "Main",
-          "Incoming Transitions",
-          "Outgoing Transitions",
-          ...workflowCategories,
-        ])
+        new Set([...DEFAULT_CATEGORIES, ...workflowCategories])
       );
       setCategories(uniqueCategories);
 
@@ -733,7 +739,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.addWorkflow(workflowWithProject);
       } catch (error: unknown) {
         // If key already exists, update instead
-        if (error && typeof error === 'object' && 'name' in error && (error as any).name === "ConstraintError") {
+        if (
+          error &&
+          typeof error === "object" &&
+          "name" in error &&
+          (error as any).name === "ConstraintError"
+        ) {
           await projectDB.updateWorkflow(workflowWithProject);
         } else {
           throw error;
@@ -784,7 +795,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.addState(stateWithProject);
       } catch (error: unknown) {
         // If key already exists, update instead
-        if (error && typeof error === 'object' && 'name' in error && error.name === "ConstraintError") {
+        if (
+          error &&
+          typeof error === "object" &&
+          "name" in error &&
+          error.name === "ConstraintError"
+        ) {
           await projectDB.updateState(stateWithProject);
         } else {
           throw error;
@@ -815,7 +831,14 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         zustandStore.addTransition(incomingTransition);
       } catch (error: unknown) {
         // If transition already exists, ignore the error
-        if (!(error && typeof error === 'object' && 'name' in error && (error as any).name === "ConstraintError")) {
+        if (
+          !(
+            error &&
+            typeof error === "object" &&
+            "name" in error &&
+            (error as any).name === "ConstraintError"
+          )
+        ) {
           console.error("Failed to create incoming transition:", error);
         }
       }
@@ -875,7 +898,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.addTransition(transitionWithProject);
       } catch (error: unknown) {
         // If key already exists, update instead
-        if (error && typeof error === 'object' && 'name' in error && error.name === "ConstraintError") {
+        if (
+          error &&
+          typeof error === "object" &&
+          "name" in error &&
+          error.name === "ConstraintError"
+        ) {
           await projectDB.updateTransition(transitionWithProject);
         } else {
           throw error;
@@ -923,7 +951,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.addImage(imageWithProject);
       } catch (error: unknown) {
         // If key already exists, update instead
-        if (error && typeof error === 'object' && 'name' in error && error.name === "ConstraintError") {
+        if (
+          error &&
+          typeof error === "object" &&
+          "name" in error &&
+          error.name === "ConstraintError"
+        ) {
           await projectDB.updateImage(imageWithProject);
         } else {
           throw error;
@@ -1318,13 +1351,8 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   }, []);
 
   const deleteCategory = useCallback((category: string) => {
-    // Protect Main and transition categories from deletion
-    const protectedCategories = [
-      "Main",
-      "Incoming Transitions",
-      "Outgoing Transitions",
-    ];
-    if (protectedCategories.includes(category)) {
+    // Protect default categories from deletion
+    if ((DEFAULT_CATEGORIES as readonly string[]).includes(category)) {
       console.warn(`Cannot delete protected category: ${category}`);
       return;
     }

@@ -179,11 +179,11 @@ export class MCPClient {
     const cached = this.getCached(cacheKey);
     if (cached) return cached as ActionResult[];
 
-    const response = await this.request("POST", "/search/actions", {
+    const response = (await this.request("POST", "/search/actions", {
       query,
       filters,
       limit: filters?.limit || 10,
-    }) as { results: ActionResult[] };
+    })) as { results: ActionResult[] };
 
     this.setCache(cacheKey, response.results);
     return response.results;
@@ -197,7 +197,10 @@ export class MCPClient {
     const cached = this.getCached(cacheKey);
     if (cached) return cached as ActionDetails;
 
-    const response = await this.request("GET", `/actions/${actionType}`) as ActionDetails;
+    const response = (await this.request(
+      "GET",
+      `/actions/${actionType}`
+    )) as ActionDetails;
 
     this.setCache(cacheKey, response);
     return response;
@@ -211,10 +214,10 @@ export class MCPClient {
     const cached = this.getCached(cacheKey);
     if (cached) return cached as ActionResult[];
 
-    const response = await this.request(
+    const response = (await this.request(
       "GET",
       `/categories/${category}/actions`
-    ) as { results: ActionResult[] };
+    )) as { results: ActionResult[] };
 
     this.setCache(cacheKey, response.results);
     return response.results;
@@ -228,9 +231,12 @@ export class MCPClient {
   > {
     const cacheKey = "categories:all";
     const cached = this.getCached(cacheKey);
-    if (cached) return cached as Array<{ id: string; name: string; count: number }>;
+    if (cached)
+      return cached as Array<{ id: string; name: string; count: number }>;
 
-    const response = await this.request("GET", "/categories") as { categories: Array<{ id: string; name: string; count: number }> };
+    const response = (await this.request("GET", "/categories")) as {
+      categories: Array<{ id: string; name: string; count: number }>;
+    };
 
     this.setCache(cacheKey, response.categories);
     return response.categories;
@@ -250,9 +256,9 @@ export class MCPClient {
    * - Invalid configurations
    */
   async validateWorkflow(workflow: Workflow): Promise<ValidationResult> {
-    const response = await this.request("POST", "/workflows/validate", {
+    const response = (await this.request("POST", "/workflows/validate", {
       workflow,
-    }) as { validation: ValidationResult };
+    })) as { validation: ValidationResult };
 
     return response.validation;
   }
@@ -268,9 +274,9 @@ export class MCPClient {
     };
     suggestions: WorkflowSuggestion[];
   }> {
-    const response = await this.request("POST", "/workflows/analyze", {
+    const response = (await this.request("POST", "/workflows/analyze", {
       workflow,
-    }) as {
+    })) as {
       analysis: {
         complexity: number;
         performance: {
@@ -278,7 +284,7 @@ export class MCPClient {
           bottlenecks: string[];
         };
         suggestions: WorkflowSuggestion[];
-      }
+      };
     };
 
     return response.analysis;
@@ -299,7 +305,7 @@ export class MCPClient {
     description: string,
     context?: GenerationContext
   ): Promise<GeneratedWorkflow> {
-    const response = await this.request(
+    const response = (await this.request(
       "POST",
       "/workflows/generate",
       {
@@ -316,7 +322,7 @@ export class MCPClient {
       {
         timeout: 60000, // Longer timeout for AI generation
       }
-    ) as {
+    )) as {
       workflow: Workflow;
       confidence: number;
       explanation: string;
@@ -353,7 +359,7 @@ export class MCPClient {
     const refinementData =
       typeof feedback === "string" ? { feedback } : feedback;
 
-    const response = await this.request(
+    const response = (await this.request(
       "POST",
       "/workflows/refine",
       {
@@ -363,7 +369,7 @@ export class MCPClient {
       {
         timeout: 60000,
       }
-    ) as {
+    )) as {
       workflow: Workflow;
       confidence: number;
       explanation: string;
@@ -393,10 +399,10 @@ export class MCPClient {
     templateId: string,
     parameters?: Record<string, unknown>
   ): Promise<GeneratedWorkflow> {
-    const response = await this.request("POST", "/workflows/from-template", {
+    const response = (await this.request("POST", "/workflows/from-template", {
       templateId,
       parameters,
-    }) as {
+    })) as {
       workflow: Workflow;
       confidence: number;
       explanation: string;
@@ -428,9 +434,9 @@ export class MCPClient {
   async getSuggestions(
     partialWorkflow: Workflow
   ): Promise<WorkflowSuggestion[]> {
-    const response = await this.request("POST", "/workflows/suggestions", {
+    const response = (await this.request("POST", "/workflows/suggestions", {
       workflow: partialWorkflow,
-    }) as { suggestions: WorkflowSuggestion[] };
+    })) as { suggestions: WorkflowSuggestion[] };
 
     return response.suggestions;
   }
@@ -448,15 +454,15 @@ export class MCPClient {
       confidence: number;
     }>
   > {
-    const response = await this.request("POST", "/workflows/suggest-next", {
+    const response = (await this.request("POST", "/workflows/suggest-next", {
       workflow,
       afterActionId,
-    }) as {
+    })) as {
       suggestions: Array<{
         action: ActionResult;
         reason: string;
         confidence: number;
-      }>
+      }>;
     };
 
     return response.suggestions;
@@ -469,11 +475,15 @@ export class MCPClient {
     workflow: Workflow,
     suggestion: WorkflowSuggestion
   ): Promise<Workflow> {
-    const response = await this.request("POST", "/workflows/apply-suggestion", {
-      workflow,
-      suggestionId: suggestion.id,
-      actions: suggestion.actions,
-    }) as { workflow: Workflow };
+    const response = (await this.request(
+      "POST",
+      "/workflows/apply-suggestion",
+      {
+        workflow,
+        suggestionId: suggestion.id,
+        actions: suggestion.actions,
+      }
+    )) as { workflow: Workflow };
 
     return response.workflow;
   }
@@ -504,26 +514,27 @@ export class MCPClient {
   > {
     const cacheKey = `templates:${category || "all"}`;
     const cached = this.getCached(cacheKey);
-    if (cached) return cached as Array<{
-      id: string;
-      name: string;
-      description: string;
-      category: string;
-      tags: string[];
-      parameters?: Array<{
+    if (cached)
+      return cached as Array<{
+        id: string;
         name: string;
-        type: string;
         description: string;
-        required: boolean;
-        default?: unknown;
+        category: string;
+        tags: string[];
+        parameters?: Array<{
+          name: string;
+          type: string;
+          description: string;
+          required: boolean;
+          default?: unknown;
+        }>;
+        preview?: Workflow;
       }>;
-      preview?: Workflow;
-    }>;
 
-    const response = await this.request(
+    const response = (await this.request(
       "GET",
       `/templates${category ? `?category=${category}` : ""}`
-    ) as {
+    )) as {
       templates: Array<{
         id: string;
         name: string;
@@ -538,7 +549,7 @@ export class MCPClient {
           default?: unknown;
         }>;
         preview?: Workflow;
-      }>
+      }>;
     };
 
     this.setCache(cacheKey, response.templates);
@@ -563,9 +574,9 @@ export class MCPClient {
     potentialIssues?: string[];
     recommendations?: string[];
   }> {
-    const response = await this.request("POST", "/workflows/explain", {
+    const response = (await this.request("POST", "/workflows/explain", {
       workflow,
-    }) as {
+    })) as {
       explanation: {
         summary: string;
         steps: Array<{
@@ -576,7 +587,7 @@ export class MCPClient {
         flowDescription: string;
         potentialIssues?: string[];
         recommendations?: string[];
-      }
+      };
     };
 
     return response.explanation;
@@ -591,15 +602,15 @@ export class MCPClient {
     how: string;
     alternatives?: string[];
   }> {
-    const response = await this.request("POST", "/actions/explain", {
+    const response = (await this.request("POST", "/actions/explain", {
       action,
-    }) as {
+    })) as {
       explanation: {
         what: string;
         why: string;
         how: string;
         alternatives?: string[];
-      }
+      };
     };
 
     return response.explanation;
@@ -618,7 +629,7 @@ export class MCPClient {
       "speed" | "reliability" | "simplicity" | "maintainability"
     >
   ): Promise<GeneratedWorkflow> {
-    const response = await this.request(
+    const response = (await this.request(
       "POST",
       "/workflows/optimize",
       {
@@ -628,7 +639,7 @@ export class MCPClient {
       {
         timeout: 60000,
       }
-    ) as {
+    )) as {
       workflow: Workflow;
       confidence: number;
       explanation: string;
@@ -735,7 +746,7 @@ export class MCPClient {
     capabilities?: string[];
   }> {
     try {
-      const response = await this.request("GET", "/health") as {
+      const response = (await this.request("GET", "/health")) as {
         version: string;
         capabilities: string[];
       };

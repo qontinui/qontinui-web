@@ -9,35 +9,35 @@ export const metadata = {
 
 export default function RunnerDocsPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         {/* Header */}
         <div className="mb-12">
           <Link
             href="/docs"
-            className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+            className="text-primary hover:text-primary/80 text-sm mb-4 inline-block"
           >
             ← Back to Documentation
           </Link>
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             Qontinui Runner
           </h1>
-          <p className="text-xl text-slate-600">
+          <p className="text-xl text-muted-foreground">
             Desktop application for executing real GUI automation workflows
           </p>
         </div>
 
         {/* What is Runner */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             What is Qontinui Runner?
           </h2>
-          <p className="text-slate-700 mb-4">
+          <p className="text-foreground mb-4">
             Qontinui Runner is a desktop application that executes automation
             workflows created in Qontinui Web. It performs <strong>real</strong>{" "}
             GUI automation on your system:
           </p>
-          <ul className="space-y-2 text-slate-700">
+          <ul className="space-y-2 text-foreground">
             <li className="flex items-start gap-2">
               <span className="text-green-600 font-bold">✓</span>
               <span>Actual mouse clicks and keyboard input</span>
@@ -56,8 +56,8 @@ export default function RunnerDocsPage() {
             </li>
           </ul>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
-            <p className="text-sm text-blue-900">
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-4 mt-6">
+            <p className="text-sm text-foreground">
               <strong>Note:</strong> For testing automation logic without real
               GUI interactions, use{" "}
               <Link href="/docs/web/testing" className="underline">
@@ -70,7 +70,7 @@ export default function RunnerDocsPage() {
 
         {/* Quick Links */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Documentation Sections
           </h2>
           <div className="grid gap-4">
@@ -104,7 +104,7 @@ export default function RunnerDocsPage() {
 
         {/* System Requirements */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             System Requirements
           </h2>
           <div className="grid md:grid-cols-3 gap-6">
@@ -140,7 +140,7 @@ export default function RunnerDocsPage() {
 
         {/* Key Features */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
             Key Features
           </h2>
           <div className="space-y-6">
@@ -165,10 +165,10 @@ export default function RunnerDocsPage() {
 
         {/* Getting Started CTA */}
         <section className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-8">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             Ready to Get Started?
           </h2>
-          <p className="text-slate-700 mb-6">
+          <p className="text-foreground mb-6">
             Download Qontinui Runner and start running your automation workflows
             today.
           </p>
@@ -182,7 +182,7 @@ export default function RunnerDocsPage() {
             </Link>
             <Link
               href="/docs/runner/installation"
-              className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-900 border border-slate-300 px-6 py-3 rounded-lg font-semibold transition-colors"
+              className="inline-flex items-center gap-2 bg-background hover:bg-muted text-foreground border border-border px-6 py-3 rounded-lg font-semibold transition-colors"
             >
               Installation Guide →
             </Link>
@@ -203,10 +203,10 @@ function DocLink({ title, description, href }: DocLinkProps) {
   return (
     <Link
       href={href}
-      className="block bg-slate-50 border border-slate-200 rounded-lg p-6 hover:shadow-md hover:border-purple-300 transition-all"
+      className="block bg-card border border-border rounded-lg p-6 hover:shadow-md hover:border-primary/50 transition-all"
     >
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600">{description}</p>
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </Link>
   );
 }
@@ -218,13 +218,13 @@ interface SystemReqProps {
 
 function SystemReq({ platform, requirements }: SystemReqProps) {
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-      <h3 className="font-bold text-slate-900 mb-4">{platform}</h3>
+    <div className="bg-card border border-border rounded-lg p-6">
+      <h3 className="font-bold text-foreground mb-4">{platform}</h3>
       <ul className="space-y-2">
         {requirements.map((req, idx) => (
           <li
             key={idx}
-            className="text-sm text-slate-700 flex items-start gap-2"
+            className="text-sm text-foreground flex items-start gap-2"
           >
             <span className="text-green-600 mt-0.5">•</span>
             <span>{req}</span>
@@ -243,8 +243,8 @@ interface FeatureSectionProps {
 function FeatureSection({ title, description }: FeatureSectionProps) {
   return (
     <div>
-      <h3 className="text-lg font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-slate-700">{description}</p>
+      <h3 className="text-lg font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-foreground">{description}</p>
     </div>
   );
 }

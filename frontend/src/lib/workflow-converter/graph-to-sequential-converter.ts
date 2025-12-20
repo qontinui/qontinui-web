@@ -332,15 +332,27 @@ export class GraphToSequentialConverter {
       if (action.type === "IF") {
         const config = action.config as Record<string, unknown>;
         if (config.thenActions && Array.isArray(config.thenActions)) {
-          this.validateActionReferences(config.thenActions as string[], ids, action.id);
+          this.validateActionReferences(
+            config.thenActions as string[],
+            ids,
+            action.id
+          );
         }
         if (config.elseActions && Array.isArray(config.elseActions)) {
-          this.validateActionReferences(config.elseActions as string[], ids, action.id);
+          this.validateActionReferences(
+            config.elseActions as string[],
+            ids,
+            action.id
+          );
         }
       } else if (action.type === "LOOP") {
         const config = action.config as Record<string, unknown>;
         if (config.actions && Array.isArray(config.actions)) {
-          this.validateActionReferences(config.actions as string[], ids, action.id);
+          this.validateActionReferences(
+            config.actions as string[],
+            ids,
+            action.id
+          );
         }
       }
     });

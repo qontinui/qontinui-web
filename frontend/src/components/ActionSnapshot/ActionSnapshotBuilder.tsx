@@ -5,7 +5,6 @@ import {
   MousePointer,
   Type,
   Move,
-  Clock,
   Check,
   X,
   Plus,
@@ -24,7 +23,11 @@ interface ActionSnapshotBuilderProps {
   onCancel: () => void;
 }
 
-interface Match {  region: { x: number; y: number; width: number; height: number };  score: number;  stateImageId?: string;}
+interface Match {
+  region: { x: number; y: number; width: number; height: number };
+  score: number;
+  stateImageId?: string;
+}
 export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
   currentScreenshot,
   screenshots,
@@ -60,7 +63,6 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
     "TYPE",
     "DRAG",
     "SCROLL",
-    "WAIT",
   ];
 
   const handleAddMatch = () => {
@@ -72,7 +74,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
     setMatches([...matches, newMatch]);
   };
 
-  const handleUpdateMatch = (index: number, field: string, value: number | string) => {
+  const handleUpdateMatch = (
+    index: number,
+    field: string,
+    value: number | string
+  ) => {
     const updated = [...matches];
     if (field.includes(".")) {
       const parts = field.split(".");
@@ -124,8 +130,8 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
         return <Move className="w-4 h-4" />;
       case "SCROLL":
         return <Move className="w-4 h-4 rotate-90" />;
-      case "WAIT":
-        return <Clock className="w-4 h-4" />;
+      default:
+        return <Target className="w-4 h-4" />;
     }
   };
 
@@ -276,26 +282,6 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Enter text to type..."
-                  className="w-full px-3 py-1 border rounded"
-                />
-              </div>
-            )}
-
-            {actionType === "WAIT" && (
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Wait Time (ms)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={actionConfig.waitTime}
-                  onChange={(e) =>
-                    setActionConfig({
-                      ...actionConfig,
-                      waitTime: parseInt(e.target.value),
-                    })
-                  }
                   className="w-full px-3 py-1 border rounded"
                 />
               </div>

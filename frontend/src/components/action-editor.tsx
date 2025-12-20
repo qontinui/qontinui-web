@@ -522,7 +522,14 @@ function getActionSummary(
       }
 
       // Handle stateImage target type (Find State)
-      const target = config.target as { type?: string; stateId?: string; imageId?: string; imageIds?: string[] } | undefined;
+      const target = config.target as
+        | {
+            type?: string;
+            stateId?: string;
+            imageId?: string;
+            imageIds?: string[];
+          }
+        | undefined;
       if (target?.type === "stateImage") {
         const stateId = target.stateId;
         if (stateId) {
@@ -535,10 +542,7 @@ function getActionSummary(
       }
 
       // Handle new target structure - support both imageId (singular) and imageIds (array)
-      const imageIds =
-        target?.type === "image"
-          ? target.imageIds
-          : null;
+      const imageIds = target?.type === "image" ? target.imageIds : null;
       const imageId =
         target?.type === "image"
           ? target.imageId
@@ -551,9 +555,7 @@ function getActionSummary(
           // Look for StateImage across all states
           let found = false;
           for (const state of states) {
-            const stateImage = state.stateImages?.find(
-              (si) => si.id === id
-            );
+            const stateImage = state.stateImages?.find((si) => si.id === id);
             if (stateImage) {
               const nameWithoutExtension = stateImage.name.replace(
                 /\.(png|jpg|jpeg|gif|webp|svg)$/i,
@@ -589,9 +591,7 @@ function getActionSummary(
         // First look for StateImage across all states
         let stateImageName: string | null = null;
         for (const state of states) {
-          const stateImage = state.stateImages?.find(
-            (si) => si.id === imageId
-          );
+          const stateImage = state.stateImages?.find((si) => si.id === imageId);
           if (stateImage) {
             stateImageName = stateImage.name;
             break;
@@ -660,9 +660,7 @@ function getActionSummary(
             // Look for StateImage across all states
             let found = false;
             for (const state of states) {
-              const stateImage = state.stateImages?.find(
-                (si) => si.id === id
-              );
+              const stateImage = state.stateImages?.find((si) => si.id === id);
               if (stateImage) {
                 const nameWithoutExtension = stateImage.name.replace(
                   /\.(png|jpg|jpeg|gif|webp|svg)$/i,
@@ -724,21 +722,15 @@ function getActionSummary(
     }
     case "KEY_PRESS": {
       const key = config.key as string | undefined;
-      return key
-        ? `Press key: ${key}`
-        : "No key selected";
+      return key ? `Press key: ${key}` : "No key selected";
     }
     case "KEY_DOWN": {
       const keyDown = config.key as string | undefined;
-      return keyDown
-        ? `Hold key down: ${keyDown}`
-        : "No key selected";
+      return keyDown ? `Hold key down: ${keyDown}` : "No key selected";
     }
     case "KEY_UP": {
       const keyUp = config.key as string | undefined;
-      return keyUp
-        ? `Release key: ${keyUp}`
-        : "No key selected";
+      return keyUp ? `Release key: ${keyUp}` : "No key selected";
     }
     case "TYPE": {
       const textSource = config.textSource as string | undefined;
@@ -748,13 +740,17 @@ function getActionSummary(
         const state = states.find((s) => s.id === selectedState);
         if (!state) return "Invalid state";
 
-        const selectedStateStrings = config.selectedStateStrings as string[] | undefined;
-        if (selectedStateStrings && selectedStateStrings.length > 0 && state.strings) {
+        const selectedStateStrings = config.selectedStateStrings as
+          | string[]
+          | undefined;
+        if (
+          selectedStateStrings &&
+          selectedStateStrings.length > 0 &&
+          state.strings
+        ) {
           // Get the actual string values
           const selectedStrings = state.strings
-            .filter((s) =>
-              selectedStateStrings.includes(s.id)
-            )
+            .filter((s) => selectedStateStrings.includes(s.id))
             .map((s) => s.value)
             .filter((v) => v); // Remove empty values
 
@@ -778,9 +774,7 @@ function getActionSummary(
         if (!text) return "No text specified";
         // Truncate long text and show special keys
         const displayText =
-          text.length > 30
-            ? text.substring(0, 30) + "..."
-            : text;
+          text.length > 30 ? text.substring(0, 30) + "..." : text;
         return `Type "${displayText.replace(/\n/g, "↵").replace(/\t/g, "→")}"`;
       }
     }
@@ -799,7 +793,9 @@ function getActionSummary(
         return `Wait for [REMOVED: ${removedImage}] to vanish`;
       }
       // Handle new target structure
-      const vanishTarget = config.target as { type?: string; imageId?: string } | undefined;
+      const vanishTarget = config.target as
+        | { type?: string; imageId?: string }
+        | undefined;
       const vanishImageId =
         vanishTarget?.type === "image"
           ? vanishTarget.imageId

@@ -687,7 +687,10 @@ export class OperationalTransformService {
    * Apply insert operation
    */
   private applyInsert(doc: unknown, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<string, unknown>;
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<
+      string,
+      unknown
+    >;
     const key = op.path[op.path.length - 1];
 
     if (key !== undefined) {
@@ -703,7 +706,10 @@ export class OperationalTransformService {
    * Apply delete operation
    */
   private applyDelete(doc: unknown, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<string, unknown>;
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<
+      string,
+      unknown
+    >;
     const key = op.path[op.path.length - 1];
 
     if (key !== undefined) {
@@ -719,7 +725,10 @@ export class OperationalTransformService {
    * Apply update operation
    */
   private applyUpdate(doc: unknown, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<string, unknown>;
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<
+      string,
+      unknown
+    >;
     const key = op.path[op.path.length - 1];
     if (key !== undefined) {
       parent[key] = op.value;
@@ -730,7 +739,10 @@ export class OperationalTransformService {
    * Apply move operation
    */
   private applyMove(doc: unknown, op: Operation): void {
-    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<string, unknown>;
+    const parent = this.navigateToPath(doc, op.path.slice(0, -1)) as Record<
+      string,
+      unknown
+    >;
     const key = op.path[op.path.length - 1];
 
     if (key !== undefined && Array.isArray(parent[key])) {
@@ -743,7 +755,9 @@ export class OperationalTransformService {
    * Apply connect operation
    */
   private applyConnect(doc: unknown, op: Operation): void {
-    const docWithConnections = doc as { connections?: Array<{ id: string; source?: string; target?: string }> };
+    const docWithConnections = doc as {
+      connections?: Array<{ id: string; source?: string; target?: string }>;
+    };
     if (!docWithConnections.connections) {
       docWithConnections.connections = [];
     }
@@ -760,19 +774,23 @@ export class OperationalTransformService {
    * Apply disconnect operation
    */
   private applyDisconnect(doc: unknown, op: Operation): void {
-    const docWithConnections = doc as { connections?: Array<{ source?: string; target?: string }> };
+    const docWithConnections = doc as {
+      connections?: Array<{ source?: string; target?: string }>;
+    };
     if (!docWithConnections.connections) return;
 
     docWithConnections.connections = docWithConnections.connections.filter(
-      (conn) =>
-        !(conn.source === op.sourceId && conn.target === op.targetId)
+      (conn) => !(conn.source === op.sourceId && conn.target === op.targetId)
     );
   }
 
   /**
    * Navigate to a path in the document
    */
-  private navigateToPath(doc: unknown, path: string[]): Record<string, unknown> {
+  private navigateToPath(
+    doc: unknown,
+    path: string[]
+  ): Record<string, unknown> {
     let current = doc as Record<string, unknown>;
 
     for (const segment of path) {

@@ -121,9 +121,7 @@ function suggestCategory(workflow: Workflow): string {
   const actionTypes = workflow.actions.map((a) => a.type);
 
   // UI testing
-  if (
-    actionTypes.some((t) => ["CLICK", "TYPE", "FIND", "EXISTS"].includes(t))
-  ) {
+  if (actionTypes.some((t) => ["CLICK", "TYPE", "FIND"].includes(t))) {
     return "UI Testing";
   }
 

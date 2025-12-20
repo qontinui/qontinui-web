@@ -193,7 +193,8 @@ export function ImagesManager() {
           console.error(`Upload failed for ${file.name}:`, error);
 
           // Show user-friendly error message
-          const errorMsg = error instanceof Error ? error.message : "Unknown error occurred";
+          const errorMsg =
+            error instanceof Error ? error.message : "Unknown error occurred";
           if (errorMsg.includes("quota") || errorMsg.includes("Quota")) {
             toast.error("Storage quota exceeded", {
               description: "Please upgrade your plan or delete unused images.",

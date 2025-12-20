@@ -18,7 +18,10 @@ export function SimilarityThresholdOverride({
   action,
   updateConfig,
 }: SimilarityThresholdOverrideProps) {
-  const similarity = (action.config as any).similarity as number | null | undefined;
+  const similarity = (action.config as any).similarity as
+    | number
+    | null
+    | undefined;
 
   return (
     <div className="space-y-2">

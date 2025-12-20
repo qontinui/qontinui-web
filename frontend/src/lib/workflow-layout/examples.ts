@@ -5,7 +5,11 @@
  */
 
 import { autoLayoutWorkflow, AutoLayout, LayoutStyle } from "./auto-layout";
-import type { Workflow, Connection, Connections } from "../action-schema/action-types";
+import type {
+  Workflow,
+  Connection,
+  Connections,
+} from "../action-schema/action-types";
 
 /**
  * Example 1: Simple Linear Workflow
@@ -81,16 +85,23 @@ export function createConditionalWorkflowExample(): Workflow {
     actions: [
       {
         id: "check-element",
-        type: "EXISTS",
+        type: "FIND",
         name: "Check if Element Exists",
-        config: { target: "success-message" },
+        config: {
+          target: { type: "image", imageId: "success-message" },
+          searchOptions: { strategy: "FIRST" },
+        },
         position: [0, 0],
       },
       {
         id: "branch-decision",
         type: "IF",
         name: "Element Exists?",
-        config: { condition: { type: "expression", expression: "result === true" }, thenActions: [], elseActions: [] },
+        config: {
+          condition: { type: "expression", expression: "result === true" },
+          thenActions: [],
+          elseActions: [],
+        },
         position: [0, 0],
       },
       {
@@ -163,7 +174,11 @@ export function createLoopWorkflowExample(): Workflow {
         id: "loop-items",
         type: "LOOP",
         name: "For Each Item",
-        config: { loopType: "FOREACH", collection: { type: "variable", variableName: "items" }, actions: [] },
+        config: {
+          loopType: "FOREACH",
+          collection: { type: "variable", variableName: "items" },
+          actions: [],
+        },
         position: [0, 0],
       },
       {
@@ -175,9 +190,12 @@ export function createLoopWorkflowExample(): Workflow {
       },
       {
         id: "validate-item",
-        type: "EXISTS",
+        type: "FIND",
         name: "Validate Item",
-        config: { target: "item-validated" },
+        config: {
+          target: { type: "image", imageId: "item-validated" },
+          searchOptions: { strategy: "FIRST" },
+        },
         position: [0, 0],
       },
       {
@@ -314,7 +332,11 @@ export function createDiamondPatternExample(): Workflow {
         id: "check-condition",
         type: "IF",
         name: "Check Condition",
-        config: { condition: { type: "expression", expression: "value > 10" }, thenActions: [], elseActions: [] },
+        config: {
+          condition: { type: "expression", expression: "value > 10" },
+          thenActions: [],
+          elseActions: [],
+        },
         position: [0, 0],
       },
       {
@@ -497,7 +519,16 @@ export function createLayoutStylesComparison(): Record<string, Workflow> {
     actions: [
       { id: "a1", type: "CLICK", config: {}, position: [0, 0] },
       { id: "a2", type: "TYPE", config: {}, position: [0, 0] },
-      { id: "if1", type: "IF", config: { condition: { type: "expression", expression: "true" }, thenActions: [], elseActions: [] }, position: [0, 0] },
+      {
+        id: "if1",
+        type: "IF",
+        config: {
+          condition: { type: "expression", expression: "true" },
+          thenActions: [],
+          elseActions: [],
+        },
+        position: [0, 0],
+      },
       { id: "a3", type: "CLICK", config: {}, position: [0, 0] },
       { id: "a4", type: "CLICK", config: {}, position: [0, 0] },
       { id: "a5", type: "SCREENSHOT", config: {}, position: [0, 0] },
@@ -576,14 +607,22 @@ export function createComplexNestedExample(): Workflow {
         id: "loop-items",
         type: "LOOP",
         name: "For Each Item",
-        config: { loopType: "FOREACH", collection: { type: "variable", variableName: "items" }, actions: [] },
+        config: {
+          loopType: "FOREACH",
+          collection: { type: "variable", variableName: "items" },
+          actions: [],
+        },
         position: [0, 0],
       },
       {
         id: "check-type",
         type: "IF",
         name: "Check Type",
-        config: { condition: { type: "expression", expression: "true" }, thenActions: [], elseActions: [] },
+        config: {
+          condition: { type: "expression", expression: "true" },
+          thenActions: [],
+          elseActions: [],
+        },
         position: [0, 0],
       },
       {
@@ -597,7 +636,11 @@ export function createComplexNestedExample(): Workflow {
         id: "type-b-check",
         type: "IF",
         name: "Type B Subcheck",
-        config: { condition: { type: "expression", expression: "true" }, thenActions: [], elseActions: [] },
+        config: {
+          condition: { type: "expression", expression: "true" },
+          thenActions: [],
+          elseActions: [],
+        },
         position: [0, 0],
       },
       {
@@ -616,9 +659,12 @@ export function createComplexNestedExample(): Workflow {
       },
       {
         id: "validate",
-        type: "EXISTS",
+        type: "FIND",
         name: "Validate",
-        config: {},
+        config: {
+          target: { type: "image", imageId: "validate-image" },
+          searchOptions: { strategy: "FIRST" },
+        },
         position: [0, 0],
       },
       {

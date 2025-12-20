@@ -7,10 +7,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesService } from "@/services/service-factory";
 import { IssueStatus } from "@/types/detected-issue";
-import type {
-  DetectedIssueUpdate,
-  IssueFilters,
-} from "@/types/detected-issue";
+import type { DetectedIssueUpdate, IssueFilters } from "@/types/detected-issue";
 import type {
   IssuesSyncRequest,
   IssuesSyncResponse,
@@ -105,10 +102,7 @@ export function useUpdateIssue() {
     },
     onSuccess: (updatedIssue) => {
       // Update the issue in the cache
-      queryClient.setQueryData(
-        issueKeys.detail(updatedIssue.id),
-        updatedIssue
-      );
+      queryClient.setQueryData(issueKeys.detail(updatedIssue.id), updatedIssue);
 
       // Invalidate lists to refetch
       queryClient.invalidateQueries({ queryKey: issueKeys.lists() });
@@ -150,7 +144,9 @@ export function useSyncIssues() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (request: IssuesSyncRequest): Promise<IssuesSyncResponse> => {
+    mutationFn: async (
+      request: IssuesSyncRequest
+    ): Promise<IssuesSyncResponse> => {
       return await issuesService.syncIssues(request);
     },
     onSuccess: () => {

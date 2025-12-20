@@ -1172,7 +1172,9 @@ export class TransitionOrganizationService {
     if (query) {
       const lowerQuery = query.toLowerCase();
       results = results.filter((t) => {
-        const metadata = this.getTransitionMetadata(t.id) as { name?: string; description?: string } | undefined;
+        const metadata = this.getTransitionMetadata(t.id) as
+          | { name?: string; description?: string }
+          | undefined;
         const searchableText = [
           t.id,
           t.workflows.join(" "),
@@ -1269,7 +1271,9 @@ export class TransitionOrganizationService {
 
       if (filters.hasTag) {
         results = results.filter((t) => {
-          const metadata = this.getTransitionMetadata(t.id) as { tags?: string[] } | undefined;
+          const metadata = this.getTransitionMetadata(t.id) as
+            | { tags?: string[] }
+            | undefined;
           return metadata?.tags?.includes(filters.hasTag!);
         });
       }
@@ -1725,7 +1729,9 @@ export class TransitionOrganizationService {
           stateIds.add(incoming.toState);
         }
       }
-      (exportData as { states?: State[] }).states = states.filter((s) => stateIds.has(s.id));
+      (exportData as { states?: State[] }).states = states.filter((s) =>
+        stateIds.has(s.id)
+      );
     }
 
     if (options.includeWorkflows) {
@@ -1733,21 +1739,24 @@ export class TransitionOrganizationService {
       for (const transition of selectedTransitions) {
         transition.workflows.forEach((id) => workflowIds.add(id));
       }
-      (exportData as { workflows?: unknown[] }).workflows = workflows.filter((w) => workflowIds.has(w.id));
+      (exportData as { workflows?: unknown[] }).workflows = workflows.filter(
+        (w) => workflowIds.has(w.id)
+      );
     }
 
     if (options.includeGroups) {
-      (exportData as { groups?: TransitionGroup[] }).groups = Array.from(this.groups.values()).filter((g) =>
-        g.transitionIds.some((id) => transitionIds.includes(id))
-      );
+      (exportData as { groups?: TransitionGroup[] }).groups = Array.from(
+        this.groups.values()
+      ).filter((g) => g.transitionIds.some((id) => transitionIds.includes(id)));
     }
 
     if (options.includeMetadata) {
-      (exportData as { metadata?: Record<string, unknown> }).metadata = Object.fromEntries(
-        Array.from(this.transitionMetadata.entries()).filter(([id]) =>
-          transitionIds.includes(id)
-        )
-      );
+      (exportData as { metadata?: Record<string, unknown> }).metadata =
+        Object.fromEntries(
+          Array.from(this.transitionMetadata.entries()).filter(([id]) =>
+            transitionIds.includes(id)
+          )
+        );
     }
 
     return JSON.stringify(exportData, null, 2);

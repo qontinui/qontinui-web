@@ -95,7 +95,9 @@ export function ProjectManager({
       setIsPublic(false);
       toast.success("Project saved successfully");
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to save project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save project"
+      );
     }
   };
 
@@ -105,7 +107,9 @@ export function ProjectManager({
     try {
       const updated = await updateProject.mutateAsync({
         id: selectedProject.id,
-        data: { configuration: currentConfiguration as Record<string, unknown> },
+        data: {
+          configuration: currentConfiguration as Record<string, unknown>,
+        },
       });
       setSelectedProject({
         ...updated,
@@ -113,7 +117,9 @@ export function ProjectManager({
       } as Project);
       toast.success("Project updated successfully");
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to update project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to update project"
+      );
     }
   };
 
@@ -126,7 +132,9 @@ export function ProjectManager({
       setLoadDialogOpen(false);
       toast.success(`Loaded project: ${project.name}`);
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to load project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to load project"
+      );
     }
   };
 
@@ -150,7 +158,9 @@ export function ProjectManager({
       setDeleteDialogOpen(false);
       setProjectToDelete(null);
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to delete project");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete project"
+      );
     }
   };
 

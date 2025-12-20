@@ -43,7 +43,9 @@ export const migrationV21ToV22: Migration = {
 
     // Normalize transition positions (if they have position data)
     if (migrated.transitions && Array.isArray(migrated.transitions)) {
-      for (const transition of migrated.transitions as Array<Record<string, unknown>>) {
+      for (const transition of migrated.transitions as Array<
+        Record<string, unknown>
+      >) {
         if (transition.position) {
           const position = transition.position as Record<string, unknown>;
           const oldX = position.x;
@@ -97,19 +99,13 @@ export const migrationV21ToV22: Migration = {
       for (const state of configObj.states as Array<Record<string, unknown>>) {
         if (state.position) {
           const position = state.position as Record<string, unknown>;
-          if (
-            typeof position.x === "number" &&
-            !Number.isInteger(position.x)
-          ) {
+          if (typeof position.x === "number" && !Number.isInteger(position.x)) {
             console.error(
               `Validation failed: State "${state.name || state.id}" has non-integer x position`
             );
             return false;
           }
-          if (
-            typeof position.y === "number" &&
-            !Number.isInteger(position.y)
-          ) {
+          if (typeof position.y === "number" && !Number.isInteger(position.y)) {
             console.error(
               `Validation failed: State "${state.name || state.id}" has non-integer y position`
             );
@@ -120,26 +116,19 @@ export const migrationV21ToV22: Migration = {
     }
 
     // Check transition positions
-    if (
-      configObj.transitions &&
-      Array.isArray(configObj.transitions)
-    ) {
-      for (const transition of configObj.transitions as Array<Record<string, unknown>>) {
+    if (configObj.transitions && Array.isArray(configObj.transitions)) {
+      for (const transition of configObj.transitions as Array<
+        Record<string, unknown>
+      >) {
         if (transition.position) {
           const position = transition.position as Record<string, unknown>;
-          if (
-            typeof position.x === "number" &&
-            !Number.isInteger(position.x)
-          ) {
+          if (typeof position.x === "number" && !Number.isInteger(position.x)) {
             console.error(
               `Validation failed: Transition "${transition.id}" has non-integer x position`
             );
             return false;
           }
-          if (
-            typeof position.y === "number" &&
-            !Number.isInteger(position.y)
-          ) {
+          if (typeof position.y === "number" && !Number.isInteger(position.y)) {
             console.error(
               `Validation failed: Transition "${transition.id}" has non-integer y position`
             );

@@ -54,7 +54,7 @@ describe('GraphToSequentialConverter', () => {
     test('should convert simple linear graph to sequential', () => {
       const action1 = createTestAction('CLICK', 'action-1', { target: { image: 'test.png' } });
       const action2 = createTestAction('TYPE', 'action-2', { text: 'hello' });
-      const action3 = createTestAction('WAIT', 'action-3', { duration: 1000 });
+      const action3 = createTestAction('FIND', 'action-3', { target: { image: 'result.png' }, strategy: 'FIRST' });
 
       const workflow = createTestWorkflow(
         [action1, action2, action3],
@@ -137,7 +137,7 @@ describe('GraphToSequentialConverter', () => {
     test('should throw error for graph with merge nodes', () => {
       const action1 = createTestAction('CLICK', 'action-1', { target: { image: 'test.png' } });
       const action2 = createTestAction('TYPE', 'action-2', { text: 'hello' });
-      const action3 = createTestAction('WAIT', 'action-3', { duration: 1000 });
+      const action3 = createTestAction('FIND', 'action-3', { target: { image: 'result.png' }, strategy: 'FIRST' });
 
       const workflow = createTestWorkflow(
         [action1, action2, action3],
@@ -337,7 +337,7 @@ describe('GraphToSequentialConverter', () => {
       });
       const body1 = createTestAction('CLICK', 'body-1', { target: { image: 'a.png' } });
       const body2 = createTestAction('TYPE', 'body-2', { text: 'test' });
-      const body3 = createTestAction('WAIT', 'body-3', { duration: 100 });
+      const body3 = createTestAction('FIND', 'body-3', { target: { image: 'element.png' }, strategy: 'FIRST' });
 
       const workflow = createTestWorkflow(
         [loopAction, body1, body2, body3],
@@ -497,7 +497,7 @@ describe('GraphToSequentialConverter', () => {
     test('should return false for non-linearizable workflow with details', () => {
       const action1 = createTestAction('CLICK', 'action-1', { target: { image: 'test.png' } });
       const action2 = createTestAction('TYPE', 'action-2', { text: 'hello' });
-      const action3 = createTestAction('WAIT', 'action-3', { duration: 1000 });
+      const action3 = createTestAction('FIND', 'action-3', { target: { image: 'result.png' }, strategy: 'FIRST' });
 
       const workflow = createTestWorkflow(
         [action1, action2, action3],
@@ -555,7 +555,7 @@ describe('LinearizabilityChecker', () => {
   test('should fail on merge nodes', () => {
     const action1 = createTestAction('CLICK', 'action-1', { target: { image: 'test.png' } });
     const action2 = createTestAction('TYPE', 'action-2', { text: 'hello' });
-    const action3 = createTestAction('WAIT', 'action-3', { duration: 1000 });
+    const action3 = createTestAction('FIND', 'action-3', { target: { image: 'result.png' }, strategy: 'FIRST' });
 
     const workflow = createTestWorkflow(
       [action1, action2, action3],

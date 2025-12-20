@@ -70,7 +70,7 @@ export const PROMPT_TEMPLATES: Record<string, PromptTemplate> = {
       { name: "action", placeholder: "what to do", required: true },
       { name: "website", placeholder: "which website", required: true },
     ],
-    preferredActions: ["CLICK", "TYPE", "FIND", "WAIT"],
+    preferredActions: ["CLICK", "TYPE", "FIND"],
     tags: ["automation", "web", "bot"],
   },
 
@@ -116,7 +116,7 @@ export const PROMPT_TEMPLATES: Record<string, PromptTemplate> = {
       { name: "website", placeholder: "which website", required: true },
       { name: "method", placeholder: "authentication method", required: true },
     ],
-    preferredActions: ["FIND", "CLICK", "TYPE", "WAIT"],
+    preferredActions: ["FIND", "CLICK", "TYPE"],
     tags: ["login", "authentication", "security"],
   },
 
@@ -162,7 +162,7 @@ export const PROMPT_TEMPLATES: Record<string, PromptTemplate> = {
       { name: "feature", placeholder: "what to test", required: true },
       { name: "test_steps", placeholder: "how to test it", required: true },
     ],
-    preferredActions: ["FIND", "CLICK", "TYPE", "EXISTS", "SCREENSHOT"],
+    preferredActions: ["FIND", "CLICK", "TYPE", "SCREENSHOT"],
     tags: ["testing", "qa", "validation"],
   },
 
@@ -188,7 +188,7 @@ export const PROMPT_TEMPLATES: Record<string, PromptTemplate> = {
       },
       { name: "frequency", placeholder: "how often", required: true },
     ],
-    preferredActions: ["FIND", "EXISTS", "VANISH", "SCREENSHOT", "WAIT"],
+    preferredActions: ["FIND", "VANISH", "SCREENSHOT"],
     tags: ["monitoring", "alerts", "tracking"],
   },
 
@@ -209,7 +209,7 @@ export const PROMPT_TEMPLATES: Record<string, PromptTemplate> = {
       { name: "target", placeholder: "what to capture", required: true },
       { name: "condition", placeholder: "when to capture", required: true },
     ],
-    preferredActions: ["SCREENSHOT", "FIND", "WAIT"],
+    preferredActions: ["SCREENSHOT", "FIND"],
     tags: ["screenshots", "documentation", "capture"],
   },
 
@@ -278,7 +278,7 @@ export const PROMPT_TEMPLATES: Record<string, PromptTemplate> = {
       { name: "action_true", placeholder: "if true", required: true },
       { name: "action_false", placeholder: "if false", required: false },
     ],
-    preferredActions: ["IF", "EXISTS", "FIND"],
+    preferredActions: ["IF", "FIND"],
     tags: ["conditional", "logic", "control flow"],
   },
 
@@ -303,7 +303,7 @@ export const PROMPT_TEMPLATES: Record<string, PromptTemplate> = {
         required: true,
       },
     ],
-    preferredActions: ["TRY_CATCH", "WAIT", "SCREENSHOT"],
+    preferredActions: ["TRY_CATCH", "SCREENSHOT"],
     tags: ["error", "reliability", "fallback"],
   },
 };

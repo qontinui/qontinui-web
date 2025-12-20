@@ -90,7 +90,10 @@ export function findBrokenWorkflowReferences(
     }
 
     // Check image references in action configs
-    const config = action.config as { target?: { image?: string }; imageId?: string };
+    const config = action.config as {
+      target?: { image?: string };
+      imageId?: string;
+    };
     if (config.target?.image && !imageIds.has(config.target.image)) {
       broken.push({
         type: "image",

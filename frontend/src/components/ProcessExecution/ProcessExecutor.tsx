@@ -158,15 +158,10 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
           await new Promise((resolve) => setTimeout(resolve, 800));
           success = true;
           const typeConfig = action.config as Record<string, unknown>;
-          addLog(`Typed text: "${(typeConfig.text as string) || ""}"`, "success");
-          break;
-
-        case "WAIT":
-          const waitConfig = action.config as Record<string, unknown>;
-          const waitTime = (waitConfig.duration as number) || 1000;
-          await new Promise((resolve) => setTimeout(resolve, waitTime));
-          success = true;
-          addLog(`Waited ${waitTime}ms`, "success");
+          addLog(
+            `Typed text: "${(typeConfig.text as string) || ""}"`,
+            "success"
+          );
           break;
 
         case "GO_TO_STATE":
@@ -212,7 +207,11 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       if (debugEnabled && action.type === "SET_VARIABLE") {
         const setVarConfig = action.config as Record<string, unknown>;
         if (setVarConfig.variableName) {
-          setVariable(setVarConfig.variableName as string, setVarConfig.value, index);
+          setVariable(
+            setVarConfig.variableName as string,
+            setVarConfig.value,
+            index
+          );
         }
       }
 
@@ -614,11 +613,13 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
                       {index + 1}
                     </span>
                     <span className="text-sm font-medium">{action.type}</span>
-                    {action.config && typeof action.config === "object" && "description" in action.config && (
-                      <span className="text-sm text-gray-600">
-                        {String(action.config.description)}
-                      </span>
-                    )}
+                    {action.config &&
+                      typeof action.config === "object" &&
+                      "description" in action.config && (
+                        <span className="text-sm text-gray-600">
+                          {String(action.config.description)}
+                        </span>
+                      )}
                   </div>
 
                   <div className="flex items-center gap-2">

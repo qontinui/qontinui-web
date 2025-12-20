@@ -529,7 +529,9 @@ export default function ComponentLibraryPage() {
           {/* Main Content Tabs */}
           <Tabs
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as "library" | "built-in" | "stats" | "docs")}
+            onValueChange={(v) =>
+              setActiveTab(v as "library" | "built-in" | "stats" | "docs")
+            }
           >
             <TabsList className="bg-[#1A1A1B]/50 border border-gray-800/50">
               <TabsTrigger

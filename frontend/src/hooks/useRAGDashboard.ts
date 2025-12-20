@@ -54,7 +54,10 @@ export function useRAGDashboard(projectId: string) {
 /**
  * Fetch paginated list of embeddings.
  */
-export function useRAGEmbeddings(projectId: string, params: EmbeddingsParams = {}) {
+export function useRAGEmbeddings(
+  projectId: string,
+  params: EmbeddingsParams = {}
+) {
   return useQuery<EmbeddingListResponse, Error>({
     queryKey: ragDashboardKeys.embeddings(projectId, params),
     queryFn: () => ragDashboardService.getEmbeddings(projectId, params),

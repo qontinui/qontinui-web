@@ -120,7 +120,9 @@ export function OutgoingTransitionBuilder({
 
     const wasAdded = await addTransition(newTransition);
     if (!wasAdded) {
-      toast.error("A transition with the same origin and target states already exists");
+      toast.error(
+        "A transition with the same origin and target states already exists"
+      );
       return;
     }
     toast.success("Outgoing transition created");

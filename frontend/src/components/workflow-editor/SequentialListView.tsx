@@ -367,9 +367,7 @@ function buildActionTree(
       const thenActions = config.thenActions as Action[] | undefined;
       if (thenActions && Array.isArray(thenActions)) {
         children.push(
-          ...thenActions.map((a: Action) =>
-            processAction(a, level + 1)
-          )
+          ...thenActions.map((a: Action) => processAction(a, level + 1))
         );
       }
 
@@ -377,9 +375,7 @@ function buildActionTree(
       const elseActions = config.elseActions as Action[] | undefined;
       if (elseActions && Array.isArray(elseActions)) {
         children.push(
-          ...elseActions.map((a: Action) =>
-            processAction(a, level + 1)
-          )
+          ...elseActions.map((a: Action) => processAction(a, level + 1))
         );
       }
 
@@ -399,18 +395,14 @@ function buildActionTree(
       const tryActions = config.tryActions as Action[] | undefined;
       if (tryActions && Array.isArray(tryActions)) {
         children.push(
-          ...tryActions.map((a: Action) =>
-            processAction(a, level + 1)
-          )
+          ...tryActions.map((a: Action) => processAction(a, level + 1))
         );
       }
 
       const catchActions = config.catchActions as Action[] | undefined;
       if (catchActions && Array.isArray(catchActions)) {
         children.push(
-          ...catchActions.map((a: Action) =>
-            processAction(a, level + 1)
-          )
+          ...catchActions.map((a: Action) => processAction(a, level + 1))
         );
       }
 
@@ -433,14 +425,13 @@ function getActionIcon(type: string): string {
   const icons: Record<string, string> = {
     CLICK: "🖱️",
     TYPE: "⌨️",
-    WAIT: "⏱️",
     SCREENSHOT: "📷",
     IF: "🔀",
     LOOP: "🔁",
     TRY_CATCH: "⚠️",
     SWITCH: "🔀",
-    EXISTS: "🔍",
     FIND: "🔍",
+    VANISH: "👻",
     RAG_FIND: "🔮",
     GET_VARIABLE: "📥",
     SET_VARIABLE: "📤",
@@ -461,7 +452,9 @@ function getActionSummary(action: Action): string {
 
   switch (action.type) {
     case "CLICK": {
-      const target = config.target as { image?: string; selector?: string } | undefined;
+      const target = config.target as
+        | { image?: string; selector?: string }
+        | undefined;
       if (target?.image) {
         return `Click "${target.image}"`;
       } else if (target?.selector) {
@@ -474,27 +467,15 @@ function getActionSummary(action: Action): string {
       const text = config.text as string | undefined;
       if (text) {
         const truncated =
-          text.length > 30
-            ? text.substring(0, 30) + "..."
-            : text;
+          text.length > 30 ? text.substring(0, 30) + "..." : text;
         return `Type "${truncated}"`;
       }
       return "Type text";
     }
 
-    case "WAIT": {
-      const duration = config.duration as number | undefined;
-      if (duration) {
-        return `Wait ${duration}ms`;
-      }
-      return "Wait";
-    }
-
     case "SCREENSHOT": {
       const filename = config.filename as string | undefined;
-      return filename
-        ? `Screenshot "${filename}"`
-        : "Take screenshot";
+      return filename ? `Screenshot "${filename}"` : "Take screenshot";
     }
 
     case "IF":
@@ -508,11 +489,11 @@ function getActionSummary(action: Action): string {
     case "TRY_CATCH":
       return "Try-Catch block";
 
-    case "EXISTS":
-      return "Check if exists";
-
     case "FIND":
       return "Find element";
+
+    case "VANISH":
+      return "Wait for element to vanish";
 
     case "RAG_FIND":
       return "RAG Find element";

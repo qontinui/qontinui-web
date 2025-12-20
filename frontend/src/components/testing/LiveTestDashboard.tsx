@@ -371,7 +371,9 @@ export function LiveTestDashboard({
                     >
                       <AlertCircle className="w-4 h-4 text-destructive mt-0.5" />
                       <div className="flex-1">
-                        <p className="text-sm font-medium">{deficiency.title}</p>
+                        <p className="text-sm font-medium">
+                          {deficiency.title}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {deficiency.description}
                         </p>

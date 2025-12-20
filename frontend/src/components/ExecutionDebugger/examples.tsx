@@ -175,8 +175,11 @@ export function ControlFlowDebuggerExample() {
       },
       {
         id: "6",
-        type: "WAIT",
-        config: { waitFor: "time", duration: 1000 },
+        type: "FIND",
+        config: {
+          target: { type: "image", imageId: "result-indicator" },
+          searchOptions: { timeout: 1000 },
+        },
         position: [0, 0],
       },
     ],
@@ -453,8 +456,11 @@ export function SpeedControlExample() {
     description: "Demonstrating execution speed control",
     actions: Array.from({ length: 10 }, (_, i) => ({
       id: String(i + 1),
-      type: "WAIT",
-      config: { description: `Action ${i + 1}`, duration: 100 },
+      type: "FIND",
+      config: {
+        target: { type: "image", imageId: `action-${i + 1}` },
+        searchOptions: { timeout: 100 },
+      },
     })) as unknown as Action[],
     connections:
       {} as import("../../lib/action-schema/action-types").Connections,

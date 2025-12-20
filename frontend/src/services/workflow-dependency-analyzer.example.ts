@@ -95,9 +95,14 @@ function createExampleWorkflows(): Workflow[] {
     format: "graph",
     category: "Utilities",
     actions: [
-      createAction("WAIT", { waitFor: "time", duration: 1000 }, [100, 100], {
-        id: "action-1",
-      }),
+      createAction(
+        "FIND",
+        { target: { type: "text", text: "element" } },
+        [100, 100],
+        {
+          id: "action-1",
+        }
+      ),
     ],
     connections: {},
   };

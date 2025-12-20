@@ -177,7 +177,11 @@ describe("Workflow Utilities", () => {
             { id: "action-1" }
           ),
           createAction("TYPE", { text: "hello" }, { id: "action-2" }),
-          createAction("WAIT", { duration: 1000 }, { id: "action-3" }),
+          createAction(
+            "FIND",
+            { target: { image: "result.png" }, strategy: "FIRST" },
+            { id: "action-3" }
+          ),
         ],
         connections: {
           "action-1": {
@@ -205,7 +209,11 @@ describe("Workflow Utilities", () => {
           { id: "action-1" }
         ),
         createAction("TYPE", { text: "hello" }, { id: "action-2" }),
-        createAction("WAIT", { duration: 1000 }, { id: "action-3" }),
+        createAction(
+          "FIND",
+          { target: { image: "result.png" }, strategy: "FIRST" },
+          { id: "action-3" }
+        ),
       ],
       connections: {
         "action-1": {
@@ -305,7 +313,11 @@ describe("Workflow Utilities", () => {
             { id: "action-1" }
           ),
           createAction("TYPE", { text: "hello" }, { id: "action-2" }),
-          createAction("WAIT", { duration: 1000 }, { id: "action-3" }),
+          createAction(
+            "FIND",
+            { target: { image: "result.png" }, strategy: "FIRST" },
+            { id: "action-3" }
+          ),
         ],
         connections: {
           "action-1": {
@@ -332,7 +344,11 @@ describe("Workflow Utilities", () => {
             { id: "action-1" }
           ),
           createAction("TYPE", { text: "hello" }, { id: "action-2" }),
-          createAction("WAIT", { duration: 1000 }, { id: "action-orphan" }),
+          createAction(
+            "FIND",
+            { target: { image: "result.png" }, strategy: "FIRST" },
+            { id: "action-orphan" }
+          ),
         ],
         connections: {
           "action-1": {
@@ -356,7 +372,11 @@ describe("Workflow Utilities", () => {
             { id: "action-1" }
           ),
           createAction("TYPE", { text: "hello" }, { id: "action-2" }),
-          createAction("WAIT", { duration: 1000 }, { id: "action-3" }),
+          createAction(
+            "FIND",
+            { target: { image: "result.png" }, strategy: "FIRST" },
+            { id: "action-3" }
+          ),
         ],
         connections: {
           "action-1": {
@@ -386,7 +406,11 @@ describe("Workflow Utilities", () => {
             { id: "action-1" }
           ),
           createAction("TYPE", { text: "hello" }, { id: "action-2" }),
-          createAction("WAIT", { duration: 1000 }, { id: "action-3" }),
+          createAction(
+            "FIND",
+            { target: { image: "result.png" }, strategy: "FIRST" },
+            { id: "action-3" }
+          ),
         ],
         connections: {
           "action-1": {

@@ -42,7 +42,8 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
             // Check if any child is a block-level element to avoid nesting errors
             const hasBlockChild = node?.children?.some(
               (child: any) =>
-                child && typeof child === 'object' &&
+                child &&
+                typeof child === "object" &&
                 child.type === "element" &&
                 ["pre", "div", "blockquote", "ul", "ol", "table"].includes(
                   child.tagName

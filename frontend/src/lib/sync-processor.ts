@@ -80,7 +80,10 @@ class SyncProcessor {
 
           if (result.success) {
             // Mark as completed
-            await syncQueue.markCompleted(item.id, result.data as Record<string, unknown> | undefined);
+            await syncQueue.markCompleted(
+              item.id,
+              result.data as Record<string, unknown> | undefined
+            );
             processedCount++;
           } else {
             // Mark as failed
@@ -160,7 +163,6 @@ class SyncProcessor {
       description?: string;
       tags?: string[];
     };
-
 
     if (!file) {
       return {

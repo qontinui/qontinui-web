@@ -61,14 +61,14 @@ export function SimpleWorkflowExample() {
     },
     {
       id: "3",
-      type: "WAIT",
+      type: "SCREENSHOT",
       position: { x: 500, y: 100 },
       data: {
         action: {
           id: "3",
-          type: "WAIT",
+          type: "SCREENSHOT",
           config: {
-            duration: 1000,
+            region: "fullscreen" as unknown,
           } as Action["config"],
           position: [500, 100],
         },
@@ -164,14 +164,14 @@ export function ConditionalWorkflowExample() {
     },
     {
       id: "4",
-      type: "WAIT",
+      type: "SCREENSHOT",
       position: { x: 500, y: 250 },
       data: {
         action: {
           id: "4",
-          type: "WAIT",
+          type: "SCREENSHOT",
           config: {
-            duration: 2000,
+            region: "fullscreen" as unknown,
           } as Action["config"],
           position: [500, 250],
         },
@@ -326,13 +326,13 @@ export function InteractiveWorkflowExample() {
     },
     {
       id: "2",
-      type: "WAIT",
+      type: "TYPE",
       position: { x: 300, y: 100 },
       data: {
         action: {
           id: "2",
-          type: "WAIT",
-          config: { duration: 1000 } as Action["config"],
+          type: "TYPE",
+          config: { text: "example" } as Action["config"],
           position: [300, 100],
         },
         executionState: "idle",
@@ -489,7 +489,7 @@ export function AllNodeTypesShowcase() {
         { type: "CLICK", x: 0, y: 150 },
         { type: "TYPE", x: 200, y: 150 },
         { type: "FIND", x: 400, y: 150 },
-        { type: "WAIT", x: 600, y: 150 },
+        { type: "VANISH", x: 600, y: 150 },
         { type: "SCREENSHOT", x: 800, y: 150 },
       ],
     },

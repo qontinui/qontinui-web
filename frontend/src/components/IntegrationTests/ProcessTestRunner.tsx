@@ -614,40 +614,41 @@ export const ProcessTestRunner: React.FC = () => {
                       (result: unknown, index) => {
                         const r = result as ResultItem;
                         return (
-                        <div
-                          key={`${r.actionId || index}`}
-                          className={`flex items-start gap-3 p-3 rounded-lg border ${
-                            r.success
-                              ? "bg-green-50 border-green-200"
-                              : "bg-red-50 border-red-200"
-                          }`}
-                        >
-                          <div className="flex-shrink-0 mt-0.5">
-                            {getActionIcon(r.actionType)}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm capitalize text-gray-900">
-                                {r.actionType}
-                              </span>
-                              {r.success ? (
-                                <CheckCircle className="w-4 h-4 text-green-500" />
-                              ) : (
-                                <XCircle className="w-4 h-4 text-red-500" />
-                              )}
+                          <div
+                            key={`${r.actionId || index}`}
+                            className={`flex items-start gap-3 p-3 rounded-lg border ${
+                              r.success
+                                ? "bg-green-50 border-green-200"
+                                : "bg-red-50 border-red-200"
+                            }`}
+                          >
+                            <div className="flex-shrink-0 mt-0.5">
+                              {getActionIcon(r.actionType)}
                             </div>
-                            {r.message && (
-                              <div className="text-xs text-gray-700 mt-1">
-                                {r.message}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm capitalize text-gray-900">
+                                  {r.actionType}
+                                </span>
+                                {r.success ? (
+                                  <CheckCircle className="w-4 h-4 text-green-500" />
+                                ) : (
+                                  <XCircle className="w-4 h-4 text-red-500" />
+                                )}
                               </div>
-                            )}
-                            <div className="text-xs text-gray-500 mt-1">
-                              Duration: {r.duration}ms
+                              {r.message && (
+                                <div className="text-xs text-gray-700 mt-1">
+                                  {r.message}
+                                </div>
+                              )}
+                              <div className="text-xs text-gray-500 mt-1">
+                                Duration: {r.duration}ms
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      }
+                    )}
 
                     {(selectedHistoryRun || activeRun)!.results.length ===
                       0 && (

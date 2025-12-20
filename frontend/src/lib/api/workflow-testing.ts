@@ -193,7 +193,9 @@ async function executeWorkflowWithInputs(
   return {
     variables: { ...inputs, result: "simulated_execution" },
     executionPath:
-      workflow.actions?.slice(0, 3).map((a: unknown) => (a as { id: string }).id) || [],
+      workflow.actions
+        ?.slice(0, 3)
+        .map((a: unknown) => (a as { id: string }).id) || [],
     activeStates: [],
     actionsExecuted: Math.min(3, workflow.actions?.length || 0),
   };
@@ -229,11 +231,15 @@ function evaluateAssertion(assertion: unknown, actualValue: unknown): boolean {
       return true;
     case "greaterThan":
       return (
-        typeof actualValue === "number" && typeof assertionObj.expected === "number" && actualValue > assertionObj.expected
+        typeof actualValue === "number" &&
+        typeof assertionObj.expected === "number" &&
+        actualValue > assertionObj.expected
       );
     case "lessThan":
       return (
-        typeof actualValue === "number" && typeof assertionObj.expected === "number" && actualValue < assertionObj.expected
+        typeof actualValue === "number" &&
+        typeof assertionObj.expected === "number" &&
+        actualValue < assertionObj.expected
       );
     case "regex":
       if (assertionObj.pattern && typeof assertionObj.pattern === "string") {

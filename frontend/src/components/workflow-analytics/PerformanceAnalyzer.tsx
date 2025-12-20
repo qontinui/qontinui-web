@@ -226,13 +226,13 @@ function generateMockPerformanceData(workflow: Workflow): PerformanceData {
       id: "opt-2",
       type: "wait-optimization",
       severity: "medium",
-      title: "Optimize Wait Duration",
+      title: "Optimize Timeout Duration",
       description:
-        "WAIT action is using a fixed 5s delay. Consider using a dynamic wait with timeout.",
+        "VANISH action is using a long timeout. Consider reducing the timeout duration or using a FIND action with FIRST strategy.",
       estimatedImprovement: 3000,
       impactPercentage: 30,
       affectedActions: workflow.actions
-        .filter((a) => a.type === "WAIT")
+        .filter((a) => a.type === "VANISH")
         .map((a) => a.id),
     },
     {
@@ -274,12 +274,12 @@ function generateMockPerformanceData(workflow: Workflow): PerformanceData {
   ];
 
   const waitAnalysis: WaitAnalysis[] = workflow.actions
-    .filter((a) => a.type === "WAIT")
+    .filter((a) => a.type === "VANISH")
     .map((a, i) => ({
       actionId: a.id,
-      actionName: a.name || `Wait ${i + 1}`,
+      actionName: a.name || `Vanish ${i + 1}`,
       waitDuration: 5000,
-      suggestion: "Replace with dynamic wait with 10s timeout",
+      suggestion: "Reduce timeout duration or use FIND with FIRST strategy",
       potentialSavings: 3000,
     }));
 
@@ -840,7 +840,7 @@ export function PerformanceAnalyzer({
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
-                  No WAIT actions found in this workflow
+                  No VANISH actions found in this workflow
                 </div>
               )}
             </CardContent>

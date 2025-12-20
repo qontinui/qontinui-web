@@ -33,8 +33,6 @@ export const NODE_TYPES: Record<ActionType, NodeComponent> = {
   // Find Actions
   FIND: GuiActionNodes.FIND,
   VANISH: GuiActionNodes.VANISH,
-  EXISTS: GuiActionNodes.EXISTS,
-  WAIT: GuiActionNodes.WAIT,
   RAG_FIND: GuiActionNodes.FIND, // Reuse FIND node for RAG_FIND
 
   // Mouse Actions
@@ -86,6 +84,7 @@ export const NODE_TYPES: Record<ActionType, NodeComponent> = {
   // AI Actions
   AI_PROMPT: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for AI prompt
   RUN_PROMPT_SEQUENCE: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for prompt sequence
+  CHECKPOINT_WORKFLOW: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for checkpoint workflow
 };
 
 /**
@@ -135,7 +134,7 @@ export function getRegisteredNodeTypes(): ActionType[] {
  * Node type groups for UI organization
  */
 export const NODE_TYPE_GROUPS = {
-  find: ["FIND", "VANISH", "EXISTS", "WAIT"] as ActionType[],
+  find: ["FIND", "VANISH"] as ActionType[],
   mouse: [
     "CLICK",
     "DOUBLE_CLICK",

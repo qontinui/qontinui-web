@@ -166,9 +166,6 @@ function getActionSummary(action: Action): string {
     case "TYPE":
       return `Type: "${((config?.text as string) || "...").substring(0, 30)}"`;
 
-    case "WAIT":
-      return `Wait ${(config?.duration as number) || 1000}ms`;
-
     case "GO_TO_STATE":
       const stateIds = (config?.stateIds as string[]) || [];
       return `Activate ${stateIds.length} state(s)`;

@@ -15,12 +15,10 @@ import {
   Move,
   ArrowDown,
   ArrowUp,
-  Eye,
   EyeOff,
   Search,
   Sparkles,
   Camera,
-  Clock,
   GitBranch,
   Repeat,
   SkipForward,
@@ -66,8 +64,6 @@ const ACTION_ICONS: Record<ActionType, LucideIcon> = {
   // Find Actions
   FIND: Search,
   VANISH: EyeOff,
-  EXISTS: Eye,
-  WAIT: Clock,
   RAG_FIND: Sparkles,
 
   // Mouse Actions
@@ -119,6 +115,7 @@ const ACTION_ICONS: Record<ActionType, LucideIcon> = {
   // AI Actions
   AI_PROMPT: Sparkles,
   RUN_PROMPT_SEQUENCE: RotateCw,
+  CHECKPOINT_WORKFLOW: GitBranch,
 };
 
 /**

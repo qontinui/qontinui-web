@@ -21,7 +21,9 @@ export function RAGDashboardHeader({
     return (
       <Card className="bg-red-900/20 border-red-800">
         <CardContent className="p-6">
-          <p className="text-red-400">Failed to load dashboard: {error.message}</p>
+          <p className="text-red-400">
+            Failed to load dashboard: {error.message}
+          </p>
         </CardContent>
       </Card>
     );
@@ -144,7 +146,10 @@ export function RAGDashboardHeader({
                     }}
                   />
                 </div>
-                <Badge variant="outline" className="border-[#00D9FF] text-[#00D9FF]">
+                <Badge
+                  variant="outline"
+                  className="border-[#00D9FF] text-[#00D9FF]"
+                >
                   {Math.round(stats.active_job.progress_percent)}%
                 </Badge>
               </div>

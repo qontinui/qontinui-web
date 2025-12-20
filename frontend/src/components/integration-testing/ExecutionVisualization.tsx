@@ -12,7 +12,6 @@ import { TypeVisualization } from "./visualizations/TypeVisualization";
 import { MoveMouseVisualization } from "./visualizations/MoveMouseVisualization";
 import { HighlightVisualization } from "./visualizations/HighlightVisualization";
 import { ScrollVisualization } from "./visualizations/ScrollVisualization";
-import { WaitVisualization } from "./visualizations/WaitVisualization";
 import { DefineVisualization } from "./visualizations/DefineVisualization";
 import { VanishVisualization } from "./visualizations/VanishVisualization";
 import { useExecutionPlayback } from "@/hooks/useExecutionPlayback";
@@ -157,14 +156,6 @@ export function ExecutionVisualization({
               location={currentAction.action_location}
               direction={(currentAction as { direction?: string }).direction}
               amount={(currentAction as { amount?: number }).amount}
-            />
-          )}
-
-          {currentAction.action_type === "WAIT" && (
-            <WaitVisualization
-              actionRegion={currentAction.action_region}
-              location={currentAction.action_location}
-              duration={currentAction.duration_ms}
             />
           )}
 

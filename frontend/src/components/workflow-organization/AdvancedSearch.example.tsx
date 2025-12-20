@@ -371,7 +371,7 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
       },
       {
         id: "action-4",
-        type: "EXISTS",
+        type: "VANISH",
         config: {} as Action["config"],
         position: [0, 0],
       },

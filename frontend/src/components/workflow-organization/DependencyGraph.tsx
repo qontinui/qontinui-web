@@ -1194,7 +1194,12 @@ function DependencyGraphInner({
                 value={selectedFilter}
                 onValueChange={(v) =>
                   setSelectedFilter(
-                    v as "all" | "critical" | "unused" | "dependencies" | "dependents"
+                    v as
+                      | "all"
+                      | "critical"
+                      | "unused"
+                      | "dependencies"
+                      | "dependents"
                   )
                 }
               >

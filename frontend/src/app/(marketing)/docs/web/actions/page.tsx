@@ -1,538 +1,394 @@
 import Link from "next/link";
-import { Mouse, Keyboard, Eye, Navigation, Clock } from "lucide-react";
 
 export const metadata = {
   title: "Action Types - Qontinui Web Documentation",
   description:
-    "Complete reference for all action types in Qontinui: mouse, keyboard, vision, and navigation actions.",
+    "Complete reference for all action types available in Qontinui workflows.",
 };
 
 export default function ActionsDocPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-12 max-w-4xl">
         {/* Header */}
         <div className="mb-12">
           <Link
             href="/docs/web"
-            className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+            className="text-primary hover:text-primary/80 text-sm mb-4 inline-block"
           >
             ← Back to Qontinui Web Docs
           </Link>
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             Action Types
           </h1>
-          <p className="text-xl text-slate-600">
+          <p className="text-xl text-muted-foreground">
             Complete reference for all automation actions in Qontinui
           </p>
         </div>
 
         {/* Overview */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             What are Actions?
           </h2>
-          <p className="text-slate-700 mb-4">
+          <p className="text-foreground mb-4">
             Actions are the atomic operations performed during automation. They
             represent specific tasks like clicking a button, typing text, or
-            finding an image on screen. Actions are organized into processes and
+            finding an image on screen. Actions are organized into workflows and
             executed during state transitions.
           </p>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-            <h3 className="font-semibold text-blue-900 mb-3">Key Concepts</h3>
-            <ul className="space-y-2 text-sm text-blue-900">
-              <li className="flex items-start gap-2">
-                <span className="font-bold">•</span>
-                <span>Actions execute sequentially within a process</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="font-bold">•</span>
-                <span>Failed actions can be retried automatically</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="font-bold">•</span>
-                <span>
-                  Actions can target images, coordinates, or the last found
-                  image
-                </span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="font-bold">•</span>
-                <span>Pauses can be added before and after each action</span>
-              </li>
-            </ul>
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-6">
+            <h3 className="font-semibold text-foreground mb-3">
+              Key Concept: Action Categories
+            </h3>
+            <p className="text-sm text-foreground">
+              Actions are organized into <strong>7 categories</strong> based on
+              their purpose: Find, Mouse, Keyboard, Control Flow, Data, State,
+              and Code. Each category groups related operations together for
+              easy discovery in the workflow builder.
+            </p>
           </div>
         </section>
 
-        {/* Action Categories */}
+        {/* Find Actions */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
-            Action Categories
+          <h2 className="text-2xl font-bold text-foreground mb-4">
+            Find Actions
           </h2>
-
-          <div className="space-y-8">
-            {/* Mouse Actions */}
-            <CategorySection
-              icon={<Mouse className="w-6 h-6 text-blue-600" />}
-              title="Mouse Actions"
-              description="Control mouse movement and clicks"
-            >
-              <ActionCard
-                name="CLICK"
-                description="Left-click at the target location"
-                params={[
-                  {
-                    name: "target",
-                    desc: "Image, coordinates, or 'Last Find Result'",
-                  },
-                  { name: "offset", desc: "Optional x/y offset from target" },
-                ]}
-                example="Click the login button found via image recognition"
-              />
-              <ActionCard
-                name="DOUBLE_CLICK"
-                description="Double-click at the target location"
-                params={[
-                  {
-                    name: "target",
-                    desc: "Image, coordinates, or 'Last Find Result'",
-                  },
-                ]}
-                example="Double-click to open a file"
-              />
-              <ActionCard
-                name="RIGHT_CLICK"
-                description="Right-click to open context menu"
-                params={[
-                  {
-                    name: "target",
-                    desc: "Image, coordinates, or 'Last Find Result'",
-                  },
-                ]}
-                example="Right-click to show context menu"
-              />
-              <ActionCard
-                name="DRAG"
-                description="Drag from source to destination"
-                params={[
-                  { name: "source", desc: "Starting location" },
-                  { name: "destination", desc: "Ending location" },
-                ]}
-                example="Drag a file to trash"
-              />
-              <ActionCard
-                name="MOUSE_MOVE / MOVE"
-                description="Move mouse without clicking"
-                params={[
-                  { name: "target", desc: "Destination coordinates or image" },
-                ]}
-                example="Hover over an element to reveal tooltip"
-              />
-              <ActionCard
-                name="MOUSE_DOWN / MOUSE_UP"
-                description="Press or release mouse button"
-                params={[
-                  { name: "button", desc: "Mouse button: left, right, middle" },
-                ]}
-                example="Hold mouse button for custom drag operations"
-              />
-              <ActionCard
-                name="SCROLL / MOUSE_SCROLL"
-                description="Scroll mouse wheel"
-                params={[
-                  {
-                    name: "amount",
-                    desc: "Scroll amount (positive = down, negative = up)",
-                  },
-                  {
-                    name: "direction",
-                    desc: "Optional: vertical or horizontal",
-                  },
-                ]}
-                example="Scroll down to load more content"
-              />
-            </CategorySection>
-
-            {/* Keyboard Actions */}
-            <CategorySection
-              icon={<Keyboard className="w-6 h-6 text-green-600" />}
-              title="Keyboard Actions"
-              description="Type text and press keys"
-            >
-              <ActionCard
-                name="TYPE"
-                description="Type a text string"
-                params={[
-                  { name: "text", desc: "Text to type" },
-                  {
-                    name: "interval",
-                    desc: "Optional delay between keystrokes (ms)",
-                  },
-                ]}
-                example="Type username into login field"
-              />
-              <ActionCard
-                name="KEY_PRESS"
-                description="Press and release a key"
-                params={[
-                  {
-                    name: "key",
-                    desc: "Key name (e.g., 'enter', 'tab', 'ctrl+c')",
-                  },
-                ]}
-                example="Press Enter to submit form"
-              />
-              <ActionCard
-                name="KEY_DOWN / KEY_UP"
-                description="Press or release a specific key"
-                params={[{ name: "key", desc: "Key name to press or release" }]}
-                example="Hold Shift while clicking for multi-select"
-              />
-            </CategorySection>
-
-            {/* Vision Actions */}
-            <CategorySection
-              icon={<Eye className="w-6 h-6 text-purple-600" />}
-              title="Vision Actions"
-              description="Find and verify visual elements"
-            >
-              <ActionCard
-                name="FIND"
-                description="Locate an image on screen and store its location"
-                params={[
-                  { name: "target", desc: "Image to find" },
-                  { name: "similarity", desc: "Match threshold (0.7-0.95)" },
-                ]}
-                example="Find the submit button before clicking it"
-                important="The found location is stored and can be used by subsequent actions with target: 'Last Find Result'"
-              />
-              <ActionCard
-                name="EXISTS"
-                description="Check if an image exists (returns true/false)"
-                params={[
-                  { name: "target", desc: "Image to check for" },
-                  { name: "similarity", desc: "Match threshold" },
-                ]}
-                example="Verify a confirmation dialog appeared"
-              />
-              <ActionCard
-                name="VANISH"
-                description="Wait for an image to disappear from screen"
-                params={[
-                  { name: "target", desc: "Image to wait for disappearance" },
-                  { name: "timeout", desc: "Maximum wait time (ms)" },
-                ]}
-                example="Wait for loading spinner to disappear"
-              />
-            </CategorySection>
-
-            {/* Navigation Actions */}
-            <CategorySection
-              icon={<Navigation className="w-6 h-6 text-orange-600" />}
-              title="Navigation Actions"
-              description="Navigate states and execute processes"
-            >
-              <ActionCard
-                name="GO_TO_STATE"
-                description="Navigate to a target state using pathfinding"
-                params={[{ name: "stateId", desc: "ID of target state" }]}
-                example="Navigate to the settings page from anywhere"
-                important="Uses automatic pathfinding through the state graph"
-              />
-              <ActionCard
-                name="RUN_WORKFLOW"
-                description="Execute another workflow by ID"
-                params={[
-                  { name: "workflowId", desc: "ID of workflow to execute" },
-                ]}
-                example="Run a reusable login workflow"
-              />
-            </CategorySection>
-
-            {/* Utility Actions */}
-            <CategorySection
-              icon={<Clock className="w-6 h-6 text-slate-600" />}
-              title="Utility Actions"
-              description="Timing and debugging utilities"
-            >
-              <ActionCard
-                name="WAIT"
-                description="Pause execution for a specified duration"
-                params={[
-                  { name: "duration", desc: "Wait time in milliseconds" },
-                ]}
-                example="Wait 2 seconds for page to load"
-              />
-              <ActionCard
-                name="SCREENSHOT"
-                description="Capture the current screen"
-                params={[
-                  {
-                    name: "filename",
-                    desc: "Optional filename for screenshot",
-                  },
-                ]}
-                example="Take screenshot for debugging or verification"
-              />
-            </CategorySection>
-          </div>
-        </section>
-
-        {/* Common Parameters */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
-            Common Action Parameters
-          </h2>
+          <p className="text-muted-foreground mb-6">
+            Image matching and element detection on screen.
+          </p>
 
           <div className="space-y-4">
-            <ParamCard
-              name="target"
-              type="Object or String"
-              description="Specifies where the action should be performed"
-              options={[
-                {
-                  value: '{"type": "image", "imageId": "..."}',
-                  desc: "Find and target an image",
-                },
-                {
-                  value: '{"type": "coordinates", "x": 100, "y": 200}',
-                  desc: "Use fixed coordinates",
-                },
-                {
-                  value: '"Last Find Result"',
-                  desc: "Use location from last FIND action",
-                },
-              ]}
+            <ActionCard
+              name="Find"
+              type="FIND"
+              description="Find element on screen using image matching"
             />
-
-            <ParamCard
-              name="similarity"
-              type="Number (0.0 - 1.0)"
-              description="Image matching threshold for visual actions"
-              options={[
-                { value: "0.7 - 0.8", desc: "Fuzzy matching (more tolerant)" },
-                {
-                  value: "0.85 - 0.9",
-                  desc: "Standard matching (recommended)",
-                },
-                { value: "0.95+", desc: "Exact matching (strict)" },
-              ]}
+            <ActionCard
+              name="Vanish"
+              type="VANISH"
+              description="Wait for element to disappear from screen"
             />
-
-            <ParamCard
-              name="retry_count"
-              type="Integer"
-              description="Number of retry attempts if action fails (default: 3)"
-            />
-
-            <ParamCard
-              name="timeout"
-              type="Integer (milliseconds)"
-              description="Maximum time to wait for action completion (default: 5000)"
-            />
-
-            <ParamCard
-              name="continue_on_error"
-              type="Boolean"
-              description="If true, process continues even if this action fails (default: false)"
-            />
-
-            <ParamCard
-              name="pause_before_begin"
-              type="Integer (milliseconds)"
-              description="Wait time before executing action"
-            />
-
-            <ParamCard
-              name="pause_after_end"
-              type="Integer (milliseconds)"
-              description="Wait time after action completes"
-            />
-
-            <ParamCard
-              name="offset"
-              type="Object {x, y}"
-              description="Offset from target location in pixels"
+            <ActionCard
+              name="RAG Find"
+              type="RAG_FIND"
+              description="Find element using AI embeddings (RAG)"
             />
           </div>
         </section>
 
-        {/* Best Practices */}
+        {/* Mouse Actions */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
-            Best Practices
+          <h2 className="text-2xl font-bold text-foreground mb-4">
+            Mouse Actions
           </h2>
+          <p className="text-muted-foreground mb-6">
+            Mouse interactions and movements.
+          </p>
 
           <div className="space-y-4">
-            <BestPractice
-              title="Use FIND before CLICK for reliability"
-              description="Always use a FIND action before clicking an image target. This ensures the element exists and updates the 'Last Find Result' location."
-              example='1. FIND (target: login_button) → 2. CLICK (target: "Last Find Result")'
+            <ActionCard
+              name="Click"
+              type="CLICK"
+              description="Click on element (left, right, middle, or double)"
             />
+            <ActionCard
+              name="Mouse Move"
+              type="MOUSE_MOVE"
+              description="Move mouse cursor to position"
+            />
+            <ActionCard
+              name="Mouse Down"
+              type="MOUSE_DOWN"
+              description="Press mouse button down"
+            />
+            <ActionCard
+              name="Mouse Up"
+              type="MOUSE_UP"
+              description="Release mouse button"
+            />
+            <ActionCard
+              name="Drag"
+              type="DRAG"
+              description="Drag element from one position to another"
+            />
+            <ActionCard
+              name="Scroll"
+              type="SCROLL"
+              description="Scroll page or element"
+            />
+          </div>
+        </section>
 
-            <BestPractice
-              title="Set appropriate similarity thresholds"
-              description="Start with 0.85 and adjust based on results. Lower for elements that change slightly, higher for exact matches."
-            />
+        {/* Keyboard Actions */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
+            Keyboard Actions
+          </h2>
+          <p className="text-muted-foreground mb-6">
+            Keyboard input and shortcuts.
+          </p>
 
-            <BestPractice
-              title="Add pauses for slow applications"
-              description="Use pause_after_end for actions that trigger slow operations (e.g., page loads, animations)."
+          <div className="space-y-4">
+            <ActionCard
+              name="Type"
+              type="TYPE"
+              description="Type text into an element"
             />
+            <ActionCard
+              name="Key Press"
+              type="KEY_PRESS"
+              description="Press a single key"
+            />
+            <ActionCard
+              name="Key Down"
+              type="KEY_DOWN"
+              description="Press key down (hold)"
+            />
+            <ActionCard name="Key Up" type="KEY_UP" description="Release key" />
+            <ActionCard
+              name="Hotkey"
+              type="HOTKEY"
+              description="Execute keyboard shortcut combination"
+            />
+          </div>
+        </section>
 
-            <BestPractice
-              title="Use continue_on_error sparingly"
-              description="Only use for truly optional actions. Most actions should fail the process if they fail."
-            />
+        {/* Control Flow Actions */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
+            Control Flow Actions
+          </h2>
+          <p className="text-muted-foreground mb-6">
+            Conditional logic and loops.
+          </p>
 
-            <BestPractice
-              title="Combine actions into logical processes"
-              description="Group related actions into named processes for reusability and clarity (e.g., 'login_sequence', 'submit_form')."
+          <div className="space-y-4">
+            <ActionCard
+              name="If"
+              type="IF"
+              description="Conditional branching based on condition"
             />
+            <ActionCard
+              name="Loop"
+              type="LOOP"
+              description="Repeat actions multiple times"
+            />
+            <ActionCard
+              name="Break"
+              type="BREAK"
+              description="Exit from loop early"
+            />
+            <ActionCard
+              name="Continue"
+              type="CONTINUE"
+              description="Skip to next loop iteration"
+            />
+            <ActionCard
+              name="Switch"
+              type="SWITCH"
+              description="Multi-way branching based on value"
+            />
+            <ActionCard
+              name="Try/Catch"
+              type="TRY_CATCH"
+              description="Error handling and recovery"
+            />
+          </div>
+        </section>
+
+        {/* Data Actions */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
+            Data Actions
+          </h2>
+          <p className="text-muted-foreground mb-6">
+            Variables and data operations.
+          </p>
+
+          <div className="space-y-4">
+            <ActionCard
+              name="Set Variable"
+              type="SET_VARIABLE"
+              description="Store a value in a variable"
+            />
+            <ActionCard
+              name="Get Variable"
+              type="GET_VARIABLE"
+              description="Retrieve a variable value"
+            />
+            <ActionCard
+              name="Sort"
+              type="SORT"
+              description="Sort array or list of items"
+            />
+            <ActionCard
+              name="Filter"
+              type="FILTER"
+              description="Filter array based on condition"
+            />
+            <ActionCard
+              name="Map"
+              type="MAP"
+              description="Transform each item in array"
+            />
+            <ActionCard
+              name="Reduce"
+              type="REDUCE"
+              description="Reduce array to single value"
+            />
+            <ActionCard
+              name="String Operation"
+              type="STRING_OPERATION"
+              description="Manipulate text strings"
+            />
+            <ActionCard
+              name="Math Operation"
+              type="MATH_OPERATION"
+              description="Perform mathematical calculations"
+            />
+          </div>
+        </section>
+
+        {/* State Actions */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
+            State Actions
+          </h2>
+          <p className="text-muted-foreground mb-6">
+            State management and process control.
+          </p>
+
+          <div className="space-y-4">
+            <ActionCard
+              name="Go To State"
+              type="GO_TO_STATE"
+              description="Navigate to a different workflow state"
+            />
+            <ActionCard
+              name="Run Workflow"
+              type="RUN_WORKFLOW"
+              description="Execute another workflow"
+            />
+            <ActionCard
+              name="Screenshot"
+              type="SCREENSHOT"
+              description="Capture screen or region"
+            />
+          </div>
+        </section>
+
+        {/* Code Actions */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
+            Code Actions
+          </h2>
+          <p className="text-muted-foreground mb-6">
+            Python code execution, shell commands, and AI automation.
+          </p>
+
+          <h3 className="text-lg font-semibold text-foreground mb-3">Python</h3>
+          <div className="space-y-4 mb-6">
+            <ActionCard
+              name="Code Block"
+              type="CODE_BLOCK"
+              description="Execute inline Python code with access to workflow context"
+            />
+            <ActionCard
+              name="Custom Function"
+              type="CUSTOM_FUNCTION"
+              description="Execute pre-registered custom Python function"
+            />
+          </div>
+
+          <h3 className="text-lg font-semibold text-foreground mb-3">Shell</h3>
+          <div className="space-y-4 mb-6">
+            <ActionCard
+              name="Run Command"
+              type="SHELL"
+              description="Execute a shell command and capture output"
+            />
+            <ActionCard
+              name="Run Script"
+              type="SHELL_SCRIPT"
+              description="Execute a multi-line shell script"
+            />
+          </div>
+
+          <h3 className="text-lg font-semibold text-foreground mb-3">AI</h3>
+          <div className="space-y-4">
+            <ActionCard
+              name="AI Prompt"
+              type="AI_PROMPT"
+              description="Execute an AI prompt with context isolation"
+            />
+            <ActionCard
+              name="Prompt Sequence"
+              type="RUN_PROMPT_SEQUENCE"
+              description="Execute a sequence of AI prompts with context isolation"
+            />
+            <ActionCard
+              name="Checkpoint Workflow"
+              type="CHECKPOINT_WORKFLOW"
+              description="Dynamic multi-session AI workflow with checkpoint-based progress tracking"
+            />
+          </div>
+
+          <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mt-6">
+            <p className="text-sm text-foreground">
+              <strong>Learn more:</strong> See the{" "}
+              <Link
+                href="/docs/web/ai-actions"
+                className="text-purple-700 hover:text-purple-800 underline"
+              >
+                AI Actions documentation
+              </Link>{" "}
+              for detailed information on AI-powered automation.
+            </p>
           </div>
         </section>
 
         {/* Next Steps */}
-        <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
+        <section className="border-t border-border pt-12">
+          <h2 className="text-2xl font-bold text-foreground mb-6">
+            Next Steps
+          </h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
-              title="State Transitions"
-              description="Learn how to connect states using processes"
-              href="/docs/web/transitions"
+              title="AI Actions"
+              description="Learn about AI-powered automation with Claude"
+              href="/docs/web/ai-actions"
             />
             <NextStepCard
-              title="Working with States"
-              description="Understand state identification and structure"
-              href="/docs/web/states"
+              title="State Transitions"
+              description="Connect states using workflows"
+              href="/docs/web/transitions"
             />
           </div>
         </section>
       </div>
-    </div>
-  );
-}
-
-interface CategorySectionProps {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}
-
-function CategorySection({
-  icon,
-  title,
-  description,
-  children,
-}: CategorySectionProps) {
-  return (
-    <div className="border border-slate-200 rounded-lg p-6">
-      <div className="flex items-center gap-3 mb-4">
-        {icon}
-        <div>
-          <h3 className="text-xl font-bold text-slate-900">{title}</h3>
-          <p className="text-sm text-slate-600">{description}</p>
-        </div>
-      </div>
-      <div className="space-y-4">{children}</div>
     </div>
   );
 }
 
 interface ActionCardProps {
   name: string;
-  description: string;
-  params: Array<{ name: string; desc: string }>;
-  example?: string;
-  important?: string;
-}
-
-function ActionCard({
-  name,
-  description,
-  params,
-  example,
-  important,
-}: ActionCardProps) {
-  return (
-    <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-      <h4 className="font-mono font-bold text-slate-900 mb-2">{name}</h4>
-      <p className="text-sm text-slate-700 mb-3">{description}</p>
-
-      <div className="mb-3">
-        <p className="text-xs font-semibold text-slate-600 mb-1">Parameters:</p>
-        <ul className="text-xs text-slate-600 space-y-1">
-          {params.map((param, idx) => (
-            <li key={idx} className="font-mono">
-              <span className="text-blue-600">{param.name}</span>: {param.desc}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {example && (
-        <div className="text-xs text-slate-600 italic">Example: {example}</div>
-      )}
-
-      {important && (
-        <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded p-2 text-xs text-yellow-900">
-          <strong>Important:</strong> {important}
-        </div>
-      )}
-    </div>
-  );
-}
-
-interface ParamCardProps {
-  name: string;
   type: string;
   description: string;
-  options?: Array<{ value: string; desc: string }>;
 }
 
-function ParamCard({ name, type, description, options }: ParamCardProps) {
+function ActionCard({ name, type, description }: ActionCardProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4">
-      <div className="flex items-start justify-between mb-2">
-        <h4 className="font-mono font-semibold text-slate-900">{name}</h4>
-        <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">
+    <div className="bg-muted border border-border rounded-lg p-4">
+      <div className="flex items-center gap-3 mb-2">
+        <h4 className="font-semibold text-foreground">{name}</h4>
+        <span className="text-xs font-mono bg-muted-foreground/20 px-2 py-0.5 rounded text-muted-foreground">
           {type}
         </span>
       </div>
-      <p className="text-sm text-slate-700 mb-3">{description}</p>
-
-      {options && (
-        <div className="space-y-1">
-          {options.map((opt, idx) => (
-            <div key={idx} className="text-xs">
-              <span className="font-mono text-blue-600">{opt.value}</span>
-              <span className="text-slate-600"> - {opt.desc}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-interface BestPracticeProps {
-  title: string;
-  description: string;
-  example?: string;
-}
-
-function BestPractice({ title, description, example }: BestPracticeProps) {
-  return (
-    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-      <h4 className="font-semibold text-green-900 mb-2">{title}</h4>
-      <p className="text-sm text-green-800 mb-2">{description}</p>
-      {example && (
-        <p className="text-xs font-mono bg-white border border-green-200 rounded p-2 text-slate-700">
-          {example}
-        </p>
-      )}
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -547,10 +403,10 @@ function NextStepCard({ title, description, href }: NextStepCardProps) {
   return (
     <Link
       href={href}
-      className="block bg-slate-50 border border-slate-200 rounded-lg p-6 hover:shadow-md hover:border-blue-300 transition-all"
+      className="block bg-card border border-border rounded-lg p-6 hover:shadow-md hover:border-primary/50 transition-all"
     >
-      <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-600">{description}</p>
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </Link>
   );
 }

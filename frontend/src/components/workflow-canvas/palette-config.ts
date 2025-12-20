@@ -15,7 +15,6 @@ import {
   GitBranch,
   Database,
   Navigation,
-  Eye,
   MousePointerClick,
   Move,
   Type,
@@ -34,7 +33,6 @@ import {
   ArrowRight,
   Play,
   Camera,
-  Timer,
   EyeOff,
   Repeat,
   CornerDownRight,
@@ -163,24 +161,6 @@ export const NODE_METADATA: Record<ActionType, NodeMetadata> = {
     icon: EyeOff,
     keywords: ["vanish", "disappear", "gone", "wait", "remove"],
     tags: ["vision", "wait"],
-  },
-  EXISTS: {
-    type: "EXISTS",
-    displayName: "Exists",
-    description: "Check if element exists on screen",
-    category: "find",
-    icon: Eye,
-    keywords: ["exists", "check", "verify", "present", "visible"],
-    tags: ["vision", "validation"],
-  },
-  WAIT: {
-    type: "WAIT",
-    displayName: "Wait",
-    description: "Wait for element to appear on screen",
-    category: "find",
-    icon: Timer,
-    keywords: ["wait", "pause", "delay", "timeout"],
-    tags: ["timing", "wait"],
   },
   RAG_FIND: {
     type: "RAG_FIND",
@@ -592,6 +572,26 @@ export const NODE_METADATA: Record<ActionType, NodeMetadata> = {
     ],
     tags: ["ai", "sequence", "pipeline"],
   },
+  CHECKPOINT_WORKFLOW: {
+    type: "CHECKPOINT_WORKFLOW",
+    displayName: "Checkpoint Workflow",
+    description:
+      "Dynamic multi-session AI workflow with checkpoint-based progress tracking",
+    category: "code",
+    icon: GitBranch,
+    keywords: [
+      "ai",
+      "checkpoint",
+      "multi-session",
+      "dynamic",
+      "workflow",
+      "claude",
+      "phase",
+      "continuation",
+      "long-running",
+    ],
+    tags: ["ai", "workflow", "checkpoint", "multi-session"],
+  },
 };
 
 // ============================================================================
@@ -708,16 +708,7 @@ export function searchNodes(
  * Get frequently used nodes (mock implementation - would track actual usage)
  */
 export function getFrequentlyUsedNodes(): ActionType[] {
-  return [
-    "FIND",
-    "CLICK",
-    "TYPE",
-    "IF",
-    "WAIT",
-    "SET_VARIABLE",
-    "LOOP",
-    "SCREENSHOT",
-  ];
+  return ["FIND", "CLICK", "TYPE", "IF", "SET_VARIABLE", "LOOP", "SCREENSHOT"];
 }
 
 /**
@@ -732,10 +723,10 @@ export function getRecommendedNodes(
   }
 
   const recommendations: Partial<Record<ActionType, ActionType[]>> = {
-    FIND: ["CLICK", "EXISTS", "WAIT"],
-    CLICK: ["TYPE", "WAIT", "FIND"],
-    TYPE: ["KEY_PRESS", "CLICK", "WAIT"],
-    IF: ["FIND", "EXISTS", "GET_VARIABLE"],
+    FIND: ["CLICK", "TYPE", "VANISH"],
+    CLICK: ["TYPE", "FIND", "IF"],
+    TYPE: ["KEY_PRESS", "CLICK", "FIND"],
+    IF: ["FIND", "GET_VARIABLE", "SET_VARIABLE"],
     LOOP: ["BREAK", "CONTINUE", "FIND"],
     // ... add more recommendations
   };

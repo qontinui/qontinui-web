@@ -49,7 +49,9 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
     return (
       <Card className="bg-red-900/20 border-red-800">
         <CardContent className="p-6">
-          <p className="text-red-400">Failed to load embeddings: {error.message}</p>
+          <p className="text-red-400">
+            Failed to load embeddings: {error.message}
+          </p>
         </CardContent>
       </Card>
     );
@@ -60,7 +62,10 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-white">Indexed Elements</CardTitle>
-          <Select value={stateFilter ?? "all"} onValueChange={handleStateChange}>
+          <Select
+            value={stateFilter ?? "all"}
+            onValueChange={handleStateChange}
+          >
             <SelectTrigger className="w-48 bg-gray-800 border-gray-700">
               <SelectValue placeholder="Filter by state" />
             </SelectTrigger>
@@ -87,7 +92,8 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
             <ImageIcon className="w-12 h-12 text-gray-600 mx-auto mb-4" />
             <p className="text-gray-400 text-lg">No embeddings found</p>
             <p className="text-gray-500 text-sm mt-1">
-              Connect a runner and process your project configuration to generate embeddings
+              Connect a runner and process your project configuration to
+              generate embeddings
             </p>
           </div>
         ) : (

@@ -1134,7 +1134,16 @@ export class ImageOrganizationService {
         results = results.filter((meta) => {
           // Get image source from customFields if available
           const source = meta.customFields?.source;
-          return typeof source === 'string' && sourceSet.has(source as "uploaded" | "pattern_optimization" | "image_extraction" | "state_discovery");
+          return (
+            typeof source === "string" &&
+            sourceSet.has(
+              source as
+                | "uploaded"
+                | "pattern_optimization"
+                | "image_extraction"
+                | "state_discovery"
+            )
+          );
         });
       }
 
@@ -1343,7 +1352,7 @@ export class ImageOrganizationService {
 
           // Estimate size from metadata if available
           if (meta.customFields?.fileSize) {
-            totalSize += (meta.customFields.fileSize as number);
+            totalSize += meta.customFields.fileSize as number;
           }
         }
       });

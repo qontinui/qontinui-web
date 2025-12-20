@@ -229,7 +229,7 @@ export function ComponentEditor({
   const handleAddAction = () => {
     const newAction: Partial<Action> = {
       id: crypto.randomUUID(),
-      type: "WAIT" as ActionType,
+      type: "FIND" as ActionType,
       name: "New Action",
       position: [0, 0],
     };

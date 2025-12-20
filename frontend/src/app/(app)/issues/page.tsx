@@ -52,7 +52,8 @@ function IssueCard({
 }) {
   const severityConfig = ISSUE_SEVERITY_CONFIG[issue.severity as IssueSeverity];
   const statusConfig = ISSUE_STATUS_CONFIG[issue.status as IssueStatus];
-  const sourceConfig = ISSUE_SOURCE_CONFIG[issue.source.type as IssueSourceType];
+  const sourceConfig =
+    ISSUE_SOURCE_CONFIG[issue.source.type as IssueSourceType];
 
   const getSourceIcon = () => {
     switch (issue.source.type) {
@@ -367,7 +368,8 @@ export default function IssuesPage() {
                 onValueChange={(value) =>
                   setFilters((f) => ({
                     ...f,
-                    status: value === "all" ? undefined : (value as IssueStatus),
+                    status:
+                      value === "all" ? undefined : (value as IssueStatus),
                   }))
                 }
               >

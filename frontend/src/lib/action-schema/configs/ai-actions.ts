@@ -310,3 +310,151 @@ export interface RunPromptSequenceActionConfig {
    */
   description?: string;
 }
+
+// ============================================================================
+// CHECKPOINT_WORKFLOW - Dynamic multi-session AI workflow
+// ============================================================================
+
+/**
+ * A phase in a checkpoint workflow
+ *
+ * Phases are visual markers that help users understand the workflow structure.
+ * The AI updates the checkpoint file as it completes each phase.
+ */
+export interface WorkflowPhase {
+  /** Phase number (must match checkpoint value) */
+  phase: number;
+
+  /** Human-readable phase name */
+  name: string;
+
+  /** What this phase accomplishes */
+  description?: string;
+
+  /** Estimated duration hint (for UI display only) */
+  estimatedMinutes?: number;
+}
+
+/**
+ * Checkpoint configuration for tracking workflow progress
+ */
+export interface CheckpointConfig {
+  /**
+   * Path to the checkpoint JSON file
+   * The AI will read/write this file to track progress
+   * Example: "C:/project/.dev-logs/workflow-checkpoint.json"
+   */
+  path: string;
+
+  /**
+   * JSON field name that contains the current phase number
+   * Default: "current_phase"
+   */
+  phaseField?: string;
+
+  /**
+   * Phase value that indicates workflow completion
+   * When the checkpoint's phase field >= this value, the workflow is complete
+   */
+  completionValue: number;
+
+  /**
+   * Whether to delete the checkpoint file when starting a new run
+   * This ensures a fresh start each time
+   * Default: true
+   */
+  resetOnStart?: boolean;
+}
+
+/**
+ * CHECKPOINT_WORKFLOW - Execute a dynamic multi-session AI workflow
+ *
+ * Unlike RUN_PROMPT_SEQUENCE which executes pre-defined steps, this action
+ * runs AI sessions that dynamically progress through phases. The AI decides
+ * when to update the checkpoint file, and the workflow automatically spawns
+ * continuation sessions until the target phase is reached.
+ *
+ * How it works:
+ * 1. First session runs with the initial prompt
+ * 2. AI works on the task and updates the checkpoint file when ready
+ * 3. When session ends, workflow checks checkpoint:
+ *    - If phase >= completionValue: workflow complete
+ *    - If phase < completionValue: spawn continuation with continuationPrompt
+ * 4. Repeat until complete or max sessions reached
+ *
+ * Use cases:
+ * - Large refactoring tasks that span multiple AI sessions
+ * - Multi-phase improvement workflows (audit → fix → verify)
+ * - Long-running tasks that would overflow a single context
+ * - Tasks where the AI needs to decide when each phase is done
+ *
+ * Key difference from RUN_PROMPT_SEQUENCE:
+ * - Sequence: "Do step 1, then step 2, then step 3" (deterministic)
+ * - Checkpoint: "Work until phase X is done, then continue" (AI-driven)
+ */
+export interface CheckpointWorkflowActionConfig {
+  /**
+   * AI provider to use
+   * Default: "claude"
+   */
+  provider?: "claude";
+
+  /**
+   * Prompt for the first session
+   * Should include instructions about the checkpoint file and expected phases
+   */
+  initialPrompt: string;
+
+  /**
+   * Prompt for continuation sessions (after the first)
+   * Typically instructs the AI to read the checkpoint and continue
+   * If not provided, uses a default that references the checkpoint path
+   */
+  continuationPrompt?: string;
+
+  /**
+   * Checkpoint configuration for progress tracking
+   */
+  checkpoint: CheckpointConfig;
+
+  /**
+   * Visual phase definitions for the workflow builder UI
+   * These help users understand the workflow structure
+   * Optional - workflow will function without them
+   */
+  phases?: WorkflowPhase[];
+
+  /**
+   * Maximum number of sessions to spawn
+   * Prevents infinite loops if the AI never reaches completion
+   * Default: 10
+   */
+  maxSessions?: number;
+
+  /**
+   * Maximum iterations per session (passed to Claude CLI)
+   * Default: 50
+   */
+  maxIterationsPerSession?: number;
+
+  /**
+   * Timeout per session in milliseconds
+   * Default: 600000 (10 minutes)
+   */
+  sessionTimeout?: number;
+
+  /**
+   * Working directory for AI execution
+   */
+  workingDirectory?: string;
+
+  /**
+   * Variable name to store the final workflow results
+   */
+  outputVariable?: string;
+
+  /**
+   * Human-readable description of this workflow
+   */
+  description?: string;
+}

@@ -492,7 +492,9 @@ export function GraphWorkflowBuilder() {
           {selectedAction ? (
             <ActionProperties
               action={selectedAction as any}
-              onUpdateAction={(action) => handleUpdateAction(action as unknown as Action)}
+              onUpdateAction={(action) =>
+                handleUpdateAction(action as unknown as Action)
+              }
             />
           ) : (
             <div className="flex items-center justify-center h-full text-gray-500">

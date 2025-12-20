@@ -832,7 +832,8 @@ export function SemanticAnalysisTab() {
                       </div>
                       <div className="text-xs text-gray-400">
                         Area:{" "}
-                        {(selectedObject.attributes as { area?: number }).area ||
+                        {(selectedObject.attributes as { area?: number })
+                          .area ||
                           selectedObject.bounding_box.width *
                             selectedObject.bounding_box.height}{" "}
                         px²

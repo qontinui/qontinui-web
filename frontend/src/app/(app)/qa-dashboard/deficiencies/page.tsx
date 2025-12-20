@@ -69,7 +69,10 @@ export default function DeficienciesPage() {
             </p>
           </div>
 
-          <DeficiencyList projectId={projectId || undefined} testRunId={testRunId || undefined} />
+          <DeficiencyList
+            projectId={projectId || undefined}
+            testRunId={testRunId || undefined}
+          />
         </main>
       </div>
     </RequireProject>

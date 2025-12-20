@@ -20,9 +20,7 @@ export function VanishActionProperties({
 
   // Extract imageId from the new target structure
   const imageId =
-    config.target?.type === "image"
-      ? (config.target as any).imageId
-      : null;
+    config.target?.type === "image" ? (config.target as any).imageId : null;
 
   const handleImageSelect = (selectedImageId: string | null) => {
     if (!selectedImageId) return;

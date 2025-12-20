@@ -21,8 +21,7 @@ describe("Node Utilities", () => {
   describe("getNodeCategory", () => {
     it("returns correct category for find actions", () => {
       expect(getNodeCategory("FIND")).toBe("find");
-      expect(getNodeCategory("WAIT")).toBe("find");
-      expect(getNodeCategory("EXISTS")).toBe("find");
+      expect(getNodeCategory("VANISH")).toBe("find");
     });
 
     it("returns correct category for mouse actions", () => {
@@ -79,18 +78,19 @@ describe("Node Utilities", () => {
       expect(summary).toBe('Type "Hello World"');
     });
 
-    it("generates summary for WAIT action", () => {
-      const action: Action<"WAIT"> = {
+    it("generates summary for VANISH action", () => {
+      const action: Action<"VANISH"> = {
         id: "3",
-        type: "WAIT",
+        type: "VANISH",
         config: {
-          duration: 2000,
+          target: { text: "Loading..." },
+          timeout: 2000,
         },
         position: [0, 0],
       };
 
       const summary = getNodeSummary(action);
-      expect(summary).toBe("Wait 2000ms");
+      expect(summary).toContain("Vanish");
     });
 
     it("generates summary for IF action", () => {

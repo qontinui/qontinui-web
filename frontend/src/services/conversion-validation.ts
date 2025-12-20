@@ -348,8 +348,16 @@ function validateIfAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as { condition?: unknown; thenActions?: unknown[]; elseActions?: unknown[] };
-  const convertedConfig = converted.config as { condition?: unknown; thenActions?: unknown[]; elseActions?: unknown[] };
+  const originalConfig = original.config as {
+    condition?: unknown;
+    thenActions?: unknown[];
+    elseActions?: unknown[];
+  };
+  const convertedConfig = converted.config as {
+    condition?: unknown;
+    thenActions?: unknown[];
+    elseActions?: unknown[];
+  };
 
   // Check condition preservation
   if (
@@ -392,8 +400,14 @@ function validateLoopAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as { condition?: unknown; loopType?: string };
-  const convertedConfig = converted.config as { condition?: unknown; loopType?: string };
+  const originalConfig = original.config as {
+    condition?: unknown;
+    loopType?: string;
+  };
+  const convertedConfig = converted.config as {
+    condition?: unknown;
+    loopType?: string;
+  };
 
   // Check condition preservation
   if (
@@ -449,8 +463,14 @@ function validateTryCatchAction(
   converted: Action,
   issues: ValidationIssue[]
 ): void {
-  const originalConfig = original.config as { tryActions?: unknown[]; catchActions?: unknown[] };
-  const convertedConfig = converted.config as { tryActions?: unknown[]; catchActions?: unknown[] };
+  const originalConfig = original.config as {
+    tryActions?: unknown[];
+    catchActions?: unknown[];
+  };
+  const convertedConfig = converted.config as {
+    tryActions?: unknown[];
+    catchActions?: unknown[];
+  };
 
   // Check that try/catch blocks exist
   const hasTry =

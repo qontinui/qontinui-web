@@ -62,7 +62,10 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
     setStatusFilter(value);
     setFilters((prev) => ({
       ...prev,
-      status: value === "all" ? undefined : (value as "running" | "completed" | "failed"),
+      status:
+        value === "all"
+          ? undefined
+          : (value as "running" | "completed" | "failed"),
       page: 1,
     }));
   };
