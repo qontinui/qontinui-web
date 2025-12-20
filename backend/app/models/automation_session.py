@@ -1,5 +1,4 @@
-"""
-Automation Session Model
+"""Automation Session Model.
 
 Tracks automation test sessions including runner metadata and session lifecycle.
 """
@@ -18,6 +17,7 @@ if TYPE_CHECKING:
     from app.models.automation import AutomationInputEvent
     from app.models.automation_log import AutomationLog
     from app.models.automation_screenshot import AutomationScreenshot
+    from app.models.discovered_state import DiscoveredState
     from app.models.user import User
     from app.models.workflow_execution_history import WorkflowExecutionHistory
 
@@ -102,6 +102,12 @@ class AutomationSession(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    discovered_states: Mapped[list["DiscoveredState"]] = relationship(
+        "DiscoveredState",
+        back_populates="automation_session",
+        foreign_keys="DiscoveredState.automation_session_id",
+        cascade="all, delete-orphan",
+    )
 
     def is_expired(self) -> bool:
         """
@@ -118,4 +124,5 @@ class AutomationSession(Base):
         return duration > self.max_duration_seconds
 
     def __repr__(self) -> str:
+        """Return string representation of the session."""
         return f"<AutomationSession(id={self.id}, status='{self.status}', runner_version='{self.runner_version}')>"
