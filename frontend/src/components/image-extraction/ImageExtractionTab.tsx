@@ -16,7 +16,8 @@ import { useAutomationStore } from "@/stores/automation";
 import {
   useImageExtractionBridge,
   useImageExtractionStore,
-
+  getModuleBlobFromCache,
+  getModuleBlobCacheSize,
 } from "@/stores/page-state";
 import type { Screenshot } from "@/stores/page-state";
 import {
@@ -268,14 +269,27 @@ export const ImageExtractionTab: React.FC = () => {
         throw new Error("No screenshots to composite");
       }
 
-      // Get blob from cache using the store's method to ensure we get fresh state
+      // Use module-level cache directly (bypasses Immer proxy issues)
+      // Also try the store's method as fallback
       const getBlobFromCache = (url: string): Blob | undefined => {
+        // Try module-level cache first (most reliable)
+        const moduleBlob = getModuleBlobFromCache(url);
+        if (moduleBlob) {
+          return moduleBlob;
+        }
+        // Fallback to store method (may have Immer proxy issues)
         return useImageExtractionStore.getState().getBlobFromCache(url);
       };
 
       // Log cache state for debugging
-      const cacheSize = useImageExtractionStore.getState()._blobCache.size;
-      console.log("[createCompositeImage] Blob cache has", cacheSize, "entries");
+      const moduleCacheSize = getModuleBlobCacheSize();
+      const stateCacheSize = useImageExtractionStore.getState()._blobCache.size;
+      console.log(
+        "[createCompositeImage] Cache sizes - MODULE:",
+        moduleCacheSize,
+        "STATE:",
+        stateCacheSize
+      );
 
       // Validate all screenshots have URLs and log cache status
       for (const s of screenshots) {

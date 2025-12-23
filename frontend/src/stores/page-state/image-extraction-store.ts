@@ -25,6 +25,48 @@ import {
 } from "./types";
 import type { Region } from "@/types/pattern-optimization";
 
+// ===== Module-Level Blob Cache =====
+// This cache is OUTSIDE of Zustand/Immer state to avoid proxy issues.
+// Immer's Map proxy can cause issues when accessing blobs via get()._blobCache.
+// By keeping the cache at module level, we ensure reliable blob access.
+const MODULE_BLOB_CACHE = new Map<string, Blob>();
+
+/**
+ * Get a blob from the module-level cache.
+ * This is the reliable way to access cached blobs.
+ */
+export function getModuleBlobFromCache(url: string): Blob | undefined {
+  return MODULE_BLOB_CACHE.get(url);
+}
+
+/**
+ * Set a blob in the module-level cache.
+ */
+export function setModuleBlobInCache(url: string, blob: Blob): void {
+  MODULE_BLOB_CACHE.set(url, blob);
+}
+
+/**
+ * Delete a blob from the module-level cache.
+ */
+export function deleteModuleBlobFromCache(url: string): void {
+  MODULE_BLOB_CACHE.delete(url);
+}
+
+/**
+ * Clear all blobs from the module-level cache.
+ */
+export function clearModuleBlobCache(): void {
+  MODULE_BLOB_CACHE.clear();
+}
+
+/**
+ * Get the size of the module-level cache (for debugging).
+ */
+export function getModuleBlobCacheSize(): number {
+  return MODULE_BLOB_CACHE.size;
+}
+
 // ===== Store State =====
 
 interface ImageExtractionStoreState extends ImageExtractionPageState {
@@ -337,6 +379,17 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
               }
             }
 
+            // Populate module-level cache for reliable access
+            // This is done BEFORE the set() call to ensure blobs are available
+            blobCache.forEach((blob, url) => {
+              setModuleBlobInCache(url, blob);
+            });
+            console.log(
+              "[ImageExtractionStore] Hydration: Populated MODULE cache with",
+              blobCache.size,
+              "entries"
+            );
+
             set((draft) => {
               // Restore all state
               draft.currentScreenshot = currentScreenshot;
@@ -582,6 +635,9 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
         // Cleanup object URLs
         state._objectUrls.forEach((url) => URL.revokeObjectURL(url));
 
+        // Clear module-level cache
+        clearModuleBlobCache();
+
         set((draft) => {
           Object.assign(draft, DEFAULT_IMAGE_EXTRACTION_STATE);
           draft._objectUrls = new Set();
@@ -602,6 +658,13 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
 
         if (screenshot) {
           const url = URL.createObjectURL(screenshot.file);
+
+          // Update module-level cache
+          if (oldUrl) {
+            deleteModuleBlobFromCache(oldUrl);
+          }
+          setModuleBlobInCache(url, screenshot.file);
+
           set((draft) => {
             // Remove old URL from tracking and cache
             if (oldUrl) {
@@ -618,6 +681,11 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
             };
           });
         } else {
+          // Update module-level cache
+          if (oldUrl) {
+            deleteModuleBlobFromCache(oldUrl);
+          }
+
           set((draft) => {
             if (oldUrl) {
               draft._objectUrls.delete(oldUrl);
@@ -643,6 +711,10 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           "[ImageExtractionStore] Created blob URL:",
           url.substring(0, 50)
         );
+
+        // Update module-level cache
+        setModuleBlobInCache(url, screenshot.file);
+
         set((draft) => {
           draft._objectUrls.add(url);
           draft._blobCache.set(url, screenshot.file); // Cache the file
@@ -721,6 +793,24 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           newCacheEntries.push({ url, blob: s.file });
         }
 
+        // Update MODULE-LEVEL cache FIRST (outside Immer) for reliable access
+        urlsToRevoke.forEach((url) => {
+          deleteModuleBlobFromCache(url);
+        });
+        newCacheEntries.forEach(({ url, blob }) => {
+          console.log(
+            "[ImageExtractionStore] Adding to MODULE cache:",
+            url.substring(0, 50),
+            "size:",
+            blob.size
+          );
+          setModuleBlobInCache(url, blob);
+        });
+        console.log(
+          "[ImageExtractionStore] MODULE cache size after update:",
+          getModuleBlobCacheSize()
+        );
+
         // Update state atomically
         set((draft) => {
           // Remove old URLs from tracking and cache
@@ -773,7 +863,12 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           }
         });
 
-        // Update state first
+        // Clear from module-level cache first
+        urlsToRevoke.forEach((url) => {
+          deleteModuleBlobFromCache(url);
+        });
+
+        // Update state
         set((draft) => {
           // Remove URLs from tracking set and cache
           urlsToRevoke.forEach((url) => {
@@ -1010,6 +1105,10 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
       cleanup: () => {
         const state = get();
         state._objectUrls.forEach((url) => URL.revokeObjectURL(url));
+
+        // Clear module-level cache
+        clearModuleBlobCache();
+
         set((draft) => {
           draft._objectUrls = new Set();
           draft._blobCache = new Map();
@@ -1019,8 +1118,38 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
       // ===== Blob Cache Access =====
 
       getBlobFromCache: (url: string) => {
+        // Try module-level cache FIRST (most reliable)
+        const moduleBlob = getModuleBlobFromCache(url);
+        if (moduleBlob) {
+          console.log(
+            "[ImageExtractionStore] getBlobFromCache: Found in MODULE cache:",
+            url.substring(0, 50),
+            "size:",
+            moduleBlob.size
+          );
+          return moduleBlob;
+        }
+
+        // Fallback to Zustand state cache (may have Immer proxy issues)
         const state = get();
-        return state._blobCache.get(url);
+        const stateBlob = state._blobCache.get(url);
+        if (stateBlob) {
+          console.log(
+            "[ImageExtractionStore] getBlobFromCache: Found in STATE cache (fallback):",
+            url.substring(0, 50),
+            "size:",
+            stateBlob.size
+          );
+          return stateBlob;
+        }
+
+        console.warn(
+          "[ImageExtractionStore] getBlobFromCache: NOT FOUND in either cache:",
+          url.substring(0, 50),
+          "MODULE cache size:",
+          getModuleBlobCacheSize()
+        );
+        return undefined;
       },
     })),
     { name: "image-extraction-store" }

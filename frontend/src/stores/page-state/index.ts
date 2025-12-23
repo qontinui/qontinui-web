@@ -23,6 +23,12 @@ export {
   selectProcessingMode,
   selectTolerance,
   selectBlobCache,
+  // Module-level blob cache functions (reliable, bypasses Immer proxy)
+  getModuleBlobFromCache,
+  setModuleBlobInCache,
+  deleteModuleBlobFromCache,
+  clearModuleBlobCache,
+  getModuleBlobCacheSize,
 } from "./image-extraction-store";
 
 export {
