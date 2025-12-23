@@ -36,6 +36,10 @@ interface ImageExtractionStoreState extends ImageExtractionPageState {
   // Object URLs that need cleanup
   _objectUrls: Set<string>;
 
+  // Blob cache - stores original File/Blob objects keyed by their object URL
+  // This allows us to access the data even after blob URLs become invalid
+  _blobCache: Map<string, Blob>;
+
   // Context for persistence
   _projectName: string | null;
   _userId: string | null;
@@ -59,12 +63,14 @@ interface ImageExtractionStoreActions {
     file: File;
     monitor: MonitorInfo;
   }) => Promise<void>;
-  setCompositeScreenshots: (screenshots: Array<{
-    id: string;
-    name: string;
-    file: File;
-    monitor: MonitorInfo;
-  }>) => void;
+  setCompositeScreenshots: (
+    screenshots: Array<{
+      id: string;
+      name: string;
+      file: File;
+      monitor: MonitorInfo;
+    }>
+  ) => void;
   clearCompositeScreenshots: () => void;
   setIsCompositeMode: (mode: boolean) => void;
   setCompositeRegion: (region: Region | null) => void;
@@ -74,11 +80,13 @@ interface ImageExtractionStoreActions {
   setTolerance: (tolerance: number) => void;
 
   // Extracted result
-  setExtractedResult: (result: {
-    croppedImage: Blob;
-    mask: Blob | null;
-    bounds: { x: number; y: number; width: number; height: number };
-  } | null) => Promise<void>;
+  setExtractedResult: (
+    result: {
+      croppedImage: Blob;
+      mask: Blob | null;
+      bounds: { x: number; y: number; width: number; height: number };
+    } | null
+  ) => Promise<void>;
   clearExtractedResult: () => void;
 
   // Save dialog
@@ -92,13 +100,19 @@ interface ImageExtractionStoreActions {
 
   // Mask editor
   setShowMaskEditor: (show: boolean) => void;
-  setEditingMask: (mask: { imageBlob: Blob; initialMaskBlob: Blob | null } | null) => Promise<void>;
+  setEditingMask: (
+    mask: { imageBlob: Blob; initialMaskBlob: Blob | null } | null
+  ) => Promise<void>;
 
   // Cleanup
   cleanup: () => void;
+
+  // Blob cache access
+  getBlobFromCache: (url: string) => Blob | undefined;
 }
 
-type ImageExtractionStore = ImageExtractionStoreState & ImageExtractionStoreActions;
+type ImageExtractionStore = ImageExtractionStoreState &
+  ImageExtractionStoreActions;
 
 // ===== Helper Functions =====
 
@@ -106,26 +120,52 @@ type ImageExtractionStore = ImageExtractionStoreState & ImageExtractionStoreActi
  * Convert a data URL or blob URL to a Blob
  * Returns null if the URL is invalid or has been revoked
  * Uses XMLHttpRequest to bypass any fetch interception (like dev-debug-logger)
+ *
+ * @param url - The URL to convert
+ * @param blobCache - Optional cache to check first before making XHR request
  */
-async function urlToBlob(url: string): Promise<Blob | null> {
+async function urlToBlob(
+  url: string,
+  blobCache?: Map<string, Blob>
+): Promise<Blob | null> {
   if (!url) return null;
+
+  // Check cache first - this is the reliable source
+  if (blobCache?.has(url)) {
+    const cachedBlob = blobCache.get(url)!;
+    console.log(
+      "[ImageExtractionStore] urlToBlob: Found in cache:",
+      url.substring(0, 50),
+      "size:",
+      cachedBlob.size
+    );
+    return cachedBlob;
+  }
 
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.responseType = 'blob';
+    xhr.open("GET", url, true);
+    xhr.responseType = "blob";
 
     xhr.onload = () => {
-      if (xhr.status === 200 || xhr.status === 0) { // status 0 is valid for blob URLs
+      if (xhr.status === 200 || xhr.status === 0) {
+        // status 0 is valid for blob URLs
         resolve(xhr.response as Blob);
       } else {
-        console.warn("[ImageExtractionStore] Failed to fetch URL:", url, xhr.status);
+        console.warn(
+          "[ImageExtractionStore] Failed to fetch URL:",
+          url,
+          xhr.status
+        );
         resolve(null);
       }
     };
 
     xhr.onerror = () => {
-      console.warn("[ImageExtractionStore] Could not convert URL to blob:", url);
+      console.warn(
+        "[ImageExtractionStore] Could not convert URL to blob:",
+        url
+      );
       resolve(null);
     };
 
@@ -144,6 +184,7 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
       isHydrating: false,
       hydrationError: null,
       _objectUrls: new Set<string>(),
+      _blobCache: new Map<string, Blob>(),
       _projectName: null,
       _userId: null,
 
@@ -184,19 +225,25 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
             blobs.forEach((blob) => blobMap.set(blob.id, blob));
 
             const objectUrls = new Set<string>();
-            const savedState = metadata.state as Partial<ImageExtractionPageState>;
+            const blobCache = new Map<string, Blob>();
+            const savedState =
+              metadata.state as Partial<ImageExtractionPageState>;
 
             // Check if saved state has stale URLs (URLs without valid blobs)
             // This happens when persist failed before saving blobs
             const hasStaleState =
-              (savedState.currentScreenshot?.url && !savedState.currentScreenshot?.blobId) ||
+              (savedState.currentScreenshot?.url &&
+                !savedState.currentScreenshot?.blobId) ||
               savedState.compositeScreenshots?.some(
                 (cs) => cs.url && !cs.blobId
               ) ||
-              (savedState.extractedResult?.croppedImage && !savedState.extractedResult?.croppedImageBlobId);
+              (savedState.extractedResult?.croppedImage &&
+                !savedState.extractedResult?.croppedImageBlobId);
 
             if (hasStaleState) {
-              console.warn("[ImageExtractionStore] Detected stale state with invalid URLs, clearing metadata");
+              console.warn(
+                "[ImageExtractionStore] Detected stale state with invalid URLs, clearing metadata"
+              );
               // Delete the stale metadata
               await pageStateDB.deletePageState(pageKey);
               // Mark as hydrated with defaults
@@ -214,6 +261,7 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
               if (blob) {
                 const url = URL.createObjectURL(blob.data);
                 objectUrls.add(url);
+                blobCache.set(url, blob.data); // Cache the blob
                 currentScreenshot = {
                   ...savedState.currentScreenshot,
                   url,
@@ -229,6 +277,7 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
                 if (blob) {
                   const url = URL.createObjectURL(blob.data);
                   objectUrls.add(url);
+                  blobCache.set(url, blob.data); // Cache the blob
                   compositeScreenshots.push({ ...cs, url });
                 }
               }
@@ -243,6 +292,7 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
               if (croppedBlob) {
                 const croppedUrl = URL.createObjectURL(croppedBlob.data);
                 objectUrls.add(croppedUrl);
+                blobCache.set(croppedUrl, croppedBlob.data); // Cache the blob
 
                 let maskUrl: string | undefined;
                 if (savedState.extractedResult.maskBlobId) {
@@ -252,6 +302,7 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
                   if (maskBlob) {
                     maskUrl = URL.createObjectURL(maskBlob.data);
                     objectUrls.add(maskUrl);
+                    blobCache.set(maskUrl, maskBlob.data); // Cache the blob
                   }
                 }
 
@@ -270,6 +321,7 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
               if (imageBlob) {
                 const imageUrl = URL.createObjectURL(imageBlob.data);
                 objectUrls.add(imageUrl);
+                blobCache.set(imageUrl, imageBlob.data); // Cache the blob
 
                 let initialMask: string | undefined;
                 if (editingMask.initialMaskBlobId) {
@@ -277,6 +329,7 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
                   if (maskBlob) {
                     initialMask = URL.createObjectURL(maskBlob.data);
                     objectUrls.add(initialMask);
+                    blobCache.set(initialMask, maskBlob.data); // Cache the blob
                   }
                 }
 
@@ -298,11 +351,13 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
               draft.imageName = savedState.imageName ?? "";
               draft.selectedStateId = savedState.selectedStateId ?? "";
               draft.newStateName = savedState.newStateName ?? "";
-              draft.selectedStateImageId = savedState.selectedStateImageId ?? "";
+              draft.selectedStateImageId =
+                savedState.selectedStateImageId ?? "";
               draft.fixedLocation = savedState.fixedLocation ?? true;
               draft.showMaskEditor = savedState.showMaskEditor ?? false;
               draft.editingMask = editingMask ?? null;
               draft._objectUrls = objectUrls;
+              draft._blobCache = blobCache;
               draft.isHydrated = true;
               draft.isHydrating = false;
             });
@@ -356,7 +411,10 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           // Save current screenshot blob
           let currentScreenshotState = state.currentScreenshot;
           if (isValidUrl(currentScreenshotState?.url)) {
-            const blob = await urlToBlob(currentScreenshotState.url);
+            const blob = await urlToBlob(
+              currentScreenshotState.url,
+              state._blobCache
+            );
             if (blob) {
               const blobId = await pageStateDB.saveBlob(
                 pageKey,
@@ -380,7 +438,7 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           for (let i = 0; i < state.compositeScreenshots.length; i++) {
             const cs = state.compositeScreenshots[i];
             if (cs && isValidUrl(cs.url)) {
-              const blob = await urlToBlob(cs.url);
+              const blob = await urlToBlob(cs.url, state._blobCache);
               if (blob) {
                 const blobId = await pageStateDB.saveBlob(
                   pageKey,
@@ -404,7 +462,8 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           let extractedResultState = state.extractedResult;
           if (isValidUrl(extractedResultState?.croppedImage)) {
             const croppedBlob = await urlToBlob(
-              extractedResultState.croppedImage
+              extractedResultState.croppedImage,
+              state._blobCache
             );
             if (croppedBlob) {
               const croppedBlobId = await pageStateDB.saveBlob(
@@ -416,7 +475,10 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
 
               let maskBlobId: string | null = null;
               if (isValidUrl(extractedResultState.mask)) {
-                const maskBlob = await urlToBlob(extractedResultState.mask);
+                const maskBlob = await urlToBlob(
+                  extractedResultState.mask,
+                  state._blobCache
+                );
                 if (maskBlob) {
                   maskBlobId = await pageStateDB.saveBlob(
                     pageKey,
@@ -443,7 +505,10 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           // Save editing mask
           let editingMaskState = state.editingMask;
           if (isValidUrl(editingMaskState?.imageUrl)) {
-            const imageBlob = await urlToBlob(editingMaskState.imageUrl);
+            const imageBlob = await urlToBlob(
+              editingMaskState.imageUrl,
+              state._blobCache
+            );
             if (imageBlob) {
               const imageBlobId = await pageStateDB.saveBlob(
                 pageKey,
@@ -455,7 +520,8 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
               let initialMaskBlobId: string | null = null;
               if (isValidUrl(editingMaskState.initialMask)) {
                 const initialBlob = await urlToBlob(
-                  editingMaskState.initialMask
+                  editingMaskState.initialMask,
+                  state._blobCache
                 );
                 if (initialBlob) {
                   initialMaskBlobId = await pageStateDB.saveBlob(
@@ -519,6 +585,7 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
         set((draft) => {
           Object.assign(draft, DEFAULT_IMAGE_EXTRACTION_STATE);
           draft._objectUrls = new Set();
+          draft._blobCache = new Map();
           draft.isHydrated = false;
           draft.isHydrating = false;
           draft.hydrationError = null;
@@ -536,9 +603,13 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
         if (screenshot) {
           const url = URL.createObjectURL(screenshot.file);
           set((draft) => {
-            // Remove old URL from tracking
-            if (oldUrl) draft._objectUrls.delete(oldUrl);
+            // Remove old URL from tracking and cache
+            if (oldUrl) {
+              draft._objectUrls.delete(oldUrl);
+              draft._blobCache.delete(oldUrl);
+            }
             draft._objectUrls.add(url);
+            draft._blobCache.set(url, screenshot.file); // Cache the file
             draft.currentScreenshot = {
               id: screenshot.id,
               name: screenshot.name,
@@ -548,7 +619,10 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           });
         } else {
           set((draft) => {
-            if (oldUrl) draft._objectUrls.delete(oldUrl);
+            if (oldUrl) {
+              draft._objectUrls.delete(oldUrl);
+              draft._blobCache.delete(oldUrl);
+            }
             draft.currentScreenshot = null;
           });
         }
@@ -558,11 +632,20 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
       },
 
       addCompositeScreenshot: async (screenshot) => {
-        console.log("[ImageExtractionStore] addCompositeScreenshot called:", screenshot.id, "file size:", screenshot.file?.size);
+        console.log(
+          "[ImageExtractionStore] addCompositeScreenshot called:",
+          screenshot.id,
+          "file size:",
+          screenshot.file?.size
+        );
         const url = URL.createObjectURL(screenshot.file);
-        console.log("[ImageExtractionStore] Created blob URL:", url.substring(0, 50));
+        console.log(
+          "[ImageExtractionStore] Created blob URL:",
+          url.substring(0, 50)
+        );
         set((draft) => {
           draft._objectUrls.add(url);
+          draft._blobCache.set(url, screenshot.file); // Cache the file
           draft.compositeScreenshots.push({
             id: screenshot.id,
             name: screenshot.name,
@@ -570,52 +653,106 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
             url,
             monitor: screenshot.monitor,
           });
-          console.log("[ImageExtractionStore] After push, compositeScreenshots count:", draft.compositeScreenshots.length);
+          console.log(
+            "[ImageExtractionStore] After push, compositeScreenshots count:",
+            draft.compositeScreenshots.length,
+            "cache size:",
+            draft._blobCache.size
+          );
         });
       },
 
       setCompositeScreenshots: (screenshots) => {
-        console.log("[ImageExtractionStore] setCompositeScreenshots called with", screenshots.length, "screenshots");
+        console.log(
+          "[ImageExtractionStore] setCompositeScreenshots called with",
+          screenshots.length,
+          "screenshots"
+        );
         const state = get();
 
-        // First, revoke all old URLs
+        // First, collect old URLs to revoke and remove from cache
         const urlsToRevoke: string[] = [];
         state.compositeScreenshots.forEach((cs) => {
           if (cs.url) {
             urlsToRevoke.push(cs.url);
           }
         });
-        console.log("[ImageExtractionStore] Will revoke", urlsToRevoke.length, "old URLs");
+        console.log(
+          "[ImageExtractionStore] Will revoke",
+          urlsToRevoke.length,
+          "old URLs"
+        );
 
-        // Create URLs for all new screenshots
-        const newScreenshots = screenshots.map((s) => {
+        // Create URLs for all new screenshots and prepare cache entries
+        const newScreenshots: Array<{
+          id: string;
+          name: string;
+          blobId: string;
+          url: string;
+          monitor: (typeof screenshots)[0]["monitor"];
+        }> = [];
+        const newCacheEntries: Array<{ url: string; blob: Blob }> = [];
+
+        for (const s of screenshots) {
           if (!s.file) {
-            console.error("[ImageExtractionStore] setCompositeScreenshots - missing file for:", s.id);
+            console.error(
+              "[ImageExtractionStore] setCompositeScreenshots - missing file for:",
+              s.id
+            );
             throw new Error(`Missing file for screenshot ${s.id}`);
           }
           const url = URL.createObjectURL(s.file);
-          console.log("[ImageExtractionStore] Created URL:", url, "for:", s.id, "file size:", s.file.size);
-          return {
+          console.log(
+            "[ImageExtractionStore] Created URL:",
+            url,
+            "for:",
+            s.id,
+            "file size:",
+            s.file.size
+          );
+          newScreenshots.push({
             id: s.id,
             name: s.name,
             blobId: "",
             url,
             monitor: s.monitor,
-          };
-        });
+          });
+          // Store the File in cache for later access
+          newCacheEntries.push({ url, blob: s.file });
+        }
 
         // Update state atomically
         set((draft) => {
-          // Remove old URLs from tracking
-          urlsToRevoke.forEach((url) => draft._objectUrls.delete(url));
-          // Add new URLs to tracking
+          // Remove old URLs from tracking and cache
+          urlsToRevoke.forEach((url) => {
+            draft._objectUrls.delete(url);
+            draft._blobCache.delete(url);
+          });
+          // Add new URLs to tracking and cache
           newScreenshots.forEach((s) => {
-            console.log("[ImageExtractionStore] Adding URL to tracking:", s.url);
+            console.log(
+              "[ImageExtractionStore] Adding URL to tracking:",
+              s.url
+            );
             draft._objectUrls.add(s.url);
+          });
+          newCacheEntries.forEach(({ url, blob }) => {
+            console.log(
+              "[ImageExtractionStore] Adding to blob cache:",
+              url.substring(0, 50),
+              "size:",
+              blob.size
+            );
+            draft._blobCache.set(url, blob);
           });
           // Replace screenshots array
           draft.compositeScreenshots = newScreenshots;
-          console.log("[ImageExtractionStore] State updated, compositeScreenshots:", draft.compositeScreenshots.length);
+          console.log(
+            "[ImageExtractionStore] State updated, compositeScreenshots:",
+            draft.compositeScreenshots.length,
+            "cache size:",
+            draft._blobCache.size
+          );
         });
 
         // Revoke old URLs after state update
@@ -638,8 +775,11 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
 
         // Update state first
         set((draft) => {
-          // Remove URLs from tracking set
-          urlsToRevoke.forEach((url) => draft._objectUrls.delete(url));
+          // Remove URLs from tracking set and cache
+          urlsToRevoke.forEach((url) => {
+            draft._objectUrls.delete(url);
+            draft._blobCache.delete(url);
+          });
           draft.compositeScreenshots = [];
         });
 
@@ -689,12 +829,22 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
             : undefined;
 
           set((draft) => {
-            // Remove old URLs from tracking
-            if (oldCroppedUrl) draft._objectUrls.delete(oldCroppedUrl);
-            if (oldMaskUrl) draft._objectUrls.delete(oldMaskUrl);
+            // Remove old URLs from tracking and cache
+            if (oldCroppedUrl) {
+              draft._objectUrls.delete(oldCroppedUrl);
+              draft._blobCache.delete(oldCroppedUrl);
+            }
+            if (oldMaskUrl) {
+              draft._objectUrls.delete(oldMaskUrl);
+              draft._blobCache.delete(oldMaskUrl);
+            }
 
             draft._objectUrls.add(croppedUrl);
-            if (maskUrl) draft._objectUrls.add(maskUrl);
+            draft._blobCache.set(croppedUrl, result.croppedImage); // Cache the blob
+            if (maskUrl) {
+              draft._objectUrls.add(maskUrl);
+              draft._blobCache.set(maskUrl, result.mask!); // Cache the blob
+            }
 
             draft.extractedResult = {
               croppedImageBlobId: "",
@@ -706,8 +856,14 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           });
         } else {
           set((draft) => {
-            if (oldCroppedUrl) draft._objectUrls.delete(oldCroppedUrl);
-            if (oldMaskUrl) draft._objectUrls.delete(oldMaskUrl);
+            if (oldCroppedUrl) {
+              draft._objectUrls.delete(oldCroppedUrl);
+              draft._blobCache.delete(oldCroppedUrl);
+            }
+            if (oldMaskUrl) {
+              draft._objectUrls.delete(oldMaskUrl);
+              draft._blobCache.delete(oldMaskUrl);
+            }
             draft.extractedResult = null;
           });
         }
@@ -724,8 +880,14 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
         const oldMaskUrl = state.extractedResult?.mask;
 
         set((draft) => {
-          if (oldCroppedUrl) draft._objectUrls.delete(oldCroppedUrl);
-          if (oldMaskUrl) draft._objectUrls.delete(oldMaskUrl);
+          if (oldCroppedUrl) {
+            draft._objectUrls.delete(oldCroppedUrl);
+            draft._blobCache.delete(oldCroppedUrl);
+          }
+          if (oldMaskUrl) {
+            draft._objectUrls.delete(oldMaskUrl);
+            draft._blobCache.delete(oldMaskUrl);
+          }
           draft.extractedResult = null;
         });
 
@@ -800,12 +962,22 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
             : undefined;
 
           set((draft) => {
-            // Remove old URLs from tracking
-            if (oldImageUrl) draft._objectUrls.delete(oldImageUrl);
-            if (oldMaskUrl) draft._objectUrls.delete(oldMaskUrl);
+            // Remove old URLs from tracking and cache
+            if (oldImageUrl) {
+              draft._objectUrls.delete(oldImageUrl);
+              draft._blobCache.delete(oldImageUrl);
+            }
+            if (oldMaskUrl) {
+              draft._objectUrls.delete(oldMaskUrl);
+              draft._blobCache.delete(oldMaskUrl);
+            }
 
             draft._objectUrls.add(imageUrl);
-            if (initialMask) draft._objectUrls.add(initialMask);
+            draft._blobCache.set(imageUrl, mask.imageBlob); // Cache the blob
+            if (initialMask) {
+              draft._objectUrls.add(initialMask);
+              draft._blobCache.set(initialMask, mask.initialMaskBlob!); // Cache the blob
+            }
 
             draft.editingMask = {
               imageBlobId: "",
@@ -816,8 +988,14 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
           });
         } else {
           set((draft) => {
-            if (oldImageUrl) draft._objectUrls.delete(oldImageUrl);
-            if (oldMaskUrl) draft._objectUrls.delete(oldMaskUrl);
+            if (oldImageUrl) {
+              draft._objectUrls.delete(oldImageUrl);
+              draft._blobCache.delete(oldImageUrl);
+            }
+            if (oldMaskUrl) {
+              draft._objectUrls.delete(oldMaskUrl);
+              draft._blobCache.delete(oldMaskUrl);
+            }
             draft.editingMask = null;
           });
         }
@@ -834,7 +1012,15 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
         state._objectUrls.forEach((url) => URL.revokeObjectURL(url));
         set((draft) => {
           draft._objectUrls = new Set();
+          draft._blobCache = new Map();
         });
+      },
+
+      // ===== Blob Cache Access =====
+
+      getBlobFromCache: (url: string) => {
+        const state = get();
+        return state._blobCache.get(url);
       },
     })),
     { name: "image-extraction-store" }
@@ -843,8 +1029,10 @@ export const useImageExtractionStore = create<ImageExtractionStore>()(
 
 // ===== Selectors =====
 
-export const selectIsHydrated = (state: ImageExtractionStore) => state.isHydrated;
-export const selectIsHydrating = (state: ImageExtractionStore) => state.isHydrating;
+export const selectIsHydrated = (state: ImageExtractionStore) =>
+  state.isHydrated;
+export const selectIsHydrating = (state: ImageExtractionStore) =>
+  state.isHydrating;
 export const selectHydrationError = (state: ImageExtractionStore) =>
   state.hydrationError;
 export const selectCurrentScreenshot = (state: ImageExtractionStore) =>
@@ -854,3 +1042,5 @@ export const selectExtractedResult = (state: ImageExtractionStore) =>
 export const selectProcessingMode = (state: ImageExtractionStore) =>
   state.processingMode;
 export const selectTolerance = (state: ImageExtractionStore) => state.tolerance;
+export const selectBlobCache = (state: ImageExtractionStore) =>
+  state._blobCache;
