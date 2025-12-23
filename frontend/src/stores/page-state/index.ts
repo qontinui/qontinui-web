@@ -22,6 +22,7 @@ export {
   selectExtractedResult,
   selectProcessingMode,
   selectTolerance,
+  selectBlobCache,
 } from "./image-extraction-store";
 
 export {

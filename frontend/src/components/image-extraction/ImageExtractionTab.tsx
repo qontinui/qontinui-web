@@ -16,7 +16,7 @@ import { useAutomationStore } from "@/stores/automation";
 import {
   useImageExtractionBridge,
   useImageExtractionStore,
-  selectBlobCache,
+
 } from "@/stores/page-state";
 import type { Screenshot } from "@/stores/page-state";
 import {
@@ -268,27 +268,29 @@ export const ImageExtractionTab: React.FC = () => {
         throw new Error("No screenshots to composite");
       }
 
-      // Get blob cache from store - this is the reliable source for blob data
-      const blobCache = useImageExtractionStore.getState()._blobCache;
-      console.log(
-        "[createCompositeImage] Blob cache has",
-        blobCache.size,
-        "entries"
-      );
+      // Get blob from cache using the store's method to ensure we get fresh state
+      const getBlobFromCache = (url: string): Blob | undefined => {
+        return useImageExtractionStore.getState().getBlobFromCache(url);
+      };
 
-      // Validate all screenshots have URLs
+      // Log cache state for debugging
+      const cacheSize = useImageExtractionStore.getState()._blobCache.size;
+      console.log("[createCompositeImage] Blob cache has", cacheSize, "entries");
+
+      // Validate all screenshots have URLs and log cache status
       for (const s of screenshots) {
         if (!s.url) {
           throw new Error(`Screenshot ${s.id} has no URL`);
         }
-        const inCache = blobCache.has(s.url);
+        const cachedBlob = getBlobFromCache(s.url);
         console.log(
           "[createCompositeImage] Screenshot:",
           s.id,
           "URL:",
           s.url.substring(0, 50),
           "inCache:",
-          inCache
+          !!cachedBlob,
+          cachedBlob ? `size: ${cachedBlob.size}` : ""
         );
       }
 
@@ -321,8 +323,8 @@ export const ImageExtractionTab: React.FC = () => {
         id: string
       ): Promise<HTMLImageElement> => {
         return new Promise((resolve, reject) => {
-          // First check the blob cache - this is the reliable source
-          const cachedBlob = blobCache.get(url);
+          // First check the blob cache using the store's method for fresh state
+          const cachedBlob = getBlobFromCache(url);
           if (cachedBlob) {
             console.log(
               "[createCompositeImage] Found in blob cache:",
@@ -360,77 +362,102 @@ export const ImageExtractionTab: React.FC = () => {
             return;
           }
 
-          // Fallback to XHR if not in cache (shouldn't happen with proper caching)
+          // Fallback: Try loading directly from the blob URL
+          // This can work if the blob URL is still valid
           console.log(
-            "[createCompositeImage] Not in cache, trying XHR:",
+            "[createCompositeImage] Not in cache, trying direct URL load:",
             id,
             "URL:",
             url.substring(0, 60)
           );
 
-          const xhr = new XMLHttpRequest();
-          xhr.open("GET", url, true);
-          xhr.responseType = "blob";
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => {
+            console.log(
+              "[createCompositeImage] Loaded from direct URL:",
+              id,
+              "dimensions:",
+              img.width,
+              "x",
+              img.height
+            );
+            resolve(img);
+          };
+          img.onerror = () => {
+            console.error(
+              "[createCompositeImage] Failed to load from direct URL, trying XHR:",
+              id
+            );
 
-          xhr.onload = () => {
-            if (xhr.status === 200 || xhr.status === 0) {
-              // status 0 is valid for blob URLs
-              const blob = xhr.response as Blob;
-              console.log(
-                "[createCompositeImage] Got blob via XHR:",
-                id,
-                "size:",
-                blob.size
-              );
+            // Final fallback: XHR
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", url, true);
+            xhr.responseType = "blob";
 
-              // Create a new blob URL from the fetched blob
-              const freshUrl = URL.createObjectURL(blob);
-
-              const img = new Image();
-              img.onload = () => {
+            xhr.onload = () => {
+              if (xhr.status === 200 || xhr.status === 0) {
+                const blob = xhr.response as Blob;
                 console.log(
-                  "[createCompositeImage] Loaded from XHR:",
+                  "[createCompositeImage] Got blob via XHR:",
                   id,
-                  "dimensions:",
-                  img.width,
-                  "x",
-                  img.height
+                  "size:",
+                  blob.size
                 );
-                URL.revokeObjectURL(freshUrl); // Clean up the temporary URL
-                resolve(img);
-              };
-              img.onerror = () => {
-                URL.revokeObjectURL(freshUrl);
+
+                const freshUrl = URL.createObjectURL(blob);
+                const xhrImg = new Image();
+                xhrImg.onload = () => {
+                  console.log(
+                    "[createCompositeImage] Loaded from XHR:",
+                    id,
+                    "dimensions:",
+                    xhrImg.width,
+                    "x",
+                    xhrImg.height
+                  );
+                  URL.revokeObjectURL(freshUrl);
+                  resolve(xhrImg);
+                };
+                xhrImg.onerror = () => {
+                  URL.revokeObjectURL(freshUrl);
+                  console.error(
+                    "[createCompositeImage] Failed to load image from XHR blob:",
+                    id
+                  );
+                  reject(
+                    new Error(
+                      `Failed to load image ${id}: Image data may be corrupted`
+                    )
+                  );
+                };
+                xhrImg.src = freshUrl;
+              } else {
                 console.error(
-                  "[createCompositeImage] Failed to load image from XHR blob:",
-                  id
+                  "[createCompositeImage] XHR failed:",
+                  id,
+                  "status:",
+                  xhr.status
                 );
                 reject(
-                  new Error(
-                    `Failed to load image ${id}: Image data may be corrupted`
-                  )
+                  new Error(`Failed to load image ${id}: HTTP ${xhr.status}`)
                 );
-              };
-              img.src = freshUrl;
-            } else {
+              }
+            };
+
+            xhr.onerror = () => {
               console.error(
-                "[createCompositeImage] XHR failed:",
+                "[createCompositeImage] XHR error for:",
                 id,
-                "status:",
-                xhr.status
+                "URL:",
+                url.substring(0, 60)
               );
-              reject(
-                new Error(`Failed to load image ${id}: HTTP ${xhr.status}`)
-              );
-            }
-          };
+              reject(new Error(`Failed to load image ${id}: Network error. The blob URL may have been revoked.`));
+            };
 
-          xhr.onerror = () => {
-            console.error("[createCompositeImage] XHR error for:", id);
-            reject(new Error(`Failed to load image ${id}: Network error`));
+            xhr.send();
           };
-
-          xhr.send();
+          img.src = url;
         });
       };
 
