@@ -47,9 +47,14 @@ export function useProjectAutoSave({
     transitions,
     images,
     isLoadingFromBackend,
+    getLastImmediateSaveTime,
   } = useAutomation();
 
   const isSavingRef = useRef(false);
+
+  // Minimum time (ms) to wait after an immediate save before auto-saving
+  // This prevents race conditions where auto-save overwrites with stale data
+  const IMMEDIATE_SAVE_COOLDOWN_MS = 2000;
 
   // Save to backend
   const saveToBackend = useCallback(async () => {
@@ -58,6 +63,19 @@ export function useProjectAutoSave({
     if (isLoadingFromBackend) {
       projectLogger.debug("AutoSave", "Skipping save - loading from backend", {
         projectId,
+      });
+      return;
+    }
+
+    // Don't save if an immediate save happened recently - prevents race conditions
+    // where auto-save might use stale closure data
+    const lastImmediateSave = getLastImmediateSaveTime();
+    const timeSinceImmediateSave = Date.now() - lastImmediateSave;
+    if (lastImmediateSave > 0 && timeSinceImmediateSave < IMMEDIATE_SAVE_COOLDOWN_MS) {
+      projectLogger.debug("AutoSave", "Skipping save - recent immediate save", {
+        projectId,
+        timeSinceImmediateSave,
+        cooldown: IMMEDIATE_SAVE_COOLDOWN_MS,
       });
       return;
     }
@@ -113,7 +131,7 @@ export function useProjectAutoSave({
     } finally {
       isSavingRef.current = false;
     }
-  }, [projectId, getConfiguration, isLoadingFromBackend]);
+  }, [projectId, getConfiguration, isLoadingFromBackend, getLastImmediateSaveTime]);
 
   // Auto-save to localStorage
   useEffect(() => {

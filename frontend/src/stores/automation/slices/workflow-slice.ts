@@ -59,4 +59,16 @@ export const createWorkflowSlice: StateCreator<
     });
     get().triggerSave();
   },
+
+  deleteWorkflows: (workflowIds) => {
+    projectLogger.info("WorkflowSlice", "deleteWorkflows", {
+      count: workflowIds.length,
+      ids: workflowIds,
+    });
+    const idsSet = new Set(workflowIds);
+    set((state) => {
+      state.workflows = state.workflows.filter((w) => !idsSet.has(w.id));
+    });
+    get().triggerSave();
+  },
 });

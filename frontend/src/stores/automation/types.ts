@@ -113,6 +113,7 @@ export interface WorkflowSlice {
   addWorkflow: (workflow: Workflow) => void;
   updateWorkflow: (workflow: Workflow) => void;
   deleteWorkflow: (workflowId: string) => void;
+  deleteWorkflows: (workflowIds: string[]) => void;
 }
 
 export interface StateSlice {

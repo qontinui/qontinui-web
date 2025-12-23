@@ -49,6 +49,7 @@ import {
   createFindStateWorkflow,
 } from "@/lib/workflow-helpers";
 import { toast } from "sonner";
+import { useStatesBridge } from "@/stores/page-state";
 
 const nodeTypes: NodeTypes = {
   stateNode: StateNode,
@@ -169,6 +170,15 @@ function TransitionPositionManager({
 export function StateStructure() {
   // Get states from Zustand (for reading)
   const { states } = useStates();
+
+  // Log when component mounts and when states change
+  React.useEffect(() => {
+    console.log("[StateStructure] Component mounted/states changed:", {
+      statesCount: states.length,
+      stateIds: states.map((s) => s.id),
+      stateNames: states.map((s) => s.name),
+    });
+  }, [states]);
   // Get transitions from Zustand for reading only
   const { transitions } = useTransitions();
   // Use state/transition mutations from Context (not Zustand) to ensure both stores are synced
@@ -186,7 +196,11 @@ export function StateStructure() {
   } = useAutomation();
   const { images } = useImages();
 
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  // Use persisted page state for selected node (editingStateId)
+  const pageState = useStatesBridge();
+  const selectedNode = pageState.editingStateId;
+  const setSelectedNode = pageState.setEditingStateId;
+
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [batchMonitorDialogOpen, setBatchMonitorDialogOpen] = useState(false);
   const [outgoingTransitionDialogOpen, setOutgoingTransitionDialogOpen] =
@@ -365,16 +379,49 @@ export function StateStructure() {
         return;
       }
 
-      // Create the click workflow for the outgoing transition
-      const clickWorkflow = createClickStateImageWorkflow(
-        sourceState,
-        stateImage
+      // Check if a transition from this state to target already exists BEFORE creating workflows
+      const existingOutgoingTransition = transitions.find(
+        (t): t is OutgoingTransition =>
+          t.type === "OutgoingTransition" &&
+          t.fromState === sourceStateId &&
+          t.activateStates.includes(targetStateId)
       );
-      addWorkflow(clickWorkflow);
 
-      // Create the find state workflow for the incoming transition
-      const findWorkflow = createFindStateWorkflow(targetState);
-      addWorkflow(findWorkflow);
+      if (existingOutgoingTransition) {
+        toast.error(
+          `A transition from "${sourceState.name}" to "${targetState.name}" already exists`
+        );
+        setImageDragData(null);
+        return;
+      }
+
+      // Find existing "Click" workflow for this stateImage, or create a new one
+      const expectedClickName = `Click: ${stateImage.name}`;
+      let clickWorkflow = workflows.find(
+        (w) =>
+          w.name === expectedClickName &&
+          w.category === "Outgoing Transitions" &&
+          w.tags?.includes(sourceState.id)
+      );
+
+      if (!clickWorkflow) {
+        clickWorkflow = createClickStateImageWorkflow(sourceState, stateImage);
+        addWorkflow(clickWorkflow);
+      }
+
+      // Find existing "Find State" workflow for the target state, or create a new one
+      const expectedFindName = `Find State: ${targetState.name}`;
+      let findWorkflow = workflows.find(
+        (w) =>
+          w.name === expectedFindName &&
+          w.category === "Incoming Transitions" &&
+          w.tags?.includes(targetState.id)
+      );
+
+      if (!findWorkflow) {
+        findWorkflow = createFindStateWorkflow(targetState);
+        addWorkflow(findWorkflow);
+      }
 
       // Create the outgoing transition with the click workflow
       const outgoingTransition: OutgoingTransition = {
@@ -388,14 +435,7 @@ export function StateStructure() {
         timeout: 30000,
         retryCount: 0,
       };
-      const outgoingWasAdded = await addTransition(outgoingTransition);
-      if (!outgoingWasAdded) {
-        toast.error(
-          `A transition from "${sourceState.name}" to "${targetState.name}" already exists`
-        );
-        setImageDragData(null);
-        return;
-      }
+      await addTransition(outgoingTransition);
 
       // Check if the target state already has an incoming transition
       const existingIncomingTransition = transitions.find(
@@ -432,7 +472,7 @@ export function StateStructure() {
       );
       setImageDragData(null);
     },
-    [states, transitions, addWorkflow, addTransition, updateTransition]
+    [states, transitions, workflows, addWorkflow, addTransition, updateTransition]
   );
 
   // Handler for moving a StateImage to another state via Alt+drag
@@ -695,11 +735,14 @@ export function StateStructure() {
 
     const newNodes = [...stateNodes, ...transitionNodes];
 
-    console.log("[StateStructure] Setting nodes:", {
+    console.log("[StateStructure] useEffect triggered - rebuilding nodes:", {
+      statesCount: states.length,
+      stateIds: states.map((s) => s.id),
       stateNodesCount: stateNodes.length,
       transitionNodesCount: transitionNodes.length,
       totalNodes: newNodes.length,
       edgesCount: newEdges.length,
+      isDragging: isDraggingRef.current,
       nodeDetails: newNodes.map((n) => ({
         id: n.id,
         type: n.type,
@@ -1156,7 +1199,7 @@ export function StateStructure() {
     if (pendingIdChangeRef.current) {
       const { oldId, newId } = pendingIdChangeRef.current;
 
-      // If selectedNode matches the newId but we can&apos;t find it yet,
+      // If selectedNode matches the newId but we can't find it yet,
       // try to find the oldId temporarily
       if (selectedNode === newId) {
         const oldState = states.find((s) => s.id === oldId);
@@ -1186,6 +1229,15 @@ export function StateStructure() {
         return false;
       })
     : null;
+
+  // Show loading state while hydrating page state
+  if (pageState.isHydrating) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-gray-400">Loading page state...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full">

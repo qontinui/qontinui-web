@@ -27,15 +27,27 @@ export const createStateSlice: StateCreator<
   },
 
   addState: (newState) => {
+    console.log("[StateSlice] addState called:", {
+      id: newState.id,
+      name: newState.name,
+      position: newState.position,
+      projectName: newState.projectName,
+      stateImagesCount: newState.stateImages?.length || 0,
+    });
     projectLogger.info("StateSlice", "addState", {
       id: newState.id,
       name: newState.name,
     });
     set((state) => {
-      state.states.push({
+      // Use the state's projectName if provided, otherwise fall back to store's projectName
+      // This ensures the state is associated with the correct project even if
+      // Zustand's projectName hasn't been synced yet
+      const stateToAdd = {
         ...newState,
-        projectName: state.projectName,
-      });
+        projectName: newState.projectName || state.projectName,
+      };
+      state.states.push(stateToAdd);
+      console.log("[StateSlice] addState complete - new state count:", state.states.length);
     });
     get().triggerSave();
   },

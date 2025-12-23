@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, DragEvent } from "react";
+import { useState, DragEvent, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
   TooltipContent,
@@ -21,6 +22,8 @@ import {
   Workflow as WorkflowIcon,
   List,
   ArrowRightLeft,
+  CheckSquare,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -29,6 +32,7 @@ import {
 } from "@/contexts/automation-context";
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog";
 import { DeleteWorkflowDialog } from "@/components/delete-process-dialog";
+import { BatchDeleteWorkflowsDialog } from "@/components/batch-delete-workflows-dialog";
 import type { Workflow } from "@/lib/action-schema/action-types";
 
 // LibraryItem is now just Workflow - sequential workflows are linear graphs
@@ -38,6 +42,7 @@ interface UnifiedProcessLibraryProps {
   selectedItem: LibraryItem | null;
   onSelectItem: (item: LibraryItem) => void;
   onDeleteItem: (item: LibraryItem) => void;
+  onDeleteItems?: (items: LibraryItem[]) => void;
   onUpdateWorkflow?: (workflow: Workflow) => void;
   onCreateSequential?: (category: string) => void;
   onCreateGraph?: (category: string) => void;
@@ -48,6 +53,7 @@ export function UnifiedProcessLibrary({
   selectedItem,
   onSelectItem,
   onDeleteItem,
+  onDeleteItems,
   onUpdateWorkflow,
   onCreateSequential,
   onCreateGraph,
@@ -72,6 +78,11 @@ export function UnifiedProcessLibrary({
     open: boolean;
     item: LibraryItem | null;
   }>({ open: false, item: null });
+
+  // Selection mode state
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleteDialog, setBatchDeleteDialog] = useState(false);
 
   // Get all unique categories from workflows
   const workflowCategories = [
@@ -121,6 +132,75 @@ export function UnifiedProcessLibrary({
     }
     return true;
   };
+
+  // Selection mode helpers
+  const toggleSelectionMode = useCallback(() => {
+    setIsSelectionMode((prev) => {
+      if (prev) {
+        // Exiting selection mode - clear selections
+        setSelectedIds(new Set());
+      }
+      return !prev;
+    });
+  }, []);
+
+  const toggleItemSelection = useCallback((itemId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleCategorySelection = useCallback(
+    (category: string) => {
+      const categoryItems = itemsByCategory[category] || [];
+      const categoryIds = categoryItems.map((item) => item.id);
+      const allSelected = categoryIds.every((id) => selectedIds.has(id));
+
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (allSelected) {
+          // Deselect all in category
+          categoryIds.forEach((id) => next.delete(id));
+        } else {
+          // Select all in category
+          categoryIds.forEach((id) => next.add(id));
+        }
+        return next;
+      });
+    },
+    [itemsByCategory, selectedIds]
+  );
+
+  const getSelectedItems = useCallback(() => {
+    return workflows.filter((w) => selectedIds.has(w.id));
+  }, [workflows, selectedIds]);
+
+  const handleBatchDelete = useCallback(() => {
+    if (selectedIds.size > 0) {
+      setBatchDeleteDialog(true);
+    }
+  }, [selectedIds]);
+
+  const handleConfirmBatchDelete = useCallback(() => {
+    const itemsToDelete = getSelectedItems();
+    if (itemsToDelete.length > 0 && onDeleteItems) {
+      onDeleteItems(itemsToDelete);
+      toast.success(`${itemsToDelete.length} workflow${itemsToDelete.length !== 1 ? "s" : ""} deleted`);
+    } else if (itemsToDelete.length > 0) {
+      // Fallback to individual deletes if batch delete not provided
+      itemsToDelete.forEach((item) => onDeleteItem(item));
+      toast.success(`${itemsToDelete.length} workflow${itemsToDelete.length !== 1 ? "s" : ""} deleted`);
+    }
+    setSelectedIds(new Set());
+    setIsSelectionMode(false);
+    setBatchDeleteDialog(false);
+  }, [getSelectedItems, onDeleteItems, onDeleteItem]);
 
   const handleDelete = (item: LibraryItem) => {
     setDeleteItemDialog({
@@ -258,7 +338,8 @@ export function UnifiedProcessLibrary({
 
   const renderItem = (item: LibraryItem) => {
     const isLinear = isLinearWorkflow(item);
-    const isDraggable = true; // All workflows can be dragged
+    const isDraggable = !isSelectionMode; // Disable drag in selection mode
+    const isChecked = selectedIds.has(item.id);
 
     return (
       <Card
@@ -267,17 +348,33 @@ export function UnifiedProcessLibrary({
         onDragStart={(e) => handleDragStart(e, item)}
         onDragEnd={handleDragEnd}
         className={`cursor-pointer transition-all hover:border-[#00D9FF]/50 !py-0 !gap-0 ${
-          isItemSelected(item)
-            ? isLinear
-              ? "border-[#00D9FF] bg-[#00D9FF]/10"
-              : "border-[#00FF88] bg-[#00FF88]/10"
-            : "border-gray-700 bg-[#27272A]"
+          isSelectionMode && isChecked
+            ? "border-red-500 bg-red-500/10"
+            : isItemSelected(item)
+              ? isLinear
+                ? "border-[#00D9FF] bg-[#00D9FF]/10"
+                : "border-[#00FF88] bg-[#00FF88]/10"
+              : "border-gray-700 bg-[#27272A]"
         } ${draggedItem?.id === item.id ? "opacity-50" : ""}`}
-        onClick={() => onSelectItem(item)}
+        onClick={() => {
+          if (isSelectionMode) {
+            toggleItemSelection(item.id);
+          } else {
+            onSelectItem(item);
+          }
+        }}
       >
         <CardContent className="py-1 px-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              {isSelectionMode && (
+                <Checkbox
+                  checked={isChecked}
+                  onCheckedChange={() => toggleItemSelection(item.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-3.5 w-3.5 flex-shrink-0 border-gray-500 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
+                />
+              )}
               {isLinear ? (
                 <List className="w-3 h-3 text-[#00D9FF] flex-shrink-0" />
               ) : (
@@ -303,7 +400,7 @@ export function UnifiedProcessLibrary({
               >
                 {getItemActionCount(item)}
               </Badge>
-              {onConvertItem && (
+              {!isSelectionMode && onConvertItem && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -317,17 +414,19 @@ export function UnifiedProcessLibrary({
                   <ArrowRightLeft className="w-2.5 h-2.5" />
                 </Button>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-4 w-4 p-0 text-gray-400 hover:text-red-400"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(item);
-                }}
-              >
-                <Trash2 className="w-2.5 h-2.5" />
-              </Button>
+              {!isSelectionMode && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-4 w-4 p-0 text-gray-400 hover:text-red-400"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(item);
+                  }}
+                >
+                  <Trash2 className="w-2.5 h-2.5" />
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>
@@ -342,16 +441,57 @@ export function UnifiedProcessLibrary({
           <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
             Automation Library
           </h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-1.5 text-gray-400 hover:text-[#00D9FF] flex items-center gap-1"
-            onClick={() => setShowNewCategoryInput(true)}
-            title="Add new category"
-          >
-            <FolderOpen className="w-3.5 h-3.5" />
-            <Plus className="w-3 h-3" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {isSelectionMode ? (
+              <>
+                <span className="text-xs text-gray-400">
+                  {selectedIds.size} selected
+                </span>
+                {selectedIds.size > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    onClick={handleBatchDelete}
+                    title="Delete selected workflows"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-1.5 text-gray-400 hover:text-white"
+                  onClick={toggleSelectionMode}
+                  title="Cancel selection"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-1.5 text-gray-400 hover:text-[#00D9FF] flex items-center gap-1"
+                  onClick={toggleSelectionMode}
+                  title="Select multiple workflows"
+                >
+                  <CheckSquare className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-1.5 text-gray-400 hover:text-[#00D9FF] flex items-center gap-1"
+                  onClick={() => setShowNewCategoryInput(true)}
+                  title="Add new category"
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  <Plus className="w-3 h-3" />
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         {showNewCategoryInput && (
@@ -398,6 +538,16 @@ export function UnifiedProcessLibrary({
                 onDrop={(e) => handleDrop(e, category)}
               >
                 <div className="flex items-center gap-1">
+                  {isSelectionMode && categoryItems.length > 0 && (
+                    <Checkbox
+                      checked={
+                        categoryItems.length > 0 &&
+                        categoryItems.every((item) => selectedIds.has(item.id))
+                      }
+                      onCheckedChange={() => toggleCategorySelection(category)}
+                      className="h-3.5 w-3.5 ml-1 border-gray-500 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
+                    />
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -421,7 +571,7 @@ export function UnifiedProcessLibrary({
                   </Button>
                   <div className="flex items-center gap-1">
                     {/* Create sequential workflow button */}
-                    {onCreateSequential && (
+                    {!isSelectionMode && onCreateSequential && (
                       <Button
                         size="sm"
                         className="h-6 w-6 p-0 bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
@@ -432,7 +582,7 @@ export function UnifiedProcessLibrary({
                       </Button>
                     )}
                     {/* Create graph workflow button */}
-                    {onCreateGraph && (
+                    {!isSelectionMode && onCreateGraph && (
                       <Button
                         size="sm"
                         className="h-6 w-6 p-0 bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
@@ -442,18 +592,22 @@ export function UnifiedProcessLibrary({
                         <Plus className="w-3 h-3" />
                       </Button>
                     )}
-                    <div className="w-5" />
-                    {isDeletable ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
-                        onClick={() => handleDeleteCategory(category)}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    ) : (
-                      <div className="h-6 w-6" />
+                    {!isSelectionMode && (
+                      <>
+                        <div className="w-5" />
+                        {isDeletable ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
+                            onClick={() => handleDeleteCategory(category)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        ) : (
+                          <div className="h-6 w-6" />
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -497,6 +651,13 @@ export function UnifiedProcessLibrary({
           }
           onClose={() => setDeleteItemDialog({ open: false, item: null })}
           onConfirm={handleConfirmDelete}
+        />
+
+        <BatchDeleteWorkflowsDialog
+          open={batchDeleteDialog}
+          workflowNames={getSelectedItems().map((item) => getItemName(item))}
+          onClose={() => setBatchDeleteDialog(false)}
+          onConfirm={handleConfirmBatchDelete}
         />
       </div>
     </TooltipProvider>

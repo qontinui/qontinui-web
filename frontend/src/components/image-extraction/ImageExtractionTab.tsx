@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   Scissors,
   ImageIcon,
@@ -7,11 +7,17 @@ import {
   Edit,
   Library,
   Layers,
+  Trash2,
+  Monitor,
+  Loader2,
 } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
-import { useImageExtractionState } from "@/contexts/tab-state";
-import { ScreenshotPicker } from "../common/ScreenshotPicker";
+import { useAutomationStore } from "@/stores/automation";
+import { useImageExtractionBridge } from "@/stores/page-state";
+import type { Screenshot } from "@/stores/page-state";
+import { ScreenshotPicker, CapturedScreenshot } from "../common/ScreenshotPicker";
 import { AdvancedRegionSelector } from "../pattern-optimization/AdvancedRegionSelector";
+import { CompositeScreenshotCanvas, CompositeScreenshotDisplay } from "./CompositeScreenshotCanvas";
 import { MaskEditor } from "../mask-editor";
 import { Region } from "@/types/pattern-optimization";
 import {
@@ -29,16 +35,6 @@ import type {
   SearchRegion,
 } from "@/contexts/automation-context/types";
 
-interface Screenshot {
-  id: string;
-  name: string;
-  url: string;
-  region?: Region;
-}
-
-type ProcessingMode = "none" | "border" | "background";
-type SaveMode = "createStateImage" | "addPattern" | "libraryOnly";
-
 // Helper to flatten all StateImages with their parent state info
 interface StateImageWithContext {
   stateImage: StateImage;
@@ -47,25 +43,48 @@ interface StateImageWithContext {
 }
 
 export const ImageExtractionTab: React.FC = () => {
-  const [currentScreenshot, setCurrentScreenshot] = useState<Screenshot | null>(
-    null
-  );
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>("none");
-  const [tolerance, setTolerance] = useState(10);
-  const [extractedResult, setExtractedResult] =
-    useState<ProcessedImageResult | null>(null);
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [saveMode, setSaveMode] = useState<SaveMode>("createStateImage");
-  const [imageName, setImageName] = useState("");
-  const [selectedStateId, setSelectedStateId] = useState<string>("");
-  const [newStateName, setNewStateName] = useState("");
-  const [selectedStateImageId, setSelectedStateImageId] = useState<string>("");
-  const [fixedLocation, setFixedLocation] = useState(true);
-  const [showMaskEditor, setShowMaskEditor] = useState(false);
-  const [editingMask, setEditingMask] = useState<{
-    imageUrl: string;
-    initialMask?: string;
-  } | null>(null);
+  // Use the persistent page state hook - persists across navigation
+  const {
+    isHydrated,
+    isHydrating,
+    currentScreenshot,
+    compositeScreenshots,
+    isCompositeMode,
+    compositeRegion,
+    processingMode,
+    tolerance,
+    extractedResult,
+    showSaveDialog,
+    saveMode,
+    imageName,
+    selectedStateId,
+    newStateName,
+    selectedStateImageId,
+    fixedLocation,
+    showMaskEditor,
+    editingMask,
+    // Actions
+    handleUploadScreenshot: bridgeHandleUploadScreenshot,
+    handleCaptureMultipleScreenshots: bridgeHandleCaptureMultipleScreenshots,
+    handleClearScreenshot: bridgeHandleClearScreenshot,
+    handleClearAllScreenshots: bridgeHandleClearAllScreenshots,
+    setCompositeRegion,
+    setProcessingMode,
+    setTolerance,
+    setExtractedResult,
+    setShowSaveDialog,
+    setSaveMode,
+    setImageName,
+    setSelectedStateId,
+    setNewStateName,
+    setSelectedStateImageId,
+    setFixedLocation,
+    setShowMaskEditor,
+    setEditingMask,
+  } = useImageExtractionBridge();
+
+  // Local state for captured screenshots thumbnails (ephemeral, doesn't need persistence)
+  const [capturedScreenshots, setCapturedScreenshots] = useState<Screenshot[]>([]);
 
   const {
     states,
@@ -75,8 +94,6 @@ export const ImageExtractionTab: React.FC = () => {
     images,
     addImage,
   } = useAutomation();
-  const { state: persistedState, setState: setPersistedState } =
-    useImageExtractionState();
 
   // Flatten all StateImages with their parent state context for the "Add Pattern" dropdown
   const allStateImages = useMemo((): StateImageWithContext[] => {
@@ -93,60 +110,59 @@ export const ImageExtractionTab: React.FC = () => {
     return result;
   }, [states]);
 
-  // Load persisted state on mount
-  useEffect(() => {
-    if (persistedState.selectedStateId) {
-      setSelectedStateId(persistedState.selectedStateId);
-    }
-
-    if (persistedState.newStateName) {
-      setNewStateName(persistedState.newStateName);
-    }
-
-    // Note: We don&apos;t persist screenshots due to storage limitations
-    // Users will need to re-upload when navigating back
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Persist state changes (only metadata, not images)
-  useEffect(() => {
-    setPersistedState({
-      selectedRegion: currentScreenshot?.region || null,
-      selectedStateId,
-      newStateName,
-    });
-  }, [
-    currentScreenshot?.region,
-    selectedStateId,
-    newStateName,
-    setPersistedState,
-  ]);
-
-  const handleUploadScreenshot = (file: File) => {
+  // Wrap bridgeHandleUploadScreenshot to also track in local capturedScreenshots
+  const handleUploadScreenshot = useCallback((file: File) => {
     const url = URL.createObjectURL(file);
+    const id = `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newScreenshot: Screenshot = { id, name: file.name, url };
 
-    setCurrentScreenshot({
-      id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      name: file.name,
-      url,
+    // Add to local captured screenshots collection for thumbnails
+    setCapturedScreenshots((prev) => {
+      if (prev.some((s) => s.id === id)) {
+        return prev;
+      }
+      return [...prev, newScreenshot];
     });
 
-    // Reset extracted result when new screenshot is loaded
-    setExtractedResult(null);
-  };
+    // Use bridge function to persist to IndexedDB
+    bridgeHandleUploadScreenshot(file);
+  }, [bridgeHandleUploadScreenshot]);
+
+  // Handler for multi-monitor captures with position data
+  const handleCaptureMultipleScreenshots = useCallback((screenshots: CapturedScreenshot[]) => {
+    // Clear local single-screenshot captures
+    setCapturedScreenshots([]);
+    // Use bridge function to persist
+    bridgeHandleCaptureMultipleScreenshots(screenshots);
+  }, [bridgeHandleCaptureMultipleScreenshots]);
 
   const handleProjectScreenshotSelect = async (screenshotId: string) => {
     const projectScreenshot = projectScreenshots.find(
       (s) => s.id === screenshotId
     );
     if (projectScreenshot && projectScreenshot.url) {
-      setCurrentScreenshot({
-        id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: projectScreenshot.name,
-        url: projectScreenshot.url,
-      });
-
-      // Reset extracted result when new screenshot is loaded
-      setExtractedResult(null);
+      // Fetch the image using XHR (bypasses dev-debug-logger) and create a file for the bridge
+      try {
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('GET', projectScreenshot.url!, true);
+          xhr.responseType = 'blob';
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 0) {
+              resolve(xhr.response as Blob);
+            } else {
+              reject(new Error(`HTTP ${xhr.status}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.send();
+        });
+        const file = new File([blob], projectScreenshot.name, { type: blob.type });
+        bridgeHandleUploadScreenshot(file);
+      } catch (error) {
+        console.error("[ImageExtractionTab] Failed to load project screenshot:", error);
+        toast.error("Failed to load screenshot");
+      }
     } else {
       console.warn(
         "[ImageExtractionTab] Project screenshot missing URL:",
@@ -157,52 +173,210 @@ export const ImageExtractionTab: React.FC = () => {
   };
 
   const handleClearScreenshot = () => {
-    setCurrentScreenshot(null);
-    setExtractedResult(null);
+    if (currentScreenshot) {
+      // Remove from local captured screenshots collection
+      setCapturedScreenshots((prev) =>
+        prev.filter((s) => s.id !== currentScreenshot.id)
+      );
+    }
+    // Use bridge function to clear persisted state
+    bridgeHandleClearScreenshot();
   };
 
-  const handleRegionChange = (region: Region) => {
-    if (currentScreenshot) {
-      setCurrentScreenshot({
-        ...currentScreenshot,
-        region,
+  const handleClearAllScreenshots = () => {
+    // Revoke all local object URLs to free memory
+    capturedScreenshots.forEach((s) => {
+      if (s.url.startsWith("blob:")) {
+        URL.revokeObjectURL(s.url);
+      }
+    });
+    setCapturedScreenshots([]);
+    // Use bridge function to clear persisted state
+    bridgeHandleClearAllScreenshots();
+  };
+
+  const handleSelectCapturedScreenshot = async (screenshot: Screenshot) => {
+    // Fetch using XHR (bypasses dev-debug-logger) and re-upload to set as current via bridge
+    try {
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', screenshot.url, true);
+        xhr.responseType = 'blob';
+        xhr.onload = () => {
+          if (xhr.status === 200 || xhr.status === 0) {
+            resolve(xhr.response as Blob);
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.send();
       });
+      const file = new File([blob], screenshot.name, { type: blob.type });
+      bridgeHandleUploadScreenshot(file);
+    } catch (error) {
+      console.error("[ImageExtractionTab] Failed to select screenshot:", error);
     }
   };
 
+  const handleRegionChange = (region: Region) => {
+    // Region changes are stored in compositeRegion for both modes
+    setCompositeRegion(region);
+  };
+
+  // Handler for region changes in composite mode
+  const handleCompositeRegionChange = (region: Region) => {
+    setCompositeRegion(region);
+  };
+
+  /**
+   * Create a composite image from multiple screenshots positioned according to monitor coordinates.
+   * Returns a data URL of the composited image.
+   */
+  const createCompositeImage = useCallback(async (screenshots: CompositeScreenshotDisplay[]): Promise<string> => {
+    console.log("[createCompositeImage] Starting with", screenshots.length, "screenshots");
+
+    if (screenshots.length === 0) {
+      throw new Error("No screenshots to composite");
+    }
+
+    // Validate all screenshots have URLs
+    for (const s of screenshots) {
+      if (!s.url) {
+        throw new Error(`Screenshot ${s.id} has no URL`);
+      }
+      console.log("[createCompositeImage] Screenshot:", s.id, "URL:", s.url.substring(0, 50));
+    }
+
+    // Calculate bounds
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const s of screenshots) {
+      const { x, y, width, height } = s.monitor;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + width);
+      maxY = Math.max(maxY, y + height);
+    }
+
+    const compositeWidth = maxX - minX;
+    const compositeHeight = maxY - minY;
+    console.log("[createCompositeImage] Composite size:", compositeWidth, "x", compositeHeight);
+
+    // Load all images - use XHR to fetch blob (bypasses dev-debug-logger fetch interception)
+    const loadImage = async (url: string, id: string): Promise<HTMLImageElement> => {
+      return new Promise((resolve, reject) => {
+        console.log("[createCompositeImage] Loading image via XHR:", id, "URL:", url.substring(0, 60));
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.responseType = 'blob';
+
+        xhr.onload = () => {
+          if (xhr.status === 200 || xhr.status === 0) { // status 0 is valid for blob URLs
+            const blob = xhr.response as Blob;
+            console.log("[createCompositeImage] Got blob for:", id, "size:", blob.size);
+
+            // Create a new blob URL from the fetched blob
+            const freshUrl = URL.createObjectURL(blob);
+
+            const img = new Image();
+            img.onload = () => {
+              console.log("[createCompositeImage] Loaded image:", id, "dimensions:", img.width, "x", img.height);
+              URL.revokeObjectURL(freshUrl); // Clean up the temporary URL
+              resolve(img);
+            };
+            img.onerror = () => {
+              URL.revokeObjectURL(freshUrl);
+              console.error("[createCompositeImage] Failed to load image from fresh URL:", id);
+              reject(new Error(`Failed to load image ${id}: Image data may be corrupted`));
+            };
+            img.src = freshUrl;
+          } else {
+            console.error("[createCompositeImage] XHR failed:", id, "status:", xhr.status);
+            reject(new Error(`Failed to load image ${id}: HTTP ${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => {
+          console.error("[createCompositeImage] XHR error for:", id);
+          reject(new Error(`Failed to load image ${id}: Network error`));
+        };
+
+        xhr.send();
+      });
+    };
+
+    const loadedImages = await Promise.all(
+      screenshots.map(async (s) => ({
+        screenshot: s,
+        image: await loadImage(s.url, s.id),
+      }))
+    );
+
+    // Create canvas and draw all images at their positions
+    const canvas = document.createElement("canvas");
+    canvas.width = compositeWidth;
+    canvas.height = compositeHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("Could not get canvas context");
+    }
+
+    // Fill with black background (for gaps between monitors)
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, compositeWidth, compositeHeight);
+
+    // Draw each screenshot at its normalized position
+    for (const { screenshot, image } of loadedImages) {
+      const x = screenshot.monitor.x - minX;
+      const y = screenshot.monitor.y - minY;
+      ctx.drawImage(image, x, y);
+    }
+
+    return canvas.toDataURL("image/png");
+  }, []);
+
   const handleExtract = async () => {
-    if (!currentScreenshot?.region) {
+    if (!activeRegion) {
       toast.error("Please select a region first");
       return;
     }
 
     try {
       let result: ProcessedImageResult;
+      let imageUrl: string;
+      let regionToExtract: Region;
+
+      if (isCompositeMode && compositeScreenshots.length > 0) {
+        // Create composite image and extract from it
+        imageUrl = await createCompositeImage(compositeScreenshots);
+        regionToExtract = compositeRegion!;
+      } else if (currentScreenshot) {
+        imageUrl = currentScreenshot.url;
+        regionToExtract = compositeRegion!;
+      } else {
+        toast.error("No screenshot available");
+        return;
+      }
 
       if (processingMode === "none") {
-        result = await extractRegion(
-          currentScreenshot.url,
-          currentScreenshot.region
-        );
+        result = await extractRegion(imageUrl, regionToExtract);
       } else if (processingMode === "border") {
-        result = await removeBorder(
-          currentScreenshot.url,
-          currentScreenshot.region,
-          tolerance
-        );
+        result = await removeBorder(imageUrl, regionToExtract, tolerance);
       } else {
-        result = await removeBackground(
-          currentScreenshot.url,
-          currentScreenshot.region,
-          tolerance
-        );
+        result = await removeBackground(imageUrl, regionToExtract, tolerance);
       }
 
       setExtractedResult(result);
       toast.success("Image extracted successfully");
     } catch (error) {
-      console.error("Extraction failed:", error);
-      toast.error("Failed to extract image");
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("Extraction failed:", errorMessage, error);
+      toast.error(`Failed to extract image: ${errorMessage}`);
     }
   };
 
@@ -267,7 +441,8 @@ export const ImageExtractionTab: React.FC = () => {
         if (extractedResult.mask) {
           imageAsset.mask = extractedResult.mask;
         }
-        addImage(imageAsset);
+        // IMPORTANT: await to ensure image is in library before creating patterns that reference it
+        await addImage(imageAsset);
       }
 
       // Handle based on save mode
@@ -280,11 +455,23 @@ export const ImageExtractionTab: React.FC = () => {
         }
       } else if (saveMode === "addPattern") {
         // Add as a new pattern to existing StateImage
-        const stateImageContext = allStateImages.find(
-          (ctx) => ctx.stateImage.id === selectedStateImageId
-        );
+        // IMPORTANT: Read the LATEST state directly from Zustand store to avoid stale data
+        // The React Context's states might not have been updated yet after a previous pattern addition
+        const zustandStates = useAutomationStore.getState().states;
 
-        if (!stateImageContext) {
+        // Find the state that contains this stateImage
+        let targetState = null;
+        let targetStateImageName = "";
+        for (const s of zustandStates) {
+          const foundSi = s.stateImages?.find(si => si.id === selectedStateImageId);
+          if (foundSi) {
+            targetState = s;
+            targetStateImageName = foundSi.name;
+            break;
+          }
+        }
+
+        if (!targetState) {
           toast.error("Selected StateImage not found");
           return;
         }
@@ -311,33 +498,33 @@ export const ImageExtractionTab: React.FC = () => {
           fixed: fixedLocation,
         };
 
-        // Find the state and update the StateImage with the new pattern
-        const state = states.find((s) => s.id === stateImageContext.stateId);
-        if (state) {
-          const updatedStateImages = state.stateImages.map((si) => {
-            if (si.id === selectedStateImageId) {
-              return {
-                ...si,
-                patterns: [...si.patterns, newPattern],
-              };
-            }
-            return si;
-          });
-
-          updateState({
-            ...state,
-            stateImages: updatedStateImages,
-          });
-
-          if (isNewImage) {
-            toast.success(
-              `Added pattern to ${stateImageContext.stateImage.name} (image saved to library)`
-            );
-          } else {
-            toast.success(
-              `Added pattern to ${stateImageContext.stateImage.name}`
-            );
+        // Update the StateImage with the new pattern using the LATEST state from Zustand
+        const updatedStateImages = targetState.stateImages.map((si) => {
+          if (si.id === selectedStateImageId) {
+            return {
+              ...si,
+              patterns: [...(si.patterns || []), newPattern],
+            };
           }
+          return si;
+        });
+
+        const updatedState = {
+          ...targetState,
+          stateImages: updatedStateImages,
+        };
+
+        // IMPORTANT: await to ensure state is persisted before showing success
+        await updateState(updatedState);
+
+        if (isNewImage) {
+          toast.success(
+            `Added pattern to ${targetStateImageName} (image saved to library)`
+          );
+        } else {
+          toast.success(
+            `Added pattern to ${targetStateImageName}`
+          );
         }
       } else {
         // createStateImage mode - original behavior
@@ -369,10 +556,22 @@ export const ImageExtractionTab: React.FC = () => {
         );
 
         if (result.action === "create-state" && result.targetState) {
-          addState(result.targetState);
+          console.log("[ImageExtraction] Creating new state:", {
+            id: result.targetState.id,
+            name: result.targetState.name,
+            position: result.targetState.position,
+            stateImagesCount: result.targetState.stateImages?.length || 0,
+          });
+          await addState(result.targetState);
+          console.log("[ImageExtraction] addState completed");
           toast.success(`Created new state: ${result.targetState.name}`);
         } else if (result.action === "update-state" && result.targetState) {
-          updateState(result.targetState);
+          console.log("[ImageExtraction] Updating existing state:", {
+            id: result.targetState.id,
+            name: result.targetState.name,
+          });
+          await updateState(result.targetState);
+          console.log("[ImageExtraction] updateState completed");
           toast.success(`Added StateImage to ${result.targetState.name}`);
         }
       }
@@ -391,10 +590,33 @@ export const ImageExtractionTab: React.FC = () => {
     }
   };
 
+  // Region is now always stored in compositeRegion for simplicity
+  const activeRegion = compositeRegion;
   const canExtract =
-    currentScreenshot?.region &&
-    currentScreenshot.region.width > 0 &&
-    currentScreenshot.region.height > 0;
+    activeRegion &&
+    activeRegion.width > 0 &&
+    activeRegion.height > 0;
+
+  // Show loading state while hydrating from IndexedDB
+  if (isHydrating && !isHydrated) {
+    return (
+      <div className="h-full flex flex-col bg-[#0A0A0B]">
+        <div className="bg-[#27272A] border-b border-gray-800 px-6 py-4">
+          <h1 className="text-2xl font-bold text-white">Image Extraction</h1>
+          <p className="text-gray-400 mt-1">
+            Extract images from screenshots with optional border and background
+            removal
+          </p>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Loading saved state...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col bg-[#0A0A0B]">
@@ -421,36 +643,92 @@ export const ImageExtractionTab: React.FC = () => {
                 : null
             }
             onUploadScreenshot={handleUploadScreenshot}
+            onCaptureMultipleScreenshots={handleCaptureMultipleScreenshots}
             onSelectProjectScreenshot={handleProjectScreenshotSelect}
             onClearScreenshot={handleClearScreenshot}
             showRegionInfo={true}
             regionDimensions={
-              currentScreenshot?.region
+              compositeRegion
                 ? {
-                    width: currentScreenshot.region.width,
-                    height: currentScreenshot.region.height,
+                    width: compositeRegion.width,
+                    height: compositeRegion.height,
                   }
                 : null
             }
             additionalInfo={
               <div className="bg-[#27272A] rounded-lg p-3 border border-gray-700">
                 <h3 className="text-xs font-medium text-gray-300 mb-2">
-                  Instructions
+                  {isCompositeMode ? "Multi-Monitor Mode" : "Instructions"}
                 </h3>
-                <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
-                  <li>Draw a selection box on the image</li>
-                  <li>Choose processing mode</li>
-                  <li>Click "Extract Image"</li>
-                  <li>Create StateImage from result</li>
-                </ol>
+                {isCompositeMode ? (
+                  <div className="text-xs text-gray-400 space-y-1">
+                    <div className="flex items-center gap-1 text-[#00D9FF]">
+                      <Monitor className="w-3 h-3" />
+                      <span>{compositeScreenshots.length} monitors captured</span>
+                    </div>
+                    <p>Draw a region across monitors to extract images that span multiple screens.</p>
+                  </div>
+                ) : (
+                  <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
+                    <li>Draw a selection box on the image</li>
+                    <li>Choose processing mode</li>
+                    <li>Click "Extract Image"</li>
+                    <li>Create StateImage from result</li>
+                  </ol>
+                )}
               </div>
             }
             className="flex-1 flex flex-col"
           />
+
+          {/* Captured Screenshots Thumbnail Strip */}
+          {capturedScreenshots.length > 1 && (
+            <div className="p-4 border-t border-gray-800">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-xs font-medium text-gray-300">
+                  Captured ({capturedScreenshots.length})
+                </h3>
+                <button
+                  onClick={handleClearAllScreenshots}
+                  className="text-xs text-gray-400 hover:text-red-400 flex items-center gap-1"
+                  title="Clear all captured screenshots"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Clear All
+                </button>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {capturedScreenshots.map((screenshot) => (
+                  <button
+                    key={screenshot.id}
+                    onClick={() => handleSelectCapturedScreenshot(screenshot)}
+                    className={`relative flex-shrink-0 w-16 h-12 rounded border-2 overflow-hidden transition-all ${
+                      currentScreenshot?.id === screenshot.id
+                        ? "border-[#00D9FF] ring-2 ring-[#00D9FF]/30"
+                        : "border-gray-600 hover:border-gray-500"
+                    }`}
+                    title={screenshot.name}
+                  >
+                    <img
+                      src={screenshot.url}
+                      alt={screenshot.name}
+                      className="w-full h-full object-cover"
+                    />
+                    {currentScreenshot?.id === screenshot.id && (
+                      <div className="absolute inset-0 bg-[#00D9FF]/20" />
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Click to switch between captured screenshots
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Middle Panel - Configuration and Viewer */}
-        <div className="flex-1 flex">
+        <div className="flex-1 flex h-full">
           {/* Configuration Panel */}
           <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 p-4">
             <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
@@ -562,12 +840,18 @@ export const ImageExtractionTab: React.FC = () => {
           </div>
 
           {/* Screenshot Viewer */}
-          <div className="flex-1 bg-[#0A0A0B]">
-            {currentScreenshot ? (
+          <div className="flex-1 h-full bg-[#0A0A0B]">
+            {isCompositeMode && compositeScreenshots.length > 0 ? (
+              <CompositeScreenshotCanvas
+                screenshots={compositeScreenshots}
+                region={compositeRegion ?? undefined}
+                onRegionChange={handleCompositeRegionChange}
+              />
+            ) : currentScreenshot ? (
               <AdvancedRegionSelector
                 screenshotId={currentScreenshot.id}
                 screenshotUrl={currentScreenshot.url}
-                region={currentScreenshot.region}
+                region={compositeRegion ?? undefined}
                 onRegionChange={handleRegionChange}
               />
             ) : (
@@ -661,11 +945,11 @@ export const ImageExtractionTab: React.FC = () => {
                     {processingMode !== "none" && (
                       <li>Tolerance: {tolerance}</li>
                     )}
-                    {currentScreenshot?.region && (
+                    {compositeRegion && (
                       <li>
                         Original bounds:{" "}
-                        {Math.round(currentScreenshot.region.x)},{" "}
-                        {Math.round(currentScreenshot.region.y)}
+                        {Math.round(compositeRegion.x)},{" "}
+                        {Math.round(compositeRegion.y)}
                       </li>
                     )}
                     <li>
@@ -713,7 +997,18 @@ export const ImageExtractionTab: React.FC = () => {
       {/* Save Image Dialog */}
       {showSaveDialog && extractedResult && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-[#27272A] border border-gray-700 rounded-lg p-6 w-[450px] max-w-full max-h-[90vh] overflow-y-auto">
+          <div
+            className="bg-[#27272A] border border-gray-700 rounded-lg p-6 w-[450px] max-w-full max-h-[90vh] overflow-y-auto"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                const target = e.target as HTMLElement;
+                if (target.tagName !== "TEXTAREA" && target.tagName !== "BUTTON") {
+                  e.preventDefault();
+                  handleSaveImage();
+                }
+              }
+            }}
+          >
             <h3 className="text-lg font-semibold text-white mb-4">
               Save Extracted Image
             </h3>
@@ -851,13 +1146,16 @@ export const ImageExtractionTab: React.FC = () => {
                     className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
                   >
                     <option value="">Select a StateImage...</option>
-                    {allStateImages.map((ctx) => (
-                      <option key={ctx.stateImage.id} value={ctx.stateImage.id}>
-                        {ctx.stateImage.name} ({ctx.stateName}) -{" "}
-                        {ctx.stateImage.patterns.length} pattern
-                        {ctx.stateImage.patterns.length !== 1 ? "s" : ""}
-                      </option>
-                    ))}
+                    {allStateImages.map((ctx) => {
+                      const patternCount = ctx.stateImage.patterns?.length || 0;
+                      return (
+                        <option key={ctx.stateImage.id} value={ctx.stateImage.id}>
+                          {ctx.stateImage.name} ({ctx.stateName}) -{" "}
+                          {patternCount} pattern
+                          {patternCount !== 1 ? "s" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                   {allStateImages.length === 0 && (
                     <p className="text-xs text-amber-500 mt-1">

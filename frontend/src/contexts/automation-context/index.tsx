@@ -22,6 +22,7 @@ import { projectLogger } from "@/lib/project-logger";
 import { useAutomationStore } from "@/stores/automation";
 import { isDuplicateTransition } from "@/stores/automation/slices/transition-slice";
 import { apiClient } from "@/lib/api-client";
+import { projectService } from "@/services/service-factory";
 import type {
   AutomationContextType,
   State,
@@ -270,9 +271,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   // Track if we&apos;re in the middle of renaming to prevent premature reload
   const isRenamingRef = useRef(false);
 
-  // Track if we&apos;re loading from backend to prevent IndexedDB from overwriting
+  // Track if we're loading from backend to prevent IndexedDB from overwriting
   const [isLoadingFromBackend, setIsLoadingFromBackendState] = useState(false);
   const isLoadingFromBackendRef = useRef(false);
+
+  // Track when the last immediate save happened to prevent auto-save race conditions
+  const lastImmediateSaveRef = useRef<number>(0);
 
   // Wrapper that updates both ref (synchronously) and state
   // This prevents race conditions where the ref is checked before state updates
@@ -751,6 +755,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         }
       }
       setWorkflows((prev) => [...prev, workflow]);
+      // Also sync to Zustand store
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.addWorkflow(workflow);
     },
     [projectName]
   );
@@ -774,6 +781,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setWorkflows((prev) =>
         prev.map((w) => (w.id === workflow.id ? workflow : w))
       );
+      // Also sync to Zustand store
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.updateWorkflow(workflow);
       console.log(
         "[AutomationContext] State updated for workflow:",
         workflow.id
@@ -782,17 +792,123 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     [projectName]
   );
 
-  const deleteWorkflow = useCallback(async (workflowId: string) => {
-    await projectDB.deleteWorkflow(workflowId);
-    setWorkflows((prev) => prev.filter((w) => w.id !== workflowId));
-  }, []);
+  // Helper to save current configuration to backend immediately
+  // Used after critical operations like deletion to prevent data loss
+  const saveToBackendImmediately = useCallback(
+    async (updatedWorkflows: Workflow[]) => {
+      if (!projectId) {
+        projectLogger.debug(
+          "AutomationContext",
+          "Skipping immediate save - no projectId"
+        );
+        return;
+      }
+
+      try {
+        // Build configuration with updated workflows
+        const config = {
+          name: projectName,
+          images,
+          screenshots,
+          workflows: updatedWorkflows,
+          states,
+          transitions,
+          categories,
+          settings,
+          schedules,
+          executionRecords,
+          metadata: {
+            lastSaved: new Date().toISOString(),
+            version: "1.0.0",
+          },
+        };
+
+        projectLogger.info("AutomationContext", "Immediate save to backend", {
+          projectId,
+          workflowCount: updatedWorkflows.length,
+        });
+
+        await projectService.updateProject(projectId, {
+          configuration: config,
+        });
+
+        // Record the timestamp of this immediate save to prevent auto-save race conditions
+        lastImmediateSaveRef.current = Date.now();
+
+        projectLogger.info("AutomationContext", "Immediate save complete");
+      } catch (error) {
+        projectLogger.error("AutomationContext", "Immediate save failed", {
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    },
+    [
+      projectId,
+      projectName,
+      images,
+      screenshots,
+      states,
+      transitions,
+      categories,
+      settings,
+      schedules,
+      executionRecords,
+    ]
+  );
+
+  const deleteWorkflow = useCallback(
+    async (workflowId: string) => {
+      await projectDB.deleteWorkflow(workflowId);
+
+      // Calculate updated workflows for immediate save
+      const updatedWorkflows = workflows.filter((w) => w.id !== workflowId);
+
+      setWorkflows(updatedWorkflows);
+
+      // Also sync to Zustand store
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.deleteWorkflow(workflowId);
+
+      // Immediately save to backend to prevent deleted workflows from reappearing
+      await saveToBackendImmediately(updatedWorkflows);
+    },
+    [workflows, saveToBackendImmediately]
+  );
+
+  const deleteWorkflows = useCallback(
+    async (workflowIds: string[]) => {
+      await projectDB.deleteWorkflows(workflowIds);
+      const idsSet = new Set(workflowIds);
+
+      // Calculate updated workflows for immediate save
+      const updatedWorkflows = workflows.filter((w) => !idsSet.has(w.id));
+
+      setWorkflows(updatedWorkflows);
+
+      // Also sync to Zustand store
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.deleteWorkflows(workflowIds);
+
+      // Immediately save to backend to prevent deleted workflows from reappearing
+      await saveToBackendImmediately(updatedWorkflows);
+    },
+    [workflows, saveToBackendImmediately]
+  );
 
   // State management functions
   const addState = useCallback(
     async (state: State) => {
+      console.log("[AutomationContext] addState called:", {
+        id: state.id,
+        name: state.name,
+        position: state.position,
+        projectName: projectName,
+        stateImagesCount: state.stateImages?.length || 0,
+      });
       const stateWithProject = { ...state, projectName };
       try {
         await projectDB.addState(stateWithProject);
+        console.log("[AutomationContext] addState - IndexedDB save complete");
       } catch (error: unknown) {
         // If key already exists, update instead
         if (
@@ -802,14 +918,17 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
           error.name === "ConstraintError"
         ) {
           await projectDB.updateState(stateWithProject);
+          console.log("[AutomationContext] addState - IndexedDB update complete (key existed)");
         } else {
           throw error;
         }
       }
       setStates((prev) => StateManager.addState(prev, stateWithProject));
+      console.log("[AutomationContext] addState - Context state updated");
 
       // Also sync to Zustand store so StateStructure and other components see the new state
       const zustandStore = useAutomationStore.getState();
+      console.log("[AutomationContext] addState - Calling Zustand addState");
       zustandStore.addState(stateWithProject);
 
       // Auto-create an incoming transition for this state
@@ -847,24 +966,33 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   );
 
   const updateState = useCallback(async (state: State) => {
-    await projectDB.updateState(state);
-    setStates((prev) => StateManager.updateState(prev, state));
+    // Ensure projectName is always set for proper IndexedDB indexing
+    const stateWithProject = { ...state, projectName };
+
+    await projectDB.updateState(stateWithProject);
+
+    setStates((prev) => {
+      return StateManager.updateState(prev, stateWithProject);
+    });
+
     // Also sync to Zustand store
     const zustandStore = useAutomationStore.getState();
-    zustandStore.updateState(state);
-  }, []);
+    zustandStore.updateState(stateWithProject);
+  }, [projectName]);
 
   const updateStateWithIdChange = useCallback(
     async (oldId: string, newState: State) => {
-      await projectDB.updateStateWithIdChange(oldId, newState);
+      // Ensure projectName is always set for proper IndexedDB indexing
+      const stateWithProject = { ...newState, projectName };
+      await projectDB.updateStateWithIdChange(oldId, stateWithProject);
       setStates((prev) =>
-        StateManager.updateStateWithIdChange(prev, oldId, newState)
+        StateManager.updateStateWithIdChange(prev, oldId, stateWithProject)
       );
       // Also sync to Zustand store
       const zustandStore = useAutomationStore.getState();
-      zustandStore.updateStateWithIdChange(oldId, newState);
+      zustandStore.updateStateWithIdChange(oldId, stateWithProject);
     },
-    []
+    [projectName]
   );
 
   const deleteState = useCallback(async (stateId: string) => {
@@ -1972,6 +2100,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       addWorkflow,
       updateWorkflow,
       deleteWorkflow,
+      deleteWorkflows,
 
       // State management
       states,
@@ -2043,6 +2172,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       // Backend loading control
       isLoadingFromBackend,
       setIsLoadingFromBackend,
+
+      // Immediate save tracking (for preventing auto-save race conditions)
+      getLastImmediateSaveTime: () => lastImmediateSaveRef.current,
     }),
     [
       projectName,
@@ -2054,6 +2186,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       addWorkflow,
       updateWorkflow,
       deleteWorkflow,
+      deleteWorkflows,
       states,
       addState,
       updateState,

@@ -276,6 +276,15 @@ if (typeof window !== "undefined") {
       if (states === prevStates) return;
       const state = useAutomationStore.getState();
       if (state.isLoadingFromBackend || !state.projectName) return;
+      // Skip persistence if store's projectName is still the default "Untitled Project"
+      // This prevents data from being persisted with the wrong projectName
+      if (state.projectName === "Untitled Project" && states.some(s => s.projectName && s.projectName !== "Untitled Project")) {
+        projectLogger.debug("Persistence", "Skipping states persist - projectName mismatch", {
+          storeProjectName: state.projectName,
+          stateProjectNames: [...new Set(states.map(s => s.projectName))],
+        });
+        return;
+      }
       schedulePersist("states", states, state.projectName, persistStates);
     }
   );
@@ -303,6 +312,15 @@ if (typeof window !== "undefined") {
       if (images === prevImages) return;
       const state = useAutomationStore.getState();
       if (state.isLoadingFromBackend || !state.projectName) return;
+      // Skip persistence if store's projectName is still the default "Untitled Project"
+      // This prevents data from being persisted with the wrong projectName
+      if (state.projectName === "Untitled Project" && images.some(i => i.projectName && i.projectName !== "Untitled Project")) {
+        projectLogger.debug("Persistence", "Skipping images persist - projectName mismatch", {
+          storeProjectName: state.projectName,
+          imageProjectNames: [...new Set(images.map(i => i.projectName))],
+        });
+        return;
+      }
       schedulePersist("images", images, state.projectName, persistImages);
     }
   );

@@ -55,17 +55,23 @@ export function TypeActionProperties({
                 (s) => s.strings && s.strings.length > 0
               );
               if (statesWithStrings.length > 0 && statesWithStrings[0]) {
-                updateConfig("textSource", {
-                  stateId: statesWithStrings[0].id,
-                  stringIds: [],
-                  useAll: false,
-                });
-                updateConfig("text", undefined);
+                // Use additionalUpdates to batch both changes in a single call
+                // This avoids stale closure issues with multiple updateConfig calls
+                updateConfig(
+                  "textSource",
+                  {
+                    stateId: statesWithStrings[0].id,
+                    stringIds: [],
+                    useAll: false,
+                  },
+                  { text: undefined }
+                );
               }
             } else {
               // Switch to manual text mode
-              updateConfig("textSource", undefined);
-              updateConfig("text", "");
+              // Use additionalUpdates to batch both changes in a single call
+              // This avoids stale closure issues with multiple updateConfig calls
+              updateConfig("textSource", undefined, { text: "" });
             }
           }}
         >

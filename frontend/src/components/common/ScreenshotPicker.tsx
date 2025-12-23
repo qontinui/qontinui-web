@@ -18,7 +18,7 @@ export interface ScreenshotInfo {
   url: string;
 }
 
-interface MonitorInfo {
+export interface MonitorInfo {
   index: number;
   x: number;
   y: number;
@@ -27,8 +27,53 @@ interface MonitorInfo {
   is_primary: boolean;
 }
 
+/** Screenshot captured with monitor position data for composite views */
+export interface CapturedScreenshot {
+  id: string;
+  name: string;
+  url: string;
+  file: File;
+  monitor: MonitorInfo;
+}
+
 // Delay options in seconds
 const DELAY_OPTIONS = [0, 3, 5, 10];
+
+// localStorage keys for screenshot capture preferences
+const STORAGE_KEY_MONITORS = "qontinui-screenshot-monitors";
+const STORAGE_KEY_DELAY = "qontinui-screenshot-delay";
+
+/**
+ * Load saved monitor preferences from localStorage
+ */
+function loadMonitorPrefs(): { monitors: number[]; delay: number } {
+  if (typeof window === "undefined") {
+    return { monitors: [], delay: 0 };
+  }
+  try {
+    const monitorsStr = localStorage.getItem(STORAGE_KEY_MONITORS);
+    const delayStr = localStorage.getItem(STORAGE_KEY_DELAY);
+    return {
+      monitors: monitorsStr ? JSON.parse(monitorsStr) : [],
+      delay: delayStr ? parseInt(delayStr, 10) : 0,
+    };
+  } catch {
+    return { monitors: [], delay: 0 };
+  }
+}
+
+/**
+ * Save monitor preferences to localStorage
+ */
+function saveMonitorPrefs(monitors: number[], delay: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY_MONITORS, JSON.stringify(monitors));
+    localStorage.setItem(STORAGE_KEY_DELAY, String(delay));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 /**
  * Get position label based on monitor X coordinate relative to others
@@ -62,6 +107,12 @@ interface ScreenshotPickerProps {
   className?: string;
   /** Enable capture from screen functionality (requires qontinui-api running) */
   enableCapture?: boolean;
+  /**
+   * Callback for multi-monitor captures with position data.
+   * If provided, this is called instead of onUploadScreenshot when capturing from screen.
+   * All captured screenshots are passed at once with their monitor positions.
+   */
+  onCaptureMultipleScreenshots?: (screenshots: CapturedScreenshot[]) => void;
 }
 
 /**
@@ -78,6 +129,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
   additionalInfo,
   className = "",
   enableCapture = true,
+  onCaptureMultipleScreenshots,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const screenshotSelectorTriggerRef = useRef<HTMLButtonElement>(null);
@@ -87,9 +139,27 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
   const [isCapturing, setIsCapturing] = useState(false);
   const [showMonitorMenu, setShowMonitorMenu] = useState(false);
   const [availableMonitors, setAvailableMonitors] = useState<MonitorInfo[]>([]);
-  const [selectedMonitors, setSelectedMonitors] = useState<number[]>([]);
-  const [captureDelay, setCaptureDelay] = useState<number>(0); // Delay in seconds
   const [countdown, setCountdown] = useState<number | null>(null);
+
+  // Load saved preferences from localStorage
+  const savedPrefs = loadMonitorPrefs();
+  const [selectedMonitors, setSelectedMonitorsState] = useState<number[]>(savedPrefs.monitors);
+  const [captureDelay, setCaptureDelayState] = useState<number>(savedPrefs.delay);
+
+  // Wrapper to save monitor selection to localStorage
+  const setSelectedMonitors = (value: number[] | ((prev: number[]) => number[])) => {
+    setSelectedMonitorsState((prev) => {
+      const newValue = typeof value === "function" ? value(prev) : value;
+      saveMonitorPrefs(newValue, captureDelay);
+      return newValue;
+    });
+  };
+
+  // Wrapper to save delay to localStorage
+  const setCaptureDelay = (value: number) => {
+    setCaptureDelayState(value);
+    saveMonitorPrefs(selectedMonitors, value);
+  };
   const [menuPosition, setMenuPosition] = useState<{
     top: number;
     left: number;
@@ -154,8 +224,21 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
           (a: MonitorInfo, b: MonitorInfo) => a.x - b.x
         );
         setAvailableMonitors(sortedMonitors);
-        // Default select the primary monitor if nothing selected
-        if (selectedMonitors.length === 0) {
+
+        // Validate saved monitor selections against available monitors
+        const availableIndices = sortedMonitors.map((m: MonitorInfo) => m.index);
+        const validSavedMonitors = selectedMonitors.filter((idx) =>
+          availableIndices.includes(idx)
+        );
+
+        if (validSavedMonitors.length > 0) {
+          // Use validated saved monitors
+          if (validSavedMonitors.length !== selectedMonitors.length) {
+            // Some saved monitors no longer exist, update state
+            setSelectedMonitors(validSavedMonitors);
+          }
+        } else {
+          // No valid saved monitors, default to primary or first
           const primaryMonitor = sortedMonitors.find(
             (m: MonitorInfo) => m.is_primary
           );
@@ -221,7 +304,13 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
 
       // Capture from all selected monitors
+      console.log("[ScreenshotPicker] Starting capture for monitors:", selectedMonitors);
+
+      // Collect all captured screenshots with their monitor data
+      const capturedScreenshots: CapturedScreenshot[] = [];
+
       for (const monitorIndex of selectedMonitors) {
+        console.log("[ScreenshotPicker] Capturing monitor:", monitorIndex);
         const monitorParam = `&monitor=${monitorIndex}`;
         const response = await fetch(
           `${apiUrl}/api/capture/screenshot/current?quality=95${monitorParam}`
@@ -235,6 +324,10 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         }
 
         const data = await response.json();
+        console.log("[ScreenshotPicker] Received screenshot data for monitor:", monitorIndex, {
+          width: data.width,
+          height: data.height,
+        });
 
         // Convert base64 to Blob
         const byteCharacters = atob(data.screenshot_base64);
@@ -250,13 +343,42 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         const monitorLabel = `monitor${monitorIndex}_`;
         const filename = `screenshot_${monitorLabel}${timestamp}.png`;
         const file = new File([blob], filename, { type: "image/png" });
+        const url = URL.createObjectURL(blob);
 
-        // Pass to upload handler
-        onUploadScreenshot(file);
+        // Find monitor info from availableMonitors
+        const monitorInfo = availableMonitors.find((m) => m.index === monitorIndex);
+        if (!monitorInfo) {
+          console.warn("[ScreenshotPicker] Monitor info not found for index:", monitorIndex);
+          continue;
+        }
+
+        // Add to captured screenshots array
+        capturedScreenshots.push({
+          id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: filename,
+          url,
+          file,
+          monitor: monitorInfo,
+        });
 
         toast.success("Screenshot captured", {
           description: `Monitor ${monitorIndex}: ${data.width}x${data.height} pixels`,
         });
+      }
+
+      console.log("[ScreenshotPicker] Capture loop completed, total monitors:", capturedScreenshots.length);
+
+      // Call the appropriate callback
+      if (onCaptureMultipleScreenshots && capturedScreenshots.length > 0) {
+        // New callback: pass all screenshots with monitor positions
+        console.log("[ScreenshotPicker] Calling onCaptureMultipleScreenshots with:", capturedScreenshots.length, "screenshots");
+        onCaptureMultipleScreenshots(capturedScreenshots);
+      } else {
+        // Fallback: call onUploadScreenshot for each (backward compatible)
+        for (const captured of capturedScreenshots) {
+          console.log("[ScreenshotPicker] Calling onUploadScreenshot for:", captured.name);
+          onUploadScreenshot(captured.file);
+        }
       }
     } catch (error: unknown) {
       console.error("Screenshot capture failed:", error);

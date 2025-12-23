@@ -67,7 +67,7 @@ export function AutomationBuilder() {
   const initializedFromUrlRef = useRef(false);
 
   // Hooks
-  const { updateItem, deleteItem, createWorkflow } = useItemManagement();
+  const { updateItem, deleteItem, deleteItems, createWorkflow } = useItemManagement();
   const { handleItemSelection } = useModeDetection({
     currentMode: mode,
     autoSwitch: true,
@@ -205,6 +205,23 @@ export function AutomationBuilder() {
       }
     },
     [deleteItem, selectedItem]
+  );
+
+  /**
+   * Handle batch deleting items
+   * Note: Confirmation dialog is shown in UnifiedProcessLibrary
+   */
+  const handleDeleteItems = useCallback(
+    (items: LibraryItem[]) => {
+      deleteItems(items);
+
+      // Clear selection if the selected item was deleted
+      if (selectedItem && items.some((item) => item.id === selectedItem.id)) {
+        setSelectedItem(null);
+        setSelectedAction(null);
+      }
+    },
+    [deleteItems, selectedItem]
   );
 
   /**
@@ -495,6 +512,7 @@ export function AutomationBuilder() {
             selectedItem={selectedItem}
             onSelectItem={handleSelectItem}
             onDeleteItem={handleDeleteItem}
+            onDeleteItems={handleDeleteItems}
             onUpdateWorkflow={handleUpdateWorkflow}
             onCreateSequential={handleCreateSequential}
             onCreateGraph={handleCreateGraph}

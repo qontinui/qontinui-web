@@ -33,6 +33,7 @@ import { VariableTable } from "@/components/variables/VariableTable";
 import { VariableEditorDialog } from "@/components/variables/VariableEditorDialog";
 import { RequireProject } from "@/components/require-project";
 import { useGlobalVariables } from "@/hooks/useGlobalVariables";
+import { useVariablesBridge } from "@/stores/page-state";
 import {
   Plus,
   Download,
@@ -54,8 +55,16 @@ export default function VariablesPage() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get("project");
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedVariables, setSelectedVariables] = useState<string[]>([]);
+  // Page state (persisted)
+  const {
+    isHydrating,
+    searchQuery,
+    selectedVariableIds,
+    setSearchQuery,
+    setSelectedVariables,
+  } = useVariablesBridge();
+
+  // Local component state (not persisted)
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingVariable, setEditingVariable] = useState<GlobalVariable | null>(
     null
@@ -153,13 +162,13 @@ export default function VariablesPage() {
 
   // Handle bulk delete
   const handleBulkDelete = () => {
-    if (selectedVariables.length > 0) {
+    if (selectedVariableIds.length > 0) {
       setBulkDeleteDialogOpen(true);
     }
   };
 
   const confirmBulkDelete = async () => {
-    await deleteMultiple(selectedVariables);
+    await deleteMultiple(selectedVariableIds);
     setSelectedVariables([]);
     setBulkDeleteDialogOpen(false);
   };
@@ -360,10 +369,10 @@ export default function VariablesPage() {
                     className="pl-9"
                   />
                 </div>
-                {selectedVariables.length > 0 && (
+                {selectedVariableIds.length > 0 && (
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary">
-                      {selectedVariables.length} selected
+                      {selectedVariableIds.length} selected
                     </Badge>
                     <Button
                       variant="destructive"
@@ -383,9 +392,9 @@ export default function VariablesPage() {
                 onEdit={handleEdit}
                 onDelete={handleDeleteSingle}
                 onDuplicate={handleDuplicate}
-                selectedVariables={selectedVariables}
+                selectedVariables={selectedVariableIds}
                 onSelectionChange={setSelectedVariables}
-                isLoading={isLoading}
+                isLoading={isLoading || isHydrating}
               />
             </CardContent>
           </Card>
@@ -433,10 +442,10 @@ export default function VariablesPage() {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>
-                  Delete {selectedVariables.length} Variables?
+                  Delete {selectedVariableIds.length} Variables?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to delete {selectedVariables.length}{" "}
+                  Are you sure you want to delete {selectedVariableIds.length}{" "}
                   selected variable(s)? This action cannot be undone and may
                   affect workflows that use these variables.
                 </AlertDialogDescription>

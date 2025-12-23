@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useMemo, useCallback } from "react";
+import { useDependenciesBridge } from "@/stores/page-state";
 import {
   ReactFlow,
   Background,
@@ -119,20 +120,80 @@ function getImpactBadge(level: "low" | "medium" | "high" | "critical") {
 
 function DependenciesPageInner() {
   const { workflows = [] } = useAutomation();
-  const [activeTab, setActiveTab] = useState("overview");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [selectedWorkflow, setSelectedWorkflow] =
-    useState<SelectedWorkflowData | null>(null);
-  const [filters, setFilters] = useState<FilterState>({
-    folders: [],
-    tags: [],
-    categories: [],
-    showOnlyIssues: false,
-    showCriticalPath: false,
-    selectedWorkflowId: null,
-    viewMode: "all",
-  });
+
+  // Use bridge hook for persisted state
+  const {
+    isHydrating,
+    activeTab,
+    setActiveTab,
+    searchQuery,
+    setSearchQuery,
+    filtersOpen,
+    setFiltersOpen,
+    filters: persistedFilters,
+    setFilters: setPersistedFilters,
+    selectedWorkflowId,
+    setSelectedWorkflowId,
+  } = useDependenciesBridge();
+
+  // Local non-persisted state (selectedWorkflow is derived from selectedWorkflowId)
+  const selectedWorkflow = useMemo<SelectedWorkflowData | null>(() => {
+    if (!selectedWorkflowId) return null;
+    const workflow = workflows.find((w) => w.id === selectedWorkflowId);
+    if (!workflow) return null;
+
+    // Build the graph to get the node
+    const graph = workflowDependencyAnalyzer.buildDependencyGraph(workflows);
+    const depNode = graph.nodes.get(selectedWorkflowId);
+    if (!depNode) return null;
+
+    const impact = workflowDependencyAnalyzer.getImpactAnalysis(
+      selectedWorkflowId,
+      workflows
+    );
+
+    return {
+      workflow,
+      node: depNode,
+      impact,
+    };
+  }, [selectedWorkflowId, workflows]);
+
+  // Convert persisted filters to FilterState format (add non-persisted fields)
+  const filters: FilterState = useMemo(
+    () => ({
+      folders: persistedFilters.folders,
+      tags: persistedFilters.tags,
+      categories: persistedFilters.categories,
+      showOnlyIssues: false,
+      showCriticalPath: false,
+      selectedWorkflowId: selectedWorkflowId,
+      viewMode: "all" as const,
+    }),
+    [persistedFilters, selectedWorkflowId]
+  );
+
+  // Wrapper for setFilters to handle both persisted and non-persisted fields
+  const setFilters = useCallback(
+    (update: Partial<FilterState> | ((prev: FilterState) => FilterState)) => {
+      const newFilters =
+        typeof update === "function" ? update(filters) : { ...filters, ...update };
+
+      // Update persisted fields (note: persistedFilters.viewMode is separate from FilterState.viewMode)
+      setPersistedFilters({
+        folders: newFilters.folders,
+        tags: newFilters.tags,
+        categories: newFilters.categories,
+        // Keep the persisted viewMode as-is (it's for graph vs list, not all/dependencies/dependents)
+      });
+
+      // Update selectedWorkflowId if it changed
+      if (newFilters.selectedWorkflowId !== selectedWorkflowId) {
+        setSelectedWorkflowId(newFilters.selectedWorkflowId);
+      }
+    },
+    [filters, setPersistedFilters, selectedWorkflowId, setSelectedWorkflowId]
+  );
 
   // Build dependency graph
   const graph = useMemo<DependencyGraph>(() => {
@@ -235,24 +296,9 @@ function DependenciesPageInner() {
   // Handle node click
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
-      const workflow = workflows.find((w) => w.id === node.id);
-      if (!workflow) return;
-
-      const depNode = graph.nodes.get(node.id);
-      if (!depNode) return;
-
-      const impact = workflowDependencyAnalyzer.getImpactAnalysis(
-        workflow.id,
-        workflows
-      );
-
-      setSelectedWorkflow({
-        workflow,
-        node: depNode,
-        impact,
-      });
+      setSelectedWorkflowId(node.id);
     },
-    [workflows, graph]
+    [setSelectedWorkflowId]
   );
 
   // Export functions
@@ -316,6 +362,20 @@ function DependenciesPageInner() {
     },
     [nodes, setNodes]
   );
+
+  // Show loading state during hydration
+  if (isHydrating) {
+    return (
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Workflow Dependencies</h1>
+          <p className="text-muted-foreground mt-1">
+            Loading saved state...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (workflows.length === 0) {
     return (
@@ -928,7 +988,7 @@ function DependenciesPageInner() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setSelectedWorkflow(null)}
+              onClick={() => setSelectedWorkflowId(null)}
             >
               <X className="size-4" />
             </Button>

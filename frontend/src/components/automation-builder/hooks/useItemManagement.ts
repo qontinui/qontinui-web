@@ -18,7 +18,7 @@ interface CreateWorkflowOptions {
 }
 
 export function useItemManagement() {
-  const { workflows, addWorkflow, updateWorkflow, deleteWorkflow } =
+  const { workflows, addWorkflow, updateWorkflow, deleteWorkflow, deleteWorkflows } =
     useAutomation();
 
   /**
@@ -56,6 +56,28 @@ export function useItemManagement() {
       deleteWorkflow(item.id);
     },
     [deleteWorkflow]
+  );
+
+  /**
+   * Delete multiple workflows
+   */
+  const deleteItems = useCallback(
+    (items: LibraryItem[]) => {
+      if (typeof deleteWorkflows !== "function") {
+        console.error(
+          "[useItemManagement] deleteWorkflows is not a function:",
+          deleteWorkflows,
+          "Type:",
+          typeof deleteWorkflows
+        );
+        // Fall back to individual deletes
+        items.forEach((item) => deleteWorkflow(item.id));
+        return;
+      }
+      const ids = items.map((item) => item.id);
+      deleteWorkflows(ids);
+    },
+    [deleteWorkflows, deleteWorkflow]
   );
 
   /**
@@ -137,6 +159,7 @@ export function useItemManagement() {
     // Mutations
     updateItem,
     deleteItem,
+    deleteItems,
     createSequential,
     createGraph,
     createWorkflow,
@@ -145,5 +168,6 @@ export function useItemManagement() {
     addWorkflow,
     updateWorkflow,
     deleteWorkflow,
+    deleteWorkflows,
   };
 }

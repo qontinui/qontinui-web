@@ -240,6 +240,10 @@ class ProjectDB {
     return this.delete(STORES.WORKFLOWS, id);
   }
 
+  async deleteWorkflows(ids: string[]): Promise<void> {
+    await Promise.all(ids.map((id) => this.delete(STORES.WORKFLOWS, id)));
+  }
+
   async clearWorkflows(): Promise<void> {
     return this.clear(STORES.WORKFLOWS);
   }

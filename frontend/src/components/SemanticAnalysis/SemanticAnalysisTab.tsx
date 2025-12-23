@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useSemanticAnalysisBridge } from "@/stores/page-state";
 import type {
   SemanticObject,
   SemanticScene,
@@ -27,6 +28,21 @@ import type {
 } from "@/types/semantic-analysis";
 
 export function SemanticAnalysisTab() {
+  // Persistent state from store
+  const {
+    // isHydrated - not used yet, available for future
+    isHydrating,
+    // selectedScreenshotId is not directly used in this component yet
+    // but available for future integration with screenshot gallery
+    // selectedElementIds is not directly used yet
+    // analysisResults is not directly used yet
+    // showOverlay - persisted for future use
+    // setShowOverlay - persisted for future use
+    // highlightMode - persisted for future use
+    // setHighlightMode - persisted for future use
+  } = useSemanticAnalysisBridge();
+
+  // Local UI state (not persisted)
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [scene, setScene] = useState<SemanticScene | null>(null);
@@ -381,6 +397,18 @@ export function SemanticAnalysisTab() {
 
     setHoveredObject(hoveredObj?.id || null);
   };
+
+  // Show loading state during hydration
+  if (isHydrating) {
+    return (
+      <div className="h-full flex items-center justify-center bg-[#0A0A0B]">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 mx-auto mb-2 text-gray-400 animate-spin" />
+          <p className="text-sm text-gray-400">Loading page state...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex bg-[#0A0A0B]">

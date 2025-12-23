@@ -19,19 +19,16 @@ import {
 } from "lucide-react";
 import { Screenshot } from "../../contexts/automation-context/types";
 import { useAutomation } from "../../contexts/automation-context";
-import { usePatternMatchingState } from "../../contexts/tab-state";
+import {
+  usePatternTestsBridge,
+  type MatchResult,
+} from "@/stores/page-state";
 import { qontinuiAPI } from "../../lib/qontinui-api-client";
 import { ScreenshotPicker } from "../common/ScreenshotPicker";
 import { ScreenshotRegion } from "../../types/Screenshot";
 
 interface PatternMatchingTestProps {
   screenshots: Screenshot[];
-}
-
-interface MatchResult {
-  region: { x: number; y: number; width: number; height: number };
-  score: number;
-  index?: number;
 }
 
 export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
@@ -43,8 +40,10 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
     screenshots: contextScreenshots,
     resolvePatternImage,
   } = useAutomation();
-  const { state: persistedState, setState: setPersistedState } =
-    usePatternMatchingState();
+
+  // Use bridge hook for persistent state
+  const bridge = usePatternTestsBridge();
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const templateCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -53,50 +52,55 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   const activeScreenshots =
     contextScreenshots.length > 0 ? contextScreenshots : screenshots;
 
-  // State
-  const [selectedScreenshot, setSelectedScreenshot] =
-    useState<Screenshot | null>(
-      activeScreenshots.length > 0 ? (activeScreenshots[0] ?? null) : null
-    );
-  const [screenshotDimensions, setScreenshotDimensions] = useState<{
-    width: number;
-    height: number;
-  } | null>(null);
+  // Local state (not persisted)
   const [currentDisplayScale, setCurrentDisplayScale] = useState<number>(1);
-  const [templateImage, setTemplateImage] = useState<string | null>(null);
-  const [templateSource, setTemplateSource] = useState<
-    "upload" | "state" | "asset"
-  >("upload");
-  const [selectedStateImage, setSelectedStateImage] = useState<string>("");
-  const [selectedAssetImage, setSelectedAssetImage] = useState<string>("");
-
-  // Matching parameters
-  const [similarity, setSimilarity] = useState(0.8);
-  const [findAll, setFindAll] = useState(true);
-  const [searchRegion, setSearchRegion] = useState<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null>(null);
-
-  // Results
-  const [matches, setMatches] = useState<MatchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchTime, setSearchTime] = useState(0);
-  const [selectedMatch, setSelectedMatch] = useState<MatchResult | null>(null);
-
-  // Visualization
-  const [showMatches, setShowMatches] = useState(true);
-  const [showScores, setShowScores] = useState(true); // Always show scores by default
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const [highlightBest, setHighlightBest] = useState(true);
-
-  // Zoom and Pan
-  const [zoom, setZoom] = useState(1);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
+  // Extract persisted state from bridge
+  const {
+    isHydrating,
+    selectedScreenshot,
+    screenshotDimensions,
+    templateImage,
+    templateSource,
+    selectedStateImage,
+    selectedAssetImage,
+    similarity,
+    findAll,
+    searchRegion,
+    matches,
+    searchTime,
+    selectedMatch,
+    showMatches,
+    showScores,
+    showHeatmap,
+    highlightBest,
+    zoom,
+    panOffset,
+    handleUploadScreenshot,
+    handleSelectProjectScreenshot,
+    handleClearScreenshot,
+    setScreenshotDimensions,
+    setTemplateImage,
+    setTemplateSource,
+    setSelectedStateImage,
+    setSelectedAssetImage,
+    setSimilarity,
+    setFindAll,
+    setSearchRegion,
+    setMatches,
+    setSearchTime,
+    setSelectedMatch,
+    setShowMatches,
+    setShowScores,
+    setShowHeatmap,
+    setHighlightBest,
+    setZoom,
+    setPanOffset,
+    resetView,
+  } = bridge;
 
   // API connection
   const [apiConnected, setApiConnected] = useState(false);
@@ -105,77 +109,6 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   useEffect(() => {
     checkAPIConnection();
   }, []);
-
-  // Load persisted state on mount
-  useEffect(() => {
-    // Restore screenshot
-    if (persistedState.selectedScreenshotId) {
-      const screenshot = activeScreenshots.find(
-        (s) => s.id === persistedState.selectedScreenshotId
-      );
-      if (screenshot) {
-        setSelectedScreenshot(screenshot);
-      }
-    }
-
-    // Restore template based on source
-    if (
-      persistedState.templateSource === "state" &&
-      persistedState.selectedStateImageId
-    ) {
-      // Find the state image and restore template
-      const stateImage = states
-        .flatMap((s) => s.stateImages || [])
-        .find((si) => si.id === persistedState.selectedStateImageId);
-      if (stateImage?.patterns?.[0]) {
-        const imageData = resolvePatternImage(stateImage.patterns[0]);
-        if (imageData) {
-          setTemplateImage(imageData.url);
-          setTemplateSource("state");
-          setSelectedStateImage(persistedState.selectedStateImageId);
-        }
-      }
-    } else if (
-      persistedState.templateSource === "asset" &&
-      persistedState.selectedAssetImageId
-    ) {
-      // Find the asset image and restore template
-      const asset = images.find(
-        (img) => img.id === persistedState.selectedAssetImageId
-      );
-      if (asset) {
-        setTemplateImage(asset.url);
-        setTemplateSource("asset");
-        setSelectedAssetImage(persistedState.selectedAssetImageId);
-      }
-    }
-
-    // Restore settings
-    setSimilarity(persistedState.threshold);
-    setFindAll(persistedState.findAll);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Persist state changes (only IDs and settings, not image data)
-  useEffect(() => {
-    setPersistedState({
-      templateSource,
-      selectedScreenshotId: selectedScreenshot?.id || null,
-      selectedStateImageId:
-        templateSource === "state" ? selectedStateImage : null,
-      selectedAssetImageId:
-        templateSource === "asset" ? selectedAssetImage : null,
-      threshold: similarity,
-      findAll,
-    });
-  }, [
-    templateSource,
-    selectedScreenshot?.id,
-    selectedStateImage,
-    selectedAssetImage,
-    similarity,
-    findAll,
-    setPersistedState,
-  ]);
 
   useEffect(() => {
     drawVisualization();
@@ -210,37 +143,25 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
     }
   };
 
-  const handleUploadScreenshot = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
-      const newScreenshot: Screenshot = {
-        id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: file.name,
-        url: dataUrl,
-        timestamp: Date.now(),
-        size: file.size,
-        uploadedAt: new Date(),
-      };
-      setSelectedScreenshot(newScreenshot);
-      setMatches([]);
-    };
-    reader.readAsDataURL(file);
+  const handleUploadScreenshotWrapper = (file: File) => {
+    handleUploadScreenshot(file);
   };
 
-  const handleSelectProjectScreenshot = async (screenshotId: string) => {
+  const handleSelectProjectScreenshotWrapper = async (screenshotId: string) => {
     const projectScreenshot = activeScreenshots.find(
       (s) => s.id === screenshotId
     );
     if (projectScreenshot) {
-      setSelectedScreenshot(projectScreenshot);
-      setMatches([]);
+      await handleSelectProjectScreenshot({
+        id: projectScreenshot.id,
+        name: projectScreenshot.name,
+        url: projectScreenshot.url,
+      });
     }
   };
 
-  const handleClearScreenshot = () => {
-    setSelectedScreenshot(null);
-    setMatches([]);
+  const handleClearScreenshotWrapper = () => {
+    handleClearScreenshot();
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -248,7 +169,8 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
     if (file && file.type.startsWith("image/")) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        setTemplateImage(e.target?.result as string);
+        const dataUrl = e.target?.result as string;
+        setTemplateImage(dataUrl);
         setTemplateSource("upload");
       };
       reader.readAsDataURL(file);
@@ -661,7 +583,8 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   };
 
   const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev * 1.2, 10)); // Allow up to 10x zoom
+    const newZoom = Math.min(zoom * 1.2, 10); // Allow up to 10x zoom
+    setZoom(newZoom);
   };
 
   const handleZoomOut = () => {
@@ -674,8 +597,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   };
 
   const handleFitToScreen = () => {
-    setZoom(1);
-    setPanOffset({ x: 0, y: 0 });
+    resetView();
   };
 
   // Mouse wheel zoom with native event listener to support preventDefault
@@ -736,6 +658,18 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   const clearSearchRegion = () => {
     setSearchRegion(null);
   };
+
+  // Show loading state while hydrating
+  if (isHydrating) {
+    return (
+      <div className="h-full flex flex-col bg-[#0A0A0B] items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 mx-auto mb-3 text-blue-600 animate-spin" />
+          <p className="text-gray-400">Loading pattern tests...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col bg-[#0A0A0B]">
@@ -805,9 +739,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       }
                     : null
                 }
-                onUploadScreenshot={handleUploadScreenshot}
-                onSelectProjectScreenshot={handleSelectProjectScreenshot}
-                onClearScreenshot={handleClearScreenshot}
+                onUploadScreenshot={handleUploadScreenshotWrapper}
+                onSelectProjectScreenshot={handleSelectProjectScreenshotWrapper}
+                onClearScreenshot={handleClearScreenshotWrapper}
               />
             </div>
 
@@ -1567,7 +1501,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
 
 // Helper component to render match thumbnail
 const MatchThumbnail: React.FC<{
-  screenshot: Screenshot | null;
+  screenshot: { id: string; name: string; url: string } | null;
   match: MatchResult;
 }> = ({ screenshot, match }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);

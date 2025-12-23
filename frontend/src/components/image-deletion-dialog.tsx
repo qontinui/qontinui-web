@@ -38,7 +38,10 @@ export function ImageDeletionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[#27272A] border-gray-700 max-w-2xl">
+      <DialogContent className="bg-[#27272A] border-gray-700 max-w-2xl" onSubmit={() => {
+        onConfirmDelete();
+        onOpenChange(false);
+      }}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             {hasUsage && <AlertTriangle className="w-6 h-6 text-yellow-500" />}

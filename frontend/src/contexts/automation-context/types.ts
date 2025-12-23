@@ -395,6 +395,7 @@ export interface AutomationContextType {
   addWorkflow: (workflow: Workflow) => void;
   updateWorkflow: (workflow: Workflow) => void;
   deleteWorkflow: (workflowId: string) => void;
+  deleteWorkflows: (workflowIds: string[]) => void;
 
   // State management
   states: State[];
@@ -488,4 +489,7 @@ export interface AutomationContextType {
   // Backend loading control - prevents race conditions
   isLoadingFromBackend: boolean;
   setIsLoadingFromBackend: (loading: boolean) => void;
+
+  // Immediate save tracking - for preventing auto-save race conditions
+  getLastImmediateSaveTime: () => number;
 }

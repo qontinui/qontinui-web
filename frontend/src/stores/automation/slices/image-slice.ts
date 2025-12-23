@@ -31,9 +31,12 @@ export const createImageSlice: StateCreator<
       name: image.name,
     });
     set((state) => {
+      // Use the image's projectName if provided, otherwise fall back to state.projectName
+      // This ensures the image is associated with the correct project even if
+      // Zustand's projectName hasn't been synced yet
       state.images.push({
         ...image,
-        projectName: state.projectName,
+        projectName: image.projectName || state.projectName,
       });
     });
     get().triggerSave();

@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { authService } from "@/services/service-factory";
 import { User } from "@/types/auth-types";
+import { pageStateDB } from "@/stores/page-state";
 
 interface AuthContextType {
   user: User | null;
@@ -25,7 +26,7 @@ interface AuthContextType {
     password: string,
     fullName?: string
   ) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
   getAccessToken: () => Promise<string | null>;
 }
@@ -272,7 +273,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Clear page state from IndexedDB before logout
+    if (user?.id) {
+      try {
+        console.log("[AuthContext] Clearing page state for user:", user.id);
+        await pageStateDB.clearUserData(user.id);
+        console.log("[AuthContext] Page state cleared successfully");
+      } catch (error) {
+        console.error("[AuthContext] Failed to clear page state:", error);
+        // Continue with logout even if page state cleanup fails
+      }
+    }
+
     authService.logout();
     setUser(null);
 
