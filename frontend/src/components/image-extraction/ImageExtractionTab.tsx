@@ -13,11 +13,21 @@ import {
 } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
 import { useAutomationStore } from "@/stores/automation";
-import { useImageExtractionBridge } from "@/stores/page-state";
+import {
+  useImageExtractionBridge,
+  useImageExtractionStore,
+  selectBlobCache,
+} from "@/stores/page-state";
 import type { Screenshot } from "@/stores/page-state";
-import { ScreenshotPicker, CapturedScreenshot } from "../common/ScreenshotPicker";
+import {
+  ScreenshotPicker,
+  CapturedScreenshot,
+} from "../common/ScreenshotPicker";
 import { AdvancedRegionSelector } from "../pattern-optimization/AdvancedRegionSelector";
-import { CompositeScreenshotCanvas, CompositeScreenshotDisplay } from "./CompositeScreenshotCanvas";
+import {
+  CompositeScreenshotCanvas,
+  CompositeScreenshotDisplay,
+} from "./CompositeScreenshotCanvas";
 import { MaskEditor } from "../mask-editor";
 import { Region } from "@/types/pattern-optimization";
 import {
@@ -84,7 +94,9 @@ export const ImageExtractionTab: React.FC = () => {
   } = useImageExtractionBridge();
 
   // Local state for captured screenshots thumbnails (ephemeral, doesn't need persistence)
-  const [capturedScreenshots, setCapturedScreenshots] = useState<Screenshot[]>([]);
+  const [capturedScreenshots, setCapturedScreenshots] = useState<Screenshot[]>(
+    []
+  );
 
   const {
     states,
@@ -111,30 +123,36 @@ export const ImageExtractionTab: React.FC = () => {
   }, [states]);
 
   // Wrap bridgeHandleUploadScreenshot to also track in local capturedScreenshots
-  const handleUploadScreenshot = useCallback((file: File) => {
-    const url = URL.createObjectURL(file);
-    const id = `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const newScreenshot: Screenshot = { id, name: file.name, url };
+  const handleUploadScreenshot = useCallback(
+    (file: File) => {
+      const url = URL.createObjectURL(file);
+      const id = `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newScreenshot: Screenshot = { id, name: file.name, url };
 
-    // Add to local captured screenshots collection for thumbnails
-    setCapturedScreenshots((prev) => {
-      if (prev.some((s) => s.id === id)) {
-        return prev;
-      }
-      return [...prev, newScreenshot];
-    });
+      // Add to local captured screenshots collection for thumbnails
+      setCapturedScreenshots((prev) => {
+        if (prev.some((s) => s.id === id)) {
+          return prev;
+        }
+        return [...prev, newScreenshot];
+      });
 
-    // Use bridge function to persist to IndexedDB
-    bridgeHandleUploadScreenshot(file);
-  }, [bridgeHandleUploadScreenshot]);
+      // Use bridge function to persist to IndexedDB
+      bridgeHandleUploadScreenshot(file);
+    },
+    [bridgeHandleUploadScreenshot]
+  );
 
   // Handler for multi-monitor captures with position data
-  const handleCaptureMultipleScreenshots = useCallback((screenshots: CapturedScreenshot[]) => {
-    // Clear local single-screenshot captures
-    setCapturedScreenshots([]);
-    // Use bridge function to persist
-    bridgeHandleCaptureMultipleScreenshots(screenshots);
-  }, [bridgeHandleCaptureMultipleScreenshots]);
+  const handleCaptureMultipleScreenshots = useCallback(
+    (screenshots: CapturedScreenshot[]) => {
+      // Clear local single-screenshot captures
+      setCapturedScreenshots([]);
+      // Use bridge function to persist
+      bridgeHandleCaptureMultipleScreenshots(screenshots);
+    },
+    [bridgeHandleCaptureMultipleScreenshots]
+  );
 
   const handleProjectScreenshotSelect = async (screenshotId: string) => {
     const projectScreenshot = projectScreenshots.find(
@@ -145,8 +163,8 @@ export const ImageExtractionTab: React.FC = () => {
       try {
         const blob = await new Promise<Blob>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          xhr.open('GET', projectScreenshot.url!, true);
-          xhr.responseType = 'blob';
+          xhr.open("GET", projectScreenshot.url!, true);
+          xhr.responseType = "blob";
           xhr.onload = () => {
             if (xhr.status === 200 || xhr.status === 0) {
               resolve(xhr.response as Blob);
@@ -154,13 +172,18 @@ export const ImageExtractionTab: React.FC = () => {
               reject(new Error(`HTTP ${xhr.status}`));
             }
           };
-          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.onerror = () => reject(new Error("Network error"));
           xhr.send();
         });
-        const file = new File([blob], projectScreenshot.name, { type: blob.type });
+        const file = new File([blob], projectScreenshot.name, {
+          type: blob.type,
+        });
         bridgeHandleUploadScreenshot(file);
       } catch (error) {
-        console.error("[ImageExtractionTab] Failed to load project screenshot:", error);
+        console.error(
+          "[ImageExtractionTab] Failed to load project screenshot:",
+          error
+        );
         toast.error("Failed to load screenshot");
       }
     } else {
@@ -200,8 +223,8 @@ export const ImageExtractionTab: React.FC = () => {
     try {
       const blob = await new Promise<Blob>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('GET', screenshot.url, true);
-        xhr.responseType = 'blob';
+        xhr.open("GET", screenshot.url, true);
+        xhr.responseType = "blob";
         xhr.onload = () => {
           if (xhr.status === 200 || xhr.status === 0) {
             resolve(xhr.response as Blob);
@@ -209,7 +232,7 @@ export const ImageExtractionTab: React.FC = () => {
             reject(new Error(`HTTP ${xhr.status}`));
           }
         };
-        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.onerror = () => reject(new Error("Network error"));
         xhr.send();
       });
       const file = new File([blob], screenshot.name, { type: blob.type });
@@ -233,112 +256,215 @@ export const ImageExtractionTab: React.FC = () => {
    * Create a composite image from multiple screenshots positioned according to monitor coordinates.
    * Returns a data URL of the composited image.
    */
-  const createCompositeImage = useCallback(async (screenshots: CompositeScreenshotDisplay[]): Promise<string> => {
-    console.log("[createCompositeImage] Starting with", screenshots.length, "screenshots");
+  const createCompositeImage = useCallback(
+    async (screenshots: CompositeScreenshotDisplay[]): Promise<string> => {
+      console.log(
+        "[createCompositeImage] Starting with",
+        screenshots.length,
+        "screenshots"
+      );
 
-    if (screenshots.length === 0) {
-      throw new Error("No screenshots to composite");
-    }
-
-    // Validate all screenshots have URLs
-    for (const s of screenshots) {
-      if (!s.url) {
-        throw new Error(`Screenshot ${s.id} has no URL`);
+      if (screenshots.length === 0) {
+        throw new Error("No screenshots to composite");
       }
-      console.log("[createCompositeImage] Screenshot:", s.id, "URL:", s.url.substring(0, 50));
-    }
 
-    // Calculate bounds
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
+      // Get blob cache from store - this is the reliable source for blob data
+      const blobCache = useImageExtractionStore.getState()._blobCache;
+      console.log(
+        "[createCompositeImage] Blob cache has",
+        blobCache.size,
+        "entries"
+      );
 
-    for (const s of screenshots) {
-      const { x, y, width, height } = s.monitor;
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x + width);
-      maxY = Math.max(maxY, y + height);
-    }
+      // Validate all screenshots have URLs
+      for (const s of screenshots) {
+        if (!s.url) {
+          throw new Error(`Screenshot ${s.id} has no URL`);
+        }
+        const inCache = blobCache.has(s.url);
+        console.log(
+          "[createCompositeImage] Screenshot:",
+          s.id,
+          "URL:",
+          s.url.substring(0, 50),
+          "inCache:",
+          inCache
+        );
+      }
 
-    const compositeWidth = maxX - minX;
-    const compositeHeight = maxY - minY;
-    console.log("[createCompositeImage] Composite size:", compositeWidth, "x", compositeHeight);
+      // Calculate bounds
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
 
-    // Load all images - use XHR to fetch blob (bypasses dev-debug-logger fetch interception)
-    const loadImage = async (url: string, id: string): Promise<HTMLImageElement> => {
-      return new Promise((resolve, reject) => {
-        console.log("[createCompositeImage] Loading image via XHR:", id, "URL:", url.substring(0, 60));
+      for (const s of screenshots) {
+        const { x, y, width, height } = s.monitor;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + width);
+        maxY = Math.max(maxY, y + height);
+      }
 
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', url, true);
-        xhr.responseType = 'blob';
+      const compositeWidth = maxX - minX;
+      const compositeHeight = maxY - minY;
+      console.log(
+        "[createCompositeImage] Composite size:",
+        compositeWidth,
+        "x",
+        compositeHeight
+      );
 
-        xhr.onload = () => {
-          if (xhr.status === 200 || xhr.status === 0) { // status 0 is valid for blob URLs
-            const blob = xhr.response as Blob;
-            console.log("[createCompositeImage] Got blob for:", id, "size:", blob.size);
-
-            // Create a new blob URL from the fetched blob
-            const freshUrl = URL.createObjectURL(blob);
-
+      // Load image from blob cache or XHR fallback
+      const loadImage = async (
+        url: string,
+        id: string
+      ): Promise<HTMLImageElement> => {
+        return new Promise((resolve, reject) => {
+          // First check the blob cache - this is the reliable source
+          const cachedBlob = blobCache.get(url);
+          if (cachedBlob) {
+            console.log(
+              "[createCompositeImage] Found in blob cache:",
+              id,
+              "size:",
+              cachedBlob.size
+            );
+            const freshUrl = URL.createObjectURL(cachedBlob);
             const img = new Image();
             img.onload = () => {
-              console.log("[createCompositeImage] Loaded image:", id, "dimensions:", img.width, "x", img.height);
-              URL.revokeObjectURL(freshUrl); // Clean up the temporary URL
+              console.log(
+                "[createCompositeImage] Loaded from cache:",
+                id,
+                "dimensions:",
+                img.width,
+                "x",
+                img.height
+              );
+              URL.revokeObjectURL(freshUrl);
               resolve(img);
             };
             img.onerror = () => {
               URL.revokeObjectURL(freshUrl);
-              console.error("[createCompositeImage] Failed to load image from fresh URL:", id);
-              reject(new Error(`Failed to load image ${id}: Image data may be corrupted`));
+              console.error(
+                "[createCompositeImage] Failed to load cached blob:",
+                id
+              );
+              reject(
+                new Error(
+                  `Failed to load image ${id}: Cached data may be corrupted`
+                )
+              );
             };
             img.src = freshUrl;
-          } else {
-            console.error("[createCompositeImage] XHR failed:", id, "status:", xhr.status);
-            reject(new Error(`Failed to load image ${id}: HTTP ${xhr.status}`));
+            return;
           }
-        };
 
-        xhr.onerror = () => {
-          console.error("[createCompositeImage] XHR error for:", id);
-          reject(new Error(`Failed to load image ${id}: Network error`));
-        };
+          // Fallback to XHR if not in cache (shouldn't happen with proper caching)
+          console.log(
+            "[createCompositeImage] Not in cache, trying XHR:",
+            id,
+            "URL:",
+            url.substring(0, 60)
+          );
 
-        xhr.send();
-      });
-    };
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", url, true);
+          xhr.responseType = "blob";
 
-    const loadedImages = await Promise.all(
-      screenshots.map(async (s) => ({
-        screenshot: s,
-        image: await loadImage(s.url, s.id),
-      }))
-    );
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 0) {
+              // status 0 is valid for blob URLs
+              const blob = xhr.response as Blob;
+              console.log(
+                "[createCompositeImage] Got blob via XHR:",
+                id,
+                "size:",
+                blob.size
+              );
 
-    // Create canvas and draw all images at their positions
-    const canvas = document.createElement("canvas");
-    canvas.width = compositeWidth;
-    canvas.height = compositeHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      throw new Error("Could not get canvas context");
-    }
+              // Create a new blob URL from the fetched blob
+              const freshUrl = URL.createObjectURL(blob);
 
-    // Fill with black background (for gaps between monitors)
-    ctx.fillStyle = "#000000";
-    ctx.fillRect(0, 0, compositeWidth, compositeHeight);
+              const img = new Image();
+              img.onload = () => {
+                console.log(
+                  "[createCompositeImage] Loaded from XHR:",
+                  id,
+                  "dimensions:",
+                  img.width,
+                  "x",
+                  img.height
+                );
+                URL.revokeObjectURL(freshUrl); // Clean up the temporary URL
+                resolve(img);
+              };
+              img.onerror = () => {
+                URL.revokeObjectURL(freshUrl);
+                console.error(
+                  "[createCompositeImage] Failed to load image from XHR blob:",
+                  id
+                );
+                reject(
+                  new Error(
+                    `Failed to load image ${id}: Image data may be corrupted`
+                  )
+                );
+              };
+              img.src = freshUrl;
+            } else {
+              console.error(
+                "[createCompositeImage] XHR failed:",
+                id,
+                "status:",
+                xhr.status
+              );
+              reject(
+                new Error(`Failed to load image ${id}: HTTP ${xhr.status}`)
+              );
+            }
+          };
 
-    // Draw each screenshot at its normalized position
-    for (const { screenshot, image } of loadedImages) {
-      const x = screenshot.monitor.x - minX;
-      const y = screenshot.monitor.y - minY;
-      ctx.drawImage(image, x, y);
-    }
+          xhr.onerror = () => {
+            console.error("[createCompositeImage] XHR error for:", id);
+            reject(new Error(`Failed to load image ${id}: Network error`));
+          };
 
-    return canvas.toDataURL("image/png");
-  }, []);
+          xhr.send();
+        });
+      };
+
+      const loadedImages = await Promise.all(
+        screenshots.map(async (s) => ({
+          screenshot: s,
+          image: await loadImage(s.url, s.id),
+        }))
+      );
+
+      // Create canvas and draw all images at their positions
+      const canvas = document.createElement("canvas");
+      canvas.width = compositeWidth;
+      canvas.height = compositeHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        throw new Error("Could not get canvas context");
+      }
+
+      // Fill with black background (for gaps between monitors)
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, compositeWidth, compositeHeight);
+
+      // Draw each screenshot at its normalized position
+      for (const { screenshot, image } of loadedImages) {
+        const x = screenshot.monitor.x - minX;
+        const y = screenshot.monitor.y - minY;
+        ctx.drawImage(image, x, y);
+      }
+
+      return canvas.toDataURL("image/png");
+    },
+    []
+  );
 
   const handleExtract = async () => {
     if (!activeRegion) {
@@ -374,7 +500,8 @@ export const ImageExtractionTab: React.FC = () => {
       setExtractedResult(result);
       toast.success("Image extracted successfully");
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       console.error("Extraction failed:", errorMessage, error);
       toast.error(`Failed to extract image: ${errorMessage}`);
     }
@@ -463,7 +590,9 @@ export const ImageExtractionTab: React.FC = () => {
         let targetState = null;
         let targetStateImageName = "";
         for (const s of zustandStates) {
-          const foundSi = s.stateImages?.find(si => si.id === selectedStateImageId);
+          const foundSi = s.stateImages?.find(
+            (si) => si.id === selectedStateImageId
+          );
           if (foundSi) {
             targetState = s;
             targetStateImageName = foundSi.name;
@@ -522,9 +651,7 @@ export const ImageExtractionTab: React.FC = () => {
             `Added pattern to ${targetStateImageName} (image saved to library)`
           );
         } else {
-          toast.success(
-            `Added pattern to ${targetStateImageName}`
-          );
+          toast.success(`Added pattern to ${targetStateImageName}`);
         }
       } else {
         // createStateImage mode - original behavior
@@ -593,9 +720,7 @@ export const ImageExtractionTab: React.FC = () => {
   // Region is now always stored in compositeRegion for simplicity
   const activeRegion = compositeRegion;
   const canExtract =
-    activeRegion &&
-    activeRegion.width > 0 &&
-    activeRegion.height > 0;
+    activeRegion && activeRegion.width > 0 && activeRegion.height > 0;
 
   // Show loading state while hydrating from IndexedDB
   if (isHydrating && !isHydrated) {
@@ -611,7 +736,9 @@ export const ImageExtractionTab: React.FC = () => {
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Loading saved state...</p>
+            <p className="text-sm text-muted-foreground">
+              Loading saved state...
+            </p>
           </div>
         </div>
       </div>
@@ -664,9 +791,14 @@ export const ImageExtractionTab: React.FC = () => {
                   <div className="text-xs text-gray-400 space-y-1">
                     <div className="flex items-center gap-1 text-[#00D9FF]">
                       <Monitor className="w-3 h-3" />
-                      <span>{compositeScreenshots.length} monitors captured</span>
+                      <span>
+                        {compositeScreenshots.length} monitors captured
+                      </span>
                     </div>
-                    <p>Draw a region across monitors to extract images that span multiple screens.</p>
+                    <p>
+                      Draw a region across monitors to extract images that span
+                      multiple screens.
+                    </p>
                   </div>
                 ) : (
                   <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
@@ -947,8 +1079,7 @@ export const ImageExtractionTab: React.FC = () => {
                     )}
                     {compositeRegion && (
                       <li>
-                        Original bounds:{" "}
-                        {Math.round(compositeRegion.x)},{" "}
+                        Original bounds: {Math.round(compositeRegion.x)},{" "}
                         {Math.round(compositeRegion.y)}
                       </li>
                     )}
@@ -1000,9 +1131,18 @@ export const ImageExtractionTab: React.FC = () => {
           <div
             className="bg-[#27272A] border border-gray-700 rounded-lg p-6 w-[450px] max-w-full max-h-[90vh] overflow-y-auto"
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.ctrlKey &&
+                !e.metaKey &&
+                !e.altKey
+              ) {
                 const target = e.target as HTMLElement;
-                if (target.tagName !== "TEXTAREA" && target.tagName !== "BUTTON") {
+                if (
+                  target.tagName !== "TEXTAREA" &&
+                  target.tagName !== "BUTTON"
+                ) {
                   e.preventDefault();
                   handleSaveImage();
                 }
@@ -1149,7 +1289,10 @@ export const ImageExtractionTab: React.FC = () => {
                     {allStateImages.map((ctx) => {
                       const patternCount = ctx.stateImage.patterns?.length || 0;
                       return (
-                        <option key={ctx.stateImage.id} value={ctx.stateImage.id}>
+                        <option
+                          key={ctx.stateImage.id}
+                          value={ctx.stateImage.id}
+                        >
                           {ctx.stateImage.name} ({ctx.stateName}) -{" "}
                           {patternCount} pattern
                           {patternCount !== 1 ? "s" : ""}
