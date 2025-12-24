@@ -5,6 +5,7 @@ Provides database operations for querying project embeddings,
 embedding generation jobs, and performing semantic search.
 """
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -17,7 +18,7 @@ from app.models.project_embedding import ProjectEmbedding
 async def get_dashboard_stats(
     db: AsyncSession,
     project_id: UUID,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """
     Get summary statistics for RAG dashboard.
 
@@ -192,8 +193,6 @@ async def semantic_search(
     Returns:
         List of (embedding, similarity_score) tuples
     """
-
-    # Build the similarity expression using cosine distance
     # Cosine similarity = 1 - cosine distance
     similarity = (
         1 - ProjectEmbedding.embedding.cosine_distance(query_embedding)
@@ -225,7 +224,7 @@ async def semantic_search(
 async def get_unique_states(
     db: AsyncSession,
     project_id: UUID,
-) -> list[dict[str, str]]:
+) -> list[dict[str, str | int]]:
     """
     Get list of unique states with embeddings for filter dropdown.
 
@@ -251,6 +250,6 @@ async def get_unique_states(
     rows = result.all()
 
     return [
-        {"state_id": row.state_id, "state_name": row.state_name, "count": row.count}
+        {"state_id": row.state_id, "state_name": row.state_name, "count": row[2]}
         for row in rows
     ]

@@ -6,6 +6,7 @@ AI prompt templates and sequences.
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -569,7 +570,7 @@ async def get_project_tags(db: AsyncSession, project_id: UUID) -> list[str]:
     return sorted(unique_tags)
 
 
-async def get_project_stats(db: AsyncSession, project_id: UUID) -> dict[str, int]:
+async def get_project_stats(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
     """
     Get statistics for AI prompt library in a project.
 
