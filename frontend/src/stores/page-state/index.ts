@@ -14,24 +14,6 @@ export * from "./types";
 
 // Stores
 export {
-  useImageExtractionStore,
-  selectIsHydrated,
-  selectIsHydrating,
-  selectHydrationError,
-  selectCurrentScreenshot,
-  selectExtractedResult,
-  selectProcessingMode,
-  selectTolerance,
-  selectBlobCache,
-  // Module-level blob cache functions (reliable, bypasses Immer proxy)
-  getModuleBlobFromCache,
-  setModuleBlobInCache,
-  deleteModuleBlobFromCache,
-  clearModuleBlobCache,
-  getModuleBlobCacheSize,
-} from "./image-extraction-store";
-
-export {
   usePatternTestsStore,
   selectIsHydrated as selectPatternTestsIsHydrated,
   selectIsHydrating as selectPatternTestsIsHydrating,
@@ -109,19 +91,9 @@ export {
 } from "./states-store";
 
 // Hooks
-export {
-  useImageExtractionPageState,
-  createPageStateHook,
-} from "./hooks/use-page-state-hydration";
+export { createPageStateHook } from "./hooks/use-page-state-hydration";
 
-// Bridge hooks for gradual migration
-export { useImageExtractionBridge } from "./hooks/use-image-extraction-bridge";
-export type {
-  Screenshot,
-  ProcessingMode,
-  SaveMode,
-} from "./hooks/use-image-extraction-bridge";
-
+// Bridge hooks for page state persistence
 export { usePatternTestsBridge } from "./hooks/use-pattern-tests-bridge";
 export type {
   TemplateSource,

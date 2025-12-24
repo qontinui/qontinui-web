@@ -177,7 +177,9 @@ function DependenciesPageInner() {
   const setFilters = useCallback(
     (update: Partial<FilterState> | ((prev: FilterState) => FilterState)) => {
       const newFilters =
-        typeof update === "function" ? update(filters) : { ...filters, ...update };
+        typeof update === "function"
+          ? update(filters)
+          : { ...filters, ...update };
 
       // Update persisted fields (note: persistedFilters.viewMode is separate from FilterState.viewMode)
       setPersistedFilters({
@@ -369,9 +371,7 @@ function DependenciesPageInner() {
       <div className="p-6 space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Workflow Dependencies</h1>
-          <p className="text-muted-foreground mt-1">
-            Loading saved state...
-          </p>
+          <p className="text-muted-foreground mt-1">Loading saved state...</p>
         </div>
       </div>
     );

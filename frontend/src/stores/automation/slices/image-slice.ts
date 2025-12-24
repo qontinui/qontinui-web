@@ -26,6 +26,13 @@ export const createImageSlice: StateCreator<
   },
 
   addImage: (image) => {
+    console.log("[ImageSlice] addImage called:", {
+      id: image.id,
+      name: image.name,
+      hasUrl: !!image.url,
+      hasMask: !!image.mask,
+      projectName: image.projectName,
+    });
     projectLogger.info("ImageSlice", "addImage", {
       id: image.id,
       name: image.name,
@@ -38,6 +45,7 @@ export const createImageSlice: StateCreator<
         ...image,
         projectName: image.projectName || state.projectName,
       });
+      console.log("[ImageSlice] addImage complete - new images count:", state.images.length);
     });
     get().triggerSave();
   },
@@ -140,9 +148,22 @@ export const createImageSlice: StateCreator<
   },
 
   resolvePatternImage: (pattern) => {
-    if (!pattern.imageId) return null;
+    if (!pattern.imageId) {
+      console.log("[ImageSlice] resolvePatternImage: No imageId in pattern", {
+        patternId: pattern.id,
+        patternName: pattern.name,
+      });
+      return null;
+    }
     const image = get().getImageById(pattern.imageId);
-    if (!image) return null;
+    if (!image) {
+      console.log("[ImageSlice] resolvePatternImage: Image not found", {
+        patternId: pattern.id,
+        patternImageId: pattern.imageId,
+        availableImageIds: get().images.map((i) => i.id),
+      });
+      return null;
+    }
     return { url: image.url, mask: image.mask };
   },
 });

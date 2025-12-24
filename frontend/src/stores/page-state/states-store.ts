@@ -104,7 +104,8 @@ export const useStatesStore = create<StatesStore>()(
               // Restore all state
               draft.viewport = savedState.viewport ?? { x: 0, y: 0, zoom: 1 };
               draft.selectedStateIds = savedState.selectedStateIds ?? [];
-              draft.selectedTransitionIds = savedState.selectedTransitionIds ?? [];
+              draft.selectedTransitionIds =
+                savedState.selectedTransitionIds ?? [];
               draft.editingStateId = savedState.editingStateId ?? null;
               draft.showGrid = savedState.showGrid ?? true;
               draft.snapToGrid = savedState.snapToGrid ?? true;
@@ -135,7 +136,11 @@ export const useStatesStore = create<StatesStore>()(
           return;
         }
 
-        const pageKey = makePageKey(state._projectName, "states", state._userId);
+        const pageKey = makePageKey(
+          state._projectName,
+          "states",
+          state._userId
+        );
 
         try {
           // Save metadata (no blobs for this page)

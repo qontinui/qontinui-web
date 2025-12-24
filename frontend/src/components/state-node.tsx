@@ -142,6 +142,19 @@ export function StateNode({
                   const imageData = firstPattern
                     ? resolvePatternImage(firstPattern)
                     : null;
+
+                  // Debug log for troubleshooting image display issues
+                  if (!imageData) {
+                    console.log("[StateNode] No imageData for stateImage:", {
+                      stateId: state.id,
+                      stateImageId: stateImage.id,
+                      stateImageName: stateImage.name,
+                      hasPatterns: !!stateImage.patterns,
+                      patternsLength: stateImage.patterns?.length,
+                      firstPatternId: firstPattern?.id,
+                      firstPatternImageId: firstPattern?.imageId,
+                    });
+                  }
                   return (
                     <div key={stateImage.id} className="relative">
                       <div

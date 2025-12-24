@@ -143,11 +143,17 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
 
   // Load saved preferences from localStorage
   const savedPrefs = loadMonitorPrefs();
-  const [selectedMonitors, setSelectedMonitorsState] = useState<number[]>(savedPrefs.monitors);
-  const [captureDelay, setCaptureDelayState] = useState<number>(savedPrefs.delay);
+  const [selectedMonitors, setSelectedMonitorsState] = useState<number[]>(
+    savedPrefs.monitors
+  );
+  const [captureDelay, setCaptureDelayState] = useState<number>(
+    savedPrefs.delay
+  );
 
   // Wrapper to save monitor selection to localStorage
-  const setSelectedMonitors = (value: number[] | ((prev: number[]) => number[])) => {
+  const setSelectedMonitors = (
+    value: number[] | ((prev: number[]) => number[])
+  ) => {
     setSelectedMonitorsState((prev) => {
       const newValue = typeof value === "function" ? value(prev) : value;
       saveMonitorPrefs(newValue, captureDelay);
@@ -226,7 +232,9 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         setAvailableMonitors(sortedMonitors);
 
         // Validate saved monitor selections against available monitors
-        const availableIndices = sortedMonitors.map((m: MonitorInfo) => m.index);
+        const availableIndices = sortedMonitors.map(
+          (m: MonitorInfo) => m.index
+        );
         const validSavedMonitors = selectedMonitors.filter((idx) =>
           availableIndices.includes(idx)
         );
@@ -304,7 +312,10 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
 
       // Capture from all selected monitors
-      console.log("[ScreenshotPicker] Starting capture for monitors:", selectedMonitors);
+      console.log(
+        "[ScreenshotPicker] Starting capture for monitors:",
+        selectedMonitors
+      );
 
       // Collect all captured screenshots with their monitor data
       const capturedScreenshots: CapturedScreenshot[] = [];
@@ -324,10 +335,14 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         }
 
         const data = await response.json();
-        console.log("[ScreenshotPicker] Received screenshot data for monitor:", monitorIndex, {
-          width: data.width,
-          height: data.height,
-        });
+        console.log(
+          "[ScreenshotPicker] Received screenshot data for monitor:",
+          monitorIndex,
+          {
+            width: data.width,
+            height: data.height,
+          }
+        );
 
         // Convert base64 to Blob
         const byteCharacters = atob(data.screenshot_base64);
@@ -346,9 +361,14 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         const url = URL.createObjectURL(blob);
 
         // Find monitor info from availableMonitors
-        const monitorInfo = availableMonitors.find((m) => m.index === monitorIndex);
+        const monitorInfo = availableMonitors.find(
+          (m) => m.index === monitorIndex
+        );
         if (!monitorInfo) {
-          console.warn("[ScreenshotPicker] Monitor info not found for index:", monitorIndex);
+          console.warn(
+            "[ScreenshotPicker] Monitor info not found for index:",
+            monitorIndex
+          );
           continue;
         }
 
@@ -366,17 +386,27 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         });
       }
 
-      console.log("[ScreenshotPicker] Capture loop completed, total monitors:", capturedScreenshots.length);
+      console.log(
+        "[ScreenshotPicker] Capture loop completed, total monitors:",
+        capturedScreenshots.length
+      );
 
       // Call the appropriate callback
       if (onCaptureMultipleScreenshots && capturedScreenshots.length > 0) {
         // New callback: pass all screenshots with monitor positions
-        console.log("[ScreenshotPicker] Calling onCaptureMultipleScreenshots with:", capturedScreenshots.length, "screenshots");
+        console.log(
+          "[ScreenshotPicker] Calling onCaptureMultipleScreenshots with:",
+          capturedScreenshots.length,
+          "screenshots"
+        );
         onCaptureMultipleScreenshots(capturedScreenshots);
       } else {
         // Fallback: call onUploadScreenshot for each (backward compatible)
         for (const captured of capturedScreenshots) {
-          console.log("[ScreenshotPicker] Calling onUploadScreenshot for:", captured.name);
+          console.log(
+            "[ScreenshotPicker] Calling onUploadScreenshot for:",
+            captured.name
+          );
           onUploadScreenshot(captured.file);
         }
       }

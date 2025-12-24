@@ -19,10 +19,7 @@ import {
 } from "lucide-react";
 import { Screenshot } from "../../contexts/automation-context/types";
 import { useAutomation } from "../../contexts/automation-context";
-import {
-  usePatternTestsBridge,
-  type MatchResult,
-} from "@/stores/page-state";
+import { usePatternTestsBridge, type MatchResult } from "@/stores/page-state";
 import { qontinuiAPI } from "../../lib/qontinui-api-client";
 import { ScreenshotPicker } from "../common/ScreenshotPicker";
 import { ScreenshotRegion } from "../../types/Screenshot";

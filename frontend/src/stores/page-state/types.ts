@@ -301,26 +301,27 @@ export const DEFAULT_PATTERN_TESTS_STATE: PatternTestsPageState = {
   panOffset: { x: 0, y: 0 },
 };
 
-export const DEFAULT_PATTERN_OPTIMIZATION_STATE: PatternOptimizationPageState = {
-  selectedScreenshotId: null,
-  config: {
-    similarityThreshold: 0.85,
-    colorAveraging: "weighted",
-    morphologicalOps: {
-      enabled: true,
-      erosionSize: 1,
-      dilationSize: 2,
+export const DEFAULT_PATTERN_OPTIMIZATION_STATE: PatternOptimizationPageState =
+  {
+    selectedScreenshotId: null,
+    config: {
+      similarityThreshold: 0.85,
+      colorAveraging: "weighted",
+      morphologicalOps: {
+        enabled: true,
+        erosionSize: 1,
+        dilationSize: 2,
+      },
     },
-  },
-  editMode: "none",
-  editedPatternBlobId: null,
-  stepIndex: 0,
-  showStateImageDialog: false,
-  stateImageName: "",
-  selectedStateId: "",
-  newStateName: "",
-  fixedLocation: true,
-};
+    editMode: "none",
+    editedPatternBlobId: null,
+    stepIndex: 0,
+    showStateImageDialog: false,
+    stateImageName: "",
+    selectedStateId: "",
+    newStateName: "",
+    fixedLocation: true,
+  };
 
 export const DEFAULT_SEMANTIC_ANALYSIS_STATE: SemanticAnalysisPageState = {
   selectedScreenshotId: null,

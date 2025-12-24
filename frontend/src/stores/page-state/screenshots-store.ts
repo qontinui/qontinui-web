@@ -83,14 +83,19 @@ async function urlToBlob(url: string): Promise<Blob | null> {
 
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.responseType = 'blob';
+    xhr.open("GET", url, true);
+    xhr.responseType = "blob";
 
     xhr.onload = () => {
-      if (xhr.status === 200 || xhr.status === 0) { // status 0 is valid for blob URLs
+      if (xhr.status === 200 || xhr.status === 0) {
+        // status 0 is valid for blob URLs
         resolve(xhr.response as Blob);
       } else {
-        console.warn("[ScreenshotsStore] Failed to fetch URL:", url, xhr.status);
+        console.warn(
+          "[ScreenshotsStore] Failed to fetch URL:",
+          url,
+          xhr.status
+        );
         resolve(null);
       }
     };
@@ -142,7 +147,11 @@ export const useScreenshotsStore = create<ScreenshotsStore>()(
 
         try {
           const pageKey = makePageKey(projectName, "screenshots", userId);
-          const metadata = await pageStateDB.getPageState(projectName, "screenshots", userId);
+          const metadata = await pageStateDB.getPageState(
+            projectName,
+            "screenshots",
+            userId
+          );
 
           if (metadata) {
             // Load blobs and create object URLs
@@ -172,7 +181,8 @@ export const useScreenshotsStore = create<ScreenshotsStore>()(
             set((draft) => {
               // Restore all state
               draft.uploadedScreenshots = uploadedScreenshots;
-              draft.selectedScreenshotIds = savedState.selectedScreenshotIds ?? [];
+              draft.selectedScreenshotIds =
+                savedState.selectedScreenshotIds ?? [];
               draft.viewMode = savedState.viewMode ?? "grid";
               draft.sortBy = savedState.sortBy ?? "uploadedAt";
               draft.sortDirection = savedState.sortDirection ?? "desc";
@@ -204,7 +214,11 @@ export const useScreenshotsStore = create<ScreenshotsStore>()(
           return;
         }
 
-        const pageKey = makePageKey(state._projectName, "screenshots", state._userId);
+        const pageKey = makePageKey(
+          state._projectName,
+          "screenshots",
+          state._userId
+        );
 
         try {
           // Delete old blobs
@@ -298,8 +312,12 @@ export const useScreenshotsStore = create<ScreenshotsStore>()(
 
         set((draft) => {
           if (urlToRevoke) draft._objectUrls.delete(urlToRevoke);
-          draft.uploadedScreenshots = draft.uploadedScreenshots.filter((s) => s.id !== id);
-          draft.selectedScreenshotIds = draft.selectedScreenshotIds.filter((sid) => sid !== id);
+          draft.uploadedScreenshots = draft.uploadedScreenshots.filter(
+            (s) => s.id !== id
+          );
+          draft.selectedScreenshotIds = draft.selectedScreenshotIds.filter(
+            (sid) => sid !== id
+          );
         });
 
         // Revoke URL after state update (side effect)
@@ -348,7 +366,9 @@ export const useScreenshotsStore = create<ScreenshotsStore>()(
 
       deselectScreenshot: (id) => {
         set((draft) => {
-          draft.selectedScreenshotIds = draft.selectedScreenshotIds.filter((sid) => sid !== id);
+          draft.selectedScreenshotIds = draft.selectedScreenshotIds.filter(
+            (sid) => sid !== id
+          );
         });
       },
 
@@ -361,7 +381,9 @@ export const useScreenshotsStore = create<ScreenshotsStore>()(
       selectAll: () => {
         const state = get();
         set((draft) => {
-          draft.selectedScreenshotIds = state.uploadedScreenshots.map((s) => s.id);
+          draft.selectedScreenshotIds = state.uploadedScreenshots.map(
+            (s) => s.id
+          );
         });
       },
 
@@ -403,11 +425,13 @@ export const useScreenshotsStore = create<ScreenshotsStore>()(
 
 export const selectIsHydrated = (state: ScreenshotsStore) => state.isHydrated;
 export const selectIsHydrating = (state: ScreenshotsStore) => state.isHydrating;
-export const selectHydrationError = (state: ScreenshotsStore) => state.hydrationError;
+export const selectHydrationError = (state: ScreenshotsStore) =>
+  state.hydrationError;
 export const selectUploadedScreenshots = (state: ScreenshotsStore) =>
   state.uploadedScreenshots;
 export const selectSelectedScreenshotIds = (state: ScreenshotsStore) =>
   state.selectedScreenshotIds;
 export const selectViewMode = (state: ScreenshotsStore) => state.viewMode;
 export const selectSortBy = (state: ScreenshotsStore) => state.sortBy;
-export const selectSortDirection = (state: ScreenshotsStore) => state.sortDirection;
+export const selectSortDirection = (state: ScreenshotsStore) =>
+  state.sortDirection;

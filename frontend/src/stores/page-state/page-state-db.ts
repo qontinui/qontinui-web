@@ -107,7 +107,9 @@ class PageStateDB {
           const metaStore = db.createObjectStore(STORES.PAGE_METADATA, {
             keyPath: "key",
           });
-          metaStore.createIndex("projectName", "projectName", { unique: false });
+          metaStore.createIndex("projectName", "projectName", {
+            unique: false,
+          });
           metaStore.createIndex("userId", "userId", { unique: false });
           metaStore.createIndex("pageId", "pageId", { unique: false });
         }
@@ -305,15 +307,17 @@ class PageStateDB {
       const db = await this.getDB();
 
       // Get all page metadata for this user
-      const pageStates = await new Promise<PageMetadata[]>((resolve, reject) => {
-        const transaction = db.transaction(STORES.PAGE_METADATA, "readonly");
-        const store = transaction.objectStore(STORES.PAGE_METADATA);
-        const index = store.index("userId");
-        const request = index.getAll(userId);
+      const pageStates = await new Promise<PageMetadata[]>(
+        (resolve, reject) => {
+          const transaction = db.transaction(STORES.PAGE_METADATA, "readonly");
+          const store = transaction.objectStore(STORES.PAGE_METADATA);
+          const index = store.index("userId");
+          const request = index.getAll(userId);
 
-        request.onsuccess = () => resolve(request.result || []);
-        request.onerror = () => reject(request.error);
-      });
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+        }
+      );
 
       // Delete all associated blobs and metadata
       for (const pageState of pageStates) {
@@ -335,28 +339,32 @@ class PageStateDB {
       const db = await this.getDB();
 
       // Get all page metadata for this project and user
-      const pageStates = await new Promise<PageMetadata[]>((resolve, reject) => {
-        const transaction = db.transaction(STORES.PAGE_METADATA, "readonly");
-        const store = transaction.objectStore(STORES.PAGE_METADATA);
-        const index = store.index("projectName");
-        const request = index.getAll(projectName);
+      const pageStates = await new Promise<PageMetadata[]>(
+        (resolve, reject) => {
+          const transaction = db.transaction(STORES.PAGE_METADATA, "readonly");
+          const store = transaction.objectStore(STORES.PAGE_METADATA);
+          const index = store.index("projectName");
+          const request = index.getAll(projectName);
 
-        request.onsuccess = () => {
-          // Filter by userId since we indexed by projectName
-          const filtered = (request.result || []).filter(
-            (m) => m.userId === userId
-          );
-          resolve(filtered);
-        };
-        request.onerror = () => reject(request.error);
-      });
+          request.onsuccess = () => {
+            // Filter by userId since we indexed by projectName
+            const filtered = (request.result || []).filter(
+              (m) => m.userId === userId
+            );
+            resolve(filtered);
+          };
+          request.onerror = () => reject(request.error);
+        }
+      );
 
       // Delete all associated blobs and metadata
       for (const pageState of pageStates) {
         await this.deletePageState(pageState.key);
       }
 
-      console.log(`Cleared page state for project ${projectName} user ${userId}`);
+      console.log(
+        `Cleared page state for project ${projectName} user ${userId}`
+      );
     } catch (error) {
       console.error("Error clearing project data:", error);
     }

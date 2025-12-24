@@ -9,7 +9,10 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { pageStateDB, makePageKey } from "./page-state-db";
-import { type DependenciesPageState, DEFAULT_DEPENDENCIES_STATE } from "./types";
+import {
+  type DependenciesPageState,
+  DEFAULT_DEPENDENCIES_STATE,
+} from "./types";
 
 // ===== Store State =====
 
@@ -36,9 +39,7 @@ interface DependenciesStoreActions {
   setActiveTab: (tab: string) => void;
   setSearchQuery: (query: string) => void;
   setFiltersOpen: (open: boolean) => void;
-  setFilters: (
-    filters: Partial<DependenciesPageState["filters"]>
-  ) => void;
+  setFilters: (filters: Partial<DependenciesPageState["filters"]>) => void;
   setGraphViewport: (
     viewport: Partial<DependenciesPageState["graphViewport"]>
   ) => void;
@@ -219,12 +220,15 @@ export const useDependenciesStore = create<DependenciesStore>()(
 // ===== Selectors =====
 
 export const selectIsHydrated = (state: DependenciesStore) => state.isHydrated;
-export const selectIsHydrating = (state: DependenciesStore) => state.isHydrating;
+export const selectIsHydrating = (state: DependenciesStore) =>
+  state.isHydrating;
 export const selectHydrationError = (state: DependenciesStore) =>
   state.hydrationError;
 export const selectActiveTab = (state: DependenciesStore) => state.activeTab;
-export const selectSearchQuery = (state: DependenciesStore) => state.searchQuery;
-export const selectFiltersOpen = (state: DependenciesStore) => state.filtersOpen;
+export const selectSearchQuery = (state: DependenciesStore) =>
+  state.searchQuery;
+export const selectFiltersOpen = (state: DependenciesStore) =>
+  state.filtersOpen;
 export const selectFilters = (state: DependenciesStore) => state.filters;
 export const selectGraphViewport = (state: DependenciesStore) =>
   state.graphViewport;

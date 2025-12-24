@@ -71,7 +71,10 @@ export function useProjectAutoSave({
     // where auto-save might use stale closure data
     const lastImmediateSave = getLastImmediateSaveTime();
     const timeSinceImmediateSave = Date.now() - lastImmediateSave;
-    if (lastImmediateSave > 0 && timeSinceImmediateSave < IMMEDIATE_SAVE_COOLDOWN_MS) {
+    if (
+      lastImmediateSave > 0 &&
+      timeSinceImmediateSave < IMMEDIATE_SAVE_COOLDOWN_MS
+    ) {
       projectLogger.debug("AutoSave", "Skipping save - recent immediate save", {
         projectId,
         timeSinceImmediateSave,
@@ -131,7 +134,12 @@ export function useProjectAutoSave({
     } finally {
       isSavingRef.current = false;
     }
-  }, [projectId, getConfiguration, isLoadingFromBackend, getLastImmediateSaveTime]);
+  }, [
+    projectId,
+    getConfiguration,
+    isLoadingFromBackend,
+    getLastImmediateSaveTime,
+  ]);
 
   // Auto-save to localStorage
   useEffect(() => {

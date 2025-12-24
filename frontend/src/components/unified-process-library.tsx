@@ -191,11 +191,15 @@ export function UnifiedProcessLibrary({
     const itemsToDelete = getSelectedItems();
     if (itemsToDelete.length > 0 && onDeleteItems) {
       onDeleteItems(itemsToDelete);
-      toast.success(`${itemsToDelete.length} workflow${itemsToDelete.length !== 1 ? "s" : ""} deleted`);
+      toast.success(
+        `${itemsToDelete.length} workflow${itemsToDelete.length !== 1 ? "s" : ""} deleted`
+      );
     } else if (itemsToDelete.length > 0) {
       // Fallback to individual deletes if batch delete not provided
       itemsToDelete.forEach((item) => onDeleteItem(item));
-      toast.success(`${itemsToDelete.length} workflow${itemsToDelete.length !== 1 ? "s" : ""} deleted`);
+      toast.success(
+        `${itemsToDelete.length} workflow${itemsToDelete.length !== 1 ? "s" : ""} deleted`
+      );
     }
     setSelectedIds(new Set());
     setIsSelectionMode(false);

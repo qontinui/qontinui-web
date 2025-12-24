@@ -67,7 +67,8 @@ export function AutomationBuilder() {
   const initializedFromUrlRef = useRef(false);
 
   // Hooks
-  const { updateItem, deleteItem, deleteItems, createWorkflow } = useItemManagement();
+  const { updateItem, deleteItem, deleteItems, createWorkflow } =
+    useItemManagement();
   const { handleItemSelection } = useModeDetection({
     currentMode: mode,
     autoSwitch: true,

@@ -86,20 +86,28 @@ async function urlToBlob(url: string): Promise<Blob | null> {
 
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.responseType = 'blob';
+    xhr.open("GET", url, true);
+    xhr.responseType = "blob";
 
     xhr.onload = () => {
-      if (xhr.status === 200 || xhr.status === 0) { // status 0 is valid for blob URLs
+      if (xhr.status === 200 || xhr.status === 0) {
+        // status 0 is valid for blob URLs
         resolve(xhr.response as Blob);
       } else {
-        console.warn("[PatternOptimizationStore] Failed to fetch URL:", url, xhr.status);
+        console.warn(
+          "[PatternOptimizationStore] Failed to fetch URL:",
+          url,
+          xhr.status
+        );
         resolve(null);
       }
     };
 
     xhr.onerror = () => {
-      console.warn("[PatternOptimizationStore] Could not convert URL to blob:", url);
+      console.warn(
+        "[PatternOptimizationStore] Could not convert URL to blob:",
+        url
+      );
       resolve(null);
     };
 

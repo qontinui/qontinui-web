@@ -472,7 +472,14 @@ export function StateStructure() {
       );
       setImageDragData(null);
     },
-    [states, transitions, workflows, addWorkflow, addTransition, updateTransition]
+    [
+      states,
+      transitions,
+      workflows,
+      addWorkflow,
+      addTransition,
+      updateTransition,
+    ]
   );
 
   // Handler for moving a StateImage to another state via Alt+drag

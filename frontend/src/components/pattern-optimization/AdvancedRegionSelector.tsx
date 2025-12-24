@@ -8,6 +8,11 @@ interface AdvancedRegionSelectorProps {
   screenshotUrl: string; // ID reference to IndexedDB
   region?: Region;
   onRegionChange: (region: Region) => void;
+  // Optional controlled viewport props - if provided, component uses these instead of local state
+  zoom?: number;
+  panX?: number;
+  panY?: number;
+  onViewportChange?: (viewport: { zoom?: number; panX?: number; panY?: number }) => void;
 }
 
 type DragHandle =
@@ -35,6 +40,10 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   screenshotUrl,
   region,
   onRegionChange,
+  zoom: controlledZoom,
+  panX: controlledPanX,
+  panY: controlledPanY,
+  onViewportChange,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,9 +54,74 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     height: number;
   } | null>(null);
 
-  // View state
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  // View state - use controlled props if provided, otherwise local state
+  const isControlled = controlledZoom !== undefined && onViewportChange !== undefined;
+  const [localZoom, setLocalZoom] = useState(1);
+  const [localPan, setLocalPan] = useState({ x: 0, y: 0 });
+
+  // Use refs to track the latest values for callbacks (avoids stale closures)
+  const zoomRef = useRef(isControlled ? controlledZoom : localZoom);
+  const panRef = useRef(isControlled ? { x: controlledPanX ?? 0, y: controlledPanY ?? 0 } : localPan);
+  const isControlledRef = useRef(isControlled);
+  const onViewportChangeRef = useRef(onViewportChange);
+
+  // Effective values (controlled or local)
+  const zoom = isControlled ? controlledZoom : localZoom;
+  const pan = isControlled
+    ? { x: controlledPanX ?? 0, y: controlledPanY ?? 0 }
+    : localPan;
+
+  // Keep refs in sync
+  useEffect(() => {
+    zoomRef.current = zoom;
+    panRef.current = pan;
+    isControlledRef.current = isControlled;
+    onViewportChangeRef.current = onViewportChange;
+  });
+
+  // Debug logging for mount/unmount
+  useEffect(() => {
+    console.log("[AdvancedRegionSelector] MOUNTED with props:", {
+      isControlled,
+      controlledZoom,
+      screenshotUrl: screenshotUrl?.substring(0, 50) + "...",
+    });
+    return () => {
+      console.log("[AdvancedRegionSelector] UNMOUNTED");
+    };
+  }, []); // Empty deps = only on mount/unmount
+
+  // Debug logging for zoom tracking
+  useEffect(() => {
+    console.log("[AdvancedRegionSelector] Zoom state changed:", {
+      isControlled,
+      controlledZoom,
+      localZoom,
+      effectiveZoom: zoom,
+    });
+  }, [isControlled, controlledZoom, localZoom, zoom]);
+
+  // Stable setters that use refs (avoids stale closure issues)
+  const setZoom = useCallback((newZoom: number | ((prev: number) => number)) => {
+    const currentZoom = zoomRef.current;
+    const value = typeof newZoom === "function" ? newZoom(currentZoom) : newZoom;
+    console.log("[AdvancedRegionSelector] setZoom called:", { currentZoom, newValue: value, isControlled: isControlledRef.current });
+    if (isControlledRef.current && onViewportChangeRef.current) {
+      onViewportChangeRef.current({ zoom: value });
+    } else {
+      setLocalZoom(value);
+    }
+  }, []); // No dependencies - uses refs
+
+  const setPan = useCallback((newPan: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => {
+    const currentPan = panRef.current;
+    const value = typeof newPan === "function" ? newPan(currentPan) : newPan;
+    if (isControlledRef.current && onViewportChangeRef.current) {
+      onViewportChangeRef.current({ panX: value.x, panY: value.y });
+    } else {
+      setLocalPan(value);
+    }
+  }, []); // No dependencies - uses refs
 
   // Interaction state
   const [isDrawing, setIsDrawing] = useState(false);
@@ -568,17 +642,24 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     setDragStart(null);
   };
 
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newZoom = Math.min(Math.max(0.1, zoom * delta), 5);
+    const currentZoom = zoomRef.current;
+    const newZoom = Math.min(Math.max(0.1, currentZoom * delta), 5);
+    console.log("[AdvancedRegionSelector] handleWheel:", { currentZoom, delta, newZoom });
     setZoom(newZoom);
-  };
+  }, [setZoom]);
 
-  const resetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  };
+  const resetView = useCallback(() => {
+    console.log("[AdvancedRegionSelector] resetView called, isControlled:", isControlledRef.current);
+    if (isControlledRef.current && onViewportChangeRef.current) {
+      onViewportChangeRef.current({ zoom: 1, panX: 0, panY: 0 });
+    } else {
+      setLocalZoom(1);
+      setLocalPan({ x: 0, y: 0 });
+    }
+  }, []); // No dependencies - uses refs
 
   return (
     <div className="h-full flex flex-col bg-gray-50">

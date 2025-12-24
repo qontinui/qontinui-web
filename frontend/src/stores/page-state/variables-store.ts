@@ -9,10 +9,7 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { pageStateDB, makePageKey } from "./page-state-db";
-import {
-  type VariablesPageState,
-  DEFAULT_VARIABLES_STATE,
-} from "./types";
+import { type VariablesPageState, DEFAULT_VARIABLES_STATE } from "./types";
 
 // ===== Store State =====
 

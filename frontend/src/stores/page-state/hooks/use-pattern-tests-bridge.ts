@@ -343,7 +343,9 @@ export function usePatternTestsBridge() {
   // Find selected match from ID
   const selectedMatch = (() => {
     if (!store.selectedMatchId) return null;
-    const storeMatch = store.matches.find((m) => m.id === store.selectedMatchId);
+    const storeMatch = store.matches.find(
+      (m) => m.id === store.selectedMatchId
+    );
     if (!storeMatch) return null;
     return {
       region: {

@@ -93,11 +93,13 @@ export const useSemanticAnalysisStore = create<SemanticAnalysisStore>()(
           );
 
           if (metadata) {
-            const savedState = metadata.state as Partial<SemanticAnalysisPageState>;
+            const savedState =
+              metadata.state as Partial<SemanticAnalysisPageState>;
 
             set((draft) => {
               // Restore all state
-              draft.selectedScreenshotId = savedState.selectedScreenshotId ?? null;
+              draft.selectedScreenshotId =
+                savedState.selectedScreenshotId ?? null;
               draft.selectedElementIds = savedState.selectedElementIds ?? [];
               draft.analysisResults = savedState.analysisResults ?? {};
               draft.showOverlay = savedState.showOverlay ?? true;

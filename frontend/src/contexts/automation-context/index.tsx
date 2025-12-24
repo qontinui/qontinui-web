@@ -918,7 +918,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
           error.name === "ConstraintError"
         ) {
           await projectDB.updateState(stateWithProject);
-          console.log("[AutomationContext] addState - IndexedDB update complete (key existed)");
+          console.log(
+            "[AutomationContext] addState - IndexedDB update complete (key existed)"
+          );
         } else {
           throw error;
         }
@@ -965,20 +967,23 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     [projectName]
   );
 
-  const updateState = useCallback(async (state: State) => {
-    // Ensure projectName is always set for proper IndexedDB indexing
-    const stateWithProject = { ...state, projectName };
+  const updateState = useCallback(
+    async (state: State) => {
+      // Ensure projectName is always set for proper IndexedDB indexing
+      const stateWithProject = { ...state, projectName };
 
-    await projectDB.updateState(stateWithProject);
+      await projectDB.updateState(stateWithProject);
 
-    setStates((prev) => {
-      return StateManager.updateState(prev, stateWithProject);
-    });
+      setStates((prev) => {
+        return StateManager.updateState(prev, stateWithProject);
+      });
 
-    // Also sync to Zustand store
-    const zustandStore = useAutomationStore.getState();
-    zustandStore.updateState(stateWithProject);
-  }, [projectName]);
+      // Also sync to Zustand store
+      const zustandStore = useAutomationStore.getState();
+      zustandStore.updateState(stateWithProject);
+    },
+    [projectName]
+  );
 
   const updateStateWithIdChange = useCallback(
     async (oldId: string, newState: State) => {

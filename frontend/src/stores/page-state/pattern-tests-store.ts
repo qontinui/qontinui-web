@@ -65,12 +65,16 @@ interface PatternTestsStoreState {
   cleanup: () => void;
 
   // Screenshot actions
-  setSelectedScreenshot: (screenshot: {
-    id: string;
-    name: string;
-    file: File;
-  } | null) => Promise<void>;
-  setScreenshotDimensions: (dimensions: { width: number; height: number } | null) => void;
+  setSelectedScreenshot: (
+    screenshot: {
+      id: string;
+      name: string;
+      file: File;
+    } | null
+  ) => Promise<void>;
+  setScreenshotDimensions: (
+    dimensions: { width: number; height: number } | null
+  ) => void;
 
   // Template actions
   setTemplateImage: (file: File | null) => Promise<void>;
@@ -104,7 +108,8 @@ interface PatternTestsStoreState {
 
 // ===== Helper Functions =====
 
-function getDefaultState(): Omit<PatternTestsStoreState,
+function getDefaultState(): Omit<
+  PatternTestsStoreState,
   | "hydrate"
   | "persist"
   | "cleanup"
@@ -190,15 +195,24 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
         });
 
         try {
-          const savedState = await pageStateDB.getPageState(projectName, "pattern-tests", userId);
+          const savedState = await pageStateDB.getPageState(
+            projectName,
+            "pattern-tests",
+            userId
+          );
 
           if (savedState?.state) {
-            const pageState = savedState.state as unknown as PatternTestsPageState;
+            const pageState =
+              savedState.state as unknown as PatternTestsPageState;
 
             // Load screenshot blob
-            let screenshotWithUrl: (PersistedScreenshot & { url?: string }) | null = null;
+            let screenshotWithUrl:
+              | (PersistedScreenshot & { url?: string })
+              | null = null;
             if (pageState.selectedScreenshot) {
-              const pageBlob = await pageStateDB.getBlob(pageState.selectedScreenshot.blobId);
+              const pageBlob = await pageStateDB.getBlob(
+                pageState.selectedScreenshot.blobId
+              );
               if (pageBlob) {
                 screenshotWithUrl = {
                   ...pageState.selectedScreenshot,
@@ -210,7 +224,9 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
             // Load template blob
             let templateWithUrl: { blobId: string; url?: string } | null = null;
             if (pageState.templateImage) {
-              const pageBlob = await pageStateDB.getBlob(pageState.templateImage.blobId);
+              const pageBlob = await pageStateDB.getBlob(
+                pageState.templateImage.blobId
+              );
               if (pageBlob) {
                 templateWithUrl = {
                   blobId: pageState.templateImage.blobId,
@@ -223,7 +239,9 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
             const matchesWithUrls: MatchResult[] = [];
             for (const match of pageState.matches || []) {
               if (match.thumbnailBlobId) {
-                const pageBlob = await pageStateDB.getBlob(match.thumbnailBlobId);
+                const pageBlob = await pageStateDB.getBlob(
+                  match.thumbnailBlobId
+                );
                 if (pageBlob) {
                   matchesWithUrls.push({
                     ...match,
@@ -268,7 +286,8 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
         } catch (error) {
           console.error("[PatternTestsStore] Hydration failed:", error);
           set((draft) => {
-            draft.hydrationError = error instanceof Error ? error.message : "Unknown error";
+            draft.hydrationError =
+              error instanceof Error ? error.message : "Unknown error";
             draft.isHydrated = true;
             draft.isHydrating = false;
           });
@@ -280,7 +299,11 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
         if (!state.projectName || !state.userId) return;
 
         try {
-          const pageKey = makePageKey(state.projectName, "pattern-tests", state.userId);
+          const pageKey = makePageKey(
+            state.projectName,
+            "pattern-tests",
+            state.userId
+          );
           const blobRefs: string[] = [];
 
           // Prepare state for persistence (without runtime URLs)
@@ -359,7 +382,11 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
         if (!state.projectName || !state.userId) return;
 
         if (screenshot) {
-          const pageKey = makePageKey(state.projectName, "pattern-tests", state.userId);
+          const pageKey = makePageKey(
+            state.projectName,
+            "pattern-tests",
+            state.userId
+          );
           const blobId = await pageStateDB.saveBlob(
             pageKey,
             "selectedScreenshot",
@@ -401,7 +428,11 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
         if (!state.projectName || !state.userId) return;
 
         if (file) {
-          const pageKey = makePageKey(state.projectName, "pattern-tests", state.userId);
+          const pageKey = makePageKey(
+            state.projectName,
+            "pattern-tests",
+            state.userId
+          );
           const blobId = await pageStateDB.saveBlob(
             pageKey,
             "templateImage",
@@ -429,7 +460,11 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
           const blob = await response.blob();
           const file = new File([blob], "template.png", { type: blob.type });
 
-          const pageKey = makePageKey(state.projectName, "pattern-tests", state.userId);
+          const pageKey = makePageKey(
+            state.projectName,
+            "pattern-tests",
+            state.userId
+          );
           const blobId = await pageStateDB.saveBlob(
             pageKey,
             "templateImage",
@@ -441,7 +476,10 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
             draft.templateImage = { blobId, url: objectUrl };
           });
         } catch (error) {
-          console.error("[PatternTestsStore] Failed to load template from URL:", error);
+          console.error(
+            "[PatternTestsStore] Failed to load template from URL:",
+            error
+          );
         }
       },
 
@@ -556,9 +594,14 @@ export const usePatternTestsStore = create<PatternTestsStoreState>()(
 
 // ===== Selectors =====
 
-export const selectIsHydrated = (state: PatternTestsStoreState) => state.isHydrated;
-export const selectIsHydrating = (state: PatternTestsStoreState) => state.isHydrating;
-export const selectSelectedScreenshot = (state: PatternTestsStoreState) => state.selectedScreenshot;
-export const selectTemplateImage = (state: PatternTestsStoreState) => state.templateImage;
+export const selectIsHydrated = (state: PatternTestsStoreState) =>
+  state.isHydrated;
+export const selectIsHydrating = (state: PatternTestsStoreState) =>
+  state.isHydrating;
+export const selectSelectedScreenshot = (state: PatternTestsStoreState) =>
+  state.selectedScreenshot;
+export const selectTemplateImage = (state: PatternTestsStoreState) =>
+  state.templateImage;
 export const selectMatches = (state: PatternTestsStoreState) => state.matches;
-export const selectSimilarity = (state: PatternTestsStoreState) => state.similarity;
+export const selectSimilarity = (state: PatternTestsStoreState) =>
+  state.similarity;

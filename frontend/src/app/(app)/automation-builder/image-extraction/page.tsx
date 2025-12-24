@@ -14,13 +14,13 @@
  * - Generate patterns from extracted elements
  */
 
-import { ImageExtractionTab } from "@/components/image-extraction/ImageExtractionTab";
+import { ImageExtractionPage as ImageExtractionPageContent } from "@/components/image-extraction/v2";
 import { RequireProject } from "@/components/require-project";
 
 export default function ImageExtractionPage() {
   return (
     <RequireProject pageName="Extract Images">
-      <ImageExtractionTab />
+      <ImageExtractionPageContent />
     </RequireProject>
   );
 }

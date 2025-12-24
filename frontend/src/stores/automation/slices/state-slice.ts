@@ -47,7 +47,10 @@ export const createStateSlice: StateCreator<
         projectName: newState.projectName || state.projectName,
       };
       state.states.push(stateToAdd);
-      console.log("[StateSlice] addState complete - new state count:", state.states.length);
+      console.log(
+        "[StateSlice] addState complete - new state count:",
+        state.states.length
+      );
     });
     get().triggerSave();
   },

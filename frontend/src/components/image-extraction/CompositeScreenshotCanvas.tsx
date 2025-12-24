@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Region } from "@/types/pattern-optimization";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import type { MonitorInfo } from "@/components/common/ScreenshotPicker";
@@ -18,6 +18,14 @@ interface CompositeScreenshotCanvasProps {
   region?: Region;
   /** Callback when region changes */
   onRegionChange: (region: Region) => void;
+  /** Current zoom level (controlled from parent) */
+  zoom?: number;
+  /** Current pan X position (controlled from parent) */
+  panX?: number;
+  /** Current pan Y position (controlled from parent) */
+  panY?: number;
+  /** Callback when viewport changes */
+  onViewportChange?: (viewport: { zoom?: number; panX?: number; panY?: number }) => void;
 }
 
 type DragHandle =
@@ -86,44 +94,122 @@ function calculateCompositeBounds(screenshots: CompositeScreenshotDisplay[]): {
  * - Right Click: Pan/Move the view
  * - Mouse Wheel: Zoom in/out
  */
-export const CompositeScreenshotCanvas: React.FC<CompositeScreenshotCanvasProps> = ({
-  screenshots,
-  region,
-  onRegionChange,
-}) => {
+export const CompositeScreenshotCanvas: React.FC<
+  CompositeScreenshotCanvasProps
+> = ({ screenshots, region, onRegionChange, zoom: propZoom, panX: propPanX, panY: propPanY, onViewportChange }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Loaded images
   const [loadedImages, setLoadedImages] = useState<LoadedImage[]>([]);
-  const [compositeBounds, setCompositeBounds] = useState<ReturnType<typeof calculateCompositeBounds> | null>(null);
+  const [compositeBounds, setCompositeBounds] = useState<ReturnType<
+    typeof calculateCompositeBounds
+  > | null>(null);
 
-  // View state
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  // Track which screenshot IDs we've already fit to view
+  // This prevents fitToView from being called on every re-render
+  const fittedScreenshotIdsRef = useRef<string | null>(null);
+
+  // Track which screenshots we've already loaded to avoid reloading
+  const lastLoadedScreenshotKeyRef = useRef<string | null>(null);
+
+  // Create a stable key for the current set of screenshots (used for deduplication)
+  const screenshotKey = useMemo(
+    () => screenshots.map((s) => s.id).sort().join(","),
+    [screenshots]
+  );
+
+  // View state - use controlled props if provided, otherwise fall back to internal state
+  const isControlled = propZoom !== undefined && onViewportChange !== undefined;
+  const [internalZoom, setInternalZoom] = useState(1);
+  const [internalPan, setInternalPan] = useState({ x: 0, y: 0 });
+
+  // Use controlled values if provided
+  const zoom = isControlled ? propZoom : internalZoom;
+  const pan = isControlled ? { x: propPanX ?? 0, y: propPanY ?? 0 } : internalPan;
+
+  // Keep a ref to track the latest zoom value for functional updates
+  // This prevents stale closure issues when zoom changes rapidly
+  const zoomRef = useRef(zoom);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  // Unified setters that work for both controlled and uncontrolled modes
+  const setZoom = useCallback((newZoom: number | ((prev: number) => number)) => {
+    // Use ref for functional updates to avoid stale closures
+    const currentZoom = zoomRef.current;
+    const computedZoom = typeof newZoom === 'function' ? newZoom(currentZoom) : newZoom;
+    // Update ref immediately so subsequent calls see the new value
+    zoomRef.current = computedZoom;
+    if (isControlled) {
+      onViewportChange?.({ zoom: computedZoom });
+    } else {
+      setInternalZoom(computedZoom);
+    }
+  }, [isControlled, onViewportChange]);
+
+  const setPan = useCallback((newPan: { x: number; y: number }) => {
+    if (isControlled) {
+      onViewportChange?.({ panX: newPan.x, panY: newPan.y });
+    } else {
+      setInternalPan(newPan);
+    }
+  }, [isControlled, onViewportChange]);
 
   // Interaction state
   const [isDrawing, setIsDrawing] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragHandle, setDragHandle] = useState<DragHandle>(null);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [currentRegion, setCurrentRegion] = useState<Region | null>(region || null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [currentRegion, setCurrentRegion] = useState<Region | null>(
+    region || null
+  );
 
-  // Load all images
+  // Debug: mount/unmount tracking
   useEffect(() => {
-    console.log("[CompositeCanvas] Screenshots received:", screenshots.length, screenshots.map(s => ({ id: s.id, url: s.url?.substring(0, 50) })));
+    console.log("[CompositeCanvas] MOUNTED");
+    return () => {
+      console.log("[CompositeCanvas] UNMOUNTED");
+    };
+  }, []);
+
+  // Load all images (only when screenshots actually change)
+  useEffect(() => {
+    console.log(
+      "[CompositeCanvas] Screenshots effect triggered:",
+      screenshots.length,
+      "screenshotKey:",
+      screenshotKey,
+      "lastKey:",
+      lastLoadedScreenshotKeyRef.current
+    );
 
     if (screenshots.length === 0) {
       setLoadedImages([]);
       setCompositeBounds(null);
+      lastLoadedScreenshotKeyRef.current = null;
+      return;
+    }
+
+    // Skip if we've already loaded these screenshots
+    if (lastLoadedScreenshotKeyRef.current === screenshotKey) {
+      console.log("[CompositeCanvas] Screenshots already loaded, skipping");
       return;
     }
 
     // Check for valid URLs
-    const invalidScreenshots = screenshots.filter(s => !s.url || s.url === "");
+    const invalidScreenshots = screenshots.filter(
+      (s) => !s.url || s.url === ""
+    );
     if (invalidScreenshots.length > 0) {
-      console.warn("[CompositeCanvas] Screenshots with missing URLs:", invalidScreenshots.map(s => s.id));
+      console.warn(
+        "[CompositeCanvas] Screenshots with missing URLs:",
+        invalidScreenshots.map((s) => s.id)
+      );
       return;
     }
 
@@ -144,7 +230,13 @@ export const CompositeScreenshotCanvas: React.FC<CompositeScreenshotCanvasProps>
         };
         img.onerror = (err) => {
           if (!isCancelled) {
-            console.error("[CompositeCanvas] Failed to load image:", screenshot.id, "URL:", screenshot.url?.substring(0, 80), err);
+            console.error(
+              "[CompositeCanvas] Failed to load image:",
+              screenshot.id,
+              "URL:",
+              screenshot.url?.substring(0, 80),
+              err
+            );
             reject(err);
           }
         };
@@ -156,6 +248,7 @@ export const CompositeScreenshotCanvas: React.FC<CompositeScreenshotCanvasProps>
       .then((loaded) => {
         if (!isCancelled) {
           console.log("[CompositeCanvas] All images loaded:", loaded.length);
+          lastLoadedScreenshotKeyRef.current = screenshotKey;
           setLoadedImages(loaded);
         }
       })
@@ -169,7 +262,7 @@ export const CompositeScreenshotCanvas: React.FC<CompositeScreenshotCanvasProps>
     return () => {
       isCancelled = true;
     };
-  }, [screenshots]);
+  }, [screenshots, screenshotKey]);
 
   // Update region when prop changes
   useEffect(() => {
@@ -178,35 +271,84 @@ export const CompositeScreenshotCanvas: React.FC<CompositeScreenshotCanvasProps>
     }
   }, [region]);
 
-  // Fit view to show all content
-  const fitToView = useCallback(() => {
-    if (!containerRef.current || !compositeBounds || compositeBounds.width === 0) return;
+  // Fit view to show all content - using ref to avoid dependency issues
+  const fitToViewRef = useRef<() => void>(() => {});
 
-    const container = containerRef.current;
-    const containerWidth = container.clientWidth;
-    const containerHeight = container.clientHeight;
+  // Update the ref whenever compositeBounds changes
+  useEffect(() => {
+    fitToViewRef.current = () => {
+      if (
+        !containerRef.current ||
+        !compositeBounds ||
+        compositeBounds.width === 0
+      )
+        return;
 
-    const padding = 40;
-    const availableWidth = containerWidth - padding * 2;
-    const availableHeight = containerHeight - padding * 2;
+      const container = containerRef.current;
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
 
-    const scaleX = availableWidth / compositeBounds.width;
-    const scaleY = availableHeight / compositeBounds.height;
-    const newZoom = Math.min(scaleX, scaleY, 1);
+      const padding = 40;
+      const availableWidth = containerWidth - padding * 2;
+      const availableHeight = containerHeight - padding * 2;
 
-    const centeredX = (containerWidth - compositeBounds.width * newZoom) / 2;
-    const centeredY = (containerHeight - compositeBounds.height * newZoom) / 2;
+      const scaleX = availableWidth / compositeBounds.width;
+      const scaleY = availableHeight / compositeBounds.height;
+      const newZoom = Math.min(scaleX, scaleY, 1);
 
-    setZoom(newZoom);
-    setPan({ x: centeredX, y: centeredY });
+      const centeredX = (containerWidth - compositeBounds.width * newZoom) / 2;
+      const centeredY = (containerHeight - compositeBounds.height * newZoom) / 2;
+
+      console.log("[CompositeCanvas] fitToView executing:", { newZoom, centeredX, centeredY });
+      setZoom(newZoom);
+      setPan({ x: centeredX, y: centeredY });
+    };
   }, [compositeBounds]);
 
-  // Fit to view when images are loaded
+  // Stable fitToView function that uses the ref
+  const fitToView = useCallback(() => {
+    fitToViewRef.current();
+  }, []);
+
+  // Track if we've already done initial fitToView for this set of screenshots
+  // Store the screenshotKey that was fitted, not just a boolean
+  const initialFitDoneForRef = useRef<string | null>(null);
+
+  // Fit to view when a NEW set of images is loaded (not on every re-render)
+  // Skip if zoom is already set (i.e., restored from persisted state)
   useEffect(() => {
-    if (loadedImages.length > 0) {
-      fitToView();
+    if (loadedImages.length === 0) return;
+
+    // Check if we already handled this set of screenshots
+    if (initialFitDoneForRef.current === screenshotKey) {
+      return;
     }
-  }, [loadedImages, fitToView]);
+
+    // Mark this screenshot set as processed BEFORE scheduling fitToView
+    initialFitDoneForRef.current = screenshotKey;
+    fittedScreenshotIdsRef.current = screenshotKey;
+
+    // Use setTimeout to ensure:
+    // 1. compositeBounds has been updated in the ref
+    // 2. Any pending state updates (like hydration) have been processed
+    // IMPORTANT: Check zoom INSIDE the timeout to use the latest value after hydration.
+    // This prevents a race condition where the zoom check happens before hydration completes,
+    // but fitToView runs after hydration has already set the correct zoom.
+    setTimeout(() => {
+      // Use zoomRef which always has the current zoom value
+      const currentZoom = zoomRef.current;
+      // Only fit to view if zoom is still at the default value (1)
+      // If zoom has been restored from storage or user interacted, skip fitToView
+      if (currentZoom === 1) {
+        console.log("[CompositeCanvas] Auto fitToView: zoom is default (1)");
+        fitToViewRef.current();
+      } else {
+        console.log("[CompositeCanvas] Skipping auto fitToView: zoom already set to", currentZoom);
+      }
+    }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedImages, screenshotKey]);
+
 
   // Draw canvas
   const draw = useCallback(() => {
@@ -275,10 +417,19 @@ export const CompositeScreenshotCanvas: React.FC<CompositeScreenshotCanvasProps>
         { x: currentRegion.x, y: currentRegion.y }, // tl
         { x: currentRegion.x + currentRegion.width, y: currentRegion.y }, // tr
         { x: currentRegion.x, y: currentRegion.y + currentRegion.height }, // bl
-        { x: currentRegion.x + currentRegion.width, y: currentRegion.y + currentRegion.height }, // br
+        {
+          x: currentRegion.x + currentRegion.width,
+          y: currentRegion.y + currentRegion.height,
+        }, // br
         { x: currentRegion.x + currentRegion.width / 2, y: currentRegion.y }, // t
-        { x: currentRegion.x + currentRegion.width, y: currentRegion.y + currentRegion.height / 2 }, // r
-        { x: currentRegion.x + currentRegion.width / 2, y: currentRegion.y + currentRegion.height }, // b
+        {
+          x: currentRegion.x + currentRegion.width,
+          y: currentRegion.y + currentRegion.height / 2,
+        }, // r
+        {
+          x: currentRegion.x + currentRegion.width / 2,
+          y: currentRegion.y + currentRegion.height,
+        }, // b
         { x: currentRegion.x, y: currentRegion.y + currentRegion.height / 2 }, // l
       ];
 
@@ -402,12 +553,7 @@ export const CompositeScreenshotCanvas: React.FC<CompositeScreenshotCanvasProps>
       }
 
       // Check if inside region (for move)
-      if (
-        imgX >= x &&
-        imgX <= x + width &&
-        imgY >= y &&
-        imgY <= y + height
-      ) {
+      if (imgX >= x && imgX <= x + width && imgY >= y && imgY <= y + height) {
         return "move";
       }
 
@@ -581,7 +727,11 @@ export const CompositeScreenshotCanvas: React.FC<CompositeScreenshotCanvasProps>
 
   const handleMouseUp = useCallback(() => {
     if (isDrawing || isDragging) {
-      if (currentRegion && currentRegion.width > 0 && currentRegion.height > 0) {
+      if (
+        currentRegion &&
+        currentRegion.width > 0 &&
+        currentRegion.height > 0
+      ) {
         onRegionChange(currentRegion);
       }
     }
@@ -653,10 +803,11 @@ export const CompositeScreenshotCanvas: React.FC<CompositeScreenshotCanvasProps>
             Composite: {compositeBounds.width} × {compositeBounds.height}px
           </div>
         )}
-        <div>Zoom: {Math.round(zoom * 100)}%</div>
+        <div data-zoom-value={zoom}>Zoom: {Math.round(zoom * 100)}%</div>
         {currentRegion && currentRegion.width > 0 && (
           <div className="text-[#00D9FF]">
-            Region: {Math.round(currentRegion.width)} × {Math.round(currentRegion.height)}px
+            Region: {Math.round(currentRegion.width)} ×{" "}
+            {Math.round(currentRegion.height)}px
           </div>
         )}
       </div>

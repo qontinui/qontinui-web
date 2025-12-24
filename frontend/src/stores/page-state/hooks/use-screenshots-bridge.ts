@@ -74,12 +74,14 @@ export function useScreenshotsBridge() {
   }, [store]);
 
   // Convert store screenshots to component Screenshot format
-  const uploadedScreenshots: Screenshot[] = store.uploadedScreenshots.map((s) => ({
-    id: s.id,
-    name: s.name,
-    url: s.url || "",
-    region: s.region,
-  }));
+  const uploadedScreenshots: Screenshot[] = store.uploadedScreenshots.map(
+    (s) => ({
+      id: s.id,
+      name: s.name,
+      url: s.url || "",
+      region: s.region,
+    })
+  );
 
   // Actions that mirror the original component's setState functions
   const addScreenshot = useCallback(

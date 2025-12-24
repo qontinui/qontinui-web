@@ -18,8 +18,13 @@ interface CreateWorkflowOptions {
 }
 
 export function useItemManagement() {
-  const { workflows, addWorkflow, updateWorkflow, deleteWorkflow, deleteWorkflows } =
-    useAutomation();
+  const {
+    workflows,
+    addWorkflow,
+    updateWorkflow,
+    deleteWorkflow,
+    deleteWorkflows,
+  } = useAutomation();
 
   /**
    * All items are workflows
