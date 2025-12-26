@@ -1,10 +1,11 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { TokenStatus } from "@/types/runner";
+
+type ConnectionStatus = "active" | "disconnected";
 
 interface StatusIndicatorProps {
-  status: TokenStatus;
+  status: ConnectionStatus;
   showLabel?: boolean;
   className?: string;
 }
@@ -14,33 +15,20 @@ export function StatusIndicator({
   showLabel = true,
   className,
 }: StatusIndicatorProps) {
-  const getStatusConfig = () => {
-    switch (status) {
-      case "active":
-        return {
+  const config =
+    status === "active"
+      ? {
           dotClass: "bg-green-500",
           labelClass: "text-green-500",
           label: "Active",
           animate: true,
-        };
-      case "expired":
-        return {
-          dotClass: "bg-orange-500",
-          labelClass: "text-orange-500",
-          label: "Expired",
+        }
+      : {
+          dotClass: "bg-gray-500",
+          labelClass: "text-gray-500",
+          label: "Disconnected",
           animate: false,
         };
-      case "revoked":
-        return {
-          dotClass: "bg-red-500",
-          labelClass: "text-red-500",
-          label: "Revoked",
-          animate: false,
-        };
-    }
-  };
-
-  const config = getStatusConfig();
 
   return (
     <div className={cn("flex items-center gap-2", className)}>

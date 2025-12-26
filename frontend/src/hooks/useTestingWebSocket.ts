@@ -495,24 +495,33 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
 
   /**
    * Disconnect from WebSocket
+   * @param resetState - If true, reset execution state to idle (default: true).
+   *                     Set to false during cleanup to avoid infinite loops.
    */
-  const disconnect = useCallback(() => {
-    if (reconnectTimeout.current) {
-      clearTimeout(reconnectTimeout.current);
-      reconnectTimeout.current = null;
-    }
+  const disconnect = useCallback(
+    (resetState = true) => {
+      if (reconnectTimeout.current) {
+        clearTimeout(reconnectTimeout.current);
+        reconnectTimeout.current = null;
+      }
 
-    stopElapsedTimer();
-    stopHeartbeat();
-    messageQueue.current = [];
+      stopElapsedTimer();
+      stopHeartbeat();
+      messageQueue.current = [];
 
-    if (wsRef.current) {
-      wsRef.current.close(1000, "Client disconnect");
-      wsRef.current = null;
-    }
+      if (wsRef.current) {
+        wsRef.current.close(1000, "Client disconnect");
+        wsRef.current = null;
+      }
 
-    setExecutionData((prev) => ({ ...prev, state: "idle" }));
-  }, [stopElapsedTimer, stopHeartbeat]);
+      // Only reset state when explicitly disconnecting, not during cleanup
+      // This prevents infinite re-render loops when the effect cleanup runs
+      if (resetState) {
+        setExecutionData((prev) => ({ ...prev, state: "idle" }));
+      }
+    },
+    [stopElapsedTimer, stopHeartbeat]
+  );
 
   /**
    * Connect on mount/when testRunId changes
@@ -523,9 +532,15 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
     }
 
     return () => {
-      disconnect();
+      // Pass false to prevent state update during cleanup, which avoids infinite loops
+      disconnect(false);
     };
-  }, [enabled, testRunId, connect, disconnect]);
+    // Note: We intentionally exclude `connect` and `disconnect` from deps
+    // to prevent infinite re-render loops. These functions reference refs
+    // and stable callbacks, so the effect only needs to run when the
+    // primary values (enabled, testRunId) change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, testRunId]);
 
   return {
     ...executionData,

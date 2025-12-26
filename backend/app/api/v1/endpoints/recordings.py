@@ -23,9 +23,9 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
+from app.models.discovered_state import DiscoveredState
 from app.models.project import Project
 from app.models.recording import (
-    DiscoveredState,
     DiscoveredTransition,
     Recording,
     RecordingContext,

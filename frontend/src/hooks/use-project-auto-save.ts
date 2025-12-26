@@ -2,24 +2,23 @@
  * useProjectAutoSave Hook
  *
  * Single Responsibility: Handle automatic saving of project configuration.
- * This hook extracts the auto-save logic from the automation-builder component.
+ * This hook delegates sync operations to the SyncCoordinator.
  *
  * Responsibilities:
- * - Trigger local storage saves periodically
- * - Sync configuration to backend periodically
- * - Track save status
+ * - Initialize and configure SyncCoordinator
+ * - Register save function and configuration getter
+ * - Track sync status for UI
  */
 
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { useAutomation } from "@/contexts/automation-context";
 import { projectService } from "@/services/service-factory";
+import { syncCoordinator, type SyncStatus } from "@/lib/sync";
 import { projectLogger } from "@/lib/project-logger";
 
 interface UseProjectAutoSaveOptions {
   /** Project ID for backend sync (null if no backend project) */
   projectId: string | null;
-  /** Interval for local saves in ms (default: 2000) */
-  localSaveInterval?: number;
   /** Interval for backend saves in ms (default: 10000) */
   backendSaveInterval?: number;
   /** Whether auto-save is enabled */
@@ -31,189 +30,95 @@ interface UseProjectAutoSaveResult {
   saveToBackend: () => Promise<void>;
   /** Whether a save is in progress */
   isSaving: boolean;
+  /** Full sync status */
+  syncStatus: SyncStatus;
 }
 
 export function useProjectAutoSave({
   projectId,
-  localSaveInterval = 2000,
   backendSaveInterval = 10000,
   enabled = true,
 }: UseProjectAutoSaveOptions): UseProjectAutoSaveResult {
-  const {
-    triggerSave,
-    getConfiguration,
-    workflows,
-    states,
-    transitions,
-    images,
-    isLoadingFromBackend,
-    getLastImmediateSaveTime,
-  } = useAutomation();
+  const { getConfiguration, isLoadingFromBackend } = useAutomation();
 
-  const isSavingRef = useRef(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(
+    syncCoordinator.getStatus()
+  );
 
-  // Minimum time (ms) to wait after an immediate save before auto-saving
-  // This prevents race conditions where auto-save overwrites with stale data
-  const IMMEDIATE_SAVE_COOLDOWN_MS = 2000;
+  // Keep refs to avoid stale closures
+  const projectIdRef = useRef(projectId);
+  const getConfigurationRef = useRef(getConfiguration);
 
-  // Save to backend
-  const saveToBackend = useCallback(async () => {
-    // Don't save if we're currently loading from backend - this prevents
-    // overwriting backend data with empty/partial local state
-    if (isLoadingFromBackend) {
-      projectLogger.debug("AutoSave", "Skipping save - loading from backend", {
-        projectId,
-      });
-      return;
-    }
+  // Update refs when values change
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
 
-    // Don't save if an immediate save happened recently - prevents race conditions
-    // where auto-save might use stale closure data
-    const lastImmediateSave = getLastImmediateSaveTime();
-    const timeSinceImmediateSave = Date.now() - lastImmediateSave;
-    if (
-      lastImmediateSave > 0 &&
-      timeSinceImmediateSave < IMMEDIATE_SAVE_COOLDOWN_MS
-    ) {
-      projectLogger.debug("AutoSave", "Skipping save - recent immediate save", {
-        projectId,
-        timeSinceImmediateSave,
-        cooldown: IMMEDIATE_SAVE_COOLDOWN_MS,
-      });
-      return;
-    }
+  useEffect(() => {
+    getConfigurationRef.current = getConfiguration;
+  }, [getConfiguration]);
 
-    if (!projectId || isSavingRef.current) {
-      return;
-    }
+  // Initialize coordinator
+  useEffect(() => {
+    syncCoordinator.initialize({
+      projectId,
+      enabled,
+      backendSaveInterval,
+    });
+  }, [projectId, enabled, backendSaveInterval]);
 
-    isSavingRef.current = true;
+  // Update loading state
+  useEffect(() => {
+    syncCoordinator.setLoadingFromBackend(isLoadingFromBackend);
+  }, [isLoadingFromBackend]);
 
-    try {
-      const config = getConfiguration();
+  // Register save function
+  useEffect(() => {
+    const saveFn = async () => {
+      const currentProjectId = projectIdRef.current;
+      if (!currentProjectId) return;
 
-      // Safety check: don't save if configuration appears to be empty/invalid
-      // This prevents accidental data loss from race conditions
-      const hasData =
-        (config.workflows?.length ?? 0) > 0 ||
-        (config.states?.length ?? 0) > 0 ||
-        (config.transitions?.length ?? 0) > 0 ||
-        (config.images?.length ?? 0) > 0;
+      const config = getConfigurationRef.current();
 
-      if (!hasData) {
-        projectLogger.warn(
-          "AutoSave",
-          "Skipping save - configuration appears empty",
-          {
-            projectId,
-            workflowCount: config.workflows?.length ?? 0,
-            stateCount: config.states?.length ?? 0,
-            transitionCount: config.transitions?.length ?? 0,
-            imageCount: config.images?.length ?? 0,
-          }
-        );
-        return;
-      }
-
-      projectLogger.debug("AutoSave", "Saving to backend", {
-        projectId,
-        workflowCount: config.workflows?.length ?? 0,
-        stateCount: config.states?.length ?? 0,
+      projectLogger.debug("AutoSave", "Saving to backend via coordinator", {
+        projectId: currentProjectId,
+        workflowCount: (config.workflows as unknown[])?.length ?? 0,
+        stateCount: (config.states as unknown[])?.length ?? 0,
       });
 
-      await projectService.updateProject(projectId, {
+      await projectService.updateProject(currentProjectId, {
         configuration: config,
       });
 
-      projectLogger.debug("AutoSave", "Backend save complete", { projectId });
-    } catch (error) {
-      projectLogger.error("AutoSave", "Backend save failed", {
-        projectId,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-    } finally {
-      isSavingRef.current = false;
-    }
-  }, [
-    projectId,
-    getConfiguration,
-    isLoadingFromBackend,
-    getLastImmediateSaveTime,
-  ]);
-
-  // Auto-save to localStorage
-  useEffect(() => {
-    if (!enabled) return;
-
-    const interval = setInterval(() => {
-      triggerSave();
-    }, localSaveInterval);
-
-    return () => clearInterval(interval);
-  }, [triggerSave, localSaveInterval, enabled]);
-
-  // Auto-save to backend
-  useEffect(() => {
-    if (!enabled || !projectId) return;
-
-    const interval = setInterval(() => {
-      saveToBackend();
-    }, backendSaveInterval);
-
-    return () => clearInterval(interval);
-  }, [
-    projectId,
-    saveToBackend,
-    backendSaveInterval,
-    enabled,
-    workflows,
-    states,
-    transitions,
-    images,
-  ]);
-
-  // Save to backend when page is about to unload (refresh, close, navigate away)
-  useEffect(() => {
-    if (!enabled || !projectId) return;
-
-    const handleBeforeUnload = () => {
-      const config = getConfiguration();
-
-      const hasData =
-        (config.workflows?.length ?? 0) > 0 ||
-        (config.states?.length ?? 0) > 0 ||
-        (config.transitions?.length ?? 0) > 0 ||
-        (config.images?.length ?? 0) > 0;
-
-      if (!hasData) return;
-
-      projectLogger.debug("AutoSave", "Saving on beforeunload", { projectId });
-
-      // Use fetch with keepalive for reliable delivery during page unload
-      // keepalive allows the request to outlive the page
-      const backendUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const url = `${backendUrl}/api/v1/projects/${projectId}`;
-
-      fetch(url, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ configuration: config }),
-        keepalive: true,
-        credentials: "include",
-      }).catch(() => {
-        // Ignore errors during unload - best effort save
+      projectLogger.debug("AutoSave", "Backend save complete", {
+        projectId: currentProjectId,
       });
     };
 
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [enabled, projectId, getConfiguration]);
+    syncCoordinator.registerSaveFunction(saveFn);
+  }, []);
+
+  // Register configuration getter
+  useEffect(() => {
+    syncCoordinator.registerConfigurationGetter(() =>
+      getConfigurationRef.current()
+    );
+  }, []);
+
+  // Subscribe to status changes
+  useEffect(() => {
+    const unsubscribe = syncCoordinator.subscribe(setSyncStatus);
+    return unsubscribe;
+  }, []);
+
+  // Manual save trigger
+  const saveToBackend = useCallback(async () => {
+    await syncCoordinator.saveNow();
+  }, []);
 
   return {
     saveToBackend,
-    isSaving: isSavingRef.current,
+    isSaving: syncStatus.isSyncing,
+    syncStatus,
   };
 }

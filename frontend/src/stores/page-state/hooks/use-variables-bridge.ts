@@ -20,6 +20,11 @@ export function useVariablesBridge() {
   const { user } = useAuth();
   const { projectName } = useAutomation();
   const store = useVariablesStore();
+
+  // Keep stable ref to store to avoid infinite loops
+  const storeRef = useRef(store);
+  storeRef.current = store;
+
   const hasHydrated = useRef(false);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -27,9 +32,10 @@ export function useVariablesBridge() {
   useEffect(() => {
     if (user?.id && projectName && !hasHydrated.current) {
       hasHydrated.current = true;
-      store.hydrate(projectName, user.id);
+      storeRef.current.hydrate(projectName, user.id);
     }
-  }, [user?.id, projectName, store]);
+
+  }, [user?.id, projectName]);
 
   // Persist on unmount
   useEffect(() => {
@@ -37,9 +43,9 @@ export function useVariablesBridge() {
       if (persistTimeoutRef.current) {
         clearTimeout(persistTimeoutRef.current);
       }
-      store.persist();
+      storeRef.current.persist();
     };
-  }, [store]);
+  }, []);
 
   // Debounced persist
   const debouncedPersist = useCallback(() => {
@@ -47,60 +53,60 @@ export function useVariablesBridge() {
       clearTimeout(persistTimeoutRef.current);
     }
     persistTimeoutRef.current = setTimeout(() => {
-      store.persist();
+      storeRef.current.persist();
     }, 500);
-  }, [store]);
+  }, []);
 
   // Listen for beforeunload
   useEffect(() => {
     const handleBeforeUnload = () => {
-      store.persist();
+      storeRef.current.persist();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [store]);
+  }, []);
 
   // State setters that persist after each change
   const setSearchQuery = useCallback(
     (query: string) => {
-      store.setSearchQuery(query);
+      storeRef.current.setSearchQuery(query);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSelectedVariables = useCallback(
     (ids: string[]) => {
-      store.setSelectedVariableIds(ids);
+      storeRef.current.setSelectedVariableIds(ids);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSortField = useCallback(
     (field: "name" | "type" | "value" | "createdAt") => {
-      store.setSortField(field);
+      storeRef.current.setSortField(field);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSortDirection = useCallback(
     (direction: "asc" | "desc") => {
-      store.setSortDirection(direction);
+      storeRef.current.setSortDirection(direction);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setFilterType = useCallback(
     (type: string | null) => {
-      store.setFilterType(type);
+      storeRef.current.setFilterType(type);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   return {

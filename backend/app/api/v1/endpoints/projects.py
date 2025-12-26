@@ -2,14 +2,13 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.error_codes import ErrorCode
 from app.crud.project import create_project, delete_project, get_project, update_project
 from app.middleware.error_handler import forbidden_error, not_found_error
-from app.middleware.rate_limit import user_limiter
 from app.models.organization import PermissionLevel
 from app.models.user import User
 from app.schemas.project import Project, ProjectCreate, ProjectUpdate
@@ -25,9 +24,7 @@ router = APIRouter()
 
 
 @router.get("", response_model=list[Project])
-@user_limiter.limit("100 per minute")
 async def read_projects(
-    request: Request,
     db: AsyncSession = Depends(get_async_db),
     skip: int = 0,
     limit: int = 100,
@@ -139,10 +136,8 @@ async def read_projects(
         },
     },
 )
-@user_limiter.limit("20 per minute")
 async def create_new_project(
     *,
-    request: Request,
     db: AsyncSession = Depends(get_async_db),
     project_in: ProjectCreate,
     current_user: User = Depends(get_current_active_user_async),

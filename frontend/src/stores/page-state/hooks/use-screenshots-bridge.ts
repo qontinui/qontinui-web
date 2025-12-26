@@ -29,6 +29,11 @@ export function useScreenshotsBridge() {
   const { user } = useAuth();
   const { projectName } = useAutomation();
   const store = useScreenshotsStore();
+
+  // Keep stable ref to store to avoid infinite loops
+  const storeRef = useRef(store);
+  storeRef.current = store;
+
   const hasHydrated = useRef(false);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -36,9 +41,10 @@ export function useScreenshotsBridge() {
   useEffect(() => {
     if (user?.id && projectName && !hasHydrated.current) {
       hasHydrated.current = true;
-      store.hydrate(projectName, user.id);
+      storeRef.current.hydrate(projectName, user.id);
     }
-  }, [user?.id, projectName, store]);
+
+  }, [user?.id, projectName]);
 
   // Persist on unmount
   useEffect(() => {
@@ -46,11 +52,11 @@ export function useScreenshotsBridge() {
       if (persistTimeoutRef.current) {
         clearTimeout(persistTimeoutRef.current);
       }
-      store.persist().finally(() => {
-        store.cleanup();
+      storeRef.current.persist().finally(() => {
+        storeRef.current.cleanup();
       });
     };
-  }, [store]);
+  }, []);
 
   // Debounced persist
   const debouncedPersist = useCallback(() => {
@@ -58,20 +64,20 @@ export function useScreenshotsBridge() {
       clearTimeout(persistTimeoutRef.current);
     }
     persistTimeoutRef.current = setTimeout(() => {
-      store.persist();
+      storeRef.current.persist();
     }, 500);
-  }, [store]);
+  }, []);
 
   // Listen for beforeunload
   useEffect(() => {
     const handleBeforeUnload = () => {
-      store.persist();
+      storeRef.current.persist();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [store]);
+  }, []);
 
   // Convert store screenshots to component Screenshot format
   const uploadedScreenshots: Screenshot[] = store.uploadedScreenshots.map(
@@ -86,81 +92,81 @@ export function useScreenshotsBridge() {
   // Actions that mirror the original component's setState functions
   const addScreenshot = useCallback(
     async (screenshot: { id: string; name: string; file: File }) => {
-      await store.addScreenshot(screenshot);
+      await storeRef.current.addScreenshot(screenshot);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const removeScreenshot = useCallback(
     (id: string) => {
-      store.removeScreenshot(id);
+      storeRef.current.removeScreenshot(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const updateScreenshotName = useCallback(
     (id: string, name: string) => {
-      store.updateScreenshotName(id, name);
+      storeRef.current.updateScreenshotName(id, name);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const clearAllScreenshots = useCallback(() => {
-    store.clearAllScreenshots();
+    storeRef.current.clearAllScreenshots();
     debouncedPersist();
-  }, [store, debouncedPersist]);
+  }, [debouncedPersist]);
 
   const selectScreenshot = useCallback(
     (id: string) => {
-      store.selectScreenshot(id);
+      storeRef.current.selectScreenshot(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const deselectScreenshot = useCallback(
     (id: string) => {
-      store.deselectScreenshot(id);
+      storeRef.current.deselectScreenshot(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const clearSelection = useCallback(() => {
-    store.clearSelection();
+    storeRef.current.clearSelection();
     debouncedPersist();
-  }, [store, debouncedPersist]);
+  }, [debouncedPersist]);
 
   const selectAll = useCallback(() => {
-    store.selectAll();
+    storeRef.current.selectAll();
     debouncedPersist();
-  }, [store, debouncedPersist]);
+  }, [debouncedPersist]);
 
   const setViewMode = useCallback(
     (mode: "grid" | "list") => {
-      store.setViewMode(mode);
+      storeRef.current.setViewMode(mode);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSortBy = useCallback(
     (sortBy: "name" | "uploadedAt") => {
-      store.setSortBy(sortBy);
+      storeRef.current.setSortBy(sortBy);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSortDirection = useCallback(
     (direction: "asc" | "desc") => {
-      store.setSortDirection(direction);
+      storeRef.current.setSortDirection(direction);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   return {

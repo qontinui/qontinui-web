@@ -1,7 +1,13 @@
 """
-Integration Testing API Endpoints
+Config Testing API Endpoints
 
-Endpoints for mock execution, video export, and integration testing features.
+Endpoints for mock execution and PDF report generation used by the
+Config Testing feature (workflow validation with historical data).
+
+Note: This was previously named integration_testing.py but renamed to
+config_testing.py to align with Qontinui terminology:
+- Config Testing = Mock mode testing with historical data
+- QA Testing = Real test runs from the runner (see testing.py)
 """
 
 import json
@@ -11,24 +17,19 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from redis import asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.deps import current_active_user, get_async_db
+from app.models.project import Project
 from app.models.snapshot import SnapshotRun
+from app.models.user import User
 from app.services.object_storage import object_storage
-
-# DEPRECATED: CV-heavy services removed - functionality moved to qontinui library
-# from app.services.pattern_auto_extraction import PatternAutoExtractor
-# from app.services.video_export import (
-#     VideoExportOptions,
-#     VideoQuality,
-#     create_execution_video,
-# )
 from app.services.pdf_report import PDFReportOptions, generate_pdf_report
 
 # Redis key prefix for PDF report jobs
@@ -44,62 +45,19 @@ router = APIRouter()
 class MockExecutionRequest(BaseModel):
     """Request for mock execution"""
 
-    process_id: str
-    process_name: str
+    project_id: str
+    workflow_id: str
+    workflow_name: str
     snapshot_run_ids: list[str] = Field(default_factory=list)
-    snapshot_run_id: str | None = None  # Deprecated
     initial_states: list[str] = Field(default_factory=list)
     actions: list[dict[str, Any]] = Field(default_factory=list)
-
-
-# DEPRECATED: Video export functionality removed - moved to qontinui library
-# class VideoExportRequest(BaseModel):
-#     """Request for video export"""
-#
-#     execution_data: dict[str, Any] = Field(..., description="Execution response data")
-#     frame_duration: float = Field(
-#         1.5, ge=0.5, le=5.0, description="Duration per frame in seconds"
-#     )
-#     quality: VideoQuality = Field(
-#         VideoQuality.MEDIUM, description="Video quality preset"
-#     )
-#     include_overlays: bool = Field(True, description="Include action overlays")
-#     include_timeline: bool = Field(True, description="Include timeline progress bar")
-#     include_text: bool = Field(True, description="Include text overlays")
-#     smooth_transitions: bool = Field(
-#         True, description="Smooth transitions between frames"
-#     )
-
-
-class VideoExportResponse(BaseModel):
-    """Response for video export"""
-
-    video_id: str
-    status: str  # "processing" | "completed" | "failed"
-    progress: float = 0.0  # 0.0 to 1.0
-    video_url: str | None = None
-    file_size: int | None = None
-    duration_seconds: float | None = None
-    error: str | None = None
-
-
-class VideoStatusResponse(BaseModel):
-    """Response for video status check"""
-
-    video_id: str
-    status: str
-    progress: float = 0.0
-    video_url: str | None = None
-    file_size: int | None = None
-    duration_seconds: float | None = None
-    error: str | None = None
 
 
 class PDFReportRequest(BaseModel):
     """Request for PDF report generation"""
 
     execution_result: dict[str, Any] = Field(
-        ..., description="Full execution result from integration test"
+        ..., description="Full execution result from config test"
     )
     screenshots_dir: str = Field(..., description="Path to screenshots directory")
     include_screenshots: bool = Field(
@@ -131,49 +89,6 @@ class PDFReportResponse(BaseModel):
     file_size: int | None = None
     generated_at: str
 
-
-class AutoExtractRequest(BaseModel):
-    """Request for automatic pattern extraction (EXPERIMENTAL)"""
-
-    state_name: str = Field(..., description="State name for pattern naming")
-    snapshot_ids: list[str] = Field(
-        default_factory=list, description="Snapshot run IDs"
-    )
-    screenshot_paths: list[str] = Field(
-        default_factory=list,
-        description="Direct screenshot paths (alternative to snapshot_ids)",
-    )
-    detect_buttons: bool = Field(default=True, description="Detect button-like regions")
-    detect_inputs: bool = Field(default=True, description="Detect input field regions")
-    detect_icons: bool = Field(default=True, description="Detect icon-like regions")
-    min_confidence: float = Field(
-        default=0.7, ge=0.0, le=1.0, description="Minimum confidence threshold"
-    )
-
-
-class DetectedPattern(BaseModel):
-    """Detected pattern response model"""
-
-    region: dict[str, int] = Field(..., description="Region coordinates {x, y, w, h}")
-    confidence: float = Field(..., description="Detection confidence (0.0-1.0)")
-    pattern_type: str = Field(
-        ..., description="Pattern type: button, input, icon, text"
-    )
-    suggested_name: str = Field(..., description="Suggested pattern name")
-    image_data: str = Field(..., description="Base64 encoded pattern image")
-    source_screenshot: str = Field(..., description="Source screenshot path")
-
-
-class AutoExtractResponse(BaseModel):
-    """Response for automatic pattern extraction"""
-
-    patterns: list[DetectedPattern] = Field(..., description="Detected patterns")
-    total_screenshots: int = Field(..., description="Number of screenshots processed")
-    total_detected: int = Field(..., description="Total patterns detected")
-
-
-# In-memory storage for video export jobs (replace with Redis/DB in production)
-_video_jobs: dict[str, VideoStatusResponse] = {}
 
 # Global Redis client (set during app startup)
 _redis_client: aioredis.Redis | None = None
@@ -233,20 +148,67 @@ async def get_pdf_job_status(report_id: str) -> dict[str, Any] | None:
     return None
 
 
+async def verify_project_access(
+    db: AsyncSession, project_id: str, user_id: Any
+) -> Project:
+    """Verify user has access to the project."""
+    from uuid import UUID
+
+    try:
+        pid = UUID(project_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project ID format",
+        )
+
+    result = await db.execute(select(Project).filter(Project.id == pid))
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    if project.owner_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this project",
+        )
+
+    return project
+
+
 @router.post("/execute", status_code=status.HTTP_200_OK)
-async def execute_mock_process(request: MockExecutionRequest) -> dict[str, Any]:
+async def execute_mock_workflow(
+    request: MockExecutionRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+) -> dict[str, Any]:
     """
-    Execute a mock process (placeholder endpoint)
+    Execute a mock workflow using historical data (placeholder endpoint).
 
-    This is a placeholder that returns mock data.
-    Replace with actual integration testing execution logic.
+    **Authentication:** JWT token required
+
+    This endpoint returns mock execution data for UI visualization.
+    Actual config testing execution happens in qontinui-runner using
+    the HistoricalDataClient to fetch historical results.
+
+    Note: This is a placeholder that returns simulated data.
     """
-    # This would integrate with the actual execution engine
-    # For now, return mock data structure
+    # Verify project access
+    await verify_project_access(db, request.project_id, current_user.id)
 
+    logger.info(
+        f"Mock execution requested for workflow {request.workflow_name} "
+        f"by user {current_user.id}"
+    )
+
+    # Return mock data structure for UI visualization
     mock_response = {
-        "process_id": request.process_id,
-        "process_name": request.process_name,
+        "workflow_id": request.workflow_id,
+        "workflow_name": request.workflow_name,
         "start_time": datetime.now().isoformat(),
         "end_time": datetime.now().isoformat(),
         "total_duration_ms": 1500,
@@ -273,80 +235,25 @@ async def execute_mock_process(request: MockExecutionRequest) -> dict[str, Any]:
     return mock_response
 
 
-@router.post("/export/video", status_code=status.HTTP_410_GONE)
-async def export_execution_video():
-    """
-    DEPRECATED: Video export functionality has been removed.
-
-    This endpoint has been deprecated and removed. Video export functionality
-    should be implemented in the qontinui library for local execution.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Video export functionality has been removed. Use qontinui library for local execution.",
-    )
-
-
-@router.get("/export/video/{video_id}/status", status_code=status.HTTP_410_GONE)
-async def get_video_export_status(video_id: str):
-    """
-    DEPRECATED: Video export functionality has been removed.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Video export functionality has been removed. Use qontinui library for local execution.",
-    )
-
-
-@router.get("/export/video/{video_id}/download", status_code=status.HTTP_410_GONE)
-async def download_video(video_id: str):
-    """
-    DEPRECATED: Video export functionality has been removed.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Video export functionality has been removed. Use qontinui library for local execution.",
-    )
-
-
-@router.delete("/export/video/{video_id}", status_code=status.HTTP_410_GONE)
-async def delete_video(video_id: str):
-    """
-    DEPRECATED: Video export functionality has been removed.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Video export functionality has been removed. Use qontinui library for local execution.",
-    )
-
-
-# DEPRECATED: Video generation removed - moved to qontinui library
-# async def _generate_video_task(
-#     video_id: str,
-#     execution_data: dict[str, Any],
-#     options: VideoExportOptions,
-# ):
-#     """
-#     Background task to generate video
-#
-#     Updates job status as it progresses.
-#     """
-#     pass
-
-
 # PDF Report Generation Endpoints
 @router.post("/reports/pdf", status_code=status.HTTP_200_OK)
 async def generate_pdf_report_endpoint(
     request: PDFReportRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
 ) -> StreamingResponse:
     """
-    Generate PDF report for integration test execution results
+    Generate PDF report for config test execution results.
+
+    **Authentication:** JWT token required
 
     This endpoint accepts execution results and generates a comprehensive PDF report
     including executive summary, coverage analysis, action timeline, and recommendations.
 
     The PDF is streamed directly for immediate download.
     """
+    logger.info(f"PDF report generation requested by user {current_user.id}")
+
     try:
         # Validate execution result
         execution_result = request.execution_result
@@ -380,14 +287,14 @@ async def generate_pdf_report_endpoint(
         )
 
         # Generate PDF
-        process_name = execution_result.get("process_name", "integration_test")
-        logger.info(f"Generating PDF report for process: {process_name}")
+        workflow_name = execution_result.get("workflow_name", "config_test")
+        logger.info(f"Generating PDF report for workflow: {workflow_name}")
 
         pdf_bytes = generate_pdf_report(execution_result, screenshots_dir, options)
 
         # Prepare filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{process_name}_report_{timestamp}.pdf"
+        filename = f"{workflow_name}_report_{timestamp}.pdf"
 
         # Log success
         logger.info(f"PDF report generated successfully. Size: {len(pdf_bytes)} bytes")
@@ -414,13 +321,19 @@ async def generate_pdf_report_endpoint(
 async def generate_pdf_report_async(
     request: PDFReportRequest,
     background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
 ) -> PDFReportResponse:
     """
-    Generate PDF report asynchronously for large reports
+    Generate PDF report asynchronously for large reports.
+
+    **Authentication:** JWT token required
 
     This endpoint queues PDF generation as a background task and returns immediately.
     Use the returned report_id to check status and download when ready.
     """
+    logger.info(f"Async PDF report generation requested by user {current_user.id}")
+
     try:
         # Generate unique report ID
         report_id = str(uuid4())
@@ -451,14 +364,13 @@ async def generate_pdf_report_async(
 async def _generate_pdf_background(
     report_id: str,
     request: PDFReportRequest,
-):
+) -> None:
     """
-    Background task for PDF generation
+    Background task for PDF generation.
 
     1. Generates the PDF
     2. Stores it in object storage
     3. Updates job status in Redis
-    4. Sends webhook/notification when complete
     """
     import asyncio
 
@@ -530,11 +442,6 @@ async def _generate_pdf_background(
             )
         )
 
-        # Send webhook notification if configured
-        # Note: Webhook URL would typically come from project settings
-        # For now, just log completion
-        logger.info(f"PDF report {report_id} ready for download at {storage_url}")
-
     except Exception as e:
         logger.error(
             f"Background PDF generation failed for {report_id}: {e}",
@@ -550,32 +457,149 @@ async def _generate_pdf_background(
         )
 
 
-# Placeholder endpoints for screenshots (to be implemented)
+# Snapshot Screenshots Endpoints
 @router.get("/snapshots/{run_id}/screenshots")
 async def get_state_screenshots(
     run_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
     active_states: str | None = Query(None),
 ) -> dict[str, Any]:
     """
-    Get screenshots for a snapshot run
+    Get screenshots for a snapshot run.
 
-    Placeholder endpoint.
+    **Authentication:** JWT token required
+
+    Returns screenshots from a snapshot run, optionally filtered by active states.
     """
+    logger.info(f"Get screenshots requested for run {run_id} by user {current_user.id}")
+
+    # Get snapshot run and verify ownership
+    from uuid import UUID
+
+    try:
+        rid = UUID(run_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid run ID format",
+        )
+
+    result = await db.execute(
+        select(SnapshotRun)
+        .options(selectinload(SnapshotRun.screenshots))
+        .where(SnapshotRun.run_id == rid)
+    )
+    snapshot_run = result.scalar_one_or_none()
+
+    if not snapshot_run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Snapshot run not found",
+        )
+
+    # Verify project access
+    await verify_project_access(db, str(snapshot_run.project_id), current_user.id)
+
+    # Filter screenshots by active states if specified
+    screenshots = []
+    states_filter = active_states.split(",") if active_states else None
+
+    for screenshot in snapshot_run.screenshots:
+        if states_filter:
+            if any(state in screenshot.active_states for state in states_filter):
+                screenshots.append(
+                    {
+                        "id": str(screenshot.id),
+                        "path": screenshot.screenshot_path,
+                        "active_states": screenshot.active_states,
+                        "timestamp": (
+                            screenshot.timestamp.isoformat()
+                            if screenshot.timestamp
+                            else None
+                        ),
+                    }
+                )
+        else:
+            screenshots.append(
+                {
+                    "id": str(screenshot.id),
+                    "path": screenshot.screenshot_path,
+                    "active_states": screenshot.active_states,
+                    "timestamp": (
+                        screenshot.timestamp.isoformat()
+                        if screenshot.timestamp
+                        else None
+                    ),
+                }
+            )
+
+    # Get unique state combinations
+    unique_states = set()
+    for s in snapshot_run.screenshots:
+        unique_states.add(tuple(sorted(s.active_states)))
+
     return {
-        "screenshots": [],
-        "total": 0,
-        "unique_state_combinations": 0,
+        "screenshots": screenshots,
+        "total": len(screenshots),
+        "unique_state_combinations": len(unique_states),
     }
 
 
-@router.get("/snapshots/{run_id}/screenshot/{screenshot_path:path}")
-async def get_screenshot(run_id: str, screenshot_path: str) -> FileResponse:
+@router.get(
+    "/snapshots/{run_id}/screenshot/{screenshot_path:path}", response_model=None
+)
+async def get_screenshot(
+    run_id: str,
+    screenshot_path: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+) -> FileResponse | RedirectResponse:
     """
-    Get a specific screenshot file
+    Get a specific screenshot file.
 
-    Placeholder endpoint.
+    **Authentication:** JWT token required
+
+    Returns the screenshot image file from object storage.
     """
-    # In production, retrieve from storage service
+    logger.info(
+        f"Get screenshot {screenshot_path} requested for run {run_id} "
+        f"by user {current_user.id}"
+    )
+
+    # Get snapshot run and verify ownership
+    from uuid import UUID
+
+    try:
+        rid = UUID(run_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid run ID format",
+        )
+
+    result = await db.execute(select(SnapshotRun).where(SnapshotRun.run_id == rid))
+    snapshot_run = result.scalar_one_or_none()
+
+    if not snapshot_run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Snapshot run not found",
+        )
+
+    # Verify project access
+    await verify_project_access(db, str(snapshot_run.project_id), current_user.id)
+
+    # Try to get from object storage
+    try:
+        # Generate presigned URL or download file
+        url = object_storage.generate_presigned_url(screenshot_path)
+        if url:
+            # Redirect to presigned URL
+            return RedirectResponse(url=url)
+    except Exception as e:
+        logger.warning(f"Failed to get screenshot from storage: {e}")
+
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Screenshot not found",
@@ -599,14 +623,22 @@ async def _get_screenshots_from_snapshot_ids(
     Returns:
         List of screenshot paths
     """
+    from uuid import UUID
+
     screenshot_paths = []
 
     for snapshot_id in snapshot_ids:
+        try:
+            sid = UUID(snapshot_id)
+        except ValueError:
+            logger.warning(f"Invalid snapshot ID: {snapshot_id}")
+            continue
+
         # Query snapshot run with screenshots
         result = await db.execute(
             select(SnapshotRun)
             .options(selectinload(SnapshotRun.screenshots))
-            .where(SnapshotRun.run_id == snapshot_id)
+            .where(SnapshotRun.run_id == sid)
         )
         snapshot_run = result.scalar_one_or_none()
 
@@ -623,18 +655,3 @@ async def _get_screenshots_from_snapshot_ids(
                 screenshot_paths.append(screenshot.screenshot_path)
 
     return screenshot_paths
-
-
-# Pattern Auto-Extraction Endpoints (EXPERIMENTAL) - DEPRECATED
-@router.post("/patterns/auto-extract", status_code=status.HTTP_410_GONE)
-async def auto_extract_patterns():
-    """
-    DEPRECATED: Pattern auto-extraction functionality has been removed.
-
-    This endpoint has been deprecated and removed. Pattern extraction should be
-    implemented in the qontinui library for local execution.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Pattern auto-extraction functionality has been removed. Use qontinui library for local execution.",
-    )

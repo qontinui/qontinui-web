@@ -21,6 +21,11 @@ export function useDependenciesBridge() {
   const { user } = useAuth();
   const { projectName } = useAutomation();
   const store = useDependenciesStore();
+
+  // Keep stable ref to store to avoid infinite loops
+  const storeRef = useRef(store);
+  storeRef.current = store;
+
   const hasHydrated = useRef(false);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -28,9 +33,10 @@ export function useDependenciesBridge() {
   useEffect(() => {
     if (user?.id && projectName && !hasHydrated.current) {
       hasHydrated.current = true;
-      store.hydrate(projectName, user.id);
+      storeRef.current.hydrate(projectName, user.id);
     }
-  }, [user?.id, projectName, store]);
+
+  }, [user?.id, projectName]);
 
   // Persist on unmount
   useEffect(() => {
@@ -38,9 +44,9 @@ export function useDependenciesBridge() {
       if (persistTimeoutRef.current) {
         clearTimeout(persistTimeoutRef.current);
       }
-      store.persist();
+      storeRef.current.persist();
     };
-  }, [store]);
+  }, []);
 
   // Debounced persist
   const debouncedPersist = useCallback(() => {
@@ -48,68 +54,68 @@ export function useDependenciesBridge() {
       clearTimeout(persistTimeoutRef.current);
     }
     persistTimeoutRef.current = setTimeout(() => {
-      store.persist();
+      storeRef.current.persist();
     }, 500);
-  }, [store]);
+  }, []);
 
   // Listen for beforeunload
   useEffect(() => {
     const handleBeforeUnload = () => {
-      store.persist();
+      storeRef.current.persist();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [store]);
+  }, []);
 
   // State setters with auto-persist
   const setActiveTab = useCallback(
     (tab: string) => {
-      store.setActiveTab(tab);
+      storeRef.current.setActiveTab(tab);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSearchQuery = useCallback(
     (query: string) => {
-      store.setSearchQuery(query);
+      storeRef.current.setSearchQuery(query);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setFiltersOpen = useCallback(
     (open: boolean) => {
-      store.setFiltersOpen(open);
+      storeRef.current.setFiltersOpen(open);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setFilters = useCallback(
     (filters: Partial<DependenciesPageState["filters"]>) => {
-      store.setFilters(filters);
+      storeRef.current.setFilters(filters);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setGraphViewport = useCallback(
     (viewport: Partial<DependenciesPageState["graphViewport"]>) => {
-      store.setGraphViewport(viewport);
+      storeRef.current.setGraphViewport(viewport);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSelectedWorkflowId = useCallback(
     (id: string | null) => {
-      store.setSelectedWorkflowId(id);
+      storeRef.current.setSelectedWorkflowId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   return {

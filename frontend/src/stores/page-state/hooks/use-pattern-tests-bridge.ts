@@ -38,6 +38,11 @@ export function usePatternTestsBridge() {
   const { user } = useAuth();
   const { projectName } = useAutomation();
   const store = usePatternTestsStore();
+
+  // Keep stable ref to store to avoid infinite loops
+  const storeRef = useRef(store);
+  storeRef.current = store;
+
   const hasHydrated = useRef(false);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -45,9 +50,10 @@ export function usePatternTestsBridge() {
   useEffect(() => {
     if (user?.id && projectName && !hasHydrated.current) {
       hasHydrated.current = true;
-      store.hydrate(projectName, user.id);
+      storeRef.current.hydrate(projectName, user.id);
     }
-  }, [user?.id, projectName, store]);
+
+  }, [user?.id, projectName]);
 
   // Persist on unmount
   useEffect(() => {
@@ -55,11 +61,11 @@ export function usePatternTestsBridge() {
       if (persistTimeoutRef.current) {
         clearTimeout(persistTimeoutRef.current);
       }
-      store.persist().finally(() => {
-        store.cleanup();
+      storeRef.current.persist().finally(() => {
+        storeRef.current.cleanup();
       });
     };
-  }, [store]);
+  }, []);
 
   // Debounced persist
   const debouncedPersist = useCallback(() => {
@@ -67,20 +73,20 @@ export function usePatternTestsBridge() {
       clearTimeout(persistTimeoutRef.current);
     }
     persistTimeoutRef.current = setTimeout(() => {
-      store.persist();
+      storeRef.current.persist();
     }, 500);
-  }, [store]);
+  }, []);
 
   // Listen for beforeunload
   useEffect(() => {
     const handleBeforeUnload = () => {
-      store.persist();
+      storeRef.current.persist();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [store]);
+  }, []);
 
   // Convert store screenshot to component Screenshot format
   const selectedScreenshot: Screenshot | null = store.selectedScreenshot
@@ -115,31 +121,31 @@ export function usePatternTestsBridge() {
         const blob = await response.blob();
         const file = new File([blob], screenshot.name, { type: blob.type });
 
-        await store.setSelectedScreenshot({
+        await storeRef.current.setSelectedScreenshot({
           id: screenshot.id,
           name: screenshot.name,
           file,
         });
       } else {
-        await store.setSelectedScreenshot(null);
+        await storeRef.current.setSelectedScreenshot(null);
       }
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const handleUploadScreenshot = useCallback(
     async (file: File) => {
       const id = `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      await store.setSelectedScreenshot({
+      await storeRef.current.setSelectedScreenshot({
         id,
         name: file.name,
         file,
       });
-      store.clearResults();
+      storeRef.current.clearResults();
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const handleSelectProjectScreenshot = useCallback(
@@ -148,29 +154,29 @@ export function usePatternTestsBridge() {
       const blob = await response.blob();
       const file = new File([blob], screenshot.name, { type: blob.type });
 
-      await store.setSelectedScreenshot({
+      await storeRef.current.setSelectedScreenshot({
         id: screenshot.id,
         name: screenshot.name,
         file,
       });
-      store.clearResults();
+      storeRef.current.clearResults();
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const handleClearScreenshot = useCallback(async () => {
-    await store.setSelectedScreenshot(null);
-    store.clearResults();
+    await storeRef.current.setSelectedScreenshot(null);
+    storeRef.current.clearResults();
     debouncedPersist();
-  }, [store, debouncedPersist]);
+  }, [debouncedPersist]);
 
   const setScreenshotDimensions = useCallback(
     (dimensions: { width: number; height: number } | null) => {
-      store.setScreenshotDimensions(dimensions);
+      storeRef.current.setScreenshotDimensions(dimensions);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setTemplateImage = useCallback(
@@ -179,61 +185,61 @@ export function usePatternTestsBridge() {
         const response = await fetch(dataUrl);
         const blob = await response.blob();
         const file = new File([blob], "template.png", { type: blob.type });
-        await store.setTemplateImage(file);
+        await storeRef.current.setTemplateImage(file);
       } else {
-        await store.setTemplateImage(null);
+        await storeRef.current.setTemplateImage(null);
       }
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setTemplateSource = useCallback(
     (source: TemplateSource) => {
-      store.setTemplateSource(source);
+      storeRef.current.setTemplateSource(source);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSelectedStateImage = useCallback(
     (id: string) => {
-      store.setSelectedStateImageId(id);
+      storeRef.current.setSelectedStateImageId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSelectedAssetImage = useCallback(
     (id: string) => {
-      store.setSelectedAssetImageId(id);
+      storeRef.current.setSelectedAssetImageId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSimilarity = useCallback(
     (similarity: number) => {
-      store.setSimilarity(similarity);
+      storeRef.current.setSimilarity(similarity);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setFindAll = useCallback(
     (findAll: boolean) => {
-      store.setFindAll(findAll);
+      storeRef.current.setFindAll(findAll);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSearchRegion = useCallback(
     (region: Region | null) => {
-      store.setSearchRegion(region);
+      storeRef.current.setSearchRegion(region);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setMatches = useCallback(
@@ -247,25 +253,25 @@ export function usePatternTestsBridge() {
         height: m.region.height,
         score: m.score,
       }));
-      store.setMatches(storeMatches);
+      storeRef.current.setMatches(storeMatches);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSearchTime = useCallback(
     (time: number) => {
-      store.setSearchTime(time);
+      storeRef.current.setSearchTime(time);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSelectedMatch = useCallback(
     (match: MatchResult | null) => {
       // Find the corresponding store match by comparing region
       if (match) {
-        const storeMatch = store.matches.find(
+        const storeMatch = storeRef.current.matches.find(
           (m) =>
             m.x === match.region.x &&
             m.y === match.region.y &&
@@ -273,72 +279,72 @@ export function usePatternTestsBridge() {
             m.height === match.region.height &&
             m.score === match.score
         );
-        store.setSelectedMatchId(storeMatch?.id || null);
+        storeRef.current.setSelectedMatchId(storeMatch?.id || null);
       } else {
-        store.setSelectedMatchId(null);
+        storeRef.current.setSelectedMatchId(null);
       }
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const clearResults = useCallback(() => {
-    store.clearResults();
+    storeRef.current.clearResults();
     debouncedPersist();
-  }, [store, debouncedPersist]);
+  }, [debouncedPersist]);
 
   const setShowMatches = useCallback(
     (show: boolean) => {
-      store.setShowMatches(show);
+      storeRef.current.setShowMatches(show);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setShowScores = useCallback(
     (show: boolean) => {
-      store.setShowScores(show);
+      storeRef.current.setShowScores(show);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setShowHeatmap = useCallback(
     (show: boolean) => {
-      store.setShowHeatmap(show);
+      storeRef.current.setShowHeatmap(show);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setHighlightBest = useCallback(
     (highlight: boolean) => {
-      store.setHighlightBest(highlight);
+      storeRef.current.setHighlightBest(highlight);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setZoom = useCallback(
     (zoom: number) => {
-      store.setZoom(zoom);
+      storeRef.current.setZoom(zoom);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setPanOffset = useCallback(
     (offset: { x: number; y: number }) => {
-      store.setPanOffset(offset);
+      storeRef.current.setPanOffset(offset);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const resetView = useCallback(() => {
-    store.resetView();
+    storeRef.current.resetView();
     debouncedPersist();
-  }, [store, debouncedPersist]);
+  }, [debouncedPersist]);
 
   // Find selected match from ID
   const selectedMatch = (() => {

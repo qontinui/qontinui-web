@@ -30,7 +30,6 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
-from app.crud import runner as runner_crud
 from app.models.project import Project
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.test_deficiency import (
@@ -168,64 +167,80 @@ async def get_test_run_with_access(
 async def get_runner_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_async_db),
-) -> tuple[User, Any]:
+) -> User:
     """
-    Validate runner token and return associated user.
+    Validate JWT and return associated user.
 
     This dependency is used for runner endpoints (desktop → backend).
-    It validates the bearer token as a runner token.
 
     Args:
         credentials: HTTP Authorization credentials
         db: Database session
 
     Returns:
-        Tuple of (User, RunnerToken)
+        User
 
     Raises:
-        HTTPException(401): Invalid/expired/revoked token
+        HTTPException(401): Invalid/expired token
     """
+    from uuid import UUID
+
+    from jose import JWTError, jwt
+
+    from app.core.config import settings
+
     token = credentials.credentials
 
-    # Validate runner token
-    runner_token = await runner_crud.validate_runner_token(db, token)
+    try:
+        # Verify it looks like a JWT (3 parts separated by dots)
+        if token.count(".") != 2:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token format",
+            )
 
-    if not runner_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired runner token",
+        # Decode JWT token
+        secret_key = str(settings.ACCESS_SECRET_KEY)
+        payload = jwt.decode(
+            token,
+            secret_key,
+            algorithms=[settings.ALGORITHM],
+            audience="fastapi-users:auth",
         )
 
-    # Update last_used_at
-    runner_token.last_used_at = datetime.utcnow()
-    await db.commit()
+        # Extract user ID
+        user_id_str: str | None = payload.get("sub")
+        if not user_id_str:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+            )
 
-    # Get user from runner token
-    result = await db.execute(
-        select(User).where(User.id == runner_token.user_id)  # type: ignore[arg-type]
-    )
-    user = result.scalar_one_or_none()
+        user_id = UUID(user_id_str)
 
-    if not user:
+        # Get user from database
+        result = await db.execute(select(User).where(User.id == user_id))  # type: ignore[arg-type]
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account is inactive",
+            )
+
+        return user
+
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail="Invalid or expired token",
         )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User account is inactive",
-        )
-
-    logger.info(
-        "runner_authenticated",
-        user_id=str(user.id),
-        runner_token_id=str(runner_token.id),
-        token_name=runner_token.name,
-    )
-
-    return user, runner_token
 
 
 # ============================================================================
@@ -239,7 +254,7 @@ async def get_runner_user(
 async def create_test_run(
     *,
     db: AsyncSession = Depends(get_async_db),
-    runner_auth: tuple[User, Any] = Depends(get_runner_user),
+    user: User = Depends(get_runner_user),
     run_in: TestRunCreate,
 ) -> Any:
     """
@@ -276,7 +291,6 @@ async def create_test_run(
 
     **Returns:** Created test run with assigned ID
     """
-    user, runner_token = runner_auth
 
     logger.info(
         "create_test_run_requested",
@@ -291,7 +305,7 @@ async def create_test_run(
     # Create test run record
     test_run = SoftwareTestRun(
         project_id=run_in.project_id,
-        runner_connection_id=getattr(runner_token, "runner_connection_id", None),
+        runner_connection_id=None,
         workflow_id=run_in.workflow_metadata.get("workflow_id"),
         status=TestRunStatus.RUNNING,
         started_at=datetime.utcnow(),
@@ -340,7 +354,7 @@ async def create_test_run(
 async def report_transitions(
     *,
     db: AsyncSession = Depends(get_async_db),
-    runner_auth: tuple[User, Any] = Depends(get_runner_user),
+    user: User = Depends(get_runner_user),
     run_id: UUID,
     batch_in: TransitionBatchCreate,
 ) -> Any:
@@ -379,7 +393,6 @@ async def report_transitions(
 
     **Returns:** Created transition IDs and updated coverage metrics
     """
-    user, runner_token = runner_auth
 
     logger.info(
         "report_transitions_requested",
@@ -493,7 +506,7 @@ async def report_transitions(
 async def report_deficiencies(
     *,
     db: AsyncSession = Depends(get_async_db),
-    runner_auth: tuple[User, Any] = Depends(get_runner_user),
+    user: User = Depends(get_runner_user),
     run_id: UUID,
     batch_in: DeficiencyBatchCreate,
 ) -> Any:
@@ -529,7 +542,6 @@ async def report_deficiencies(
 
     **Returns:** Created deficiency IDs
     """
-    user, runner_token = runner_auth
 
     logger.info(
         "report_deficiencies_requested",
@@ -621,7 +633,7 @@ async def report_deficiencies(
 async def update_coverage(
     *,
     db: AsyncSession = Depends(get_async_db),
-    runner_auth: tuple[User, Any] = Depends(get_runner_user),
+    user: User = Depends(get_runner_user),
     run_id: UUID,
     coverage_in: CoverageUpdate,
 ) -> Any:
@@ -655,7 +667,6 @@ async def update_coverage(
 
     **Returns:** Confirmation with current coverage percentage
     """
-    user, runner_token = runner_auth
 
     logger.info(
         "update_coverage_requested",
@@ -703,7 +714,7 @@ async def update_coverage(
 async def complete_test_run(
     *,
     db: AsyncSession = Depends(get_async_db),
-    runner_auth: tuple[User, Any] = Depends(get_runner_user),
+    user: User = Depends(get_runner_user),
     run_id: UUID,
     complete_in: TestRunComplete,
 ) -> Any:
@@ -740,7 +751,6 @@ async def complete_test_run(
 
     **Returns:** Final test run status with duration
     """
-    user, runner_token = runner_auth
 
     logger.info(
         "complete_test_run_requested",
@@ -824,7 +834,7 @@ async def complete_test_run(
 async def upload_screenshot(
     *,
     db: AsyncSession = Depends(get_async_db),
-    runner_auth: tuple[User, Any] = Depends(get_runner_user),
+    user: User = Depends(get_runner_user),
     run_id: UUID,
     metadata: str = Form(..., description="JSON metadata for screenshot"),
     image: UploadFile = File(..., description="Screenshot image file (PNG/JPEG)"),
@@ -870,7 +880,6 @@ async def upload_screenshot(
     **Returns:** Screenshot URLs (full image + thumbnail), plus visual comparison
     result if baseline exists
     """
-    user, runner_token = runner_auth
 
     logger.info(
         "upload_screenshot_requested",
@@ -2132,4 +2141,209 @@ async def add_deficiency_comment(
         },
         comment=comment_in.comment,
         created_at=datetime.utcnow(),
+    )
+
+
+# ============================================================================
+# Alternative Endpoints (Query Parameter Based)
+# These endpoints use query parameters instead of path parameters for consistency
+# with frontend expectations.
+# ============================================================================
+
+
+@router.get("/coverage-trends", response_model=CoverageTrendResponse)
+async def get_coverage_trends_query(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    project_id: UUID = Query(..., description="Project identifier"),
+    start_date: datetime | None = Query(None, description="Start of date range"),
+    end_date: datetime | None = Query(None, description="End of date range"),
+    granularity: str = Query(
+        "daily", description="Granularity (daily, weekly, monthly)"
+    ),
+    workflow_id: str | None = Query(None, description="Filter by specific workflow"),
+) -> Any:
+    """
+    Get coverage trends over time for historical analysis (query parameter version).
+
+    **Authentication:** JWT token required
+
+    This is an alternative endpoint that accepts project_id as a query parameter
+    instead of a path parameter.
+
+    **Returns:** Time-series coverage data with trend analysis
+    """
+    # Delegate to the existing implementation
+    return await get_coverage_trends(
+        db=db,
+        current_user=current_user,
+        project_id=project_id,
+        start_date=start_date,
+        end_date=end_date,
+        granularity=granularity,
+        workflow_id=workflow_id,
+    )
+
+
+@router.get("/reliability-stats", response_model=ReliabilityResponse)
+async def get_reliability_stats_query(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    project_id: UUID = Query(..., description="Project identifier"),
+    workflow_id: str | None = Query(None, description="Filter by specific workflow"),
+    start_date: datetime | None = Query(None, description="Start of date range"),
+    end_date: datetime | None = Query(None, description="End of date range"),
+    min_executions: int = Query(5, ge=1, description="Minimum executions to include"),
+) -> Any:
+    """
+    Get transition reliability statistics for a project (query parameter version).
+
+    **Authentication:** JWT token required
+
+    Returns reliability statistics for all transitions in a project. Optionally
+    filter by workflow_id to see stats for a specific workflow.
+
+    **Query Parameters:**
+    - `project_id` (required): Project identifier
+    - `workflow_id`: Filter by specific workflow UUID (optional)
+    - `start_date`: Start of date range (ISO 8601)
+    - `end_date`: End of date range (ISO 8601)
+    - `min_executions`: Only show transitions executed at least N times (default: 5)
+
+    **Returns:** Per-transition reliability statistics and overall metrics
+    """
+    from collections import defaultdict
+
+    from app.schemas.testing import TransitionReliabilityStats
+
+    logger.info(
+        "get_reliability_stats_query_requested",
+        user_id=str(current_user.id),
+        project_id=project_id,
+        workflow_id=workflow_id,
+    )
+
+    # Check user has access to project
+    await verify_project_access(db, project_id, current_user.id)
+
+    # Get test runs for this project (and optionally workflow)
+    runs_query = select(SoftwareTestRun.id).filter(
+        SoftwareTestRun.project_id == project_id,
+    )
+
+    if workflow_id:
+        runs_query = runs_query.filter(SoftwareTestRun.workflow_id == workflow_id)
+
+    if start_date:
+        runs_query = runs_query.filter(SoftwareTestRun.started_at >= start_date)
+
+    if end_date:
+        runs_query = runs_query.filter(SoftwareTestRun.started_at <= end_date)
+
+    # Get all transitions for these runs
+    result = await db.execute(
+        select(TransitionExecution).filter(
+            TransitionExecution.test_run_id.in_(runs_query)
+        )
+    )
+    transitions = result.scalars().all()
+
+    # Group transitions by transition_id
+    transition_groups: dict[str, list[TransitionExecution]] = defaultdict(list)
+    for t in transitions:
+        transition_groups[t.transition_id].append(t)
+
+    # Build statistics
+    transition_stats = []
+    total_success_rate: float = 0.0
+    most_reliable = None
+    least_reliable = None
+    max_success_rate: float = -1.0
+    min_success_rate: float = 101.0
+
+    for transition_id, group in transition_groups.items():
+        if len(group) < min_executions:
+            continue
+
+        successful = sum(
+            1 for t in group if t.status == TransitionExecutionStatus.SUCCESS
+        )
+        failed = len(group) - successful
+        success_rate = (successful / len(group)) * 100 if group else 0
+
+        durations = [
+            t.execution_time_ms for t in group if t.execution_time_ms is not None
+        ]
+        avg_duration = sum(durations) // len(durations) if durations else 0
+        sorted_durations = sorted(durations)
+        median_duration = (
+            sorted_durations[len(sorted_durations) // 2] if sorted_durations else 0
+        )
+        p95_duration = (
+            sorted_durations[int(len(sorted_durations) * 0.95)]
+            if sorted_durations
+            else 0
+        )
+
+        # Get failure modes
+        failure_counts: dict[str, int] = defaultdict(int)
+        for t in group:
+            if t.status != TransitionExecutionStatus.SUCCESS and t.error_type:
+                failure_counts[t.error_type] += 1
+
+        failure_modes = [
+            {
+                "error_type": error_type,
+                "count": count,
+                "percentage": (count / failed * 100) if failed > 0 else 0,
+            }
+            for error_type, count in failure_counts.items()
+        ]
+
+        # Get from/to state from first transition
+        first_t = group[0]
+        stats = TransitionReliabilityStats(
+            transition_name=first_t.transition_name or transition_id,
+            from_state=first_t.source_state or "",
+            to_state=first_t.target_state or "",
+            total_executions=len(group),
+            successful_executions=successful,
+            failed_executions=failed,
+            success_rate=success_rate,
+            avg_duration_ms=avg_duration,
+            median_duration_ms=median_duration,
+            p95_duration_ms=p95_duration,
+            failure_modes=failure_modes,
+        )
+        transition_stats.append(stats)
+        total_success_rate += success_rate
+
+        if success_rate > max_success_rate:
+            max_success_rate = success_rate
+            most_reliable = stats.transition_name
+        if success_rate < min_success_rate:
+            min_success_rate = success_rate
+            least_reliable = stats.transition_name
+
+    avg_success_rate = (
+        total_success_rate / len(transition_stats) if transition_stats else 0
+    )
+
+    return ReliabilityResponse(
+        workflow_id=workflow_id or "",
+        workflow_name=None,
+        project_id=project_id,
+        date_range={
+            "start": start_date.strftime("%Y-%m-%d") if start_date else "",
+            "end": end_date.strftime("%Y-%m-%d") if end_date else "",
+        },
+        transition_stats=transition_stats,
+        overall_reliability={
+            "total_transitions_analyzed": len(transition_stats),
+            "avg_success_rate": avg_success_rate,
+            "most_reliable_transition": most_reliable,
+            "least_reliable_transition": least_reliable,
+        },
     )

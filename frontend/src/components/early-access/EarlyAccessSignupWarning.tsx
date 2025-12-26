@@ -118,8 +118,9 @@ export function EarlyAccessSignupWarning() {
                 Q: Will I lose my work?
               </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
-                Not if you export! Use File → Export to save your automation as
-                a JSON file. This JSON will always be compatible with future
+                Not if you export! Use the export icon in the sidebar or the
+                Export button at the top of the canvas to save your automation
+                as a JSON file. This JSON will always be compatible with future
                 versions.
               </p>
             </div>

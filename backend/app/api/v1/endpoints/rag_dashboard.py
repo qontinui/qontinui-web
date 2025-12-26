@@ -18,6 +18,7 @@ from app.crud.rag_dashboard import (
     get_embeddings,
     get_jobs,
     get_unique_states,
+    semantic_search,
 )
 from app.middleware.error_handler import not_found_error
 from app.models.organization import PermissionLevel
@@ -32,7 +33,12 @@ from app.schemas.rag_dashboard import (
     SemanticSearchRequest,
     SemanticSearchResponse,
 )
+from app.services.embedding_service import EmbeddingService
+from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
+
+# Presigned URL expiration: 7 days
+PRESIGNED_URL_EXPIRATION = 7 * 24 * 60 * 60  # 604800 seconds
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +53,10 @@ async def check_project_access(
     if not project:
         raise not_found_error("Project", "project")
 
+    # Superusers have access to all projects
+    if user.is_superuser:
+        return
+
     has_access = await permission_service.can_user_access_project(
         db, user.id, project_id, level
     )
@@ -56,6 +66,20 @@ async def check_project_access(
 
 def embedding_to_item(emb: Any) -> EmbeddingItem:
     """Convert ProjectEmbedding model to EmbeddingItem schema."""
+    # Generate presigned URL for the image
+    image_url = None
+    if emb.image_storage_path:
+        try:
+            image_url = object_storage.generate_presigned_url(
+                emb.image_storage_path, expiration=PRESIGNED_URL_EXPIRATION
+            )
+        except Exception as e:
+            logger.warning(
+                "failed_to_generate_presigned_url",
+                image_storage_path=emb.image_storage_path,
+                error=str(e),
+            )
+
     return EmbeddingItem(
         id=emb.id,
         pattern_id=emb.pattern_id,
@@ -64,10 +88,13 @@ def embedding_to_item(emb: Any) -> EmbeddingItem:
         state_name=emb.state_name,
         image_id=emb.image_id,
         image_storage_path=emb.image_storage_path,
+        image_url=image_url,
         embedding_model=emb.embedding_model,
         embedding_version=emb.embedding_version,
         image_width=emb.image_width,
         image_height=emb.image_height,
+        text_description=getattr(emb, "text_description", None),
+        has_text_embedding=getattr(emb, "text_embedding", None) is not None,
         pattern_metadata=emb.pattern_metadata,
         created_at=emb.created_at,
         updated_at=emb.updated_at,
@@ -210,45 +237,75 @@ async def search_embeddings(
     """
     Perform semantic search across indexed embeddings.
 
-    This endpoint generates an embedding from the query text and finds
+    This endpoint generates a CLIP text embedding from the query and finds
     similar patterns using pgvector cosine similarity.
-
-    Note: Requires embedding generation to be implemented. Currently returns
-    empty results as a placeholder.
 
     Requires VIEW permission on the project.
     """
     await check_project_access(db, project_id, current_user, PermissionLevel.VIEW)
 
-    # TODO: Implement embedding generation for query text
-    # For now, we return empty results since we need a text-to-embedding model
-    # to convert the query string into a vector.
-    #
-    # Future implementation:
-    # 1. Use CLIP or similar model to generate embedding from query text
-    # 2. Call semantic_search() with the query embedding
-    # 3. Return results
-    #
-    # Example when implemented:
-    # query_embedding = await generate_text_embedding(request.query)
-    # results = await semantic_search(
-    #     db, project_id, query_embedding,
-    #     limit=request.limit,
-    #     min_similarity=request.min_similarity,
-    #     state_filter=request.state_filter,
-    # )
+    # Generate query embedding using qontinui-api
+    embedding_service = EmbeddingService()
+    embedding_result = await embedding_service.compute_text_embedding(request.query)
+
+    if not embedding_result.get("success"):
+        logger.warning(
+            "rag_search_embedding_failed",
+            project_id=str(project_id),
+            query=request.query,
+            error=embedding_result.get("error"),
+        )
+        return SemanticSearchResponse(
+            results=[],
+            query=request.query,
+            total_found=0,
+        )
+
+    query_embedding = embedding_result.get("embedding")
+    if not query_embedding:
+        logger.warning(
+            "rag_search_no_embedding",
+            project_id=str(project_id),
+            query=request.query,
+        )
+        return SemanticSearchResponse(
+            results=[],
+            query=request.query,
+            total_found=0,
+        )
+
+    # Perform semantic search using pgvector
+    results = await semantic_search(
+        db,
+        project_id,
+        query_embedding,
+        limit=request.limit,
+        min_similarity=request.min_similarity,
+        state_filter=request.state_filter,
+    )
+
+    # Convert results to response format
+    from app.schemas.rag_dashboard import SearchResultItem
+
+    search_results = [
+        SearchResultItem(
+            embedding=embedding_to_item(emb),
+            similarity_score=score,
+        )
+        for emb, score in results
+    ]
 
     logger.info(
-        "rag_search_placeholder",
+        "rag_search_complete",
         project_id=str(project_id),
         query=request.query,
-        message="Semantic search requires embedding generation - returning empty results",
+        results_found=len(search_results),
     )
 
     return SemanticSearchResponse(
-        results=[],
+        results=search_results,
         query=request.query,
-        total_found=0,
+        total_found=len(search_results),
     )
 
 

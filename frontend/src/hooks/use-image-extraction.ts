@@ -28,7 +28,6 @@ import {
   type ProcessingMode,
   type CompositeScreenshotInput,
 } from "@/services/image-extraction";
-import type { Region } from "@/types/pattern-optimization";
 import type { CapturedScreenshot } from "@/components/common/ScreenshotPicker";
 
 /**

@@ -360,9 +360,17 @@ export const useCanvasStore = create<CanvasStore>()(
                 (a) => a.id === actionId
               );
               if (index !== -1) {
+                const existingAction = state.workflow.actions[index];
+                // Deep merge config to preserve existing properties
+                const mergedConfig =
+                  updates.config && existingAction
+                    ? { ...existingAction.config, ...updates.config }
+                    : updates.config || existingAction?.config;
+
                 state.workflow.actions[index] = {
-                  ...state.workflow.actions[index],
+                  ...existingAction,
                   ...updates,
+                  config: mergedConfig,
                 } as Action;
                 state.isDirty = true;
               }

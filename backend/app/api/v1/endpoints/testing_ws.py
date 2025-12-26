@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import authenticate_runner, get_async_db
+from app.api.deps import get_async_db, get_current_user_from_ws
 from app.api.v1.endpoints.images import (
     validate_image_magic_bytes,
     validate_image_mime_type,
@@ -799,10 +799,10 @@ async def websocket_testing_runner_endpoint(
     WebSocket endpoint for test execution streaming from runners.
 
     Connection URL:
-        ws://localhost:8000/api/v1/testing/ws/testing/runner?token=<runner_token>
+        ws://localhost:8000/api/v1/testing/ws/testing/runner?token=<jwt_token>
 
     Query Parameters:
-        token: Runner token or JWT access token for authentication
+        token: JWT access token for authentication
 
     Message Types (Client -> Server):
         - session_start: Start new test session
@@ -861,7 +861,6 @@ async def websocket_testing_runner_endpoint(
 
     db = None
     user = None
-    runner_token = None
     connection_record = None
     test_run_id = None
     session_key = f"ws_testing_{id(websocket)}"
@@ -885,7 +884,7 @@ async def websocket_testing_runner_endpoint(
             return
 
         try:
-            user, runner_token = await authenticate_runner(auth_token)
+            user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error("testing_ws_auth_failed", error=str(e))
             await websocket.send_json(
@@ -935,32 +934,29 @@ async def websocket_testing_runner_endpoint(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-        # Log connection record (for runner tokens)
-        if runner_token:
-            try:
-                client_host = websocket.client.host if websocket.client else None
-                connection_record = await runner_crud.create_connection_record(
-                    db=db,
-                    user_id=user.id,
-                    token_id=runner_token.id,
-                    ip_address=client_host,
-                )
-                logger.info(
-                    "testing_runner_connection_logged",
-                    connection_id=connection_record.id,
-                    token_name=runner_token.name,
-                )
-            except Exception as e:
-                logger.error(
-                    "testing_runner_connection_log_failed",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
+        # Log connection record
+        try:
+            client_host = websocket.client.host if websocket.client else None
+            connection_record = await runner_crud.create_connection_record(
+                db=db,
+                user_id=user.id,
+                ip_address=client_host,
+            )
+            logger.info(
+                "testing_runner_connection_logged",
+                connection_id=connection_record.id,
+            )
+        except Exception as e:
+            logger.error(
+                "testing_runner_connection_log_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
         logger.info(
             "testing_ws_connected",
             user_id=str(user.id),
-            auth_method="runner_token" if runner_token else "jwt",
+            auth_method="jwt",
         )
 
         # Send connection acknowledgment
@@ -968,7 +964,7 @@ async def websocket_testing_runner_endpoint(
             {
                 "type": "connected",
                 "user_id": str(user.id),
-                "auth_method": "runner_token" if runner_token else "jwt",
+                "auth_method": "jwt",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             }
         )

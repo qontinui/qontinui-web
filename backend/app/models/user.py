@@ -101,9 +101,6 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     automation_sessions = relationship(
         "AutomationSession", back_populates="user", cascade="all, delete-orphan"
     )
-    runner_tokens = relationship(
-        "RunnerToken", back_populates="user", cascade="all, delete-orphan"
-    )
     runner_connections = relationship(
         "RunnerConnection", back_populates="user", cascade="all, delete-orphan"
     )
@@ -142,4 +139,13 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         "DetectedIssue",
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+    execution_runs = relationship(
+        "ExecutionRun",
+        back_populates="created_by",
+    )
+    assigned_execution_issues = relationship(
+        "ExecutionIssue",
+        back_populates="assigned_to",
+        foreign_keys="ExecutionIssue.assigned_to_user_id",
     )

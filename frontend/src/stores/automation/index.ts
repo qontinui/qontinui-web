@@ -21,14 +21,183 @@ import {
 } from "./slices";
 import { createCrossEntitySlice } from "./middleware";
 import { hydrateFromIndexedDB, clearIndexedDB } from "./middleware/persistence";
-import { projectDB } from "@/lib/project-db";
+import {
+  workflowRepository,
+  stateRepository,
+  transitionRepository,
+  imageRepository,
+} from "@/lib/repositories";
 import { screenshotDB } from "@/lib/screenshot-db";
 import { projectLogger } from "@/lib/project-logger";
 import type { Workflow } from "@/lib/action-schema/action-types";
+import type { State, Transition, ImageAsset } from "./types";
+
+// Legacy action config type for migration
+interface LegacyActionConfig {
+  processId?: string;
+  workflowId?: string;
+  processRepetition?: any;
+  repetition?: any;
+  [key: string]: any;
+}
 
 // Debounce timers for persistence
 const debounceTimers: Record<string, NodeJS.Timeout> = {};
 const DEBOUNCE_MS = 500;
+
+/**
+ * Migrate workflows from old format to new format
+ * - RUN_PROCESS → RUN_WORKFLOW
+ * - processId → workflowId
+ */
+function migrateWorkflows(workflows: Workflow[]): Workflow[] {
+  return workflows.map((workflow) => {
+    const migratedActions = workflow.actions.map((action) => {
+      // Migrate RUN_PROCESS to RUN_WORKFLOW (legacy migration)
+      if ((action.type as string) === "RUN_PROCESS") {
+        const config = { ...action.config } as LegacyActionConfig;
+
+        // Migrate processId to workflowId
+        if (config.processId) {
+          config.workflowId = config.processId;
+          delete config.processId;
+        }
+
+        // Migrate processRepetition to repetition
+        if (config.processRepetition) {
+          config.repetition = config.processRepetition;
+          delete config.processRepetition;
+        }
+
+        return {
+          ...action,
+          type: "RUN_WORKFLOW" as any,
+          config,
+        };
+      }
+
+      return action;
+    });
+
+    return {
+      ...workflow,
+      actions: migratedActions as any,
+    };
+  });
+}
+
+/**
+ * Migrate transitions from old format to new format
+ * - Ensure workflows array exists
+ */
+function migrateTransitions(transitions: Transition[]): Transition[] {
+  return transitions.map((transition) => {
+    // Ensure workflows is always an array
+    if (!transition.workflows) {
+      return {
+        ...transition,
+        workflows: [],
+      };
+    }
+
+    return transition;
+  });
+}
+
+/**
+ * Migrate patterns with embedded image data to use imageId references
+ * This handles legacy patterns that have image/mask data embedded directly
+ * instead of referencing the image library
+ */
+function migratePatternImages(
+  states: State[],
+  images: ImageAsset[]
+): { states: State[]; newImages: ImageAsset[] } {
+  const newImages: ImageAsset[] = [];
+  let migrationCount = 0;
+
+  const migratedStates = states.map((state) => {
+    if (!state.stateImages || state.stateImages.length === 0) {
+      return state;
+    }
+
+    const migratedStateImages = state.stateImages.map((stateImage) => {
+      if (!stateImage.patterns || stateImage.patterns.length === 0) {
+        return stateImage;
+      }
+
+      const migratedPatterns = stateImage.patterns.map((pattern) => {
+        const patternAny = pattern as any;
+
+        // Check if pattern has embedded image data but no imageId
+        // OR if pattern.imageId accidentally contains base64 data (fix for corrupted data)
+        const imageIdIsData =
+          pattern.imageId && pattern.imageId.startsWith("data:image");
+        const hasEmbeddedImage =
+          !pattern.imageId && "image" in patternAny && patternAny.image;
+
+        if (hasEmbeddedImage || imageIdIsData) {
+          const imageData = imageIdIsData ? pattern.imageId! : patternAny.image;
+
+          // Try to find matching image in library
+          let matchingImage = images.find((img) => img.url === imageData);
+
+          // If not found, also check newImages we've created in this migration
+          if (!matchingImage) {
+            matchingImage = newImages.find((img) => img.url === imageData);
+          }
+
+          // If still not found, create new image asset
+          if (!matchingImage) {
+            const newImageId = `migrated-image-${Date.now()}-${Math.random()
+              .toString(36)
+              .substr(2, 9)}`;
+            const newImage: ImageAsset = {
+              id: newImageId,
+              name: `Migrated Pattern Image ${newImages.length + 1}`,
+              url: imageData,
+              projectName: state.projectName || "Unknown",
+              size: 0, // Unknown size for migrated images
+              createdAt: new Date(),
+              usageCount: 0,
+              source: "migration" as any,
+            };
+            newImages.push(newImage);
+            matchingImage = newImage;
+            migrationCount++;
+          }
+
+          // Return pattern with imageId reference (remove embedded data)
+          const cleanPattern = { ...pattern };
+          delete (cleanPattern as any).image;
+          delete (cleanPattern as any).mask;
+          cleanPattern.imageId = matchingImage.id;
+          return cleanPattern;
+        }
+
+        return pattern;
+      });
+
+      return {
+        ...stateImage,
+        patterns: migratedPatterns,
+      };
+    });
+
+    return {
+      ...state,
+      stateImages: migratedStateImages,
+    };
+  });
+
+  if (migrationCount > 0) {
+    projectLogger.info("Migration", "Migrated embedded pattern images", {
+      count: migrationCount,
+    });
+  }
+
+  return { states: migratedStates, newImages };
+}
 
 /**
  * Schedule a debounced persist operation
@@ -120,18 +289,36 @@ export const useAutomationStore = create<AutomationStore>()(
           });
 
           try {
+            // Apply migrations to workflows
+            let workflows = config.workflows as Workflow[] | undefined;
+            if (workflows && workflows.length > 0) {
+              workflows = migrateWorkflows(workflows);
+            }
+
+            // Apply migrations to transitions
+            let transitions = config.transitions as Transition[] | undefined;
+            if (transitions && transitions.length > 0) {
+              transitions = migrateTransitions(transitions);
+            }
+
+            // Apply migrations to pattern images
+            let states = config.states as State[] | undefined;
+            let images = config.images as ImageAsset[] | undefined;
+            if (states && states.length > 0 && images) {
+              const migrationResult = migratePatternImages(states, images);
+              states = migrationResult.states;
+              // Merge new images from migration
+              if (migrationResult.newImages.length > 0) {
+                images = [...images, ...migrationResult.newImages];
+              }
+            }
+
             set((state) => {
               if (config.name) state.projectName = config.name as string;
-              if (config.workflows)
-                state.workflows =
-                  config.workflows as AutomationStore["workflows"];
-              if (config.states)
-                state.states = config.states as AutomationStore["states"];
-              if (config.transitions)
-                state.transitions =
-                  config.transitions as AutomationStore["transitions"];
-              if (config.images)
-                state.images = config.images as AutomationStore["images"];
+              if (workflows) state.workflows = workflows;
+              if (states) state.states = states;
+              if (transitions) state.transitions = transitions;
+              if (images) state.images = images;
               if (config.screenshots)
                 state.screenshots =
                   config.screenshots as AutomationStore["screenshots"];
@@ -185,19 +372,15 @@ export const useAutomationStore = create<AutomationStore>()(
   )
 );
 
-// Persistence helpers
+// Persistence helpers using Repository pattern
 async function persistWorkflows(
   workflows: Workflow[],
   projectName: string
 ): Promise<void> {
-  const existing = await projectDB.getWorkflowsByProject(projectName);
-  await Promise.all(existing.map((w) => projectDB.deleteWorkflow(w.id)));
+  // Delete existing and replace with new (full replacement strategy)
+  await workflowRepository.deleteByProject(projectName);
   await Promise.all(
-    workflows.map((w) =>
-      projectDB.addWorkflow({ ...w, projectName } as Workflow & {
-        projectName: string;
-      })
-    )
+    workflows.map((w) => workflowRepository.add({ ...w, projectName }))
   );
 }
 
@@ -205,10 +388,9 @@ async function persistStates(
   states: AutomationStore["states"],
   projectName: string
 ): Promise<void> {
-  const existing = await projectDB.getStatesByProject(projectName);
-  await Promise.all(existing.map((s) => projectDB.deleteState(s.id)));
+  await stateRepository.deleteByProject(projectName);
   await Promise.all(
-    states.map((s) => projectDB.addState({ ...s, projectName }))
+    states.map((s) => stateRepository.add({ ...s, projectName }))
   );
 }
 
@@ -216,10 +398,9 @@ async function persistTransitions(
   transitions: AutomationStore["transitions"],
   projectName: string
 ): Promise<void> {
-  const existing = await projectDB.getTransitionsByProject(projectName);
-  await Promise.all(existing.map((t) => projectDB.deleteTransition(t.id)));
+  await transitionRepository.deleteByProject(projectName);
   await Promise.all(
-    transitions.map((t) => projectDB.addTransition({ ...t, projectName }))
+    transitions.map((t) => transitionRepository.add({ ...t, projectName }))
   );
 }
 
@@ -227,10 +408,9 @@ async function persistImages(
   images: AutomationStore["images"],
   projectName: string
 ): Promise<void> {
-  const existing = await projectDB.getImagesByProject(projectName);
-  await Promise.all(existing.map((i) => projectDB.deleteImage(i.id)));
+  await imageRepository.deleteByProject(projectName);
   await Promise.all(
-    images.map((i) => projectDB.addImage({ ...i, projectName }))
+    images.map((i) => imageRepository.add({ ...i, projectName }))
   );
 }
 

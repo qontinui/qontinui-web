@@ -70,7 +70,7 @@ export function ReportExportButton({
     try {
       // Determine screenshots directory
       const screenshotPath =
-        screenshotsDir || `/tmp/qontinui/screenshots/${result.process_id}`;
+        screenshotsDir || `/tmp/qontinui/screenshots/${result.workflow_id}`;
 
       // Generate PDF
       const blob = await generatePDFReport({
@@ -83,7 +83,7 @@ export function ReportExportButton({
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${result.process_name}_report_${new Date().toISOString().split("T")[0]}.pdf`;
+      a.download = `${result.workflow_name}_report_${new Date().toISOString().split("T")[0]}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -117,7 +117,7 @@ export function ReportExportButton({
           <DialogHeader>
             <DialogTitle>PDF Report Options</DialogTitle>
             <DialogDescription>
-              Configure the PDF report for {result.process_name}
+              Configure the PDF report for {result.workflow_name}
             </DialogDescription>
           </DialogHeader>
 

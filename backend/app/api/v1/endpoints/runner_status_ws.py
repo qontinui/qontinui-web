@@ -93,10 +93,7 @@ async def websocket_runner_status(
             connections_data = [
                 {
                     "id": conn.id,
-                    "runner_token_id": (
-                        str(conn.runner_token_id) if conn.runner_token_id else None
-                    ),
-                    "runner_name": conn.runner_name,
+                    "runner_name": conn.runner_name or "Desktop Runner",
                     "connected_at": conn.connected_at.isoformat(),
                     "disconnected_at": (
                         conn.disconnected_at.isoformat()

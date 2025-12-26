@@ -6,6 +6,7 @@
  */
 
 import type { Migration } from "../migration-types";
+import { migrationLegacyRagToV2 } from "./legacy-rag-to-v2.0.0";
 import { migrationV1ToV2 } from "./v1.0.0-to-v2.0.0";
 import { migrationV2ToV201 } from "./v2.0.0-to-v2.0.1";
 import { migrationV201ToV21 } from "./v2.0.1-to-v2.1.0";
@@ -39,6 +40,9 @@ export const CURRENT_VERSION = "2.9.0";
  * 4. Update CURRENT_VERSION to '2.4.0'
  */
 export const ALL_MIGRATIONS: Migration[] = [
+  // Legacy format migrations (must come first to handle format conversion)
+  migrationLegacyRagToV2,
+  // Version-to-version migrations
   migrationV1ToV2,
   migrationV2ToV201,
   migrationV201ToV21,

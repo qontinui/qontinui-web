@@ -52,7 +52,7 @@ User Action
     │
     ▼
 ┌─────────────────────┐
-│ IndexedDB Update    │  (projectDB.updateState)
+│ IndexedDB Update    │  (stateRepository.save)
 └─────────────────────┘
     │
     ▼

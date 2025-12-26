@@ -4,6 +4,11 @@ Models package for qontinui-web backend.
 This package contains all SQLAlchemy models for the application.
 """
 
+from app.models.action_execution import (
+    ActionExecution,
+    ActionExecutionStatus,
+    ActionExecutionType,
+)
 from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
 from app.models.analytics_event import AnalyticsEvent
@@ -49,8 +54,18 @@ from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
 from app.models.detected_issue import DetectedIssue
 from app.models.device_session import DeviceSession
+from app.models.discovered_state import DiscoveredState
 from app.models.edit_command import EditCommand
 from app.models.embedding_generation_job import EmbeddingGenerationJob
+from app.models.execution_issue import (
+    ExecutionIssue,
+    ExecutionIssueSeverity,
+    ExecutionIssueSource,
+    ExecutionIssueStatus,
+    ExecutionIssueType,
+)
+from app.models.execution_run import ExecutionRun, ExecutionRunStatus, ExecutionRunType
+from app.models.execution_screenshot import ExecutionScreenshot, ExecutionScreenshotType
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.notification import (
     Notification,
@@ -72,7 +87,6 @@ from app.models.project_embedding import ProjectEmbedding
 from app.models.project_version import ProjectVersion
 from app.models.runner_connection import RunnerConnection
 from app.models.runner_device import RunnerDevice
-from app.models.runner_token import RunnerToken
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
 from app.models.snapshot import (
@@ -84,6 +98,7 @@ from app.models.snapshot import (
     SnapshotRun,
 )
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
+from app.models.state_transition import StateTransition
 from app.models.storage_usage import StorageUsage
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
 from app.models.test_deficiency import (
@@ -177,6 +192,9 @@ __all__ = [
     "AnalyticsEvent",
     # Detected Issues
     "DetectedIssue",
+    # State Discovery
+    "DiscoveredState",
+    "StateTransition",
     # Automation
     "EmbeddingGenerationJob",
     "ProjectEmbedding",
@@ -194,8 +212,7 @@ __all__ = [
     "SnapshotAction",
     "SnapshotPattern",
     "SnapshotMatch",
-    # Runner Tokens
-    "RunnerToken",
+    # Runner Connections
     "RunnerConnection",
     "RunnerDevice",
     # Version History & Event Sourcing
@@ -250,6 +267,20 @@ __all__ = [
     "VisualComparisonResult",
     "VisualComparisonStatus",
     "ReviewDecision",
+    # Unified Execution (NEW - replaces fragmented systems)
+    "ExecutionRun",
+    "ExecutionRunType",
+    "ExecutionRunStatus",
+    "ActionExecution",
+    "ActionExecutionType",
+    "ActionExecutionStatus",
+    "ExecutionScreenshot",
+    "ExecutionScreenshotType",
+    "ExecutionIssue",
+    "ExecutionIssueType",
+    "ExecutionIssueSeverity",
+    "ExecutionIssueStatus",
+    "ExecutionIssueSource",
     # Training Datasets
     "TrainingDataset",
     "TrainingDatasetImage",

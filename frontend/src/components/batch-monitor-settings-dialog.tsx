@@ -31,7 +31,7 @@ export interface BatchMonitorSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   states: State[];
-  onApplyMonitors: (stateIds: string[], monitors: number[]) => void;
+  onApplyMonitors: (stateIds: string[], monitors: number[]) => Promise<void>;
 }
 
 export function BatchMonitorSettingsDialog({
@@ -86,7 +86,7 @@ export function BatchMonitorSettingsDialog({
     });
   }, []);
 
-  const handleApply = useCallback(() => {
+  const handleApply = useCallback(async () => {
     if (selectedStateIds.size === 0) {
       toast.error("Please select at least one state");
       return;
@@ -97,14 +97,19 @@ export function BatchMonitorSettingsDialog({
       return;
     }
 
-    onApplyMonitors(Array.from(selectedStateIds), monitors);
-    toast.success(
-      `Applied monitor settings to ${selectedStateIds.size} state(s)`,
-      {
-        description: `Monitors: ${monitors.map((m) => (m === 0 ? "Primary" : m === 1 ? "Left" : m === 2 ? "Right" : `Monitor ${m}`)).join(", ")}`,
-      }
-    );
-    onOpenChange(false);
+    try {
+      await onApplyMonitors(Array.from(selectedStateIds), monitors);
+      toast.success(
+        `Applied monitor settings to ${selectedStateIds.size} state(s)`,
+        {
+          description: `Monitors: ${monitors.map((m) => (m === 0 ? "Primary" : m === 1 ? "Left" : m === 2 ? "Right" : `Monitor ${m}`)).join(", ")}`,
+        }
+      );
+      onOpenChange(false);
+    } catch (error) {
+      toast.error("Failed to apply monitor settings");
+      console.error("Failed to apply monitor settings:", error);
+    }
   }, [selectedStateIds, monitors, onApplyMonitors, onOpenChange]);
 
   return (

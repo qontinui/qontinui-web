@@ -1,8 +1,9 @@
 "use client";
 
 import type React from "react";
+import { Suspense } from "react";
 import { AuthProvider } from "@/contexts/auth-context";
-import { AutomationProvider } from "@/contexts/automation-context";
+import { AutomationProvider } from "@/contexts/automation-context/AutomationProviderV2";
 import { OrganizationProvider } from "@/contexts/organization-context";
 import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
 import { TabStateProvider } from "@/contexts/tab-state-context";
@@ -23,12 +24,25 @@ import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
+  return (
+    <div
+      className={cn(
+        "fixed left-0 top-0 h-screen bg-[#0A0A0B] border-r border-gray-800/50",
+        isCollapsed ? "w-16" : "w-64"
+      )}
+    />
+  );
+}
+
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed } = useSidebar();
 
   return (
     <div className="flex min-h-screen bg-background">
-      <UnifiedSidebar />
+      <Suspense fallback={<SidebarSkeleton isCollapsed={isCollapsed} />}>
+        <UnifiedSidebar />
+      </Suspense>
       <div
         className={cn(
           "flex-1 flex flex-col transition-all duration-300",

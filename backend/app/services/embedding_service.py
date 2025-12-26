@@ -185,6 +185,60 @@ class EmbeddingService:
                 "error": str(e),
             }
 
+    async def compute_text_embedding(self, text: str) -> dict[str, Any]:
+        """Compute CLIP text embedding for semantic search.
+
+        Uses CLIP's text encoder to produce a 512-dimensional embedding
+        in the same space as CLIP image embeddings, enabling text-to-image
+        similarity search.
+
+        Args:
+            text: Query text to encode
+
+        Returns:
+            Dict with:
+                - success: Whether the embedding was computed
+                - embedding: 512-dimensional embedding vector
+                - embedding_dim: Dimension of the embedding (512)
+                - processing_time_ms: Time to compute
+                - error: Error message if failed
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.api_url}/api/embeddings/compute-text",
+                    json={"text": text},
+                )
+                response.raise_for_status()
+                result: dict[str, Any] = response.json()
+                return result
+
+        except httpx.ConnectError:
+            logger.warning(
+                "embedding_service_text_connection_failed",
+                api_url=self.api_url,
+            )
+            return {
+                "success": False,
+                "error": f"Could not connect to qontinui-api at {self.api_url}",
+            }
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "embedding_service_text_http_error",
+                status_code=e.response.status_code,
+                detail=e.response.text,
+            )
+            return {
+                "success": False,
+                "error": f"HTTP error {e.response.status_code}: {e.response.text}",
+            }
+        except Exception as e:
+            logger.error("embedding_service_text_error", error=str(e), exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
 
 async def compute_embeddings_for_state_images(
     config: dict[str, Any],

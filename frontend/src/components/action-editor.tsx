@@ -370,7 +370,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, unknown> {
       };
     case "GO_TO_STATE":
       return {
-        states: [], // Array of state IDs for multi-target pathfinding
+        stateIds: [], // Array of state IDs for multi-target pathfinding
         // pause_before_begin, pause_after_end are optional overrides
       };
     case "RUN_WORKFLOW":
@@ -814,7 +814,11 @@ function getActionSummary(
       return "No image selected";
     }
     case "GO_TO_STATE": {
-      const targetStates = (config.states as string[] | undefined) || [];
+      // Support both old 'states' key and new 'stateIds' key for backward compatibility
+      const targetStates =
+        (config.stateIds as string[] | undefined) ||
+        (config.states as string[] | undefined) ||
+        [];
       if (targetStates.length > 0) {
         const stateNames = targetStates.map((stateId: string) => {
           const state = states.find((s) => s.id === stateId);

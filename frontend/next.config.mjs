@@ -1,4 +1,9 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import bundleAnalyzer from '@next/bundle-analyzer';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === 'true',
@@ -10,6 +15,10 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  webpack: (config) => {
+    config.resolve.alias['@qontinui/schemas'] = path.resolve(__dirname, '../../qontinui-schemas/generated/typescript');
+    return config;
+  },
   // Prevent Next.js from stripping trailing slashes on API routes
   // FastAPI requires trailing slashes on some endpoints
   skipTrailingSlashRedirect: true,

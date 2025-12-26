@@ -151,7 +151,10 @@ class Recording(Base):
         "RecordingContext", back_populates="recording", cascade="all, delete-orphan"
     )
     discovered_states = relationship(
-        "DiscoveredState", back_populates="recording", cascade="all, delete-orphan"
+        "DiscoveredState",
+        back_populates="recording",
+        cascade="all, delete-orphan",
+        foreign_keys="DiscoveredState.recording_id",
     )
     discovered_transitions = relationship(
         "DiscoveredTransition", back_populates="recording", cascade="all, delete-orphan"
@@ -420,78 +423,6 @@ class RecordingContext(Base):
             "ix_recording_contexts_recording_time", "recording_id", "relative_time_ms"
         ),
         Index("ix_recording_contexts_type", "recording_id", "event_type"),
-    )
-
-
-class DiscoveredState(Base):
-    """
-    A state discovered through automated analysis
-    """
-
-    __tablename__ = "discovered_states"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    recording_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("recordings.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    # State identification
-    name = Column(String, nullable=False)
-    description = Column(Text)
-    cluster_id = Column(Integer)  # From clustering algorithm
-
-    # Visual elements (stored as JSON, will be converted to actual State objects if accepted)
-    state_images = Column(JSON, default=list)  # Array of StateImage objects
-    regions = Column(JSON, default=list)  # Array of StateRegion objects
-    locations = Column(JSON, default=list)  # Array of StateLocation objects
-    strings = Column(JSON, default=list)  # Array of StateString objects
-
-    # Frames belonging to this state
-    frame_ids = Column(JSON, default=list)  # Array of frame UUIDs
-    frame_count = Column(Integer, default=0)
-
-    # Position on canvas
-    position_x = Column(Float)
-    position_y = Column(Float)
-
-    # State properties
-    is_initial = Column(Boolean, default=False)
-    is_error_state = Column(Boolean, default=False)
-    is_transient = Column(Boolean, default=False)  # Loading states, etc.
-
-    # Confidence scores
-    confidence = Column(Float)  # Overall confidence (0.0-1.0)
-    uniqueness_score = Column(Float)
-    stability_score = Column(Float)
-    distinctiveness_score = Column(Float)
-
-    # Context
-    window_context = Column(JSON)  # Window title, bounds
-    url_context = Column(String)  # For web apps
-
-    # User review
-    user_edited = Column(Boolean, default=False)
-    user_approved = Column(Boolean, default=False)
-    user_notes = Column(Text)
-
-    # Conversion to actual state
-    converted_to_state_id = Column(
-        UUID(as_uuid=True), nullable=True
-    )  # Reference to actual State if accepted
-    converted_at = Column(DateTime)
-
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    # Relationships
-    recording = relationship("Recording", back_populates="discovered_states")
-
-    __table_args__ = (
-        Index("ix_discovered_states_recording", "recording_id"),
-        Index("ix_discovered_states_confidence", "confidence"),
     )
 
 

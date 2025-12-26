@@ -165,6 +165,7 @@ export interface TransitionSlice {
     oldStateId: string,
     newStateId: string
   ) => void;
+  removeWorkflowFromTransitions: (workflowId: string) => void;
 }
 
 export interface ImageSlice {

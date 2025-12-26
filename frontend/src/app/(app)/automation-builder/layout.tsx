@@ -5,7 +5,7 @@
  *
  * This layout wraps all automation-builder pages and ensures:
  * 1. Project data is auto-saved to backend every 10 seconds
- * 2. Local saves to IndexedDB happen every 2 seconds
+ * 2. Local saves to IndexedDB happen via store subscriptions
  *
  * Previously, only the main /automation-builder page had autosave,
  * causing data loss when users worked on sub-pages like /states, /images, etc.
@@ -27,12 +27,11 @@ function AutoSaveProvider({ children }: { children: React.ReactNode }) {
   // This ensures auto-save works even when navigating without URL project param
   const effectiveProjectId = urlProjectId || contextProjectId;
 
-  // Auto-save to backend every 10 seconds, local save every 2 seconds
-  // This ensures data is saved regardless of which sub-page the user is on
+  // Auto-save to backend every 10 seconds
+  // Local saves happen automatically via store subscriptions
   useProjectAutoSave({
     projectId: effectiveProjectId,
     enabled: !isLoading && effectiveProjectId !== null,
-    localSaveInterval: 2000,
     backendSaveInterval: 10000,
   });
 

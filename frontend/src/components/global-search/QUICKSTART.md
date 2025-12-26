@@ -91,17 +91,17 @@ Create a hook to load data into the search index:
 // hooks/useSearchIndex.ts
 import { useEffect } from "react";
 import { globalSearchService } from "@/services/global-search-service";
-import { projectDB } from "@/lib/project-db";
+import { workflowRepository, stateRepository, imageRepository, transitionRepository } from "@/lib/repositories";
 
 export function useSearchIndex() {
   useEffect(() => {
     async function loadIndex() {
       try {
         // Load from your data source
-        const workflows = await projectDB.getAllWorkflows();
-        const states = await projectDB.getAllStates();
-        const images = await projectDB.getAllImages();
-        const transitions = await projectDB.getAllTransitions();
+        const workflows = await workflowRepository.getAll();
+        const states = await stateRepository.getAll();
+        const images = await imageRepository.getAll();
+        const transitions = await transitionRepository.getAll();
 
         // Update search index
         globalSearchService.updateIndex({

@@ -92,6 +92,7 @@ export class ConfigExporter {
           runner: "2.0.0",
           website: "2.0.0",
         },
+        projectId: metadata?.projectId, // For test run reporting
       },
       images: exportedImages,
       workflows: this.exportWorkflows(allWorkflows, states || []),

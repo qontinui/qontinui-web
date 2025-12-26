@@ -1,7 +1,7 @@
 // hooks/useMockExecution.ts
 
 import { useState } from "react";
-import { executeMockProcess } from "@/lib/api/integration-testing";
+import { executeMockWorkflow } from "@/lib/api/integration-testing";
 import type {
   MockExecutionRequest,
   MockExecutionResponse,
@@ -17,7 +17,7 @@ export function useMockExecution() {
     setError(null);
 
     try {
-      const response = await executeMockProcess(request);
+      const response = await executeMockWorkflow(request);
       setResult(response);
       return response;
     } catch (err) {

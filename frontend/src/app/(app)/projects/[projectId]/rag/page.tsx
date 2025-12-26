@@ -60,7 +60,7 @@ export default function RAGDashboardPage() {
               Dashboard
             </Button>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
-              RAG Pre-processing
+              Visual Index
             </h1>
           </div>
         </div>

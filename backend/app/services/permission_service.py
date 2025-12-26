@@ -76,6 +76,7 @@ class PermissionService:
         Check if user has required access level to a project.
 
         This method checks access in the following order:
+        0. Superuser status (grants admin access to all projects)
         1. Project ownership (grants admin access)
         2. Direct user access via ProjectAccessControl
         3. Organization membership access via ProjectAccessControl
@@ -96,6 +97,13 @@ class PermissionService:
             True
         """
         try:
+            # Check if user is a superuser - they have access to all projects
+            from app.crud.user import get_user
+
+            user = await get_user(db, user_id=user_id)
+            if user and user.is_superuser:
+                return True
+
             # Get the user's actual permission level
             user_level = await self.get_user_permission_level(db, user_id, project_id)
 

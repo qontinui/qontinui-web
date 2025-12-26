@@ -58,6 +58,10 @@ class ProjectEmbedding(Base):
     # - Custom model: variable
     embedding: Mapped[Vector] = mapped_column(Vector(512), nullable=False)
 
+    # Text embedding (384 dimensions for all-MiniLM-L6-v2)
+    # Used for text-to-text semantic search
+    text_embedding: Mapped[Vector | None] = mapped_column(Vector(384), nullable=True)
+
     # Embedding metadata
     embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
     # e.g., "clip-vit-base-patch32", "resnet50", etc.
@@ -72,6 +76,9 @@ class ProjectEmbedding(Base):
     # Image dimensions
     image_width: Mapped[int] = mapped_column(Integer, nullable=False)
     image_height: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Text description for semantic search (AI-generated or manual)
+    text_description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

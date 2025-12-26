@@ -20,6 +20,11 @@ export function useStatesBridge() {
   const { user } = useAuth();
   const { projectName } = useAutomation();
   const store = useStatesStore();
+
+  // Keep stable ref to store to avoid infinite loops
+  const storeRef = useRef(store);
+  storeRef.current = store;
+
   const hasHydrated = useRef(false);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -27,9 +32,10 @@ export function useStatesBridge() {
   useEffect(() => {
     if (user?.id && projectName && !hasHydrated.current) {
       hasHydrated.current = true;
-      store.hydrate(projectName, user.id);
+      storeRef.current.hydrate(projectName, user.id);
     }
-  }, [user?.id, projectName, store]);
+
+  }, [user?.id, projectName]);
 
   // Persist on unmount
   useEffect(() => {
@@ -37,9 +43,9 @@ export function useStatesBridge() {
       if (persistTimeoutRef.current) {
         clearTimeout(persistTimeoutRef.current);
       }
-      store.persist();
+      storeRef.current.persist();
     };
-  }, [store]);
+  }, []);
 
   // Debounced persist
   const debouncedPersist = useCallback(() => {
@@ -47,84 +53,84 @@ export function useStatesBridge() {
       clearTimeout(persistTimeoutRef.current);
     }
     persistTimeoutRef.current = setTimeout(() => {
-      store.persist();
+      storeRef.current.persist();
     }, 500);
-  }, [store]);
+  }, []);
 
   // Listen for beforeunload
   useEffect(() => {
     const handleBeforeUnload = () => {
-      store.persist();
+      storeRef.current.persist();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [store]);
+  }, []);
 
   // State setters that mirror the original component's setState functions
   const setViewport = useCallback(
     (viewport: { x: number; y: number; zoom: number }) => {
-      store.setViewport(viewport);
+      storeRef.current.setViewport(viewport);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSelectedStateIds = useCallback(
     (ids: string[]) => {
-      store.setSelectedStateIds(ids);
+      storeRef.current.setSelectedStateIds(ids);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const toggleStateId = useCallback(
     (id: string) => {
-      store.toggleStateId(id);
+      storeRef.current.toggleStateId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSelectedTransitionIds = useCallback(
     (ids: string[]) => {
-      store.setSelectedTransitionIds(ids);
+      storeRef.current.setSelectedTransitionIds(ids);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const toggleTransitionId = useCallback(
     (id: string) => {
-      store.toggleTransitionId(id);
+      storeRef.current.toggleTransitionId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setEditingStateId = useCallback(
     (id: string | null) => {
-      store.setEditingStateId(id);
+      storeRef.current.setEditingStateId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setShowGrid = useCallback(
     (show: boolean) => {
-      store.setShowGrid(show);
+      storeRef.current.setShowGrid(show);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSnapToGrid = useCallback(
     (snap: boolean) => {
-      store.setSnapToGrid(snap);
+      storeRef.current.setSnapToGrid(snap);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   return {

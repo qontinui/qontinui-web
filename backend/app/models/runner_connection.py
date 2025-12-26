@@ -29,12 +29,7 @@ class RunnerConnection(Base):
     # Primary key (auto-incrementing integer for simplicity)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # Foreign keys
-    # runner_token_id is nullable to support JWT auth connections (not just runner token connections)
-    runner_token_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("runner_tokens.id", ondelete="CASCADE"), nullable=True, index=True
-    )
-
+    # Foreign key to user
     user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -90,7 +85,6 @@ class RunnerConnection(Base):
     )
 
     # Relationships
-    runner_token = relationship("RunnerToken", back_populates="connections")
     user = relationship("User", back_populates="runner_connections")
     software_test_runs = relationship(
         "SoftwareTestRun", back_populates="runner_connection"
@@ -104,4 +98,6 @@ class RunnerConnection(Base):
 
     def __repr__(self) -> str:
         status = "active" if self.disconnected_at is None else "closed"
-        return f"<RunnerConnection(id={self.id}, token_id={self.runner_token_id}, status={status})>"
+        return (
+            f"<RunnerConnection(id={self.id}, user_id={self.user_id}, status={status})>"
+        )

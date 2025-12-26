@@ -1,24 +1,25 @@
 // types/integration-testing.ts
+// Types for Integration Testing feature (mock mode testing with historical data)
 
 export interface MockExecutionRequest {
-  process_id: string;
-  process_name: string;
-  snapshot_run_ids: string[]; // Support multiple snapshot runs
-  snapshot_run_id?: string; // Deprecated: for backward compatibility
+  project_id: string;
+  workflow_id: string;
+  workflow_name: string;
+  snapshot_run_ids: string[];
   initial_states: string[];
   actions: ActionSpec[];
 }
 
 export interface ActionSpec {
-  type: string; // "FIND" | "CLICK" | "TYPE" | etc.
+  type: string;
   pattern_id?: string;
   text?: string;
   metadata?: Record<string, unknown>;
 }
 
 export interface MockExecutionResponse {
-  process_id: string;
-  process_name: string;
+  workflow_id: string;
+  workflow_name: string;
   start_time: string;
   end_time: string | null;
   total_duration_ms: number;
@@ -70,11 +71,9 @@ export interface StateScreenshotListResponse {
   unique_state_combinations: number;
 }
 
-// Coverage Analysis Types
-
 export interface CoverageAnalysisRequest {
-  process_id: string;
-  process_name: string;
+  workflow_id: string;
+  workflow_name: string;
   snapshot_run_ids: string[];
   expected_states?: string[];
 }
@@ -110,8 +109,8 @@ export interface CoverageGap {
 }
 
 export interface CoverageReport {
-  process_id: string;
-  process_name: string;
+  workflow_id: string;
+  workflow_name: string;
   snapshot_run_ids: string[];
   analysis_time: string;
   overall_coverage_percentage: number;

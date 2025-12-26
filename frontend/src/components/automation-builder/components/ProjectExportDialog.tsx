@@ -28,6 +28,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Brain,
+  Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAutomation } from "@/contexts/automation-context";
@@ -44,6 +45,14 @@ import {
   MissingMonitorsDialog,
   type MonitorUpdate,
 } from "@/components/export/MissingMonitorsDialog";
+import {
+  cleanAllReferences,
+  type CleanupResult,
+} from "@/services/project-optimization/reference-cleaner";
+import {
+  workflowRepository,
+  transitionRepository,
+} from "@/lib/repositories";
 
 export interface ProjectExportDialogProps {
   open: boolean;
@@ -55,6 +64,7 @@ export function ProjectExportDialog({
   onOpenChange,
 }: ProjectExportDialogProps) {
   const {
+    projectId,
     projectName,
     images,
     workflows,
@@ -64,12 +74,16 @@ export function ProjectExportDialog({
     settings,
     screenshots,
     updateState,
+    updateWorkflow,
+    updateTransition,
   } = useAutomation();
 
   const [isExporting, setIsExporting] = useState(false);
+  const [isFixing, setIsFixing] = useState(false);
   const [exportName, setExportName] = useState(projectName);
   const [description, setDescription] = useState("");
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
 
   // Monitor validation state
   const [monitorValidationErrors, setMonitorValidationErrors] = useState<
@@ -91,6 +105,7 @@ export function ProjectExportDialog({
       setExportName(projectName);
       setDescription("");
       setValidationErrors([]);
+      setCleanupResult(null);
       setRagStatus("idle");
       setRagProgress(null);
       setRagError(null);
@@ -148,8 +163,9 @@ export function ProjectExportDialog({
    */
   const triggerRagProcessing = useCallback(
     async (config: Parameters<typeof ragSetupService.startRAGSetup>[1]) => {
-      // Generate a project ID based on the config name
-      const projectId = (config.metadata.name || "project")
+      // Use actual project UUID for proper backend sync
+      // Fall back to sanitized name only if no projectId exists
+      const ragProjectId = projectId || (config.metadata.name || "project")
         .toLowerCase()
         .replace(/[^a-z0-9]/g, "-")
         .replace(/-+/g, "-")
@@ -190,11 +206,11 @@ export function ProjectExportDialog({
           totalElements: 0,
         });
 
-        const result = await ragSetupService.startRAGSetup(projectId, config);
+        const result = await ragSetupService.startRAGSetup(ragProjectId, config);
 
         if (result.success) {
           // Start polling for progress
-          startRagProgressPolling(projectId);
+          startRagProgressPolling(ragProjectId);
         } else {
           setRagStatus("failed");
           setRagError(result.message);
@@ -211,7 +227,7 @@ export function ProjectExportDialog({
         });
       }
     },
-    [startRagProgressPolling]
+    [projectId, startRagProgressPolling]
   );
 
   /**
@@ -296,6 +312,67 @@ export function ProjectExportDialog({
     [states, updateState]
   );
 
+  /**
+   * Handle fixing broken references in workflows and transitions
+   */
+  const handleFixIssues = useCallback(async () => {
+    setIsFixing(true);
+    setCleanupResult(null);
+
+    try {
+      const { workflows: cleanedWorkflows, transitions: cleanedTransitions, result } =
+        cleanAllReferences(workflows, transitions);
+
+      // Update all cleaned workflows - both context state AND directly persist to IndexedDB
+      for (const workflow of cleanedWorkflows) {
+        const originalWorkflow = workflows.find((w) => w.id === workflow.id);
+        if (
+          originalWorkflow &&
+          JSON.stringify(originalWorkflow.connections) !==
+            JSON.stringify(workflow.connections)
+        ) {
+          // Update context state (for immediate UI update)
+          await updateWorkflow(workflow);
+
+          // Also persist directly to IndexedDB via repository (guaranteed persistence)
+          // This bypasses the debounced subscription which may not fire reliably
+          await workflowRepository.update({ ...workflow, projectName });
+        }
+      }
+
+      // Update all cleaned transitions - both context state AND directly persist to IndexedDB
+      for (const transition of cleanedTransitions) {
+        const originalTransition = transitions.find(
+          (t) => t.id === transition.id
+        );
+        if (
+          originalTransition &&
+          JSON.stringify(originalTransition.workflows) !==
+            JSON.stringify(transition.workflows)
+        ) {
+          // Update context state (for immediate UI update)
+          await updateTransition(transition);
+
+          // Also persist directly to IndexedDB via repository (guaranteed persistence)
+          await transitionRepository.update({ ...transition, projectName });
+        }
+      }
+
+      // Store the result to display in the dialog
+      setCleanupResult(result);
+
+      // Clear validation errors since we fixed them
+      setValidationErrors([]);
+    } catch (error) {
+      console.error("Failed to fix issues:", error);
+      toast.error("Failed to fix issues", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      setIsFixing(false);
+    }
+  }, [workflows, transitions, updateWorkflow, updateTransition, projectName]);
+
   const handleExport = useCallback(async () => {
     // First, validate monitor associations
     const monitorErrors = validateMonitorAssociations(states);
@@ -328,6 +405,7 @@ export function ProjectExportDialog({
           name: exportName || projectName,
           description: description || undefined,
           created: new Date().toISOString(),
+          projectId: projectId || undefined, // Include project ID for test run reporting
         },
         settings,
         screenshots as any // Type cast needed: context uses different Screenshot type than ConfigExporter
@@ -452,12 +530,33 @@ export function ProjectExportDialog({
 
             {/* Validation Errors */}
             {validationErrors.length > 0 && (
-              <div className="bg-yellow-950/30 border border-yellow-800 rounded-lg p-4 space-y-2">
-                <div className="flex items-center gap-2 text-yellow-500">
-                  <AlertCircle className="w-4 h-4" />
-                  <span className="text-sm font-medium">
-                    Validation Warnings
-                  </span>
+              <div className="bg-yellow-950/30 border border-yellow-800 rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-yellow-500">
+                    <AlertCircle className="w-4 h-4" />
+                    <span className="text-sm font-medium">
+                      Validation Warnings
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleFixIssues}
+                    disabled={isFixing}
+                    className="border-yellow-700 text-yellow-500 hover:bg-yellow-950/50"
+                  >
+                    {isFixing ? (
+                      <>
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        Fixing...
+                      </>
+                    ) : (
+                      <>
+                        <Wrench className="w-3 h-3 mr-1" />
+                        Fix Issues
+                      </>
+                    )}
+                  </Button>
                 </div>
                 <ul className="text-sm text-yellow-400 space-y-1 list-disc list-inside">
                   {validationErrors.slice(0, 5).map((error, i) => (
@@ -467,6 +566,72 @@ export function ProjectExportDialog({
                     <li>...and {validationErrors.length - 5} more</li>
                   )}
                 </ul>
+              </div>
+            )}
+
+            {/* Cleanup Report */}
+            {cleanupResult && (
+              <div className="bg-green-950/30 border border-green-700 rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2 text-green-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span className="text-sm font-medium">
+                    Issues Fixed Successfully
+                  </span>
+                </div>
+
+                {cleanupResult.workflowConnectionsCleaned +
+                  cleanupResult.transitionWorkflowsCleaned >
+                0 ? (
+                  <div className="space-y-2">
+                    <div className="text-sm text-green-300">
+                      <span className="font-medium">Summary:</span>
+                      <ul className="mt-1 ml-4 list-disc list-inside text-green-400/90">
+                        {cleanupResult.workflowConnectionsCleaned > 0 && (
+                          <li>
+                            Removed {cleanupResult.workflowConnectionsCleaned}{" "}
+                            orphaned workflow connection
+                            {cleanupResult.workflowConnectionsCleaned !== 1
+                              ? "s"
+                              : ""}
+                          </li>
+                        )}
+                        {cleanupResult.transitionWorkflowsCleaned > 0 && (
+                          <li>
+                            Removed {cleanupResult.transitionWorkflowsCleaned}{" "}
+                            orphaned transition workflow reference
+                            {cleanupResult.transitionWorkflowsCleaned !== 1
+                              ? "s"
+                              : ""}
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+
+                    {cleanupResult.details.length > 0 && (
+                      <div className="text-xs text-green-400/70 mt-2">
+                        <span className="font-medium">Details:</span>
+                        <ul className="mt-1 ml-4 space-y-0.5 max-h-32 overflow-y-auto">
+                          {cleanupResult.details.slice(0, 10).map((detail, i) => (
+                            <li key={i}>
+                              {detail.type === "workflow-connection"
+                                ? `Workflow "${detail.sourceName || detail.sourceId}": ${detail.reason}`
+                                : `Transition "${detail.sourceId}": ${detail.reason}`}
+                            </li>
+                          ))}
+                          {cleanupResult.details.length > 10 && (
+                            <li className="text-green-400/50">
+                              ...and {cleanupResult.details.length - 10} more
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-green-400/90">
+                    No issues were found. All references are valid.
+                  </p>
+                )}
               </div>
             )}
 

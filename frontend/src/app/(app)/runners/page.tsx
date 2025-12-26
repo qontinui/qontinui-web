@@ -4,71 +4,22 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import {
-  ArrowLeft,
-  Loader2,
-  Monitor,
-  History,
-  Key,
-  Plus,
-  WifiOff,
-  RefreshCw,
-} from "lucide-react";
-import { CreateTokenDialog } from "@/components/runners/CreateTokenDialog";
-import { RunnerTokenCard } from "@/components/runners/RunnerTokenCard";
+import { ArrowLeft, Loader2, Monitor, History } from "lucide-react";
 import { ActiveConnectionsList } from "@/components/runners/ActiveConnectionsList";
 import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTable";
-import {
-  useRunnerTokens,
-  useRevokeRunnerToken,
-  useDeleteRunnerToken,
-} from "@/hooks/useRunners";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
-import { toast } from "sonner";
 
 export default function RunnersPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("active");
 
-  const {
-    data: tokens,
-    isLoading: tokensLoading,
-    error: tokensError,
-    refetch: refetchTokens,
-    isRefetching: isRefetchingTokens,
-  } = useRunnerTokens();
   const { connections: activeConnections } = useRealtimeConnections();
-  const revokeMutation = useRevokeRunnerToken();
-  const deleteMutation = useDeleteRunnerToken();
 
   const handleBackToDashboard = () => {
     router.push("/dashboard");
-  };
-
-  const handleRevokeToken = async (tokenId: string) => {
-    try {
-      await revokeMutation.mutateAsync(tokenId);
-    } catch (error) {
-      console.error("Failed to revoke token:", error);
-    }
-  };
-
-  const handleDeleteToken = async (tokenId: string) => {
-    try {
-      await deleteMutation.mutateAsync(tokenId);
-    } catch (error) {
-      console.error("Failed to delete token:", error);
-    }
-  };
-
-  const handleViewConnections = (_tokenId: string) => {
-    // Switch to history tab and filter by token
-    setActiveTab("history");
-    toast.info("Viewing connections for selected token");
   };
 
   // Show loading while auth is checking
@@ -156,18 +107,6 @@ export default function RunnersPage() {
               <History className="w-4 h-4" />
               Connection History
             </TabsTrigger>
-            <TabsTrigger value="tokens" className="gap-2">
-              <Key className="w-4 h-4" />
-              Runner Tokens
-              {tokens && (
-                <Badge
-                  variant="outline"
-                  className="ml-1 border-[#00D9FF]/50 text-[#00D9FF] text-xs"
-                >
-                  {tokens.length}
-                </Badge>
-              )}
-            </TabsTrigger>
           </TabsList>
 
           {/* Tab 1: Active Connections */}
@@ -194,89 +133,6 @@ export default function RunnersPage() {
               </div>
             </div>
             <ConnectionHistoryTable />
-          </TabsContent>
-
-          {/* Tab 3: Runner Tokens */}
-          <TabsContent value="tokens" className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h3 className="text-xl font-semibold">Runner Tokens</h3>
-                <p className="text-sm text-gray-400">
-                  Manage authentication tokens for desktop runners
-                </p>
-              </div>
-              <CreateTokenDialog />
-            </div>
-
-            {tokensLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF]" />
-                <span className="ml-3 text-gray-400">Loading tokens...</span>
-              </div>
-            ) : tokensError ? (
-              <Card className="bg-[#1A1A1B] border-gray-800 p-12">
-                <div className="text-center">
-                  <WifiOff className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-                  <h3 className="text-xl font-semibold text-gray-300 mb-2">
-                    Unable to Load Tokens
-                  </h3>
-                  <p className="text-gray-400 mb-6 max-w-md mx-auto">
-                    {tokensError.message?.includes("fetch failed") ||
-                    tokensError.message?.includes("proxy")
-                      ? "The backend server appears to be offline or unreachable. Please ensure the server is running and try again."
-                      : tokensError.message ||
-                        "An unexpected error occurred while loading tokens."}
-                  </p>
-                  <Button
-                    onClick={() => refetchTokens()}
-                    disabled={isRefetchingTokens}
-                    className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
-                  >
-                    {isRefetchingTokens ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Retrying...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Try Again
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </Card>
-            ) : !tokens || tokens.length === 0 ? (
-              <Card className="bg-[#1A1A1B] border-gray-800 p-12">
-                <div className="text-center">
-                  <Key className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-                  <h3 className="text-xl font-semibold text-gray-300 mb-2">
-                    No Runner Tokens
-                  </h3>
-                  <p className="text-gray-400 mb-6">
-                    Create your first runner token to connect a desktop runner
-                  </p>
-                  <CreateTokenDialog>
-                    <Button className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Your First Token
-                    </Button>
-                  </CreateTokenDialog>
-                </div>
-              </Card>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {tokens.map((token) => (
-                  <RunnerTokenCard
-                    key={token.id}
-                    token={token}
-                    onRevoke={handleRevokeToken}
-                    onDelete={handleDeleteToken}
-                    onViewConnections={handleViewConnections}
-                  />
-                ))}
-              </div>
-            )}
           </TabsContent>
         </Tabs>
       </main>

@@ -64,7 +64,6 @@ class RunnerConnectionManager:
         user_id: UUID,
         runner_name: str | None = None,
         ip_address: str | None = None,
-        runner_token_id: UUID | None = None,
         connected_at: datetime | None = None,
         project_id: UUID | None = None,
     ) -> None:
@@ -79,7 +78,6 @@ class RunnerConnectionManager:
             user_id: Owner user ID
             runner_name: Optional runner name
             ip_address: Optional IP address
-            runner_token_id: Optional runner token ID
             connected_at: Connection timestamp
             project_id: Optional project ID
         """
@@ -116,8 +114,7 @@ class RunnerConnectionManager:
         # Include full connection object for frontend to add to list
         connection_data = {
             "id": connection_id,
-            "runner_token_id": str(runner_token_id) if runner_token_id else None,
-            "runner_name": runner_name,
+            "runner_name": runner_name or "Desktop Runner",
             "connected_at": connected_at.isoformat(),
             "disconnected_at": None,
             "duration_seconds": None,
@@ -526,6 +523,32 @@ class RunnerConnectionManager:
                 user_id=str(user_id),
                 error=str(e),
             )
+
+    async def disconnect_runner(self, connection_id: int) -> bool:
+        """
+        Forcefully disconnect a runner WebSocket.
+
+        Args:
+            connection_id: Database connection record ID
+
+        Returns:
+            True if runner was connected and disconnect initiated, False otherwise
+        """
+        if connection_id not in self._runner_websockets:
+            return False
+
+        try:
+            websocket = self._runner_websockets[connection_id]
+            await websocket.close()
+            logger.info("runner_force_disconnected", connection_id=connection_id)
+            return True
+        except Exception as e:
+            logger.error(
+                "runner_force_disconnect_failed",
+                connection_id=connection_id,
+                error=str(e),
+            )
+            return False
 
     def is_runner_connected(self, connection_id: int) -> bool:
         """

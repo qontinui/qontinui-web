@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { usePropertiesPanelStore } from "@/stores/properties-panel-store";
+import { useAutomation } from "@/contexts/automation-context";
 import type { Action as CanvasAction } from "@/lib/action-schema/action-types";
 import type { Action as PropertyAction } from "@/components/action-properties/types";
 
@@ -356,19 +357,14 @@ export function useMultiPropertyAdapter(
 export interface PropertyEditorWrapperProps {
   actionId: string;
   component: React.ComponentType<unknown>;
-  images?: unknown[];
-  states?: unknown[];
-  processes?: unknown[];
 }
 
 export function PropertyEditorWrapper({
   actionId,
   component: Component,
-  images = [],
-  states = [],
-  processes = [],
 }: PropertyEditorWrapperProps) {
   const { action, updateConfig } = usePropertyAdapter(actionId);
+  const { images, states, workflows } = useAutomation();
 
   if (!action) {
     return (
@@ -387,7 +383,7 @@ export function PropertyEditorWrapper({
       updateConfig={updateConfig}
       images={images}
       states={states}
-      processes={processes}
+      processes={workflows}
     />
   );
 }

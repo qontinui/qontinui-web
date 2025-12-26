@@ -54,7 +54,6 @@ import { useAutomation } from "@/contexts/automation-context";
 import { useAutomationStore } from "@/stores/automation";
 import { useProjects, useCreateProject } from "@/hooks/use-projects";
 import { toast } from "sonner";
-import { ConfigExporter } from "@/lib/config-exporter";
 import { ConfigImporter } from "@/lib/config-importer";
 import {
   Tooltip,
@@ -62,6 +61,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ProjectExportDialog } from "@/components/automation-builder/components/ProjectExportDialog";
 
 interface NavItem {
   id: string;
@@ -161,6 +161,14 @@ const navItems: NavItem[] = [
         description: "Video recordings for state discovery",
         icon: <Video size={22} />,
         route: "/recordings",
+        color: "#8B5CF6",
+      },
+      {
+        id: "visual-index",
+        label: "Visual Index",
+        description: "Indexed elements for visual search",
+        icon: <Database size={22} />,
+        route: "/projects/:projectId/rag",
         color: "#8B5CF6",
       },
     ],
@@ -278,6 +286,7 @@ const navItems: NavItem[] = [
         color: "#9B59B6",
         badge: "beta",
       },
+
       {
         id: "workflow-runner",
         label: "Workflow Runner",
@@ -432,14 +441,6 @@ const navItems: NavItem[] = [
         route: "/monitor",
         color: "#10B981",
       },
-      {
-        id: "rag-preprocessing",
-        label: "RAG Results",
-        description: "View RAG pre-processing results",
-        icon: <Database size={22} />,
-        route: "/projects/:projectId/rag",
-        color: "#00D9FF",
-      },
     ],
   },
   {
@@ -547,9 +548,16 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [closeTimer, setCloseTimer] = useState<NodeJS.Timeout | null>(null);
   const [showCreateOrgDialog, setShowCreateOrgDialog] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
+  // Prevent hydration mismatch by only rendering client-specific components after mount
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
   const { currentOrganization, organizations, loading, switchOrganization } =
     useOrganization();
 
@@ -558,56 +566,21 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     projectId: contextProjectId,
     setProjectId: setContextProjectId,
     setProjectName,
-    projectName,
-    images,
-    workflows,
-    states,
-    transitions,
-    categories,
-    settings,
     loadConfiguration,
   } = useAutomation();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const createProject = useCreateProject();
 
-  // Export/Import handlers
-  const exporter = new ConfigExporter();
+  // Import handler
   const importer = new ConfigImporter();
 
-  const handleExport = async () => {
+  const handleExport = () => {
     if (!user) {
       toast.error("Please log in to export your project");
       return;
     }
-
-    try {
-      const config = await exporter.exportConfiguration(
-        images,
-        workflows,
-        states,
-        transitions,
-        categories,
-        {
-          name: projectName || currentProject?.name || "Untitled",
-          description: "Exported from Qontinui Web",
-          author: user?.username,
-        },
-        settings
-      );
-
-      exporter.downloadConfiguration(
-        config,
-        `${(projectName || currentProject?.name || "project").replace(/\s+/g, "_")}_config.json`
-      );
-
-      toast.success("Export complete", {
-        description: "Configuration downloaded successfully.",
-      });
-    } catch (error) {
-      toast.error("Export failed", {
-        description: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
+    // Open the full export dialog with validation and RAG processing
+    setShowExportDialog(true);
   };
 
   const handleImport = async () => {
@@ -879,28 +852,36 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       {/* Organization Switcher */}
       {!isCollapsed && (
         <div className="px-3 pt-4 pb-2 border-b border-gray-800/50">
-          <OrganizationSwitcher
-            organizations={switcherOrganizations}
-            currentOrganization={switcherCurrentOrg}
-            onOrganizationChange={handleOrganizationChange}
-            onCreateOrganization={handleCreateOrganization}
-            loading={loading}
-            className="bg-gray-900/50 border-gray-700 hover:bg-gray-900 hover:border-gray-600"
-          />
+          {mounted ? (
+            <OrganizationSwitcher
+              organizations={switcherOrganizations}
+              currentOrganization={switcherCurrentOrg}
+              onOrganizationChange={handleOrganizationChange}
+              onCreateOrganization={handleCreateOrganization}
+              loading={loading}
+              className="bg-gray-900/50 border-gray-700 hover:bg-gray-900 hover:border-gray-600"
+            />
+          ) : (
+            <div className="h-10 w-full rounded-md bg-gray-900/50 border border-gray-700 animate-pulse" />
+          )}
         </div>
       )}
 
       {/* Project Switcher */}
       {!isCollapsed && (
         <div className="px-3 pt-2 pb-2 border-b border-gray-800/50">
-          <ProjectSwitcher
-            projects={projects}
-            currentProject={currentProject}
-            onProjectChange={handleProjectChange}
-            onCreateProject={handleCreateProject}
-            loading={projectsLoading}
-            className="bg-gray-900/50 border-gray-700 hover:bg-gray-900 hover:border-gray-600"
-          />
+          {mounted ? (
+            <ProjectSwitcher
+              projects={projects}
+              currentProject={currentProject}
+              onProjectChange={handleProjectChange}
+              onCreateProject={handleCreateProject}
+              loading={projectsLoading}
+              className="bg-gray-900/50 border-gray-700 hover:bg-gray-900 hover:border-gray-600"
+            />
+          ) : (
+            <div className="h-10 w-full rounded-md bg-gray-900/50 border border-gray-700 animate-pulse" />
+          )}
         </div>
       )}
 
@@ -1160,6 +1141,12 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       <CreateOrganizationDialog
         open={showCreateOrgDialog}
         onOpenChange={setShowCreateOrgDialog}
+      />
+
+      {/* Project Export Dialog */}
+      <ProjectExportDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
       />
     </div>
   );

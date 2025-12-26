@@ -135,6 +135,11 @@ export interface ConfigMetadata {
     runner: string;
     website: string;
   };
+  /**
+   * Project ID from qontinui-web for test run reporting.
+   * When present, the runner uses this instead of localStorage selection.
+   */
+  projectId?: string;
 }
 
 export interface ImageAsset {

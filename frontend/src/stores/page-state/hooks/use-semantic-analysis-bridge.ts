@@ -20,6 +20,11 @@ export function useSemanticAnalysisBridge() {
   const { user } = useAuth();
   const { projectName } = useAutomation();
   const store = useSemanticAnalysisStore();
+
+  // Keep stable ref to store to avoid infinite loops
+  const storeRef = useRef(store);
+  storeRef.current = store;
+
   const hasHydrated = useRef(false);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -27,9 +32,10 @@ export function useSemanticAnalysisBridge() {
   useEffect(() => {
     if (user?.id && projectName && !hasHydrated.current) {
       hasHydrated.current = true;
-      store.hydrate(projectName, user.id);
+      storeRef.current.hydrate(projectName, user.id);
     }
-  }, [user?.id, projectName, store]);
+
+  }, [user?.id, projectName]);
 
   // Persist on unmount
   useEffect(() => {
@@ -37,9 +43,9 @@ export function useSemanticAnalysisBridge() {
       if (persistTimeoutRef.current) {
         clearTimeout(persistTimeoutRef.current);
       }
-      store.persist();
+      storeRef.current.persist();
     };
-  }, [store]);
+  }, []);
 
   // Debounced persist
   const debouncedPersist = useCallback(() => {
@@ -47,68 +53,68 @@ export function useSemanticAnalysisBridge() {
       clearTimeout(persistTimeoutRef.current);
     }
     persistTimeoutRef.current = setTimeout(() => {
-      store.persist();
+      storeRef.current.persist();
     }, 500);
-  }, [store]);
+  }, []);
 
   // Listen for beforeunload
   useEffect(() => {
     const handleBeforeUnload = () => {
-      store.persist();
+      storeRef.current.persist();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [store]);
+  }, []);
 
   // State setters that mirror the original component's setState functions
   const setSelectedScreenshotId = useCallback(
     (id: string | null) => {
-      store.setSelectedScreenshotId(id);
+      storeRef.current.setSelectedScreenshotId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSelectedElementIds = useCallback(
     (ids: string[]) => {
-      store.setSelectedElementIds(ids);
+      storeRef.current.setSelectedElementIds(ids);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const toggleElementId = useCallback(
     (id: string) => {
-      store.toggleElementId(id);
+      storeRef.current.toggleElementId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setAnalysisResults = useCallback(
     (results: Record<string, unknown>) => {
-      store.setAnalysisResults(results);
+      storeRef.current.setAnalysisResults(results);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setShowOverlay = useCallback(
     (show: boolean) => {
-      store.setShowOverlay(show);
+      storeRef.current.setShowOverlay(show);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setHighlightMode = useCallback(
     (mode: "all" | "selected" | "none") => {
-      store.setHighlightMode(mode);
+      storeRef.current.setHighlightMode(mode);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   return {

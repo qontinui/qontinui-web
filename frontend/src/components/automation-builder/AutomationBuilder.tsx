@@ -60,7 +60,8 @@ export function AutomationBuilder() {
   const [projectExportDialogOpen, setProjectExportDialogOpen] = useState(false);
 
   // Context
-  const { addWorkflow, updateWorkflow, states, workflows } = useAutomation();
+  const { addWorkflow, updateWorkflow, states, workflows, projectId } =
+    useAutomation();
 
   // URL params for deep linking
   const searchParams = useSearchParams();
@@ -87,7 +88,7 @@ export function AutomationBuilder() {
     generateShareLink,
     getMyPermission,
   } = useProjectSharing({
-    projectId: selectedItem?.id || null,
+    projectId: projectId || null,
     enabled: shareDialogOpen,
   });
 
@@ -96,14 +97,14 @@ export function AutomationBuilder() {
     undefined
   );
 
-  // Load permission when item changes
+  // Load permission when project changes
   useEffect(() => {
-    if (selectedItem?.id) {
+    if (projectId) {
       getMyPermission().then(setMyPermission);
     } else {
       setMyPermission(undefined);
     }
-  }, [selectedItem?.id, getMyPermission]);
+  }, [projectId, getMyPermission]);
 
   // Handle URL parameters for deep linking to workflows
   useEffect(() => {

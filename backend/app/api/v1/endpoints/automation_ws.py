@@ -23,7 +23,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import authenticate_runner, get_async_db
+from app.api.deps import get_async_db, get_current_user_from_ws
 from app.api.v1.endpoints.images import (
     validate_image_magic_bytes,
     validate_image_mime_type,
@@ -625,7 +625,6 @@ async def websocket_runner_endpoint(
 
     db = None
     user = None
-    runner_token = None
     connection_record = None
     runner_manager = None
     session_started = False
@@ -657,7 +656,7 @@ async def websocket_runner_endpoint(
             return
 
         try:
-            user, runner_token = await authenticate_runner(auth_token)
+            user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error("automation_ws_auth_failed", error=str(e))
             await websocket.send_json(
@@ -685,7 +684,7 @@ async def websocket_runner_endpoint(
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
             return
 
-        # Re-fetch user in this session (the user object from authenticate_runner
+        # Re-fetch user in this session (the user object from get_current_user_from_ws
         # was in a different session that's now closed)
         user_result = await db.execute(select(User).filter(User.id == user.id))  # type: ignore
         user = user_result.scalar_one_or_none()
@@ -740,17 +739,14 @@ async def websocket_runner_endpoint(
             connection_record = await runner_crud.create_connection_record(
                 db=db,
                 user_id=user.id,
-                token_id=runner_token.id if runner_token else None,
                 ip_address=client_host,
             )
 
             # Clean up any orphaned connections (from previous disconnects that weren't properly closed)
-            # Pass runner_token_id to only close connections from the same runner device
             closed_connection_ids = await runner_crud.close_orphaned_connections(
                 db=db,
                 user_id=user.id,
                 exclude_connection_id=connection_record.id,
-                runner_token_id=runner_token.id if runner_token else None,
             )
             if closed_connection_ids:
                 logger.info(
@@ -768,9 +764,7 @@ async def websocket_runner_endpoint(
             logger.info(
                 "runner_connection_logged",
                 connection_id=connection_record.id,
-                token_id=str(runner_token.id) if runner_token else None,
-                token_name=runner_token.name if runner_token else None,
-                auth_method="runner_token" if runner_token else "jwt",
+                auth_method="jwt",
             )
 
             # Register runner with connection manager for frontend command relay
@@ -782,7 +776,6 @@ async def websocket_runner_endpoint(
                 user_id=user.id,
                 runner_name=connection_record.runner_name,
                 ip_address=client_host,
-                runner_token_id=runner_token.id if runner_token else None,
                 connected_at=connection_record.connected_at,
                 project_id=connection_record.project_id,
             )
@@ -797,8 +790,7 @@ async def websocket_runner_endpoint(
             "automation_ws_connected",
             user_id=str(user.id),
             username=user.username,
-            auth_method="runner_token" if runner_token else "jwt",
-            token_name=runner_token.name if runner_token else None,
+            auth_method="jwt",
             streaming_enabled=user.automation_streaming_enabled,
             sessions_limit=user.automation_sessions_limit,
             sessions_used=user.automation_sessions_used,
@@ -810,8 +802,7 @@ async def websocket_runner_endpoint(
                 "type": "connected",
                 "user_id": str(user.id),
                 "username": user.username,
-                "auth_method": "runner_token" if runner_token else "jwt",
-                "token_name": runner_token.name if runner_token else None,
+                "auth_method": "jwt",
                 "sessions_remaining": (
                     user.automation_sessions_limit - user.automation_sessions_used
                     if user.automation_sessions_limit is not None
@@ -1587,7 +1578,7 @@ async def websocket_runner_endpoint(
         logger.info(
             "automation_ws_cleanup_complete",
             user_id=str(user.id) if user else None,
-            auth_method="runner_token" if runner_token else "jwt",
+            auth_method="jwt",
         )
 
 
@@ -1691,7 +1682,7 @@ async def websocket_monitor_endpoint(
             return
 
         try:
-            user, _ = await authenticate_runner(auth_token)
+            user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error("automation_monitor_ws_auth_failed", error=str(e))
             await websocket.send_json(

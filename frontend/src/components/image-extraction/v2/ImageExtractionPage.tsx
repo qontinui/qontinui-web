@@ -14,6 +14,7 @@ import React, { useCallback, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAutomation } from "@/contexts/automation-context";
+import { useAutomationStore } from "@/stores/automation";
 import { useImageExtraction } from "@/hooks/use-image-extraction";
 import { ScreenshotPanel } from "./ScreenshotPanel";
 import { ExtractionSettingsPanel } from "./ExtractionSettingsPanel";
@@ -58,10 +59,12 @@ export const ImageExtractionPage: React.FC = () => {
     updateMaskInResult,
   } = useImageExtraction();
 
-  const { states, addState, updateState, images, addImage, projectId, getConfiguration } = useAutomation();
+  const { states, addState, updateState, images, addImage, projectId } = useAutomation();
   const [isExtracting, setIsExtracting] = useState(false);
 
   // Helper to save configuration to backend immediately
+  // Uses Zustand store's getConfiguration to get the LATEST state
+  // (not a stale closure-captured version from React state)
   const saveToBackendImmediately = useCallback(async () => {
     if (!projectId) {
       projectLogger.debug("ImageExtraction", "No projectId - skipping backend save");
@@ -69,14 +72,24 @@ export const ImageExtractionPage: React.FC = () => {
     }
 
     try {
-      // Small delay to ensure local state updates have propagated
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Longer delay to ensure Zustand store updates have propagated
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      const config = getConfiguration();
+      // IMPORTANT: Get configuration from Zustand store, not React context
+      // This ensures we get the latest state including newly added states/images
+      const config = useAutomationStore.getState().getConfiguration();
+      const statesArray = config.states as { id: string; name: string }[] | undefined;
+      const imagesArray = config.images as unknown[] | undefined;
+
+      // Debug: log state names to verify the new state was added
+      const stateNames = statesArray?.map(s => s.name) ?? [];
+      console.log("[ImageExtractionPage] saveToBackendImmediately - state names:", stateNames);
+
       projectLogger.debug("ImageExtraction", "Saving to backend immediately", {
         projectId,
-        stateCount: config.states?.length ?? 0,
-        imageCount: config.images?.length ?? 0,
+        stateCount: statesArray?.length ?? 0,
+        stateNames,
+        imageCount: imagesArray?.length ?? 0,
       });
 
       await projectService.updateProject(projectId, { configuration: config });
@@ -89,7 +102,7 @@ export const ImageExtractionPage: React.FC = () => {
       });
       // Don't throw - this is a best-effort save, local data is still persisted
     }
-  }, [projectId, getConfiguration]);
+  }, [projectId]);
 
   // Handle extraction with loading state
   const handleExtractClick = useCallback(async () => {

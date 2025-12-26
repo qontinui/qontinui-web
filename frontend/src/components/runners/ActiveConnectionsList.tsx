@@ -205,7 +205,7 @@ export function ActiveConnectionsList() {
             <AlertDialogTitle>Disconnect Runner?</AlertDialogTitle>
             <AlertDialogDescription>
               This will immediately terminate the connection to this runner. The
-              runner can reconnect using the same token.
+              runner can reconnect by logging in again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

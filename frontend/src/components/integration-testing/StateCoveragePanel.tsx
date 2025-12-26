@@ -21,16 +21,16 @@ import type {
 } from "@/types/integration-testing";
 
 interface StateCoveragePanelProps {
-  processId?: string;
-  processName?: string;
+  workflowId?: string;
+  workflowName?: string;
   snapshotRunIds: string[];
   expectedStates?: string[];
   autoRefresh?: boolean;
 }
 
 export function StateCoveragePanel({
-  processId,
-  processName,
+  workflowId,
+  workflowName,
   snapshotRunIds,
   expectedStates,
   autoRefresh = false,
@@ -40,7 +40,7 @@ export function StateCoveragePanel({
   const [error, setError] = useState<string | null>(null);
 
   const analyzeCoverage = async () => {
-    if (!processId || !processName || snapshotRunIds.length === 0) {
+    if (!workflowId || !workflowName || snapshotRunIds.length === 0) {
       return;
     }
 
@@ -49,8 +49,8 @@ export function StateCoveragePanel({
 
     try {
       const request: CoverageAnalysisRequest = {
-        process_id: processId,
-        process_name: processName,
+        workflow_id: workflowId ?? "",
+        workflow_name: workflowName ?? "",
         snapshot_run_ids: snapshotRunIds,
         expected_states: expectedStates,
       };
@@ -85,10 +85,10 @@ export function StateCoveragePanel({
   };
 
   useEffect(() => {
-    if (autoRefresh && processId && snapshotRunIds.length > 0) {
+    if (autoRefresh && workflowId && snapshotRunIds.length > 0) {
       analyzeCoverage();
     }
-  }, [processId, snapshotRunIds, autoRefresh]);
+  }, [workflowId, snapshotRunIds, autoRefresh]);
 
   const exportReport = () => {
     if (!coverage) return;
@@ -98,7 +98,7 @@ export function StateCoveragePanel({
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `coverage-report-${coverage.process_id}-${Date.now()}.json`;
+    link.download = `coverage-report-${coverage.workflow_id}-${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -110,7 +110,7 @@ export function StateCoveragePanel({
     return "text-green-600";
   };
 
-  if (!processId || snapshotRunIds.length === 0) {
+  if (!workflowId || snapshotRunIds.length === 0) {
     return (
       <Card className="p-8">
         <div className="text-center text-gray-500">
@@ -133,7 +133,7 @@ export function StateCoveragePanel({
         <div>
           <h2 className="text-2xl font-bold">State Coverage Analysis</h2>
           <p className="text-sm text-gray-600 mt-1">
-            Analyzing {snapshotRunIds.length} snapshot run(s) for {processName}
+            Analyzing {snapshotRunIds.length} snapshot run(s) for {workflowName}
           </p>
         </div>
         <div className="flex gap-2">

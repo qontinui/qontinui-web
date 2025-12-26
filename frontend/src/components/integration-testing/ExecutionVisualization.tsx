@@ -17,7 +17,6 @@ import { VanishVisualization } from "./visualizations/VanishVisualization";
 import { useExecutionPlayback } from "@/hooks/useExecutionPlayback";
 import { getScreenshotUrl } from "@/lib/api/integration-testing";
 import type { MockExecutionResponse } from "@/types/integration-testing";
-import { VideoExportButton } from "./VideoExportButton";
 import { ReportExportButton } from "./ReportExportButton";
 
 interface ExecutionVisualizationProps {
@@ -48,7 +47,7 @@ export function ExecutionVisualization({
   }
 
   const screenshotUrl = getScreenshotUrl(
-    result.process_id,
+    result.workflow_id,
     currentAction.screenshot_path
   );
 
@@ -58,15 +57,12 @@ export function ExecutionVisualization({
       <Card className="p-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">Execution Results</h2>
-          <div className="flex gap-2">
-            <ReportExportButton result={result} />
-            <VideoExportButton executionResult={result} />
-          </div>
+          <ReportExportButton result={result} />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
-            <p className="text-sm text-gray-500">Process</p>
-            <p className="font-semibold">{result.process_name}</p>
+            <p className="text-sm text-gray-500">Workflow</p>
+            <p className="font-semibold">{result.workflow_name}</p>
           </div>
           <div>
             <p className="text-sm text-gray-500">Success Rate</p>

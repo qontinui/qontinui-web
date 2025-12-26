@@ -20,6 +20,11 @@ export function usePatternOptimizationBridge() {
   const { user } = useAuth();
   const { projectName } = useAutomation();
   const store = usePatternOptimizationStore();
+
+  // Keep stable ref to store to avoid infinite loops
+  const storeRef = useRef(store);
+  storeRef.current = store;
+
   const hasHydrated = useRef(false);
   const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -27,9 +32,10 @@ export function usePatternOptimizationBridge() {
   useEffect(() => {
     if (user?.id && projectName && !hasHydrated.current) {
       hasHydrated.current = true;
-      store.hydrate(projectName, user.id);
+      storeRef.current.hydrate(projectName, user.id);
     }
-  }, [user?.id, projectName, store]);
+
+  }, [user?.id, projectName]);
 
   // Persist on unmount
   useEffect(() => {
@@ -37,11 +43,11 @@ export function usePatternOptimizationBridge() {
       if (persistTimeoutRef.current) {
         clearTimeout(persistTimeoutRef.current);
       }
-      store.persist().finally(() => {
-        store.cleanup();
+      storeRef.current.persist().finally(() => {
+        storeRef.current.cleanup();
       });
     };
-  }, [store]);
+  }, []);
 
   // Debounced persist
   const debouncedPersist = useCallback(() => {
@@ -49,28 +55,28 @@ export function usePatternOptimizationBridge() {
       clearTimeout(persistTimeoutRef.current);
     }
     persistTimeoutRef.current = setTimeout(() => {
-      store.persist();
+      storeRef.current.persist();
     }, 500);
-  }, [store]);
+  }, []);
 
   // Listen for beforeunload
   useEffect(() => {
     const handleBeforeUnload = () => {
-      store.persist();
+      storeRef.current.persist();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [store]);
+  }, []);
 
   // State setters that mirror the original component's setState functions
   const setSelectedScreenshotId = useCallback(
     (id: string | null) => {
-      store.setSelectedScreenshotId(id);
+      storeRef.current.setSelectedScreenshotId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setConfig = useCallback(
@@ -80,22 +86,22 @@ export function usePatternOptimizationBridge() {
         | ((prev: typeof store.config) => typeof store.config)
     ) => {
       if (typeof config === "function") {
-        const newConfig = config(store.config);
-        store.setConfig(newConfig);
+        const newConfig = config(storeRef.current.config);
+        storeRef.current.setConfig(newConfig);
       } else {
-        store.setConfig(config);
+        storeRef.current.setConfig(config);
       }
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setEditMode = useCallback(
     (mode: "none" | "add" | "remove") => {
-      store.setEditMode(mode);
+      storeRef.current.setEditMode(mode);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setEditedPattern = useCallback(
@@ -104,61 +110,61 @@ export function usePatternOptimizationBridge() {
         // Convert data URL to Blob
         const response = await fetch(pattern);
         const blob = await response.blob();
-        await store.setEditedPattern(blob);
+        await storeRef.current.setEditedPattern(blob);
       } else {
-        await store.setEditedPattern(null);
+        await storeRef.current.setEditedPattern(null);
       }
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setStepIndex = useCallback(
     (index: number) => {
-      store.setStepIndex(index);
+      storeRef.current.setStepIndex(index);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setShowStateImageDialog = useCallback(
     (show: boolean) => {
-      store.setShowStateImageDialog(show);
+      storeRef.current.setShowStateImageDialog(show);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setStateImageName = useCallback(
     (name: string) => {
-      store.setStateImageName(name);
+      storeRef.current.setStateImageName(name);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setSelectedStateId = useCallback(
     (id: string) => {
-      store.setSelectedStateId(id);
+      storeRef.current.setSelectedStateId(id);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setNewStateName = useCallback(
     (name: string) => {
-      store.setNewStateName(name);
+      storeRef.current.setNewStateName(name);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   const setFixedLocation = useCallback(
     (fixed: boolean) => {
-      store.setFixedLocation(fixed);
+      storeRef.current.setFixedLocation(fixed);
       debouncedPersist();
     },
-    [store, debouncedPersist]
+    [debouncedPersist]
   );
 
   return {

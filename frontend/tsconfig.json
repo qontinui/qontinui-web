@@ -19,8 +19,10 @@
         "name": "next"
       }
     ],
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@qontinui/schemas/*": ["../../qontinui-schemas/generated/typescript/*"]
     },
     "forceConsistentCasingInFileNames": true,
     "noUnusedLocals": true,

@@ -28,6 +28,12 @@ export function createPageStateHook<T>(
     const { projectName } = useAutomation();
     const store = useStore();
 
+    // Keep stable refs to store methods to avoid infinite loops
+    // Zustand's useStore returns a new object on every render, but the
+    // methods themselves are stable references
+    const storeRef = useRef(store);
+    storeRef.current = store;
+
     const hasHydrated = useRef(false);
     const persistTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -35,9 +41,10 @@ export function createPageStateHook<T>(
     useEffect(() => {
       if (user?.id && projectName && !hasHydrated.current) {
         hasHydrated.current = true;
-        store.hydrate(projectName, user.id);
+        storeRef.current.hydrate(projectName, user.id);
       }
-    }, [user?.id, projectName, store]);
+
+    }, [user?.id, projectName]); // Don't depend on store to avoid infinite loops
 
     // Persist on unmount
     useEffect(() => {
@@ -45,11 +52,11 @@ export function createPageStateHook<T>(
         if (persistTimeoutRef.current) {
           clearTimeout(persistTimeoutRef.current);
         }
-        store.persist().finally(() => {
-          store.cleanup();
+        storeRef.current.persist().finally(() => {
+          storeRef.current.cleanup();
         });
       };
-    }, [store]);
+    }, []); // Only run on unmount
 
     // Debounced persist
     const debouncedPersist = useCallback(() => {
@@ -57,20 +64,20 @@ export function createPageStateHook<T>(
         clearTimeout(persistTimeoutRef.current);
       }
       persistTimeoutRef.current = setTimeout(() => {
-        store.persist();
+        storeRef.current.persist();
       }, 500);
-    }, [store]);
+    }, []);
 
     // beforeunload handler
     useEffect(() => {
       const handleBeforeUnload = () => {
-        store.persist();
+        storeRef.current.persist();
       };
       window.addEventListener("beforeunload", handleBeforeUnload);
       return () => {
         window.removeEventListener("beforeunload", handleBeforeUnload);
       };
-    }, [store]);
+    }, []);
 
     return {
       ...store,

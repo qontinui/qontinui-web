@@ -19,10 +19,12 @@ from app.api.v1.endpoints import (
     collaboration_ws,
     conflicts,
     custom_functions,
+    execution,
     export,
     extraction,
     feedback,
     health,
+    historical,
     images,
     integration_testing,
     issues,
@@ -151,3 +153,7 @@ api_router.include_router(
     rag_dashboard.router, prefix="/projects", tags=["rag-dashboard"]
 )
 api_router.include_router(issues.router, prefix="/issues", tags=["issues"])
+api_router.include_router(
+    historical.router, prefix="/testing/historical", tags=["historical-data"]
+)
+api_router.include_router(execution.router, prefix="/execution", tags=["execution"])

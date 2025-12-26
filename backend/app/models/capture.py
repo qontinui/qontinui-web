@@ -847,16 +847,23 @@ class ActionFrame(Base):
 
 class HistoricalResult(Base):
     """
-    Queryable historical results for integration testing (migrated from qontinui-api).
+    Queryable historical results for automation execution data.
 
-    This table aggregates data from snapshot actions in a format
-    optimized for random selection during mock mode execution.
-    It includes denormalized fields for efficient querying without joins.
+    Stores image recognition and action results from both:
+    1. Snapshot runs (offline capture/recording)
+    2. Live test runs (real-time execution via runner)
+
+    Used by multiple features:
+    - Integration testing: Search by patterns/states across executions
+    - Workflow visualization: Playback execution recordings
+    - Mock mode: Random selection for testing without real execution
+    - Unit testing: Pattern-specific result retrieval
 
     Key features:
-    - Indexed by pattern, state, and action type for fast lookups
+    - Indexed by pattern, state, action type, and test run for fast lookups
     - Links to video capture session for frame retrieval
-    - Stores result data needed for mock responses
+    - Stores match coordinates (x, y, width, height) for visualization
+    - Supports deterministic playback via sequence_number ordering
     """
 
     __tablename__ = "historical_results"
@@ -864,17 +871,17 @@ class HistoricalResult(Base):
     # Primary key
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
 
-    # Source references
-    snapshot_run_id: Mapped[int] = mapped_column(
+    # Source references - can come from snapshot runs OR live test runs
+    snapshot_run_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("snapshot_runs.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,  # Made nullable to support live test runs
         index=True,
     )
-    snapshot_action_id: Mapped[int] = mapped_column(
+    snapshot_action_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("snapshot_actions.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,  # Made nullable to support live test runs
         index=True,
     )
     video_capture_session_id: Mapped[int | None] = mapped_column(
@@ -882,6 +889,21 @@ class HistoricalResult(Base):
         ForeignKey("video_capture_sessions.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+
+    # Link to live test run (for integration testing / workflow visualization)
+    test_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("software_test_runs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    # Sequence within a run (for deterministic playback ordering)
+    sequence_number: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Order of recognition within the test run",
     )
 
     # Denormalized query fields (for efficient selection)
@@ -942,6 +964,9 @@ class HistoricalResult(Base):
             "success",
             "recorded_at",
         ),
+        # For test run playback (workflow visualization)
+        Index("idx_historical_test_run_seq", "test_run_id", "sequence_number"),
+        Index("idx_historical_test_run_pattern", "test_run_id", "pattern_id"),
     )
 
     def __repr__(self) -> str:

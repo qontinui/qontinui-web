@@ -14,7 +14,7 @@ import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
-from app.api.deps import authenticate_runner, get_async_db, get_current_user_from_ws
+from app.api.deps import get_async_db, get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.models.project import Project
 from app.models.user import User
@@ -118,11 +118,10 @@ async def websocket_runner_endpoint(
     )
 
     user = None
-    runner_token = None
     ws_manager = None
 
     try:
-        # Authenticate user (supports runner tokens and JWT)
+        # Authenticate user (JWT)
         auth_token: str | None = token
         if not auth_token:
             auth_token = websocket.cookies.get("access_token")
@@ -140,7 +139,7 @@ async def websocket_runner_endpoint(
             return
 
         try:
-            user, runner_token = await authenticate_runner(auth_token)
+            user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error(
                 "ws_runner_auth_failed",
@@ -161,7 +160,7 @@ async def websocket_runner_endpoint(
             "ws_runner_connected",
             user_id=str(user.id),
             runner_id=runner_id,
-            auth_method="runner_token" if runner_token else "jwt",
+            auth_method="jwt",
         )
 
         # Send connection acknowledgment

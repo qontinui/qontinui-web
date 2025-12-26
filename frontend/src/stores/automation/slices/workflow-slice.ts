@@ -57,6 +57,8 @@ export const createWorkflowSlice: StateCreator<
     set((state) => {
       state.workflows = state.workflows.filter((w) => w.id !== workflowId);
     });
+    // Clean up transitions that reference this workflow
+    get().removeWorkflowFromTransitions(workflowId);
     get().triggerSave();
   },
 
@@ -68,6 +70,10 @@ export const createWorkflowSlice: StateCreator<
     const idsSet = new Set(workflowIds);
     set((state) => {
       state.workflows = state.workflows.filter((w) => !idsSet.has(w.id));
+    });
+    // Clean up transitions that reference these workflows
+    workflowIds.forEach((workflowId) => {
+      get().removeWorkflowFromTransitions(workflowId);
     });
     get().triggerSave();
   },

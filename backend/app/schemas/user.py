@@ -121,8 +121,7 @@ class RunnerConnectionInfo(BaseModel):
     projectId: int | None = None
     createdAt: IsoDatetime
     backendUrl: str  # HTTP(S) URL for REST API calls
-    runnerTokenId: str | None = None  # ID of dedicated runner token (if created)
-    tokenExpiresAt: IsoDatetime | None = None  # When the token expires (None = never)
+    tokenExpiresAt: IsoDatetime | None = None  # When the token expires
 
     model_config = ConfigDict(
         from_attributes=True,

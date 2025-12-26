@@ -2,10 +2,17 @@
  * Persistence Utilities
  *
  * Functions for loading and clearing data from IndexedDB.
+ * Uses the Repository pattern for entity-specific data access.
  */
 
 import type { AutomationStore, Screenshot } from "../types";
-import { projectDB } from "@/lib/project-db";
+import {
+  workflowRepository,
+  stateRepository,
+  transitionRepository,
+  imageRepository,
+  deleteProjectFromAllRepositories,
+} from "@/lib/repositories";
 import { screenshotDB } from "@/lib/screenshot-db";
 import { projectLogger } from "@/lib/project-logger";
 
@@ -22,10 +29,10 @@ export async function hydrateFromIndexedDB(
   try {
     const [workflows, states, transitions, images, screenshotsRaw] =
       await Promise.all([
-        projectDB.getWorkflowsByProject(projectName),
-        projectDB.getStatesByProject(projectName),
-        projectDB.getTransitionsByProject(projectName),
-        projectDB.getImagesByProject(projectName),
+        workflowRepository.getByProject(projectName),
+        stateRepository.getByProject(projectName),
+        transitionRepository.getByProject(projectName),
+        imageRepository.getByProject(projectName),
         screenshotDB.getByProject(projectName),
       ]);
 
@@ -71,8 +78,8 @@ export async function clearIndexedDB(projectName: string): Promise<void> {
   });
 
   try {
-    // Clear project data from projectDB
-    await projectDB.clearProjectData(projectName);
+    // Clear project data from all repositories
+    await deleteProjectFromAllRepositories(projectName);
 
     // Clear screenshots for the project
     const screenshots = await screenshotDB.getByProject(projectName);

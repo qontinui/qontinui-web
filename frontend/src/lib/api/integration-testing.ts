@@ -1,4 +1,5 @@
 // lib/api/integration-testing.ts
+// API client for Integration Testing feature (mock mode testing with historical data)
 
 import type {
   MockExecutionRequest,
@@ -6,12 +7,33 @@ import type {
   StateScreenshotListResponse,
 } from "@/types/integration-testing";
 
-export async function executeMockProcess(
+/**
+ * Get authorization headers from localStorage
+ * Returns empty object if no token (auth will use httpOnly cookies)
+ */
+function getAuthHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const token = localStorage.getItem("auth_token");
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
+
+/**
+ * Execute a mock workflow using historical data.
+ * This is used for Config Testing (workflow validation).
+ */
+export async function executeMockWorkflow(
   request: MockExecutionRequest
 ): Promise<MockExecutionResponse> {
   const response = await fetch("/api/integration-testing/execute", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    credentials: "include",
     body: JSON.stringify(request),
   });
 
@@ -23,6 +45,9 @@ export async function executeMockProcess(
   return response.json();
 }
 
+/**
+ * Get screenshots for a snapshot run, optionally filtered by active states.
+ */
 export async function getStateScreenshots(
   runId: string,
   activeStates?: string[]
@@ -33,7 +58,11 @@ export async function getStateScreenshots(
   }
 
   const response = await fetch(
-    `/api/integration-testing/snapshots/${runId}/screenshots?${params}`
+    `/api/integration-testing/snapshots/${runId}/screenshots?${params}`,
+    {
+      headers: getAuthHeaders(),
+      credentials: "include",
+    }
   );
 
   if (!response.ok) {
@@ -43,116 +72,14 @@ export async function getStateScreenshots(
   return response.json();
 }
 
+/**
+ * Get the URL for a specific screenshot.
+ */
 export function getScreenshotUrl(
   runId: string,
   screenshotPath: string
 ): string {
   return `/api/integration-testing/snapshots/${runId}/screenshot/${screenshotPath}`;
-}
-
-// Video Export Types
-export interface VideoExportOptions {
-  frameDuration: number;
-  quality: "480p" | "720p" | "1080p";
-  includeOverlays: boolean;
-  includeTimeline: boolean;
-  includeText: boolean;
-  smoothTransitions: boolean;
-}
-
-export interface VideoExportResponse {
-  video_id: string;
-  status: string;
-  progress: number;
-  video_url?: string;
-  file_size?: number;
-  duration_seconds?: number;
-  error?: string;
-}
-
-export interface VideoExportStatus {
-  video_id: string;
-  status: string;
-  progress: number;
-  video_url?: string;
-  file_size?: number;
-  duration_seconds?: number;
-  error?: string;
-}
-
-// Video Export Functions
-export async function exportExecutionVideo(
-  executionData: MockExecutionResponse,
-  options: VideoExportOptions
-): Promise<VideoExportResponse> {
-  const response = await fetch("/api/integration-testing/export/video", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      execution_data: executionData,
-      frame_duration: options.frameDuration,
-      quality: options.quality,
-      include_overlays: options.includeOverlays,
-      include_timeline: options.includeTimeline,
-      include_text: options.includeText,
-      smooth_transitions: options.smoothTransitions,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || "Video export failed");
-  }
-
-  return response.json();
-}
-
-export async function getVideoExportStatus(
-  videoId: string
-): Promise<VideoExportStatus> {
-  const response = await fetch(
-    `/api/integration-testing/export/video/${videoId}/status`
-  );
-
-  if (!response.ok) {
-    throw new Error("Failed to get video export status");
-  }
-
-  return response.json();
-}
-
-export async function downloadVideo(videoId: string): Promise<void> {
-  const response = await fetch(
-    `/api/integration-testing/export/video/${videoId}/download`
-  );
-
-  if (!response.ok) {
-    throw new Error("Failed to download video");
-  }
-
-  // Create download link
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `execution_${videoId}.mp4`;
-  document.body.appendChild(a);
-  a.click();
-  window.URL.revokeObjectURL(url);
-  document.body.removeChild(a);
-}
-
-export async function deleteVideo(videoId: string): Promise<void> {
-  const response = await fetch(
-    `/api/integration-testing/export/video/${videoId}`,
-    {
-      method: "DELETE",
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error("Failed to delete video");
-  }
 }
 
 // PDF Report Types
@@ -169,13 +96,20 @@ export interface PDFReportOptions {
   title?: string;
 }
 
-// PDF Report Functions
+/**
+ * Generate a PDF report for config test execution results.
+ * Returns the PDF as a Blob for download.
+ */
 export async function generatePDFReport(
   options: PDFReportOptions
 ): Promise<Blob> {
   const response = await fetch("/api/integration-testing/reports/pdf", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    credentials: "include",
     body: JSON.stringify({
       execution_result: options.executionResult,
       screenshots_dir: options.screenshotsDir,

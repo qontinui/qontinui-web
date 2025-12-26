@@ -5034,6 +5034,7 @@ pydantic = "^2.11.9"
 pydantic-settings = "^2.0"
 pynput = "^1.7"
 python-dotenv = "^1.0"
+qontinui-schemas = "^0.1.0"
 scikit-learn = "^1.3"
 selenium = "^4.38.0"
 sqlalchemy = "^2.0"
@@ -5058,7 +5059,7 @@ version = "0.1.0"
 description = "Shared Pydantic schemas for the Qontinui ecosystem"
 optional = false
 python-versions = "^3.12"
-groups = ["main"]
+groups = ["main", "ml"]
 files = []
 develop = true
 
@@ -7347,4 +7348,4 @@ h11 = ">=0.16.0,<1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "6a1228a679ba1ac322ce4a94b8649ad0ae736fcd2e27ca54d3be607c688155cc"
+content-hash = "fe91b5cbbda19bc57a6b0d02e5cba06f1e8bf5662146656741840f918f01ced0"

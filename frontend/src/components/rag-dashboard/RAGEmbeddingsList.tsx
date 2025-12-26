@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Image as ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Image as ImageIcon, FileText } from "lucide-react";
 import { useRAGEmbeddings, useRAGStates } from "@/hooks/useRAGDashboard";
 import type { EmbeddingItem } from "@/types/rag-dashboard";
 
@@ -101,10 +101,11 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
             <Table>
               <TableHeader>
                 <TableRow className="border-gray-800">
-                  <TableHead className="text-gray-400">Pattern</TableHead>
+                  <TableHead className="text-gray-400 w-[300px]">
+                    Pattern
+                  </TableHead>
                   <TableHead className="text-gray-400">State</TableHead>
-                  <TableHead className="text-gray-400">Model</TableHead>
-                  <TableHead className="text-gray-400">Dimensions</TableHead>
+                  <TableHead className="text-gray-400">Size</TableHead>
                   <TableHead className="text-gray-400">Updated</TableHead>
                 </TableRow>
               </TableHeader>
@@ -113,16 +114,49 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                   <TableRow key={embedding.id} className="border-gray-800">
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gray-800 rounded flex items-center justify-center">
-                          <ImageIcon className="w-5 h-5 text-gray-500" />
+                        <div className="w-12 h-12 bg-gray-800 rounded flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {embedding.image_url ? (
+                            <img
+                              src={embedding.image_url}
+                              alt={embedding.pattern_name || embedding.pattern_id}
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                // On error, show placeholder icon
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = "none";
+                                target.nextElementSibling?.classList.remove(
+                                  "hidden"
+                                );
+                              }}
+                            />
+                          ) : null}
+                          <ImageIcon
+                            className={`w-5 h-5 text-gray-500 ${embedding.image_url ? "hidden" : ""}`}
+                          />
                         </div>
-                        <div>
-                          <p className="font-medium text-white">
-                            {embedding.pattern_name || embedding.pattern_id}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {embedding.image_width}x{embedding.image_height}
-                          </p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-white truncate">
+                              {embedding.pattern_name || embedding.pattern_id}
+                            </p>
+                            {embedding.has_text_embedding && (
+                              <span title="Text embedding available">
+                                <FileText className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                              </span>
+                            )}
+                          </div>
+                          {embedding.text_description ? (
+                            <p
+                              className="text-xs text-gray-400 truncate"
+                              title={embedding.text_description}
+                            >
+                              {embedding.text_description}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-gray-500">
+                              {embedding.image_width}x{embedding.image_height}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </TableCell>
@@ -135,12 +169,9 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <span className="text-gray-300">
-                        {embedding.embedding_model}
+                      <span className="text-gray-400 text-sm">
+                        {embedding.image_width}x{embedding.image_height}
                       </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-gray-400">512</span>
                     </TableCell>
                     <TableCell>
                       <span className="text-gray-400 text-sm">

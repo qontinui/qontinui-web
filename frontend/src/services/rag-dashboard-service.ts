@@ -15,7 +15,7 @@ import type {
  * RAG Dashboard Service
  *
  * API client for RAG dashboard data including embeddings, jobs, and search.
- * Communicates with the main backend (port 8000).
+ * Communicates with the main backend (port 8000) via Next.js proxy.
  */
 export class RAGDashboardService {
   private httpClient: HttpClient;
@@ -23,7 +23,8 @@ export class RAGDashboardService {
 
   constructor(httpClient: HttpClient) {
     this.httpClient = httpClient;
-    this.apiUrl = ApiConfig.getApiUrl();
+    // Use main backend (port 8000) via Next.js proxy, not qontinui-api (port 8001)
+    this.apiUrl = ApiConfig.getBaseUrl();
   }
 
   /**

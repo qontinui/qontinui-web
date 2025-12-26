@@ -33,6 +33,10 @@ export const createProjectSlice: StateCreator<
     set((state) => {
       state.projectName = name;
     });
+    // Sync to localStorage
+    if (typeof window !== "undefined") {
+      localStorage.setItem("qontinui-project-name", name);
+    }
   },
 
   setProjectId: (id) => {
@@ -40,12 +44,28 @@ export const createProjectSlice: StateCreator<
     set((state) => {
       state.projectId = id;
     });
+    // Sync to localStorage
+    if (typeof window !== "undefined") {
+      if (id === null) {
+        localStorage.removeItem("qontinui-selected-project-id");
+      } else {
+        localStorage.setItem("qontinui-selected-project-id", id);
+      }
+    }
   },
 
   setLastSaved: (timestamp) => {
     set((state) => {
       state.lastSaved = timestamp;
     });
+    // Sync to localStorage
+    if (typeof window !== "undefined") {
+      if (timestamp === null) {
+        localStorage.removeItem("qontinui-lastSaved");
+      } else {
+        localStorage.setItem("qontinui-lastSaved", timestamp);
+      }
+    }
   },
 
   setIsLoadingFromBackend: (loading) => {

@@ -32,6 +32,10 @@ import type {
   CodeBlockActionConfig,
   CustomFunctionActionConfig,
 } from "@/lib/action-schema/configs/code-actions";
+import type {
+  GoToStateActionConfig,
+  RunWorkflowActionConfig,
+} from "@/lib/action-schema/configs/state-actions";
 
 /**
  * Node categories for styling and organization
@@ -256,9 +260,30 @@ export function getNodeSummary(action: Action): string {
 
     // State Actions
     case "GO_TO_STATE":
-      return "Go to state";
+      const goToStateConfig = config as GoToStateActionConfig;
+      const stateCount = goToStateConfig.stateIds?.length || 0;
+      if (stateCount === 0) {
+        return "Go to state (none selected)";
+      } else if (stateCount === 1) {
+        const stateId = goToStateConfig.stateIds?.[0] || "";
+        // Truncate long state IDs
+        const displayId =
+          stateId.length > 20 ? stateId.substring(0, 20) + "..." : stateId;
+        return `→ ${displayId}`;
+      } else {
+        return `→ ${stateCount} states`;
+      }
 
     case "RUN_WORKFLOW":
+      const runWorkflowConfig = config as RunWorkflowActionConfig;
+      const workflowId = runWorkflowConfig.workflowId;
+      if (workflowId) {
+        const displayName =
+          workflowId.length > 20
+            ? workflowId.substring(0, 20) + "..."
+            : workflowId;
+        return `Run: ${displayName}`;
+      }
       return "Run workflow";
 
     case "SCREENSHOT":

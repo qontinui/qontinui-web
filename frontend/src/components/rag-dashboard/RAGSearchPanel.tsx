@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { Search, Loader2, AlertCircle, Image as ImageIcon } from "lucide-react";
+import { Search, Loader2, Image as ImageIcon } from "lucide-react";
 import { useRAGSearch } from "@/hooks/useRAGDashboard";
 import type { SearchResultItem } from "@/types/rag-dashboard";
 
@@ -91,18 +91,6 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
                 step={5}
                 className="w-full"
               />
-            </div>
-          </div>
-
-          {/* Note about search being a placeholder */}
-          <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-            <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-            <div className="text-sm">
-              <p className="text-yellow-500 font-medium">Coming Soon</p>
-              <p className="text-yellow-500/80">
-                Semantic search requires text-to-embedding generation. The
-                backend currently returns placeholder results.
-              </p>
             </div>
           </div>
         </CardContent>

@@ -12,6 +12,7 @@ import { ExecutionVisualization } from "@/components/integration-testing/Executi
 import { StateCoveragePanel } from "@/components/integration-testing/StateCoveragePanel";
 import { useMockExecution } from "@/hooks/useMockExecution";
 import { useAutomation } from "@/contexts/automation-context";
+import { useProject } from "@/hooks/automation/useProject";
 import type { SnapshotRun } from "@/types/snapshots";
 import type { ActionSpec } from "@/types/integration-testing";
 import { toast } from "sonner";
@@ -23,6 +24,7 @@ export default function IntegrationTestingPage() {
   const [activeTab, setActiveTab] = useState("execute");
   const { result, loading, error, execute, reset } = useMockExecution();
   const { workflows = [] } = useAutomation();
+  const { projectId } = useProject();
 
   const handleExecute = async (
     processId: string,
@@ -56,8 +58,9 @@ export default function IntegrationTestingPage() {
 
     try {
       await execute({
-        process_id: processId,
-        process_name: process.name,
+        project_id: projectId ?? "",
+        workflow_id: processId,
+        workflow_name: process.name,
         snapshot_run_ids: snapshotRunIds,
         initial_states: initialStates,
         actions,
@@ -168,8 +171,8 @@ export default function IntegrationTestingPage() {
           {/* Coverage Tab */}
           <TabsContent value="coverage">
             <StateCoveragePanel
-              processId={selectedProcessId}
-              processName={
+              workflowId={selectedProcessId}
+              workflowName={
                 workflows.find((w) => w.id === selectedProcessId)?.name
               }
               snapshotRunIds={selectedSnapshots.map((s) => s.run_id)}

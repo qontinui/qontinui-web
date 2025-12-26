@@ -105,12 +105,44 @@ export const createTransitionSlice: StateCreator<
 
   deleteTransition: (transitionId) => {
     projectLogger.info("TransitionSlice", "deleteTransition", { transitionId });
+
+    // Get the transition's workflow IDs before deleting
+    const transition = get().transitions.find((t) => t.id === transitionId);
+    const workflowIdsToCheck = transition?.workflows || [];
+
     set((state) => {
       const index = state.transitions.findIndex((t) => t.id === transitionId);
       if (index !== -1) {
         state.transitions.splice(index, 1);
       }
     });
+
+    // Delete auto-generated workflows that are no longer used by any transition
+    if (workflowIdsToCheck.length > 0) {
+      const remainingTransitions = get().transitions;
+      const workflows = get().workflows;
+
+      workflowIdsToCheck.forEach((workflowId) => {
+        // Check if this workflow is still used by other transitions
+        const stillUsed = remainingTransitions.some((t) =>
+          t.workflows.includes(workflowId)
+        );
+
+        if (!stillUsed) {
+          // Only delete auto-generated workflows (those with "auto-generated" tag)
+          const workflow = workflows.find((w) => w.id === workflowId);
+          if (workflow?.tags?.includes("auto-generated")) {
+            projectLogger.info(
+              "TransitionSlice",
+              "deleteTransition - cleaning up auto-generated workflow",
+              { workflowId, workflowName: workflow.name }
+            );
+            get().deleteWorkflow(workflowId);
+          }
+        }
+      });
+    }
+
     get().triggerSave();
   },
 
@@ -151,5 +183,22 @@ export const createTransitionSlice: StateCreator<
         newStateId
       );
     });
+  },
+
+  removeWorkflowFromTransitions: (workflowId) => {
+    projectLogger.info("TransitionSlice", "removeWorkflowFromTransitions", {
+      workflowId,
+    });
+    set((state) => {
+      // Remove workflow ID from all transitions' workflows arrays
+      // Delete transitions that have no workflows left
+      state.transitions = state.transitions
+        .map((t) => ({
+          ...t,
+          workflows: t.workflows.filter((wId) => wId !== workflowId),
+        }))
+        .filter((t) => t.workflows.length > 0);
+    });
+    get().triggerSave();
   },
 });

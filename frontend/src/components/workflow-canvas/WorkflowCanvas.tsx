@@ -169,6 +169,17 @@ function WorkflowCanvasInner({
   const isInternalChangeRef = useRef(false);
   const lastWorkflowRef = useRef(workflow);
 
+  // Create a stable key for the workflow to detect actual content changes
+  // This prevents infinite loops from object reference changes
+  const workflowKey = useMemo(() => {
+    const actionIds = workflow.actions.map((a) => a.id).sort().join(",");
+    const connectionKeys = Object.entries(workflow.connections || {})
+      .map(([k, v]) => `${k}:${v}`)
+      .sort()
+      .join(";");
+    return `${workflow.id}|${actionIds}|${connectionKeys}`;
+  }, [workflow.id, workflow.actions, workflow.connections]);
+
   // Update nodes/edges when workflow changes externally
   useEffect(() => {
     // Skip if we initiated this change
@@ -182,7 +193,6 @@ function WorkflowCanvasInner({
       id: workflow.id,
       name: workflow.name,
       actionsCount: workflow.actions.length,
-      actions: workflow.actions,
     });
 
     const { nodes: newNodes, edges: newEdges } = workflowToReactFlow(workflow);
@@ -190,13 +200,13 @@ function WorkflowCanvasInner({
     console.log("[WorkflowCanvas] Converted to React Flow format:", {
       nodesCount: newNodes.length,
       edgesCount: newEdges.length,
-      nodes: newNodes,
     });
 
     setNodes(newNodes as unknown as Node[]);
     setEdges(newEdges as unknown as Edge[]);
     lastWorkflowRef.current = workflow;
-  }, [workflow.actions, workflow.connections, workflow.id]); // Watch actions and connections arrays
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflowKey]); // Use stable key instead of object references
 
   // ============================================================================
   // Event Handlers
@@ -226,6 +236,10 @@ function WorkflowCanvasInner({
           removals.length
         );
 
+        // IMPORTANT: Mark as internal change IMMEDIATELY to prevent race conditions
+        // where external updates could overwrite our pending changes
+        isInternalChangeRef.current = true;
+
         // Use queueMicrotask to avoid setState during render
         setTimeout(() => {
           setNodes((currentNodes) => {
@@ -249,6 +263,8 @@ function WorkflowCanvasInner({
                     })),
                   }
                 );
+                // Re-set the flag before calling onWorkflowChange to ensure
+                // the subsequent useEffect sees it as an internal change
                 isInternalChangeRef.current = true;
                 onWorkflowChange(updatedWorkflow);
               });
@@ -289,6 +305,9 @@ function WorkflowCanvasInner({
           "[WorkflowCanvas] Edge removals detected:",
           removals.length
         );
+
+        // IMPORTANT: Mark as internal change IMMEDIATELY to prevent race conditions
+        isInternalChangeRef.current = true;
 
         // Use queueMicrotask to avoid setState during render
         setTimeout(() => {
@@ -501,6 +520,9 @@ function WorkflowCanvasInner({
       const newEdges = [...edges, enrichedEdge];
       setEdges(newEdges as unknown as Edge[]);
 
+      // IMPORTANT: Mark as internal change IMMEDIATELY to prevent race conditions
+      isInternalChangeRef.current = true;
+
       // Update workflow
       setTimeout(() => {
         const updatedWorkflow = reactFlowToWorkflow(
@@ -557,6 +579,9 @@ function WorkflowCanvasInner({
       const edgesWithoutOld = edges.filter((e) => e.id !== oldEdge.id);
       const newEdges = addEdge(newConnection, edgesWithoutOld);
       setEdges(newEdges);
+
+      // IMPORTANT: Mark as internal change IMMEDIATELY to prevent race conditions
+      isInternalChangeRef.current = true;
 
       // Update workflow
       setTimeout(() => {

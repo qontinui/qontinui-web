@@ -44,11 +44,13 @@ limiter = Limiter(
 )
 
 # Create user-aware limiter with higher limits for authenticated users
+# Note: headers_enabled=False because slowapi has issues injecting headers
+# when endpoints return non-Response objects (e.g., Pydantic models/lists)
 user_limiter = Limiter(
     key_func=get_user_identifier,
     default_limits=["1000 per hour", "100 per minute"],
     storage_uri=storage_uri,
-    headers_enabled=True,
+    headers_enabled=False,
 )
 
 

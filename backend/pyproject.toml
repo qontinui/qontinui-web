@@ -1,9 +1,15 @@
-[tool.poetry]
+[project]
 name = "backend"
 version = "0.1.0"
 description = "Backend for qontinui-web"
-authors = ["Joshua Spinak <jspinak@hotmail.com>"]
 readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    {name = "Joshua Spinak", email = "jspinak@hotmail.com"}
+]
+dynamic = ["dependencies"]
+
+[tool.poetry]
 packages = [{include = "app"}]
 
 [tool.poetry.dependencies]

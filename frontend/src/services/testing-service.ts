@@ -1,6 +1,30 @@
 import { HttpClient } from "./http-client";
 import { ApiConfig } from "./api-config";
 
+// Re-export generated types for use by other modules
+export {
+  TestRunStatus,
+  TransitionStatus,
+  DeficiencySeverity,
+  DeficiencyStatus,
+  DeficiencyType,
+  ScreenshotType,
+} from "@/types/generated/testing";
+
+export type {
+  Pagination,
+  TestRunListResponse as TestRunListResponseGenerated,
+} from "@/types/generated/testing";
+
+// Import generated types for internal use
+import type { TestRunResponse as TestRunResponseGenerated } from "@/types/generated/testing";
+
+/**
+ * Backend response shape for test runs (matches backend TestRunResponse schema)
+ * Uses generated type from qontinui-schemas
+ */
+type TestRunBackend = TestRunResponseGenerated;
+
 export interface TestRun {
   id: string;
   project_id: string;
@@ -275,7 +299,50 @@ export class TestingService {
     const queryString = params.toString();
     const url = `/api/v1/testing/runs${queryString ? `?${queryString}` : ""}`;
 
-    return this.httpClient.get<PaginatedResponse<TestRun>>(url);
+    // Backend returns: { runs: [...], pagination: { total, limit, offset, has_more } }
+    // Frontend expects: { items: [...], total, page, page_size, total_pages }
+    const response = await this.httpClient.get<{
+      runs: TestRunBackend[];
+      pagination: {
+        total: number;
+        limit: number;
+        offset: number;
+        has_more: boolean;
+      };
+    }>(url);
+
+    const page = Math.floor(response.pagination.offset / response.pagination.limit) + 1;
+    const total_pages = Math.ceil(response.pagination.total / response.pagination.limit);
+
+    // Transform backend response to frontend format
+    const items: TestRun[] = response.runs.map((run) => ({
+      id: run.run_id,
+      project_id: run.project_id,
+      workflow_id: run.runner_metadata?.workflow_id || "",
+      workflow_name: run.run_name,
+      status: run.status as "running" | "completed" | "failed",
+      start_time: run.started_at,
+      end_time: run.ended_at ?? null,
+      duration_seconds: run.duration_seconds ?? null,
+      total_transitions: run.runner_metadata?.total_transitions || 0,
+      successful_transitions: run.runner_metadata?.successful_transitions || 0,
+      failed_transitions: run.runner_metadata?.failed_transitions || 0,
+      coverage_percentage: run.runner_metadata?.coverage_percentage || 0,
+      states_covered: run.runner_metadata?.states_covered || 0,
+      total_states: run.runner_metadata?.total_states || 0,
+      deficiencies_found: run.runner_metadata?.deficiencies_found || 0,
+      runner_id: run.runner_metadata?.runner_id || "",
+      created_at: run.created_at,
+      updated_at: run.created_at,
+    }));
+
+    return {
+      items,
+      total: response.pagination.total,
+      page,
+      page_size: response.pagination.limit,
+      total_pages,
+    };
   }
 
   /**
@@ -336,7 +403,33 @@ export class TestingService {
     const queryString = params.toString();
     const url = `/api/v1/testing/coverage-trends${queryString ? `?${queryString}` : ""}`;
 
-    return this.httpClient.get<CoverageTrend[]>(url);
+    // Backend returns CoverageTrendResponse with data_points array
+    // Transform to frontend's expected CoverageTrend[] format
+    const response = await this.httpClient.get<{
+      project_id: string;
+      start_date: string;
+      end_date: string;
+      granularity: string;
+      data_points: Array<{
+        date: string;
+        runs_count: number;
+        avg_coverage_percentage: number;
+        max_coverage_percentage: number;
+        min_coverage_percentage: number;
+        total_transitions_executed: number;
+        unique_transitions_covered: number;
+      }>;
+      overall_stats: Record<string, unknown>;
+    }>(url);
+
+    // Transform backend data points to frontend format
+    return response.data_points.map((dp) => ({
+      date: dp.date,
+      coverage_percentage: dp.avg_coverage_percentage,
+      states_covered: dp.unique_transitions_covered,
+      total_states: dp.total_transitions_executed,
+      test_run_count: dp.runs_count,
+    }));
   }
 
   /**
@@ -353,7 +446,82 @@ export class TestingService {
     const queryString = params.toString();
     const url = `/api/v1/testing/reliability-stats${queryString ? `?${queryString}` : ""}`;
 
-    return this.httpClient.get<ReliabilityStats>(url);
+    // Backend returns ReliabilityResponse with different structure
+    // Transform to frontend's expected ReliabilityStats format
+    const response = await this.httpClient.get<{
+      workflow_id: string;
+      workflow_name: string | null;
+      project_id: string;
+      date_range: { start: string; end: string };
+      transition_stats: Array<{
+        transition_name: string;
+        from_state: string;
+        to_state: string;
+        total_executions: number;
+        successful_executions: number;
+        failed_executions: number;
+        success_rate: number;
+        avg_duration_ms: number;
+        median_duration_ms: number;
+        p95_duration_ms: number;
+        failure_modes: Array<{
+          error_type: string;
+          count: number;
+          percentage: number;
+        }>;
+      }>;
+      overall_reliability: {
+        total_transitions_analyzed: number;
+        avg_success_rate: number;
+        most_reliable_transition: string | null;
+        least_reliable_transition: string | null;
+      };
+    }>(url);
+
+    // Calculate aggregated stats from transition_stats
+    const totalTransitions = response.transition_stats.reduce(
+      (sum, t) => sum + t.total_executions,
+      0
+    );
+    const successfulTransitions = response.transition_stats.reduce(
+      (sum, t) => sum + t.successful_executions,
+      0
+    );
+    const failedTransitions = response.transition_stats.reduce(
+      (sum, t) => sum + t.failed_executions,
+      0
+    );
+    const avgDuration =
+      response.transition_stats.length > 0
+        ? response.transition_stats.reduce((sum, t) => sum + t.avg_duration_ms, 0) /
+          response.transition_stats.length
+        : 0;
+
+    // Sort transitions by success rate
+    const sortedBySuccess = [...response.transition_stats].sort(
+      (a, b) => b.success_rate - a.success_rate
+    );
+
+    // Transform to frontend format
+    const transformTransition = (t: (typeof response.transition_stats)[0]): TransitionReliability => ({
+      from_state: t.from_state,
+      to_state: t.to_state,
+      action_type: t.transition_name,
+      success_rate: t.success_rate,
+      total_attempts: t.total_executions,
+      average_duration_ms: t.avg_duration_ms,
+    });
+
+    return {
+      overall_success_rate: response.overall_reliability.avg_success_rate,
+      total_transitions_tested: totalTransitions,
+      successful_transitions: successfulTransitions,
+      failed_transitions: failedTransitions,
+      average_transition_time_ms: avgDuration,
+      most_reliable_transitions: sortedBySuccess.slice(0, 5).map(transformTransition),
+      least_reliable_transitions: sortedBySuccess.slice(-5).reverse().map(transformTransition),
+      state_reliability: [], // Backend doesn't provide per-state reliability directly
+    };
   }
 
   /**

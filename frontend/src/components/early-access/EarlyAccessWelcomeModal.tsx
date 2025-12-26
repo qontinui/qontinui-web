@@ -137,7 +137,8 @@ export function EarlyAccessWelcomeModal({
             <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
               <Download className="h-5 w-5 text-blue-400 mt-0.5 flex-shrink-0" />
               <span className="text-gray-200">
-                Export JSON after each session (File → Export)
+                Export JSON after each session (sidebar export icon or canvas
+                button)
               </span>
             </div>
             <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
@@ -165,9 +166,15 @@ export function EarlyAccessWelcomeModal({
               Export your work regularly! We've made it easy:
             </p>
             <ul className="space-y-1.5 text-sm text-gray-300 ml-9">
-              <li>• File → Export → Downloads your automation as JSON</li>
+              <li>
+                • Click the export icon in the sidebar or use the Export button
+                at the top of the canvas
+              </li>
               <li>• Keep these files safe (Dropbox, Git, local folder)</li>
-              <li>• Import anytime: File → Import</li>
+              <li>
+                • Import anytime using the import icon in the sidebar or Import
+                button
+              </li>
             </ul>
             <p className="text-gray-400 text-sm mt-3 ml-9 italic">
               Think of Export like "Save" - do it often! Files are versioned

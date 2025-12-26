@@ -10,6 +10,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from qontinui_schemas.api.rag import EmbeddingResultsRequest, EmbeddingResultsResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -17,6 +18,7 @@ from app.crud.project import get_project
 from app.crud.runner import get_active_connection_for_project
 from app.middleware.error_handler import not_found_error
 from app.models.organization import PermissionLevel
+from app.models.project_embedding import ProjectEmbedding
 from app.models.user import User
 from app.services.permission_service import permission_service
 from app.services.rag_builder import RAGBuilderService
@@ -609,38 +611,6 @@ async def generate_description(
 # ============================================================================
 
 
-class EmbeddingResultItem(BaseModel):
-    """Single embedding result from runner."""
-
-    state_image_id: str
-    success: bool
-    image_embedding: list[float] | None = None
-    text_embedding: list[float] | None = None
-    ocr_text: str | None = None
-    ocr_confidence: float | None = None
-    error: str | None = None
-
-
-class EmbeddingResultsRequest(BaseModel):
-    """Request containing embedding results from runner."""
-
-    project_id: str
-    results: list[EmbeddingResultItem]
-    total_processed: int
-    successful: int
-    failed: int
-
-
-class EmbeddingResultsResponse(BaseModel):
-    """Response after applying embedding results."""
-
-    success: bool
-    message: str
-    applied: int
-    failed: int
-    not_found: int
-
-
 @router.post(
     "/{project_id}/embedding-results",
     response_model=EmbeddingResultsResponse,
@@ -705,6 +675,120 @@ async def receive_embedding_results(
     project_update = ProjectUpdate(configuration=config)
     await update_project(db, project, project_update)
 
+    # Also store embeddings in project_embeddings table for RAG Dashboard
+    # Build lookups for state and image metadata
+    state_lookup: dict[str, dict[str, Any]] = {}
+    state_image_lookup: dict[str, tuple[str, str, dict[str, Any]]] = (
+        {}
+    )  # state_image_id -> (state_id, state_name, state_image)
+    image_lookup: dict[str, dict[str, Any]] = {}
+
+    for state in config.get("states", []):
+        state_id = state.get("id", "")
+        state_name = state.get("name", "Unknown State")
+        state_lookup[state_id] = state
+        for state_image in state.get("stateImages", []):
+            state_image_id = state_image.get("id")
+            if state_image_id:
+                state_image_lookup[state_image_id] = (state_id, state_name, state_image)
+
+    for image in config.get("images", []):
+        image_id = image.get("id")
+        if image_id:
+            image_lookup[image_id] = image
+
+    embeddings_stored = 0
+    from sqlalchemy import delete
+
+    # Delete existing embeddings for this project (replace with new ones)
+    await db.execute(
+        delete(ProjectEmbedding).where(ProjectEmbedding.project_id == project_id)
+    )
+
+    for result in request.results:
+        if not result.success or not result.image_embedding:
+            continue
+
+        state_image_id = result.state_image_id
+        if state_image_id not in state_image_lookup:
+            continue
+
+        state_id, state_name, state_image = state_image_lookup[state_image_id]
+
+        # Get pattern info from the first pattern in stateImage
+        patterns = state_image.get("patterns", [])
+        if not patterns:
+            continue
+
+        first_pattern = patterns[0]
+        pattern_id = first_pattern.get("id", state_image_id)
+        pattern_name = first_pattern.get("name") or state_image.get("name")
+        image_id = first_pattern.get("imageId", "")
+
+        # Get image data from image lookup
+        image_data = image_lookup.get(image_id, {})
+        image_width = image_data.get("width", 0)
+        image_height = image_data.get("height", 0)
+
+        # Get actual S3 storage path from image data
+        image_storage_path = image_data.get("s3_key") or image_data.get("s3Key")
+        if not image_storage_path:
+            # Fallback: try to find in storage_usage or skip this embedding
+            logger.warning(
+                "embedding_missing_storage_path",
+                project_id=str(project_id),
+                image_id=image_id,
+                pattern_id=pattern_id,
+            )
+            continue
+
+        # Generate text description if not provided
+        text_description = result.text_description
+        if not text_description and (pattern_name or result.ocr_text):
+            # Build description from pattern name and OCR text
+            parts = []
+            if pattern_name:
+                # Convert kebab-case/snake_case to readable text
+                readable_name = pattern_name.replace("-", " ").replace("_", " ").strip()
+                if readable_name:
+                    parts.append(readable_name)
+            if result.ocr_text:
+                ocr_clean = result.ocr_text.strip()
+                if ocr_clean and (
+                    not pattern_name or ocr_clean.lower() not in pattern_name.lower()
+                ):
+                    parts.append(f'with text "{ocr_clean}"')
+            if parts:
+                text_description = " ".join(parts)
+
+        # Create ProjectEmbedding record
+        embedding = ProjectEmbedding(
+            project_id=project_id,
+            pattern_id=pattern_id,
+            pattern_name=pattern_name,
+            state_id=state_id,
+            state_name=state_name,
+            image_id=image_id,
+            image_storage_path=image_storage_path,
+            embedding=result.image_embedding,
+            text_embedding=result.text_embedding,
+            text_description=text_description,
+            embedding_model="clip-vit-base-patch32",
+            embedding_version="1.0.0",
+            pattern_metadata={
+                "state_image_id": state_image_id,
+                "search_mode": state_image.get("searchMode", "default"),
+                "ocr_text": result.ocr_text,
+                "ocr_confidence": result.ocr_confidence,
+            },
+            image_width=image_width or 100,
+            image_height=image_height or 100,
+        )
+        db.add(embedding)
+        embeddings_stored += 1
+
+    await db.commit()
+
     logger.info(
         "embedding_results_received",
         project_id=str(project_id),
@@ -712,11 +796,12 @@ async def receive_embedding_results(
         applied=apply_result["successful"],
         failed=apply_result["failed"],
         not_found=apply_result["not_found"],
+        embeddings_stored=embeddings_stored,
     )
 
     return EmbeddingResultsResponse(
         success=True,
-        message=f"Applied {apply_result['successful']} embedding results",
+        message=f"Applied {apply_result['successful']} embedding results, stored {embeddings_stored} embeddings",
         applied=apply_result["successful"],
         failed=apply_result["failed"],
         not_found=apply_result["not_found"],

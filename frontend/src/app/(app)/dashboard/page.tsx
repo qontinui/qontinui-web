@@ -292,7 +292,7 @@ export default function Dashboard() {
 
   const handleExport = () => {
     // For now, show a helpful message
-    toast.info("To export your work, open a project and use File → Export", {
+    toast.info("To export, use the export icon in the sidebar or the Export button at the top of the canvas", {
       duration: 5000,
     });
   };

@@ -346,7 +346,7 @@ export const CompositeScreenshotCanvas: React.FC<
         console.log("[CompositeCanvas] Skipping auto fitToView: zoom already set to", currentZoom);
       }
     }, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [loadedImages, screenshotKey]);
 
 

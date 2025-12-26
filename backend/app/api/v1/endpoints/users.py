@@ -52,11 +52,7 @@ async def read_user_me(
 @router.get("/me/connection-info", response_model=RunnerConnectionInfo)
 async def get_runner_connection_info(
     request: Request,
-    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
-    use_dedicated_token: bool = False,
-    token_name: str | None = None,
-    expires_in_days: int | None = 30,
 ) -> Any:
     """
     Get connection information for qontinui-runner desktop app.
@@ -64,72 +60,38 @@ async def get_runner_connection_info(
     This endpoint returns all the necessary information for the desktop runner
     to connect to the backend, including the WebSocket URL and authentication token.
 
-    Query Parameters:
-        - use_dedicated_token: If true, creates a dedicated runner token (recommended for desktop runners)
-        - token_name: Name for the runner token (e.g., "My Laptop"). Auto-generated if not provided.
-        - expires_in_days: Token expiry in days. None or 0 = never expires. Default: 30 days.
-
     Returns:
         - version: Connection protocol version
         - url: WebSocket URL for the runner
-        - token: Authentication token (JWT or dedicated runner token)
+        - token: Authentication token (JWT)
         - userId: Current user's ID
         - projectId: null (user will select this in the UI)
         - createdAt: Current timestamp
         - backendUrl: Backend HTTP(S) URL for REST API calls
-        - runnerTokenId: ID of the dedicated runner token (if created)
-        - tokenExpiresAt: When the token expires (None = never)
+        - tokenExpiresAt: When the token expires
     """
     from app.core.config import settings
-    from app.crud import runner as runner_crud
 
-    token: str | None = None
-    runner_token_id: str | None = None
-    token_expires_at: datetime | None = None
+    # Use the session JWT token
+    # Extract JWT token from cookie (preferred) or Authorization header (fallback)
+    token = request.cookies.get("access_token")
 
-    if use_dedicated_token:
-        # Create a dedicated runner token for long-running automations
-        if not token_name:
-            token_name = f"Runner {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+    if not token:
+        # Fallback to Authorization header for backward compatibility
+        authorization = request.headers.get("Authorization")
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
 
-        # expires_in_days=0 or None means never expires
-        expiry_days = (
-            expires_in_days if expires_in_days and expires_in_days > 0 else None
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
         )
 
-        # Returns (RunnerToken model, plain text token)
-        runner_token, plain_token = await runner_crud.create_runner_token(
-            db=db,
-            user_id=current_user.id,
-            name=token_name,
-            expires_in_days=expiry_days,
-        )
-        await db.commit()
-
-        token = plain_token
-        runner_token_id = str(runner_token.id)
-        token_expires_at = runner_token.expires_at
-    else:
-        # Use the session JWT token (expires in 1 hour)
-        # Extract JWT token from cookie (preferred) or Authorization header (fallback)
-        token = request.cookies.get("access_token")
-
-        if not token:
-            # Fallback to Authorization header for backward compatibility
-            authorization = request.headers.get("Authorization")
-            if authorization and authorization.startswith("Bearer "):
-                token = authorization.replace("Bearer ", "")
-
-        if not token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing authentication token",
-            )
-
-        # JWT tokens expire in 1 hour (from settings)
-        token_expires_at = datetime.now(UTC) + timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        )
+    # JWT tokens expire in 1 hour (from settings)
+    token_expires_at = datetime.now(UTC) + timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    )
 
     # Create connection info response
     connection_info = RunnerConnectionInfo(
@@ -140,7 +102,6 @@ async def get_runner_connection_info(
         projectId=None,
         createdAt=datetime.now(UTC),
         backendUrl=settings.RUNNER_BACKEND_URL,
-        runnerTokenId=runner_token_id,
         tokenExpiresAt=token_expires_at,
     )
 

@@ -17,6 +17,10 @@
 
 import { MigrationEngine } from "./migration-engine";
 import { ALL_MIGRATIONS, CURRENT_VERSION } from "./migrations";
+import {
+  isLegacyRAGConfig,
+  normalizeLegacyRAGConfig,
+} from "./migrations/legacy-rag-to-v2.0.0";
 
 // Initialize global migration engine
 const migrationEngine = new MigrationEngine(CURRENT_VERSION);
@@ -30,12 +34,19 @@ for (const migration of ALL_MIGRATIONS) {
  * Migrate a config to the latest version
  *
  * Automatically finds the migration path and applies all necessary migrations sequentially.
+ * Also handles legacy RAGConfig format by detecting and normalizing it first.
  *
  * @param config - Configuration object with a version field
  * @returns Migration result with transformed config, warnings, and errors
  */
 export async function migrateConfigToLatest(config: unknown) {
-  return migrationEngine.migrateToLatest(config);
+  // Check if this is a legacy RAGConfig format and normalize it
+  let configToMigrate = config;
+  if (isLegacyRAGConfig(config)) {
+    configToMigrate = normalizeLegacyRAGConfig(config);
+  }
+
+  return migrationEngine.migrateToLatest(configToMigrate);
 }
 
 /**
@@ -46,6 +57,19 @@ export async function migrateConfigToLatest(config: unknown) {
  */
 export function needsMigration(configVersion: string): boolean {
   return migrationEngine.needsMigration(configVersion);
+}
+
+/**
+ * Check if a config is a legacy RAGConfig format that needs conversion
+ *
+ * Legacy RAGConfig has project_id, project_name, screenshots, elements fields
+ * instead of the modern metadata, images, workflows, states structure.
+ *
+ * @param config - Configuration object to check
+ * @returns true if config is legacy RAGConfig format
+ */
+export function isLegacyFormat(config: unknown): boolean {
+  return isLegacyRAGConfig(config);
 }
 
 /**

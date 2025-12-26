@@ -9,6 +9,7 @@
 
 import { useState, useMemo, Suspense } from "react";
 import { useAutomation } from "@/contexts/automation-context";
+import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
 import { ActiveStatesCanvas } from "@/components/workflow-viz/ActiveStatesCanvas";
 import { RequireProject } from "@/components/require-project";
 import {
@@ -32,23 +33,63 @@ import {
 } from "lucide-react";
 
 export default function OverviewPage() {
-  const { states } = useAutomation();
+  const { states, images } = useAutomation();
+  const { monitors, isRunnerConnected } = useRunnerMonitors();
   const [selectedStateIds, setSelectedStateIds] = useState<string[]>([]);
   const [highlightedStateId, setHighlightedStateId] = useState<
     string | undefined
   >();
 
-  // Filter to states that have visible elements (StateImages with fixed positions)
+  // Calculate canvas info for display
+  // The actual canvas dimensions are calculated inside ActiveStatesCanvas
+  // based on the content being displayed
+  const canvasInfo = useMemo(() => {
+    if (monitors.length > 0) {
+      // Calculate bounding box that contains all monitors
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      monitors.forEach((m) => {
+        minX = Math.min(minX, m.x);
+        minY = Math.min(minY, m.y);
+        maxX = Math.max(maxX, m.x + m.width);
+        maxY = Math.max(maxY, m.y + m.height);
+      });
+      return {
+        width: (maxX - minX) || 1920,
+        height: (maxY - minY) || 1080,
+        source: "monitors" as const,
+      };
+    }
+    return {
+      width: null,
+      height: null,
+      source: "content" as const,
+    };
+  }, [monitors]);
+
+  // Filter to states that have visible elements (StateImages with positions)
+  // A pattern is positionable if it has:
+  // 1. offsetX/offsetY set (found coordinates), OR
+  // 2. searchRegions with coordinates (initial position)
   const statesWithElements = useMemo(() => {
     return states.filter((state) => {
-      const hasFixedImages = state.stateImages?.some((img) =>
-        img.patterns?.some(
-          (p) => p.fixed && p.offsetX !== undefined && p.offsetY !== undefined
-        )
+      const hasPositionedImages = state.stateImages?.some((img) =>
+        img.patterns?.some((p) => {
+          // Check for direct offset coordinates
+          const hasOffsets =
+            p.offsetX !== undefined && p.offsetY !== undefined;
+          // Check for searchRegion coordinates as fallback
+          const hasSearchRegion = p.searchRegions?.some(
+            (sr) => sr.x !== undefined && sr.y !== undefined
+          );
+          return hasOffsets || hasSearchRegion;
+        })
       );
       const hasRegions = (state.regions?.length ?? 0) > 0;
       const hasLocations = (state.locations?.length ?? 0) > 0;
-      return hasFixedImages || hasRegions || hasLocations;
+      return hasPositionedImages || hasRegions || hasLocations;
     });
   }, [states]);
 
@@ -219,18 +260,27 @@ export default function OverviewPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between">
                   <span>Canvas View</span>
-                  <Badge variant="outline">
-                    {selectedStates.length} selected
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">
+                      {selectedStates.length} selected
+                    </Badge>
+                    <Badge variant={isRunnerConnected ? "default" : "secondary"}>
+                      {monitors.length} monitor{monitors.length !== 1 ? "s" : ""}
+                    </Badge>
+                  </div>
                 </CardTitle>
                 <CardDescription>
-                  1920x1080 canvas showing state elements at their fixed
-                  positions
+                  {canvasInfo.source === "monitors"
+                    ? `${canvasInfo.width}x${canvasInfo.height} canvas from connected monitors`
+                    : "Canvas auto-sized to fit state elements"}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-1 min-h-0">
                 <ActiveStatesCanvas
                   states={selectedStates}
+                  images={images}
+                  monitors={monitors}
+                  mode="config"
                   highlightStateId={highlightedStateId}
                   className="h-full"
                 />

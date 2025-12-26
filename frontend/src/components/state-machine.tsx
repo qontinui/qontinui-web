@@ -186,6 +186,7 @@ export function StateStructure() {
   const {
     workflows,
     addWorkflow,
+    updateWorkflow,
     addState,
     updateState,
     updateStateWithIdChange,
@@ -787,9 +788,10 @@ export function StateStructure() {
   };
 
   const handleApplyMonitors = useCallback(
-    (stateIds: string[], monitors: number[]) => {
+    async (stateIds: string[], monitors: number[]) => {
       // Apply monitors to all state images in selected states
-      stateIds.forEach((stateId) => {
+      // Use Promise.all to wait for all updates to complete
+      const updates = stateIds.map(async (stateId) => {
         const state = states.find((s) => s.id === stateId);
         if (state && state.stateImages) {
           const updatedState = {
@@ -799,9 +801,10 @@ export function StateStructure() {
               monitors: monitors,
             })),
           };
-          updateState(updatedState);
+          await updateState(updatedState);
         }
       });
+      await Promise.all(updates);
     },
     [states, updateState]
   );
@@ -930,6 +933,20 @@ export function StateStructure() {
           JSON.stringify(originalTransition) !== JSON.stringify(transition)
         ) {
           updateTransition(transition);
+        }
+      });
+
+      // Update workflow tags that reference the old state ID
+      // This is critical for deduplication of auto-generated workflows (e.g., "Click: xyz")
+      workflows.forEach((workflow) => {
+        if (workflow.tags?.includes(updateResult.oldId!)) {
+          const updatedTags = workflow.tags.map((tag) =>
+            tag === updateResult.oldId ? updateResult.newId! : tag
+          );
+          updateWorkflow({
+            ...workflow,
+            tags: updatedTags,
+          });
         }
       });
 

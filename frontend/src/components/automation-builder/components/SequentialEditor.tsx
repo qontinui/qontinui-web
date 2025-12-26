@@ -501,7 +501,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, unknown> {
         outputVariable: "",
       };
     case "GO_TO_STATE":
-      return { states: [] }; // Array of state IDs for multi-target pathfinding
+      return { stateIds: [] }; // Array of state IDs for multi-target pathfinding
     case "RUN_WORKFLOW":
       return { workflowId: "" };
     case "IF":
@@ -800,13 +800,19 @@ function getActionSummary(
       return "No element selected";
     }
     case "GO_TO_STATE": {
-      const gotoConfig = config as { states?: string[]; stateId?: string };
-      // Support both new format (states array) and legacy format (stateId)
-      const stateIds =
-        gotoConfig.states || (gotoConfig.stateId ? [gotoConfig.stateId] : []);
+      const gotoConfig = config as {
+        stateIds?: string[];
+        states?: string[];
+        stateId?: string;
+      };
+      // Support new format (stateIds), old format (states), and legacy format (stateId)
+      const stateIdList =
+        gotoConfig.stateIds ||
+        gotoConfig.states ||
+        (gotoConfig.stateId ? [gotoConfig.stateId] : []);
 
-      if (stateIds.length > 0) {
-        const stateNames = stateIds
+      if (stateIdList.length > 0) {
+        const stateNames = stateIdList
           .map((id) => {
             const state = states.find((s) => s.id === id);
             return state ? state.name : id;

@@ -5,11 +5,21 @@
  */
 
 /**
+ * Special version strings for legacy format migrations
+ */
+export const LEGACY_RAG_VERSION = "0.0.0-legacy-rag";
+
+/**
  * Parse semantic version string into components
  */
 export function parseVersion(
   version: string
 ): { major: number; minor: number; patch: number } | null {
+  // Handle special legacy version
+  if (version === LEGACY_RAG_VERSION) {
+    return { major: 0, minor: 0, patch: 0 };
+  }
+
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
   if (!match) return null;
 
@@ -21,9 +31,13 @@ export function parseVersion(
 }
 
 /**
- * Check if version string is valid semantic version (X.Y.Z)
+ * Check if version string is valid semantic version (X.Y.Z) or a known special version
  */
 export function isValidVersion(version: string): boolean {
+  // Accept the special legacy RAG version
+  if (version === LEGACY_RAG_VERSION) {
+    return true;
+  }
   return /^\d+\.\d+\.\d+$/.test(version);
 }
 

@@ -4,7 +4,7 @@ FastAPI dependencies for authentication and database access.
 Now using fastapi-users for authentication.
 """
 
-from typing import TYPE_CHECKING, cast
+from typing import cast
 from uuid import UUID
 
 import structlog
@@ -13,9 +13,6 @@ from jose import JWTError, jwt
 
 from app.core.config import settings
 from app.models.user import User
-
-if TYPE_CHECKING:
-    from app.models.runner_token import RunnerToken
 
 logger = structlog.get_logger(__name__)
 
@@ -136,78 +133,4 @@ async def get_current_user_from_ws(token: str) -> User:
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Database connection error",
-    )
-
-
-async def authenticate_runner(
-    token: str,
-) -> tuple[User, "RunnerToken | None"]:
-    """
-    Authenticate either JWT token or runner token for WebSocket connections.
-
-    This function supports both authentication methods:
-    1. Standard JWT access tokens (for backward compatibility)
-    2. Runner tokens (dedicated tokens for desktop runners)
-
-    Args:
-        token: Either a JWT access token or a runner token
-
-    Returns:
-        Tuple of (User, RunnerToken or None)
-        - If authenticated with JWT: (User, None)
-        - If authenticated with runner token: (User, RunnerToken)
-
-    Raises:
-        HTTPException if authentication fails
-    """
-    from app.crud import runner as runner_crud
-
-    # First, try JWT authentication
-    try:
-        user = await get_current_user_from_ws(token)
-        return user, None
-    except HTTPException:
-        # JWT failed, try runner token
-        pass
-
-    # Try runner token authentication
-    async for db in get_async_db():
-        try:
-            runner_token = await runner_crud.validate_runner_token(db, token)
-
-            if not runner_token:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid or expired token",
-                )
-
-            # Get user from runner token
-            from sqlalchemy import select
-
-            result = await db.execute(
-                select(User).where(User.id == runner_token.user_id)  # type: ignore[arg-type]
-            )
-            user_from_db: User | None = result.scalar_one_or_none()
-
-            if not user_from_db:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User not found",
-                )
-
-            if not user_from_db.is_active:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User is not active",
-                )
-
-            return user_from_db, runner_token
-
-        finally:
-            await db.close()
-
-    # If we get here, authentication failed
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication failed",
     )
