@@ -57,8 +57,8 @@ export default function OverviewPage() {
         maxY = Math.max(maxY, m.y + m.height);
       });
       return {
-        width: (maxX - minX) || 1920,
-        height: (maxY - minY) || 1080,
+        width: maxX - minX || 1920,
+        height: maxY - minY || 1080,
         source: "monitors" as const,
       };
     }
@@ -78,8 +78,7 @@ export default function OverviewPage() {
       const hasPositionedImages = state.stateImages?.some((img) =>
         img.patterns?.some((p) => {
           // Check for direct offset coordinates
-          const hasOffsets =
-            p.offsetX !== undefined && p.offsetY !== undefined;
+          const hasOffsets = p.offsetX !== undefined && p.offsetY !== undefined;
           // Check for searchRegion coordinates as fallback
           const hasSearchRegion = p.searchRegions?.some(
             (sr) => sr.x !== undefined && sr.y !== undefined
@@ -264,8 +263,11 @@ export default function OverviewPage() {
                     <Badge variant="outline">
                       {selectedStates.length} selected
                     </Badge>
-                    <Badge variant={isRunnerConnected ? "default" : "secondary"}>
-                      {monitors.length} monitor{monitors.length !== 1 ? "s" : ""}
+                    <Badge
+                      variant={isRunnerConnected ? "default" : "secondary"}
+                    >
+                      {monitors.length} monitor
+                      {monitors.length !== 1 ? "s" : ""}
                     </Badge>
                   </div>
                 </CardTitle>

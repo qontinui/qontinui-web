@@ -52,7 +52,6 @@ export function usePatternTestsBridge() {
       hasHydrated.current = true;
       storeRef.current.hydrate(projectName, user.id);
     }
-
   }, [user?.id, projectName]);
 
   // Persist on unmount

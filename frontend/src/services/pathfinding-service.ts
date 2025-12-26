@@ -85,32 +85,29 @@ class PathfindingService {
     }
 
     try {
-      const response = await fetch(
-        `${this.baseUrl}/api/pathfinding/validate`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            states: states.map((s) => ({
-              id: s.id,
-              name: s.name,
-              isInitial: s.initial ?? false,
-              isBlocking: false, // Could be enhanced to detect modal states
-            })),
-            transitions: transitions.map((t) => ({
-              id: t.id,
-              fromState: t.fromState,
-              activateStates: t.activateStates,
-              deactivateStates: t.deactivateStates,
-              staysVisible: t.staysVisible,
-            })),
-            fromStates: fromStateIds ?? [],
-            targetStates: targetStateIds,
-          }),
-        }
-      );
+      const response = await fetch(`${this.baseUrl}/api/pathfinding/validate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          states: states.map((s) => ({
+            id: s.id,
+            name: s.name,
+            isInitial: s.initial ?? false,
+            isBlocking: false, // Could be enhanced to detect modal states
+          })),
+          transitions: transitions.map((t) => ({
+            id: t.id,
+            fromState: t.fromState,
+            activateStates: t.activateStates,
+            deactivateStates: t.deactivateStates,
+            staysVisible: t.staysVisible,
+          })),
+          fromStates: fromStateIds ?? [],
+          targetStates: targetStateIds,
+        }),
+      });
 
       if (!response.ok) {
         const errorText = await response.text();

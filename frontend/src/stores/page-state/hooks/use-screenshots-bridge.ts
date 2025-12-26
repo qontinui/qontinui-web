@@ -43,7 +43,6 @@ export function useScreenshotsBridge() {
       hasHydrated.current = true;
       storeRef.current.hydrate(projectName, user.id);
     }
-
   }, [user?.id, projectName]);
 
   // Persist on unmount

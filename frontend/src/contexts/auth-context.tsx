@@ -11,6 +11,7 @@ import React, {
 import { authService } from "@/services/service-factory";
 import { User } from "@/types/auth-types";
 import { pageStateDB } from "@/stores/page-state";
+import { clearExtractionConfig } from "@/hooks/use-extraction-config";
 
 interface AuthContextType {
   user: User | null;
@@ -286,6 +287,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // Clear extraction config from localStorage
+    clearExtractionConfig();
+    console.log("[AuthContext] Extraction config cleared");
+
     authService.logout();
     setUser(null);
 
@@ -327,28 +332,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getAccessToken = async (): Promise<string | null> => {
     try {
-      // Get the current access token from the token manager
-      const token = authService.tokenManager.getAccessToken();
-
-      if (!token) {
+      // Check if user is authenticated
+      if (!authService.isAuthenticated()) {
+        console.log("[AuthContext] Not authenticated, cannot get runner token");
         return null;
       }
 
-      // Check if token is expired or expiring soon
-      const expiry = authService.tokenManager.getTokenExpiry();
-      if (expiry) {
-        const now = Date.now();
-        const timeUntilExpiry = expiry - now;
+      // Fetch a short-lived runner token from the backend
+      // This is needed because tokens are stored in HttpOnly cookies (XSS protection)
+      // and cannot be accessed by JavaScript. The runner-token endpoint generates
+      // a 5-minute token specifically for runner API calls.
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${apiUrl}/api/v1/auth/runner-token`, {
+        method: "POST",
+        credentials: "include", // Include HttpOnly cookies for authentication
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
 
-        // If token expires in less than 1 minute, refresh it
-        if (timeUntilExpiry < 60000) {
-          console.log("[AuthContext] Token expiring soon, refreshing...");
-          await authService.refreshAccessToken();
-          return authService.tokenManager.getAccessToken();
-        }
+      if (!response.ok) {
+        console.error(
+          "[AuthContext] Failed to get runner token:",
+          response.status
+        );
+        return null;
       }
 
-      return token;
+      const data = await response.json();
+      console.log(
+        "[AuthContext] Got runner token, expires in",
+        data.expires_in,
+        "seconds"
+      );
+      return data.token;
     } catch (error) {
       console.error("[AuthContext] Failed to get access token:", error);
       return null;

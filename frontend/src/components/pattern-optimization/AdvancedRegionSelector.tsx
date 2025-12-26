@@ -12,7 +12,11 @@ interface AdvancedRegionSelectorProps {
   zoom?: number;
   panX?: number;
   panY?: number;
-  onViewportChange?: (viewport: { zoom?: number; panX?: number; panY?: number }) => void;
+  onViewportChange?: (viewport: {
+    zoom?: number;
+    panX?: number;
+    panY?: number;
+  }) => void;
 }
 
 type DragHandle =
@@ -55,13 +59,16 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   } | null>(null);
 
   // View state - use controlled props if provided, otherwise local state
-  const isControlled = controlledZoom !== undefined && onViewportChange !== undefined;
+  const isControlled =
+    controlledZoom !== undefined && onViewportChange !== undefined;
   const [localZoom, setLocalZoom] = useState(1);
   const [localPan, setLocalPan] = useState({ x: 0, y: 0 });
 
   // Use refs to track the latest values for callbacks (avoids stale closures)
   const zoomRef = useRef(isControlled ? controlledZoom : localZoom);
-  const panRef = useRef(isControlled ? { x: controlledPanX ?? 0, y: controlledPanY ?? 0 } : localPan);
+  const panRef = useRef(
+    isControlled ? { x: controlledPanX ?? 0, y: controlledPanY ?? 0 } : localPan
+  );
   const isControlledRef = useRef(isControlled);
   const onViewportChangeRef = useRef(onViewportChange);
 
@@ -102,26 +109,41 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   }, [isControlled, controlledZoom, localZoom, zoom]);
 
   // Stable setters that use refs (avoids stale closure issues)
-  const setZoom = useCallback((newZoom: number | ((prev: number) => number)) => {
-    const currentZoom = zoomRef.current;
-    const value = typeof newZoom === "function" ? newZoom(currentZoom) : newZoom;
-    console.log("[AdvancedRegionSelector] setZoom called:", { currentZoom, newValue: value, isControlled: isControlledRef.current });
-    if (isControlledRef.current && onViewportChangeRef.current) {
-      onViewportChangeRef.current({ zoom: value });
-    } else {
-      setLocalZoom(value);
-    }
-  }, []); // No dependencies - uses refs
+  const setZoom = useCallback(
+    (newZoom: number | ((prev: number) => number)) => {
+      const currentZoom = zoomRef.current;
+      const value =
+        typeof newZoom === "function" ? newZoom(currentZoom) : newZoom;
+      console.log("[AdvancedRegionSelector] setZoom called:", {
+        currentZoom,
+        newValue: value,
+        isControlled: isControlledRef.current,
+      });
+      if (isControlledRef.current && onViewportChangeRef.current) {
+        onViewportChangeRef.current({ zoom: value });
+      } else {
+        setLocalZoom(value);
+      }
+    },
+    []
+  ); // No dependencies - uses refs
 
-  const setPan = useCallback((newPan: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => {
-    const currentPan = panRef.current;
-    const value = typeof newPan === "function" ? newPan(currentPan) : newPan;
-    if (isControlledRef.current && onViewportChangeRef.current) {
-      onViewportChangeRef.current({ panX: value.x, panY: value.y });
-    } else {
-      setLocalPan(value);
-    }
-  }, []); // No dependencies - uses refs
+  const setPan = useCallback(
+    (
+      newPan:
+        | { x: number; y: number }
+        | ((prev: { x: number; y: number }) => { x: number; y: number })
+    ) => {
+      const currentPan = panRef.current;
+      const value = typeof newPan === "function" ? newPan(currentPan) : newPan;
+      if (isControlledRef.current && onViewportChangeRef.current) {
+        onViewportChangeRef.current({ panX: value.x, panY: value.y });
+      } else {
+        setLocalPan(value);
+      }
+    },
+    []
+  ); // No dependencies - uses refs
 
   // Interaction state
   const [isDrawing, setIsDrawing] = useState(false);
@@ -642,17 +664,27 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     setDragStart(null);
   };
 
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const currentZoom = zoomRef.current;
-    const newZoom = Math.min(Math.max(0.1, currentZoom * delta), 5);
-    console.log("[AdvancedRegionSelector] handleWheel:", { currentZoom, delta, newZoom });
-    setZoom(newZoom);
-  }, [setZoom]);
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLCanvasElement>) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const currentZoom = zoomRef.current;
+      const newZoom = Math.min(Math.max(0.1, currentZoom * delta), 5);
+      console.log("[AdvancedRegionSelector] handleWheel:", {
+        currentZoom,
+        delta,
+        newZoom,
+      });
+      setZoom(newZoom);
+    },
+    [setZoom]
+  );
 
   const resetView = useCallback(() => {
-    console.log("[AdvancedRegionSelector] resetView called, isControlled:", isControlledRef.current);
+    console.log(
+      "[AdvancedRegionSelector] resetView called, isControlled:",
+      isControlledRef.current
+    );
     if (isControlledRef.current && onViewportChangeRef.current) {
       onViewportChangeRef.current({ zoom: 1, panX: 0, panY: 0 });
     } else {

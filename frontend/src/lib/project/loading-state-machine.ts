@@ -134,7 +134,10 @@ class LoadingStateMachine {
         break;
 
       case "VALIDATED":
-        if (event.previousProjectId && event.previousProjectId !== event.projectId) {
+        if (
+          event.previousProjectId &&
+          event.previousProjectId !== event.projectId
+        ) {
           if (this.canTransition("saving-current")) {
             this.transition("saving-current", {
               previousProjectId: event.previousProjectId,
@@ -172,7 +175,10 @@ class LoadingStateMachine {
         break;
 
       case "RETRY":
-        if (this.context.state === "error" && this.canTransition("validating")) {
+        if (
+          this.context.state === "error" &&
+          this.canTransition("validating")
+        ) {
           this.transition("validating", {
             retryCount: this.context.retryCount + 1,
             error: null,

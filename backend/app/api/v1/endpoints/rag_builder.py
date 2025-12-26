@@ -730,10 +730,22 @@ async def receive_embedding_results(
         image_width = image_data.get("width", 0)
         image_height = image_data.get("height", 0)
 
-        # Get actual S3 storage path from image data
+        # Get image storage path - prefer S3 keys
+        # Data URLs are too long for the VARCHAR(500) column and aren't useful as paths
         image_storage_path = image_data.get("s3_key") or image_data.get("s3Key")
+
+        # If no S3 key, check for non-data URL paths
         if not image_storage_path:
-            # Fallback: try to find in storage_usage or skip this embedding
+            url = image_data.get("url", "")
+            if url and not url.startswith("data:"):
+                # It's a file path or regular URL, use it
+                image_storage_path = url
+            elif url.startswith("data:"):
+                # Data URL - store a reference instead of the full base64
+                # Use image_id as a placeholder since data is stored inline in config
+                image_storage_path = f"inline:{image_id}"
+
+        if not image_storage_path:
             logger.warning(
                 "embedding_missing_storage_path",
                 project_id=str(project_id),

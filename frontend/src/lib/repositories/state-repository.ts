@@ -21,7 +21,10 @@ class StateRepositoryImpl extends BaseRepository<StateWithProject> {
   /**
    * Update a state with a new ID (for ID change operations)
    */
-  async updateWithIdChange(oldId: string, newState: StateWithProject): Promise<void> {
+  async updateWithIdChange(
+    oldId: string,
+    newState: StateWithProject
+  ): Promise<void> {
     // Delete the old state and add the new one with the new ID
     await this.delete(oldId);
     await this.add(newState);

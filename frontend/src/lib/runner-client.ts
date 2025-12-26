@@ -60,6 +60,52 @@ export interface RunnerErrorResponse {
   details?: string;
 }
 
+/**
+ * Request to start web extraction
+ */
+export interface StartExtractionRequest {
+  urls: string[];
+  viewports: [number, number][];
+  capture_hover_states: boolean;
+  capture_focus_states: boolean;
+  max_depth: number;
+  max_pages: number;
+  session_id?: string;
+  backend_url?: string;
+  auth_token?: string; // Auth token for backend API calls
+}
+
+/**
+ * Response from extraction start
+ */
+export interface ExtractionStartResponse {
+  success: boolean;
+  data?: {
+    extraction_id?: string;
+    success?: boolean;
+    error?: string;
+  };
+  error?: string;
+}
+
+/**
+ * Response from extraction status
+ */
+export interface ExtractionStatusResponse {
+  success: boolean;
+  data?: {
+    is_running: boolean;
+    extraction_id?: string;
+    stats?: {
+      states_found: number;
+      transitions_found: number;
+      pages_extracted: number;
+      errors: number;
+    };
+  };
+  error?: string;
+}
+
 class RunnerClient {
   private baseUrl: string;
 
@@ -138,6 +184,110 @@ class RunnerClient {
     }
 
     return response.json();
+  }
+
+  /**
+   * Start web extraction on the runner
+   */
+  async startExtraction(
+    request: StartExtractionRequest
+  ): Promise<ExtractionStartResponse> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    try {
+      const response = await fetch(`${this.baseUrl}/extraction/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `Failed to start extraction: ${response.status} - ${errorText}`,
+        };
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to start extraction",
+      };
+    }
+  }
+
+  /**
+   * Stop web extraction on the runner
+   */
+  async stopExtraction(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/extraction/stop`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `Failed to stop extraction: ${response.status} - ${errorText}`,
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to stop extraction",
+      };
+    }
+  }
+
+  /**
+   * Get extraction status from the runner
+   */
+  async getExtractionStatus(): Promise<ExtractionStatusResponse> {
+    try {
+      const response = await fetch(`${this.baseUrl}/extraction/status`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `Failed to get extraction status: ${response.status} - ${errorText}`,
+        };
+      }
+
+      return response.json();
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get extraction status",
+      };
+    }
   }
 }
 

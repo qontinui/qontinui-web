@@ -45,7 +45,10 @@ export const createImageSlice: StateCreator<
         ...image,
         projectName: image.projectName || state.projectName,
       });
-      console.log("[ImageSlice] addImage complete - new images count:", state.images.length);
+      console.log(
+        "[ImageSlice] addImage complete - new images count:",
+        state.images.length
+      );
     });
     get().triggerSave();
   },

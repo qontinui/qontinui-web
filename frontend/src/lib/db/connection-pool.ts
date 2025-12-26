@@ -79,22 +79,30 @@ export const DATABASE_CONFIGS = {
       {
         name: "workflows",
         keyPath: "id",
-        indexes: [{ name: "projectName", keyPath: "projectName", unique: false }],
+        indexes: [
+          { name: "projectName", keyPath: "projectName", unique: false },
+        ],
       },
       {
         name: "states",
         keyPath: "id",
-        indexes: [{ name: "projectName", keyPath: "projectName", unique: false }],
+        indexes: [
+          { name: "projectName", keyPath: "projectName", unique: false },
+        ],
       },
       {
         name: "transitions",
         keyPath: "id",
-        indexes: [{ name: "projectName", keyPath: "projectName", unique: false }],
+        indexes: [
+          { name: "projectName", keyPath: "projectName", unique: false },
+        ],
       },
       {
         name: "images",
         keyPath: "id",
-        indexes: [{ name: "projectName", keyPath: "projectName", unique: false }],
+        indexes: [
+          { name: "projectName", keyPath: "projectName", unique: false },
+        ],
       },
     ],
   },
@@ -202,7 +210,8 @@ class ConnectionPoolImpl {
       state.lastError = null;
       return db;
     } catch (error) {
-      state.lastError = error instanceof Error ? error : new Error(String(error));
+      state.lastError =
+        error instanceof Error ? error : new Error(String(error));
       throw error;
     } finally {
       state.connecting = false;
@@ -378,8 +387,18 @@ class ConnectionPoolImpl {
   /**
    * Get connection status for all databases
    */
-  getStatus(): Record<string, { connected: boolean; connectedAt: number | null; lastError: string | null }> {
-    const status: Record<string, { connected: boolean; connectedAt: number | null; lastError: string | null }> = {};
+  getStatus(): Record<
+    string,
+    { connected: boolean; connectedAt: number | null; lastError: string | null }
+  > {
+    const status: Record<
+      string,
+      {
+        connected: boolean;
+        connectedAt: number | null;
+        lastError: string | null;
+      }
+    > = {};
 
     for (const [name, state] of this.connections) {
       status[name] = {
@@ -408,9 +427,13 @@ class ConnectionPoolImpl {
   private performHealthCheck(): void {
     for (const [name, state] of this.connections) {
       if (state.db && this.isConnectionClosed(state.db)) {
-        projectLogger.warn("ConnectionPool", "Health check: connection closed", {
-          database: name,
-        });
+        projectLogger.warn(
+          "ConnectionPool",
+          "Health check: connection closed",
+          {
+            database: name,
+          }
+        );
         state.db = null;
         state.promise = null;
       }

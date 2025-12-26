@@ -108,6 +108,7 @@ class ExecutionIssue(Base):
             ExecutionIssueType,
             name="execution_issue_type",
             create_type=False,
+            values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
         index=True,
@@ -118,6 +119,7 @@ class ExecutionIssue(Base):
             ExecutionIssueSeverity,
             name="execution_issue_severity",
             create_type=False,
+            values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
         index=True,
@@ -128,6 +130,7 @@ class ExecutionIssue(Base):
             ExecutionIssueStatus,
             name="execution_issue_status",
             create_type=False,
+            values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
         default=ExecutionIssueStatus.OPEN,
@@ -139,6 +142,7 @@ class ExecutionIssue(Base):
             ExecutionIssueSource,
             name="execution_issue_source",
             create_type=False,
+            values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
         index=True,
@@ -230,4 +234,5 @@ class ExecutionIssue(Base):
     assigned_to = relationship("User", back_populates="assigned_execution_issues")
 
     def __repr__(self) -> str:
+        """Return string representation of ExecutionIssue."""
         return f"<ExecutionIssue(id={self.id}, type='{self.issue_type}', severity='{self.severity}')>"

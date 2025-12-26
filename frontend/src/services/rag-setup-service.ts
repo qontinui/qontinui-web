@@ -208,16 +208,36 @@ export class RAGSetupService {
       patternCount,
     });
 
-    const response = await fetch(`${this.runnerUrl}/rag/import`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        config,
-        project_id: projectId,
-      }),
-    });
+    let response: Response;
+    try {
+      // Use a 60 second timeout for large configs with embedded images
+      response = await fetch(`${this.runnerUrl}/rag/import`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          config,
+          project_id: projectId,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+    } catch (error) {
+      // Network errors (connection refused, timeout, etc.)
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error("[RAG] Failed to connect to runner:", errorMessage);
+
+      // Provide helpful error message based on error type
+      if (errorMessage.includes("abort") || errorMessage.includes("timeout")) {
+        throw new Error(
+          `Request timed out. The config may be too large or the runner is busy.`
+        );
+      }
+      throw new Error(
+        `Runner not responding. Please ensure qontinui-runner is running on ${this.runnerUrl}`
+      );
+    }
 
     if (!response.ok) {
       const errorText = await response.text();

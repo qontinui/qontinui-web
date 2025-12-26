@@ -43,7 +43,6 @@ export function createPageStateHook<T>(
         hasHydrated.current = true;
         storeRef.current.hydrate(projectName, user.id);
       }
-
     }, [user?.id, projectName]); // Don't depend on store to avoid infinite loops
 
     // Persist on unmount

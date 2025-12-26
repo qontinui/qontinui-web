@@ -11,7 +11,10 @@ import {
   ScreenshotPicker,
   type CapturedScreenshot,
 } from "@/components/common/ScreenshotPicker";
-import type { ScreenshotData, CompositeScreenshotData } from "@/hooks/use-image-extraction";
+import type {
+  ScreenshotData,
+  CompositeScreenshotData,
+} from "@/hooks/use-image-extraction";
 
 interface ScreenshotPanelProps {
   currentScreenshot: ScreenshotData | null;
@@ -19,7 +22,9 @@ interface ScreenshotPanelProps {
   isCompositeMode: boolean;
   selectedRegion: { width: number; height: number } | null;
   onUploadScreenshot: (file: File) => Promise<void>;
-  onCaptureMultipleScreenshots: (screenshots: CapturedScreenshot[]) => Promise<void>;
+  onCaptureMultipleScreenshots: (
+    screenshots: CapturedScreenshot[]
+  ) => Promise<void>;
   onClearAll: () => void;
   onSelectScreenshot?: (screenshot: ScreenshotData) => void;
 }

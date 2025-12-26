@@ -16,7 +16,12 @@ import { useEffect, useState, Suspense, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useAutomation } from "@/contexts/automation-context";
-import { workflowRepository, stateRepository, transitionRepository, imageRepository } from "@/lib/repositories";
+import {
+  workflowRepository,
+  stateRepository,
+  transitionRepository,
+  imageRepository,
+} from "@/lib/repositories";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import type {
   State,
@@ -120,12 +125,18 @@ export default function WorkflowVisualizationPage() {
   const [isLiveMode, setIsLiveMode] = useState(false);
 
   // Canvas mode: "perception" shows only found images, "config" shows all configured positions
-  const [canvasMode, setCanvasMode] = useState<"perception" | "config">("perception");
+  const [canvasMode, setCanvasMode] = useState<"perception" | "config">(
+    "perception"
+  );
 
   // Historical playback state
   const [testRuns, setTestRuns] = useState<TestRunSummary[]>([]);
-  const [selectedTestRunId, setSelectedTestRunId] = useState<string | null>(null);
-  const [historicalResults, setHistoricalResults] = useState<HistoricalResult[]>([]);
+  const [selectedTestRunId, setSelectedTestRunId] = useState<string | null>(
+    null
+  );
+  const [historicalResults, setHistoricalResults] = useState<
+    HistoricalResult[]
+  >([]);
   const [loadingTestRuns, setLoadingTestRuns] = useState(false);
   const [loadingHistoricalData, setLoadingHistoricalData] = useState(false);
 
@@ -237,7 +248,10 @@ export default function WorkflowVisualizationPage() {
         { credentials: "include" }
       );
       if (!res.ok) throw new Error("Failed to fetch test runs");
-      const data = await res.json() as { runs: TestRunSummary[]; total: number };
+      const data = (await res.json()) as {
+        runs: TestRunSummary[];
+        total: number;
+      };
       setTestRuns(data.runs || []);
     } catch (error) {
       console.error("Failed to fetch test runs:", error);
@@ -269,7 +283,7 @@ export default function WorkflowVisualizationPage() {
           { credentials: "include" }
         );
         if (!res.ok) throw new Error("Failed to fetch historical results");
-        const data = await res.json() as {
+        const data = (await res.json()) as {
           test_run_id: string;
           total_results: number;
           results: HistoricalResult[];
@@ -296,11 +310,22 @@ export default function WorkflowVisualizationPage() {
 
     const foundMap = new Map<
       string,
-      { x: number; y: number; width: number; height: number; confidence: number; found: boolean }
+      {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        confidence: number;
+        found: boolean;
+      }
     >();
 
     for (const result of historicalResults) {
-      if (result.pattern_id && result.match_x != null && result.match_y != null) {
+      if (
+        result.pattern_id &&
+        result.match_x != null &&
+        result.match_y != null
+      ) {
         foundMap.set(result.pattern_id, {
           x: result.match_x,
           y: result.match_y,
@@ -562,7 +587,9 @@ export default function WorkflowVisualizationPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span className="flex items-center gap-2">
-                      <span className="bg-muted px-2 py-0.5 rounded text-sm font-medium">Workflow</span>
+                      <span className="bg-muted px-2 py-0.5 rounded text-sm font-medium">
+                        Workflow
+                      </span>
                       {selectedWorkflow.name}
                     </span>
                     <Badge
@@ -681,22 +708,26 @@ export default function WorkflowVisualizationPage() {
                     ) : (
                       <div className="flex items-center gap-3">
                         <History className="h-3 w-3 text-purple-600" />
-                        <span className="text-purple-600">Historical Playback</span>
+                        <span className="text-purple-600">
+                          Historical Playback
+                        </span>
                         {loadingTestRuns ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
                           <Select
                             value={selectedTestRunId || ""}
-                            onValueChange={(value) => setSelectedTestRunId(value || null)}
+                            onValueChange={(value) =>
+                              setSelectedTestRunId(value || null)
+                            }
                           >
                             <SelectTrigger className="h-7 w-[250px] text-xs">
                               <SelectValue placeholder="Select a test run..." />
                             </SelectTrigger>
                             <SelectContent>
                               {testRuns.length === 0 ? (
-                                <SelectItem value="" disabled>
+                                <div className="px-2 py-1.5 text-xs text-muted-foreground">
                                   No test runs available
-                                </SelectItem>
+                                </div>
                               ) : (
                                 testRuns.map((run) => (
                                   <SelectItem key={run.id} value={run.id}>
@@ -706,15 +737,17 @@ export default function WorkflowVisualizationPage() {
                                           run.status === "completed"
                                             ? "default"
                                             : run.status === "failed"
-                                            ? "destructive"
-                                            : "secondary"
+                                              ? "destructive"
+                                              : "secondary"
                                         }
                                         className="text-[10px] px-1 py-0"
                                       >
                                         {run.status}
                                       </Badge>
                                       <span className="truncate">
-                                        {new Date(run.started_at).toLocaleDateString()}{" "}
+                                        {new Date(
+                                          run.started_at
+                                        ).toLocaleDateString()}{" "}
                                         {run.workflow_name || run.run_name}
                                       </span>
                                     </span>
@@ -746,15 +779,15 @@ export default function WorkflowVisualizationPage() {
                       isLiveMode
                         ? liveActiveStateIds
                         : canvasMode === "perception" && selectedTestRunId
-                        ? historicalActiveStateIds
-                        : activeStateIds
+                          ? historicalActiveStateIds
+                          : activeStateIds
                     }
                     foundImages={
                       isLiveMode
                         ? imageRecognitions
                         : canvasMode === "perception" && selectedTestRunId
-                        ? historicalFoundImages
-                        : undefined
+                          ? historicalFoundImages
+                          : undefined
                     }
                     connectionState={isLiveMode ? connectionState : undefined}
                   />

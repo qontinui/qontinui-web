@@ -66,19 +66,24 @@ async def check_project_access(
 
 def embedding_to_item(emb: Any) -> EmbeddingItem:
     """Convert ProjectEmbedding model to EmbeddingItem schema."""
-    # Generate presigned URL for the image
+    # Generate presigned URL for the image or use data URL directly
     image_url = None
     if emb.image_storage_path:
-        try:
-            image_url = object_storage.generate_presigned_url(
-                emb.image_storage_path, expiration=PRESIGNED_URL_EXPIRATION
-            )
-        except Exception as e:
-            logger.warning(
-                "failed_to_generate_presigned_url",
-                image_storage_path=emb.image_storage_path,
-                error=str(e),
-            )
+        # Check if it's a data URL (local storage) - use directly
+        if emb.image_storage_path.startswith("data:"):
+            image_url = emb.image_storage_path
+        else:
+            # S3/MinIO path - generate presigned URL
+            try:
+                image_url = object_storage.generate_presigned_url(
+                    emb.image_storage_path, expiration=PRESIGNED_URL_EXPIRATION
+                )
+            except Exception as e:
+                logger.warning(
+                    "failed_to_generate_presigned_url",
+                    image_storage_path=emb.image_storage_path,
+                    error=str(e),
+                )
 
     return EmbeddingItem(
         id=emb.id,

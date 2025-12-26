@@ -646,8 +646,75 @@ function getActionSummary(
     case "CLICK": {
       const mouseButton = config.mouseButton as string | undefined;
       const button = mouseButton?.toLowerCase() || "left";
-      const clickTarget = config.target as string | undefined;
-      // Handle StateImage target - show image names instead of "StateImage"
+      const clickTarget = config.target as
+        | string
+        | { type?: string; imageId?: string; imageIds?: string[] }
+        | undefined;
+
+      // Helper to get image name by ID
+      const getImageName = (imgId: string): string | null => {
+        // Look for StateImage across all states
+        for (const state of states) {
+          const stateImage = state.stateImages?.find((si) => si.id === imgId);
+          if (stateImage) {
+            return stateImage.name.replace(
+              /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+              ""
+            );
+          }
+        }
+        // Fall back to image library
+        const image = images.find((img) => img.id === imgId);
+        if (image) {
+          return image.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "");
+        }
+        return null;
+      };
+
+      // Handle object target format: { type: "StateImage" | "image", imageId?: string, imageIds?: string[] }
+      if (clickTarget && typeof clickTarget === "object") {
+        const targetObj = clickTarget;
+        const targetType = targetObj.type;
+
+        if (targetType === "StateImage" || targetType === "image") {
+          // Single imageId
+          if (targetObj.imageId) {
+            const name = getImageName(targetObj.imageId);
+            if (name) {
+              return `${button} click on ${name}`;
+            }
+            return `${button} click on image`;
+          }
+          // Multiple imageIds
+          if (targetObj.imageIds && targetObj.imageIds.length > 0) {
+            const names = targetObj.imageIds
+              .map((id) => getImageName(id))
+              .filter((n): n is string => n !== null);
+            if (names.length === 1) {
+              return `${button} click on ${names[0]}`;
+            } else if (names.length > 1) {
+              return `${button} click on ${names[0]} +${names.length - 1} more`;
+            }
+            return `${button} click on image`;
+          }
+          return `${button} click on StateImage (no image selected)`;
+        }
+
+        if (targetType === "lastFindResult") {
+          return `${button} click on last find result`;
+        }
+        if (targetType === "currentPosition") {
+          return `${button} click at current position`;
+        }
+        if (targetType === "coordinates") {
+          return `${button} click at coordinates`;
+        }
+
+        // Unknown object type
+        return `${button} click on ${targetType || "target"}`;
+      }
+
+      // Handle legacy string target format: "StateImage"
       if (clickTarget === "StateImage") {
         const clickImageIds = config.imageIds as string[] | undefined;
         if (
@@ -657,30 +724,9 @@ function getActionSummary(
         ) {
           const names: string[] = [];
           for (const id of clickImageIds) {
-            // Look for StateImage across all states
-            let found = false;
-            for (const state of states) {
-              const stateImage = state.stateImages?.find((si) => si.id === id);
-              if (stateImage) {
-                const nameWithoutExtension = stateImage.name.replace(
-                  /\.(png|jpg|jpeg|gif|webp|svg)$/i,
-                  ""
-                );
-                names.push(nameWithoutExtension);
-                found = true;
-                break;
-              }
-            }
-            if (!found) {
-              // Fall back to image library
-              const image = images.find((img) => img.id === id);
-              if (image) {
-                const nameWithoutExtension = image.name.replace(
-                  /\.(png|jpg|jpeg|gif|webp|svg)$/i,
-                  ""
-                );
-                names.push(nameWithoutExtension);
-              }
+            const name = getImageName(id);
+            if (name) {
+              names.push(name);
             }
           }
           if (names.length === 1) {
@@ -691,7 +737,13 @@ function getActionSummary(
         }
         return `${button} click on StateImage (no image selected)`;
       }
-      return `${button} click on ${clickTarget || "target"}`;
+
+      // Handle other string targets
+      if (typeof clickTarget === "string") {
+        return `${button} click on ${clickTarget}`;
+      }
+
+      return `${button} click on target`;
     }
     case "DOUBLE_CLICK":
       return `Double click on ${(config.target as string | undefined) || "Last Find Result"}`;

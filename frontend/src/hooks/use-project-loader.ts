@@ -111,7 +111,10 @@ export function useProjectLoader(): UseProjectLoaderResult {
   return {
     projectId: loader.getLoadedProjectId(),
     projectIdFromUrl,
-    isLoading: loadingContext.state !== "idle" && loadingContext.state !== "loaded" && loadingContext.state !== "error",
+    isLoading:
+      loadingContext.state !== "idle" &&
+      loadingContext.state !== "loaded" &&
+      loadingContext.state !== "error",
     error: loadingContext.error,
     reloadProject,
     loadingContext,

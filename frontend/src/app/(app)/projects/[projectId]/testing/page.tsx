@@ -16,6 +16,7 @@ import {
   PlayCircle,
   Activity,
   ArrowLeft,
+  FlaskConical,
 } from "lucide-react";
 
 export default function ProjectTestingDashboard() {
@@ -88,6 +89,17 @@ export default function ProjectTestingDashboard() {
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Deficiencies
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                router.push(`/projects/${projectId}/testing/integration`)
+              }
+              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+            >
+              <FlaskConical className="w-4 h-4 mr-2" />
+              Integration Tests
             </Button>
           </div>
         </div>

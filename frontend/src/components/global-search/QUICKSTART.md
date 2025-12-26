@@ -91,7 +91,12 @@ Create a hook to load data into the search index:
 // hooks/useSearchIndex.ts
 import { useEffect } from "react";
 import { globalSearchService } from "@/services/global-search-service";
-import { workflowRepository, stateRepository, imageRepository, transitionRepository } from "@/lib/repositories";
+import {
+  workflowRepository,
+  stateRepository,
+  imageRepository,
+  transitionRepository,
+} from "@/lib/repositories";
 
 export function useSearchIndex() {
   useEffect(() => {

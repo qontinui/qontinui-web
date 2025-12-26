@@ -65,7 +65,12 @@ export function useImageExtraction() {
 
   // Debug log viewport changes
   useEffect(() => {
-    console.log("[useImageExtraction] viewport changed:", viewport, "isHydrated:", _isHydrated);
+    console.log(
+      "[useImageExtraction] viewport changed:",
+      viewport,
+      "isHydrated:",
+      _isHydrated
+    );
   }, [viewport, _isHydrated]);
 
   // Get store actions
@@ -185,7 +190,11 @@ export function useImageExtraction() {
    * Extract the selected region with current settings
    */
   const handleExtract = useCallback(async () => {
-    if (!selectedRegion || selectedRegion.width <= 0 || selectedRegion.height <= 0) {
+    if (
+      !selectedRegion ||
+      selectedRegion.width <= 0 ||
+      selectedRegion.height <= 0
+    ) {
       throw new Error("No valid region selected");
     }
 
@@ -193,14 +202,13 @@ export function useImageExtraction() {
 
     if (isCompositeMode && compositeScreenshots.length > 0) {
       // Create composite image first
-      const compositeInput: CompositeScreenshotInput[] = compositeScreenshots.map(
-        (s) => ({
+      const compositeInput: CompositeScreenshotInput[] =
+        compositeScreenshots.map((s) => ({
           id: s.id,
           name: s.name,
           dataUrl: s.dataUrl,
           monitor: s.monitor,
-        })
-      );
+        }));
       const compositeResult = await createCompositeImage(compositeInput);
       sourceImageDataUrl = compositeResult.dataUrl;
     } else if (currentScreenshot) {
@@ -210,10 +218,14 @@ export function useImageExtraction() {
     }
 
     // Extract the region
-    const result = await extractFromScreenshot(sourceImageDataUrl, selectedRegion, {
-      processingMode,
-      tolerance,
-    });
+    const result = await extractFromScreenshot(
+      sourceImageDataUrl,
+      selectedRegion,
+      {
+        processingMode,
+        tolerance,
+      }
+    );
 
     setExtractedResult({
       croppedImage: result.croppedImage,
@@ -235,7 +247,9 @@ export function useImageExtraction() {
   // ===== Computed Values =====
 
   const hasScreenshot = useMemo(
-    () => currentScreenshot !== null || (isCompositeMode && compositeScreenshots.length > 0),
+    () =>
+      currentScreenshot !== null ||
+      (isCompositeMode && compositeScreenshots.length > 0),
     [currentScreenshot, isCompositeMode, compositeScreenshots.length]
   );
 

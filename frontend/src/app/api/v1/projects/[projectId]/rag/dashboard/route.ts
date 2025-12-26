@@ -49,7 +49,10 @@ export async function GET(
       },
     });
 
-    console.log("[RAG Dashboard Route] Backend response status:", response.status);
+    console.log(
+      "[RAG Dashboard Route] Backend response status:",
+      response.status
+    );
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });

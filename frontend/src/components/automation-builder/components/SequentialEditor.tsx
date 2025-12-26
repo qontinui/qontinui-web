@@ -664,27 +664,78 @@ function getActionSummary(
     case "CLICK": {
       const clickConfig = config as {
         mouseButton?: string;
-        target?: string;
+        target?:
+          | string
+          | { type?: string; imageId?: string; imageIds?: string[] };
         stateId?: string;
         imageIds?: string[];
       };
       const button = clickConfig.mouseButton?.toLowerCase() || "left";
 
-      // Handle StateImage target
+      // Helper to get image name by ID
+      const getImageName = (imgId: string): string | null => {
+        for (const s of states) {
+          const img = s.stateImages?.find((si) => si.id === imgId);
+          if (img) {
+            return img.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "");
+          }
+        }
+        return null;
+      };
+
+      // Handle object target format: { type: "StateImage" | "image", imageId?: string, imageIds?: string[] }
+      if (clickConfig.target && typeof clickConfig.target === "object") {
+        const targetObj = clickConfig.target;
+        const targetType = targetObj.type;
+
+        if (targetType === "StateImage" || targetType === "image") {
+          // Single imageId
+          if (targetObj.imageId) {
+            const name = getImageName(targetObj.imageId);
+            if (name) {
+              return `${button} click on ${name}`;
+            }
+            return `${button} click on image`;
+          }
+          // Multiple imageIds
+          if (targetObj.imageIds && targetObj.imageIds.length > 0) {
+            const names = targetObj.imageIds
+              .map((id) => getImageName(id))
+              .filter((n): n is string => n !== null);
+            if (names.length === 1) {
+              return `${button} click on ${names[0]}`;
+            } else if (names.length > 1) {
+              return `${button} click on ${names[0]} +${names.length - 1} more`;
+            }
+            return `${button} click on image`;
+          }
+          return `${button} click on StateImage (no image selected)`;
+        }
+
+        if (targetType === "lastFindResult") {
+          return `${button} click on last find result`;
+        }
+        if (targetType === "currentPosition") {
+          return `${button} click at current position`;
+        }
+        if (targetType === "coordinates") {
+          return `${button} click at coordinates`;
+        }
+
+        // Unknown object type - stringify for debugging
+        return `${button} click on ${targetType || "target"}`;
+      }
+
+      // Handle legacy string target format: "StateImage"
       if (clickConfig.target === "StateImage") {
         // Check imageIds first (new flow without requiring stateId)
         if (clickConfig.imageIds && clickConfig.imageIds.length > 0) {
           // Get image names from all states
           const names: string[] = [];
           for (const imgId of clickConfig.imageIds) {
-            for (const s of states) {
-              const img = s.stateImages?.find((si) => si.id === imgId);
-              if (img) {
-                names.push(
-                  img.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
-                );
-                break;
-              }
+            const name = getImageName(imgId);
+            if (name) {
+              names.push(name);
             }
           }
 
@@ -705,7 +756,12 @@ function getActionSummary(
         return `${button} click on StateImage (no image selected)`;
       }
 
-      return `${button} click on ${clickConfig.target || "target"}`;
+      // Handle other string targets
+      if (typeof clickConfig.target === "string") {
+        return `${button} click on ${clickConfig.target}`;
+      }
+
+      return `${button} click on target`;
     }
     case "TYPE": {
       const typeConfig = config as {

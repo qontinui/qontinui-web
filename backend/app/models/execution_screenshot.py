@@ -73,6 +73,7 @@ class ExecutionScreenshot(Base):
             ExecutionScreenshotType,
             name="execution_screenshot_type",
             create_type=False,
+            values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
         index=True,

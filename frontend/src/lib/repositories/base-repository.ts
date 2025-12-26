@@ -35,9 +35,9 @@ export interface Repository<T extends Entity> {
 /**
  * Base repository providing generic CRUD operations
  */
-export abstract class BaseRepository<T extends Entity>
-  implements Repository<T>
-{
+export abstract class BaseRepository<
+  T extends Entity,
+> implements Repository<T> {
   protected abstract readonly storeName: string;
 
   protected async getDB(): Promise<IDBDatabase> {

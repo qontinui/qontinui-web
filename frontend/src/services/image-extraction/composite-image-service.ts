@@ -43,7 +43,9 @@ export interface CompositeImageResult {
 /**
  * Calculate the bounding box for all monitors
  */
-export function calculateCompositeBounds(screenshots: CompositeScreenshotInput[]): {
+export function calculateCompositeBounds(
+  screenshots: CompositeScreenshotInput[]
+): {
   minX: number;
   minY: number;
   maxX: number;
@@ -247,9 +249,10 @@ export async function getPixelFromComposite(
 /**
  * Check if all screenshots in the array have valid data URLs
  */
-export function validateScreenshots(
-  screenshots: CompositeScreenshotInput[]
-): { valid: boolean; invalidIds: string[] } {
+export function validateScreenshots(screenshots: CompositeScreenshotInput[]): {
+  valid: boolean;
+  invalidIds: string[];
+} {
   const invalidIds: string[] = [];
 
   for (const screenshot of screenshots) {

@@ -55,6 +55,7 @@ import { useAutomationStore } from "@/stores/automation";
 import { useProjects, useCreateProject } from "@/hooks/use-projects";
 import { toast } from "sonner";
 import { ConfigImporter } from "@/lib/config-importer";
+import { getProjectLoader } from "@/lib/project";
 import {
   Tooltip,
   TooltipContent,
@@ -283,7 +284,7 @@ const navItems: NavItem[] = [
         description: "Test RAG element matching with SAM3/CLIP",
         icon: <Target size={22} />,
         route: "/automation-builder/rag-testing",
-        color: "#9B59B6",
+        color: "#FF6B6B",
         badge: "beta",
       },
 
@@ -363,13 +364,6 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    id: "issues",
-    label: "Issues",
-    icon: <AlertCircle size={28} />,
-    route: "/issues",
-    color: "#EF4444",
-  },
-  {
     id: "project-tools",
     label: "Project Tools",
     icon: <Box size={28} />,
@@ -406,6 +400,14 @@ const navItems: NavItem[] = [
         description: "Performance metrics and insights",
         icon: <BarChart3 size={22} />,
         route: "/automation-builder/analytics",
+        color: "#00D9FF",
+      },
+      {
+        id: "issues",
+        label: "Issues",
+        description: "Track and manage project issues",
+        icon: <AlertCircle size={22} />,
+        route: "/issues",
         color: "#00D9FF",
       },
     ],
@@ -655,8 +657,20 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   // Find the current project from the projects list
   const currentProject = projects.find((p) => p.id === projectId) ?? null;
 
-  // Handle project selection - updates context only, no navigation
-  const handleProjectChange = (newProjectId: string) => {
+  // Handle project selection - loads project data and updates context
+  const handleProjectChange = async (newProjectId: string) => {
+    // Load project data from backend/IndexedDB
+    // This hydrates the Zustand store with workflows, states, transitions, images, etc.
+    const loader = getProjectLoader();
+    const success = await loader.load(newProjectId, {
+      currentProjectId: contextProjectId,
+    });
+
+    if (!success) {
+      toast.error("Failed to load project");
+      return;
+    }
+
     // IMPORTANT: Set both projectId AND projectName to ensure data isolation
     // The projectName is used by IndexedDB to filter states/workflows by project
     const newProject = projects.find((p) => p.id === newProjectId);

@@ -387,9 +387,13 @@ export function ItemMetadataPanel({
                 <span className="text-sm font-medium text-gray-300">
                   Initial States
                 </span>
-                {initialStateIds.length > 0 && (
-                  <span className="text-xs text-[#00FF88] bg-[#00FF88]/10 px-1.5 py-0.5 rounded">
-                    {initialStateIds.length} selected
+                {initialStateIds.length > 0 ? (
+                  <span className="text-xs text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                    {initialStateIds.length} custom
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">
+                    {states.filter((s) => s.initial).length} defaults
                   </span>
                 )}
               </div>
@@ -401,9 +405,48 @@ export function ItemMetadataPanel({
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-2">
               <div className="bg-gray-900/30 border border-gray-800 rounded-lg p-3">
+                {/* Inheritance indicator */}
+                {initialStateIds.length === 0 ? (
+                  <div className="flex items-center gap-2 text-xs text-gray-400 mb-3 p-2 bg-gray-800/50 rounded">
+                    <Play className="h-3 w-3" />
+                    <span>
+                      Using {states.filter((s) => s.initial).length} default
+                      initial states from State Machine
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 text-xs mb-3 p-2 bg-amber-500/10 border border-amber-500/30 rounded">
+                    <div className="flex items-center gap-2 text-amber-500">
+                      <AlertCircle className="h-3 w-3" />
+                      <span>
+                        Overriding defaults with {initialStateIds.length} custom
+                        state{initialStateIds.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+                      onClick={() => {
+                        onUpdate({
+                          ...item,
+                          initialStateIds: undefined,
+                          metadata: {
+                            ...item.metadata,
+                            updated: new Date().toISOString(),
+                          },
+                        } as LibraryItem);
+                      }}
+                    >
+                      Reset to defaults
+                    </Button>
+                  </div>
+                )}
+
                 <p className="text-xs text-gray-500 mb-3">
-                  Select which states should be considered active when this
-                  workflow starts. Required for model-based GUI automation.
+                  Select which states should be active when this workflow
+                  starts. States marked as &quot;Initial&quot; in the State
+                  Machine are used by default.
                 </p>
                 {states.length === 0 ? (
                   <div className="flex items-center gap-2 text-sm text-amber-500">
@@ -412,28 +455,44 @@ export function ItemMetadataPanel({
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {states.map((state) => (
-                      <label
-                        key={state.id}
-                        className="flex items-center gap-2 p-2 rounded hover:bg-gray-800/50 cursor-pointer transition-colors"
-                      >
-                        <Checkbox
-                          checked={initialStateIds.includes(state.id)}
-                          onCheckedChange={(checked) =>
-                            handleInitialStateToggle(state.id, checked === true)
-                          }
-                          className="border-gray-600 data-[state=checked]:bg-[#00FF88] data-[state=checked]:border-[#00FF88]"
-                        />
-                        <span className="text-sm text-gray-300 flex-1">
-                          {state.name}
-                        </span>
-                        {state.description && (
-                          <span className="text-xs text-gray-500 truncate max-w-[120px]">
-                            {state.description}
+                    {states.map((state) => {
+                      const isDefaultInitial = state.initial === true;
+                      const isSelected =
+                        initialStateIds.length > 0
+                          ? initialStateIds.includes(state.id)
+                          : isDefaultInitial;
+
+                      return (
+                        <label
+                          key={state.id}
+                          className="flex items-center gap-2 p-2 rounded hover:bg-gray-800/50 cursor-pointer transition-colors"
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={(checked) =>
+                              handleInitialStateToggle(
+                                state.id,
+                                checked === true
+                              )
+                            }
+                            className="border-gray-600 data-[state=checked]:bg-[#00FF88] data-[state=checked]:border-[#00FF88]"
+                          />
+                          <span className="text-sm text-gray-300 flex-1">
+                            {state.name}
                           </span>
-                        )}
-                      </label>
-                    ))}
+                          {isDefaultInitial && (
+                            <span className="text-xs text-gray-500 bg-gray-700/50 px-1.5 py-0.5 rounded">
+                              default
+                            </span>
+                          )}
+                          {state.description && (
+                            <span className="text-xs text-gray-500 truncate max-w-[100px]">
+                              {state.description}
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
                   </div>
                 )}
               </div>

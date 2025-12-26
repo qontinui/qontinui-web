@@ -1,3 +1,5 @@
+"""API v1 router configuration."""
+
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
@@ -30,7 +32,6 @@ from app.api.v1.endpoints import (
     issues,
     notifications,
     organizations,
-    pattern_optimization,
     project_files,
     project_images,
     project_screenshots,
@@ -81,7 +82,6 @@ api_router.include_router(
     tags=["integration-testing"],
 )
 api_router.include_router(snapshots.router, prefix="/snapshots", tags=["snapshots"])
-api_router.include_router(pattern_optimization.router, tags=["pattern-optimization"])
 api_router.include_router(background_removal.router, tags=["background-removal"])
 api_router.include_router(analytics.router, tags=["analytics"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])

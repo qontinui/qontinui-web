@@ -10,7 +10,11 @@ import { ImageIcon } from "lucide-react";
 import { AdvancedRegionSelector } from "@/components/pattern-optimization/AdvancedRegionSelector";
 import { CompositeScreenshotCanvas } from "../CompositeScreenshotCanvas";
 import type { Region } from "@/types/pattern-optimization";
-import type { ScreenshotData, CompositeScreenshotData, ViewportState } from "@/hooks/use-image-extraction";
+import type {
+  ScreenshotData,
+  CompositeScreenshotData,
+  ViewportState,
+} from "@/hooks/use-image-extraction";
 
 interface EditorPanelProps {
   currentScreenshot: ScreenshotData | null;
@@ -32,14 +36,20 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
   onViewportChange,
 }) => {
   // Handle region change from AdvancedRegionSelector
-  const handleRegionChange = useCallback((region: Region) => {
-    onRegionChange(region);
-  }, [onRegionChange]);
+  const handleRegionChange = useCallback(
+    (region: Region) => {
+      onRegionChange(region);
+    },
+    [onRegionChange]
+  );
 
   // Handle region change from CompositeScreenshotCanvas - memoized to prevent re-renders
-  const handleCompositeRegionChange = useCallback((region: Region) => {
-    onRegionChange(region);
-  }, [onRegionChange]);
+  const handleCompositeRegionChange = useCallback(
+    (region: Region) => {
+      onRegionChange(region);
+    },
+    [onRegionChange]
+  );
 
   // Convert composite screenshots to display format (with url instead of dataUrl)
   // Memoize to prevent unnecessary re-renders that reset zoom state

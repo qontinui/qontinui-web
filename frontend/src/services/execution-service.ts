@@ -49,7 +49,9 @@ async function fetchWithAuth<T>(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Unknown error" }));
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
     throw new Error(error.detail || `HTTP ${response.status}`);
   }
 
@@ -97,7 +99,9 @@ export async function listExecutionRuns(params: {
 /**
  * Get execution run details
  */
-export async function getExecutionRun(runId: string): Promise<ExecutionRunDetail> {
+export async function getExecutionRun(
+  runId: string
+): Promise<ExecutionRunDetail> {
   return fetchWithAuth(`/api/v1/execution/runs/${runId}`);
 }
 
@@ -195,7 +199,9 @@ export async function uploadScreenshot(
   );
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Unknown error" }));
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
     throw new Error(error.detail || `HTTP ${response.status}`);
   }
 
@@ -297,7 +303,9 @@ export async function getExecutionTrends(params: {
     }
   });
 
-  return fetchWithAuth(`/api/v1/execution/analytics/trends?${searchParams.toString()}`);
+  return fetchWithAuth(
+    `/api/v1/execution/analytics/trends?${searchParams.toString()}`
+  );
 }
 
 /**

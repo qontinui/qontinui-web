@@ -13,7 +13,10 @@
 
 import { useCallback, useRef } from "react";
 import { useAutomationStore } from "@/stores/automation";
-import type { AutomationContextType, Transition } from "@/contexts/automation-context/types";
+import type {
+  AutomationContextType,
+  Transition,
+} from "@/contexts/automation-context/types";
 
 /**
  * Hook that provides the AutomationContextType interface backed by Zustand store.

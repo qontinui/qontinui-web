@@ -1,4 +1,10 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
 import { Region } from "@/types/pattern-optimization";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import type { MonitorInfo } from "@/components/common/ScreenshotPicker";
@@ -25,7 +31,11 @@ interface CompositeScreenshotCanvasProps {
   /** Current pan Y position (controlled from parent) */
   panY?: number;
   /** Callback when viewport changes */
-  onViewportChange?: (viewport: { zoom?: number; panX?: number; panY?: number }) => void;
+  onViewportChange?: (viewport: {
+    zoom?: number;
+    panX?: number;
+    panY?: number;
+  }) => void;
 }
 
 type DragHandle =
@@ -96,7 +106,15 @@ function calculateCompositeBounds(screenshots: CompositeScreenshotDisplay[]): {
  */
 export const CompositeScreenshotCanvas: React.FC<
   CompositeScreenshotCanvasProps
-> = ({ screenshots, region, onRegionChange, zoom: propZoom, panX: propPanX, panY: propPanY, onViewportChange }) => {
+> = ({
+  screenshots,
+  region,
+  onRegionChange,
+  zoom: propZoom,
+  panX: propPanX,
+  panY: propPanY,
+  onViewportChange,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -115,7 +133,11 @@ export const CompositeScreenshotCanvas: React.FC<
 
   // Create a stable key for the current set of screenshots (used for deduplication)
   const screenshotKey = useMemo(
-    () => screenshots.map((s) => s.id).sort().join(","),
+    () =>
+      screenshots
+        .map((s) => s.id)
+        .sort()
+        .join(","),
     [screenshots]
   );
 
@@ -126,7 +148,9 @@ export const CompositeScreenshotCanvas: React.FC<
 
   // Use controlled values if provided
   const zoom = isControlled ? propZoom : internalZoom;
-  const pan = isControlled ? { x: propPanX ?? 0, y: propPanY ?? 0 } : internalPan;
+  const pan = isControlled
+    ? { x: propPanX ?? 0, y: propPanY ?? 0 }
+    : internalPan;
 
   // Keep a ref to track the latest zoom value for functional updates
   // This prevents stale closure issues when zoom changes rapidly
@@ -136,26 +160,33 @@ export const CompositeScreenshotCanvas: React.FC<
   }, [zoom]);
 
   // Unified setters that work for both controlled and uncontrolled modes
-  const setZoom = useCallback((newZoom: number | ((prev: number) => number)) => {
-    // Use ref for functional updates to avoid stale closures
-    const currentZoom = zoomRef.current;
-    const computedZoom = typeof newZoom === 'function' ? newZoom(currentZoom) : newZoom;
-    // Update ref immediately so subsequent calls see the new value
-    zoomRef.current = computedZoom;
-    if (isControlled) {
-      onViewportChange?.({ zoom: computedZoom });
-    } else {
-      setInternalZoom(computedZoom);
-    }
-  }, [isControlled, onViewportChange]);
+  const setZoom = useCallback(
+    (newZoom: number | ((prev: number) => number)) => {
+      // Use ref for functional updates to avoid stale closures
+      const currentZoom = zoomRef.current;
+      const computedZoom =
+        typeof newZoom === "function" ? newZoom(currentZoom) : newZoom;
+      // Update ref immediately so subsequent calls see the new value
+      zoomRef.current = computedZoom;
+      if (isControlled) {
+        onViewportChange?.({ zoom: computedZoom });
+      } else {
+        setInternalZoom(computedZoom);
+      }
+    },
+    [isControlled, onViewportChange]
+  );
 
-  const setPan = useCallback((newPan: { x: number; y: number }) => {
-    if (isControlled) {
-      onViewportChange?.({ panX: newPan.x, panY: newPan.y });
-    } else {
-      setInternalPan(newPan);
-    }
-  }, [isControlled, onViewportChange]);
+  const setPan = useCallback(
+    (newPan: { x: number; y: number }) => {
+      if (isControlled) {
+        onViewportChange?.({ panX: newPan.x, panY: newPan.y });
+      } else {
+        setInternalPan(newPan);
+      }
+    },
+    [isControlled, onViewportChange]
+  );
 
   // Interaction state
   const [isDrawing, setIsDrawing] = useState(false);
@@ -297,9 +328,14 @@ export const CompositeScreenshotCanvas: React.FC<
       const newZoom = Math.min(scaleX, scaleY, 1);
 
       const centeredX = (containerWidth - compositeBounds.width * newZoom) / 2;
-      const centeredY = (containerHeight - compositeBounds.height * newZoom) / 2;
+      const centeredY =
+        (containerHeight - compositeBounds.height * newZoom) / 2;
 
-      console.log("[CompositeCanvas] fitToView executing:", { newZoom, centeredX, centeredY });
+      console.log("[CompositeCanvas] fitToView executing:", {
+        newZoom,
+        centeredX,
+        centeredY,
+      });
       setZoom(newZoom);
       setPan({ x: centeredX, y: centeredY });
     };
@@ -343,12 +379,13 @@ export const CompositeScreenshotCanvas: React.FC<
         console.log("[CompositeCanvas] Auto fitToView: zoom is default (1)");
         fitToViewRef.current();
       } else {
-        console.log("[CompositeCanvas] Skipping auto fitToView: zoom already set to", currentZoom);
+        console.log(
+          "[CompositeCanvas] Skipping auto fitToView: zoom already set to",
+          currentZoom
+        );
       }
     }, 0);
-
   }, [loadedImages, screenshotKey]);
-
 
   // Draw canvas
   const draw = useCallback(() => {

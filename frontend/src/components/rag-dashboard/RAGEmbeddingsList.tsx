@@ -20,7 +20,12 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Image as ImageIcon, FileText } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Image as ImageIcon,
+  FileText,
+} from "lucide-react";
 import { useRAGEmbeddings, useRAGStates } from "@/hooks/useRAGDashboard";
 import type { EmbeddingItem } from "@/types/rag-dashboard";
 
@@ -118,7 +123,9 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                           {embedding.image_url ? (
                             <img
                               src={embedding.image_url}
-                              alt={embedding.pattern_name || embedding.pattern_id}
+                              alt={
+                                embedding.pattern_name || embedding.pattern_id
+                              }
                               className="w-full h-full object-contain"
                               onError={(e) => {
                                 // On error, show placeholder icon

@@ -152,7 +152,8 @@ export function wrapError(
   operation: string,
   storeName?: string
 ): DBError {
-  const originalError = error instanceof Error ? error : new Error(String(error));
+  const originalError =
+    error instanceof Error ? error : new Error(String(error));
   const type = classifyError(originalError);
 
   return new DBError(type, originalError.message, {
@@ -330,7 +331,10 @@ export async function recoverConnection(
 
       if (attempt < maxAttempts) {
         await new Promise((resolve) =>
-          setTimeout(resolve, calculateRetryDelay(attempt, DEFAULT_RETRY_CONFIG))
+          setTimeout(
+            resolve,
+            calculateRetryDelay(attempt, DEFAULT_RETRY_CONFIG)
+          )
         );
       }
     }

@@ -199,7 +199,9 @@ useEffect(() => {
 
 ```tsx
 const handleExport = () => {
-  toast.info("To export, use the export icon in the sidebar or the Export button at the top of the canvas");
+  toast.info(
+    "To export, use the export icon in the sidebar or the Export button at the top of the canvas"
+  );
 };
 
 const handleShowExport = () => {

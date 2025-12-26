@@ -2,7 +2,7 @@
  * Web Extraction Tab Component
  *
  * Main component that orchestrates the web extraction workflow:
- * 1. Configure extraction settings (URLs, viewports, options)
+ * 1. Configure extraction settings (URLs, viewports, options) - persisted until logout
  * 2. Create and start extraction session
  * 3. Monitor extraction progress
  * 4. View and select discovered states
@@ -13,7 +13,11 @@
 
 import { useState, useEffect } from "react";
 import { useProjectLoader } from "@/hooks/use-project-loader";
-import { useExtractions, useCreateExtraction } from "@/hooks/use-extractions";
+import {
+  useExtractions,
+  useCreateExtraction,
+  useDeleteExtraction,
+} from "@/hooks/use-extractions";
 import { extractionService } from "@/services/service-factory";
 import { ExtractionConfigPanel } from "./ExtractionConfigPanel";
 import { ExtractionProgress } from "./ExtractionProgress";
@@ -23,8 +27,18 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, AlertCircle, Plus, History, Trash2 } from "lucide-react";
+import {
+  Loader2,
+  AlertCircle,
+  History,
+  Trash2,
+  Settings,
+  FileSearch,
+} from "lucide-react";
 import { toast } from "sonner";
+import { runnerClient } from "@/lib/runner-client";
+import { useAuth } from "@/contexts/auth-context";
+import { useExtractionConfig } from "@/hooks/use-extraction-config";
 import type {
   ExtractionSessionCreate,
   ExtractionSessionDetail,
@@ -33,10 +47,27 @@ import type {
   ImportResult,
 } from "@/services/extraction-service";
 
+type MainTab = "configuration" | "results";
+type ResultsSubTab = "progress" | "states" | "import";
+
 export default function WebExtractionTab() {
   const { projectId } = useProjectLoader();
   const { data: extractions } = useExtractions(projectId || "", !!projectId);
   const createExtraction = useCreateExtraction();
+  const deleteExtraction = useDeleteExtraction();
+  const { getAccessToken } = useAuth();
+
+  // Persistent config from hook
+  const extractionConfig = useExtractionConfig();
+
+  // State for delete all confirmation
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+
+  // Main tab state - Configuration or Results
+  const [mainTab, setMainTab] = useState<MainTab>("configuration");
+
+  // Results sub-tab state
+  const [resultsSubTab, setResultsSubTab] = useState<ResultsSubTab>("progress");
 
   const [activeExtractionId, setActiveExtractionId] = useState<string | null>(
     null
@@ -48,7 +79,6 @@ export default function WebExtractionTab() {
     new Set()
   );
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>("config");
 
   // Load extraction detail when an extraction is selected
   useEffect(() => {
@@ -112,13 +142,50 @@ export default function WebExtractionTab() {
     }
 
     try {
+      // First check if runner is available
+      const runnerAvailable = await runnerClient.isAvailable();
+      if (!runnerAvailable) {
+        toast.error(
+          "Desktop Runner is not connected. Please start the qontinui-runner application to perform web extraction."
+        );
+        return;
+      }
+
+      // Create the session in the backend
       const result = await createExtraction.mutateAsync({
         projectId,
         data: config,
       });
 
       setActiveExtractionId(result.id);
-      setActiveTab("progress");
+      setResultsSubTab("progress");
+      // Switch to Results tab when extraction starts
+      setMainTab("results");
+
+      // Now trigger the actual extraction on the runner
+      const extractionConfig = config.config ?? {};
+      const authToken = await getAccessToken();
+      const runnerResult = await runnerClient.startExtraction({
+        urls: config.source_urls,
+        viewports: extractionConfig.viewports ?? [[1920, 1080]],
+        capture_hover_states: extractionConfig.capture_hover_states ?? true,
+        capture_focus_states: extractionConfig.capture_focus_states ?? true,
+        max_depth: extractionConfig.max_depth ?? 5,
+        max_pages: extractionConfig.max_pages ?? 100,
+        session_id: result.id,
+        backend_url: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+        auth_token: authToken || undefined,
+      });
+
+      if (!runnerResult.success) {
+        console.error("Runner extraction failed:", runnerResult.error);
+        toast.error(
+          `Failed to start extraction on runner: ${runnerResult.error || "Unknown error"}`
+        );
+        // Note: Session is created but extraction failed - user can retry or delete
+        return;
+      }
+
       toast.success("Extraction started successfully");
     } catch (error) {
       console.error("Failed to start extraction:", error);
@@ -141,29 +208,55 @@ export default function WebExtractionTab() {
     return await extractionService.importStates(activeExtractionId, request);
   };
 
-  const handleNewExtraction = () => {
-    setActiveExtractionId(null);
-    setExtractionDetail(null);
-    setAnnotations([]);
-    setSelectedStateIds(new Set());
-    setActiveTab("config");
-  };
-
   const handleSelectPreviousExtraction = (extractionId: string) => {
     setActiveExtractionId(extractionId);
-    setActiveTab("progress");
+    setResultsSubTab("progress");
+    setMainTab("results");
   };
 
   const handleDeleteExtraction = async (extractionId: string) => {
+    if (!projectId) return;
+
     try {
-      await extractionService.deleteExtraction(extractionId);
+      await deleteExtraction.mutateAsync({ extractionId, projectId });
       toast.success("Extraction deleted");
       if (activeExtractionId === extractionId) {
-        handleNewExtraction();
+        setActiveExtractionId(null);
+        setExtractionDetail(null);
+        setAnnotations([]);
+        setSelectedStateIds(new Set());
       }
     } catch (error) {
       console.error("Failed to delete extraction:", error);
       toast.error("Failed to delete extraction");
+    }
+  };
+
+  const handleDeleteAllExtractions = async () => {
+    if (!projectId || !extractions || extractions.length === 0) return;
+
+    setIsDeletingAll(true);
+    try {
+      // Delete all extractions in parallel
+      await Promise.all(
+        extractions.map((extraction) =>
+          deleteExtraction.mutateAsync({
+            extractionId: extraction.id,
+            projectId,
+          })
+        )
+      );
+      toast.success(`Deleted ${extractions.length} extraction(s)`);
+      // Clear active extraction state
+      setActiveExtractionId(null);
+      setExtractionDetail(null);
+      setAnnotations([]);
+      setSelectedStateIds(new Set());
+    } catch (error) {
+      console.error("Failed to delete all extractions:", error);
+      toast.error("Failed to delete some extractions");
+    } finally {
+      setIsDeletingAll(false);
     }
   };
 
@@ -186,6 +279,10 @@ export default function WebExtractionTab() {
     0
   );
 
+  // Check if there's an active or completed extraction to show results
+  const hasActiveExtraction = !!activeExtractionId;
+  const extractionIsComplete = extractionDetail?.status === "completed";
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
@@ -197,34 +294,74 @@ export default function WebExtractionTab() {
               Automatically discover states and elements from web pages
             </p>
           </div>
-          {activeExtractionId && (
-            <Button onClick={handleNewExtraction} variant="outline">
-              <Plus className="h-4 w-4 mr-2" />
-              New Extraction
-            </Button>
-          )}
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
         <div className="container max-w-7xl mx-auto p-6">
-          {!activeExtractionId ? (
-            /* No active extraction - show config and history */
-            <div className="space-y-6">
+          {/* Main Tabs: Configuration and Results */}
+          <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger
+                value="configuration"
+                className="flex items-center gap-2"
+              >
+                <Settings className="h-4 w-4" />
+                Configuration
+              </TabsTrigger>
+              <TabsTrigger value="results" className="flex items-center gap-2">
+                <FileSearch className="h-4 w-4" />
+                Results
+                {hasActiveExtraction && extractionDetail && (
+                  <Badge
+                    variant={
+                      extractionDetail.status === "completed"
+                        ? "default"
+                        : extractionDetail.status === "failed"
+                          ? "destructive"
+                          : "secondary"
+                    }
+                    className="ml-1"
+                  >
+                    {extractionDetail.status}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Configuration Tab */}
+            <TabsContent value="configuration" className="space-y-6">
               <ExtractionConfigPanel
                 onStartExtraction={handleStartExtraction}
                 isRunning={createExtraction.isPending}
+                extractionConfig={extractionConfig}
               />
 
               {/* Previous Extractions */}
               {extractions && extractions.length > 0 && (
                 <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <History className="h-5 w-5 text-muted-foreground" />
-                    <h2 className="text-lg font-semibold">
-                      Previous Extractions
-                    </h2>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <History className="h-5 w-5 text-muted-foreground" />
+                      <h2 className="text-lg font-semibold">
+                        Previous Extractions
+                      </h2>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDeleteAllExtractions}
+                      disabled={isDeletingAll}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      {isDeletingAll ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4 mr-2" />
+                      )}
+                      Delete All
+                    </Button>
                   </div>
                   <div className="space-y-2">
                     {extractions.map((extraction) => (
@@ -274,65 +411,78 @@ export default function WebExtractionTab() {
                   </div>
                 </div>
               )}
-            </div>
-          ) : (
-            /* Active extraction - show progress and results */
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="progress">Progress</TabsTrigger>
-                <TabsTrigger
-                  value="states"
-                  disabled={
-                    !extractionDetail || extractionDetail.status !== "completed"
-                  }
+            </TabsContent>
+
+            {/* Results Tab */}
+            <TabsContent value="results" className="space-y-6">
+              {!hasActiveExtraction ? (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    No extraction in progress. Go to the Configuration tab to
+                    start a new extraction, or select a previous extraction from
+                    the list.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                /* Active extraction - show progress and results sub-tabs */
+                <Tabs
+                  value={resultsSubTab}
+                  onValueChange={(v) => setResultsSubTab(v as ResultsSubTab)}
                 >
-                  States
-                </TabsTrigger>
-                <TabsTrigger
-                  value="export"
-                  disabled={
-                    !extractionDetail || extractionDetail.status !== "completed"
-                  }
-                >
-                  Import
-                </TabsTrigger>
-              </TabsList>
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="progress">Progress</TabsTrigger>
+                    <TabsTrigger
+                      value="states"
+                      disabled={!extractionIsComplete}
+                    >
+                      States
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="import"
+                      disabled={!extractionIsComplete}
+                    >
+                      Import
+                    </TabsTrigger>
+                  </TabsList>
 
-              <TabsContent value="progress" className="space-y-6 mt-6">
-                {isLoadingDetail ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
-                ) : extractionDetail ? (
-                  <ExtractionProgress session={extractionDetail} />
-                ) : (
-                  <Alert>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      Failed to load extraction details
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </TabsContent>
+                  <TabsContent value="progress" className="space-y-6 mt-6">
+                    {isLoadingDetail ? (
+                      <div className="flex items-center justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : extractionDetail ? (
+                      <ExtractionProgress session={extractionDetail} />
+                    ) : (
+                      <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                          Failed to load extraction details
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </TabsContent>
 
-              <TabsContent value="states" className="space-y-6 mt-6">
-                <StateList
-                  annotations={annotations}
-                  selectedStateIds={selectedStateIds}
-                  onSelectionChange={setSelectedStateIds}
-                />
-              </TabsContent>
+                  <TabsContent value="states" className="space-y-6 mt-6">
+                    <StateList
+                      annotations={annotations}
+                      selectedStateIds={selectedStateIds}
+                      onSelectionChange={setSelectedStateIds}
+                    />
+                  </TabsContent>
 
-              <TabsContent value="export" className="space-y-6 mt-6">
-                <ExportPanel
-                  extractionId={activeExtractionId}
-                  selectedStateIds={selectedStateIds}
-                  totalStatesCount={totalStatesCount}
-                  onImport={handleImportStates}
-                />
-              </TabsContent>
-            </Tabs>
-          )}
+                  <TabsContent value="import" className="space-y-6 mt-6">
+                    <ExportPanel
+                      extractionId={activeExtractionId}
+                      selectedStateIds={selectedStateIds}
+                      totalStatesCount={totalStatesCount}
+                      onImport={handleImportStates}
+                    />
+                  </TabsContent>
+                </Tabs>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>

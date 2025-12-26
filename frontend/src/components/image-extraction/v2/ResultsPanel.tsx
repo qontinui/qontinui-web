@@ -6,7 +6,10 @@
 
 import React from "react";
 import { Scissors, Plus, Edit } from "lucide-react";
-import type { ExtractionResultData, ProcessingMode } from "@/hooks/use-image-extraction";
+import type {
+  ExtractionResultData,
+  ProcessingMode,
+} from "@/hooks/use-image-extraction";
 import type { Region } from "@/types/pattern-optimization";
 
 interface ResultsPanelProps {

@@ -71,7 +71,11 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
     if (!saveDialog.imageName) return false;
     if (saveDialog.mode === "createStateImage") {
       if (!saveDialog.selectedStateId) return false;
-      if (saveDialog.selectedStateId === "new" && !saveDialog.newStateName.trim()) return false;
+      if (
+        saveDialog.selectedStateId === "new" &&
+        !saveDialog.newStateName.trim()
+      )
+        return false;
     }
     if (saveDialog.mode === "addPattern") {
       if (!saveDialog.selectedStateImageId) return false;
@@ -82,7 +86,13 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
   // Handle keyboard events
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (
+        e.key === "Enter" &&
+        !e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
         const target = e.target as HTMLElement;
         if (target.tagName !== "TEXTAREA" && target.tagName !== "BUTTON") {
           e.preventDefault();

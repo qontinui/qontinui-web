@@ -10,7 +10,11 @@ import { projectLogger } from "@/lib/project-logger";
 /**
  * Conflict resolution strategy
  */
-export type ConflictStrategy = "local-wins" | "server-wins" | "merge" | "ask-user";
+export type ConflictStrategy =
+  | "local-wins"
+  | "server-wins"
+  | "merge"
+  | "ask-user";
 
 /**
  * Conflict information
@@ -143,11 +147,15 @@ class ConflictResolverImpl {
     // In the future, this could do field-level merging for objects
     const useLocal = conflict.localTimestamp > conflict.serverTimestamp;
 
-    projectLogger.debug("ConflictResolver", "Merge fallback to last-write-wins", {
-      entityType: conflict.entityType,
-      entityId: conflict.entityId,
-      useLocal,
-    });
+    projectLogger.debug(
+      "ConflictResolver",
+      "Merge fallback to last-write-wins",
+      {
+        entityType: conflict.entityType,
+        entityId: conflict.entityId,
+        useLocal,
+      }
+    );
 
     return {
       resolvedData: useLocal ? conflict.localData : conflict.serverData,
@@ -159,7 +167,9 @@ class ConflictResolverImpl {
   /**
    * Ask user to resolve conflict
    */
-  private async askUser<T>(conflict: ConflictInfo<T>): Promise<ResolutionResult<T>> {
+  private async askUser<T>(
+    conflict: ConflictInfo<T>
+  ): Promise<ResolutionResult<T>> {
     if (this.config.onUserIntervention) {
       try {
         const resolvedData = await this.config.onUserIntervention(conflict);
@@ -169,7 +179,9 @@ class ConflictResolverImpl {
           userIntervened: true,
         };
       } catch (error) {
-        projectLogger.error("ConflictResolver", "User intervention failed", { error });
+        projectLogger.error("ConflictResolver", "User intervention failed", {
+          error,
+        });
         // Fall back to local-wins
         return {
           resolvedData: conflict.localData,

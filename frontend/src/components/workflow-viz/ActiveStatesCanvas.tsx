@@ -15,12 +15,30 @@
  *    - Supports highlightStateId to emphasize a specific state
  */
 
-import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import React, {
+  useRef,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import type { State, ImageAsset } from "@/contexts/automation-context/types";
 import type { RunnerMonitor } from "@/lib/runner-client";
-import type { ImageRecognitionEvent, ConnectionState } from "@/hooks/useExecutionEvents";
+import type {
+  ImageRecognitionEvent,
+  ConnectionState,
+} from "@/hooks/useExecutionEvents";
 import { Button } from "@/components/ui/button";
-import { ZoomIn, ZoomOut, Move, Wifi, WifiOff, Radio, Eye, Layers } from "lucide-react";
+import {
+  ZoomIn,
+  ZoomOut,
+  Move,
+  Wifi,
+  WifiOff,
+  Radio,
+  Eye,
+  Layers,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type CanvasMode = "perception" | "config";
@@ -62,8 +80,13 @@ const STATE_COLORS = [
 ];
 
 // Build a map of imageId -> stateId for quick lookups
-function buildImageToStateMap(states: State[]): Map<string, { stateId: string; stateName: string; imageLabel: string }> {
-  const map = new Map<string, { stateId: string; stateName: string; imageLabel: string }>();
+function buildImageToStateMap(
+  states: State[]
+): Map<string, { stateId: string; stateName: string; imageLabel: string }> {
+  const map = new Map<
+    string,
+    { stateId: string; stateName: string; imageLabel: string }
+  >();
 
   states.forEach((state) => {
     state.stateImages?.forEach((stateImage) => {
@@ -105,14 +128,16 @@ export function ActiveStatesCanvas({
       }
       return new Set<string>();
     }
-    return activeStateIds instanceof Set ? activeStateIds : new Set(activeStateIds);
+    return activeStateIds instanceof Set
+      ? activeStateIds
+      : new Set(activeStateIds);
   }, [activeStateIds, mode, states]);
 
   // Build image -> state mapping
   const imageToStateMap = useMemo(() => buildImageToStateMap(states), [states]);
 
   // State color type
-  type StateColor = typeof STATE_COLORS[0];
+  type StateColor = (typeof STATE_COLORS)[0];
 
   // Assign colors to active states
   const stateColorMap = useMemo(() => {
@@ -156,7 +181,7 @@ export function ActiveStatesCanvas({
       stateId: string;
       stateName: string;
       imageLabel: string;
-      color: typeof STATE_COLORS[0];
+      color: (typeof STATE_COLORS)[0];
     }> = [];
 
     foundImages.forEach((recognition, imageId) => {
@@ -181,10 +206,19 @@ export function ActiveStatesCanvas({
     });
 
     return result;
-  }, [mode, foundImages, imageToStateMap, activeStateIdsSet, stateColorMap, defaultColor]);
+  }, [
+    mode,
+    foundImages,
+    imageToStateMap,
+    activeStateIdsSet,
+    stateColorMap,
+    defaultColor,
+  ]);
 
   // Image cache - declared early so it can be used by stateBounds
-  const [loadedImages, setLoadedImages] = useState<Map<string, HTMLImageElement>>(new Map());
+  const [loadedImages, setLoadedImages] = useState<
+    Map<string, HTMLImageElement>
+  >(new Map());
 
   // Build a map of monitor index to monitor info for coordinate translation
   const monitorMap = useMemo(() => {
@@ -204,7 +238,7 @@ export function ActiveStatesCanvas({
       stateId: string;
       stateName: string;
       imageLabel: string;
-      color: typeof STATE_COLORS[0];
+      color: (typeof STATE_COLORS)[0];
       x: number;
       y: number;
       width?: number;
@@ -274,7 +308,15 @@ export function ActiveStatesCanvas({
     });
 
     return result;
-  }, [mode, states, activeStateIdsSet, stateColorMap, highlightStateId, defaultColor, monitorMap]);
+  }, [
+    mode,
+    states,
+    activeStateIdsSet,
+    stateColorMap,
+    highlightStateId,
+    defaultColor,
+    monitorMap,
+  ]);
 
   // Calculate state bounds from configImages (for config mode background rendering)
   // Groups images by state and calculates bounding box for each state
@@ -293,7 +335,7 @@ export function ActiveStatesCanvas({
     const bounds: Array<{
       stateId: string;
       stateName: string;
-      color: typeof STATE_COLORS[0];
+      color: (typeof STATE_COLORS)[0];
       x: number;
       y: number;
       width: number;
@@ -370,8 +412,8 @@ export function ActiveStatesCanvas({
 
       return {
         canvasDimensions: {
-          width: (maxX - minX) || DEFAULT_WIDTH,
-          height: (maxY - minY) || DEFAULT_HEIGHT,
+          width: maxX - minX || DEFAULT_WIDTH,
+          height: maxY - minY || DEFAULT_HEIGHT,
         },
         monitorOffset: { x: offsetX, y: offsetY },
       };
@@ -421,7 +463,9 @@ export function ActiveStatesCanvas({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
+    null
+  );
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
   // Calculate minimum zoom to fit all monitors in viewport
@@ -446,9 +490,10 @@ export function ActiveStatesCanvas({
   // Load images for visible images (both modes)
   useEffect(() => {
     // Collect all image IDs to load based on mode
-    const imageIdsToLoad = mode === "perception"
-      ? visibleFoundImages.map(({ imageId }) => imageId)
-      : configImages.map(({ imageId }) => imageId);
+    const imageIdsToLoad =
+      mode === "perception"
+        ? visibleFoundImages.map(({ imageId }) => imageId)
+        : configImages.map(({ imageId }) => imageId);
 
     imageIdsToLoad.forEach((imageId) => {
       if (!loadedImages.has(imageId)) {
@@ -554,7 +599,11 @@ export function ActiveStatesCanvas({
           const sizeLabel = `${monitor.width}x${monitor.height}`;
 
           ctx.font = "bold 12px Arial";
-          const labelWidth = Math.max(ctx.measureText(label).width, ctx.measureText(sizeLabel).width) + 16;
+          const labelWidth =
+            Math.max(
+              ctx.measureText(label).width,
+              ctx.measureText(sizeLabel).width
+            ) + 16;
           ctx.fillRect(drawX, drawY, labelWidth, 44);
 
           // Label text
@@ -615,121 +664,155 @@ export function ActiveStatesCanvas({
     // Draw images based on mode
     if (mode === "perception") {
       // Draw only found images (at their found coordinates)
-      visibleFoundImages.forEach(({ imageId, recognition, color, imageLabel }) => {
-        const loadedImg = loadedImages.get(imageId);
-        if (!loadedImg) return;
+      visibleFoundImages.forEach(
+        ({ imageId, recognition, color, imageLabel }) => {
+          const loadedImg = loadedImages.get(imageId);
+          if (!loadedImg) return;
 
-        const x = (recognition.x ?? 0) + monitorOffset.x;
-        const y = (recognition.y ?? 0) + monitorOffset.y;
-        const w = recognition.width ?? loadedImg.naturalWidth;
-        const h = recognition.height ?? loadedImg.naturalHeight;
+          const x = (recognition.x ?? 0) + monitorOffset.x;
+          const y = (recognition.y ?? 0) + monitorOffset.y;
+          const w = recognition.width ?? loadedImg.naturalWidth;
+          const h = recognition.height ?? loadedImg.naturalHeight;
 
-        // Draw the image
-        ctx.drawImage(loadedImg, x, y, w, h);
+          // Draw the image
+          ctx.drawImage(loadedImg, x, y, w, h);
 
-        // Draw colored border matching state color
-        ctx.strokeStyle = color.border;
-        ctx.lineWidth = 3;
-        ctx.shadowColor = color.border;
-        ctx.shadowBlur = 6;
-        ctx.strokeRect(x, y, w, h);
-        ctx.shadowBlur = 0;
+          // Draw colored border matching state color
+          ctx.strokeStyle = color.border;
+          ctx.lineWidth = 3;
+          ctx.shadowColor = color.border;
+          ctx.shadowBlur = 6;
+          ctx.strokeRect(x, y, w, h);
+          ctx.shadowBlur = 0;
 
-        // Draw label with state color
-        ctx.fillStyle = color.border;
-        ctx.font = "bold 11px Arial";
+          // Draw label with state color
+          ctx.fillStyle = color.border;
+          ctx.font = "bold 11px Arial";
 
-        // Background for label
-        const labelText = imageLabel;
-        const labelWidth = ctx.measureText(labelText).width + 8;
-        ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-        ctx.fillRect(x, y - 18, labelWidth, 16);
+          // Background for label
+          const labelText = imageLabel;
+          const labelWidth = ctx.measureText(labelText).width + 8;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.fillRect(x, y - 18, labelWidth, 16);
 
-        ctx.fillStyle = color.border;
-        ctx.fillText(labelText, x + 4, y - 6);
-      });
+          ctx.fillStyle = color.border;
+          ctx.fillText(labelText, x + 4, y - 6);
+        }
+      );
     } else {
       // Config mode: Draw state backgrounds first, then images on top
       // Coordinates are now absolute screen coordinates (translated from monitor-relative)
       // We need to add monitorOffset to convert to canvas coordinates
 
       // Step 1: Draw state boundary backgrounds
-      stateBounds.forEach(({ stateName, color, x: boundsX, y: boundsY, width: boundsW, height: boundsH, isHighlighted }) => {
-        // Add monitorOffset to translate from absolute screen coords to canvas coords
-        const x = boundsX + monitorOffset.x;
-        const y = boundsY + monitorOffset.y;
+      stateBounds.forEach(
+        ({
+          stateName,
+          color,
+          x: boundsX,
+          y: boundsY,
+          width: boundsW,
+          height: boundsH,
+          isHighlighted,
+        }) => {
+          // Add monitorOffset to translate from absolute screen coords to canvas coords
+          const x = boundsX + monitorOffset.x;
+          const y = boundsY + monitorOffset.y;
 
-        // Draw background fill
-        ctx.fillStyle = color.bg;
-        ctx.fillRect(x, y, boundsW, boundsH);
+          // Draw background fill
+          ctx.fillStyle = color.bg;
+          ctx.fillRect(x, y, boundsW, boundsH);
 
-        // Draw border
-        ctx.strokeStyle = color.border;
-        ctx.lineWidth = isHighlighted ? 3 : 2;
-        ctx.globalAlpha = isHighlighted ? 1.0 : 0.6;
-        if (isHighlighted) {
-          ctx.shadowColor = color.border;
-          ctx.shadowBlur = 8;
+          // Draw border
+          ctx.strokeStyle = color.border;
+          ctx.lineWidth = isHighlighted ? 3 : 2;
+          ctx.globalAlpha = isHighlighted ? 1.0 : 0.6;
+          if (isHighlighted) {
+            ctx.shadowColor = color.border;
+            ctx.shadowBlur = 8;
+          }
+          ctx.strokeRect(x, y, boundsW, boundsH);
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = 1.0;
+
+          // Draw state name label in top-left corner
+          ctx.font = isHighlighted ? "bold 13px Arial" : "bold 12px Arial";
+          const labelText = stateName;
+          const labelWidth = ctx.measureText(labelText).width + 12;
+          const labelHeight = 20;
+
+          // Label background
+          ctx.fillStyle = color.border;
+          ctx.globalAlpha = isHighlighted ? 1.0 : 0.85;
+          ctx.fillRect(x, y, labelWidth, labelHeight);
+          ctx.globalAlpha = 1.0;
+
+          // Label text
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(labelText, x + 6, y + 14);
         }
-        ctx.strokeRect(x, y, boundsW, boundsH);
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 1.0;
-
-        // Draw state name label in top-left corner
-        ctx.font = isHighlighted ? "bold 13px Arial" : "bold 12px Arial";
-        const labelText = stateName;
-        const labelWidth = ctx.measureText(labelText).width + 12;
-        const labelHeight = 20;
-
-        // Label background
-        ctx.fillStyle = color.border;
-        ctx.globalAlpha = isHighlighted ? 1.0 : 0.85;
-        ctx.fillRect(x, y, labelWidth, labelHeight);
-        ctx.globalAlpha = 1.0;
-
-        // Label text
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(labelText, x + 6, y + 14);
-      });
+      );
 
       // Step 2: Draw images on top of state backgrounds
-      configImages.forEach(({ imageId, color, imageLabel, x: imgX, y: imgY, width, height, isHighlighted }) => {
-        const loadedImg = loadedImages.get(imageId);
-        if (!loadedImg) return;
+      configImages.forEach(
+        ({
+          imageId,
+          color,
+          imageLabel,
+          x: imgX,
+          y: imgY,
+          width,
+          height,
+          isHighlighted,
+        }) => {
+          const loadedImg = loadedImages.get(imageId);
+          if (!loadedImg) return;
 
-        // Add monitorOffset to translate from absolute screen coords to canvas coords
-        const x = imgX + monitorOffset.x;
-        const y = imgY + monitorOffset.y;
-        const w = width ?? loadedImg.naturalWidth;
-        const h = height ?? loadedImg.naturalHeight;
+          // Add monitorOffset to translate from absolute screen coords to canvas coords
+          const x = imgX + monitorOffset.x;
+          const y = imgY + monitorOffset.y;
+          const w = width ?? loadedImg.naturalWidth;
+          const h = height ?? loadedImg.naturalHeight;
 
-        // Draw the image
-        ctx.drawImage(loadedImg, x, y, w, h);
+          // Draw the image
+          ctx.drawImage(loadedImg, x, y, w, h);
 
-        // Draw colored border (thicker if highlighted)
-        ctx.strokeStyle = color.border;
-        ctx.lineWidth = isHighlighted ? 4 : 2;
-        if (isHighlighted) {
-          ctx.shadowColor = color.border;
-          ctx.shadowBlur = 10;
+          // Draw colored border (thicker if highlighted)
+          ctx.strokeStyle = color.border;
+          ctx.lineWidth = isHighlighted ? 4 : 2;
+          if (isHighlighted) {
+            ctx.shadowColor = color.border;
+            ctx.shadowBlur = 10;
+          }
+          ctx.strokeRect(x, y, w, h);
+          ctx.shadowBlur = 0;
+
+          // Draw image label
+          ctx.font = isHighlighted ? "bold 11px Arial" : "10px Arial";
+          const labelText = imageLabel;
+          const labelWidth = ctx.measureText(labelText).width + 8;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.fillRect(x, y - 16, labelWidth, 14);
+
+          ctx.fillStyle = color.border;
+          ctx.fillText(labelText, x + 4, y - 5);
         }
-        ctx.strokeRect(x, y, w, h);
-        ctx.shadowBlur = 0;
-
-        // Draw image label
-        ctx.font = isHighlighted ? "bold 11px Arial" : "10px Arial";
-        const labelText = imageLabel;
-        const labelWidth = ctx.measureText(labelText).width + 8;
-        ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-        ctx.fillRect(x, y - 16, labelWidth, 14);
-
-        ctx.fillStyle = color.border;
-        ctx.fillText(labelText, x + 4, y - 5);
-      });
+      );
     }
 
     ctx.restore();
-  }, [mode, visibleFoundImages, configImages, stateBounds, zoom, pan, loadedImages, drawBackground, canvasDimensions, monitorOffset]);
+  }, [
+    mode,
+    visibleFoundImages,
+    configImages,
+    stateBounds,
+    zoom,
+    pan,
+    loadedImages,
+    drawBackground,
+    canvasDimensions,
+    monitorOffset,
+  ]);
 
   // Redraw on changes
   useEffect(() => {
@@ -758,28 +841,31 @@ export function ActiveStatesCanvas({
   };
 
   // Wheel handler with passive: false
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleWheel = useCallback(
+    (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom((currentZoom) => {
-      const newZoom = Math.min(Math.max(minZoom, currentZoom * delta), 5);
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom((currentZoom) => {
+        const newZoom = Math.min(Math.max(minZoom, currentZoom * delta), 5);
 
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (rect) {
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (rect) {
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
 
-        setPan((currentPan) => ({
-          x: mouseX - ((mouseX - currentPan.x) * newZoom) / currentZoom,
-          y: mouseY - ((mouseY - currentPan.y) * newZoom) / currentZoom,
-        }));
-      }
+          setPan((currentPan) => ({
+            x: mouseX - ((mouseX - currentPan.x) * newZoom) / currentZoom,
+            y: mouseY - ((mouseY - currentPan.y) * newZoom) / currentZoom,
+          }));
+        }
 
-      return newZoom;
-    });
-  }, [minZoom]);
+        return newZoom;
+      });
+    },
+    [minZoom]
+  );
 
   // Callback ref for wheel listener - use wrapper to always call latest handler
   const wheelListenerRef = useRef<(e: WheelEvent) => void>(handleWheel);
@@ -790,17 +876,20 @@ export function ActiveStatesCanvas({
     wheelListenerRef.current(e);
   }, []);
 
-  const canvasCallbackRef = useCallback((node: HTMLCanvasElement | null) => {
-    if (canvasRef.current) {
-      canvasRef.current.removeEventListener("wheel", wheelWrapper);
-    }
+  const canvasCallbackRef = useCallback(
+    (node: HTMLCanvasElement | null) => {
+      if (canvasRef.current) {
+        canvasRef.current.removeEventListener("wheel", wheelWrapper);
+      }
 
-    canvasRef.current = node;
+      canvasRef.current = node;
 
-    if (node) {
-      node.addEventListener("wheel", wheelWrapper, { passive: false });
-    }
-  }, [wheelWrapper]);
+      if (node) {
+        node.addEventListener("wheel", wheelWrapper, { passive: false });
+      }
+    },
+    [wheelWrapper]
+  );
 
   // Cleanup on unmount
   useEffect(() => {
@@ -820,7 +909,10 @@ export function ActiveStatesCanvas({
 
       canvas.width = container.clientWidth;
       canvas.height = container.clientHeight;
-      setContainerSize({ width: container.clientWidth, height: container.clientHeight });
+      setContainerSize({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
       redraw();
     };
 
@@ -840,7 +932,8 @@ export function ActiveStatesCanvas({
   const isLiveMode = connectionState !== undefined;
   const hasFoundImages = visibleFoundImages.length > 0;
   const hasConfigImages = configImages.length > 0;
-  const hasVisibleContent = mode === "perception" ? hasFoundImages : hasConfigImages;
+  const hasVisibleContent =
+    mode === "perception" ? hasFoundImages : hasConfigImages;
 
   return (
     <div className={cn("relative flex flex-col h-full", className)}>
@@ -855,7 +948,8 @@ export function ActiveStatesCanvas({
               <span className="ml-auto">
                 {connectionState === "connected" ? (
                   <Radio className="h-3 w-3 text-green-500 animate-pulse" />
-                ) : connectionState === "connecting" || connectionState === "reconnecting" ? (
+                ) : connectionState === "connecting" ||
+                  connectionState === "reconnecting" ? (
                   <Wifi className="h-3 w-3 text-yellow-500 animate-pulse" />
                 ) : (
                   <WifiOff className="h-3 w-3 text-muted-foreground" />
@@ -970,13 +1064,28 @@ export function ActiveStatesCanvas({
 
       {/* Zoom Controls */}
       <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-background/80 backdrop-blur-sm rounded-lg p-2 shadow-lg">
-        <Button size="sm" variant="outline" onClick={handleZoomIn} title="Zoom In">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleZoomIn}
+          title="Zoom In"
+        >
           <ZoomIn className="h-4 w-4" />
         </Button>
-        <Button size="sm" variant="outline" onClick={handleZoomOut} title="Zoom Out">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleZoomOut}
+          title="Zoom Out"
+        >
           <ZoomOut className="h-4 w-4" />
         </Button>
-        <Button size="sm" variant="outline" onClick={handleResetView} title="Reset View">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleResetView}
+          title="Reset View"
+        >
           <Move className="h-4 w-4" />
         </Button>
         <div className="text-xs text-center text-muted-foreground px-2">
@@ -985,7 +1094,10 @@ export function ActiveStatesCanvas({
       </div>
 
       {/* Canvas */}
-      <div ref={containerRef} className="flex-1 relative overflow-hidden rounded-lg border">
+      <div
+        ref={containerRef}
+        className="flex-1 relative overflow-hidden rounded-lg border"
+      >
         <canvas
           ref={canvasCallbackRef}
           style={{ cursor: isPanning ? "grabbing" : "grab" }}
@@ -1009,7 +1121,8 @@ export function ActiveStatesCanvas({
                   </p>
                   {activeStatesInfo.length > 0 && (
                     <p className="text-xs mt-2 text-muted-foreground/70">
-                      {activeStatesInfo.length} state(s) active, waiting for image detection...
+                      {activeStatesInfo.length} state(s) active, waiting for
+                      image detection...
                     </p>
                   )}
                 </>
@@ -1029,7 +1142,9 @@ export function ActiveStatesCanvas({
 
       <div className="mt-2 text-sm text-muted-foreground text-center">
         Drag to pan • Scroll to zoom •{" "}
-        {mode === "perception" ? "Shows detected images" : "Shows configured positions"}
+        {mode === "perception"
+          ? "Shows detected images"
+          : "Shows configured positions"}
       </div>
     </div>
   );

@@ -59,7 +59,8 @@ export const ImageExtractionPage: React.FC = () => {
     updateMaskInResult,
   } = useImageExtraction();
 
-  const { states, addState, updateState, images, addImage, projectId } = useAutomation();
+  const { states, addState, updateState, images, addImage, projectId } =
+    useAutomation();
   const [isExtracting, setIsExtracting] = useState(false);
 
   // Helper to save configuration to backend immediately
@@ -67,23 +68,31 @@ export const ImageExtractionPage: React.FC = () => {
   // (not a stale closure-captured version from React state)
   const saveToBackendImmediately = useCallback(async () => {
     if (!projectId) {
-      projectLogger.debug("ImageExtraction", "No projectId - skipping backend save");
+      projectLogger.debug(
+        "ImageExtraction",
+        "No projectId - skipping backend save"
+      );
       return;
     }
 
     try {
       // Longer delay to ensure Zustand store updates have propagated
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // IMPORTANT: Get configuration from Zustand store, not React context
       // This ensures we get the latest state including newly added states/images
       const config = useAutomationStore.getState().getConfiguration();
-      const statesArray = config.states as { id: string; name: string }[] | undefined;
+      const statesArray = config.states as
+        | { id: string; name: string }[]
+        | undefined;
       const imagesArray = config.images as unknown[] | undefined;
 
       // Debug: log state names to verify the new state was added
-      const stateNames = statesArray?.map(s => s.name) ?? [];
-      console.log("[ImageExtractionPage] saveToBackendImmediately - state names:", stateNames);
+      const stateNames = statesArray?.map((s) => s.name) ?? [];
+      console.log(
+        "[ImageExtractionPage] saveToBackendImmediately - state names:",
+        stateNames
+      );
 
       projectLogger.debug("ImageExtraction", "Saving to backend immediately", {
         projectId,
@@ -94,7 +103,9 @@ export const ImageExtractionPage: React.FC = () => {
 
       await projectService.updateProject(projectId, { configuration: config });
 
-      projectLogger.info("ImageExtraction", "Backend save complete", { projectId });
+      projectLogger.info("ImageExtraction", "Backend save complete", {
+        projectId,
+      });
     } catch (error) {
       projectLogger.error("ImageExtraction", "Backend save failed", {
         projectId,
@@ -148,7 +159,10 @@ export const ImageExtractionPage: React.FC = () => {
 
     try {
       // First, check if this image already exists in the library
-      const existingImage = findImageByData(images, extractedResult.croppedImage);
+      const existingImage = findImageByData(
+        images,
+        extractedResult.croppedImage
+      );
 
       let imageAsset;
       let isNewImage = false;
@@ -224,16 +238,19 @@ export const ImageExtractionPage: React.FC = () => {
           name: saveDialog.imageName,
           imageId: imageAsset.id,
           fixed: saveDialog.fixedLocation,
-          searchRegions: saveDialog.fixedLocation && extractedResult.bounds
-            ? [{
-                id: `search_region_${Date.now()}`,
-                name: "Extraction Region",
-                x: extractedResult.bounds.x,
-                y: extractedResult.bounds.y,
-                width: extractedResult.bounds.width,
-                height: extractedResult.bounds.height,
-              }]
-            : [],
+          searchRegions:
+            saveDialog.fixedLocation && extractedResult.bounds
+              ? [
+                  {
+                    id: `search_region_${Date.now()}`,
+                    name: "Extraction Region",
+                    x: extractedResult.bounds.x,
+                    y: extractedResult.bounds.y,
+                    width: extractedResult.bounds.width,
+                    height: extractedResult.bounds.height,
+                  },
+                ]
+              : [],
         };
 
         // Update the StateImage with the new pattern
@@ -300,17 +317,25 @@ export const ImageExtractionPage: React.FC = () => {
         });
 
         if (result.action === "create-state" && result.targetState) {
-          console.log("[ImageExtractionPage] Creating new state with StateImage");
+          console.log(
+            "[ImageExtractionPage] Creating new state with StateImage"
+          );
           await addState(result.targetState);
           // Save to backend immediately to prevent data loss on navigation
           await saveToBackendImmediately();
           toast.success(`Created new state: ${result.targetState.name}`);
         } else if (result.action === "update-state" && result.targetState) {
-          console.log("[ImageExtractionPage] Updating existing state with StateImage:", {
-            stateId: result.targetState.id,
-            stateImagesCount: result.targetState.stateImages?.length,
-            lastStateImage: result.targetState.stateImages?.[result.targetState.stateImages.length - 1],
-          });
+          console.log(
+            "[ImageExtractionPage] Updating existing state with StateImage:",
+            {
+              stateId: result.targetState.id,
+              stateImagesCount: result.targetState.stateImages?.length,
+              lastStateImage:
+                result.targetState.stateImages?.[
+                  result.targetState.stateImages.length - 1
+                ],
+            }
+          );
           await updateState(result.targetState);
           // Save to backend immediately to prevent data loss on navigation
           await saveToBackendImmediately();
@@ -352,7 +377,9 @@ export const ImageExtractionPage: React.FC = () => {
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Loading saved state...</p>
+            <p className="text-sm text-muted-foreground">
+              Loading saved state...
+            </p>
           </div>
         </div>
       </div>

@@ -7,11 +7,12 @@
  * - Toggle hover/focus state capture
  * - Set crawl depth and page limits
  * - Add authentication cookies
+ *
+ * Configuration is persisted via the useExtractionConfig hook until logout.
  */
 
 "use client";
 
-import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -24,7 +25,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, X, Globe, Loader2, Monitor, Check, Wifi, WifiOff } from "lucide-react";
+import {
+  Plus,
+  X,
+  Globe,
+  Loader2,
+  Monitor,
+  Check,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
 import {
@@ -34,10 +44,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { ExtractionSessionCreate } from "@/services/extraction-service";
+import type { useExtractionConfig } from "@/hooks/use-extraction-config";
 
 interface ExtractionConfigPanelProps {
   onStartExtraction: (config: ExtractionSessionCreate) => Promise<void>;
   isRunning: boolean;
+  extractionConfig: ReturnType<typeof useExtractionConfig>;
 }
 
 // Default viewport size when monitor resolution is not available
@@ -46,13 +58,28 @@ const DEFAULT_VIEWPORT: [number, number] = [1920, 1080];
 export function ExtractionConfigPanel({
   onStartExtraction,
   isRunning,
+  extractionConfig,
 }: ExtractionConfigPanelProps) {
-  const [urls, setUrls] = useState<string[]>([""]);
-  const [selectedMonitors, setSelectedMonitors] = useState<number[]>([0]);
-  const [captureHover, setCaptureHover] = useState(true);
-  const [captureFocus, setCaptureFocus] = useState(true);
-  const [maxDepth, setMaxDepth] = useState(5);
-  const [maxPages, setMaxPages] = useState(100);
+  // Use persistent config from hook
+  const {
+    config,
+    isLoaded,
+    setUrls,
+    setSelectedMonitors,
+    setCaptureHover,
+    setCaptureFocus,
+    setMaxDepth,
+    setMaxPages,
+  } = extractionConfig;
+
+  const {
+    urls,
+    selectedMonitors,
+    captureHover,
+    captureFocus,
+    maxDepth,
+    maxPages,
+  } = config;
 
   // Fetch runner monitors to get actual monitor resolutions
   const { monitors: runnerMonitors, isRunnerConnected } = useRunnerMonitors();
@@ -62,18 +89,18 @@ export function ExtractionConfigPanel({
 
   // Toggle monitor selection
   const handleMonitorClick = (monitorIndex: number) => {
-    setSelectedMonitors((prev) => {
-      if (prev.includes(monitorIndex)) {
-        // Don't allow deselecting if it's the only one selected
-        if (prev.length > 1) {
-          return prev.filter((i) => i !== monitorIndex);
-        }
-        toast.error("At least one monitor must be selected");
-        return prev;
+    if (selectedMonitors.includes(monitorIndex)) {
+      // Don't allow deselecting if it's the only one selected
+      if (selectedMonitors.length > 1) {
+        setSelectedMonitors(selectedMonitors.filter((i) => i !== monitorIndex));
       } else {
-        return [...prev, monitorIndex].sort((a, b) => a - b);
+        toast.error("At least one monitor must be selected");
       }
-    });
+    } else {
+      setSelectedMonitors(
+        [...selectedMonitors, monitorIndex].sort((a, b) => a - b)
+      );
+    }
   };
 
   // Select all monitors
@@ -129,7 +156,7 @@ export function ExtractionConfigPanel({
       }
     }
 
-    const config: ExtractionSessionCreate = {
+    const extractionSessionConfig: ExtractionSessionCreate = {
       source_urls: validUrls,
       config: {
         viewports: getViewportsFromMonitors(),
@@ -142,19 +169,31 @@ export function ExtractionConfigPanel({
     };
 
     try {
-      await onStartExtraction(config);
+      await onStartExtraction(extractionSessionConfig);
     } catch (error) {
       console.error("Failed to start extraction:", error);
       toast.error("Failed to start extraction");
     }
   };
 
+  // Show loading state while config is being loaded from localStorage
+  if (!isLoaded) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Extraction Configuration</CardTitle>
         <CardDescription>
-          Configure URLs and settings for web extraction
+          Configure URLs and settings for web extraction. Settings are saved
+          automatically.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -251,9 +290,7 @@ export function ExtractionConfigPanel({
                       <span className="font-semibold text-base">
                         [{monitor.index}]
                       </span>
-                      {isSelected && (
-                        <Check className="w-4 h-4" />
-                      )}
+                      {isSelected && <Check className="w-4 h-4" />}
                     </div>
                     <div className="text-xs space-y-0.5 text-center">
                       {monitor.is_primary && (
@@ -263,7 +300,7 @@ export function ExtractionConfigPanel({
                       )}
                       <div className="capitalize">{monitor.position}</div>
                       <div className="text-muted-foreground">
-                        {monitor.width}×{monitor.height}
+                        {monitor.width}x{monitor.height}
                       </div>
                     </div>
                   </button>
@@ -299,7 +336,7 @@ export function ExtractionConfigPanel({
             <div className="text-xs text-muted-foreground">
               Viewports:{" "}
               {getViewportsFromMonitors()
-                .map(([w, h]) => `${w}×${h}`)
+                .map(([w, h]) => `${w}x${h}`)
                 .join(", ")}
             </div>
           </div>

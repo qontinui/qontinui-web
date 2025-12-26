@@ -2,12 +2,43 @@ import { HttpClient } from "./http-client";
 
 // Re-export types for backward compatibility
 // These now map to the unified execution types
-export type TestRunStatus = "pending" | "running" | "completed" | "failed" | "timeout" | "cancelled";
-export type TransitionStatus = "success" | "failed" | "timeout" | "skipped" | "error";
-export type DeficiencySeverity = "critical" | "high" | "medium" | "low" | "info";
+export type TestRunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "timeout"
+  | "cancelled";
+export type TransitionStatus =
+  | "success"
+  | "failed"
+  | "timeout"
+  | "skipped"
+  | "error";
+export type DeficiencySeverity =
+  | "critical"
+  | "high"
+  | "medium"
+  | "low"
+  | "info";
 export type DeficiencyStatus = "open" | "in_progress" | "resolved" | "wont_fix";
-export type DeficiencyType = "functional" | "visual" | "performance" | "crash" | "timeout" | "assertion" | "state_mismatch" | "element_not_found" | "other";
-export type ScreenshotType = "state_verification" | "before_action" | "after_action" | "on_error" | "on_success" | "manual";
+export type DeficiencyType =
+  | "functional"
+  | "visual"
+  | "performance"
+  | "crash"
+  | "timeout"
+  | "assertion"
+  | "state_mismatch"
+  | "element_not_found"
+  | "other";
+export type ScreenshotType =
+  | "state_verification"
+  | "before_action"
+  | "after_action"
+  | "on_error"
+  | "on_success"
+  | "manual";
 
 export interface Pagination {
   total: number;
@@ -328,7 +359,8 @@ export class TestingService {
     if (filters) {
       // Map test run filters to execution filters
       if (filters.project_id) params.append("project_id", filters.project_id);
-      if (filters.workflow_id) params.append("workflow_id", filters.workflow_id);
+      if (filters.workflow_id)
+        params.append("workflow_id", filters.workflow_id);
       if (filters.status) params.append("status", filters.status);
       if (filters.start_date) params.append("start_date", filters.start_date);
       if (filters.end_date) params.append("end_date", filters.end_date);
@@ -366,19 +398,39 @@ export class TestingService {
     const items: TestRun[] = response.runs.map((run) => ({
       id: run.id,
       project_id: run.project_id,
-      workflow_id: run.workflow_metadata?.workflow_id || run.runner_metadata?.workflow_id || "",
+      workflow_id:
+        run.workflow_metadata?.workflow_id ||
+        run.runner_metadata?.workflow_id ||
+        "",
       workflow_name: run.workflow_metadata?.workflow_name || run.run_name,
       status: this.mapExecutionStatusToTestStatus(run.status),
       start_time: run.started_at,
       end_time: run.ended_at ?? null,
       duration_seconds: run.duration_seconds ?? null,
-      total_transitions: run.stats?.total_actions || run.runner_metadata?.total_transitions || 0,
-      successful_transitions: run.stats?.successful_actions || run.runner_metadata?.successful_transitions || 0,
-      failed_transitions: run.stats?.failed_actions || run.runner_metadata?.failed_transitions || 0,
-      coverage_percentage: run.coverage_data?.coverage_percentage || run.runner_metadata?.coverage_percentage || 0,
-      states_covered: run.coverage_data?.states_covered || run.runner_metadata?.states_covered || 0,
-      total_states: run.coverage_data?.states_total || run.runner_metadata?.total_states || 0,
-      deficiencies_found: run.stats?.total_issues || run.runner_metadata?.deficiencies_found || 0,
+      total_transitions:
+        run.stats?.total_actions || run.runner_metadata?.total_transitions || 0,
+      successful_transitions:
+        run.stats?.successful_actions ||
+        run.runner_metadata?.successful_transitions ||
+        0,
+      failed_transitions:
+        run.stats?.failed_actions ||
+        run.runner_metadata?.failed_transitions ||
+        0,
+      coverage_percentage:
+        run.coverage_data?.coverage_percentage ||
+        run.runner_metadata?.coverage_percentage ||
+        0,
+      states_covered:
+        run.coverage_data?.states_covered ||
+        run.runner_metadata?.states_covered ||
+        0,
+      total_states:
+        run.coverage_data?.states_total ||
+        run.runner_metadata?.total_states ||
+        0,
+      deficiencies_found:
+        run.stats?.total_issues || run.runner_metadata?.deficiencies_found || 0,
       runner_id: run.runner_metadata?.runner_id || "",
       created_at: run.created_at,
       updated_at: run.created_at,
@@ -396,7 +448,9 @@ export class TestingService {
   /**
    * Map execution status to test run status for backward compatibility
    */
-  private mapExecutionStatusToTestStatus(status: string): "running" | "completed" | "failed" {
+  private mapExecutionStatusToTestStatus(
+    status: string
+  ): "running" | "completed" | "failed" {
     switch (status) {
       case "completed":
         return "completed";
@@ -418,10 +472,12 @@ export class TestingService {
    */
   async getTestRun(id: string): Promise<TestRunDetail> {
     // Fetch the execution run
-    const run = await this.httpClient.get<ExecutionRunBackend & {
-      description?: string;
-      configuration?: Record<string, unknown>;
-    }>(`/api/v1/execution/runs/${id}`);
+    const run = await this.httpClient.get<
+      ExecutionRunBackend & {
+        description?: string;
+        configuration?: Record<string, unknown>;
+      }
+    >(`/api/v1/execution/runs/${id}`);
 
     // Fetch actions for transition results
     const actionsResponse = await this.httpClient.get<{
@@ -464,18 +520,22 @@ export class TestingService {
     }>(`/api/v1/execution/runs/${id}/issues?limit=1000`);
 
     // Transform to TestRunDetail format
-    const transitions: TransitionResult[] = actionsResponse.actions.map((action) => ({
-      id: action.id,
-      test_run_id: action.run_id,
-      from_state: action.from_state || "",
-      to_state: action.to_state || "",
-      action_type: action.action_type,
-      success: action.status === "success",
-      duration_ms: action.duration_ms,
-      error_message: action.error_message || null,
-      screenshot_url: action.screenshot_id ? `/api/v1/execution/screenshots/${action.screenshot_id}` : null,
-      executed_at: action.started_at,
-    }));
+    const transitions: TransitionResult[] = actionsResponse.actions.map(
+      (action) => ({
+        id: action.id,
+        test_run_id: action.run_id,
+        from_state: action.from_state || "",
+        to_state: action.to_state || "",
+        action_type: action.action_type,
+        success: action.status === "success",
+        duration_ms: action.duration_ms,
+        error_message: action.error_message || null,
+        screenshot_url: action.screenshot_id
+          ? `/api/v1/execution/screenshots/${action.screenshot_id}`
+          : null,
+        executed_at: action.started_at,
+      })
+    );
 
     const deficiencies: Deficiency[] = issuesResponse.issues.map((issue) => ({
       id: issue.id,
@@ -500,12 +560,20 @@ export class TestingService {
     }));
 
     // Build state coverage from actions
-    const stateVisits: Record<string, { total: number; success: number; failed: number; duration: number }> = {};
+    const stateVisits: Record<
+      string,
+      { total: number; success: number; failed: number; duration: number }
+    > = {};
     for (const action of actionsResponse.actions) {
       if (action.to_state) {
         const stateName = action.to_state;
         if (!stateVisits[stateName]) {
-          stateVisits[stateName] = { total: 0, success: 0, failed: 0, duration: 0 };
+          stateVisits[stateName] = {
+            total: 0,
+            success: 0,
+            failed: 0,
+            duration: 0,
+          };
         }
         const stats = stateVisits[stateName];
         stats.total++;
@@ -518,30 +586,44 @@ export class TestingService {
       }
     }
 
-    const state_coverage: StateCoverage[] = Object.entries(stateVisits).map(([stateName, stats]) => ({
-      state_name: stateName,
-      times_visited: stats.total,
-      successful_visits: stats.success,
-      failed_visits: stats.failed,
-      average_duration_ms: stats.total > 0 ? Math.round(stats.duration / stats.total) : 0,
-    }));
+    const state_coverage: StateCoverage[] = Object.entries(stateVisits).map(
+      ([stateName, stats]) => ({
+        state_name: stateName,
+        times_visited: stats.total,
+        successful_visits: stats.success,
+        failed_visits: stats.failed,
+        average_duration_ms:
+          stats.total > 0 ? Math.round(stats.duration / stats.total) : 0,
+      })
+    );
 
     return {
       id: run.id,
       project_id: run.project_id,
-      workflow_id: run.workflow_metadata?.workflow_id || run.runner_metadata?.workflow_id || "",
+      workflow_id:
+        run.workflow_metadata?.workflow_id ||
+        run.runner_metadata?.workflow_id ||
+        "",
       workflow_name: run.workflow_metadata?.workflow_name || run.run_name,
       status: this.mapExecutionStatusToTestStatus(run.status),
       start_time: run.started_at,
       end_time: run.ended_at ?? null,
       duration_seconds: run.duration_seconds ?? null,
-      total_transitions: run.stats?.total_actions || actionsResponse.actions.length,
-      successful_transitions: run.stats?.successful_actions || actionsResponse.actions.filter(a => a.status === "success").length,
-      failed_transitions: run.stats?.failed_actions || actionsResponse.actions.filter(a => a.status !== "success").length,
+      total_transitions:
+        run.stats?.total_actions || actionsResponse.actions.length,
+      successful_transitions:
+        run.stats?.successful_actions ||
+        actionsResponse.actions.filter((a) => a.status === "success").length,
+      failed_transitions:
+        run.stats?.failed_actions ||
+        actionsResponse.actions.filter((a) => a.status !== "success").length,
       coverage_percentage: run.coverage_data?.coverage_percentage || 0,
-      states_covered: run.coverage_data?.states_covered || Object.keys(stateVisits).length,
-      total_states: run.coverage_data?.states_total || Object.keys(stateVisits).length,
-      deficiencies_found: run.stats?.total_issues || issuesResponse.issues.length,
+      states_covered:
+        run.coverage_data?.states_covered || Object.keys(stateVisits).length,
+      total_states:
+        run.coverage_data?.states_total || Object.keys(stateVisits).length,
+      deficiencies_found:
+        run.stats?.total_issues || issuesResponse.issues.length,
       runner_id: run.runner_metadata?.runner_id || "",
       created_at: run.created_at,
       updated_at: run.created_at,
@@ -705,8 +787,11 @@ export class TestingService {
     // Default to last 30 days if not specified
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const defaultStartDate = thirtyDaysAgo.toISOString().split("T")[0] ?? thirtyDaysAgo.toISOString().slice(0, 10);
-    const defaultEndDate = now.toISOString().split("T")[0] ?? now.toISOString().slice(0, 10);
+    const defaultStartDate =
+      thirtyDaysAgo.toISOString().split("T")[0] ??
+      thirtyDaysAgo.toISOString().slice(0, 10);
+    const defaultEndDate =
+      now.toISOString().split("T")[0] ?? now.toISOString().slice(0, 10);
 
     params.append("start_date", startDate || defaultStartDate);
     params.append("end_date", endDate || defaultEndDate);
@@ -816,7 +901,9 @@ export class TestingService {
       );
 
       // Transform to frontend format
-      const transformAction = (t: (typeof response.stats)[0]): TransitionReliability => ({
+      const transformAction = (
+        t: (typeof response.stats)[0]
+      ): TransitionReliability => ({
         from_state: "",
         to_state: "",
         action_type: t.action_name,
@@ -825,9 +912,8 @@ export class TestingService {
         average_duration_ms: t.avg_duration_ms,
       });
 
-      const overallSuccessRate = totalTransitions > 0
-        ? successfulTransitions / totalTransitions
-        : 0;
+      const overallSuccessRate =
+        totalTransitions > 0 ? successfulTransitions / totalTransitions : 0;
 
       return {
         overall_success_rate: overallSuccessRate,
@@ -835,8 +921,13 @@ export class TestingService {
         successful_transitions: successfulTransitions,
         failed_transitions: failedTransitions,
         average_transition_time_ms: avgDuration,
-        most_reliable_transitions: sortedBySuccess.slice(0, 5).map(transformAction),
-        least_reliable_transitions: sortedBySuccess.slice(-5).reverse().map(transformAction),
+        most_reliable_transitions: sortedBySuccess
+          .slice(0, 5)
+          .map(transformAction),
+        least_reliable_transitions: sortedBySuccess
+          .slice(-5)
+          .reverse()
+          .map(transformAction),
         state_reliability: [],
       };
     } catch (error) {
@@ -869,11 +960,17 @@ export class TestingService {
       const runsResponse = await this.httpClient.get<{
         runs: ExecutionRunBackend[];
         pagination: Pagination;
-      }>(`/api/v1/execution/runs?project_id=${projectId}&run_type=qa_test&limit=10`);
+      }>(
+        `/api/v1/execution/runs?project_id=${projectId}&run_type=qa_test&limit=10`
+      );
 
       // Build graph from run data
-      const stateVisits: Map<string, { count: number; successCount: number }> = new Map();
-      const transitionCounts: Map<string, { count: number; successCount: number }> = new Map();
+      const stateVisits: Map<string, { count: number; successCount: number }> =
+        new Map();
+      const transitionCounts: Map<
+        string,
+        { count: number; successCount: number }
+      > = new Map();
 
       for (const run of runsResponse.runs) {
         // Fetch actions to build state graph
@@ -888,7 +985,10 @@ export class TestingService {
 
         for (const action of actionsResponse.actions) {
           if (action.to_state) {
-            const existing = stateVisits.get(action.to_state) || { count: 0, successCount: 0 };
+            const existing = stateVisits.get(action.to_state) || {
+              count: 0,
+              successCount: 0,
+            };
             existing.count++;
             if (action.status === "success") existing.successCount++;
             stateVisits.set(action.to_state, existing);
@@ -896,7 +996,10 @@ export class TestingService {
 
           if (action.from_state && action.to_state) {
             const key = `${action.from_state}->${action.to_state}`;
-            const existing = transitionCounts.get(key) || { count: 0, successCount: 0 };
+            const existing = transitionCounts.get(key) || {
+              count: 0,
+              successCount: 0,
+            };
             existing.count++;
             if (action.status === "success") existing.successCount++;
             transitionCounts.set(key, existing);
@@ -905,27 +1008,32 @@ export class TestingService {
       }
 
       // Convert to graph format
-      const nodes: GraphNode[] = Array.from(stateVisits.entries()).map(([id, stats]) => ({
-        id,
-        label: id,
-        visit_count: stats.count,
-        success_rate: stats.count > 0 ? stats.successCount / stats.count : 0,
-        type: "normal" as const,
-      }));
-
-      const edges: GraphEdge[] = Array.from(transitionCounts.entries()).map(([key, stats]) => {
-        const parts = key.split("->");
-        const source = parts[0] ?? "";
-        const target = parts[1] ?? "";
-        return {
-          id: key,
-          source,
-          target,
-          label: `${stats.count} runs`,
+      const nodes: GraphNode[] = Array.from(stateVisits.entries()).map(
+        ([id, stats]) => ({
+          id,
+          label: id,
+          visit_count: stats.count,
           success_rate: stats.count > 0 ? stats.successCount / stats.count : 0,
-          attempt_count: stats.count,
-        };
-      });
+          type: "normal" as const,
+        })
+      );
+
+      const edges: GraphEdge[] = Array.from(transitionCounts.entries()).map(
+        ([key, stats]) => {
+          const parts = key.split("->");
+          const source = parts[0] ?? "";
+          const target = parts[1] ?? "";
+          return {
+            id: key,
+            source,
+            target,
+            label: `${stats.count} runs`,
+            success_rate:
+              stats.count > 0 ? stats.successCount / stats.count : 0,
+            attempt_count: stats.count,
+          };
+        }
+      );
 
       return { nodes, edges };
     } catch (error) {
@@ -947,10 +1055,21 @@ export class TestingService {
     const runData = await this.getTestRun(id);
 
     if (format === "json") {
-      return new Blob([JSON.stringify(runData, null, 2)], { type: "application/json" });
+      return new Blob([JSON.stringify(runData, null, 2)], {
+        type: "application/json",
+      });
     } else if (format === "csv") {
       // Convert to CSV format
-      const headers = ["id", "project_id", "workflow_name", "status", "start_time", "end_time", "duration_seconds", "coverage_percentage"];
+      const headers = [
+        "id",
+        "project_id",
+        "workflow_name",
+        "status",
+        "start_time",
+        "end_time",
+        "duration_seconds",
+        "coverage_percentage",
+      ];
       const values = [
         runData.id,
         runData.project_id,
@@ -961,7 +1080,8 @@ export class TestingService {
         runData.duration_seconds?.toString() || "",
         runData.coverage_percentage.toString(),
       ];
-      const csv = headers.join(",") + "\n" + values.map(v => `"${v}"`).join(",");
+      const csv =
+        headers.join(",") + "\n" + values.map((v) => `"${v}"`).join(",");
       return new Blob([csv], { type: "text/csv" });
     } else {
       // PDF export not supported client-side
@@ -981,18 +1101,31 @@ export class TestingService {
     const data = await this.getDeficiencies(filters);
 
     if (format === "json") {
-      return new Blob([JSON.stringify(data.items, null, 2)], { type: "application/json" });
+      return new Blob([JSON.stringify(data.items, null, 2)], {
+        type: "application/json",
+      });
     } else {
       // Convert to CSV format
-      const headers = ["id", "title", "severity", "status", "state_name", "created_at"];
-      const rows = data.items.map(item => [
-        item.id,
-        item.title,
-        item.severity,
-        item.status,
-        item.state_name,
-        item.created_at,
-      ].map(v => `"${v}"`).join(","));
+      const headers = [
+        "id",
+        "title",
+        "severity",
+        "status",
+        "state_name",
+        "created_at",
+      ];
+      const rows = data.items.map((item) =>
+        [
+          item.id,
+          item.title,
+          item.severity,
+          item.status,
+          item.state_name,
+          item.created_at,
+        ]
+          .map((v) => `"${v}"`)
+          .join(",")
+      );
       const csv = headers.join(",") + "\n" + rows.join("\n");
       return new Blob([csv], { type: "text/csv" });
     }
@@ -1014,8 +1147,12 @@ export class TestingService {
     ]);
 
     // Build transition comparison
-    const run1Transitions = new Map(run1.transitions.map(t => [`${t.from_state}->${t.to_state}`, t]));
-    const run2Transitions = new Map(run2.transitions.map(t => [`${t.from_state}->${t.to_state}`, t]));
+    const run1Transitions = new Map(
+      run1.transitions.map((t) => [`${t.from_state}->${t.to_state}`, t])
+    );
+    const run2Transitions = new Map(
+      run2.transitions.map((t) => [`${t.from_state}->${t.to_state}`, t])
+    );
 
     const regressions: TransitionComparison[] = [];
     const fixed: TransitionComparison[] = [];
@@ -1099,24 +1236,34 @@ export class TestingService {
       },
       comparison: {
         coverage_diff: {
-          percentage_change: run2.coverage_percentage - run1.coverage_percentage,
+          percentage_change:
+            run2.coverage_percentage - run1.coverage_percentage,
           states_gained: run2.states_covered - run1.states_covered,
           transitions_gained: run2.total_transitions - run1.total_transitions,
         },
         deficiencies_diff: {
-          new_count: Math.max(0, run2.deficiencies_found - run1.deficiencies_found),
-          resolved_count: Math.max(0, run1.deficiencies_found - run2.deficiencies_found),
+          new_count: Math.max(
+            0,
+            run2.deficiencies_found - run1.deficiencies_found
+          ),
+          resolved_count: Math.max(
+            0,
+            run1.deficiencies_found - run2.deficiencies_found
+          ),
         },
         execution_time_diff: {
-          seconds_change: (run2.duration_seconds || 0) - (run1.duration_seconds || 0),
+          seconds_change:
+            (run2.duration_seconds || 0) - (run1.duration_seconds || 0),
           percentage_change: run1.duration_seconds
-            ? ((run2.duration_seconds || 0) - run1.duration_seconds) / run1.duration_seconds * 100
+            ? (((run2.duration_seconds || 0) - run1.duration_seconds) /
+                run1.duration_seconds) *
+              100
             : 0,
         },
         regressions,
         fixed,
         new_failures: newFailures,
-        unchanged_count: run1.transitions.filter(t => {
+        unchanged_count: run1.transitions.filter((t) => {
           const key = `${t.from_state}->${t.to_state}`;
           const t2 = run2Transitions.get(key);
           return t2 && t.success === t2.success;

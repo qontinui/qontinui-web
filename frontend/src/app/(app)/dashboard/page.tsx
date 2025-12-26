@@ -26,6 +26,7 @@ import {
   Check,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getProjectLoader } from "@/lib/project";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 import { WelcomeModal } from "@/components/onboarding/WelcomeModal";
 import { QuickStartChecklist } from "@/components/onboarding/QuickStartChecklist";
@@ -292,9 +293,12 @@ export default function Dashboard() {
 
   const handleExport = () => {
     // For now, show a helpful message
-    toast.info("To export, use the export icon in the sidebar or the Export button at the top of the canvas", {
-      duration: 5000,
-    });
+    toast.info(
+      "To export, use the export icon in the sidebar or the Export button at the top of the canvas",
+      {
+        duration: 5000,
+      }
+    );
   };
 
   const handleShowExport = () => {
@@ -340,7 +344,19 @@ export default function Dashboard() {
     return `${diffInDays} days ago`;
   };
 
-  const handleOpenProject = (projectId: string, projectName: string) => {
+  const handleOpenProject = async (projectId: string, projectName: string) => {
+    // Load project data from backend/IndexedDB
+    // This hydrates the Zustand store with workflows, states, transitions, images, etc.
+    const loader = getProjectLoader();
+    const success = await loader.load(projectId, {
+      currentProjectId: contextProjectId,
+    });
+
+    if (!success) {
+      toast.error("Failed to load project");
+      return;
+    }
+
     // Select the project without navigating away from the dashboard
     // The project will appear in the sidebar's project switcher
     // IMPORTANT: Set both projectId AND projectName to ensure data isolation

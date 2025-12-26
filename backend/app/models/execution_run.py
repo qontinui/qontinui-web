@@ -79,6 +79,7 @@ class ExecutionRun(Base):
             ExecutionRunType,
             name="execution_run_type",
             create_type=False,
+            values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
         index=True,
@@ -100,6 +101,7 @@ class ExecutionRun(Base):
             ExecutionRunStatus,
             name="execution_run_status",
             create_type=False,
+            values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
         default=ExecutionRunStatus.RUNNING,
@@ -219,4 +221,5 @@ class ExecutionRun(Base):
     )
 
     def __repr__(self) -> str:
+        """Return string representation of ExecutionRun."""
         return f"<ExecutionRun(id={self.id}, run_type='{self.run_type}', status='{self.status}')>"

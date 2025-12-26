@@ -256,10 +256,15 @@ export const useImageExtractionStoreV2 = create<ImageExtractionStore>()(
         setViewport: (viewport) => {
           console.log("[ImageExtractionStore] setViewport called:", viewport);
           set((state) => {
-            if (viewport.zoom !== undefined) state.viewport.zoom = viewport.zoom;
-            if (viewport.panX !== undefined) state.viewport.panX = viewport.panX;
-            if (viewport.panY !== undefined) state.viewport.panY = viewport.panY;
-            console.log("[ImageExtractionStore] viewport after update:", { ...state.viewport });
+            if (viewport.zoom !== undefined)
+              state.viewport.zoom = viewport.zoom;
+            if (viewport.panX !== undefined)
+              state.viewport.panX = viewport.panX;
+            if (viewport.panY !== undefined)
+              state.viewport.panY = viewport.panY;
+            console.log("[ImageExtractionStore] viewport after update:", {
+              ...state.viewport,
+            });
           });
         },
 
@@ -365,11 +370,16 @@ export const useImageExtractionStoreV2 = create<ImageExtractionStore>()(
           // Don't persist dialog state - it should start closed
         }),
         onRehydrateStorage: () => (state) => {
-          console.log("[ImageExtractionStore] onRehydrateStorage called, state:", state ? {
-            hasCurrentScreenshot: !!state.currentScreenshot,
-            viewport: state.viewport,
-            _isHydrated: state._isHydrated,
-          } : "null");
+          console.log(
+            "[ImageExtractionStore] onRehydrateStorage called, state:",
+            state
+              ? {
+                  hasCurrentScreenshot: !!state.currentScreenshot,
+                  viewport: state.viewport,
+                  _isHydrated: state._isHydrated,
+                }
+              : "null"
+          );
           if (state) {
             state._isHydrated = true;
             console.log("[ImageExtractionStore] _isHydrated set to true");

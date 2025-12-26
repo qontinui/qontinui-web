@@ -230,7 +230,10 @@ export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
         try {
           wsRef.current.send(JSON.stringify({ type: "ping" }));
         } catch (error) {
-          console.error("[useExecutionEvents] Failed to send heartbeat:", error);
+          console.error(
+            "[useExecutionEvents] Failed to send heartbeat:",
+            error
+          );
         }
       }
     }, 30000); // Every 30 seconds
@@ -350,7 +353,9 @@ export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
       }));
 
       if (onError) {
-        onError(error instanceof Error ? error : new Error("Connection failed"));
+        onError(
+          error instanceof Error ? error : new Error("Connection failed")
+        );
       }
     }
   }, [

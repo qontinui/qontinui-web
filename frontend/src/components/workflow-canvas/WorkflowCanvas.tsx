@@ -172,7 +172,10 @@ function WorkflowCanvasInner({
   // Create a stable key for the workflow to detect actual content changes
   // This prevents infinite loops from object reference changes
   const workflowKey = useMemo(() => {
-    const actionIds = workflow.actions.map((a) => a.id).sort().join(",");
+    const actionIds = workflow.actions
+      .map((a) => a.id)
+      .sort()
+      .join(",");
     const connectionKeys = Object.entries(workflow.connections || {})
       .map(([k, v]) => `${k}:${v}`)
       .sort()

@@ -3,16 +3,14 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import { useProject } from "@/hooks/automation/useProject";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { IntegrationTestResults } from "@/components/testing/IntegrationTestResults";
 import { VisualPlayback } from "@/components/testing/VisualPlayback";
 import { integrationTestingService } from "@/services/integration-testing";
-import { RequireProject } from "@/components/require-project";
 import {
   ArrowLeft,
   Play,
@@ -34,10 +32,11 @@ import type {
 
 type ViewMode = "list" | "detail" | "visual";
 
-export default function IntegrationTestingPage() {
+export default function IntegrationTestPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const { projectId } = useProject();
+  const params = useParams();
+  const projectId = params.projectId as string;
 
   const [runs, setRuns] = useState<IntegrationTestRunSummary[]>([]);
   const [selectedRun, setSelectedRun] =
@@ -78,12 +77,10 @@ export default function IntegrationTestingPage() {
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/");
-    } else if (user && projectId) {
+    } else if (user) {
       fetchRuns();
-    } else if (user && !projectId) {
-      setLoading(false);
     }
-  }, [user, authLoading, router, fetchRuns, projectId]);
+  }, [user, authLoading, router, fetchRuns]);
 
   // Load run details
   const loadRunDetails = async (runId: string) => {
@@ -104,59 +101,33 @@ export default function IntegrationTestingPage() {
     }
   };
 
-  // Run integration test
+  // Run integration test (placeholder - would need workflow config)
   const runIntegrationTest = async () => {
-    if (!projectId) {
-      setError("No project selected. Please select a project first.");
-      return;
-    }
+    if (!projectId) return;
 
-    if (apiHealthy === null) {
-      setError("Still checking API connection. Please wait...");
-      return;
-    }
+    // This is a placeholder - in a real implementation, you would:
+    // 1. Select a workflow from the project
+    // 2. Build WorkflowConfig from the workflow definition
+    // 3. Call the integration test endpoint
 
-    if (apiHealthy === false) {
-      setError("qontinui-api is offline. Please start the API server.");
-      return;
-    }
-
-    // TODO: In the full implementation, this would:
-    // 1. Show a workflow selector dialog
-    // 2. Build WorkflowConfig from the selected workflow
-    // For now, we create a demo workflow config for testing
-    const demoWorkflowConfig: WorkflowConfig = {
-      workflow_id: "demo-test",
-      workflow_name: "Demo Integration Test",
-      states: [
-        { id: "initial", name: "Initial State", is_initial: true },
-        { id: "final", name: "Final State" },
-      ],
-      transitions: [
-        {
-          id: "t1",
-          name: "Go to Final",
-          from_state_id: "initial",
-          to_state_id: "final",
-          actions: [],
-        },
-      ],
-      initial_state_ids: ["initial"],
+    const mockWorkflowConfig: WorkflowConfig = {
+      workflow_id: "placeholder",
+      workflow_name: "Integration Test",
+      states: [],
+      transitions: [],
     };
 
     try {
       setRunningTest(true);
       setError(null);
-      console.log("Running integration test with config:", demoWorkflowConfig);
       const result = await integrationTestingService.runIntegrationTest(
         projectId,
-        demoWorkflowConfig,
+        mockWorkflowConfig,
         {
           include_historical_stats: true,
           record_screenshots: true,
         }
       );
-      console.log("Integration test result:", result);
       setSelectedRun(result);
       setViewMode("detail");
       // Refresh the runs list
@@ -196,46 +167,45 @@ export default function IntegrationTestingPage() {
   }
 
   return (
-    <RequireProject pageName="Integration Testing">
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
-        {/* Header */}
-        <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-4">
-              {viewMode !== "list" && selectedRun && (
-                <Button
-                  variant="ghost"
-                  onClick={goBackToList}
-                  className="text-gray-400 hover:text-white"
-                >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to List
-                </Button>
-              )}
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-[#FF6B6B] to-[#FF4444] bg-clip-text text-transparent">
-                Integration Testing
-              </h1>
-              <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-                Mock Mode
-              </Badge>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* API Health Indicator */}
+    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      {/* Header */}
+      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (viewMode !== "list" && selectedRun) {
+                  goBackToList();
+                } else {
+                  router.push(`/projects/${projectId}/testing`);
+                }
+              }}
+              className="text-gray-400 hover:text-white"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              {viewMode !== "list" && selectedRun
+                ? "Back to List"
+                : "Testing Dashboard"}
+            </Button>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#0099CC] bg-clip-text text-transparent">
+              Integration Testing
+            </h1>
+            <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+              Mock Mode
+            </Badge>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* API Health Indicator */}
+            {apiHealthy !== null && (
               <Badge
                 className={
-                  apiHealthy === null
-                    ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                    : apiHealthy
-                      ? "bg-green-500/20 text-green-400 border-green-500/30"
-                      : "bg-red-500/20 text-red-400 border-red-500/30"
+                  apiHealthy
+                    ? "bg-green-500/20 text-green-400 border-green-500/30"
+                    : "bg-red-500/20 text-red-400 border-red-500/30"
                 }
               >
-                {apiHealthy === null ? (
-                  <>
-                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                    Checking API...
-                  </>
-                ) : apiHealthy ? (
+                {apiHealthy ? (
                   <>
                     <CheckCircle2 className="w-3 h-3 mr-1" />
                     API Connected
@@ -247,166 +217,155 @@ export default function IntegrationTestingPage() {
                   </>
                 )}
               </Badge>
+            )}
 
-              {/* View Mode Toggle (when viewing details) */}
-              {selectedRun && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleViewMode}
-                  className="border-gray-700 hover:border-[#FF6B6B] hover:text-[#FF6B6B]"
-                >
-                  {viewMode === "visual" ? (
-                    <>
-                      <FileText className="w-4 h-4 mr-2" />
-                      Details View
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="w-4 h-4 mr-2" />
-                      Visual View
-                    </>
-                  )}
-                </Button>
-              )}
-
-              {/* Refresh Button */}
-              {viewMode === "list" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchRuns}
-                  disabled={loading || !projectId}
-                  className="border-gray-700 hover:border-gray-600"
-                  title={
-                    !projectId ? "Select a project to view runs" : undefined
-                  }
-                >
-                  <RefreshCw
-                    className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
-                  />
-                  Refresh
-                </Button>
-              )}
-
-              {/* Run Test Button */}
+            {/* View Mode Toggle (when viewing details) */}
+            {selectedRun && (
               <Button
-                onClick={runIntegrationTest}
-                disabled={runningTest || !projectId || !apiHealthy}
-                className="bg-[#FF6B6B] hover:bg-[#FF6B6B]/80 text-white"
-                title={
-                  !projectId
-                    ? "Select a project to run tests"
-                    : !apiHealthy
-                      ? "API is offline"
-                      : undefined
-                }
+                variant="outline"
+                size="sm"
+                onClick={toggleViewMode}
+                className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
               >
-                {runningTest ? (
+                {viewMode === "visual" ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Running...
+                    <FileText className="w-4 h-4 mr-2" />
+                    Details View
                   </>
                 ) : (
                   <>
-                    <Play className="w-4 h-4 mr-2" />
-                    Run Test
+                    <Eye className="w-4 h-4 mr-2" />
+                    Visual View
                   </>
                 )}
               </Button>
-            </div>
-          </div>
-        </header>
+            )}
 
-        {/* Main Content */}
-        <main className="p-6 max-w-7xl mx-auto">
-          {/* Error Display */}
-          {error && (
-            <Card className="bg-red-500/10 border-red-500/30 mb-6">
-              <CardContent className="py-4">
-                <div className="flex items-center gap-2 text-red-400">
-                  <AlertCircle className="w-5 h-5" />
-                  <span>{error}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setError(null)}
-                    className="ml-auto text-red-400 hover:text-red-300"
-                  >
-                    Dismiss
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* API Offline Warning */}
-          {apiHealthy === false && viewMode === "list" && (
-            <Card className="bg-yellow-500/10 border-yellow-500/30 mb-6">
-              <CardContent className="py-4">
-                <div className="flex items-center gap-2 text-yellow-400">
-                  <AlertCircle className="w-5 h-5" />
-                  <span>
-                    qontinui-api is not reachable at{" "}
-                    {process.env.NEXT_PUBLIC_QONTINUI_API_URL ||
-                      "http://localhost:8001"}
-                    . Start the API to run integration tests.
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Content based on view mode */}
-          {viewMode === "list" && (
-            <>
-              {/* Welcome Section */}
-              <div className="mb-8">
-                <h2 className="text-3xl font-bold mb-2">
-                  Integration Test Runs
-                </h2>
-                <p className="text-gray-400">
-                  Run workflows in mock mode using historical data. No live GUI
-                  required.
-                </p>
-              </div>
-
-              {/* Runs List */}
-              {loading && runs.length === 0 ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-[#FF6B6B]" />
-                </div>
-              ) : runs.length === 0 ? (
-                <EmptyState
-                  onRunTest={runIntegrationTest}
-                  runningTest={runningTest}
+            {/* Refresh Button */}
+            {viewMode === "list" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchRuns}
+                disabled={loading}
+                className="border-gray-700 hover:border-gray-600"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
                 />
+                Refresh
+              </Button>
+            )}
+
+            {/* Run Test Button */}
+            <Button
+              onClick={runIntegrationTest}
+              disabled={runningTest || !apiHealthy}
+              className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+            >
+              {runningTest ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Running...
+                </>
               ) : (
-                <IntegrationTestRunsList
-                  runs={runs}
-                  onSelectRun={loadRunDetails}
-                />
+                <>
+                  <Play className="w-4 h-4 mr-2" />
+                  Run Test
+                </>
               )}
-            </>
-          )}
+            </Button>
+          </div>
+        </div>
+      </header>
 
-          {viewMode === "detail" && selectedRun && (
-            <IntegrationTestResults
-              run={selectedRun}
-              showPlaybackToggle={true}
-              onToggleVisualMode={toggleViewMode}
-            />
-          )}
+      {/* Main Content */}
+      <main className="p-6 max-w-7xl mx-auto">
+        {/* Error Display */}
+        {error && (
+          <Card className="bg-red-500/10 border-red-500/30 mb-6">
+            <CardContent className="py-4">
+              <div className="flex items-center gap-2 text-red-400">
+                <AlertCircle className="w-5 h-5" />
+                <span>{error}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setError(null)}
+                  className="ml-auto text-red-400 hover:text-red-300"
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-          {viewMode === "visual" && selectedRun && (
-            <VisualPlayback
-              run={selectedRun}
-              onToggleVisualMode={toggleViewMode}
-            />
-          )}
-        </main>
-      </div>
-    </RequireProject>
+        {/* API Offline Warning */}
+        {apiHealthy === false && viewMode === "list" && (
+          <Card className="bg-yellow-500/10 border-yellow-500/30 mb-6">
+            <CardContent className="py-4">
+              <div className="flex items-center gap-2 text-yellow-400">
+                <AlertCircle className="w-5 h-5" />
+                <span>
+                  qontinui-api is not reachable at{" "}
+                  {process.env.NEXT_PUBLIC_QONTINUI_API_URL ||
+                    "http://localhost:8001"}
+                  . Start the API to run integration tests.
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Content based on view mode */}
+        {viewMode === "list" && (
+          <>
+            {/* Welcome Section */}
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold mb-2">Integration Test Runs</h2>
+              <p className="text-gray-400">
+                Run workflows in mock mode using historical data. No live GUI
+                required.
+              </p>
+            </div>
+
+            {/* Runs List */}
+            {loading && runs.length === 0 ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF]" />
+              </div>
+            ) : runs.length === 0 ? (
+              <EmptyState
+                onRunTest={runIntegrationTest}
+                runningTest={runningTest}
+                apiHealthy={apiHealthy}
+              />
+            ) : (
+              <IntegrationTestRunsList
+                runs={runs}
+                onSelectRun={loadRunDetails}
+              />
+            )}
+          </>
+        )}
+
+        {viewMode === "detail" && selectedRun && (
+          <IntegrationTestResults
+            run={selectedRun}
+            showPlaybackToggle={true}
+            onToggleVisualMode={toggleViewMode}
+          />
+        )}
+
+        {viewMode === "visual" && selectedRun && (
+          <VisualPlayback
+            run={selectedRun}
+            onToggleVisualMode={toggleViewMode}
+          />
+        )}
+      </main>
+    </div>
   );
 }
 
@@ -417,9 +376,10 @@ export default function IntegrationTestingPage() {
 interface EmptyStateProps {
   onRunTest: () => void;
   runningTest: boolean;
+  apiHealthy: boolean | null;
 }
 
-function EmptyState({ onRunTest, runningTest }: EmptyStateProps) {
+function EmptyState({ onRunTest, runningTest, apiHealthy }: EmptyStateProps) {
   return (
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
       <CardContent className="py-12 text-center">
@@ -434,8 +394,8 @@ function EmptyState({ onRunTest, runningTest }: EmptyStateProps) {
         </p>
         <Button
           onClick={onRunTest}
-          disabled={runningTest}
-          className="bg-[#FF6B6B] hover:bg-[#FF6B6B]/80 text-white"
+          disabled={runningTest || !apiHealthy}
+          className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
         >
           {runningTest ? (
             <>
@@ -512,7 +472,7 @@ function IntegrationTestRunsList({
   };
 
   const formatDuration = (ms: number) => {
-    if (ms === 0) return "0ms (virtual)";
+    if (ms === 0) return "0ms";
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
@@ -523,7 +483,7 @@ function IntegrationTestRunsList({
       {runs.map((run) => (
         <Card
           key={run.id}
-          className="bg-[#1A1A1B]/50 border-gray-800/50 hover:border-[#FF6B6B]/50 transition-colors cursor-pointer"
+          className="bg-[#1A1A1B]/50 border-gray-800/50 hover:border-gray-700/50 transition-colors cursor-pointer"
           onClick={() => onSelectRun(run.id)}
         >
           <CardContent className="py-4">

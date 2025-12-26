@@ -103,9 +103,7 @@ class ProjectLoaderService {
    * Check if a project is already loaded
    */
   isProjectLoaded(projectId: string): boolean {
-    return (
-      this.loadedProjectId === projectId && this.stateMachine.isLoaded()
-    );
+    return this.loadedProjectId === projectId && this.stateMachine.isLoaded();
   }
 
   /**

@@ -49,10 +49,7 @@ import {
   cleanAllReferences,
   type CleanupResult,
 } from "@/services/project-optimization/reference-cleaner";
-import {
-  workflowRepository,
-  transitionRepository,
-} from "@/lib/repositories";
+import { workflowRepository, transitionRepository } from "@/lib/repositories";
 
 export interface ProjectExportDialogProps {
   open: boolean;
@@ -83,7 +80,9 @@ export function ProjectExportDialog({
   const [exportName, setExportName] = useState(projectName);
   const [description, setDescription] = useState("");
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
+  const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(
+    null
+  );
 
   // Monitor validation state
   const [monitorValidationErrors, setMonitorValidationErrors] = useState<
@@ -165,11 +164,13 @@ export function ProjectExportDialog({
     async (config: Parameters<typeof ragSetupService.startRAGSetup>[1]) => {
       // Use actual project UUID for proper backend sync
       // Fall back to sanitized name only if no projectId exists
-      const ragProjectId = projectId || (config.metadata.name || "project")
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "-")
-        .replace(/-+/g, "-")
-        .substring(0, 50);
+      const ragProjectId =
+        projectId ||
+        (config.metadata.name || "project")
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "-")
+          .replace(/-+/g, "-")
+          .substring(0, 50);
 
       setRagStatus("checking");
 
@@ -206,7 +207,10 @@ export function ProjectExportDialog({
           totalElements: 0,
         });
 
-        const result = await ragSetupService.startRAGSetup(ragProjectId, config);
+        const result = await ragSetupService.startRAGSetup(
+          ragProjectId,
+          config
+        );
 
         if (result.success) {
           // Start polling for progress
@@ -320,8 +324,11 @@ export function ProjectExportDialog({
     setCleanupResult(null);
 
     try {
-      const { workflows: cleanedWorkflows, transitions: cleanedTransitions, result } =
-        cleanAllReferences(workflows, transitions);
+      const {
+        workflows: cleanedWorkflows,
+        transitions: cleanedTransitions,
+        result,
+      } = cleanAllReferences(workflows, transitions);
 
       // Update all cleaned workflows - both context state AND directly persist to IndexedDB
       for (const workflow of cleanedWorkflows) {
@@ -611,13 +618,15 @@ export function ProjectExportDialog({
                       <div className="text-xs text-green-400/70 mt-2">
                         <span className="font-medium">Details:</span>
                         <ul className="mt-1 ml-4 space-y-0.5 max-h-32 overflow-y-auto">
-                          {cleanupResult.details.slice(0, 10).map((detail, i) => (
-                            <li key={i}>
-                              {detail.type === "workflow-connection"
-                                ? `Workflow "${detail.sourceName || detail.sourceId}": ${detail.reason}`
-                                : `Transition "${detail.sourceId}": ${detail.reason}`}
-                            </li>
-                          ))}
+                          {cleanupResult.details
+                            .slice(0, 10)
+                            .map((detail, i) => (
+                              <li key={i}>
+                                {detail.type === "workflow-connection"
+                                  ? `Workflow "${detail.sourceName || detail.sourceId}": ${detail.reason}`
+                                  : `Transition "${detail.sourceId}": ${detail.reason}`}
+                              </li>
+                            ))}
                           {cleanupResult.details.length > 10 && (
                             <li className="text-green-400/50">
                               ...and {cleanupResult.details.length - 10} more

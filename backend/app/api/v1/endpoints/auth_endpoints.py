@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +18,7 @@ from app.api.deps import current_active_user, get_async_db
 from app.auth.config import fastapi_users
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
-from app.core.security import verify_password
+from app.core.security import create_access_token, create_refresh_token, verify_password
 from app.crud.user import get_user_by_email
 from app.middleware.error_handler import unauthorized_error, validation_error
 from app.middleware.rate_limit import auth_limiter
@@ -70,10 +71,6 @@ router.include_router(
 
 
 # ===== CUSTOM ENDPOINTS (NOT PROVIDED BY FASTAPI-USERS) =====
-
-from fastapi.security import OAuth2PasswordRequestForm
-
-from app.core.security import create_access_token, create_refresh_token
 
 
 class TokenResponse(BaseModel):
@@ -295,7 +292,54 @@ async def logout(
     return {"detail": "Successfully logged out"}
 
 
+class RunnerTokenResponse(BaseModel):
+    """Response model for runner token endpoint."""
+
+    token: str
+    expires_in: int  # Seconds until token expires
+
+
+@router.post("/runner-token", response_model=RunnerTokenResponse, tags=["auth"])
+async def get_runner_token(
+    *,
+    current_user: User = Depends(current_active_user),
+):
+    """
+    Get a short-lived access token for runner API calls.
+
+    This endpoint generates a 5-minute access token that can be passed to
+    the qontinui-runner for making authenticated API calls to the backend.
+
+    Since HttpOnly cookies cannot be accessed by JavaScript (for XSS protection),
+    this endpoint provides a way to get a token that can be explicitly passed
+    to the runner for server-to-server communication.
+
+    The token is short-lived (5 minutes) to minimize security risk if compromised.
+    """
+    # Generate a short-lived token (5 minutes) for runner API calls
+    runner_token_expires = 300  # 5 minutes in seconds
+
+    token = create_access_token(
+        subject=str(current_user.id),
+        expires_delta=timedelta(seconds=runner_token_expires),
+    )
+
+    logger.info(
+        "runner_token_issued",
+        user_id=str(current_user.id),
+        email=current_user.email,
+        expires_in=runner_token_expires,
+    )
+
+    return RunnerTokenResponse(
+        token=token,
+        expires_in=runner_token_expires,
+    )
+
+
 class RefreshTokenRequest(BaseModel):
+    """Request model for token refresh endpoint."""
+
     refresh_token: str | None = None  # Optional for backward compatibility
     extend_session: bool = False
 
@@ -466,10 +510,14 @@ async def refresh_token(
 
 
 class BetaSignupRequest(BaseModel):
+    """Request model for beta signup endpoint."""
+
     email: EmailStr
 
 
 class BetaSignupResponse(BaseModel):
+    """Response model for beta signup endpoint."""
+
     success: bool
     message: str
     temp_password: str | None = None

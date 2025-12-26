@@ -95,7 +95,9 @@ class SyncCoordinatorImpl {
     this.config = { ...this.config, ...config };
     this.setupAutoSave();
     this.setupBeforeUnload();
-    projectLogger.info("SyncCoordinator", "Initialized", { config: this.config });
+    projectLogger.info("SyncCoordinator", "Initialized", {
+      config: this.config,
+    });
   }
 
   /**
@@ -171,7 +173,10 @@ class SyncCoordinatorImpl {
   private async saveToBackend(): Promise<void> {
     // Don't save while loading from backend
     if (this.isLoadingFromBackend) {
-      projectLogger.debug("SyncCoordinator", "Skipping save - loading from backend");
+      projectLogger.debug(
+        "SyncCoordinator",
+        "Skipping save - loading from backend"
+      );
       return;
     }
 

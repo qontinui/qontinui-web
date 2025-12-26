@@ -19,7 +19,9 @@ interface ExtractionSettingsPanelProps {
   onExtract: () => void;
 }
 
-export const ExtractionSettingsPanel: React.FC<ExtractionSettingsPanelProps> = ({
+export const ExtractionSettingsPanel: React.FC<
+  ExtractionSettingsPanelProps
+> = ({
   processingMode,
   tolerance,
   canExtract,
