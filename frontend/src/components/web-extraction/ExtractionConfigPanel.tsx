@@ -3,7 +3,7 @@
  *
  * Allows users to configure web extraction settings:
  * - Input URLs to crawl
- * - Configure viewports (responsive testing)
+ * - Configure viewports based on selected monitors
  * - Toggle hover/focus state capture
  * - Set crawl depth and page limits
  * - Add authentication cookies
@@ -24,9 +24,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import { Plus, X, Globe, Loader2 } from "lucide-react";
+import { Plus, X, Globe, Loader2, Monitor, Check, Wifi, WifiOff } from "lucide-react";
 import { toast } from "sonner";
+import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { ExtractionSessionCreate } from "@/services/extraction-service";
 
 interface ExtractionConfigPanelProps {
@@ -34,29 +40,58 @@ interface ExtractionConfigPanelProps {
   isRunning: boolean;
 }
 
-// Common viewport presets
-const VIEWPORT_PRESETS = [
-  { name: "Desktop HD", width: 1920, height: 1080 },
-  { name: "Desktop", width: 1366, height: 768 },
-  { name: "Laptop", width: 1280, height: 720 },
-  { name: "Tablet", width: 768, height: 1024 },
-  { name: "Mobile", width: 375, height: 667 },
-];
+// Default viewport size when monitor resolution is not available
+const DEFAULT_VIEWPORT: [number, number] = [1920, 1080];
 
 export function ExtractionConfigPanel({
   onStartExtraction,
   isRunning,
 }: ExtractionConfigPanelProps) {
   const [urls, setUrls] = useState<string[]>([""]);
-  const [viewports, setViewports] = useState<Array<[number, number]>>([
-    [1920, 1080],
-  ]);
+  const [selectedMonitors, setSelectedMonitors] = useState<number[]>([0]);
   const [captureHover, setCaptureHover] = useState(true);
   const [captureFocus, setCaptureFocus] = useState(true);
   const [maxDepth, setMaxDepth] = useState(5);
   const [maxPages, setMaxPages] = useState(100);
-  const [customViewportWidth, setCustomViewportWidth] = useState("");
-  const [customViewportHeight, setCustomViewportHeight] = useState("");
+
+  // Fetch runner monitors to get actual monitor resolutions
+  const { monitors: runnerMonitors, isRunnerConnected } = useRunnerMonitors();
+
+  // Sort monitors by x position (left to right) for correct visual display
+  const sortedMonitors = [...runnerMonitors].sort((a, b) => a.x - b.x);
+
+  // Toggle monitor selection
+  const handleMonitorClick = (monitorIndex: number) => {
+    setSelectedMonitors((prev) => {
+      if (prev.includes(monitorIndex)) {
+        // Don't allow deselecting if it's the only one selected
+        if (prev.length > 1) {
+          return prev.filter((i) => i !== monitorIndex);
+        }
+        toast.error("At least one monitor must be selected");
+        return prev;
+      } else {
+        return [...prev, monitorIndex].sort((a, b) => a - b);
+      }
+    });
+  };
+
+  // Select all monitors
+  const handleSelectAllMonitors = () => {
+    setSelectedMonitors(sortedMonitors.map((m) => m.index));
+  };
+
+  // Convert selected monitor indices to viewport dimensions
+  const getViewportsFromMonitors = (): [number, number][] => {
+    return selectedMonitors.map((monitorIndex) => {
+      const monitor = runnerMonitors.find((m) => m.index === monitorIndex);
+      if (monitor) {
+        return [monitor.width, monitor.height];
+      }
+      // Fallback to default viewport
+      return DEFAULT_VIEWPORT;
+    });
+  };
 
   const handleAddUrl = () => {
     setUrls([...urls, ""]);
@@ -74,39 +109,6 @@ export function ExtractionConfigPanel({
     const newUrls = [...urls];
     newUrls[index] = value;
     setUrls(newUrls);
-  };
-
-  const handleAddViewport = (width: number, height: number) => {
-    // Check if viewport already exists
-    const exists = viewports.some(([w, h]) => w === width && h === height);
-    if (exists) {
-      toast.error("Viewport already added");
-      return;
-    }
-    setViewports([...viewports, [width, height]]);
-    toast.success(`Added ${width}x${height} viewport`);
-  };
-
-  const handleAddCustomViewport = () => {
-    const width = parseInt(customViewportWidth);
-    const height = parseInt(customViewportHeight);
-
-    if (isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
-      toast.error("Invalid viewport dimensions");
-      return;
-    }
-
-    handleAddViewport(width, height);
-    setCustomViewportWidth("");
-    setCustomViewportHeight("");
-  };
-
-  const handleRemoveViewport = (index: number) => {
-    if (viewports.length === 1) {
-      toast.error("At least one viewport is required");
-      return;
-    }
-    setViewports(viewports.filter((_, i) => i !== index));
   };
 
   const handleStartExtraction = async () => {
@@ -130,7 +132,7 @@ export function ExtractionConfigPanel({
     const config: ExtractionSessionCreate = {
       source_urls: validUrls,
       config: {
-        viewports,
+        viewports: getViewportsFromMonitors(),
         capture_hover_states: captureHover,
         capture_focus_states: captureFocus,
         max_depth: maxDepth,
@@ -202,87 +204,106 @@ export function ExtractionConfigPanel({
 
         <Separator />
 
-        {/* Viewports Section */}
-        <div className="space-y-3">
-          <Label className="text-base font-semibold">Viewports</Label>
+        {/* Monitors Section */}
+        <TooltipProvider>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Label className="text-base font-semibold">Target Monitors</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help">
+                    {isRunnerConnected ? (
+                      <Wifi className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <WifiOff className="w-4 h-4 text-gray-500" />
+                    )}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isRunnerConnected
+                    ? `Connected to runner (${runnerMonitors.length} monitors detected)`
+                    : "Runner not connected - using default monitors"}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Select monitors to capture. The viewport size will match each
+              monitor&apos;s resolution.
+            </p>
 
-          {/* Current Viewports */}
-          <div className="flex flex-wrap gap-2">
-            {viewports.map(([width, height], index) => (
-              <Badge
-                key={index}
-                variant="secondary"
-                className="flex items-center gap-2 px-3 py-1"
-              >
-                {width}x{height}
-                {viewports.length > 1 && (
+            {/* Monitor Cards */}
+            <div className="flex flex-wrap gap-3">
+              {sortedMonitors.map((monitor) => {
+                const isSelected = selectedMonitors.includes(monitor.index);
+                return (
                   <button
-                    onClick={() => handleRemoveViewport(index)}
-                    className="hover:text-destructive"
+                    key={monitor.index}
+                    onClick={() => handleMonitorClick(monitor.index)}
                     disabled={isRunning}
+                    className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all min-w-[100px] ${
+                      isSelected
+                        ? "bg-primary/10 border-primary text-primary ring-2 ring-primary/30"
+                        : "bg-muted/50 border-muted-foreground/20 text-muted-foreground hover:border-primary/50 hover:bg-muted"
+                    } ${isRunning ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                   >
-                    <X className="h-3 w-3" />
+                    <div className="flex items-center gap-1.5">
+                      <Monitor className="w-5 h-5" />
+                      <span className="font-semibold text-base">
+                        [{monitor.index}]
+                      </span>
+                      {isSelected && (
+                        <Check className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div className="text-xs space-y-0.5 text-center">
+                      {monitor.is_primary && (
+                        <div className="text-green-500 font-medium">
+                          Primary
+                        </div>
+                      )}
+                      <div className="capitalize">{monitor.position}</div>
+                      <div className="text-muted-foreground">
+                        {monitor.width}×{monitor.height}
+                      </div>
+                    </div>
                   </button>
-                )}
-              </Badge>
-            ))}
-          </div>
+                );
+              })}
 
-          {/* Viewport Presets */}
-          <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">
-              Quick Add Presets
-            </Label>
-            <div className="flex flex-wrap gap-2">
-              {VIEWPORT_PRESETS.map((preset) => (
-                <Button
-                  key={preset.name}
-                  onClick={() => handleAddViewport(preset.width, preset.height)}
-                  variant="outline"
-                  size="sm"
+              {/* All button when multiple monitors available */}
+              {sortedMonitors.length > 1 && (
+                <button
+                  onClick={handleSelectAllMonitors}
                   disabled={isRunning}
+                  className={`flex flex-col items-center justify-center gap-1 p-3 rounded-lg border-2 transition-all min-w-[100px] ${
+                    selectedMonitors.length === sortedMonitors.length
+                      ? "bg-primary/10 border-primary text-primary ring-2 ring-primary/30"
+                      : "bg-muted/50 border-muted-foreground/20 text-muted-foreground hover:border-primary/50 hover:bg-muted"
+                  } ${isRunning ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                 >
-                  {preset.name}
-                </Button>
-              ))}
+                  <div className="flex items-center gap-1.5">
+                    <Monitor className="w-5 h-5" />
+                    <span className="font-semibold text-base">All</span>
+                    {selectedMonitors.length === sortedMonitors.length && (
+                      <Check className="w-4 h-4" />
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {sortedMonitors.length} monitors
+                  </div>
+                </button>
+              )}
             </div>
-          </div>
 
-          {/* Custom Viewport */}
-          <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">
-              Custom Viewport
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                type="number"
-                placeholder="Width"
-                value={customViewportWidth}
-                onChange={(e) => setCustomViewportWidth(e.target.value)}
-                className="w-24"
-                disabled={isRunning}
-              />
-              <span className="flex items-center text-muted-foreground">x</span>
-              <Input
-                type="number"
-                placeholder="Height"
-                value={customViewportHeight}
-                onChange={(e) => setCustomViewportHeight(e.target.value)}
-                className="w-24"
-                disabled={isRunning}
-              />
-              <Button
-                onClick={handleAddCustomViewport}
-                variant="outline"
-                size="sm"
-                disabled={isRunning}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add
-              </Button>
+            {/* Show resolved viewports */}
+            <div className="text-xs text-muted-foreground">
+              Viewports:{" "}
+              {getViewportsFromMonitors()
+                .map(([w, h]) => `${w}×${h}`)
+                .join(", ")}
             </div>
           </div>
-        </div>
+        </TooltipProvider>
 
         <Separator />
 

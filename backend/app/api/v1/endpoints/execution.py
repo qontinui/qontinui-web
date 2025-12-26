@@ -13,6 +13,7 @@ Used by:
 - qontinui-web frontend: Viewing execution history and analytics
 """
 
+import io
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -20,6 +21,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from PIL import Image
 
 # Import schemas from qontinui-schemas
 from qontinui_schemas.api.execution import (
@@ -46,6 +48,7 @@ from qontinui_schemas.api.execution import (
     ExecutionStats,
     ExecutionTrendDataPoint,
     ExecutionTrendResponse,
+    ExecutionWorkflowMetadata,
     IssueSeverity,
     IssueSource,
     IssueStatus,
@@ -55,7 +58,6 @@ from qontinui_schemas.api.execution import (
     RunStatus,
     RunType,
     ScreenshotType,
-    WorkflowMetadata,
 )
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,6 +79,7 @@ from app.models.execution_issue import (
 from app.models.execution_run import ExecutionRun, ExecutionRunStatus, ExecutionRunType
 from app.models.execution_screenshot import ExecutionScreenshot, ExecutionScreenshotType
 from app.models.user import User
+from app.services.object_storage import object_storage
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -220,7 +223,9 @@ def _model_to_run_response(run: ExecutionRun) -> ExecutionRunResponse:
             )
         ),
         workflow_metadata=(
-            WorkflowMetadata(**run.workflow_metadata) if run.workflow_metadata else None
+            ExecutionWorkflowMetadata(**run.workflow_metadata)
+            if run.workflow_metadata
+            else None
         ),
         created_at=run.created_at,
     )
@@ -502,7 +507,9 @@ async def get_run(
             )
         ),
         workflow_metadata=(
-            WorkflowMetadata(**run.workflow_metadata) if run.workflow_metadata else None
+            ExecutionWorkflowMetadata(**run.workflow_metadata)
+            if run.workflow_metadata
+            else None
         ),
         created_at=run.created_at,
         description=run.description,
@@ -789,10 +796,39 @@ async def upload_screenshot(
     content = await file.read()
     file_size = len(content)
 
-    # TODO: Upload to S3/MinIO and get actual URL
-    # For now, use placeholder URL
-    storage_path = f"execution/{run_id}/screenshots/{screenshot_id}.png"
-    image_url = f"/api/v1/execution/screenshots/{screenshot_id}"
+    # Upload to S3/MinIO storage
+    storage_prefix = f"execution/{run_id}/screenshots"
+    storage_path = f"{storage_prefix}/{screenshot_id}.png"
+
+    try:
+        # Upload full image
+        file_obj = io.BytesIO(content)
+        image_url = object_storage.backend.upload_file(
+            file_obj, storage_path, content_type="image/png"
+        )
+
+        # Generate and upload thumbnail (200px max)
+        thumbnail_url = None
+        try:
+            img = Image.open(io.BytesIO(content))
+            thumb = img.copy()
+            thumb.thumbnail((200, 200), Image.Resampling.LANCZOS)
+            thumb_buffer = io.BytesIO()
+            thumb.save(thumb_buffer, format="PNG")
+            thumb_buffer.seek(0)
+            thumbnail_path = f"{storage_prefix}/{screenshot_id}_thumb.png"
+            thumbnail_url = object_storage.backend.upload_file(
+                thumb_buffer, thumbnail_path, content_type="image/png"
+            )
+        except Exception as e:
+            logger.warning("thumbnail_generation_failed", error=str(e))
+
+    except Exception as e:
+        logger.error("screenshot_upload_failed", error=str(e), run_id=str(run_id))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload screenshot: {str(e)}",
+        )
 
     # Get associated action if specified
     action_execution_id = None
@@ -814,7 +850,7 @@ async def upload_screenshot(
         screenshot_type=_map_screenshot_type_to_model(screenshot_type),
         storage_path=storage_path,
         image_url=image_url,
-        thumbnail_url=None,
+        thumbnail_url=thumbnail_url,
         width=width,
         height=height,
         file_size_bytes=file_size,

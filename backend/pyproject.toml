@@ -65,6 +65,7 @@ mypy = "^1.14.0"
 ruff = "^0.14"
 types-python-jose = "^3.5.0.20250531"
 types-passlib = "^1.7.7.20250602"
+bandit = "^1.9.2"
 
 
 [build-system]
@@ -158,6 +159,7 @@ ignore = [
 known-first-party = ["app"]
 
 # Optional ML dependencies
+
 [tool.poetry.group.ml]
 optional = true
 

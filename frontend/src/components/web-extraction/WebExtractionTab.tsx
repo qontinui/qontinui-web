@@ -73,15 +73,18 @@ export default function WebExtractionTab() {
     }
 
     const interval = setInterval(() => {
-      loadExtractionDetail(activeExtractionId);
+      loadExtractionDetail(activeExtractionId, true); // silent poll
     }, 3000); // Poll every 3 seconds
 
     return () => clearInterval(interval);
   }, [activeExtractionId, extractionDetail?.status]);
 
-  const loadExtractionDetail = async (extractionId: string) => {
+  const loadExtractionDetail = async (extractionId: string, silent = false) => {
     try {
-      setIsLoadingDetail(true);
+      // Only show loading spinner on initial load, not on polls
+      if (!silent) {
+        setIsLoadingDetail(true);
+      }
       const detail = await extractionService.getExtractionDetail(extractionId);
       setExtractionDetail(detail);
 
@@ -92,9 +95,13 @@ export default function WebExtractionTab() {
       }
     } catch (error) {
       console.error("Failed to load extraction detail:", error);
-      toast.error("Failed to load extraction details");
+      if (!silent) {
+        toast.error("Failed to load extraction details");
+      }
     } finally {
-      setIsLoadingDetail(false);
+      if (!silent) {
+        setIsLoadingDetail(false);
+      }
     }
   };
 

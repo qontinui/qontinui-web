@@ -204,10 +204,12 @@ class ActionExecution(Base):
     # Relationships
     run = relationship("ExecutionRun", back_populates="action_executions")
 
-    screenshot = relationship(
+    # Primary screenshot for this action (ActionExecution -> ExecutionScreenshot via screenshot_id)
+    # Note: This is separate from ExecutionScreenshot.action which goes the other direction
+    primary_screenshot = relationship(
         "ExecutionScreenshot",
-        back_populates="action",
         foreign_keys=[screenshot_id],
+        uselist=False,
     )
 
     issues = relationship(
@@ -217,4 +219,5 @@ class ActionExecution(Base):
     )
 
     def __repr__(self) -> str:
+        """Return string representation."""
         return f"<ActionExecution(id={self.id}, action_type='{self.action_type}', status='{self.status}')>"
