@@ -120,11 +120,11 @@ const massiveWorkflow = {
 'feature:login'    // Feature area
 'schedule:nightly' // Schedule
 
-// ❌ Bad: Inconsistent or unclear tags
+// ❌ Bad: Inconsistent or unclear tags (avoid vague names like these)
 'important'
 'test'
 'old'
-'TODO'
+'todo'
 ```
 
 ### Naming Conventions

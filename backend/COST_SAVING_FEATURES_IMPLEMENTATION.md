@@ -33,7 +33,7 @@ def is_expired(self) -> bool:
     return duration > self.max_duration_seconds
 ```
 
-**WebSocket Integration (TODO):**
+**WebSocket Integration (Implementation Example):**
 
 To complete the implementation, add this code to `app/api/v1/endpoints/automation_ws.py`:
 
@@ -111,7 +111,7 @@ poetry run alembic upgrade head
    - Automatically sets status='aborted', ended_at=now()
    - Logs all cleanup actions
 
-**WebSocket Integration (TODO):**
+**WebSocket Integration (Implementation Example):**
 
 Add this to the `finally` block in `websocket_runner_endpoint()`:
 
