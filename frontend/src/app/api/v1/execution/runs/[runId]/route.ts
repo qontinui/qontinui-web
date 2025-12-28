@@ -36,7 +36,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { runId } = await params;
 
     if (!accessToken) {
-      return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { detail: "Not authenticated" },
+        { status: 401 }
+      );
     }
 
     const backendUrl = `${BACKEND_URL}/api/v1/execution/runs/${runId}`;
@@ -69,7 +72,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { runId } = await params;
 
     if (!accessToken) {
-      return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { detail: "Not authenticated" },
+        { status: 401 }
+      );
     }
 
     // Check for /complete suffix in the URL
@@ -111,7 +117,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const { runId } = await params;
 
     if (!accessToken) {
-      return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { detail: "Not authenticated" },
+        { status: 401 }
+      );
     }
 
     const backendUrl = `${BACKEND_URL}/api/v1/execution/runs/${runId}`;

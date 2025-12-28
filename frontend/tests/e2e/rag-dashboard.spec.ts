@@ -1,11 +1,5 @@
 import { test, expect } from "@playwright/test";
-
-// Test credentials
-const TEST_USER = {
-  username: "jspinak",
-  password: "Qontinui123!",
-  email: "jspinak@hotmail.com",
-};
+import { TEST_USER } from "./test-credentials";
 
 test.describe("RAG Dashboard / Visual Index", () => {
   // Increase timeout for this suite since login + navigation can be slow

@@ -81,6 +81,7 @@ export async function listExecutionRuns(params: {
   project_id?: string;
   run_type?: RunType;
   status?: RunStatus;
+  workflow_name?: string;
   start_date?: string;
   end_date?: string;
   limit?: number;
@@ -94,6 +95,27 @@ export async function listExecutionRuns(params: {
   });
 
   return fetchWithAuth(`/api/v1/execution/runs?${searchParams.toString()}`);
+}
+
+/**
+ * Workflow summary from execution runs
+ */
+export interface WorkflowSummary {
+  workflow_id: string | null;
+  workflow_name: string;
+  run_count: number;
+  last_run_at: string | null;
+}
+
+/**
+ * List unique workflows from execution runs
+ */
+export async function listWorkflows(
+  projectId: string
+): Promise<WorkflowSummary[]> {
+  return fetchWithAuth(
+    `/api/v1/execution/runs/workflows?project_id=${projectId}`
+  );
 }
 
 /**
@@ -340,6 +362,8 @@ export const executionService = {
   getRun: getExecutionRun,
   completeRun: completeExecutionRun,
   cancelRun: cancelExecutionRun,
+  // Workflows
+  listWorkflows,
   // Actions
   reportActions,
   listActions,

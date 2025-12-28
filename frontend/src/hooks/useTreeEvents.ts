@@ -50,6 +50,7 @@ interface ApiExecutionTreeResponse {
   workflow_name: string | null;
   status: string;
   duration_ms: number | null;
+  initial_state_ids: string[];
 }
 
 interface UseTreeEventsOptions {
@@ -80,6 +81,8 @@ interface UseTreeEventsReturn {
   status: string | null;
   /** Total duration in ms */
   durationMs: number | null;
+  /** Initial state IDs from workflow metadata */
+  initialStateIds: string[];
   /** Manually refresh data */
   refresh: () => Promise<void>;
   /** Fetch more events (pagination) */
@@ -112,7 +115,9 @@ export function useTreeEvents({
       const response = await apiClient.getExecutionTree(runId);
       setTree(response);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error("Failed to fetch execution tree"));
+      setError(
+        err instanceof Error ? err : new Error("Failed to fetch execution tree")
+      );
       console.error("[useTreeEvents] Error fetching tree:", err);
     } finally {
       setIsLoading(false);
@@ -120,26 +125,34 @@ export function useTreeEvents({
   }, [runId]);
 
   // Fetch raw events (flat list)
-  const fetchEvents = useCallback(async (offset = 0, limit = 500) => {
-    if (!runId) return;
+  const fetchEvents = useCallback(
+    async (offset = 0, limit = 500) => {
+      if (!runId) return;
 
-    setIsLoading(true);
-    setError(null);
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const response = await apiClient.listTreeEvents(runId, { offset, limit });
-      if (offset === 0) {
-        setEvents(response.events);
-      } else {
-        setEvents(prev => [...prev, ...response.events]);
+      try {
+        const response = await apiClient.listTreeEvents(runId, {
+          offset,
+          limit,
+        });
+        if (offset === 0) {
+          setEvents(response.events);
+        } else {
+          setEvents((prev) => [...prev, ...response.events]);
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error ? err : new Error("Failed to fetch tree events")
+        );
+        console.error("[useTreeEvents] Error fetching events:", err);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error("Failed to fetch tree events"));
-      console.error("[useTreeEvents] Error fetching events:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [runId]);
+    },
+    [runId]
+  );
 
   // Refresh all data
   const refresh = useCallback(async () => {
@@ -147,9 +160,12 @@ export function useTreeEvents({
   }, [fetchTree, fetchEvents]);
 
   // Fetch more events (pagination)
-  const fetchMore = useCallback(async (offset: number, limit = 500) => {
-    await fetchEvents(offset, limit);
-  }, [fetchEvents]);
+  const fetchMore = useCallback(
+    async (offset: number, limit = 500) => {
+      await fetchEvents(offset, limit);
+    },
+    [fetchEvents]
+  );
 
   // Clear all data
   const clear = useCallback(() => {
@@ -178,10 +194,14 @@ export function useTreeEvents({
 
   // Derived values
   const rootNodes = useMemo(() => tree?.root_nodes ?? [], [tree]);
-  const totalEvents = useMemo(() => tree?.total_events ?? events.length, [tree, events]);
+  const totalEvents = useMemo(
+    () => tree?.total_events ?? events.length,
+    [tree, events]
+  );
   const workflowName = useMemo(() => tree?.workflow_name ?? null, [tree]);
   const status = useMemo(() => tree?.status ?? null, [tree]);
   const durationMs = useMemo(() => tree?.duration_ms ?? null, [tree]);
+  const initialStateIds = useMemo(() => tree?.initial_state_ids ?? [], [tree]);
 
   return {
     events,
@@ -193,6 +213,7 @@ export function useTreeEvents({
     workflowName,
     status,
     durationMs,
+    initialStateIds,
     refresh,
     fetchMore,
     clear,

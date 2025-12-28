@@ -8,13 +8,7 @@
 
 import { test, expect } from '@playwright/test';
 import path from 'path';
-
-// Test credentials from .env
-const TEST_USER = {
-  username: 'jspinak',
-  password: 'Qontinui123!',
-  email: 'jspinak@hotmail.com',
-};
+import { TEST_USER } from './test-credentials';
 
 test.describe('Config Import', () => {
   // Increase timeout for login-heavy tests

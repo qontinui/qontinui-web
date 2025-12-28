@@ -482,7 +482,13 @@ function ScreenshotPlaceholder({ step }: ScreenshotPlaceholderProps) {
 // Step Details Component
 // =============================================================================
 
-function StepDetails({ step, nameMap }: { step: ExecutionStep; nameMap?: Map<string, string> }) {
+function StepDetails({
+  step,
+  nameMap,
+}: {
+  step: ExecutionStep;
+  nameMap?: Map<string, string>;
+}) {
   const getStepIcon = () => {
     switch (step.type) {
       case "state_discovery":
@@ -549,7 +555,9 @@ function StepDetails({ step, nameMap }: { step: ExecutionStep; nameMap?: Map<str
       {step.type === "action" && step.pattern_name && (
         <div className="text-xs">
           <span className="text-gray-500">Pattern:</span>{" "}
-          <span className="text-[#00D9FF]">{resolveName(step.pattern_name, nameMap)}</span>
+          <span className="text-[#00D9FF]">
+            {resolveName(step.pattern_name, nameMap)}
+          </span>
         </div>
       )}
 
@@ -571,13 +579,17 @@ function StepDetails({ step, nameMap }: { step: ExecutionStep; nameMap?: Map<str
           {step.activated_states.length > 0 && (
             <div>
               <span className="text-green-400">+</span>{" "}
-              {step.activated_states.map(s => resolveName(s, nameMap)).join(", ")}
+              {step.activated_states
+                .map((s) => resolveName(s, nameMap))
+                .join(", ")}
             </div>
           )}
           {step.deactivated_states.length > 0 && (
             <div>
               <span className="text-red-400">-</span>{" "}
-              {step.deactivated_states.map(s => resolveName(s, nameMap)).join(", ")}
+              {step.deactivated_states
+                .map((s) => resolveName(s, nameMap))
+                .join(", ")}
             </div>
           )}
         </div>

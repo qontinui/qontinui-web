@@ -2,7 +2,8 @@
  * Custom Playwright fixtures for integration testing
  */
 
-import { test as base, Page } from '@playwright/test';
+import { test as base, Page, expect as baseExpect } from '@playwright/test';
+import { TEST_USER } from './test-credentials';
 
 // Define custom fixture types
 type IntegrationTestFixtures = {
@@ -15,22 +16,27 @@ type IntegrationTestFixtures = {
 export const test = base.extend<IntegrationTestFixtures>({
   /**
    * Authenticated page fixture
-   * Automatically logs in before each test
+   * Automatically logs in before each test using centralized credentials
    */
   authenticatedPage: async ({ page }, use) => {
-    // Navigate to login page
-    await page.goto('/login');
+    // Navigate to homepage
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
 
-    // Perform login (adjust selectors based on your app)
-    // This is a placeholder - update with actual login flow
-    await page.fill('[name="email"]', 'test@example.com');
-    await page.fill('[name="password"]', 'testpassword');
-    await page.click('button[type="submit"]');
+    // Open login dialog
+    const signInButton = page.getByRole('button', { name: /sign in/i });
+    await signInButton.click();
 
-    // Wait for navigation to complete
-    await page.waitForURL('**/dashboard', { timeout: 5000 }).catch(() => {
-      // If no redirect, assume we're already on the right page
-    });
+    // Wait for dialog and fill credentials
+    const dialog = page.getByRole('dialog');
+    await baseExpect(dialog).toBeVisible();
+
+    await page.getByLabel(/username/i).fill(TEST_USER.username);
+    await page.getByLabel(/password/i).fill(TEST_USER.password);
+    await page.getByRole('button', { name: /sign in/i }).click();
+
+    // Wait for login to complete (dialog closes)
+    await baseExpect(dialog).not.toBeVisible({ timeout: 15000 });
 
     await use(page);
   },

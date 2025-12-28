@@ -15,7 +15,9 @@ import {
   getExecutionTrends,
   getActionReliability,
   listActions,
+  listWorkflows,
 } from "@/services/execution-service";
+import type { WorkflowSummary } from "@/services/execution-service";
 import type {
   RunType,
   RunStatus,
@@ -35,6 +37,10 @@ export const executionKeys = {
   runsList: (filters?: ExecutionRunFilters) =>
     [...executionKeys.runs(), "list", { filters }] as const,
   runDetail: (id: string) => [...executionKeys.runs(), "detail", id] as const,
+  // Workflows (extracted from runs)
+  workflows: () => [...executionKeys.all, "workflows"] as const,
+  workflowsList: (projectId: string) =>
+    [...executionKeys.workflows(), "list", projectId] as const,
   // Actions
   actions: () => [...executionKeys.all, "actions"] as const,
   runActions: (runId: string, params?: { limit?: number; offset?: number }) =>
@@ -78,6 +84,7 @@ export interface ExecutionRunFilters {
   project_id?: string;
   run_type?: RunType;
   status?: RunStatus;
+  workflow_name?: string;
   start_date?: string;
   end_date?: string;
   limit?: number;
@@ -156,6 +163,33 @@ export function useRunActions(
     },
     enabled: enabled && !!runId,
     placeholderData: (previousData) => previousData,
+  });
+}
+
+// =============================================================================
+// Workflow Hooks
+// =============================================================================
+
+/**
+ * Hook to fetch unique workflows from execution runs for a project
+ */
+export function useExecutionWorkflows(projectId: string, enabled = true) {
+  return useQuery<WorkflowSummary[]>({
+    queryKey: executionKeys.workflowsList(projectId),
+    queryFn: async () => {
+      try {
+        return await listWorkflows(projectId);
+      } catch (error) {
+        console.error(
+          "[useExecutionWorkflows] Error fetching workflows:",
+          error
+        );
+        throw error;
+      }
+    },
+    enabled: enabled && !!projectId,
+    placeholderData: (previousData) => previousData,
+    staleTime: 30000,
   });
 }
 

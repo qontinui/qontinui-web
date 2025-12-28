@@ -340,7 +340,8 @@ export function IntegrationTestControlPanel({
                 <span className="text-sm font-medium text-white">
                   Initial States
                 </span>
-                {(initialStatesOverride ?? resolvedInitialStates).length > 0 && (
+                {(initialStatesOverride ?? resolvedInitialStates).length >
+                  0 && (
                   <Badge
                     variant="secondary"
                     className="bg-gray-700/50 text-gray-300"

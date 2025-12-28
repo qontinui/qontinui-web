@@ -34,7 +34,10 @@ export async function GET(request: NextRequest) {
     const accessToken = await getAccessToken(request);
 
     if (!accessToken) {
-      return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { detail: "Not authenticated" },
+        { status: 401 }
+      );
     }
 
     // Forward query parameters
@@ -69,7 +72,10 @@ export async function POST(request: NextRequest) {
     const accessToken = await getAccessToken(request);
 
     if (!accessToken) {
-      return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { detail: "Not authenticated" },
+        { status: 401 }
+      );
     }
 
     const body = await request.json();

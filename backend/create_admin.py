@@ -8,19 +8,33 @@ from pathlib import Path
 backend_dir = Path(__file__).resolve().parent
 sys.path.insert(0, str(backend_dir))
 
-from passlib.context import CryptContext
+from passlib.context import CryptContext  # noqa: E402
 
-from app.db.session import SessionLocal
-from app.models.user import User
+from app.core.test_credentials import get_admin_credentials  # noqa: E402
+from app.db.session import SessionLocal  # noqa: E402
+from app.models.user import User  # noqa: E402
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Get default credentials from centralized config
+default_creds = get_admin_credentials()
+
 # Allow customization via command line or environment
 email = (
-    sys.argv[1] if len(sys.argv) > 1 else os.getenv("ADMIN_EMAIL", "admin@qontinui.com")
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else os.getenv("ADMIN_EMAIL", default_creds["email"])
 )
-username = sys.argv[2] if len(sys.argv) > 2 else os.getenv("ADMIN_USERNAME", "admin")
-password = sys.argv[3] if len(sys.argv) > 3 else os.getenv("ADMIN_PASSWORD", "admin123")
+username = (
+    sys.argv[2]
+    if len(sys.argv) > 2
+    else os.getenv("ADMIN_USERNAME", default_creds["username"])
+)
+password = (
+    sys.argv[3]
+    if len(sys.argv) > 3
+    else os.getenv("ADMIN_PASSWORD", default_creds["password"])
+)
 
 db = SessionLocal()
 try:

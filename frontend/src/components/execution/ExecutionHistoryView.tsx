@@ -14,12 +14,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  RefreshCw,
-  AlertTriangle,
-  History,
-  ArrowLeft,
-} from "lucide-react";
+import { RefreshCw, AlertTriangle, History, ArrowLeft } from "lucide-react";
 import type { DisplayNode, NodeStatus, NodeType } from "@/types/tree-events";
 
 interface ExecutionHistoryViewProps {
@@ -86,14 +81,18 @@ export function ExecutionHistoryView({
     workflowName,
     status,
     durationMs,
+    initialStateIds,
     refresh,
   } = useTreeEvents({ runId, autoFetch: true });
 
   // Convert API nodes to DisplayNode format
   const displayNodes = convertApiNodes(rootNodes);
 
-  // Extract initial and final states from the tree
-  const { initialStates, finalStates } = extractStates(displayNodes);
+  // Use initial states from API (stored when workflow started), fall back to extracting from tree
+  const { initialStates: extractedInitialStates, finalStates } =
+    extractStates(displayNodes);
+  const initialStates =
+    initialStateIds.length > 0 ? initialStateIds : extractedInitialStates;
 
   if (error) {
     return (
@@ -190,7 +189,9 @@ export function ExecutionHistoryView({
           disabled={isLoading}
           className="border-gray-700"
         >
-          <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
+          />
           Refresh
         </Button>
       </div>
@@ -200,7 +201,7 @@ export function ExecutionHistoryView({
         <TreeExecutionResults
           displayNodes={displayNodes}
           workflowName={workflowName || "Execution"}
-          status={status as NodeStatus || "pending"}
+          status={(status as NodeStatus) || "pending"}
           durationMs={durationMs || 0}
           initialStates={initialStates}
           finalStates={finalStates}
@@ -237,10 +238,12 @@ function extractStates(nodes: DisplayNode[]): {
   const finalStates = new Set<string>();
 
   function traverse(node: DisplayNode) {
-    const stateContext = node.metadata?.state_context as {
-      active_before?: string[];
-      active_after?: string[];
-    } | undefined;
+    const stateContext = node.metadata?.state_context as
+      | {
+          active_before?: string[];
+          active_after?: string[];
+        }
+      | undefined;
 
     if (stateContext?.active_before) {
       // First node's "before" states are initial states

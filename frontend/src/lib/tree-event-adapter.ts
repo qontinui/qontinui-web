@@ -12,10 +12,7 @@
  * @module tree-event-adapter
  */
 
-import type {
-  TreeEvent,
-  DisplayNode,
-} from "@/types/tree-events";
+import type { TreeEvent, DisplayNode } from "@/types/tree-events";
 import type { UnifiedExecutionStep } from "@/types/tree-events";
 import type {
   ExecutionStep,
@@ -79,7 +76,8 @@ export function treeEventToUnifiedStep(
   }
 
   // Extract action type from metadata config or runtime
-  const actionType = (metadata.config as Record<string, unknown>)?.action_type as string | undefined;
+  const actionType = (metadata.config as Record<string, unknown>)
+    ?.action_type as string | undefined;
 
   return {
     stepNumber,
@@ -122,14 +120,26 @@ export function displayNodeToUnifiedStep(
   // Determine event type based on node status
   let stepType: UnifiedExecutionStep["stepType"];
   if (node.node_type === "workflow") {
-    stepType = node.status === "success" ? "workflow_completed" :
-               node.status === "failed" ? "workflow_failed" : "workflow_started";
+    stepType =
+      node.status === "success"
+        ? "workflow_completed"
+        : node.status === "failed"
+          ? "workflow_failed"
+          : "workflow_started";
   } else if (node.node_type === "transition") {
-    stepType = node.status === "success" ? "transition_completed" :
-               node.status === "failed" ? "transition_failed" : "transition_started";
+    stepType =
+      node.status === "success"
+        ? "transition_completed"
+        : node.status === "failed"
+          ? "transition_failed"
+          : "transition_started";
   } else {
-    stepType = node.status === "success" ? "action_completed" :
-               node.status === "failed" ? "action_failed" : "action_started";
+    stepType =
+      node.status === "success"
+        ? "action_completed"
+        : node.status === "failed"
+          ? "action_failed"
+          : "action_started";
   }
 
   // Build match location if available
@@ -163,7 +173,8 @@ export function displayNodeToUnifiedStep(
   }
 
   // Extract action type from metadata config
-  const actionType = (metadata.config as Record<string, unknown>)?.action_type as string | undefined;
+  const actionType = (metadata.config as Record<string, unknown>)
+    ?.action_type as string | undefined;
 
   return {
     stepNumber,
@@ -188,7 +199,9 @@ export function displayNodeToUnifiedStep(
 /**
  * Convert a mock ExecutionStep to UnifiedExecutionStep for display
  */
-export function mockStepToUnifiedStep(step: ExecutionStep): UnifiedExecutionStep {
+export function mockStepToUnifiedStep(
+  step: ExecutionStep
+): UnifiedExecutionStep {
   const baseStep = {
     stepNumber: step.step_number,
     timestamp: step.timestamp,
@@ -239,7 +252,9 @@ export function mockStepToUnifiedStep(step: ExecutionStep): UnifiedExecutionStep
       const actionStep = step as ActionStep;
       return {
         ...baseStep,
-        stepType: actionStep.result.success ? "action_completed" : "action_failed",
+        stepType: actionStep.result.success
+          ? "action_completed"
+          : "action_failed",
         name: actionStep.action_name,
         nodeId: actionStep.action_id,
         actionType: actionStep.action_type,
@@ -249,18 +264,22 @@ export function mockStepToUnifiedStep(step: ExecutionStep): UnifiedExecutionStep
           activeBefore: actionStep.from_states,
           activeAfter: actionStep.to_states,
         },
-        matchLocation: actionStep.match_location ? {
-          x: actionStep.match_location.x,
-          y: actionStep.match_location.y,
-          width: actionStep.match_location.width,
-          height: actionStep.match_location.height,
-          confidence: actionStep.match_location.score,
-        } : undefined,
-        inputData: actionStep.input_data ? {
-          text: actionStep.input_data.text,
-          from: actionStep.input_data.from,
-          to: actionStep.input_data.to,
-        } : undefined,
+        matchLocation: actionStep.match_location
+          ? {
+              x: actionStep.match_location.x,
+              y: actionStep.match_location.y,
+              width: actionStep.match_location.width,
+              height: actionStep.match_location.height,
+              confidence: actionStep.match_location.score,
+            }
+          : undefined,
+        inputData: actionStep.input_data
+          ? {
+              text: actionStep.input_data.text,
+              from: actionStep.input_data.from,
+              to: actionStep.input_data.to,
+            }
+          : undefined,
         screenshotUrl: actionStep.screenshot_url,
         metadata: {
           pattern_id: actionStep.pattern_id,
@@ -304,7 +323,9 @@ export function mockStepToUnifiedStep(step: ExecutionStep): UnifiedExecutionStep
 /**
  * Convert an array of TreeEvents to UnifiedExecutionSteps
  */
-export function treeEventsToUnifiedSteps(events: TreeEvent[]): UnifiedExecutionStep[] {
+export function treeEventsToUnifiedSteps(
+  events: TreeEvent[]
+): UnifiedExecutionStep[] {
   return events.map((event, index) => treeEventToUnifiedStep(event, index + 1));
 }
 
@@ -312,7 +333,9 @@ export function treeEventsToUnifiedSteps(events: TreeEvent[]): UnifiedExecutionS
  * Convert an array of DisplayNodes to UnifiedExecutionSteps
  * Flattens the tree structure into a chronological list
  */
-export function displayNodesToUnifiedSteps(nodes: DisplayNode[]): UnifiedExecutionStep[] {
+export function displayNodesToUnifiedSteps(
+  nodes: DisplayNode[]
+): UnifiedExecutionStep[] {
   const steps: UnifiedExecutionStep[] = [];
   let stepNumber = 1;
 
@@ -334,7 +357,9 @@ export function displayNodesToUnifiedSteps(nodes: DisplayNode[]): UnifiedExecuti
   }
 
   // Sort by timestamp
-  steps.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  steps.sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
 
   // Re-number after sorting
   steps.forEach((step, index) => {
@@ -347,7 +372,9 @@ export function displayNodesToUnifiedSteps(nodes: DisplayNode[]): UnifiedExecuti
 /**
  * Convert an array of mock ExecutionSteps to UnifiedExecutionSteps
  */
-export function mockStepsToUnifiedSteps(steps: ExecutionStep[]): UnifiedExecutionStep[] {
+export function mockStepsToUnifiedSteps(
+  steps: ExecutionStep[]
+): UnifiedExecutionStep[] {
   return steps.map(mockStepToUnifiedStep);
 }
 
@@ -356,9 +383,15 @@ export function mockStepsToUnifiedSteps(steps: ExecutionStep[]): UnifiedExecutio
  */
 export function isTreeEventStepType(stepType: string): boolean {
   const treeEventTypes = [
-    "workflow_started", "workflow_completed", "workflow_failed",
-    "action_started", "action_completed", "action_failed",
-    "transition_started", "transition_completed", "transition_failed",
+    "workflow_started",
+    "workflow_completed",
+    "workflow_failed",
+    "action_started",
+    "action_completed",
+    "action_failed",
+    "transition_started",
+    "transition_completed",
+    "transition_failed",
   ];
   return treeEventTypes.includes(stepType);
 }
@@ -417,9 +450,13 @@ export function getStepTypeLabel(step: UnifiedExecutionStep): string {
     case "action_started":
       return step.actionType ? step.actionType.toUpperCase() : "Action Started";
     case "action_completed":
-      return step.actionType ? step.actionType.toUpperCase() : "Action Completed";
+      return step.actionType
+        ? step.actionType.toUpperCase()
+        : "Action Completed";
     case "action_failed":
-      return step.actionType ? `${step.actionType.toUpperCase()} (Failed)` : "Action Failed";
+      return step.actionType
+        ? `${step.actionType.toUpperCase()} (Failed)`
+        : "Action Failed";
     case "transition_started":
       return "Transition";
     case "transition_completed":

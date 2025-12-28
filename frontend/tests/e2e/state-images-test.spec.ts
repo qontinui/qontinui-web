@@ -2,11 +2,7 @@
  * Test to verify StateImages display correctly
  */
 import { test, expect } from '@playwright/test';
-
-const TEST_USER = {
-  username: 'jspinak',
-  password: 'Qontinui123!',
-};
+import { TEST_USER } from './test-credentials';
 
 // Use the extraction project which has states with images
 const PROJECT_ID = '42c6f680-9357-49dd-ae59-52ebf3f3dd10';

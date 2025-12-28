@@ -389,6 +389,9 @@ async def list_runs(
     status_filter: RunStatus | None = Query(
         None, alias="status", description="Filter by status"
     ),
+    workflow_name: str | None = Query(
+        None, description="Filter by workflow name from workflow_metadata"
+    ),
     start_date: date | None = Query(None, description="Filter by start date (from)"),
     end_date: date | None = Query(None, description="Filter by start date (to)"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
@@ -408,6 +411,11 @@ async def list_runs(
     if status_filter:
         query = query.where(
             ExecutionRun.status == _map_run_status_to_model(status_filter)
+        )
+    if workflow_name:
+        # Filter by workflow_name in JSONB workflow_metadata field
+        query = query.where(
+            ExecutionRun.workflow_metadata["workflow_name"].astext == workflow_name
         )
     if start_date:
         query = query.where(func.date(ExecutionRun.started_at) >= start_date)
@@ -442,6 +450,65 @@ async def list_runs(
             has_more=offset + limit < total,
         ),
     )
+
+
+@router.get(
+    "/runs/workflows",
+    response_model=list[dict[str, Any]],
+    summary="List unique workflows from execution runs",
+    description="Get a list of unique workflows that have execution runs, with run counts.",
+)
+async def list_workflows(
+    project_id: UUID = Query(..., description="Project ID to filter by"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+) -> list[dict[str, Any]]:
+    """List unique workflows from execution runs."""
+    # Get all runs for the project that have workflow metadata
+    query = select(ExecutionRun).where(
+        ExecutionRun.project_id == project_id,
+        ExecutionRun.workflow_metadata.isnot(None),
+    )
+    result = await db.execute(query)
+    runs = result.scalars().all()
+
+    # Extract unique workflows
+    workflows: dict[str, dict[str, Any]] = {}
+    for run in runs:
+        if run.workflow_metadata:
+            workflow_name = run.workflow_metadata.get("workflow_name")
+            workflow_id = run.workflow_metadata.get("workflow_id")
+            if workflow_name:
+                key = workflow_id or workflow_name
+                if key not in workflows:
+                    workflows[key] = {
+                        "workflow_id": workflow_id,
+                        "workflow_name": workflow_name,
+                        "run_count": 0,
+                        "last_run_at": None,
+                    }
+                workflows[key]["run_count"] += 1
+                if (
+                    workflows[key]["last_run_at"] is None
+                    or run.started_at > workflows[key]["last_run_at"]
+                ):
+                    workflows[key]["last_run_at"] = run.started_at
+
+    # Sort by last_run_at descending
+    sorted_workflows = sorted(
+        workflows.values(),
+        key=lambda w: w["last_run_at"] or datetime.min,
+        reverse=True,
+    )
+
+    logger.info(
+        "Listed unique workflows",
+        project_id=str(project_id),
+        workflow_count=len(sorted_workflows),
+        user_id=str(current_user.id),
+    )
+
+    return sorted_workflows
 
 
 @router.get(
@@ -1800,6 +1867,11 @@ async def get_execution_tree(
     if start_times and end_times:
         duration_ms = (max(end_times) - min(start_times)) * 1000
 
+    # Extract initial states from workflow metadata
+    initial_state_ids: list[str] = []
+    if run.workflow_metadata:
+        initial_state_ids = run.workflow_metadata.get("initial_state_ids", [])
+
     return ExecutionTreeResponse(
         run_id=run_id,
         root_nodes=root_nodes,
@@ -1807,4 +1879,5 @@ async def get_execution_tree(
         workflow_name=run.run_name,
         status=overall_status,
         duration_ms=duration_ms,
+        initial_state_ids=initial_state_ids,
     )

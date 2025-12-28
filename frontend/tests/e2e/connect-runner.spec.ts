@@ -4,12 +4,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-
-// Test credentials - for local development only
-const TEST_USER = {
-  username: 'jspinak@hotmail.com',
-  password: 'password123',
-};
+import { TEST_USER } from './test-credentials';
 
 test.describe('Connect Runner Page', () => {
   test.beforeEach(async ({ page }) => {

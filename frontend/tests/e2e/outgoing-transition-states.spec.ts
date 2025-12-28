@@ -8,13 +8,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-
-// Test credentials from .env
-const TEST_USER = {
-  username: 'jspinak',
-  password: 'Qontinui123!',
-  email: 'jspinak@hotmail.com',
-};
+import { TEST_USER } from './test-credentials';
 
 test.describe('Outgoing Transition States Dropdown', () => {
   // Increase timeout for login-heavy tests

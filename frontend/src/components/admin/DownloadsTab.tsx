@@ -176,11 +176,15 @@ export default function DownloadsTab() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card className="bg-card border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Downloads</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Downloads
+            </CardTitle>
             <Download className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{analytics.total_downloads}</div>
+            <div className="text-2xl font-bold">
+              {analytics.total_downloads}
+            </div>
             <p className="text-xs text-muted-foreground">
               Last {analytics.period_days} days
             </p>
@@ -189,11 +193,15 @@ export default function DownloadsTab() {
 
         <Card className="bg-card border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Unique Downloads</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Unique Downloads
+            </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{analytics.unique_downloads}</div>
+            <div className="text-2xl font-bold">
+              {analytics.unique_downloads}
+            </div>
             <p className="text-xs text-muted-foreground">Unique IP addresses</p>
           </CardContent>
         </Card>
@@ -221,7 +229,9 @@ export default function DownloadsTab() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold capitalize">
-              {getPlatformDisplay(analytics.downloads_by_platform[0]?.name ?? "")}
+              {getPlatformDisplay(
+                analytics.downloads_by_platform[0]?.name ?? ""
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {analytics.downloads_by_platform[0]?.count || 0} downloads
@@ -241,7 +251,10 @@ export default function DownloadsTab() {
           <CardContent>
             <div className="space-y-3">
               {analytics.downloads_by_country.slice(0, 10).map((item) => (
-                <div key={item.name} className="flex items-center justify-between">
+                <div
+                  key={item.name}
+                  className="flex items-center justify-between"
+                >
                   <div className="flex items-center gap-2">
                     <span className="text-lg">{getCountryFlag(item.name)}</span>
                     <span className="font-medium">{item.name}</span>
@@ -251,7 +264,9 @@ export default function DownloadsTab() {
                       <div
                         className="bg-primary h-2 rounded-full"
                         style={{
-                          width: (item.count / analytics.total_downloads) * 100 + "%",
+                          width:
+                            (item.count / analytics.total_downloads) * 100 +
+                            "%",
                         }}
                       />
                     </div>
@@ -275,14 +290,21 @@ export default function DownloadsTab() {
           <CardContent>
             <div className="space-y-3">
               {analytics.downloads_by_platform.map((item) => (
-                <div key={item.name} className="flex items-center justify-between">
-                  <span className="font-medium">{getPlatformDisplay(item.name)}</span>
+                <div
+                  key={item.name}
+                  className="flex items-center justify-between"
+                >
+                  <span className="font-medium">
+                    {getPlatformDisplay(item.name)}
+                  </span>
                   <div className="flex items-center gap-2">
                     <div className="w-24 bg-muted rounded-full h-2">
                       <div
                         className="bg-primary h-2 rounded-full"
                         style={{
-                          width: (item.count / analytics.total_downloads) * 100 + "%",
+                          width:
+                            (item.count / analytics.total_downloads) * 100 +
+                            "%",
                         }}
                       />
                     </div>
@@ -316,14 +338,18 @@ export default function DownloadsTab() {
               {analytics.recent_downloads.map((download, index) => (
                 <TableRow key={index}>
                   <TableCell className="text-sm">
-                    {download.timestamp ? formatTimestamp(download.timestamp) : "N/A"}
+                    {download.timestamp
+                      ? formatTimestamp(download.timestamp)
+                      : "N/A"}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <span>{getCountryFlag(download.country_code)}</span>
                       <div>
                         <div className="font-medium">
-                          {download.country_name || download.country_code || "Unknown"}
+                          {download.country_name ||
+                            download.country_code ||
+                            "Unknown"}
                         </div>
                         {download.city && (
                           <div className="text-xs text-muted-foreground">
@@ -334,9 +360,7 @@ export default function DownloadsTab() {
                     </div>
                   </TableCell>
                   <TableCell>{getPlatformDisplay(download.platform)}</TableCell>
-                  <TableCell>
-                    {download.utm_source || "Direct"}
-                  </TableCell>
+                  <TableCell>{download.utm_source || "Direct"}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

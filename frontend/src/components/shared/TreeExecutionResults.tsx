@@ -24,11 +24,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { UnifiedStepCard } from "./UnifiedStepCard";
-import type {
-  DisplayNode,
-  TreeEvent,
-  NodeStatus,
-} from "@/types/tree-events";
+import type { DisplayNode, TreeEvent, NodeStatus } from "@/types/tree-events";
 import type { UnifiedExecutionStep } from "@/types/tree-events";
 import {
   treeEventsToUnifiedSteps,
@@ -83,7 +79,9 @@ export function TreeExecutionResults({
   nameMap,
   onStepClick,
 }: TreeExecutionResultsProps) {
-  const [expandedStepIndex, setExpandedStepIndex] = useState<number | null>(null);
+  const [expandedStepIndex, setExpandedStepIndex] = useState<number | null>(
+    null
+  );
 
   // Convert data to unified steps
   const unifiedSteps = useMemo(() => {
@@ -99,12 +97,14 @@ export function TreeExecutionResults({
 
   // Calculate statistics
   const stats = useMemo(() => {
-    const totalActions = unifiedSteps.filter(s => s.nodeType === "action").length;
+    const totalActions = unifiedSteps.filter(
+      (s) => s.nodeType === "action"
+    ).length;
     const successfulActions = unifiedSteps.filter(
-      s => s.nodeType === "action" && s.status === "success"
+      (s) => s.nodeType === "action" && s.status === "success"
     ).length;
     const failedActions = unifiedSteps.filter(
-      s => s.nodeType === "action" && s.status === "failed"
+      (s) => s.nodeType === "action" && s.status === "failed"
     ).length;
 
     return {
@@ -163,7 +163,9 @@ export function TreeExecutionResults({
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <CardTitle className="text-xl text-white">{workflowName}</CardTitle>
+              <CardTitle className="text-xl text-white">
+                {workflowName}
+              </CardTitle>
               {getStatusBadge()}
               {isLive && (
                 <Badge className="bg-green-500/20 text-green-400 border-green-500/30 animate-pulse">
@@ -208,7 +210,9 @@ export function TreeExecutionResults({
             <div className="mt-4 pt-4 border-t border-gray-800/50">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <div className="text-xs text-gray-400 mb-2">Initial States</div>
+                  <div className="text-xs text-gray-400 mb-2">
+                    Initial States
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {initialStates.length > 0 ? (
                       initialStates.map((state) => (

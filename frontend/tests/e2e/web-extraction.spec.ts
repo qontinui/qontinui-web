@@ -4,12 +4,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-
-// Test credentials - for local development only
-const TEST_USER = {
-  username: 'jspinak@hotmail.com',
-  password: 'password123',
-};
+import { TEST_USER } from './test-credentials';
 
 // Valid project ID from the bug report URL
 const PROJECT_ID = 'fb93478d-98bd-4e40-99f4-0f2c08c1fd5a';

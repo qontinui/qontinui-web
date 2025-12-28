@@ -10,14 +10,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-
-// Test credentials from .env
-const TEST_USER = {
-  username: 'jspinak',
-  password: 'Qontinui123!',
-  email: 'jspinak@hotmail.com',
-  isSuperuser: true,
-};
+import { TEST_USER } from './test-credentials';
 
 test.describe('Login Flow', () => {
   test.beforeEach(async ({ page }) => {

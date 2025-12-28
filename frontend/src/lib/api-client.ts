@@ -1138,10 +1138,9 @@ class ApiClient {
     workflow_name: string | null;
     status: string;
     duration_ms: number | null;
+    initial_state_ids: string[];
   }> {
-    const response = await this.fetchWithAuth(
-      `/execution/runs/${runId}/tree`
-    );
+    const response = await this.fetchWithAuth(`/execution/runs/${runId}/tree`);
 
     if (!response.ok) {
       const errorText = await response.text();

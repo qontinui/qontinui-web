@@ -96,7 +96,10 @@ class IntegrationTestingService {
         } else if (Array.isArray(errorData.detail)) {
           // Pydantic validation errors
           errorMessage = errorData.detail
-            .map((e: { msg?: string; loc?: string[] }) => e.msg || JSON.stringify(e))
+            .map(
+              (e: { msg?: string; loc?: string[] }) =>
+                e.msg || JSON.stringify(e)
+            )
             .join("; ");
         } else {
           errorMessage = JSON.stringify(errorData.detail);
@@ -113,28 +116,64 @@ class IntegrationTestingService {
   /**
    * Transform backend response to frontend IntegrationTestResponse format
    */
-  private transformBackendResponse(data: Record<string, unknown>): IntegrationTestResponse {
+  private transformBackendResponse(
+    data: Record<string, unknown>
+  ): IntegrationTestResponse {
     return {
       run_id: (data.testId as string) ?? (data.test_id as string) ?? "",
-      project_id: (data.projectId as string) ?? (data.project_id as string) ?? "",
-      workflow_id: (data.workflowId as string) ?? (data.workflow_id as string) ?? "",
-      workflow_name: (data.workflowName as string) ?? (data.workflow_name as string) ?? "",
-      status: ((data.status as string) ?? "completed") as "completed" | "failed" | "timeout",
-      started_at: (data.startedAt as string) ?? (data.started_at as string) ?? new Date().toISOString(),
-      ended_at: (data.completedAt as string) ?? (data.ended_at as string) ?? new Date().toISOString(),
-      duration_ms: (data.totalDurationMs as number) ?? (data.total_duration_ms as number) ?? (data.duration_ms as number) ?? 0,
-      initial_states: (data.initialStates as string[]) ?? (data.initial_states as string[]) ?? [],
-      final_states: (data.finalActiveStates as string[]) ?? (data.final_states as string[]) ?? [],
-      steps: this.transformSteps(data.steps as Record<string, unknown>[] ?? []),
-      coverage_data: this.transformCoverageData(data.coverageData ?? data.coverage_data),
-      stochasticity_warnings: (data.stochasticityWarnings as IntegrationTestResponse["stochasticity_warnings"]) ??
-                              (data.stochasticity_warnings as IntegrationTestResponse["stochasticity_warnings"]) ?? [],
-      coverage_gaps: (data.coverageGaps as IntegrationTestResponse["coverage_gaps"]) ??
-                     (data.coverage_gaps as IntegrationTestResponse["coverage_gaps"]) ?? [],
-      reliability_insights: this.transformReliabilityInsights(data.reliabilityInsights ?? data.reliability_insights),
+      project_id:
+        (data.projectId as string) ?? (data.project_id as string) ?? "",
+      workflow_id:
+        (data.workflowId as string) ?? (data.workflow_id as string) ?? "",
+      workflow_name:
+        (data.workflowName as string) ?? (data.workflow_name as string) ?? "",
+      status: ((data.status as string) ?? "completed") as
+        | "completed"
+        | "failed"
+        | "timeout",
+      started_at:
+        (data.startedAt as string) ??
+        (data.started_at as string) ??
+        new Date().toISOString(),
+      ended_at:
+        (data.completedAt as string) ??
+        (data.ended_at as string) ??
+        new Date().toISOString(),
+      duration_ms:
+        (data.totalDurationMs as number) ??
+        (data.total_duration_ms as number) ??
+        (data.duration_ms as number) ??
+        0,
+      initial_states:
+        (data.initialStates as string[]) ??
+        (data.initial_states as string[]) ??
+        [],
+      final_states:
+        (data.finalActiveStates as string[]) ??
+        (data.final_states as string[]) ??
+        [],
+      steps: this.transformSteps(
+        (data.steps as Record<string, unknown>[]) ?? []
+      ),
+      coverage_data: this.transformCoverageData(
+        data.coverageData ?? data.coverage_data
+      ),
+      stochasticity_warnings:
+        (data.stochasticityWarnings as IntegrationTestResponse["stochasticity_warnings"]) ??
+        (data.stochasticity_warnings as IntegrationTestResponse["stochasticity_warnings"]) ??
+        [],
+      coverage_gaps:
+        (data.coverageGaps as IntegrationTestResponse["coverage_gaps"]) ??
+        (data.coverage_gaps as IntegrationTestResponse["coverage_gaps"]) ??
+        [],
+      reliability_insights: this.transformReliabilityInsights(
+        data.reliabilityInsights ?? data.reliability_insights
+      ),
       summary: {
         total_steps: (data.steps as unknown[])?.length ?? 0,
-        total_actions: ((data.successCount as number) ?? 0) + ((data.failureCount as number) ?? 0),
+        total_actions:
+          ((data.successCount as number) ?? 0) +
+          ((data.failureCount as number) ?? 0),
         successful_actions: (data.successCount as number) ?? 0,
         failed_actions: (data.failureCount as number) ?? 0,
         states_visited: 0,
@@ -145,22 +184,38 @@ class IntegrationTestingService {
     };
   }
 
-  private transformSteps(steps: Record<string, unknown>[]): IntegrationTestResponse["steps"] {
+  private transformSteps(
+    steps: Record<string, unknown>[]
+  ): IntegrationTestResponse["steps"] {
     return steps.map((step) => {
-      const stepType = (step.stepType as string) ?? (step.step_type as string) ?? (step.type as string) ?? "action";
+      const stepType =
+        (step.stepType as string) ??
+        (step.step_type as string) ??
+        (step.type as string) ??
+        "action";
       const baseStep = {
-        step_number: (step.stepNumber as number) ?? (step.step_number as number) ?? 0,
+        step_number:
+          (step.stepNumber as number) ?? (step.step_number as number) ?? 0,
         timestamp: (step.timestamp as string) ?? new Date().toISOString(),
-        duration_ms: (step.durationMs as number) ?? (step.duration_ms as number) ?? 0,
+        duration_ms:
+          (step.durationMs as number) ?? (step.duration_ms as number) ?? 0,
       };
 
       if (stepType === "state_discovery" || stepType === "STATE_DISCOVERY") {
-        const discovery = (step.stateDiscovery ?? step.state_discovery ?? {}) as Record<string, unknown>;
+        const discovery = (step.stateDiscovery ??
+          step.state_discovery ??
+          {}) as Record<string, unknown>;
         return {
           ...baseStep,
           type: "state_discovery" as const,
-          active_states: (discovery.activeStates as string[]) ?? (discovery.active_states as string[]) ?? [],
-          initial_states_match: (discovery.initialStatesMatch as boolean) ?? (discovery.initial_states_match as boolean) ?? true,
+          active_states:
+            (discovery.activeStates as string[]) ??
+            (discovery.active_states as string[]) ??
+            [],
+          initial_states_match:
+            (discovery.initialStatesMatch as boolean) ??
+            (discovery.initial_states_match as boolean) ??
+            true,
           expected_initial_states: [],
           detection_method: "mock" as const,
         };
@@ -178,7 +233,9 @@ class IntegrationTestingService {
     });
   }
 
-  private transformCoverageData(data: unknown): IntegrationTestResponse["coverage_data"] {
+  private transformCoverageData(
+    data: unknown
+  ): IntegrationTestResponse["coverage_data"] {
     if (!data || typeof data !== "object") {
       return {
         states_covered: 0,
@@ -190,32 +247,54 @@ class IntegrationTestingService {
     }
     const coverageData = data as Record<string, unknown>;
     return {
-      states_covered: (coverageData.statesCovered as number) ?? (coverageData.states_covered as number) ?? 0,
-      total_states: (coverageData.totalStates as number) ?? (coverageData.total_states as number) ?? 0,
-      transitions_covered: (coverageData.transitionsCovered as number) ?? (coverageData.transitions_covered as number) ?? 0,
-      total_transitions: (coverageData.totalTransitions as number) ?? (coverageData.total_transitions as number) ?? 0,
-      coverage_percentage: (coverageData.coveragePercentage as number) ?? (coverageData.coverage_percentage as number) ?? 0,
+      states_covered:
+        (coverageData.statesCovered as number) ??
+        (coverageData.states_covered as number) ??
+        0,
+      total_states:
+        (coverageData.totalStates as number) ??
+        (coverageData.total_states as number) ??
+        0,
+      transitions_covered:
+        (coverageData.transitionsCovered as number) ??
+        (coverageData.transitions_covered as number) ??
+        0,
+      total_transitions:
+        (coverageData.totalTransitions as number) ??
+        (coverageData.total_transitions as number) ??
+        0,
+      coverage_percentage:
+        (coverageData.coveragePercentage as number) ??
+        (coverageData.coverage_percentage as number) ??
+        0,
     };
   }
 
-  private transformReliabilityInsights(data: unknown): IntegrationTestResponse["reliability_insights"] {
+  private transformReliabilityInsights(
+    data: unknown
+  ): IntegrationTestResponse["reliability_insights"] {
     if (!data || typeof data !== "object") return [];
     const insights = data as Record<string, unknown>;
     // Backend returns ReliabilityInsights object with arrays inside
     const result: IntegrationTestResponse["reliability_insights"] = [];
 
-    const lowSuccessRate = (insights.lowSuccessRatePatterns ?? insights.low_success_rate_patterns) as unknown[];
+    const lowSuccessRate = (insights.lowSuccessRatePatterns ??
+      insights.low_success_rate_patterns) as unknown[];
     if (Array.isArray(lowSuccessRate)) {
-      result.push(...lowSuccessRate.map((p) => ({
-        id: String((p as Record<string, unknown>).patternId ?? ""),
-        insight_type: "low_success_rate" as const,
-        severity: "high" as const,
-        title: `Low success rate: ${(p as Record<string, unknown>).patternName ?? "Unknown"}`,
-        description: `Success rate: ${(p as Record<string, unknown>).successRate ?? 0}%`,
-        affected_patterns: [(p as Record<string, unknown>).patternId as string ?? ""],
-        affected_states: [],
-        recommendation: "Review pattern reliability",
-      })));
+      result.push(
+        ...lowSuccessRate.map((p) => ({
+          id: String((p as Record<string, unknown>).patternId ?? ""),
+          insight_type: "low_success_rate" as const,
+          severity: "high" as const,
+          title: `Low success rate: ${(p as Record<string, unknown>).patternName ?? "Unknown"}`,
+          description: `Success rate: ${(p as Record<string, unknown>).successRate ?? 0}%`,
+          affected_patterns: [
+            ((p as Record<string, unknown>).patternId as string) ?? "",
+          ],
+          affected_states: [],
+          recommendation: "Review pattern reliability",
+        }))
+      );
     }
 
     return result;

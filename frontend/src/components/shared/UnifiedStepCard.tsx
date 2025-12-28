@@ -43,10 +43,7 @@ import {
   Loader2,
 } from "lucide-react";
 import type { UnifiedExecutionStep } from "@/types/tree-events";
-import {
-  getStepTypeIcon,
-  getStepTypeLabel,
-} from "@/lib/tree-event-adapter";
+import { getStepTypeIcon, getStepTypeLabel } from "@/lib/tree-event-adapter";
 
 interface UnifiedStepCardProps {
   step: UnifiedExecutionStep;
@@ -98,7 +95,9 @@ export function UnifiedStepCard({
       case "refresh-cw":
         return <RefreshCw {...iconProps} className="w-5 h-5 text-cyan-400" />;
       case "mouse-pointer-2":
-        return <MousePointer2 {...iconProps} className="w-5 h-5 text-green-400" />;
+        return (
+          <MousePointer2 {...iconProps} className="w-5 h-5 text-green-400" />
+        );
       case "keyboard":
         return <Keyboard {...iconProps} className="w-5 h-5 text-yellow-400" />;
       case "eye":
@@ -160,7 +159,10 @@ export function UnifiedStepCard({
 
   const getQuickPreview = () => {
     // State context preview
-    if (step.stateContext?.activeAfter && step.stateContext.activeAfter.length > 0) {
+    if (
+      step.stateContext?.activeAfter &&
+      step.stateContext.activeAfter.length > 0
+    ) {
       return (
         <span>
           States:{" "}
@@ -181,7 +183,8 @@ export function UnifiedStepCard({
       return (
         <span>
           Match: ({step.matchLocation.x}, {step.matchLocation.y})
-          {step.matchLocation.confidence && ` @ ${(step.matchLocation.confidence * 100).toFixed(0)}%`}
+          {step.matchLocation.confidence &&
+            ` @ ${(step.matchLocation.confidence * 100).toFixed(0)}%`}
         </span>
       );
     }
@@ -221,7 +224,10 @@ export function UnifiedStepCard({
                       </Badge>
                     )}
                     {step.isRealExecution && (
-                      <Badge variant="outline" className="text-xs border-green-500/30 text-green-400">
+                      <Badge
+                        variant="outline"
+                        className="text-xs border-green-500/30 text-green-400"
+                      >
                         Live
                       </Badge>
                     )}
@@ -320,38 +326,40 @@ function StepDetails({
             State Context
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {step.stateContext.activeBefore && step.stateContext.activeBefore.length > 0 && (
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Before</div>
-                <div className="flex flex-wrap gap-1">
-                  {step.stateContext.activeBefore.map((state) => (
-                    <Badge
-                      key={state}
-                      variant="outline"
-                      className="text-xs border-blue-500/30 text-blue-400"
-                    >
-                      {resolveName(state, nameMap)}
-                    </Badge>
-                  ))}
+            {step.stateContext.activeBefore &&
+              step.stateContext.activeBefore.length > 0 && (
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">Before</div>
+                  <div className="flex flex-wrap gap-1">
+                    {step.stateContext.activeBefore.map((state) => (
+                      <Badge
+                        key={state}
+                        variant="outline"
+                        className="text-xs border-blue-500/30 text-blue-400"
+                      >
+                        {resolveName(state, nameMap)}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-            {step.stateContext.activeAfter && step.stateContext.activeAfter.length > 0 && (
-              <div>
-                <div className="text-xs text-gray-500 mb-1">After</div>
-                <div className="flex flex-wrap gap-1">
-                  {step.stateContext.activeAfter.map((state) => (
-                    <Badge
-                      key={state}
-                      variant="outline"
-                      className="text-xs border-green-500/30 text-green-400"
-                    >
-                      {resolveName(state, nameMap)}
-                    </Badge>
-                  ))}
+              )}
+            {step.stateContext.activeAfter &&
+              step.stateContext.activeAfter.length > 0 && (
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">After</div>
+                  <div className="flex flex-wrap gap-1">
+                    {step.stateContext.activeAfter.map((state) => (
+                      <Badge
+                        key={state}
+                        variant="outline"
+                        className="text-xs border-green-500/30 text-green-400"
+                      >
+                        {resolveName(state, nameMap)}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
           {step.stateContext.changed && (
             <div className="mt-2 text-xs text-cyan-400 flex items-center gap-1">
@@ -408,7 +416,9 @@ function StepDetails({
           {step.inputData.text && (
             <div className="text-sm">
               <span className="text-gray-500">Text:</span>{" "}
-              <span className="text-white font-mono">&quot;{step.inputData.text}&quot;</span>
+              <span className="text-white font-mono">
+                &quot;{step.inputData.text}&quot;
+              </span>
             </div>
           )}
           {step.inputData.from && step.inputData.to && (

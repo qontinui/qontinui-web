@@ -283,7 +283,10 @@ function SummaryHeader({
             value={
               "summary" in run
                 ? `${run.summary.successful_actions}/${run.summary.total_actions}`
-                : String(run.steps.filter((s: ExecutionStep) => s.type === "action").length)
+                : String(
+                    run.steps.filter((s: ExecutionStep) => s.type === "action")
+                      .length
+                  )
             }
             color="green"
           />
@@ -493,7 +496,11 @@ function InsightsPanel({
         >
           <div className="space-y-3">
             {reliabilityInsights.map((insight) => (
-              <ReliabilityInsightCard key={insight.id} insight={insight} nameMap={nameMap} />
+              <ReliabilityInsightCard
+                key={insight.id}
+                insight={insight}
+                nameMap={nameMap}
+              />
             ))}
           </div>
         </InsightSection>
@@ -509,7 +516,11 @@ function InsightsPanel({
         >
           <div className="space-y-3">
             {stochasticityWarnings.map((warning) => (
-              <StochasticityWarningCard key={warning.id} warning={warning} nameMap={nameMap} />
+              <StochasticityWarningCard
+                key={warning.id}
+                warning={warning}
+                nameMap={nameMap}
+              />
             ))}
           </div>
         </InsightSection>
@@ -525,7 +536,11 @@ function InsightsPanel({
         >
           <div className="space-y-3">
             {coverageGaps.map((gap, index) => (
-              <CoverageGapCard key={`gap-${index}`} gap={gap} nameMap={nameMap} />
+              <CoverageGapCard
+                key={`gap-${index}`}
+                gap={gap}
+                nameMap={nameMap}
+              />
             ))}
           </div>
         </InsightSection>
@@ -599,7 +614,13 @@ function InsightSection({
 // Insight Card Components
 // =============================================================================
 
-function ReliabilityInsightCard({ insight, nameMap }: { insight: ReliabilityInsight; nameMap?: Map<string, string> }) {
+function ReliabilityInsightCard({
+  insight,
+  nameMap,
+}: {
+  insight: ReliabilityInsight;
+  nameMap?: Map<string, string>;
+}) {
   const severityColors = {
     critical: "border-l-red-600 bg-red-500/5",
     high: "border-l-red-500 bg-red-500/5",
@@ -725,7 +746,13 @@ function StochasticityWarningCard({
   );
 }
 
-function CoverageGapCard({ gap, nameMap }: { gap: CoverageGap; nameMap?: Map<string, string> }) {
+function CoverageGapCard({
+  gap,
+  nameMap,
+}: {
+  gap: CoverageGap;
+  nameMap?: Map<string, string>;
+}) {
   const severityColors = {
     high: "border-l-red-500 bg-red-500/5",
     medium: "border-l-yellow-500 bg-yellow-500/5",
