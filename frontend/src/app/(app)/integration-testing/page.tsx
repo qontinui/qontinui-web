@@ -2,20 +2,22 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useProject } from "@/hooks/automation/useProject";
+import { useWorkflows } from "@/hooks/automation/useWorkflows";
+import { useAutomationStore } from "@/stores/automation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { IntegrationTestResults } from "@/components/testing/IntegrationTestResults";
+import { IntegrationTestControlPanel } from "@/components/testing/IntegrationTestControlPanel";
 import { VisualPlayback } from "@/components/testing/VisualPlayback";
 import { integrationTestingService } from "@/services/integration-testing";
 import { RequireProject } from "@/components/require-project";
 import {
   ArrowLeft,
-  Play,
   RefreshCw,
   Loader2,
   CheckCircle2,
@@ -38,7 +40,39 @@ export default function IntegrationTestingPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const { projectId } = useProject();
+  const { workflows } = useWorkflows();
+  const states = useAutomationStore((s) => s.states);
+  const transitions = useAutomationStore((s) => s.transitions);
+  const images = useAutomationStore((s) => s.images);
 
+  // Build a nameMap for displaying names instead of IDs
+  const nameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    // Add states
+    states.forEach((s) => {
+      if (s.name) map.set(s.id, s.name);
+    });
+    // Add transitions
+    transitions.forEach((t) => {
+      const name = (t as { name?: string }).name;
+      if (name) map.set(t.id, name);
+    });
+    // Add images (patterns)
+    images.forEach((img) => {
+      if (img.name) map.set(img.id, img.name);
+    });
+    return map;
+  }, [states, transitions, images]);
+
+  // Workflow selection state
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
+    null
+  );
+  const [initialStatesOverride, setInitialStatesOverride] = useState<
+    string[] | null
+  >(null);
+
+  // Test runs state
   const [runs, setRuns] = useState<IntegrationTestRunSummary[]>([]);
   const [selectedRun, setSelectedRun] =
     useState<IntegrationTestResponse | null>(null);
@@ -85,6 +119,68 @@ export default function IntegrationTestingPage() {
     }
   }, [user, authLoading, router, fetchRuns, projectId]);
 
+  // Auto-select first runnable workflow
+  useEffect(() => {
+    if (workflows.length > 0 && selectedWorkflowId === null && !loading) {
+      const mainWorkflows = workflows.filter((w) => w.category === "Main");
+      const firstWorkflow = mainWorkflows[0];
+      if (firstWorkflow) {
+        setSelectedWorkflowId(firstWorkflow.id);
+      }
+    }
+  }, [workflows, selectedWorkflowId, loading]);
+
+  // Build WorkflowConfig from selected workflow
+  const buildWorkflowConfig = useCallback((): WorkflowConfig | null => {
+    const workflow = workflows.find((w) => w.id === selectedWorkflowId);
+    if (!workflow) return null;
+
+    // Get effective initial states
+    const effectiveInitialStates =
+      initialStatesOverride ?? workflow.initialStateIds ?? [];
+
+    // Build state configs from the project states
+    const stateConfigs = states.map((s) => ({
+      id: s.id,
+      name: s.name,
+      patterns: s.stateImages?.map((img) => img.id) ?? [],
+      is_initial: effectiveInitialStates.includes(s.id),
+    }));
+
+    // Build transition configs from the automation store
+    const transitions = useAutomationStore.getState().transitions;
+    const transitionConfigs = transitions
+      .filter((t) => t.type === "OutgoingTransition")
+      .map((t) => {
+        const outgoing = t as {
+          id: string;
+          fromState: string;
+          activateStates: string[];
+          deactivateStates: string[];
+          workflows: string[];
+        };
+        return {
+          id: outgoing.id,
+          name: outgoing.id,
+          from_state_id: outgoing.fromState,
+          to_state_id: outgoing.activateStates[0] ?? "",
+          actions:
+            outgoing.workflows?.map((wfId) => ({
+              id: wfId,
+              type: "workflow",
+            })) ?? [],
+        };
+      });
+
+    return {
+      workflow_id: workflow.id,
+      workflow_name: workflow.name,
+      states: stateConfigs,
+      transitions: transitionConfigs,
+      initial_state_ids: effectiveInitialStates,
+    };
+  }, [selectedWorkflowId, workflows, states, initialStatesOverride]);
+
   // Load run details
   const loadRunDetails = async (runId: string) => {
     try {
@@ -121,36 +217,19 @@ export default function IntegrationTestingPage() {
       return;
     }
 
-    // TODO: In the full implementation, this would:
-    // 1. Show a workflow selector dialog
-    // 2. Build WorkflowConfig from the selected workflow
-    // For now, we create a demo workflow config for testing
-    const demoWorkflowConfig: WorkflowConfig = {
-      workflow_id: "demo-test",
-      workflow_name: "Demo Integration Test",
-      states: [
-        { id: "initial", name: "Initial State", is_initial: true },
-        { id: "final", name: "Final State" },
-      ],
-      transitions: [
-        {
-          id: "t1",
-          name: "Go to Final",
-          from_state_id: "initial",
-          to_state_id: "final",
-          actions: [],
-        },
-      ],
-      initial_state_ids: ["initial"],
-    };
+    const workflowConfig = buildWorkflowConfig();
+    if (!workflowConfig) {
+      setError("No workflow selected. Please select a workflow first.");
+      return;
+    }
 
     try {
       setRunningTest(true);
       setError(null);
-      console.log("Running integration test with config:", demoWorkflowConfig);
+      console.log("Running integration test with config:", workflowConfig);
       const result = await integrationTestingService.runIntegrationTest(
         projectId,
-        demoWorkflowConfig,
+        workflowConfig,
         {
           include_historical_stats: true,
           record_screenshots: true,
@@ -288,32 +367,6 @@ export default function IntegrationTestingPage() {
                   Refresh
                 </Button>
               )}
-
-              {/* Run Test Button */}
-              <Button
-                onClick={runIntegrationTest}
-                disabled={runningTest || !projectId || !apiHealthy}
-                className="bg-[#FF6B6B] hover:bg-[#FF6B6B]/80 text-white"
-                title={
-                  !projectId
-                    ? "Select a project to run tests"
-                    : !apiHealthy
-                      ? "API is offline"
-                      : undefined
-                }
-              >
-                {runningTest ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Running...
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 mr-2" />
-                    Run Test
-                  </>
-                )}
-              </Button>
             </div>
           </div>
         </header>
@@ -359,35 +412,47 @@ export default function IntegrationTestingPage() {
 
           {/* Content based on view mode */}
           {viewMode === "list" && (
-            <>
-              {/* Welcome Section */}
-              <div className="mb-8">
-                <h2 className="text-3xl font-bold mb-2">
-                  Integration Test Runs
-                </h2>
-                <p className="text-gray-400">
-                  Run workflows in mock mode using historical data. No live GUI
-                  required.
-                </p>
+            <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] gap-6">
+              {/* Left Column - Control Panel */}
+              <div className="space-y-6">
+                <IntegrationTestControlPanel
+                  workflows={workflows}
+                  states={states}
+                  selectedWorkflowId={selectedWorkflowId}
+                  onWorkflowSelect={setSelectedWorkflowId}
+                  initialStatesOverride={initialStatesOverride}
+                  onInitialStatesChange={setInitialStatesOverride}
+                  isRunning={runningTest}
+                  onRunTest={runIntegrationTest}
+                  apiHealthy={apiHealthy}
+                  isLoading={loading && workflows.length === 0}
+                />
               </div>
 
-              {/* Runs List */}
-              {loading && runs.length === 0 ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-[#FF6B6B]" />
+              {/* Right Column - Test Runs List */}
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-xl font-bold mb-2">Test Run History</h2>
+                  <p className="text-gray-400 text-sm">
+                    Previous integration test results using historical execution
+                    data.
+                  </p>
                 </div>
-              ) : runs.length === 0 ? (
-                <EmptyState
-                  onRunTest={runIntegrationTest}
-                  runningTest={runningTest}
-                />
-              ) : (
-                <IntegrationTestRunsList
-                  runs={runs}
-                  onSelectRun={loadRunDetails}
-                />
-              )}
-            </>
+
+                {loading && runs.length === 0 ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#FF6B6B]" />
+                  </div>
+                ) : runs.length === 0 ? (
+                  <EmptyState />
+                ) : (
+                  <IntegrationTestRunsList
+                    runs={runs}
+                    onSelectRun={loadRunDetails}
+                  />
+                )}
+              </div>
+            </div>
           )}
 
           {viewMode === "detail" && selectedRun && (
@@ -395,6 +460,7 @@ export default function IntegrationTestingPage() {
               run={selectedRun}
               showPlaybackToggle={true}
               onToggleVisualMode={toggleViewMode}
+              nameMap={nameMap}
             />
           )}
 
@@ -402,6 +468,7 @@ export default function IntegrationTestingPage() {
             <VisualPlayback
               run={selectedRun}
               onToggleVisualMode={toggleViewMode}
+              nameMap={nameMap}
             />
           )}
         </main>
@@ -414,12 +481,7 @@ export default function IntegrationTestingPage() {
 // Empty State Component
 // =============================================================================
 
-interface EmptyStateProps {
-  onRunTest: () => void;
-  runningTest: boolean;
-}
-
-function EmptyState({ onRunTest, runningTest }: EmptyStateProps) {
+function EmptyState() {
   return (
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
       <CardContent className="py-12 text-center">
@@ -427,28 +489,10 @@ function EmptyState({ onRunTest, runningTest }: EmptyStateProps) {
         <h3 className="text-xl font-medium text-white mb-2">
           No Integration Tests Yet
         </h3>
-        <p className="text-gray-400 mb-6 max-w-md mx-auto">
-          Run your first integration test to validate workflow behavior using
-          historical execution data. Tests run in mock mode without needing a
-          live GUI.
+        <p className="text-gray-400 mb-4 max-w-md mx-auto">
+          Select a workflow from the configuration panel and run your first
+          integration test. Tests run in mock mode using historical data.
         </p>
-        <Button
-          onClick={onRunTest}
-          disabled={runningTest}
-          className="bg-[#FF6B6B] hover:bg-[#FF6B6B]/80 text-white"
-        >
-          {runningTest ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Running...
-            </>
-          ) : (
-            <>
-              <Play className="w-4 h-4 mr-2" />
-              Run First Test
-            </>
-          )}
-        </Button>
       </CardContent>
     </Card>
   );

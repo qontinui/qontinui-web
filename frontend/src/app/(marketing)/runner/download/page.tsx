@@ -81,7 +81,31 @@ export default function DownloadPage() {
   ) => {
     setDownloading(filename);
 
-    // Track download (privacy-friendly)
+    // Collect client-side analytics data (privacy-friendly, no PII)
+    const getUtmParams = () => {
+      if (typeof window === "undefined") return {};
+      const params = new URLSearchParams(window.location.search);
+      return {
+        utm_source: params.get("utm_source") || undefined,
+        utm_medium: params.get("utm_medium") || undefined,
+        utm_campaign: params.get("utm_campaign") || undefined,
+      };
+    };
+
+    const getScreenResolution = () => {
+      if (typeof window === "undefined") return undefined;
+      return `${window.screen.width}x${window.screen.height}`;
+    };
+
+    const getTimezone = () => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone;
+      } catch {
+        return undefined;
+      }
+    };
+
+    // Track download (privacy-friendly, anonymized on server)
     try {
       await fetch("/api/analytics/download", {
         method: "POST",
@@ -90,6 +114,11 @@ export default function DownloadPage() {
           platform: selectedPlatform,
           version: LATEST_RELEASE.version,
           timestamp: new Date().toISOString(),
+          // Client-side data
+          timezone: getTimezone(),
+          screen_resolution: getScreenResolution(),
+          referrer: document.referrer || undefined,
+          ...getUtmParams(),
         }),
       });
     } catch (e) {

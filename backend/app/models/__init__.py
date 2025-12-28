@@ -66,6 +66,12 @@ from app.models.execution_issue import (
 )
 from app.models.execution_run import ExecutionRun, ExecutionRunStatus, ExecutionRunType
 from app.models.execution_screenshot import ExecutionScreenshot, ExecutionScreenshotType
+from app.models.execution_tree_event import (
+    ExecutionTreeEvent,
+    TreeEventType,
+    TreeNodeStatus,
+    TreeNodeType,
+)
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.notification import (
     Notification,
@@ -85,6 +91,16 @@ from app.models.project import Project
 from app.models.project_assets import ProjectImage, ProjectScreenshot
 from app.models.project_embedding import ProjectEmbedding
 from app.models.project_version import ProjectVersion
+from app.models.recording import (
+    DiscoveredTransition,
+    ProcessingLog,
+    ProcessingPhase,
+    Recording,
+    RecordingContext,
+    RecordingFrame,
+    RecordingInteraction,
+    RecordingStatus,
+)
 from app.models.runner_connection import RunnerConnection
 from app.models.runner_device import RunnerDevice
 from app.models.screenshot_input_association import ScreenshotInputAssociation
@@ -281,6 +297,20 @@ __all__ = [
     "ExecutionIssueSeverity",
     "ExecutionIssueStatus",
     "ExecutionIssueSource",
+    # Tree Events (Execution Logging)
+    "ExecutionTreeEvent",
+    "TreeEventType",
+    "TreeNodeType",
+    "TreeNodeStatus",
+    # Recordings (State Discovery from Video)
+    "Recording",
+    "RecordingStatus",
+    "RecordingFrame",
+    "RecordingInteraction",
+    "RecordingContext",
+    "DiscoveredTransition",
+    "ProcessingLog",
+    "ProcessingPhase",
     # Training Datasets
     "TrainingDataset",
     "TrainingDatasetImage",

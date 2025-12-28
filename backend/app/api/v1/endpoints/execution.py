@@ -59,6 +59,19 @@ from qontinui_schemas.api.execution import (
     RunType,
     ScreenshotType,
 )
+
+# Import tree event schemas
+from qontinui_schemas.events import DisplayNode as SchemaDisplayNode
+from qontinui_schemas.events import ExecutionTreeResponse
+from qontinui_schemas.events import NodeMetadata as SchemaNodeMetadata
+from qontinui_schemas.events import NodeStatus as SchemaNodeStatus
+from qontinui_schemas.events import NodeType as SchemaNodeType
+from qontinui_schemas.events import (
+    PathElement,
+    TreeEventListResponse,
+    TreeEventResponse,
+)
+from qontinui_schemas.events import TreeEventType as SchemaTreeEventType
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -78,6 +91,7 @@ from app.models.execution_issue import (
 )
 from app.models.execution_run import ExecutionRun, ExecutionRunStatus, ExecutionRunType
 from app.models.execution_screenshot import ExecutionScreenshot, ExecutionScreenshotType
+from app.models.execution_tree_event import ExecutionTreeEvent
 from app.models.user import User
 from app.services.object_storage import object_storage
 
@@ -1557,3 +1571,240 @@ async def get_reliability_stats(
     # Sort by failure rate descending
     result_list.sort(key=lambda x: x.success_rate)
     return result_list[:limit]
+
+
+# =============================================================================
+# Tree Events Endpoints
+# =============================================================================
+
+
+def _model_to_tree_event_response(event: ExecutionTreeEvent) -> TreeEventResponse:
+    """Convert ExecutionTreeEvent model to TreeEventResponse schema."""
+    # Parse path from JSONB
+    path_elements = []
+    if event.path:
+        for p in event.path:
+            if isinstance(p, dict):
+                path_elements.append(
+                    PathElement(
+                        id=p.get("id", ""),
+                        name=p.get("name", ""),
+                        node_type=SchemaNodeType(p.get("node_type", "action")),
+                    )
+                )
+
+    # Parse metadata from JSONB
+    metadata = None
+    if event.node_metadata:
+        metadata = SchemaNodeMetadata(**event.node_metadata)
+
+    return TreeEventResponse(
+        id=event.id,
+        run_id=event.run_id,
+        event_type=SchemaTreeEventType(event.event_type),
+        node_id=event.node_id,
+        node_type=SchemaNodeType(event.node_type),
+        node_name=event.node_name,
+        parent_node_id=event.parent_node_id,
+        path=path_elements,
+        sequence=event.sequence,
+        event_timestamp=event.event_timestamp,
+        status=SchemaNodeStatus(event.status),
+        error_message=event.error_message,
+        metadata=metadata,
+        created_at=event.created_at.isoformat() if event.created_at else "",
+    )
+
+
+def _build_display_node(
+    node_data: dict[str, Any],
+    children: list[SchemaDisplayNode],
+) -> SchemaDisplayNode:
+    """Build a DisplayNode from node data."""
+    metadata = None
+    if node_data.get("metadata"):
+        metadata = SchemaNodeMetadata(**node_data["metadata"])
+
+    return SchemaDisplayNode(
+        id=node_data["id"],
+        node_type=SchemaNodeType(node_data["node_type"]),
+        name=node_data["name"],
+        timestamp=node_data.get("timestamp") or 0.0,
+        end_timestamp=node_data.get("end_timestamp"),
+        duration=(
+            node_data.get("duration_ms") / 1000
+            if node_data.get("duration_ms")
+            else None
+        ),
+        status=SchemaNodeStatus(node_data["status"]),
+        metadata=metadata or SchemaNodeMetadata(),
+        error=node_data.get("error"),
+        children=children,
+        is_expanded=True,
+        level=0,
+    )
+
+
+@router.get(
+    "/runs/{run_id}/tree-events",
+    response_model=TreeEventListResponse,
+    summary="List tree events for a run",
+    description="List all tree events for a specific execution run, ordered by sequence.",
+)
+async def list_tree_events(
+    run_id: UUID,
+    event_type: str | None = Query(None, description="Filter by event type"),
+    node_type: str | None = Query(None, description="Filter by node type"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    limit: int = Query(500, ge=1, le=1000, description="Pagination limit"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+) -> TreeEventListResponse:
+    """List tree events for an execution run."""
+    # Verify run exists
+    run_query = select(ExecutionRun).where(ExecutionRun.id == run_id)
+    run_result = await db.execute(run_query)
+    run = run_result.scalar_one_or_none()
+
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Execution run {run_id} not found",
+        )
+
+    # Build query
+    query = select(ExecutionTreeEvent).where(ExecutionTreeEvent.run_id == run_id)
+
+    if event_type:
+        query = query.where(ExecutionTreeEvent.event_type == event_type)
+    if node_type:
+        query = query.where(ExecutionTreeEvent.node_type == node_type)
+
+    # Get total count
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Apply ordering and pagination
+    query = query.order_by(ExecutionTreeEvent.sequence).offset(offset).limit(limit)
+
+    result = await db.execute(query)
+    events = result.scalars().all()
+
+    return TreeEventListResponse(
+        events=[_model_to_tree_event_response(e) for e in events],
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=offset + limit < total,
+    )
+
+
+@router.get(
+    "/runs/{run_id}/tree",
+    response_model=ExecutionTreeResponse,
+    summary="Get execution tree structure",
+    description="Get the full reconstructed execution tree for a run.",
+)
+async def get_execution_tree(
+    run_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+) -> ExecutionTreeResponse:
+    """Get the reconstructed execution tree for a run."""
+    # Verify run exists
+    run_query = select(ExecutionRun).where(ExecutionRun.id == run_id)
+    run_result = await db.execute(run_query)
+    run = run_result.scalar_one_or_none()
+
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Execution run {run_id} not found",
+        )
+
+    # Get all tree events for this run
+    query = (
+        select(ExecutionTreeEvent)
+        .where(ExecutionTreeEvent.run_id == run_id)
+        .order_by(ExecutionTreeEvent.sequence)
+    )
+
+    result = await db.execute(query)
+    events = result.scalars().all()
+
+    # Build node map from events
+    nodes: dict[str, dict[str, Any]] = {}
+    for event in events:
+        node_id = event.node_id
+        if node_id not in nodes:
+            nodes[node_id] = {
+                "id": node_id,
+                "node_type": event.node_type,
+                "name": event.node_name,
+                "parent_id": event.parent_node_id,
+                "status": event.status,
+                "error": event.error_message,
+                "timestamp": event.node_start_timestamp,
+                "end_timestamp": event.node_end_timestamp,
+                "duration_ms": event.duration_ms,
+                "metadata": event.node_metadata,
+                "children_ids": [],
+            }
+        else:
+            # Update with latest event data (e.g., completed status)
+            node = nodes[node_id]
+            node["status"] = event.status
+            if event.error_message:
+                node["error"] = event.error_message
+            if event.node_end_timestamp:
+                node["end_timestamp"] = event.node_end_timestamp
+            if event.duration_ms:
+                node["duration_ms"] = event.duration_ms
+
+    # Build parent-child relationships
+    for node_id, node in nodes.items():
+        parent_id = node.get("parent_id")
+        if parent_id and parent_id in nodes:
+            nodes[parent_id]["children_ids"].append(node_id)
+
+    # Recursive function to build DisplayNode tree
+    def build_tree(node_id: str) -> SchemaDisplayNode:
+        node_data = nodes[node_id]
+        children = [build_tree(child_id) for child_id in node_data["children_ids"]]
+        return _build_display_node(node_data, children)
+
+    # Build root nodes
+    root_node_ids = [
+        node_id
+        for node_id, node in nodes.items()
+        if not node.get("parent_id") or node.get("parent_id") not in nodes
+    ]
+    root_nodes = [build_tree(node_id) for node_id in root_node_ids]
+
+    # Calculate overall status
+    all_statuses = [n["status"] for n in nodes.values()]
+    if "failed" in all_statuses:
+        overall_status = SchemaNodeStatus.FAILED
+    elif all(s == "success" for s in all_statuses):
+        overall_status = SchemaNodeStatus.SUCCESS
+    elif "running" in all_statuses:
+        overall_status = SchemaNodeStatus.RUNNING
+    else:
+        overall_status = SchemaNodeStatus.PENDING
+
+    # Calculate total duration
+    start_times = [n["timestamp"] for n in nodes.values() if n.get("timestamp")]
+    end_times = [n["end_timestamp"] for n in nodes.values() if n.get("end_timestamp")]
+    duration_ms = None
+    if start_times and end_times:
+        duration_ms = (max(end_times) - min(start_times)) * 1000
+
+    return ExecutionTreeResponse(
+        run_id=run_id,
+        root_nodes=root_nodes,
+        total_events=len(events),
+        workflow_name=run.run_name,
+        status=overall_status,
+        duration_ms=duration_ms,
+    )

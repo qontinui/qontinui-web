@@ -56,13 +56,13 @@ class DeviceSessionService:
             Created DeviceSession
         """
         # Get geolocation from IP address if available
-        if GEOLOCATION_AVAILABLE:
-            geo_data = await geolocation_service.get_location_from_ip(ip_address)
-            country = geo_data.country
-            city = geo_data.city
-        else:
-            country = None
-            city = None
+        country = None
+        city = None
+        if GEOLOCATION_AVAILABLE and geolocation_service:
+            geo_data = geolocation_service.lookup(ip_address)
+            if geo_data:
+                country = geo_data.country_code
+                city = geo_data.city
 
         device_session = DeviceSession(
             id=uuid.uuid4(),
@@ -87,8 +87,8 @@ class DeviceSessionService:
             user_id=str(user_id),
             device_fingerprint=device_fingerprint,
             ip_address=ip_address,
-            country=geo_data.country,
-            city=geo_data.city,
+            country=country,
+            city=city,
         )
 
         return device_session

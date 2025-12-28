@@ -48,6 +48,7 @@ pyarrow = "^17.0.0"
 radon = "^6.0.1"
 qontinui-schemas = {path = "../../qontinui-schemas", develop = true}
 pgvector = "^0.4.2"
+geoip2 = "^5.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
@@ -159,6 +160,7 @@ ignore = [
 known-first-party = ["app"]
 
 # Optional ML dependencies
+
 
 [tool.poetry.group.ml]
 optional = true

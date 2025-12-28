@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import mermaid from "mermaid";
+import DOMPurify from "dompurify";
 
 interface MermaidDiagramProps {
   chart: string;
@@ -56,7 +57,10 @@ export function MermaidDiagram({ chart, id }: MermaidDiagramProps) {
         const { svg } = await mermaid.render(diagramId, chart);
 
         if (ref.current) {
-          ref.current.innerHTML = svg;
+          // Sanitize SVG to prevent XSS attacks
+          ref.current.innerHTML = DOMPurify.sanitize(svg, {
+            USE_PROFILES: { svg: true, svgFilters: true },
+          });
         }
         setError(null);
       } catch (err) {

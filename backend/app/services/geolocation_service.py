@@ -1,296 +1,174 @@
 """
-Geolocation service for determining location from IP addresses.
+Geolocation service using MaxMind GeoLite2 database.
 
-Uses ipapi.co free API with Redis caching for improved performance.
+This service provides IP-to-location lookups for analytics purposes.
+The lookup happens BEFORE IP anonymization, then the raw IP is discarded.
+
+Setup:
+1. Create a free MaxMind account at https://www.maxmind.com/en/geolite2/signup
+2. Download GeoLite2-City.mmdb from your account
+3. Place it in backend/data/GeoLite2-City.mmdb
+   OR set GEOIP_DATABASE_PATH environment variable
+
+The service gracefully handles missing database files.
 """
 
-import httpx
+from dataclasses import dataclass
+from pathlib import Path
+
 import structlog
 
 logger = structlog.get_logger(__name__)
 
+# Try to import geoip2, but don't fail if not available
+try:
+    import geoip2.database
+    import geoip2.errors
 
-class GeolocationData:
-    """Data class for geolocation information."""
+    GEOIP2_AVAILABLE = True
+except ImportError:
+    GEOIP2_AVAILABLE = False
+    logger.warning("geoip2_not_installed", message="Install geoip2 for geolocation")
 
-    def __init__(
-        self,
-        country: str | None = None,
-        city: str | None = None,
-        timezone: str | None = None,
-    ):
-        self.country = country
-        self.city = city
-        self.timezone = timezone
 
-    def __repr__(self) -> str:
-        return f"GeolocationData(country={self.country}, city={self.city}, timezone={self.timezone})"
+@dataclass
+class GeoLocation:
+    """Geolocation data for an IP address."""
+
+    country_code: str | None = None  # ISO 3166-1 alpha-2 (e.g., "US", "DE")
+    country_name: str | None = None  # Full country name
+    city: str | None = None  # City name
+    region: str | None = None  # State/province/region
+    continent: str | None = None  # Continent code (e.g., "EU", "NA")
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class GeolocationService:
-    """Service for IP-based geolocation with Redis caching."""
+    """
+    Service for looking up geographic location from IP addresses.
 
-    # Cache TTL: 24 hours (86400 seconds)
-    CACHE_TTL = 86400
-    # Request timeout
-    REQUEST_TIMEOUT = 5.0
+    Uses MaxMind GeoLite2-City database for lookups.
+    Gracefully handles missing database or lookup failures.
+    """
 
-    def __init__(self):
-        """Initialize the geolocation service."""
-        self._redis_client = None
-        self._redis_initialized = False
+    def __init__(self) -> None:
+        self._reader: geoip2.database.Reader | None = None
+        self._initialized = False
+        self._database_path: Path | None = None
 
-    async def _get_redis_client(self):
-        """Get Redis client for caching (lazy initialization)."""
-        if self._redis_initialized:
-            return self._redis_client
+    def _get_database_path(self) -> Path | None:
+        """Find the GeoLite2 database file."""
+        import os
 
-        try:
-            from app.core.config import settings
+        # Check environment variable first
+        env_path = os.environ.get("GEOIP_DATABASE_PATH")
+        if env_path:
+            path = Path(env_path)
+            if path.exists():
+                return path
 
-            if not settings.REDIS_ENABLED:
-                logger.info("redis_disabled_for_geolocation")
-                self._redis_initialized = True
-                return None
-
-            import redis.asyncio as redis
-
-            self._redis_client = redis.Redis(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                db=settings.REDIS_DB,
-                decode_responses=True,
-            )
-            # Test connection
-            await self._redis_client.ping()
-            logger.info("redis_connected_for_geolocation")
-        except Exception as e:
-            logger.warning(
-                "redis_unavailable_for_geolocation",
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            self._redis_client = None
-
-        self._redis_initialized = True
-        return self._redis_client
-
-    async def _get_from_cache(self, ip_address: str) -> GeolocationData | None:
-        """
-        Get geolocation data from Redis cache.
-
-        Args:
-            ip_address: IP address to lookup
-
-        Returns:
-            GeolocationData if found in cache, None otherwise
-        """
-        redis = await self._get_redis_client()
-        if not redis:
-            return None
-
-        try:
-            cache_key = f"geo:{ip_address}"
-            cached_data = await redis.hgetall(cache_key)
-
-            if cached_data:
-                logger.debug("geolocation_cache_hit", ip_address=ip_address)
-                return GeolocationData(
-                    country=cached_data.get("country"),
-                    city=cached_data.get("city"),
-                    timezone=cached_data.get("timezone"),
-                )
-
-            logger.debug("geolocation_cache_miss", ip_address=ip_address)
-            return None
-        except Exception as e:
-            logger.warning(
-                "geolocation_cache_read_error",
-                ip_address=ip_address,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            return None
-
-    async def _save_to_cache(self, ip_address: str, geo_data: GeolocationData) -> None:
-        """
-        Save geolocation data to Redis cache.
-
-        Args:
-            ip_address: IP address
-            geo_data: Geolocation data to cache
-        """
-        redis = await self._get_redis_client()
-        if not redis:
-            return
-
-        try:
-            cache_key = f"geo:{ip_address}"
-            cache_data = {}
-
-            if geo_data.country:
-                cache_data["country"] = geo_data.country
-            if geo_data.city:
-                cache_data["city"] = geo_data.city
-            if geo_data.timezone:
-                cache_data["timezone"] = geo_data.timezone
-
-            if cache_data:
-                await redis.hset(cache_key, mapping=cache_data)
-                await redis.expire(cache_key, self.CACHE_TTL)
-                logger.debug(
-                    "geolocation_cached",
-                    ip_address=ip_address,
-                    ttl=self.CACHE_TTL,
-                )
-        except Exception as e:
-            logger.warning(
-                "geolocation_cache_write_error",
-                ip_address=ip_address,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-    async def _fetch_from_api(self, ip_address: str) -> GeolocationData | None:
-        """
-        Fetch geolocation data from ipapi.co API.
-
-        Args:
-            ip_address: IP address to lookup
-
-        Returns:
-            GeolocationData if successful, None otherwise
-        """
-        # Don't try to geolocate private/local IPs
-        if self._is_private_ip(ip_address):
-            logger.debug("geolocation_skipped_private_ip", ip_address=ip_address)
-            return GeolocationData(
-                country="Local",
-                city="Local",
-                timezone=None,
-            )
-
-        try:
-            async with httpx.AsyncClient() as client:
-                # ipapi.co free tier allows 1000 requests/day without API key
-                # Format: https://ipapi.co/{ip}/json/
-                url = f"https://ipapi.co/{ip_address}/json/"
-
-                response = await client.get(url, timeout=self.REQUEST_TIMEOUT)
-
-                if response.status_code == 200:
-                    data = response.json()
-
-                    # Check if we got an error from the API
-                    if "error" in data:
-                        logger.warning(
-                            "geolocation_api_error",
-                            ip_address=ip_address,
-                            error=data.get("reason", "Unknown error"),
-                        )
-                        return None
-
-                    geo_data = GeolocationData(
-                        country=data.get("country_name"),
-                        city=data.get("city"),
-                        timezone=data.get("timezone"),
-                    )
-
-                    logger.info(
-                        "geolocation_fetched",
-                        ip_address=ip_address,
-                        country=geo_data.country,
-                        city=geo_data.city,
-                    )
-                    return geo_data
-                else:
-                    logger.warning(
-                        "geolocation_api_error",
-                        ip_address=ip_address,
-                        status_code=response.status_code,
-                    )
-                    return None
-
-        except TimeoutError:
-            logger.warning("geolocation_timeout", ip_address=ip_address)
-            return None
-        except Exception as e:
-            logger.error(
-                "geolocation_api_error",
-                ip_address=ip_address,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            return None
-
-    def _is_private_ip(self, ip_address: str) -> bool:
-        """
-        Check if IP address is private/local.
-
-        Args:
-            ip_address: IP address to check
-
-        Returns:
-            True if private/local, False otherwise
-        """
-        # Common local/private IP patterns
-        private_patterns = [
-            "127.",
-            "localhost",
-            "10.",
-            "192.168.",
-            "172.16.",
-            "172.17.",
-            "172.18.",
-            "172.19.",
-            "172.20.",
-            "172.21.",
-            "172.22.",
-            "172.23.",
-            "172.24.",
-            "172.25.",
-            "172.26.",
-            "172.27.",
-            "172.28.",
-            "172.29.",
-            "172.30.",
-            "172.31.",
-            "::1",
-            "fe80:",
+        # Check default locations
+        default_paths = [
+            Path(__file__).parent.parent.parent / "data" / "GeoLite2-City.mmdb",
+            Path("/var/lib/GeoIP/GeoLite2-City.mmdb"),  # Linux standard
+            Path("C:/ProgramData/MaxMind/GeoLite2-City.mmdb"),  # Windows
         ]
 
-        return any(ip_address.startswith(pattern) for pattern in private_patterns)
+        for path in default_paths:
+            if path.exists():
+                return path
 
-    async def get_location_from_ip(self, ip_address: str) -> GeolocationData:
+        return None
+
+    def _ensure_initialized(self) -> bool:
+        """Initialize the database reader if not already done."""
+        if self._initialized:
+            return self._reader is not None
+
+        self._initialized = True
+
+        if not GEOIP2_AVAILABLE:
+            logger.info("geolocation_disabled", reason="geoip2 not installed")
+            return False
+
+        self._database_path = self._get_database_path()
+        if not self._database_path:
+            logger.info(
+                "geolocation_disabled",
+                reason="GeoLite2-City.mmdb not found",
+                hint="Download from MaxMind and place in backend/data/",
+            )
+            return False
+
+        try:
+            self._reader = geoip2.database.Reader(str(self._database_path))
+            logger.info(
+                "geolocation_enabled",
+                database_path=str(self._database_path),
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                "geolocation_init_failed",
+                error=str(e),
+                database_path=str(self._database_path),
+            )
+            return False
+
+    def lookup(self, ip: str | None) -> GeoLocation | None:
         """
-        Get geolocation data for an IP address.
-
-        Checks Redis cache first, then fetches from API if not cached.
-        Results are cached in Redis for 24 hours.
+        Look up geographic location for an IP address.
 
         Args:
-            ip_address: IP address to lookup
+            ip: IPv4 or IPv6 address string
 
         Returns:
-            GeolocationData with country, city, and timezone (fields may be None)
+            GeoLocation with available data, or None if lookup failed
         """
-        # Try cache first
-        cached_data = await self._get_from_cache(ip_address)
-        if cached_data:
-            return cached_data
+        if not ip:
+            return None
 
-        # Fetch from API
-        geo_data = await self._fetch_from_api(ip_address)
+        if not self._ensure_initialized():
+            return None
 
-        # Return empty data if API fetch failed
-        if not geo_data:
-            geo_data = GeolocationData()
+        if not self._reader:
+            return None
 
-        # Cache the result (even if empty, to avoid repeated API calls)
-        await self._save_to_cache(ip_address, geo_data)
+        try:
+            response = self._reader.city(ip)
 
-        return geo_data
+            return GeoLocation(
+                country_code=response.country.iso_code,
+                country_name=response.country.name,
+                city=response.city.name,
+                region=(
+                    response.subdivisions.most_specific.name
+                    if response.subdivisions
+                    else None
+                ),
+                continent=response.continent.code,
+                latitude=response.location.latitude,
+                longitude=response.location.longitude,
+            )
+        except geoip2.errors.AddressNotFoundError:
+            # IP not in database (e.g., private IP, localhost)
+            return None
+        except Exception as e:
+            logger.warning("geolocation_lookup_failed", ip=ip[:10], error=str(e))
+            return None
+
+    def close(self) -> None:
+        """Close the database reader."""
+        if self._reader:
+            self._reader.close()
+            self._reader = None
+
+    @property
+    def is_available(self) -> bool:
+        """Check if geolocation is available."""
+        return self._ensure_initialized()
 
 
-# Global instance
+# Singleton instance
 geolocation_service = GeolocationService()

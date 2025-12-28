@@ -361,6 +361,14 @@ const navItems: NavItem[] = [
         route: "/qa-dashboard/compare",
         color: "#F59E0B",
       },
+      {
+        id: "execution-history",
+        label: "Execution History",
+        description: "View detailed execution tree events",
+        icon: <Play size={22} />,
+        route: "/execution-history",
+        color: "#F59E0B",
+      },
     ],
   },
   {

@@ -220,6 +220,13 @@ class ExecutionRun(Base):
         lazy="select",
     )
 
+    tree_events = relationship(
+        "ExecutionTreeEvent",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
     def __repr__(self) -> str:
         """Return string representation of ExecutionRun."""
         return f"<ExecutionRun(id={self.id}, run_type='{self.run_type}', status='{self.status}')>"

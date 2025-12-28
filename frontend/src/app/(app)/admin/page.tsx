@@ -19,6 +19,7 @@ import {
   Network,
   Smartphone,
   Bell,
+  Download,
 } from "lucide-react";
 
 // Dynamic imports for admin tabs - these are loaded only when accessed
@@ -83,6 +84,14 @@ const NotificationsTab = dynamic(
     ),
   }
 );
+
+const DownloadsTab = dynamic(() => import("@/components/admin/DownloadsTab"), {
+  loading: () => (
+    <div className="flex items-center justify-center h-64">
+      Loading Downloads...
+    </div>
+  ),
+});
 
 export default function AdminDashboard() {
   const { user, loading: authLoading } = useAuth();
@@ -167,7 +176,7 @@ export default function AdminDashboard() {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-7 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-8 lg:w-auto lg:inline-grid">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <LayoutDashboard className="h-4 w-4" />
               <span className="hidden sm:inline">Overview</span>
@@ -199,6 +208,10 @@ export default function AdminDashboard() {
               <Server className="h-4 w-4" />
               <span className="hidden sm:inline">System</span>
             </TabsTrigger>
+            <TabsTrigger value="downloads" className="flex items-center gap-2">
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Downloads</span>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -227,6 +240,10 @@ export default function AdminDashboard() {
 
           <TabsContent value="system" className="space-y-6">
             <SystemTab />
+          </TabsContent>
+
+          <TabsContent value="downloads" className="space-y-6">
+            <DownloadsTab />
           </TabsContent>
         </Tabs>
       </div>

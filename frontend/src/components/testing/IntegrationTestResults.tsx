@@ -26,7 +26,8 @@ import {
   Shield,
   Zap,
 } from "lucide-react";
-import { ExecutionStepCard } from "./ExecutionStepCard";
+import { UnifiedStepCard } from "@/components/shared/UnifiedStepCard";
+import { mockStepToUnifiedStep } from "@/lib/tree-event-adapter";
 import type {
   IntegrationTestResponse,
   IntegrationTestRun,
@@ -35,16 +36,26 @@ import type {
   CoverageGap,
   ReliabilityInsight,
 } from "@/types/integration-testing";
+import type { UnifiedExecutionStep } from "@/types/tree-events";
 
 interface IntegrationTestResultsProps {
   /** The integration test run data */
   run: IntegrationTestResponse | IntegrationTestRun;
   /** Optional callback when a step is clicked */
-  onStepClick?: (step: ExecutionStep, index: number) => void;
+  onStepClick?: (step: UnifiedExecutionStep, index: number) => void;
   /** Whether to show the visual playback toggle */
   showPlaybackToggle?: boolean;
   /** Callback when visual mode is toggled */
   onToggleVisualMode?: () => void;
+  /** Map of state/element IDs to display names */
+  nameMap?: Map<string, string>;
+}
+
+/**
+ * Helper to resolve an ID to a display name
+ */
+function resolveName(id: string, nameMap?: Map<string, string>): string {
+  return nameMap?.get(id) ?? id;
 }
 
 /**
@@ -60,16 +71,38 @@ export function IntegrationTestResults({
   onStepClick,
   showPlaybackToggle = true,
   onToggleVisualMode,
+  nameMap,
 }: IntegrationTestResultsProps) {
   const [expandedStepIndex, setExpandedStepIndex] = useState<number | null>(
     null
   );
   const [activeTab, setActiveTab] = useState<"steps" | "insights">("steps");
 
+  // Normalize run data with defaults (handles both camelCase and snake_case from API)
+  const normalizedRun = {
+    ...run,
+    steps: run.steps ?? [],
+    initial_states: run.initial_states ?? [],
+    final_states: run.final_states ?? [],
+    reliability_insights: run.reliability_insights ?? [],
+    stochasticity_warnings: run.stochasticity_warnings ?? [],
+    coverage_gaps: run.coverage_gaps ?? [],
+    coverage_data: run.coverage_data ?? {
+      states_covered: 0,
+      total_states: 0,
+      transitions_covered: 0,
+      total_transitions: 0,
+      coverage_percentage: 0,
+    },
+  };
+
+  // Convert mock steps to unified format for display
+  const unifiedSteps = normalizedRun.steps.map(mockStepToUnifiedStep);
+
   const handleStepToggle = (index: number) => {
     setExpandedStepIndex(expandedStepIndex === index ? null : index);
-    if (onStepClick && run.steps[index]) {
-      onStepClick(run.steps[index], index);
+    if (onStepClick && unifiedSteps[index]) {
+      onStepClick(unifiedSteps[index], index);
     }
   };
 
@@ -116,7 +149,7 @@ export function IntegrationTestResults({
   const formatDuration = (ms: number) => {
     if (ms === 0) return "0ms (virtual)";
     if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${Math.floor(ms / 60000)}m ${((ms % 60000) / 1000).toFixed(0)}s`;
   };
 
@@ -124,11 +157,12 @@ export function IntegrationTestResults({
     <div className="space-y-6">
       {/* Summary Header */}
       <SummaryHeader
-        run={run}
+        run={normalizedRun}
         getStatusBadge={getStatusBadge}
         formatDuration={formatDuration}
         showPlaybackToggle={showPlaybackToggle}
         onToggleVisualMode={onToggleVisualMode}
+        nameMap={nameMap}
       />
 
       {/* Main Content Tabs */}
@@ -142,7 +176,7 @@ export function IntegrationTestResults({
             className="data-[state=active]:bg-[#00D9FF]/20 data-[state=active]:text-[#00D9FF]"
           >
             <Route className="w-4 h-4 mr-2" />
-            Execution Steps ({run.steps.length})
+            Execution Steps ({unifiedSteps.length})
           </TabsTrigger>
           <TabsTrigger
             value="insights"
@@ -150,13 +184,13 @@ export function IntegrationTestResults({
           >
             <Shield className="w-4 h-4 mr-2" />
             Insights
-            {(run.reliability_insights.length > 0 ||
-              run.stochasticity_warnings.length > 0 ||
-              run.coverage_gaps.length > 0) && (
+            {(normalizedRun.reliability_insights.length > 0 ||
+              normalizedRun.stochasticity_warnings.length > 0 ||
+              normalizedRun.coverage_gaps.length > 0) && (
               <Badge className="ml-2 bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-xs">
-                {run.reliability_insights.length +
-                  run.stochasticity_warnings.length +
-                  run.coverage_gaps.length}
+                {normalizedRun.reliability_insights.length +
+                  normalizedRun.stochasticity_warnings.length +
+                  normalizedRun.coverage_gaps.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -164,17 +198,19 @@ export function IntegrationTestResults({
 
         <TabsContent value="steps" className="mt-4">
           <ExecutionStepsPanel
-            steps={run.steps}
+            steps={unifiedSteps}
             expandedStepIndex={expandedStepIndex}
             onStepToggle={handleStepToggle}
+            nameMap={nameMap}
           />
         </TabsContent>
 
         <TabsContent value="insights" className="mt-4">
           <InsightsPanel
-            reliabilityInsights={run.reliability_insights}
-            stochasticityWarnings={run.stochasticity_warnings}
-            coverageGaps={run.coverage_gaps}
+            reliabilityInsights={normalizedRun.reliability_insights}
+            stochasticityWarnings={normalizedRun.stochasticity_warnings}
+            coverageGaps={normalizedRun.coverage_gaps}
+            nameMap={nameMap}
           />
         </TabsContent>
       </Tabs>
@@ -192,6 +228,7 @@ interface SummaryHeaderProps {
   formatDuration: (ms: number) => string;
   showPlaybackToggle?: boolean;
   onToggleVisualMode?: () => void;
+  nameMap?: Map<string, string>;
 }
 
 function SummaryHeader({
@@ -200,6 +237,7 @@ function SummaryHeader({
   formatDuration,
   showPlaybackToggle,
   onToggleVisualMode,
+  nameMap,
 }: SummaryHeaderProps) {
   return (
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
@@ -245,7 +283,7 @@ function SummaryHeader({
             value={
               "summary" in run
                 ? `${run.summary.successful_actions}/${run.summary.total_actions}`
-                : String(run.steps.filter((s) => s.type === "action").length)
+                : String(run.steps.filter((s: ExecutionStep) => s.type === "action").length)
             }
             color="green"
           />
@@ -282,13 +320,13 @@ function SummaryHeader({
               <div className="text-xs text-gray-400 mb-2">Initial States</div>
               <div className="flex flex-wrap gap-1">
                 {run.initial_states.length > 0 ? (
-                  run.initial_states.map((state) => (
+                  run.initial_states.map((state: string) => (
                     <Badge
                       key={state}
                       variant="outline"
                       className="text-xs border-blue-500/30 text-blue-400"
                     >
-                      {state}
+                      {resolveName(state, nameMap)}
                     </Badge>
                   ))
                 ) : (
@@ -300,13 +338,13 @@ function SummaryHeader({
               <div className="text-xs text-gray-400 mb-2">Final States</div>
               <div className="flex flex-wrap gap-1">
                 {run.final_states.length > 0 ? (
-                  run.final_states.map((state) => (
+                  run.final_states.map((state: string) => (
                     <Badge
                       key={state}
                       variant="outline"
                       className="text-xs border-green-500/30 text-green-400"
                     >
-                      {state}
+                      {resolveName(state, nameMap)}
                     </Badge>
                   ))
                 ) : (
@@ -360,15 +398,17 @@ function StatBadge({ icon, label, value, color }: StatBadgeProps) {
 // =============================================================================
 
 interface ExecutionStepsPanelProps {
-  steps: ExecutionStep[];
+  steps: UnifiedExecutionStep[];
   expandedStepIndex: number | null;
   onStepToggle: (index: number) => void;
+  nameMap?: Map<string, string>;
 }
 
 function ExecutionStepsPanel({
   steps,
   expandedStepIndex,
   onStepToggle,
+  nameMap,
 }: ExecutionStepsPanelProps) {
   if (steps.length === 0) {
     return (
@@ -389,12 +429,13 @@ function ExecutionStepsPanel({
   return (
     <div className="space-y-2">
       {steps.map((step, index) => (
-        <ExecutionStepCard
+        <UnifiedStepCard
           key={`step-${index}`}
           step={step}
           isExpanded={expandedStepIndex === index}
           onToggle={() => onStepToggle(index)}
           isCurrent={false}
+          nameMap={nameMap}
         />
       ))}
     </div>
@@ -409,12 +450,14 @@ interface InsightsPanelProps {
   reliabilityInsights: ReliabilityInsight[];
   stochasticityWarnings: StochasticityWarning[];
   coverageGaps: CoverageGap[];
+  nameMap?: Map<string, string>;
 }
 
 function InsightsPanel({
   reliabilityInsights,
   stochasticityWarnings,
   coverageGaps,
+  nameMap,
 }: InsightsPanelProps) {
   const hasInsights =
     reliabilityInsights.length > 0 ||
@@ -450,7 +493,7 @@ function InsightsPanel({
         >
           <div className="space-y-3">
             {reliabilityInsights.map((insight) => (
-              <ReliabilityInsightCard key={insight.id} insight={insight} />
+              <ReliabilityInsightCard key={insight.id} insight={insight} nameMap={nameMap} />
             ))}
           </div>
         </InsightSection>
@@ -466,7 +509,7 @@ function InsightsPanel({
         >
           <div className="space-y-3">
             {stochasticityWarnings.map((warning) => (
-              <StochasticityWarningCard key={warning.id} warning={warning} />
+              <StochasticityWarningCard key={warning.id} warning={warning} nameMap={nameMap} />
             ))}
           </div>
         </InsightSection>
@@ -482,7 +525,7 @@ function InsightsPanel({
         >
           <div className="space-y-3">
             {coverageGaps.map((gap, index) => (
-              <CoverageGapCard key={`gap-${index}`} gap={gap} />
+              <CoverageGapCard key={`gap-${index}`} gap={gap} nameMap={nameMap} />
             ))}
           </div>
         </InsightSection>
@@ -556,7 +599,7 @@ function InsightSection({
 // Insight Card Components
 // =============================================================================
 
-function ReliabilityInsightCard({ insight }: { insight: ReliabilityInsight }) {
+function ReliabilityInsightCard({ insight, nameMap }: { insight: ReliabilityInsight; nameMap?: Map<string, string> }) {
   const severityColors = {
     critical: "border-l-red-600 bg-red-500/5",
     high: "border-l-red-500 bg-red-500/5",
@@ -592,7 +635,7 @@ function ReliabilityInsightCard({ insight }: { insight: ReliabilityInsight }) {
             variant="outline"
             className="text-xs border-gray-700"
           >
-            {pattern}
+            {resolveName(pattern, nameMap)}
           </Badge>
         ))}
       </div>
@@ -615,8 +658,10 @@ function ReliabilityInsightCard({ insight }: { insight: ReliabilityInsight }) {
 
 function StochasticityWarningCard({
   warning,
+  nameMap,
 }: {
   warning: StochasticityWarning;
+  nameMap?: Map<string, string>;
 }) {
   const severityColors = {
     high: "border-l-red-500 bg-red-500/5",
@@ -639,7 +684,9 @@ function StochasticityWarningCard({
       <div className="flex items-start justify-between mb-2">
         <div>
           <h4 className="font-medium text-white">
-            {warning.pattern_name || warning.action_type || "Unknown Pattern"}
+            {warning.pattern_name
+              ? resolveName(warning.pattern_name, nameMap)
+              : warning.action_type || "Unknown Pattern"}
           </h4>
           <div className="text-xs text-gray-500 mt-1">
             {warningTypeLabels[warning.warning_type] || warning.warning_type}
@@ -678,7 +725,7 @@ function StochasticityWarningCard({
   );
 }
 
-function CoverageGapCard({ gap }: { gap: CoverageGap }) {
+function CoverageGapCard({ gap, nameMap }: { gap: CoverageGap; nameMap?: Map<string, string> }) {
   const severityColors = {
     high: "border-l-red-500 bg-red-500/5",
     medium: "border-l-yellow-500 bg-yellow-500/5",
@@ -713,7 +760,7 @@ function CoverageGapCard({ gap }: { gap: CoverageGap }) {
               variant="outline"
               className="text-xs border-purple-500/30 text-purple-400"
             >
-              {state}
+              {resolveName(state, nameMap)}
             </Badge>
           ))}
         </div>

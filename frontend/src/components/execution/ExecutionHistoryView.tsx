@@ -1,0 +1,269 @@
+"use client";
+
+/**
+ * ExecutionHistoryView
+ *
+ * Displays historical execution data for a specific run using TreeEvents.
+ * This component fetches data from the REST API and displays it using
+ * the shared TreeExecutionResults component.
+ */
+
+import { useTreeEvents } from "@/hooks/useTreeEvents";
+import { TreeExecutionResults } from "@/components/shared/TreeExecutionResults";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  RefreshCw,
+  AlertTriangle,
+  History,
+  ArrowLeft,
+} from "lucide-react";
+import type { DisplayNode, NodeStatus, NodeType } from "@/types/tree-events";
+
+interface ExecutionHistoryViewProps {
+  /** Execution run ID to display */
+  runId: string;
+  /** Callback when back button is clicked */
+  onBack?: () => void;
+  /** Whether to show the back button */
+  showBackButton?: boolean;
+  /** Map of state/element IDs to display names */
+  nameMap?: Map<string, string>;
+}
+
+/**
+ * Convert API display nodes to the format expected by TreeExecutionResults
+ */
+interface ApiNode {
+  id: string;
+  node_type: string;
+  name: string;
+  timestamp: number;
+  end_timestamp?: number | null;
+  duration?: number | null;
+  status: string;
+  metadata: Record<string, unknown>;
+  error?: string | null;
+  children: unknown[];
+  is_expanded: boolean;
+  level: number;
+}
+
+function convertApiNodes(apiNodes: ApiNode[]): DisplayNode[] {
+  function convert(node: ApiNode): DisplayNode {
+    return {
+      id: node.id,
+      node_type: node.node_type as NodeType,
+      name: node.name,
+      timestamp: node.timestamp,
+      end_timestamp: node.end_timestamp,
+      duration: node.duration,
+      status: node.status as NodeStatus,
+      metadata: node.metadata,
+      error: node.error,
+      children: (node.children as ApiNode[]).map(convert),
+      is_expanded: node.is_expanded,
+      level: node.level,
+    };
+  }
+
+  return apiNodes.map(convert);
+}
+
+export function ExecutionHistoryView({
+  runId,
+  onBack,
+  showBackButton = true,
+  nameMap,
+}: ExecutionHistoryViewProps) {
+  const {
+    tree,
+    rootNodes,
+    isLoading,
+    error,
+    workflowName,
+    status,
+    durationMs,
+    refresh,
+  } = useTreeEvents({ runId, autoFetch: true });
+
+  // Convert API nodes to DisplayNode format
+  const displayNodes = convertApiNodes(rootNodes);
+
+  // Extract initial and final states from the tree
+  const { initialStates, finalStates } = extractStates(displayNodes);
+
+  if (error) {
+    return (
+      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <CardContent className="py-12">
+          <div className="text-center">
+            <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-red-500" />
+            <h3 className="text-lg font-medium text-white mb-2">
+              Failed to Load Execution
+            </h3>
+            <p className="text-sm text-gray-400 mb-4">{error.message}</p>
+            <Button
+              variant="outline"
+              onClick={refresh}
+              className="border-gray-700"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading && !tree) {
+    return (
+      <div className="space-y-6">
+        {/* Header skeleton */}
+        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-7 w-48 bg-gray-800" />
+                <Skeleton className="h-6 w-20 bg-gray-800" />
+              </div>
+              <Skeleton className="h-9 w-24 bg-gray-800" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-20 bg-gray-800" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Steps skeleton */}
+        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <CardHeader>
+            <Skeleton className="h-6 w-32 bg-gray-800" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-16 bg-gray-800" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {showBackButton && onBack && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="text-gray-400 hover:text-white"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back
+            </Button>
+          )}
+          <div className="flex items-center gap-2">
+            <History className="w-5 h-5 text-gray-400" />
+            <span className="text-sm text-gray-400">Run ID:</span>
+            <Badge variant="outline" className="font-mono text-xs">
+              {runId.slice(0, 8)}...
+            </Badge>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={refresh}
+          disabled={isLoading}
+          className="border-gray-700"
+        >
+          <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Execution Results */}
+      {tree ? (
+        <TreeExecutionResults
+          displayNodes={displayNodes}
+          workflowName={workflowName || "Execution"}
+          status={status as NodeStatus || "pending"}
+          durationMs={durationMs || 0}
+          initialStates={initialStates}
+          finalStates={finalStates}
+          isLive={false}
+          nameMap={nameMap}
+        />
+      ) : (
+        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <CardContent className="py-12">
+            <div className="text-center">
+              <History className="w-12 h-12 mx-auto mb-4 text-gray-600" />
+              <h3 className="text-lg font-medium text-gray-400 mb-2">
+                No Execution Data
+              </h3>
+              <p className="text-sm text-gray-500">
+                No tree events found for this execution run.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Extract initial and final states from the execution tree
+ */
+function extractStates(nodes: DisplayNode[]): {
+  initialStates: string[];
+  finalStates: string[];
+} {
+  const initialStates = new Set<string>();
+  const finalStates = new Set<string>();
+
+  function traverse(node: DisplayNode) {
+    const stateContext = node.metadata?.state_context as {
+      active_before?: string[];
+      active_after?: string[];
+    } | undefined;
+
+    if (stateContext?.active_before) {
+      // First node's "before" states are initial states
+      if (initialStates.size === 0) {
+        stateContext.active_before.forEach((s) => initialStates.add(s));
+      }
+    }
+
+    if (stateContext?.active_after) {
+      // Keep updating final states as we traverse
+      finalStates.clear();
+      stateContext.active_after.forEach((s) => finalStates.add(s));
+    }
+
+    node.children?.forEach(traverse);
+  }
+
+  nodes.forEach(traverse);
+
+  return {
+    initialStates: Array.from(initialStates),
+    finalStates: Array.from(finalStates),
+  };
+}
+
+export default ExecutionHistoryView;

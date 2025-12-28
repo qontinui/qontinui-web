@@ -34,10 +34,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Development auto-login credentials
+// Development auto-login credentials (from environment variables)
+// Set NEXT_PUBLIC_DEV_EMAIL and NEXT_PUBLIC_DEV_PASSWORD in .env.local for dev auto-login
 const DEV_AUTO_LOGIN = {
-  username: "josh",
-  password: "admin123",
+  username: process.env.NEXT_PUBLIC_DEV_EMAIL || "",
+  password: process.env.NEXT_PUBLIC_DEV_PASSWORD || "",
 };
 
 // Cross-tab auth event types
@@ -200,6 +201,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) {
       console.log(
         "[AuthContext] Dev mode: Already authenticated, skipping auto-login"
+      );
+      return;
+    }
+
+    // Check if dev credentials are configured via environment variables
+    if (!DEV_AUTO_LOGIN.username || !DEV_AUTO_LOGIN.password) {
+      console.log(
+        "[AuthContext] Dev mode: No auto-login credentials configured (set NEXT_PUBLIC_DEV_EMAIL and NEXT_PUBLIC_DEV_PASSWORD in .env.local)"
       );
       return;
     }

@@ -3,7 +3,6 @@
 
 import { ApiConfig } from "./api-config";
 import type {
-  IntegrationTestRequest,
   IntegrationTestResponse,
   IntegrationTestRunListResponse,
   IntegrationTestRunSummary,
@@ -37,11 +36,43 @@ class IntegrationTestingService {
     workflowConfig: WorkflowConfig,
     options?: IntegrationTestOptions
   ): Promise<IntegrationTestResponse> {
-    const request: IntegrationTestRequest = {
-      project_id: projectId,
-      workflow_config: workflowConfig,
-      initial_states: workflowConfig.initial_state_ids,
-      options,
+    // Transform frontend schema to match backend expectations
+    // Backend uses: workflow.id, workflow.name, fromState, activateStates, deactivateStates
+    // Frontend uses: workflow_id, workflow_name, from_state_id, to_state_id
+    const backendRequest = {
+      workflow: {
+        id: workflowConfig.workflow_id,
+        name: workflowConfig.workflow_name,
+        states: workflowConfig.states.map((s) => ({
+          id: s.id,
+          name: s.name,
+          isInitial: s.is_initial ?? false,
+          isBlocking: false,
+          stateImages: s.patterns?.map((p) => ({ id: p, name: p })) ?? [],
+        })),
+        transitions: workflowConfig.transitions.map((t) => ({
+          id: t.id,
+          name: t.name,
+          fromState: t.from_state_id,
+          // to_state_id maps to activateStates, from_state_id maps to deactivateStates
+          activateStates: [t.to_state_id],
+          deactivateStates: [t.from_state_id],
+          actionIds: t.actions?.map((a) => a.id) ?? [],
+        })),
+        actions: workflowConfig.transitions.flatMap((t) =>
+          (t.actions ?? []).map((a) => ({
+            id: a.id,
+            type: a.type,
+            name: a.id,
+            config: a.config ?? {},
+            patternId: a.pattern_id,
+          }))
+        ),
+        initialStateIds: workflowConfig.initial_state_ids ?? [],
+      },
+      initialStates: workflowConfig.initial_state_ids,
+      maxSteps: options?.max_steps ?? 100,
+      includeVisualData: options?.record_screenshots ?? false,
     };
 
     const response = await fetch(
@@ -51,18 +82,143 @@ class IntegrationTestingService {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify(backendRequest),
       }
     );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        errorData.detail || `Integration test failed: ${response.statusText}`
-      );
+      // Handle complex error structures (FastAPI returns detail as string or array)
+      let errorMessage = `Integration test failed: ${response.statusText}`;
+      if (errorData.detail) {
+        if (typeof errorData.detail === "string") {
+          errorMessage = errorData.detail;
+        } else if (Array.isArray(errorData.detail)) {
+          // Pydantic validation errors
+          errorMessage = errorData.detail
+            .map((e: { msg?: string; loc?: string[] }) => e.msg || JSON.stringify(e))
+            .join("; ");
+        } else {
+          errorMessage = JSON.stringify(errorData.detail);
+        }
+      }
+      throw new Error(errorMessage);
     }
 
-    return response.json();
+    // Transform backend response (camelCase) to frontend format (snake_case)
+    const data = await response.json();
+    return this.transformBackendResponse(data);
+  }
+
+  /**
+   * Transform backend response to frontend IntegrationTestResponse format
+   */
+  private transformBackendResponse(data: Record<string, unknown>): IntegrationTestResponse {
+    return {
+      run_id: (data.testId as string) ?? (data.test_id as string) ?? "",
+      project_id: (data.projectId as string) ?? (data.project_id as string) ?? "",
+      workflow_id: (data.workflowId as string) ?? (data.workflow_id as string) ?? "",
+      workflow_name: (data.workflowName as string) ?? (data.workflow_name as string) ?? "",
+      status: ((data.status as string) ?? "completed") as "completed" | "failed" | "timeout",
+      started_at: (data.startedAt as string) ?? (data.started_at as string) ?? new Date().toISOString(),
+      ended_at: (data.completedAt as string) ?? (data.ended_at as string) ?? new Date().toISOString(),
+      duration_ms: (data.totalDurationMs as number) ?? (data.total_duration_ms as number) ?? (data.duration_ms as number) ?? 0,
+      initial_states: (data.initialStates as string[]) ?? (data.initial_states as string[]) ?? [],
+      final_states: (data.finalActiveStates as string[]) ?? (data.final_states as string[]) ?? [],
+      steps: this.transformSteps(data.steps as Record<string, unknown>[] ?? []),
+      coverage_data: this.transformCoverageData(data.coverageData ?? data.coverage_data),
+      stochasticity_warnings: (data.stochasticityWarnings as IntegrationTestResponse["stochasticity_warnings"]) ??
+                              (data.stochasticity_warnings as IntegrationTestResponse["stochasticity_warnings"]) ?? [],
+      coverage_gaps: (data.coverageGaps as IntegrationTestResponse["coverage_gaps"]) ??
+                     (data.coverage_gaps as IntegrationTestResponse["coverage_gaps"]) ?? [],
+      reliability_insights: this.transformReliabilityInsights(data.reliabilityInsights ?? data.reliability_insights),
+      summary: {
+        total_steps: (data.steps as unknown[])?.length ?? 0,
+        total_actions: ((data.successCount as number) ?? 0) + ((data.failureCount as number) ?? 0),
+        successful_actions: (data.successCount as number) ?? 0,
+        failed_actions: (data.failureCount as number) ?? 0,
+        states_visited: 0,
+        transitions_executed: 0,
+        avg_action_duration_ms: 0,
+        low_confidence_actions: 0,
+      },
+    };
+  }
+
+  private transformSteps(steps: Record<string, unknown>[]): IntegrationTestResponse["steps"] {
+    return steps.map((step) => {
+      const stepType = (step.stepType as string) ?? (step.step_type as string) ?? (step.type as string) ?? "action";
+      const baseStep = {
+        step_number: (step.stepNumber as number) ?? (step.step_number as number) ?? 0,
+        timestamp: (step.timestamp as string) ?? new Date().toISOString(),
+        duration_ms: (step.durationMs as number) ?? (step.duration_ms as number) ?? 0,
+      };
+
+      if (stepType === "state_discovery" || stepType === "STATE_DISCOVERY") {
+        const discovery = (step.stateDiscovery ?? step.state_discovery ?? {}) as Record<string, unknown>;
+        return {
+          ...baseStep,
+          type: "state_discovery" as const,
+          active_states: (discovery.activeStates as string[]) ?? (discovery.active_states as string[]) ?? [],
+          initial_states_match: (discovery.initialStatesMatch as boolean) ?? (discovery.initial_states_match as boolean) ?? true,
+          expected_initial_states: [],
+          detection_method: "mock" as const,
+        };
+      }
+
+      // Default to a generic step structure
+      return {
+        ...baseStep,
+        type: "state_discovery" as const,
+        active_states: [],
+        initial_states_match: true,
+        expected_initial_states: [],
+        detection_method: "mock" as const,
+      };
+    });
+  }
+
+  private transformCoverageData(data: unknown): IntegrationTestResponse["coverage_data"] {
+    if (!data || typeof data !== "object") {
+      return {
+        states_covered: 0,
+        total_states: 0,
+        transitions_covered: 0,
+        total_transitions: 0,
+        coverage_percentage: 0,
+      };
+    }
+    const coverageData = data as Record<string, unknown>;
+    return {
+      states_covered: (coverageData.statesCovered as number) ?? (coverageData.states_covered as number) ?? 0,
+      total_states: (coverageData.totalStates as number) ?? (coverageData.total_states as number) ?? 0,
+      transitions_covered: (coverageData.transitionsCovered as number) ?? (coverageData.transitions_covered as number) ?? 0,
+      total_transitions: (coverageData.totalTransitions as number) ?? (coverageData.total_transitions as number) ?? 0,
+      coverage_percentage: (coverageData.coveragePercentage as number) ?? (coverageData.coverage_percentage as number) ?? 0,
+    };
+  }
+
+  private transformReliabilityInsights(data: unknown): IntegrationTestResponse["reliability_insights"] {
+    if (!data || typeof data !== "object") return [];
+    const insights = data as Record<string, unknown>;
+    // Backend returns ReliabilityInsights object with arrays inside
+    const result: IntegrationTestResponse["reliability_insights"] = [];
+
+    const lowSuccessRate = (insights.lowSuccessRatePatterns ?? insights.low_success_rate_patterns) as unknown[];
+    if (Array.isArray(lowSuccessRate)) {
+      result.push(...lowSuccessRate.map((p) => ({
+        id: String((p as Record<string, unknown>).patternId ?? ""),
+        insight_type: "low_success_rate" as const,
+        severity: "high" as const,
+        title: `Low success rate: ${(p as Record<string, unknown>).patternName ?? "Unknown"}`,
+        description: `Success rate: ${(p as Record<string, unknown>).successRate ?? 0}%`,
+        affected_patterns: [(p as Record<string, unknown>).patternId as string ?? ""],
+        affected_states: [],
+        recommendation: "Review pattern reliability",
+      })));
+    }
+
+    return result;
   }
 
   /**

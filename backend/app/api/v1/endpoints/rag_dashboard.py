@@ -85,8 +85,9 @@ def embedding_to_item(emb: Any) -> EmbeddingItem:
                     error=str(e),
                 )
 
+    # Convert UUID to string for JSON serialization
     return EmbeddingItem(
-        id=emb.id,
+        id=str(emb.id),
         pattern_id=emb.pattern_id,
         pattern_name=emb.pattern_name,
         state_id=emb.state_id,
@@ -109,7 +110,7 @@ def embedding_to_item(emb: Any) -> EmbeddingItem:
 def job_to_item(job: Any) -> JobItem:
     """Convert EmbeddingGenerationJob model to JobItem schema."""
     return JobItem(
-        id=job.id,
+        id=str(job.id),
         status=job.status,
         total_patterns=job.total_patterns,
         processed_patterns=job.processed_patterns,
@@ -127,7 +128,7 @@ def job_to_item(job: Any) -> JobItem:
 def job_to_summary(job: Any) -> JobSummary:
     """Convert EmbeddingGenerationJob model to JobSummary schema."""
     return JobSummary(
-        id=job.id,
+        id=str(job.id),
         status=job.status,
         progress_percent=job.calculate_progress_percent(),
         total_patterns=job.total_patterns,

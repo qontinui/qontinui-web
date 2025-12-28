@@ -1,0 +1,2 @@
+# MaxMind GeoLite2 database (download from MaxMind, don't commit)
+*.mmdb

@@ -1058,6 +1058,100 @@ class ApiClient {
 
     return response.json();
   }
+
+  // ===== Tree Events Endpoints =====
+
+  /**
+   * List tree events for an execution run
+   */
+  async listTreeEvents(
+    runId: string,
+    params?: {
+      event_type?: string;
+      node_type?: string;
+      offset?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    events: Array<{
+      id: string;
+      run_id: string;
+      event_type: string;
+      node_id: string;
+      node_type: string;
+      node_name: string;
+      parent_node_id: string | null;
+      path: Array<{ id: string; name: string; node_type: string }>;
+      sequence: number;
+      event_timestamp: number;
+      status: string;
+      error_message: string | null;
+      metadata: Record<string, unknown> | null;
+      created_at: string;
+    }>;
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  }> {
+    const queryParams = new URLSearchParams();
+    if (params?.event_type) queryParams.append("event_type", params.event_type);
+    if (params?.node_type) queryParams.append("node_type", params.node_type);
+    if (params?.offset !== undefined)
+      queryParams.append("offset", params.offset.toString());
+    if (params?.limit !== undefined)
+      queryParams.append("limit", params.limit.toString());
+
+    const url = `/execution/runs/${runId}/tree-events${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const response = await this.fetchWithAuth(url);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Failed to list tree events: ${response.status} - ${errorText}`
+      );
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get the reconstructed execution tree for a run
+   */
+  async getExecutionTree(runId: string): Promise<{
+    run_id: string;
+    root_nodes: Array<{
+      id: string;
+      node_type: string;
+      name: string;
+      timestamp: number;
+      end_timestamp?: number | null;
+      duration?: number | null;
+      status: string;
+      metadata: Record<string, unknown>;
+      error?: string | null;
+      children: unknown[];
+      is_expanded: boolean;
+      level: number;
+    }>;
+    total_events: number;
+    workflow_name: string | null;
+    status: string;
+    duration_ms: number | null;
+  }> {
+    const response = await this.fetchWithAuth(
+      `/execution/runs/${runId}/tree`
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Failed to get execution tree: ${response.status} - ${errorText}`
+      );
+    }
+
+    return response.json();
+  }
 }
 
 export const apiClient = new ApiClient();

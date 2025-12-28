@@ -34,6 +34,7 @@ from app.crud import runner as runner_crud
 from app.models.automation import AutomationInputEvent, InputEventType
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
+from app.models.execution_tree_event import ExecutionTreeEvent
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.user import User
 from app.schemas.detected_issue import IssueSource, IssueSyncItem
@@ -121,6 +122,87 @@ def cleanup_rate_limit_session(session_key: str) -> None:
     """
     if session_key in _message_counts:
         del _message_counts[session_key]
+
+
+async def store_tree_event(
+    db: AsyncSession,
+    event_data: dict[str, Any],
+) -> ExecutionTreeEvent | None:
+    """
+    Store a tree event from the runner in the database.
+
+    Args:
+        db: Database session
+        event_data: The tree event data from the runner
+
+    Returns:
+        The created ExecutionTreeEvent or None if failed
+    """
+    try:
+        # Extract run_id - can be in root or in data
+        run_id_str = event_data.get("run_id") or event_data.get("data", {}).get(
+            "run_id"
+        )
+        if not run_id_str:
+            logger.warning("tree_event_missing_run_id", event_data=event_data)
+            return None
+
+        run_id = UUID(run_id_str) if isinstance(run_id_str, str) else run_id_str
+
+        # Extract node data
+        node = event_data.get("node", {})
+        node_metadata = node.get("metadata", {})
+
+        # Extract state context
+        state_context = node_metadata.get("state_context", {})
+
+        tree_event = ExecutionTreeEvent(
+            run_id=run_id,
+            event_type=event_data.get("event_type", "unknown"),
+            node_id=node.get("id", str(uuid.uuid4())),
+            node_type=node.get("node_type", "action"),
+            node_name=node.get("name", "Unknown"),
+            parent_node_id=node.get("parent_id"),
+            path=event_data.get("path"),
+            sequence=event_data.get("sequence", 0),
+            event_timestamp=event_data.get("timestamp", time.time()),
+            node_start_timestamp=node.get("timestamp"),
+            node_end_timestamp=node.get("end_timestamp"),
+            duration_ms=(
+                (node.get("end_timestamp", 0) - node.get("timestamp", 0)) * 1000
+                if node.get("end_timestamp") and node.get("timestamp")
+                else node.get("duration", 0) * 1000 if node.get("duration") else None
+            ),
+            status=node.get("status", "pending"),
+            error_message=node.get("error"),
+            active_states_before=state_context.get("active_before", []),
+            active_states_after=state_context.get("active_after", []),
+            states_changed=state_context.get("changed", False),
+            node_metadata=node_metadata,
+        )
+
+        db.add(tree_event)
+        await db.commit()
+        await db.refresh(tree_event)
+
+        logger.debug(
+            "tree_event_stored",
+            run_id=str(run_id),
+            event_type=tree_event.event_type,
+            node_name=tree_event.node_name,
+            event_id=str(tree_event.id),
+        )
+
+        return tree_event
+
+    except Exception as e:
+        logger.error(
+            "tree_event_storage_failed",
+            error=str(e),
+            event_data=event_data,
+        )
+        await db.rollback()
+        return None
 
 
 # WebSocket message schemas
@@ -1142,8 +1224,35 @@ async def websocket_runner_endpoint(
                         }
                     )
 
+                elif message_type == "tree_event":
+                    # Tree events are stored in database AND relayed to frontends
+                    # Store the tree event for historical analysis
+                    await store_tree_event(db, message.data)
+
+                    # Relay to frontends for real-time display
+                    if connection_record and runner_manager:
+                        await runner_manager.send_response_to_frontends(
+                            connection_record.id,
+                            {
+                                "type": message_type,
+                                **message.data,
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                            },
+                        )
+                        logger.debug(
+                            "tree_event_stored_and_relayed",
+                            connection_id=connection_record.id,
+                            event_type=message.data.get("event_type"),
+                        )
+                    # Acknowledge receipt
+                    await websocket.send_json(
+                        {
+                            "type": "tree_event_ack",
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                    )
+
                 elif message_type in (
-                    "tree_event",
                     "image_recognition",
                     "action_execution",
                     "execution_started",
