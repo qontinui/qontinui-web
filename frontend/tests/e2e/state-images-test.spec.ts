@@ -2,7 +2,7 @@
  * Test to verify StateImages display correctly
  */
 import { test, expect } from '@playwright/test';
-import { TEST_USER } from './test-credentials';
+import { loginUser } from './fixtures';
 
 // Use the extraction project which has states with images
 const PROJECT_ID = '42c6f680-9357-49dd-ae59-52ebf3f3dd10';
@@ -19,21 +19,8 @@ test.describe('StateImage Display Test', () => {
       }
     });
 
-    // Login
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    const signInButton = page.getByRole('button', { name: /sign in/i });
-    await signInButton.click();
-
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 10000 });
-
-    await page.getByLabel(/username/i).fill(TEST_USER.username);
-    await page.getByLabel(/password/i).fill(TEST_USER.password);
-    await page.getByRole('button', { name: /sign in/i }).click();
-
-    await expect(dialog).not.toBeVisible({ timeout: 30000 });
+    // Login using auto-login with manual fallback
+    await loginUser(page);
 
     // Navigate to states page
     await page.goto(`/automation-builder/states?project=${PROJECT_ID}`);

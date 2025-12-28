@@ -8,7 +8,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { TEST_USER } from './test-credentials';
+import { loginUser } from './fixtures';
 
 test.describe('Outgoing Transition States Dropdown', () => {
   // Increase timeout for login-heavy tests
@@ -17,30 +17,9 @@ test.describe('Outgoing Transition States Dropdown', () => {
   // Use slower navigation timeout for CI/WSL environments
   test.use({ navigationTimeout: 60000 });
 
-  // Login before each test
+  // Login before each test using auto-login with manual fallback
   test.beforeEach(async ({ page }) => {
-    // Navigate to homepage
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    // Click Sign In button
-    const signInButton = page.getByRole('button', { name: /sign in/i });
-    await signInButton.click();
-
-    // Wait for dialog
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 10000 });
-
-    // Fill credentials and submit
-    await page.getByLabel(/username/i).fill(TEST_USER.username);
-    await page.getByLabel(/password/i).fill(TEST_USER.password);
-    await page.getByRole('button', { name: /sign in/i }).click();
-
-    // Wait for dialog to close (indicates successful login)
-    await expect(dialog).not.toBeVisible({ timeout: 30000 });
-
-    // Wait for authenticated state
-    await expect(page.getByText(TEST_USER.email)).toBeVisible({ timeout: 15000 });
+    await loginUser(page);
   });
 
   test('states appear in Create Outgoing Transition dropdown', async ({ page }) => {
@@ -156,29 +135,11 @@ test.describe('Outgoing Transition States Dropdown', () => {
 
   test('states load correctly from backend when navigating directly to states page', async ({ page }) => {
     // Clear localStorage to simulate fresh navigation
-    await page.goto('/');
+    // Note: beforeEach already logged in via loginUser()
     await page.evaluate(() => {
       localStorage.removeItem('qontinui-selected-project-id');
       localStorage.removeItem('qontinui-project-name');
     });
-
-    // Navigate to homepage and login again
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    // Click Sign In button
-    const signInButton = page.getByRole('button', { name: /sign in/i });
-    await signInButton.click();
-
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 10000 });
-
-    await page.getByLabel(/username/i).fill(TEST_USER.username);
-    await page.getByLabel(/password/i).fill(TEST_USER.password);
-    await page.getByRole('button', { name: /sign in/i }).click();
-
-    await expect(dialog).not.toBeVisible({ timeout: 30000 });
-    await expect(page.getByText(TEST_USER.email)).toBeVisible({ timeout: 15000 });
 
     // Navigate to dashboard to get project ID
     await page.goto('/dashboard');

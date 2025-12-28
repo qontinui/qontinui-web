@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useProject } from "@/hooks/automation/useProject";
 import { useWorkflows } from "@/hooks/automation/useWorkflows";
 import { useAutomationStore } from "@/stores/automation";
+import { useProjectLoader } from "@/hooks/use-project-loader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,9 @@ export default function IntegrationTestingPage() {
   const states = useAutomationStore((s) => s.states);
   const transitions = useAutomationStore((s) => s.transitions);
   const images = useAutomationStore((s) => s.images);
+
+  // Load project data on mount (handles refresh case)
+  const { isLoading: projectLoading } = useProjectLoader();
 
   // Build a nameMap for displaying names instead of IDs
   const nameMap = useMemo(() => {
@@ -425,7 +429,9 @@ export default function IntegrationTestingPage() {
                   isRunning={runningTest}
                   onRunTest={runIntegrationTest}
                   apiHealthy={apiHealthy}
-                  isLoading={loading && workflows.length === 0}
+                  isLoading={
+                    (loading || projectLoading) && workflows.length === 0
+                  }
                 />
               </div>
 

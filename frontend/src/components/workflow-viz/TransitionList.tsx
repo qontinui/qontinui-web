@@ -15,12 +15,18 @@ import type {
 } from "@/contexts/automation-context/types";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ArrowRight,
   ArrowDown,
-  Search,
   Workflow as WorkflowIcon,
   Eye,
   Layers,
@@ -47,7 +53,8 @@ export function TransitionList({
   selectedTransition,
   onTransitionSelect,
 }: TransitionListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [originStateFilter, setOriginStateFilter] = useState<string>("all");
+  const [targetStateFilter, setTargetStateFilter] = useState<string>("all");
 
   // Resolve state ID to name
   const getStateName = (stateId: string): string => {
@@ -63,27 +70,65 @@ export function TransitionList({
     }, 0);
   };
 
-  // Filter transitions by search
-  const filteredTransitions = useMemo(() => {
-    if (!searchQuery.trim()) return transitions;
-
-    const query = searchQuery.toLowerCase();
-    return transitions.filter((t) => {
-      // Search in state names
+  // Get unique origin states from transitions
+  const originStates = useMemo(() => {
+    const stateIds = new Set<string>();
+    transitions.forEach((t) => {
       if (t.type === "OutgoingTransition") {
-        const outgoing = t as OutgoingTransition;
-        const fromName = getStateName(outgoing.fromState).toLowerCase();
-        const toNames = outgoing.activateStates
-          .map((id) => getStateName(id).toLowerCase())
-          .join(" ");
-        return fromName.includes(query) || toNames.includes(query);
-      } else {
-        const incoming = t as IncomingTransition;
-        const toName = getStateName(incoming.toState).toLowerCase();
-        return toName.includes(query);
+        stateIds.add((t as OutgoingTransition).fromState);
       }
     });
-  }, [transitions, searchQuery, states]);
+    return states.filter((s) => stateIds.has(s.id));
+  }, [transitions, states]);
+
+  // Get unique target states from transitions
+  const targetStates = useMemo(() => {
+    const stateIds = new Set<string>();
+    transitions.forEach((t) => {
+      if (t.type === "OutgoingTransition") {
+        (t as OutgoingTransition).activateStates.forEach((id) =>
+          stateIds.add(id)
+        );
+      } else {
+        stateIds.add((t as IncomingTransition).toState);
+      }
+    });
+    return states.filter((s) => stateIds.has(s.id));
+  }, [transitions, states]);
+
+  // Filter transitions by dropdowns
+  const filteredTransitions = useMemo(() => {
+    return transitions.filter((t) => {
+      // Filter by origin state
+      if (originStateFilter !== "all") {
+        if (t.type === "OutgoingTransition") {
+          if ((t as OutgoingTransition).fromState !== originStateFilter) {
+            return false;
+          }
+        } else {
+          // Incoming transitions don't have an origin state
+          return false;
+        }
+      }
+
+      // Filter by target state
+      if (targetStateFilter !== "all") {
+        if (t.type === "OutgoingTransition") {
+          const outgoing = t as OutgoingTransition;
+          if (!outgoing.activateStates.includes(targetStateFilter)) {
+            return false;
+          }
+        } else {
+          const incoming = t as IncomingTransition;
+          if (incoming.toState !== targetStateFilter) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+  }, [transitions, originStateFilter, targetStateFilter]);
 
   // Group transitions by type
   const { outgoingTransitions, incomingTransitions } = useMemo(() => {
@@ -209,15 +254,49 @@ export function TransitionList({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Search */}
-      <div className="relative mb-3">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search transitions..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9"
-        />
+      {/* Dropdown Filters */}
+      <div className="space-y-3 mb-4">
+        {/* Origin State Filter */}
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Origin State</Label>
+          <Select
+            value={originStateFilter}
+            onValueChange={setOriginStateFilter}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="All origin states" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All origin states</SelectItem>
+              {originStates.map((state) => (
+                <SelectItem key={state.id} value={state.id}>
+                  {state.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Target State Filter */}
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Target State</Label>
+          <Select
+            value={targetStateFilter}
+            onValueChange={setTargetStateFilter}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="All target states" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All target states</SelectItem>
+              {targetStates.map((state) => (
+                <SelectItem key={state.id} value={state.id}>
+                  {state.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Transition list */}
@@ -226,7 +305,7 @@ export function TransitionList({
           <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
             <ArrowRight className="h-8 w-8 mb-2 opacity-50" />
             <p className="text-sm">
-              {searchQuery
+              {originStateFilter !== "all" || targetStateFilter !== "all"
                 ? "No matching transitions"
                 : "No transitions defined"}
             </p>

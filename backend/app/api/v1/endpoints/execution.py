@@ -342,6 +342,36 @@ async def create_run(
     """Create a new execution run."""
     now = datetime.utcnow()
 
+    # Debug: write to file to verify code is executing
+
+    debug_file = "C:/Users/Joshua/Documents/qontinui_parent_directory/.dev-logs/execution_debug.txt"
+    with open(debug_file, "a") as f:
+        f.write(f"\n{'='*60}\n")
+        f.write(f"create_run called at {now}\n")
+        if run_data.workflow_metadata:
+            f.write(f"workflow_metadata received: {run_data.workflow_metadata}\n")
+            f.write(
+                f"initial_state_ids: {run_data.workflow_metadata.initial_state_ids}\n"
+            )
+            f.write(f"model_dump: {run_data.workflow_metadata.model_dump()}\n")
+        else:
+            f.write("No workflow_metadata\n")
+        f.write(f"{'='*60}\n")
+
+    # FIX: Ensure model_dump includes initial_state_ids
+    if run_data.workflow_metadata:
+        wm_dict = run_data.workflow_metadata.model_dump()
+        # Ensure initial_state_ids is included (Pydantic v2 fix)
+        if (
+            "initial_state_ids" not in wm_dict
+            or wm_dict.get("initial_state_ids") is None
+        ):
+            wm_dict["initial_state_ids"] = (
+                run_data.workflow_metadata.initial_state_ids or []
+            )
+    else:
+        wm_dict = None
+
     # Create the execution run model
     run = ExecutionRun(
         project_id=run_data.project_id,
@@ -352,11 +382,7 @@ async def create_run(
         status=ExecutionRunStatus.RUNNING,
         started_at=now,
         runner_metadata=run_data.runner_metadata.model_dump(),
-        workflow_metadata=(
-            run_data.workflow_metadata.model_dump()
-            if run_data.workflow_metadata
-            else None
-        ),
+        workflow_metadata=wm_dict,
         configuration=run_data.configuration or {},
         max_duration_seconds=run_data.max_duration_seconds,
     )
@@ -500,6 +526,11 @@ async def list_workflows(
         key=lambda w: w["last_run_at"] or datetime.min,
         reverse=True,
     )
+
+    # Convert datetime to ISO string for JSON serialization
+    for workflow in sorted_workflows:
+        if workflow["last_run_at"] is not None:
+            workflow["last_run_at"] = workflow["last_run_at"].isoformat()
 
     logger.info(
         "Listed unique workflows",

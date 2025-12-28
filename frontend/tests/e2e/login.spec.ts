@@ -14,8 +14,15 @@ import { TEST_USER } from './test-credentials';
 
 test.describe('Login Flow', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to homepage where login is accessible
+    // Clear auth state to test login flow from unauthenticated state
+    // This prevents auto-login (which uses NEXT_PUBLIC_DEV_EMAIL/PASSWORD) from interfering
     await page.goto('/');
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    });
+    // Reload to ensure clean state without auto-login
+    await page.reload();
     await page.waitForLoadState('networkidle');
   });
 
@@ -71,8 +78,8 @@ test.describe('Login Flow', () => {
       fullPage: true,
     });
 
-    // Submit form
-    await page.getByRole('button', { name: /sign in/i }).click();
+    // Submit form - click button inside dialog to avoid header button ambiguity
+    await dialog.getByRole('button', { name: /sign in/i }).click();
 
     // Wait for dialog to close (indicates successful login)
     await expect(dialog).not.toBeVisible({ timeout: 15000 });
@@ -221,10 +228,10 @@ test.describe('Authenticated Session', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    // Fill credentials and submit
+    // Fill credentials and submit - click button inside dialog to avoid header button ambiguity
     await page.getByLabel(/username/i).fill(TEST_USER.username);
     await page.getByLabel(/password/i).fill(TEST_USER.password);
-    await page.getByRole('button', { name: /sign in/i }).click();
+    await dialog.getByRole('button', { name: /sign in/i }).click();
 
     // Wait for dialog to close (indicates successful login)
     await expect(dialog).not.toBeVisible({ timeout: 15000 });

@@ -10,7 +10,7 @@
  * - Transitions: Animate and visualize transition execution
  */
 
-import { useState, useMemo, useRef, Suspense } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
 import { StateStructure } from "@/components/state-machine";
 import { RequireProject } from "@/components/require-project";
 import { useProjectLoader } from "@/hooks/use-project-loader";
@@ -20,7 +20,7 @@ import { ActiveStatesCanvas } from "@/components/workflow-viz/ActiveStatesCanvas
 import { TransitionAnimationCanvas } from "@/components/workflow-viz/TransitionAnimationCanvas";
 import { TransitionPlaybackControls } from "@/components/workflow-viz/TransitionPlaybackControls";
 import { TransitionList } from "@/components/workflow-viz/TransitionList";
-import type { UseTransitionAnimationResult } from "@/components/workflow-viz/TransitionAnimationController";
+import { useTransitionAnimation } from "@/components/workflow-viz/TransitionAnimationController";
 import type { Transition } from "@/contexts/automation-context/types";
 import {
   Card,
@@ -281,14 +281,23 @@ function TransitionVisualizationTab() {
 
   const [selectedTransition, setSelectedTransition] =
     useState<Transition | null>(null);
-  const animationControllerRef = useRef<UseTransitionAnimationResult | null>(
-    null
-  );
+
+  // Use animation hook directly so state updates trigger re-renders
+  const animation = useTransitionAnimation();
+
+  // Load transition when selection changes
+  useEffect(() => {
+    if (selectedTransition) {
+      animation.loadTransition(selectedTransition, states, workflows);
+    } else {
+      animation.cancel();
+    }
+  }, [selectedTransition?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full overflow-hidden">
       {/* Left Panel - Transition Selection */}
-      <Card className="lg:col-span-1 flex flex-col">
+      <Card className="lg:col-span-1 flex flex-col overflow-hidden">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center justify-between">
             <span>Transitions</span>
@@ -308,8 +317,8 @@ function TransitionVisualizationTab() {
       </Card>
 
       {/* Right Panel - Animation Canvas */}
-      <Card className="lg:col-span-3 flex flex-col">
-        <CardHeader className="pb-3">
+      <Card className="lg:col-span-3 flex flex-col overflow-hidden">
+        <CardHeader className="pb-3 flex-shrink-0">
           <CardTitle className="flex items-center justify-between">
             <span>Transition Animation</span>
             <div className="flex items-center gap-2">
@@ -331,36 +340,39 @@ function TransitionVisualizationTab() {
               : "Select a transition from the list"}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex-1 min-h-0 flex flex-col gap-4">
-          {/* Canvas */}
-          <TransitionAnimationCanvas
-            transition={selectedTransition}
-            states={states}
-            workflows={workflows}
-            images={images}
-            monitors={monitors}
-            className="flex-1"
-            controllerRef={animationControllerRef}
-          />
-
-          {/* Playback Controls */}
-          {selectedTransition && animationControllerRef.current && (
-            <TransitionPlaybackControls
-              state={animationControllerRef.current.state}
-              onPlay={() => animationControllerRef.current?.play()}
-              onPause={() => animationControllerRef.current?.pause()}
-              onStepForward={() =>
-                animationControllerRef.current?.stepForward()
-              }
-              onStepBackward={() =>
-                animationControllerRef.current?.stepBackward()
-              }
-              onReset={() => animationControllerRef.current?.reset()}
-              onSpeedChange={(speed) =>
-                animationControllerRef.current?.setSpeed(speed)
-              }
-              onSeek={(index) => animationControllerRef.current?.seekTo(index)}
+        <CardContent className="flex-1 min-h-0 flex flex-col">
+          {/* Canvas - takes remaining space minus controls height */}
+          <div
+            className="overflow-hidden"
+            style={{
+              height: selectedTransition ? "calc(100% - 80px)" : "100%",
+            }}
+          >
+            <TransitionAnimationCanvas
+              transition={selectedTransition}
+              states={states}
+              workflows={workflows}
+              images={images}
+              monitors={monitors}
+              className="h-full w-full"
+              animation={animation}
             />
+          </div>
+
+          {/* Playback Controls - fixed height at bottom */}
+          {selectedTransition && (
+            <div className="h-[80px] pt-4 flex-shrink-0">
+              <TransitionPlaybackControls
+                state={animation.state}
+                onPlay={() => animation.play()}
+                onPause={() => animation.pause()}
+                onStepForward={() => animation.stepForward()}
+                onStepBackward={() => animation.stepBackward()}
+                onReset={() => animation.reset()}
+                onSpeedChange={(speed) => animation.setSpeed(speed)}
+                onSeek={(index) => animation.seekTo(index)}
+              />
+            </div>
           )}
         </CardContent>
       </Card>

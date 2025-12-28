@@ -73,14 +73,43 @@ async def rate_limit_exceeded_handler(
 
 
 # Specific limits for different operations
+# When rate limiting is disabled, use a no-op limiter approach
+_auth_limits = (
+    ["5 per minute", "20 per hour"]
+    if settings.RATE_LIMIT_ENABLED
+    else ["100000 per second"]  # Effectively unlimited
+)
+_api_limits = (
+    ["100 per minute", "1000 per hour"]
+    if settings.RATE_LIMIT_ENABLED
+    else ["100000 per second"]  # Effectively unlimited
+)
+
 auth_limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=["5 per minute", "20 per hour"],
+    default_limits=_auth_limits,
     storage_uri=storage_uri,
+    enabled=settings.RATE_LIMIT_ENABLED,
 )
 
 api_limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=["100 per minute", "1000 per hour"],
+    default_limits=_api_limits,
     storage_uri=storage_uri,
+    enabled=settings.RATE_LIMIT_ENABLED,
 )
+
+
+def auth_rate_limit(limit_string: str):
+    """
+    Conditional rate limit decorator for auth endpoints.
+    When RATE_LIMIT_ENABLED is False, returns a no-op decorator.
+    """
+    if settings.RATE_LIMIT_ENABLED:
+        return auth_limiter.limit(limit_string)
+    else:
+        # Return a no-op decorator
+        def no_op_decorator(func):
+            return func
+
+        return no_op_decorator

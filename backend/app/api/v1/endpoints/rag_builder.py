@@ -4,11 +4,14 @@ These endpoints provide CRUD operations for RAG elements, states, workflows,
 and transitions stored in project rag_config.
 """
 
+import base64
+import io
 from typing import Any
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from PIL import Image
 from pydantic import BaseModel
 from qontinui_schemas.api.rag import EmbeddingResultsRequest, EmbeddingResultsResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +29,39 @@ from app.services.rag_builder import RAGBuilderService
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+def extract_dimensions_from_data_url(data_url: str) -> tuple[int, int] | None:
+    """Extract width and height from a base64 data URL image.
+
+    Args:
+        data_url: A data URL string like "data:image/png;base64,..."
+
+    Returns:
+        Tuple of (width, height) or None if extraction fails
+    """
+    if not data_url or not data_url.startswith("data:"):
+        return None
+
+    try:
+        # Parse data URL: data:[<mediatype>][;base64],<data>
+        header, encoded = data_url.split(",", 1)
+        if ";base64" not in header:
+            return None
+
+        # Decode base64 data
+        image_data = base64.b64decode(encoded)
+
+        # Use PIL to get dimensions
+        with Image.open(io.BytesIO(image_data)) as img:
+            return img.size  # Returns (width, height)
+    except Exception as e:
+        logger.debug(
+            "failed_to_extract_image_dimensions",
+            error=str(e),
+            data_url_prefix=data_url[:50] if data_url else None,
+        )
+        return None
 
 
 # ============================================================================
@@ -744,6 +780,12 @@ async def receive_embedding_results(
                 # Data URL - store a reference instead of the full base64
                 # Use image_id as a placeholder since data is stored inline in config
                 image_storage_path = f"inline:{image_id}"
+
+                # If dimensions weren't in config, extract from the data URL
+                if not image_width or not image_height:
+                    dimensions = extract_dimensions_from_data_url(url)
+                    if dimensions:
+                        image_width, image_height = dimensions
 
         if not image_storage_path:
             logger.warning(

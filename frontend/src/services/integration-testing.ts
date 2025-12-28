@@ -313,9 +313,9 @@ class IntegrationTestingService {
     limit = 20,
     offset = 0
   ): Promise<IntegrationTestRunListResponse> {
-    // Query the main backend for execution runs with run_type=integration_test
+    // Query the main backend for all execution runs (no run_type filter)
+    // This includes integration_test, live_automation, and other run types
     const params = new URLSearchParams({
-      run_type: "integration_test",
       limit: limit.toString(),
       offset: offset.toString(),
     });
@@ -451,7 +451,7 @@ function transformExecutionRunToIntegrationTest(
     duration_ms: data.duration_seconds
       ? (data.duration_seconds as number) * 1000
       : 0,
-    initial_states: (data.initial_states as string[]) ?? [],
+    initial_states: (workflowMetadata.initial_state_ids as string[]) ?? [],
     final_states: (data.final_states as string[]) ?? [],
     steps: (data.steps as IntegrationTestResponse["steps"]) ?? [],
     coverage_data: {

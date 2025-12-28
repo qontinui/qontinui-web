@@ -41,6 +41,40 @@ const DEV_AUTO_LOGIN = {
   password: process.env.NEXT_PUBLIC_DEV_PASSWORD || "",
 };
 
+/**
+ * Check if dev auto-login should be skipped.
+ * Skip when:
+ * - Running Playwright tests (detected via navigator.webdriver or URL param)
+ * - Explicitly disabled via NEXT_PUBLIC_DISABLE_DEV_AUTO_LOGIN
+ */
+function shouldSkipDevAutoLogin(): boolean {
+  if (typeof window === "undefined") return true;
+
+  // Skip if explicitly disabled
+  if (process.env.NEXT_PUBLIC_DISABLE_DEV_AUTO_LOGIN === "true") {
+    return true;
+  }
+
+  // Skip if running in Playwright/automated browser (webdriver flag)
+  if (navigator.webdriver) {
+    console.log(
+      "[AuthContext] Dev auto-login skipped: Running in automated browser (Playwright/Selenium)"
+    );
+    return true;
+  }
+
+  // Skip if URL has skip_auto_login param (useful for testing login flow)
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.has("skip_auto_login")) {
+    console.log(
+      "[AuthContext] Dev auto-login skipped: skip_auto_login URL param present"
+    );
+    return true;
+  }
+
+  return false;
+}
+
 // Cross-tab auth event types
 type AuthBroadcastMessage =
   | { type: "LOGIN"; user: User }
@@ -179,7 +213,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * Development mode auto-login
-   * Automatically logs in with dev credentials when not authenticated in dev mode
+   * Automatically logs in with dev credentials when not authenticated in dev mode.
+   * Skipped for Playwright tests (navigator.webdriver) to allow testing the login flow.
    */
   useEffect(() => {
     // Only run in development mode
@@ -205,6 +240,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Skip for Playwright tests or when explicitly disabled
+    if (shouldSkipDevAutoLogin()) {
+      hasAttemptedDevLogin.current = true;
+      return;
+    }
+
     // Check if dev credentials are configured via environment variables
     if (!DEV_AUTO_LOGIN.username || !DEV_AUTO_LOGIN.password) {
       console.log(
@@ -215,7 +256,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Auto-login in development
     console.log(
-      "[AuthContext] Dev mode: Not authenticated, attempting auto-login..."
+      "[AuthContext] Dev mode: Not authenticated, attempting auto-login with",
+      DEV_AUTO_LOGIN.username
     );
     hasAttemptedDevLogin.current = true;
 
@@ -228,8 +270,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log("[AuthContext] Dev mode auto-login successful");
         setUser(loggedInUser);
       })
-      .catch((err) => {
-        console.error("[AuthContext] Dev mode auto-login failed:", err);
+      .catch((err: unknown) => {
+        // Properly extract error message for logging
+        const errorMessage =
+          err instanceof Error
+            ? err.message
+            : typeof err === "object" && err !== null
+              ? JSON.stringify(err)
+              : String(err);
+        console.error(
+          "[AuthContext] Dev mode auto-login failed:",
+          errorMessage
+        );
       });
   }, [loading, user]);
 

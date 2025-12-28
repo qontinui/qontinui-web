@@ -27,8 +27,10 @@ from app.middleware.error_handler import (
 from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.sliding_window_session import SlidingWindowSessionMiddleware
+from pathlib import Path
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -137,8 +139,6 @@ if settings.ENABLE_QUERY_LOGGING:
     )
 
 # Add HTTP request logging middleware
-from app.middleware.logging_middleware import LoggingMiddleware
-
 app.add_middleware(LoggingMiddleware)
 logger.info("http_request_logging_enabled")
 
@@ -179,8 +179,6 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 # Mount static files for avatars
-from pathlib import Path
-
 uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
@@ -223,10 +221,11 @@ async def startup_event():
 
             await RedisConfig.get_client()
             logger.info("redis_initialized", status="connected")
-        except Exception as e:
+        except (ConnectionError, TimeoutError, OSError) as e:
             logger.warning(
                 "redis_initialization_failed",
                 error=str(e),
+                error_type=type(e).__name__,
                 note="Continuing without Redis",
             )
     else:
@@ -237,6 +236,15 @@ async def startup_event():
         async with AsyncSessionLocal() as db:
             await init_db(db)
         logger.info("database_initialized", status="success")
+    except (ConnectionRefusedError, TimeoutError) as e:
+        logger.error(
+            "database_connection_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True,
+        )
+        # Re-raise to prevent app from starting with broken DB
+        raise
     except Exception as e:
         logger.error(
             "database_initialization_failed",
@@ -260,10 +268,11 @@ async def startup_event():
 
             await get_arq_pool()
             logger.info("arq_pool_initialized", status="connected")
-        except Exception as e:
+        except (ConnectionError, TimeoutError, OSError) as e:
             logger.warning(
                 "arq_initialization_failed",
                 error=str(e),
+                error_type=type(e).__name__,
                 note="Continuing without task queue",
             )
     else:
@@ -280,10 +289,11 @@ async def startup_event():
                 "connection_cleanup_task_started",
                 interval_seconds=60,
             )
-        except Exception as e:
+        except (ImportError, RuntimeError) as e:
             logger.warning(
                 "connection_cleanup_task_failed",
                 error=str(e),
+                error_type=type(e).__name__,
                 note="Continuing without cleanup task",
             )
     else:
@@ -313,8 +323,10 @@ async def shutdown_event():
 
             await RedisConfig.close()
             logger.info("redis_closed")
-        except Exception as e:
-            logger.warning("redis_close_error", error=str(e))
+        except (ConnectionError, OSError) as e:
+            logger.warning(
+                "redis_close_error", error=str(e), error_type=type(e).__name__
+            )
 
         # Close ARQ connection pool
         try:
@@ -322,8 +334,8 @@ async def shutdown_event():
 
             await close_arq_pool()
             logger.info("arq_pool_closed")
-        except Exception as e:
-            logger.warning("arq_close_error", error=str(e))
+        except (ConnectionError, OSError) as e:
+            logger.warning("arq_close_error", error=str(e), error_type=type(e).__name__)
 
     # Flush any pending metrics before shutdown
     from app.db.session import AsyncSessionLocal
@@ -334,8 +346,10 @@ async def shutdown_event():
             try:
                 await metrics_service.force_flush(db)
                 logger.info("metrics_flushed")
-            except Exception as e:
-                logger.error("error_flushing_metrics", error=str(e))
+            except (ConnectionError, TimeoutError) as e:
+                logger.error(
+                    "error_flushing_metrics", error=str(e), error_type=type(e).__name__
+                )
 
 
 @app.get("/")

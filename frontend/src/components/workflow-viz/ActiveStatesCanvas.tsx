@@ -13,26 +13,31 @@
  *    - Images are shown at their configured positions (offsetX/offsetY or searchRegions)
  *    - Useful for previewing state elements without running automation
  *    - Supports highlightStateId to emphasize a specific state
+ *
+ * Features:
+ * - Zoom constraints that prevent zooming out beyond visible monitors
+ * - Grey area outside monitor boundaries
+ * - Monitor filter (all monitors vs only monitors with elements)
  */
 
-import React, {
-  useRef,
-  useEffect,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import type { State, ImageAsset } from "@/contexts/automation-context/types";
 import type { RunnerMonitor } from "@/lib/runner-client";
 import type {
   ImageRecognitionEvent,
   ConnectionState,
 } from "@/hooks/useExecutionEvents";
+import {
+  useMonitorCanvas,
+  drawMonitorBackground,
+  DEFAULT_THEME,
+} from "./useMonitorCanvas";
+import { MonitorFilter } from "./MonitorFilter";
 import { Button } from "@/components/ui/button";
 import {
   ZoomIn,
   ZoomOut,
-  Move,
+  RotateCcw,
   Wifi,
   WifiOff,
   Radio,
@@ -61,6 +66,8 @@ interface ActiveStatesCanvasProps {
   /** State ID to highlight (config mode only) */
   highlightStateId?: string;
   className?: string;
+  /** Whether to show the monitor filter UI (default: true) */
+  showMonitorFilter?: boolean;
 }
 
 // Default canvas dimensions (single monitor fallback)
@@ -115,9 +122,10 @@ export function ActiveStatesCanvas({
   connectionState,
   highlightStateId,
   className = "",
+  showMonitorFilter = true,
 }: ActiveStatesCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Monitor filter state
+  const [showOnlyWithElements, setShowOnlyWithElements] = useState(false);
 
   // Normalize activeStateIds to a Set
   const activeStateIdsSet = useMemo(() => {
@@ -226,6 +234,40 @@ export function ActiveStatesCanvas({
     monitors.forEach((m) => map.set(m.index, m));
     return map;
   }, [monitors]);
+
+  // Calculate which monitors have elements (states with positioned images)
+  const monitorsWithElements = useMemo(() => {
+    const monitorIndices = new Set<number>();
+
+    states.forEach((state) => {
+      if (!activeStateIdsSet.has(state.id)) return;
+
+      state.stateImages?.forEach((stateImage) => {
+        const monitorIndex = stateImage.monitors?.[0] ?? 0;
+        const hasPosition = stateImage.patterns?.some(
+          (p) =>
+            (p.offsetX !== undefined && p.offsetY !== undefined) ||
+            p.searchRegions?.some(
+              (sr) => sr.x !== undefined && sr.y !== undefined
+            )
+        );
+        if (hasPosition) {
+          monitorIndices.add(monitorIndex);
+        }
+      });
+    });
+
+    return Array.from(monitorIndices);
+  }, [states, activeStateIdsSet]);
+
+  // Use the shared monitor canvas hook
+  const canvas = useMonitorCanvas({
+    monitors,
+    monitorsWithElements,
+    showOnlyWithElements,
+    maxZoom: 5,
+    defaultDimensions: { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
+  });
 
   // Collect config-based image positions (config mode)
   // SearchRegion coordinates are stored RELATIVE to the monitor they were captured on
@@ -387,95 +429,11 @@ export function ActiveStatesCanvas({
     return bounds;
   }, [mode, configImages, loadedImages]);
 
-  // Calculate canvas dimensions from:
-  // 1. Monitor info (if available) - shows full monitor layout
-  // 2. ConfigImages bounding box (fallback) - shows area covered by images
-  // monitorOffset is used to translate absolute screen coordinates to canvas coordinates
-  // (for drawing monitor boundaries), but NOT for configImages which are already normalized
-  const { canvasDimensions, monitorOffset } = useMemo(() => {
-    // If monitors available, use them for the canvas size
-    if (monitors.length > 0) {
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-
-      monitors.forEach((m) => {
-        minX = Math.min(minX, m.x);
-        minY = Math.min(minY, m.y);
-        maxX = Math.max(maxX, m.x + m.width);
-        maxY = Math.max(maxY, m.y + m.height);
-      });
-
-      const offsetX = minX < 0 ? -minX : 0;
-      const offsetY = minY < 0 ? -minY : 0;
-
-      return {
-        canvasDimensions: {
-          width: maxX - minX || DEFAULT_WIDTH,
-          height: maxY - minY || DEFAULT_HEIGHT,
-        },
-        monitorOffset: { x: offsetX, y: offsetY },
-      };
-    }
-
-    // Fallback: calculate canvas size from configImages bounding box
-    // This ensures we show the area covered by images even without runner connection
-    if (mode === "config" && configImages.length > 0) {
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-
-      configImages.forEach((img) => {
-        const w = img.width ?? 100;
-        const h = img.height ?? 100;
-        minX = Math.min(minX, img.x);
-        minY = Math.min(minY, img.y);
-        maxX = Math.max(maxX, img.x + w);
-        maxY = Math.max(maxY, img.y + h);
-      });
-
-      // Add padding around the content
-      const padding = 50;
-      minX = Math.max(0, minX - padding);
-      minY = Math.max(0, minY - padding);
-      maxX += padding;
-      maxY += padding;
-
-      return {
-        canvasDimensions: {
-          width: maxX,
-          height: maxY,
-        },
-        monitorOffset: { x: 0, y: 0 },
-      };
-    }
-
-    // Default fallback
-    return {
-      canvasDimensions: { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
-      monitorOffset: { x: 0, y: 0 },
-    };
-  }, [monitors, mode, configImages]);
-
-  // View state
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
-    null
-  );
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-
-  // Calculate minimum zoom to fit all monitors in viewport
-  const minZoom = useMemo(() => {
-    if (containerSize.width === 0 || containerSize.height === 0) return 0.1;
-    const padding = 40; // Some padding around the edges
-    const zoomX = (containerSize.width - padding) / canvasDimensions.width;
-    const zoomY = (containerSize.height - padding) / canvasDimensions.height;
-    return Math.min(zoomX, zoomY);
-  }, [containerSize, canvasDimensions]);
+  // Legacy alias for monitorOffset - used in image coordinate translation
+  const monitorOffset = {
+    x: canvas.bounds.offsetX,
+    y: canvas.bounds.offsetY,
+  };
 
   // Helper to get image URL
   const getImageUrl = useCallback(
@@ -514,152 +472,35 @@ export function ActiveStatesCanvas({
     });
   }, [mode, visibleFoundImages, configImages, getImageUrl, loadedImages]);
 
-  // Auto-fit on mount and when canvas dimensions change
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const containerWidth = containerRef.current.clientWidth;
-    const containerHeight = containerRef.current.clientHeight;
-
-    // Update container size for minZoom calculation
-    setContainerSize({ width: containerWidth, height: containerHeight });
-
-    const padding = 40;
-    const zoomX = (containerWidth - padding) / canvasDimensions.width;
-    const zoomY = (containerHeight - padding) / canvasDimensions.height;
-    const fitZoom = Math.min(zoomX, zoomY, 1);
-
-    setZoom(fitZoom);
-    setPan({
-      x: (containerWidth - canvasDimensions.width * fitZoom) / 2,
-      y: (containerHeight - canvasDimensions.height * fitZoom) / 2,
-    });
-  }, [canvasDimensions]);
-
-  // Draw grid and monitor boundaries
-  const drawBackground = useCallback(
-    (ctx: CanvasRenderingContext2D) => {
-      const gridSize = 100;
-
-      if (monitors.length > 0) {
-        // Fill monitor areas with white background (grey is already filled in redraw)
-        monitors.forEach((monitor) => {
-          const drawX = monitor.x + monitorOffset.x;
-          const drawY = monitor.y + monitorOffset.y;
-          ctx.fillStyle = "#f8fafc"; // slate-50
-          ctx.fillRect(drawX, drawY, monitor.width, monitor.height);
-        });
-
-        // Draw grid only within monitor areas
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.lineWidth = 1;
-
-        monitors.forEach((monitor) => {
-          const drawX = monitor.x + monitorOffset.x;
-          const drawY = monitor.y + monitorOffset.y;
-
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(drawX, drawY, monitor.width, monitor.height);
-          ctx.clip();
-
-          // Vertical grid lines
-          for (let x = drawX; x <= drawX + monitor.width; x += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(x, drawY);
-            ctx.lineTo(x, drawY + monitor.height);
-            ctx.stroke();
-          }
-
-          // Horizontal grid lines
-          for (let y = drawY; y <= drawY + monitor.height; y += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(drawX, y);
-            ctx.lineTo(drawX + monitor.width, y);
-            ctx.stroke();
-          }
-
-          ctx.restore();
-        });
-
-        // Draw monitor boundaries and labels
-        ctx.strokeStyle = "#64748b"; // slate-500
-        ctx.lineWidth = 2;
-
-        monitors.forEach((monitor) => {
-          const drawX = monitor.x + monitorOffset.x;
-          const drawY = monitor.y + monitorOffset.y;
-
-          ctx.strokeRect(drawX, drawY, monitor.width, monitor.height);
-
-          // Monitor label background
-          ctx.fillStyle = "rgba(100, 116, 139, 0.9)"; // slate-500 with opacity
-          const posLabel = monitor.position || "unknown";
-          const label = `${posLabel.charAt(0).toUpperCase() + posLabel.slice(1)} (${monitor.index})`;
-          const sizeLabel = `${monitor.width}x${monitor.height}`;
-
-          ctx.font = "bold 12px Arial";
-          const labelWidth =
-            Math.max(
-              ctx.measureText(label).width,
-              ctx.measureText(sizeLabel).width
-            ) + 16;
-          ctx.fillRect(drawX, drawY, labelWidth, 44);
-
-          // Label text
-          ctx.fillStyle = "#ffffff";
-          ctx.fillText(label, drawX + 8, drawY + 18);
-
-          ctx.font = "10px Arial";
-          ctx.fillStyle = "#e2e8f0";
-          ctx.fillText(sizeLabel, drawX + 8, drawY + 34);
-        });
-      } else {
-        // No monitors - just draw grid on entire canvas
-        ctx.fillStyle = "#f8fafc";
-        ctx.fillRect(0, 0, canvasDimensions.width, canvasDimensions.height);
-
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.lineWidth = 1;
-
-        for (let x = 0; x <= canvasDimensions.width; x += gridSize) {
-          ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, canvasDimensions.height);
-          ctx.stroke();
-        }
-
-        for (let y = 0; y <= canvasDimensions.height; y += gridSize) {
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(canvasDimensions.width, y);
-          ctx.stroke();
-        }
-      }
-    },
-    [canvasDimensions, monitors, monitorOffset]
-  );
+  // Auto-fit is handled by the useMonitorCanvas hook
 
   // Redraw canvas
   const redraw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const canvasEl = canvas.canvasRef.current;
+    if (!canvasEl) return;
 
-    const ctx = canvas.getContext("2d");
+    const ctx = canvasEl.getContext("2d");
     if (!ctx) return;
 
-    // Clear and fill entire canvas with grey (for areas outside monitors)
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#6b7280"; // grey-500 - fills everything outside monitors
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Set canvas size to bounds
+    canvasEl.width = canvas.bounds.width;
+    canvasEl.height = canvas.bounds.height;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
     // Apply transformations
     ctx.save();
-    ctx.translate(pan.x, pan.y);
-    ctx.scale(zoom, zoom);
+    ctx.translate(canvas.pan.x, canvas.pan.y);
+    ctx.scale(canvas.zoom, canvas.zoom);
 
-    // Draw monitor areas (white background, grid, and labels)
-    drawBackground(ctx);
+    // Draw monitor areas with grey outside (using shared function with light theme)
+    drawMonitorBackground(
+      ctx,
+      canvas.bounds,
+      canvas.displayedMonitors,
+      DEFAULT_THEME
+    );
 
     // Draw images based on mode
     if (mode === "perception") {
@@ -806,11 +647,11 @@ export function ActiveStatesCanvas({
     visibleFoundImages,
     configImages,
     stateBounds,
-    zoom,
-    pan,
+    canvas.zoom,
+    canvas.pan,
+    canvas.bounds,
+    canvas.displayedMonitors,
     loadedImages,
-    drawBackground,
-    canvasDimensions,
     monitorOffset,
   ]);
 
@@ -819,115 +660,7 @@ export function ActiveStatesCanvas({
     redraw();
   }, [redraw]);
 
-  // Mouse handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsPanning(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning && dragStart) {
-      setPan({
-        x: pan.x + (e.clientX - dragStart.x),
-        y: pan.y + (e.clientY - dragStart.y),
-      });
-      setDragStart({ x: e.clientX, y: e.clientY });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsPanning(false);
-    setDragStart(null);
-  };
-
-  // Wheel handler with passive: false
-  const handleWheel = useCallback(
-    (e: WheelEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom((currentZoom) => {
-        const newZoom = Math.min(Math.max(minZoom, currentZoom * delta), 5);
-
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (rect) {
-          const mouseX = e.clientX - rect.left;
-          const mouseY = e.clientY - rect.top;
-
-          setPan((currentPan) => ({
-            x: mouseX - ((mouseX - currentPan.x) * newZoom) / currentZoom,
-            y: mouseY - ((mouseY - currentPan.y) * newZoom) / currentZoom,
-          }));
-        }
-
-        return newZoom;
-      });
-    },
-    [minZoom]
-  );
-
-  // Callback ref for wheel listener - use wrapper to always call latest handler
-  const wheelListenerRef = useRef<(e: WheelEvent) => void>(handleWheel);
-  wheelListenerRef.current = handleWheel;
-
-  // Stable wrapper function that always calls the latest handler from ref
-  const wheelWrapper = useCallback((e: WheelEvent) => {
-    wheelListenerRef.current(e);
-  }, []);
-
-  const canvasCallbackRef = useCallback(
-    (node: HTMLCanvasElement | null) => {
-      if (canvasRef.current) {
-        canvasRef.current.removeEventListener("wheel", wheelWrapper);
-      }
-
-      canvasRef.current = node;
-
-      if (node) {
-        node.addEventListener("wheel", wheelWrapper, { passive: false });
-      }
-    },
-    [wheelWrapper]
-  );
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (canvasRef.current) {
-        canvasRef.current.removeEventListener("wheel", wheelWrapper);
-      }
-    };
-  }, [wheelWrapper]);
-
-  // Resize handler
-  useEffect(() => {
-    const handleResize = () => {
-      const container = containerRef.current;
-      const canvas = canvasRef.current;
-      if (!container || !canvas) return;
-
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight;
-      setContainerSize({
-        width: container.clientWidth,
-        height: container.clientHeight,
-      });
-      redraw();
-    };
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [redraw]);
-
-  // Zoom controls
-  const handleZoomIn = () => setZoom((z) => Math.min(z * 1.2, 5));
-  const handleZoomOut = () => setZoom((z) => Math.max(z * 0.833, minZoom));
-  const handleResetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  };
+  // Mouse and wheel handlers are provided by the useMonitorCanvas hook
 
   const isLiveMode = connectionState !== undefined;
   const hasFoundImages = visibleFoundImages.length > 0;
@@ -1062,12 +795,24 @@ export function ActiveStatesCanvas({
         </div>
       )}
 
+      {/* Monitor filter */}
+      {showMonitorFilter && monitors.length > 1 && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
+          <MonitorFilter
+            showOnlyWithElements={showOnlyWithElements}
+            onChange={setShowOnlyWithElements}
+            totalMonitors={monitors.length}
+            monitorsWithElements={monitorsWithElements.length}
+          />
+        </div>
+      )}
+
       {/* Zoom Controls */}
       <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-background/80 backdrop-blur-sm rounded-lg p-2 shadow-lg">
         <Button
           size="sm"
           variant="outline"
-          onClick={handleZoomIn}
+          onClick={canvas.handleZoomIn}
           title="Zoom In"
         >
           <ZoomIn className="h-4 w-4" />
@@ -1075,7 +820,7 @@ export function ActiveStatesCanvas({
         <Button
           size="sm"
           variant="outline"
-          onClick={handleZoomOut}
+          onClick={canvas.handleZoomOut}
           title="Zoom Out"
         >
           <ZoomOut className="h-4 w-4" />
@@ -1083,28 +828,28 @@ export function ActiveStatesCanvas({
         <Button
           size="sm"
           variant="outline"
-          onClick={handleResetView}
-          title="Reset View"
+          onClick={canvas.handleFitView}
+          title="Fit to View"
         >
-          <Move className="h-4 w-4" />
+          <RotateCcw className="h-4 w-4" />
         </Button>
         <div className="text-xs text-center text-muted-foreground px-2">
-          {Math.round(zoom * 100)}%
+          {Math.round(canvas.zoom * 100)}%
         </div>
       </div>
 
       {/* Canvas */}
       <div
-        ref={containerRef}
+        ref={canvas.containerRef}
         className="flex-1 relative overflow-hidden rounded-lg border"
       >
         <canvas
-          ref={canvasCallbackRef}
-          style={{ cursor: isPanning ? "grabbing" : "grab" }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
+          ref={canvas.canvasRef}
+          style={{ cursor: canvas.isPanning ? "grabbing" : "grab" }}
+          onMouseDown={canvas.handleMouseDown}
+          onMouseMove={canvas.handleMouseMove}
+          onMouseUp={canvas.handleMouseUp}
+          onMouseLeave={canvas.handleMouseUp}
           className="w-full h-full"
         />
 

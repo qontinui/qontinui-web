@@ -114,8 +114,9 @@ class DeviceSessionService:
             select(DeviceSession)
             .where(DeviceSession.user_id == user_id)
             .where(DeviceSession.device_fingerprint == device_fingerprint)
+            .order_by(DeviceSession.last_seen.desc())
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def get_device_session_by_id(
         self,
@@ -277,6 +278,8 @@ class DeviceSessionService:
         Returns:
             Tuple of (DeviceSession, is_new_device)
         """
+        from sqlalchemy.exc import IntegrityError
+
         # Check if device already exists
         existing_session = await self.get_device_session(
             db, user_id, device_fingerprint
@@ -287,18 +290,32 @@ class DeviceSessionService:
             await self.update_device_session_activity(db, existing_session, ip_address)
             return existing_session, False
 
-        # Create new device session
-        new_session = await self.create_device_session(
-            db=db,
-            user_id=user_id,
-            device_fingerprint=device_fingerprint,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            accept_language=accept_language,
-            is_trusted=False,  # New devices are not trusted by default
-        )
-
-        return new_session, True
+        # Create new device session - handle race condition with unique constraint
+        try:
+            new_session = await self.create_device_session(
+                db=db,
+                user_id=user_id,
+                device_fingerprint=device_fingerprint,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                accept_language=accept_language,
+                is_trusted=False,  # New devices are not trusted by default
+            )
+            return new_session, True
+        except IntegrityError:
+            # Race condition: another request created the session first
+            # Rollback and fetch the existing session
+            await db.rollback()
+            existing_session = await self.get_device_session(
+                db, user_id, device_fingerprint
+            )
+            if existing_session:
+                await self.update_device_session_activity(
+                    db, existing_session, ip_address
+                )
+                return existing_session, False
+            # If still not found, re-raise the error
+            raise
 
     async def is_device_trusted(
         self,

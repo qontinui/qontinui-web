@@ -8,36 +8,15 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { TEST_USER } from './test-credentials';
+import { loginUser } from './fixtures';
 
 test.describe('State Persistence', () => {
   // Increase timeout for login-heavy tests
   test.setTimeout(60000);
 
-  // Login before each test
+  // Login before each test using auto-login with manual fallback
   test.beforeEach(async ({ page }) => {
-    // Navigate to homepage
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    // Click Sign In button
-    const signInButton = page.getByRole('button', { name: /sign in/i });
-    await signInButton.click();
-
-    // Wait for dialog
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 10000 });
-
-    // Fill credentials and submit
-    await page.getByLabel(/username/i).fill(TEST_USER.username);
-    await page.getByLabel(/password/i).fill(TEST_USER.password);
-    await page.getByRole('button', { name: /sign in/i }).click();
-
-    // Wait for dialog to close (indicates successful login)
-    await expect(dialog).not.toBeVisible({ timeout: 30000 });
-
-    // Wait for authenticated state
-    await expect(page.getByText(TEST_USER.email)).toBeVisible({ timeout: 15000 });
+    await loginUser(page);
   });
 
   test('states persist when navigating between pages', async ({ page }) => {

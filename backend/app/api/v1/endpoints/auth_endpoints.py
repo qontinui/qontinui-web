@@ -21,7 +21,7 @@ from app.core.error_codes import ErrorCode
 from app.core.security import create_access_token, create_refresh_token, verify_password
 from app.crud.user import get_user_by_email
 from app.middleware.error_handler import unauthorized_error, validation_error
-from app.middleware.rate_limit import auth_limiter
+from app.middleware.rate_limit import auth_rate_limit
 from app.models.device_session import DeviceSession
 from app.models.user import User
 from app.schemas.device_session import DeviceSessionSummary, DeviceSessionUpdate
@@ -92,7 +92,7 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/jwt/login", response_model=TokenResponse, tags=["auth"])
-@auth_limiter.limit("5 per minute")
+@auth_rate_limit("5 per minute")
 async def login(
     *,
     request: Request,
@@ -345,7 +345,7 @@ class RefreshTokenRequest(BaseModel):
 
 
 @router.post("/jwt/refresh", response_model=TokenResponse)
-@auth_limiter.limit("10 per minute")
+@auth_rate_limit("10 per minute")
 async def refresh_token(
     *,
     request: Request,
@@ -524,7 +524,7 @@ class BetaSignupResponse(BaseModel):
 
 
 @router.post("/beta-signup", response_model=BetaSignupResponse)
-@auth_limiter.limit("3 per hour")
+@auth_rate_limit("3 per hour")
 async def beta_signup(
     *,
     request: Request,
@@ -822,7 +822,7 @@ class ChangePasswordResponse(BaseModel):
 
 
 @router.post("/change-password", response_model=ChangePasswordResponse, tags=["auth"])
-@auth_limiter.limit("5 per hour")
+@auth_rate_limit("5 per hour")
 async def change_password(
     *,
     request: Request,
@@ -923,7 +923,7 @@ class ResendDeviceVerificationRequest(BaseModel):
 
 
 @router.post("/resend-device-verification", tags=["auth"])
-@auth_limiter.limit("3 per 5 minutes")
+@auth_rate_limit("3 per 5 minutes")
 async def resend_device_verification(
     *,
     request: Request,

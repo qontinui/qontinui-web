@@ -32,18 +32,19 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
  * Helper to make API requests with authentication
+ *
+ * Uses credentials: 'include' to send HttpOnly cookies automatically.
+ * This is the secure authentication method used by the app.
  */
 async function fetchWithAuth<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = localStorage.getItem("access_token");
-
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
+    credentials: "include", // Send HttpOnly auth cookies
     headers: {
       "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
       ...options.headers,
     },
   });
@@ -203,8 +204,6 @@ export async function uploadScreenshot(
   },
   imageFile: File
 ): Promise<{ id: string; image_url: string; thumbnail_url?: string }> {
-  const token = localStorage.getItem("access_token");
-
   const formData = new FormData();
   formData.append("metadata", JSON.stringify(metadata));
   formData.append("image", imageFile);
@@ -213,9 +212,7 @@ export async function uploadScreenshot(
     `${API_BASE}/api/v1/execution/runs/${runId}/screenshots`,
     {
       method: "POST",
-      headers: {
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
+      credentials: "include", // Send HttpOnly auth cookies
       body: formData,
     }
   );

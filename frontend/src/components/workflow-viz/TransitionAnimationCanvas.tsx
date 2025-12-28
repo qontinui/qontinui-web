@@ -5,15 +5,14 @@
  *
  * Visualizes transition execution with animated actions and state changes.
  * Shows origin states, animates workflow actions, then displays target states.
+ *
+ * Features:
+ * - Zoom constraints that prevent zooming out beyond visible monitors
+ * - Grey area outside monitor boundaries
+ * - Monitor filter (all monitors vs only monitors with elements)
  */
 
-import React, {
-  useRef,
-  useEffect,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import type {
   Transition,
   State,
@@ -27,8 +26,15 @@ import {
 } from "./TransitionAnimationController";
 import { renderActionAnimation } from "./ActionAnimations";
 import type { TransitionAnimationState } from "@/types/transition-animation";
+import {
+  useMonitorCanvas,
+  drawMonitorBackground,
+  DARK_THEME,
+  type MonitorCanvasBounds,
+} from "./useMonitorCanvas";
+import { MonitorFilter } from "./MonitorFilter";
 import { Button } from "@/components/ui/button";
-import { ZoomIn, ZoomOut, Layers, Play } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Layers, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -48,8 +54,12 @@ interface TransitionAnimationCanvasProps {
   monitors?: RunnerMonitor[];
   /** Additional class names */
   className?: string;
-  /** Ref to expose animation controls */
+  /** Animation controller (if provided externally) */
+  animation?: UseTransitionAnimationResult;
+  /** @deprecated Use animation prop instead - Ref to expose animation controls */
   controllerRef?: React.MutableRefObject<UseTransitionAnimationResult | null>;
+  /** Whether to show the monitor filter UI (default: true) */
+  showMonitorFilter?: boolean;
 }
 
 // Default canvas dimensions
@@ -79,27 +89,62 @@ export function TransitionAnimationCanvas({
   images,
   monitors = [],
   className,
+  animation: externalAnimation,
   controllerRef,
+  showMonitorFilter = true,
 }: TransitionAnimationCanvasProps) {
-  // Canvas refs
-  const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Animation controller - use external if provided, otherwise create our own
+  const internalAnimation = useTransitionAnimation();
+  const animation = externalAnimation ?? internalAnimation;
 
-  // Animation controller
-  const animation = useTransitionAnimation();
-
-  // Expose controller via ref
+  // Expose controller via ref (deprecated - for backward compatibility)
   useEffect(() => {
     if (controllerRef) {
       controllerRef.current = animation;
     }
   }, [animation, controllerRef]);
 
-  // View state
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  // Monitor filter state
+  const [showOnlyWithElements, setShowOnlyWithElements] = useState(false);
+
+  // Calculate which monitors have elements (states with positioned images)
+  const monitorsWithElements = useMemo(() => {
+    const monitorIndices = new Set<number>();
+    const data = animation.data;
+
+    if (!data) return [];
+
+    // Check origin and target states for positioned images
+    const allStates = [...data.originStates, ...data.targetStates];
+    allStates.forEach((state) => {
+      state.stateImages?.forEach((stateImage) => {
+        // Get the monitor index for this image
+        const monitorIndex = stateImage.monitors?.[0] ?? 0;
+        // Check if image has positioned patterns
+        const hasPosition = stateImage.patterns?.some(
+          (p) =>
+            (p.offsetX !== undefined && p.offsetY !== undefined) ||
+            p.searchRegions?.some(
+              (sr) => sr.x !== undefined && sr.y !== undefined
+            )
+        );
+        if (hasPosition) {
+          monitorIndices.add(monitorIndex);
+        }
+      });
+    });
+
+    return Array.from(monitorIndices);
+  }, [animation.data]);
+
+  // Use the shared monitor canvas hook
+  const canvas = useMonitorCanvas({
+    monitors,
+    monitorsWithElements,
+    showOnlyWithElements,
+    maxZoom: 5,
+    defaultDimensions: { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
+  });
 
   // Loaded images cache
   const [loadedImages, setLoadedImages] = useState<
@@ -114,37 +159,6 @@ export function TransitionAnimationCanvas({
       animation.cancel();
     }
   }, [transition?.id]); // Only reload when transition ID changes
-
-  // Calculate canvas dimensions from monitors or content
-  const canvasDimensions = useMemo(() => {
-    if (monitors.length > 0) {
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-
-      monitors.forEach((m) => {
-        minX = Math.min(minX, m.x);
-        minY = Math.min(minY, m.y);
-        maxX = Math.max(maxX, m.x + m.width);
-        maxY = Math.max(maxY, m.y + m.height);
-      });
-
-      return {
-        width: maxX - minX || DEFAULT_WIDTH,
-        height: maxY - minY || DEFAULT_HEIGHT,
-        offsetX: minX,
-        offsetY: minY,
-      };
-    }
-
-    return {
-      width: DEFAULT_WIDTH,
-      height: DEFAULT_HEIGHT,
-      offsetX: 0,
-      offsetY: 0,
-    };
-  }, [monitors]);
 
   // Build map of imageId -> loaded HTMLImageElement
   const getImageUrl = useCallback(
@@ -199,82 +213,33 @@ export function TransitionAnimationCanvas({
     }
   }, [neededImageIds, getImageUrl, loadedImages]);
 
-  // Auto-fit view on mount
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const containerWidth = containerRef.current.clientWidth;
-    const containerHeight = containerRef.current.clientHeight;
-
-    const scaleX = containerWidth / canvasDimensions.width;
-    const scaleY = containerHeight / canvasDimensions.height;
-    const scale = Math.min(scaleX, scaleY, 1) * 0.9;
-
-    setZoom(scale);
-    setPan({
-      x: (containerWidth - canvasDimensions.width * scale) / 2,
-      y: (containerHeight - canvasDimensions.height * scale) / 2,
-    });
-  }, [canvasDimensions]);
-
-  // Zoom handlers
-  const handleZoomIn = () => setZoom((z) => Math.min(z * 1.25, 5));
-  const handleZoomOut = () => setZoom((z) => Math.max(z / 1.25, 0.1));
-
-  // Pan handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0) {
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPan({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y,
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsPanning(false);
-  };
-
-  // Wheel zoom
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom((z) => Math.max(0.1, Math.min(5, z * delta)));
-    };
-
-    container.addEventListener("wheel", handleWheel, { passive: false });
-    return () => container.removeEventListener("wheel", handleWheel);
-  }, []);
-
   // Canvas rendering
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const canvasEl = canvas.canvasRef.current;
+    if (!canvasEl) return;
 
-    const ctx = canvas.getContext("2d");
+    const ctx = canvasEl.getContext("2d");
     if (!ctx) return;
 
+    // Set canvas size to bounds
+    canvasEl.width = canvas.bounds.width;
+    canvasEl.height = canvas.bounds.height;
+
     // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
     // Apply transforms
     ctx.save();
-    ctx.translate(pan.x, pan.y);
-    ctx.scale(zoom, zoom);
+    ctx.translate(canvas.pan.x, canvas.pan.y);
+    ctx.scale(canvas.zoom, canvas.zoom);
 
-    // Draw background
-    drawBackground(ctx, canvasDimensions, monitors);
+    // Draw background with grey area outside monitors (using dark theme)
+    drawMonitorBackground(
+      ctx,
+      canvas.bounds,
+      canvas.displayedMonitors,
+      DARK_THEME
+    );
 
     // Get animation data
     const data = animation.data;
@@ -282,18 +247,18 @@ export function TransitionAnimationCanvas({
 
     if (!data) {
       // No transition loaded - show placeholder
-      drawPlaceholder(ctx, canvasDimensions);
+      drawPlaceholder(ctx, canvas.bounds);
     } else {
       // Draw states based on animation phase
-      drawStates(ctx, data, state, loadedImages, canvasDimensions);
+      drawStates(ctx, data, state, loadedImages, canvas.bounds);
 
       // Draw current action animation if in executing phase
       if (state.phase === "executing-action") {
         const currentAction = animation.currentAction;
         if (currentAction) {
           const canvasCenter = {
-            x: canvasDimensions.width / 2,
-            y: canvasDimensions.height / 2,
+            x: canvas.bounds.width / 2,
+            y: canvas.bounds.height / 2,
           };
           renderActionAnimation(
             ctx,
@@ -305,7 +270,7 @@ export function TransitionAnimationCanvas({
       }
 
       // Draw phase indicator
-      drawPhaseIndicator(ctx, state, canvasDimensions);
+      drawPhaseIndicator(ctx, state, canvas.bounds);
     }
 
     ctx.restore();
@@ -313,55 +278,77 @@ export function TransitionAnimationCanvas({
     animation.state,
     animation.data,
     animation.currentAction,
-    pan,
-    zoom,
+    canvas.pan,
+    canvas.zoom,
+    canvas.bounds,
+    canvas.displayedMonitors,
     loadedImages,
-    canvasDimensions,
-    monitors,
   ]);
 
   return (
     <div
-      ref={containerRef}
+      ref={canvas.containerRef}
       className={cn(
         "relative overflow-hidden bg-zinc-900 rounded-lg",
         className
       )}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      style={{ cursor: isPanning ? "grabbing" : "grab" }}
+      onMouseDown={canvas.handleMouseDown}
+      onMouseMove={canvas.handleMouseMove}
+      onMouseUp={canvas.handleMouseUp}
+      onMouseLeave={canvas.handleMouseUp}
+      style={{ cursor: canvas.isPanning ? "grabbing" : "grab" }}
     >
       <canvas
-        ref={canvasRef}
-        width={canvasDimensions.width}
-        height={canvasDimensions.height}
+        ref={canvas.canvasRef}
+        width={canvas.bounds.width}
+        height={canvas.bounds.height}
         className="absolute top-0 left-0"
-        style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          transformOrigin: "0 0",
-        }}
       />
+
+      {/* Monitor filter */}
+      {showMonitorFilter && monitors.length > 1 && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
+          <MonitorFilter
+            showOnlyWithElements={showOnlyWithElements}
+            onChange={setShowOnlyWithElements}
+            totalMonitors={monitors.length}
+            monitorsWithElements={monitorsWithElements.length}
+          />
+        </div>
+      )}
 
       {/* Zoom controls */}
       <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
         <Button
           size="sm"
           variant="secondary"
-          onClick={handleZoomIn}
+          onClick={canvas.handleZoomIn}
           className="h-8 w-8 p-0"
+          title="Zoom In"
         >
           <ZoomIn className="h-4 w-4" />
         </Button>
         <Button
           size="sm"
           variant="secondary"
-          onClick={handleZoomOut}
+          onClick={canvas.handleZoomOut}
           className="h-8 w-8 p-0"
+          title="Zoom Out"
         >
           <ZoomOut className="h-4 w-4" />
         </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={canvas.handleFitView}
+          className="h-8 w-8 p-0"
+          title="Fit to View"
+        >
+          <RotateCcw className="h-4 w-4" />
+        </Button>
+        <div className="text-xs text-center text-zinc-400 px-1">
+          {Math.round(canvas.zoom * 100)}%
+        </div>
       </div>
 
       {/* Legend */}
@@ -370,7 +357,7 @@ export function TransitionAnimationCanvas({
       {/* Current action indicator */}
       {animation.state.phase === "executing-action" &&
         animation.currentAction && (
-          <div className="absolute top-4 left-4 bg-black/80 rounded-lg p-3 z-10">
+          <div className="absolute top-14 left-4 bg-black/80 rounded-lg p-3 z-10">
             <div className="text-xs font-semibold text-cyan-400 flex items-center gap-2">
               <Play className="h-3 w-3" />
               {animation.currentAction.name}
@@ -388,70 +375,6 @@ export function TransitionAnimationCanvas({
 // ============================================================================
 // Drawing Functions
 // ============================================================================
-
-function drawBackground(
-  ctx: CanvasRenderingContext2D,
-  dimensions: {
-    width: number;
-    height: number;
-    offsetX: number;
-    offsetY: number;
-  },
-  monitors: RunnerMonitor[]
-): void {
-  // Fill with dark background
-  ctx.fillStyle = "#18181b";
-  ctx.fillRect(0, 0, dimensions.width, dimensions.height);
-
-  // Draw monitor backgrounds
-  if (monitors.length > 0) {
-    monitors.forEach((monitor) => {
-      const x = monitor.x - dimensions.offsetX;
-      const y = monitor.y - dimensions.offsetY;
-
-      // Monitor background
-      ctx.fillStyle = "#27272a";
-      ctx.fillRect(x, y, monitor.width, monitor.height);
-
-      // Monitor border
-      ctx.strokeStyle = "#3f3f46";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, monitor.width, monitor.height);
-
-      // Monitor label
-      ctx.font = "12px sans-serif";
-      ctx.fillStyle = "#71717a";
-      ctx.fillText(`Monitor ${monitor.index}`, x + 10, y + 20);
-    });
-  } else {
-    // Single default monitor
-    ctx.fillStyle = "#27272a";
-    ctx.fillRect(0, 0, dimensions.width, dimensions.height);
-
-    ctx.strokeStyle = "#3f3f46";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0, 0, dimensions.width, dimensions.height);
-  }
-
-  // Draw grid
-  ctx.strokeStyle = "#3f3f4610";
-  ctx.lineWidth = 1;
-  const gridSize = 50;
-
-  for (let x = 0; x < dimensions.width; x += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, dimensions.height);
-    ctx.stroke();
-  }
-
-  for (let y = 0; y < dimensions.height; y += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(dimensions.width, y);
-    ctx.stroke();
-  }
-}
 
 function drawPlaceholder(
   ctx: CanvasRenderingContext2D,
@@ -473,12 +396,7 @@ function drawStates(
   data: NonNullable<UseTransitionAnimationResult["data"]>,
   state: TransitionAnimationState,
   loadedImages: Map<string, HTMLImageElement>,
-  dimensions: {
-    width: number;
-    height: number;
-    offsetX: number;
-    offsetY: number;
-  }
+  bounds: MonitorCanvasBounds
 ): void {
   // Determine which states to show and their opacity based on phase
   let originOpacity = 1;
@@ -513,7 +431,7 @@ function drawStates(
         stateObj,
         getStateColor(index),
         loadedImages,
-        dimensions,
+        bounds,
         originOpacity,
         false
       );
@@ -531,7 +449,7 @@ function drawStates(
         stateObj,
         getStateColor(index + data.originStates.length),
         loadedImages,
-        dimensions,
+        bounds,
         targetOpacity,
         true
       );
@@ -544,12 +462,7 @@ function drawState(
   state: State,
   color: { border: string; bg: string },
   loadedImages: Map<string, HTMLImageElement>,
-  dimensions: {
-    width: number;
-    height: number;
-    offsetX: number;
-    offsetY: number;
-  },
+  bounds: MonitorCanvasBounds,
   opacity: number,
   isTarget: boolean
 ): void {
@@ -564,19 +477,19 @@ function drawState(
       const img = loadedImages.get(imageId);
       if (!img) continue;
 
-      // Get position
+      // Get position (translate from absolute screen coords to canvas coords)
       let x = 0,
         y = 0;
       let width = img.naturalWidth;
       let height = img.naturalHeight;
 
       if (pattern.offsetX !== undefined && pattern.offsetY !== undefined) {
-        x = pattern.offsetX - dimensions.offsetX;
-        y = pattern.offsetY - dimensions.offsetY;
+        x = pattern.offsetX - bounds.minX;
+        y = pattern.offsetY - bounds.minY;
       } else if (pattern.searchRegions?.[0]) {
         const sr = pattern.searchRegions[0];
-        x = sr.x - dimensions.offsetX;
-        y = sr.y - dimensions.offsetY;
+        x = sr.x - bounds.minX;
+        y = sr.y - bounds.minY;
         width = sr.width || width;
         height = sr.height || height;
       }
@@ -609,8 +522,8 @@ function drawState(
 
   // Draw regions
   for (const region of state.regions || []) {
-    const x = (region.x || 0) - dimensions.offsetX;
-    const y = (region.y || 0) - dimensions.offsetY;
+    const x = (region.x || 0) - bounds.minX;
+    const y = (region.y || 0) - bounds.minY;
     const width = region.width || 100;
     const height = region.height || 100;
 
@@ -626,8 +539,8 @@ function drawState(
 
   // Draw locations
   for (const location of state.locations || []) {
-    const x = (location.x || 0) - dimensions.offsetX;
-    const y = (location.y || 0) - dimensions.offsetY;
+    const x = (location.x || 0) - bounds.minX;
+    const y = (location.y || 0) - bounds.minY;
 
     ctx.beginPath();
     ctx.arc(x, y, 6, 0, Math.PI * 2);

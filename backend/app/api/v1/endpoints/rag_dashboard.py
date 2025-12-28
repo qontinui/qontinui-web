@@ -64,14 +64,38 @@ async def check_project_access(
         raise not_found_error("Project", "project")
 
 
-def embedding_to_item(emb: Any) -> EmbeddingItem:
-    """Convert ProjectEmbedding model to EmbeddingItem schema."""
+def embedding_to_item(
+    emb: Any, image_lookup: dict[str, dict[str, Any]] | None = None
+) -> EmbeddingItem:
+    """Convert ProjectEmbedding model to EmbeddingItem schema.
+
+    Args:
+        emb: The ProjectEmbedding model instance
+        image_lookup: Optional dict mapping image_id to image data from project config.
+                     Used to resolve inline: storage paths to actual data URLs.
+    """
     # Generate presigned URL for the image or use data URL directly
     image_url = None
     if emb.image_storage_path:
         # Check if it's a data URL (local storage) - use directly
         if emb.image_storage_path.startswith("data:"):
             image_url = emb.image_storage_path
+        # Check if it's an inline reference that needs resolution
+        elif emb.image_storage_path.startswith("inline:"):
+            # Extract image_id from "inline:{image_id}" format
+            inline_image_id = emb.image_storage_path[7:]  # Remove "inline:" prefix
+            if image_lookup and inline_image_id in image_lookup:
+                # Get the actual data URL from project config
+                image_data = image_lookup[inline_image_id]
+                url = image_data.get("url", "")
+                if url.startswith("data:"):
+                    image_url = url
+            # Fallback: try using emb.image_id if inline extraction failed
+            elif image_lookup and emb.image_id and emb.image_id in image_lookup:
+                image_data = image_lookup[emb.image_id]
+                url = image_data.get("url", "")
+                if url.startswith("data:"):
+                    image_url = url
         else:
             # S3/MinIO path - generate presigned URL
             try:
@@ -181,11 +205,22 @@ async def list_embeddings(
     """
     await check_project_access(db, project_id, current_user, PermissionLevel.VIEW)
 
+    # Get project to access configuration for image lookup
+    project = await get_project(db, project_id=project_id)
+    config: dict[str, Any] = project.configuration or {} if project else {}
+
+    # Build image lookup for resolving inline: storage paths
+    image_lookup: dict[str, dict[str, Any]] = {}
+    for image in config.get("images", []):
+        image_id = image.get("id")
+        if image_id:
+            image_lookup[image_id] = image
+
     embeddings, total = await get_embeddings(
         db, project_id, page=page, limit=limit, state_filter=state_filter
     )
 
-    items = [embedding_to_item(emb) for emb in embeddings]
+    items = [embedding_to_item(emb, image_lookup) for emb in embeddings]
     has_more = (page * limit) < total
 
     return EmbeddingListResponse(
@@ -280,6 +315,17 @@ async def search_embeddings(
             total_found=0,
         )
 
+    # Get project to access configuration for image lookup
+    project = await get_project(db, project_id=project_id)
+    config: dict[str, Any] = project.configuration or {} if project else {}
+
+    # Build image lookup for resolving inline: storage paths
+    image_lookup: dict[str, dict[str, Any]] = {}
+    for image in config.get("images", []):
+        image_id = image.get("id")
+        if image_id:
+            image_lookup[image_id] = image
+
     # Perform semantic search using pgvector
     results = await semantic_search(
         db,
@@ -295,7 +341,7 @@ async def search_embeddings(
 
     search_results = [
         SearchResultItem(
-            embedding=embedding_to_item(emb),
+            embedding=embedding_to_item(emb, image_lookup),
             similarity_score=score,
         )
         for emb, score in results
