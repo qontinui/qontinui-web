@@ -35,7 +35,7 @@ interface PatternOptimizationContextType {
   ) => void;
 
   // Region management
-  setRegion: (screenshotId: string, region: Region) => void;
+  setRegion: (screenshotId: string, region: Region | null) => void;
   copyRegionToAll: (sourceId: string) => void;
   clearRegions: () => void;
 
@@ -263,19 +263,21 @@ export function PatternOptimizationProvider({
     [setSession]
   );
 
-  const setRegion = useCallback((screenshotId: string, region: Region) => {
+  const setRegion = useCallback((screenshotId: string, region: Region | null) => {
     console.log("Setting region for screenshot:", { screenshotId, region });
     setSession((prev) => {
       if (!prev) {
         console.error("No session when setting region");
         return prev;
       }
+      // Convert null to undefined for type compatibility with OptimizationScreenshot
+      const regionValue = region ?? undefined;
       const updated = {
         ...prev,
         screenshots: prev.screenshots.map((s) =>
-          s.id === screenshotId ? { ...s, region } : s
+          s.id === screenshotId ? { ...s, region: regionValue } : s
         ),
-        selectedRegion: region,
+        selectedRegion: regionValue,
         updatedAt: new Date(),
       };
       console.log("Session after setting region:", updated);

@@ -45,6 +45,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
                 child &&
                 typeof child === "object" &&
                 child.type === "element" &&
+                child.tagName !== undefined &&
                 ["pre", "div", "blockquote", "ul", "ol", "table"].includes(
                   child.tagName
                 )

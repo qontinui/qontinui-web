@@ -85,10 +85,10 @@ export function FindActionProperties({
         <Label className="text-xs text-gray-400">
           Images (multi-select enabled)
         </Label>
-        {(action.config as Record<string, unknown>).removedImage && (
+        {Boolean((action.config as Record<string, unknown>).removedImage) && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
             <span className="font-medium">Removed Image:</span>{" "}
-            {(action.config as Record<string, unknown>).removedImage as string}
+            <span>{String((action.config as Record<string, unknown>).removedImage)}</span>
             <p className="text-xs text-red-400 mt-1">
               This image was deleted. Please select new images.
             </p>

@@ -68,6 +68,9 @@ import {
   workflowAnalyticsService,
   ExecutionRecord,
 } from "@/services/workflow-analytics-service";
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type { ComplexityAnalysis } from "@/services/workflow-complexity-analyzer";
+import type { TestResult } from "@/services/workflow-testing-service";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -547,16 +550,18 @@ export default function WorkflowAnalyticsPage() {
     if (!metrics) return null;
 
     // Mock workflow and complexity data
-    const workflow = {
+    const workflow: Workflow = {
       id: selectedWorkflow,
       name: metrics.workflowName,
       description: "",
+      version: "1.0.0",
+      format: "graph",
       actions: [],
-      connections: [],
+      connections: {},
       metadata: {},
     };
 
-    const complexityMetrics = {
+    const complexityMetrics: ComplexityAnalysis = {
       actionCount: 10,
       connectionCount: 12,
       maxDepth: 5,
@@ -569,15 +574,19 @@ export default function WorkflowAnalyticsPage() {
       controlFlowCount: 2,
     };
 
-    const executionHistory = recentExecutions
+    const executionHistory: TestResult[] = recentExecutions
       .filter((e) => e.workflowId === selectedWorkflow)
       .map((e) => ({
         id: e.id,
+        testCaseId: e.id,
+        testCaseName: e.workflowName,
+        workflowId: e.workflowId,
+        workflowName: e.workflowName,
         passed: e.success,
-        failed: !e.success,
-        duration: e.duration,
         startTime: e.startTime,
         endTime: e.endTime,
+        duration: e.duration,
+        assertions: [],
         error: e.error,
       }));
 
@@ -1182,17 +1191,17 @@ export default function WorkflowAnalyticsPage() {
               {selectedWorkflow && selectedWorkflowData ? (
                 <>
                   <WorkflowMetricsPanel
-                    workflow={selectedWorkflowData.workflow as Workflow}
+                    workflow={selectedWorkflowData.workflow}
                     metrics={selectedWorkflowData.metrics}
                     complexityMetrics={
-                      selectedWorkflowData.complexityMetrics as WorkflowComplexityMetrics
+                      selectedWorkflowData.complexityMetrics
                     }
                     executionHistory={
-                      selectedWorkflowData.executionHistory as WorkflowExecution[]
+                      selectedWorkflowData.executionHistory
                     }
                   />
                   <PerformanceAnalyzer
-                    workflow={selectedWorkflowData.workflow as Workflow}
+                    workflow={selectedWorkflowData.workflow}
                     onAnalyze={() => {}}
                     onApplySuggestion={() => {}}
                   />

@@ -39,18 +39,18 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed } = useSidebar();
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen bg-background overflow-hidden">
       <Suspense fallback={<SidebarSkeleton isCollapsed={isCollapsed} />}>
         <UnifiedSidebar />
       </Suspense>
       <div
         className={cn(
-          "flex-1 flex flex-col transition-all duration-300",
+          "flex-1 flex flex-col min-h-0 transition-all duration-300",
           isCollapsed ? "ml-16" : "ml-64"
         )}
       >
         <BetaBanner />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
       </div>
       <OfflineIndicator />
       <SyncQueueViewer />

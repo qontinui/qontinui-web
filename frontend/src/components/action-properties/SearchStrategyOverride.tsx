@@ -12,6 +12,16 @@ import {
 import { Plus, X } from "lucide-react";
 import { Action } from "./types";
 
+interface TargetWithSearchOptions {
+  type?: string;
+  imageIds?: string[];
+  searchOptions?: {
+    searchStrategy?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 interface SearchStrategyOverrideProps {
   action: Action;
   updateConfig: (key: string, value: unknown) => void;
@@ -27,7 +37,7 @@ export function SearchStrategyOverride({
   updateConfig,
 }: SearchStrategyOverrideProps) {
   // Strategy is nested in target.searchOptions.searchStrategy
-  const target = (action.config as Record<string, unknown>).target as Record<string, unknown> | undefined;
+  const target = (action.config as Record<string, unknown>).target as TargetWithSearchOptions | undefined;
   const currentStrategy = target?.searchOptions?.searchStrategy as
     | string
     | undefined;
@@ -37,7 +47,7 @@ export function SearchStrategyOverride({
       type: "image",
       imageIds: [],
     };
-    const currentSearchOptions = currentTarget.searchOptions || {};
+    const currentSearchOptions = (currentTarget as TargetWithSearchOptions).searchOptions || {};
 
     updateConfig("target", {
       ...currentTarget,
@@ -53,7 +63,7 @@ export function SearchStrategyOverride({
       type: "image",
       imageIds: [],
     };
-    const currentSearchOptions = currentTarget.searchOptions || {};
+    const currentSearchOptions = (currentTarget as TargetWithSearchOptions).searchOptions || {};
     const { searchStrategy: _searchStrategy, ...restSearchOptions } = currentSearchOptions;
 
     updateConfig("target", {

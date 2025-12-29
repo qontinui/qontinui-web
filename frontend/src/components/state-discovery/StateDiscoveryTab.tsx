@@ -98,7 +98,7 @@ const StateDiscoveryTab: React.FC = () => {
     error,
   } = useStateDiscovery();
 
-  const uploadId = uploadIdRaw as string;
+  const uploadId = uploadIdRaw as string | null | undefined;
 
   // Automation context for Image Library
   const { images, addImage } = useAutomation();
@@ -576,7 +576,7 @@ const StateDiscoveryTab: React.FC = () => {
           )}
 
           {/* Statistics */}
-          {analysisResult && (
+          {analysisResult != null && (
             <Card className="mt-4">
               <CardHeader className="py-3">
                 <CardTitle className="text-sm">Analysis Results</CardTitle>

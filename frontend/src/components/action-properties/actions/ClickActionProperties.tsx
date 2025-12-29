@@ -12,6 +12,7 @@ import {
 import { ImageSelector } from "@/components/image-selector";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
+import type { ImageAsset, State } from "@/contexts/automation-context/types";
 
 /**
  * Helper to get the target type from the config.

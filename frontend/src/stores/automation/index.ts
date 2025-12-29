@@ -30,7 +30,15 @@ import {
 import { screenshotDB } from "@/lib/screenshot-db";
 import { projectLogger } from "@/lib/project-logger";
 import type { Workflow } from "@/lib/action-schema/action-types";
-import type { State, Transition, ImageAsset } from "./types";
+import type { State, Transition, ImageAsset, Pattern } from "./types";
+
+// Legacy pattern type for migration (patterns with embedded image data)
+interface LegacyPattern {
+  imageId?: string;
+  image?: string;
+  mask?: string;
+  [key: string]: unknown;
+}
 
 // Legacy action config type for migration
 interface LegacyActionConfig {
@@ -127,17 +135,19 @@ function migratePatternImages(
       }
 
       const migratedPatterns = stateImage.patterns.map((pattern) => {
-        const patternAny = pattern as Record<string, unknown>;
+        const legacyPattern = pattern as unknown as LegacyPattern;
 
         // Check if pattern has embedded image data but no imageId
         // OR if pattern.imageId accidentally contains base64 data (fix for corrupted data)
         const imageIdIsData =
           pattern.imageId && pattern.imageId.startsWith("data:image");
         const hasEmbeddedImage =
-          !pattern.imageId && "image" in patternAny && patternAny.image;
+          !pattern.imageId && "image" in legacyPattern && legacyPattern.image;
 
         if (hasEmbeddedImage || imageIdIsData) {
-          const imageData = imageIdIsData ? pattern.imageId! : patternAny.image;
+          const imageData: string = imageIdIsData
+            ? pattern.imageId!
+            : (legacyPattern.image as string);
 
           // Try to find matching image in library
           let matchingImage = images.find((img) => img.url === imageData);
@@ -168,11 +178,8 @@ function migratePatternImages(
           }
 
           // Return pattern with imageId reference (remove embedded data)
-          const cleanPattern = { ...pattern } as Record<string, unknown>;
-          delete cleanPattern.image;
-          delete cleanPattern.mask;
-          cleanPattern.imageId = matchingImage.id;
-          return cleanPattern as typeof pattern;
+          const { image: _image, mask: _mask, ...cleanPattern } = legacyPattern;
+          return { ...cleanPattern, imageId: matchingImage.id } as Pattern;
         }
 
         return pattern;

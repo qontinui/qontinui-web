@@ -13,6 +13,7 @@ import {
 import { ImageSelector } from "@/components/image-selector";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
+import type { ImageAsset } from "@/contexts/automation-context/types";
 
 /**
  * Helper to get target type from config field (handles from/to targets).

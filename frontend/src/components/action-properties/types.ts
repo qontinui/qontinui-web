@@ -21,6 +21,7 @@ export interface Action {
     | "KEY_DOWN"
     | "KEY_UP"
     | "KEY_PRESS"
+    | "HOTKEY"
     // Combined mouse actions
     | "CLICK"
     | "DOUBLE_CLICK"
@@ -69,6 +70,8 @@ export interface Action {
   execution?: ExecutionSettings;
   /** Action-level expectations for checkpoint and failure behavior */
   expectations?: ActionExpectations;
+  /** Position in graph [x, y] - optional for compatibility with action-types */
+  position?: [number, number];
 }
 
 export interface ActionPropertiesComponentProps {

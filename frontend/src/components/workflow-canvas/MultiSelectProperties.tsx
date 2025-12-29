@@ -157,7 +157,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
               </div>
               <Input
                 type="number"
-                value={commonTimeout ?? ""}
+                value={typeof commonTimeout === "number" ? commonTimeout : ""}
                 onChange={(e) =>
                   updateCommonConfig("timeout", Number(e.target.value))
                 }
@@ -176,7 +176,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
               </div>
               <Input
                 type="number"
-                value={commonRetries ?? ""}
+                value={typeof commonRetries === "number" ? commonRetries : ""}
                 onChange={(e) =>
                   updateCommonConfig("maxRetries", Number(e.target.value))
                 }

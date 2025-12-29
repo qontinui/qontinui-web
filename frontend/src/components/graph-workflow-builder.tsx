@@ -491,7 +491,7 @@ export function GraphWorkflowBuilder() {
         >
           {selectedAction ? (
             <ActionProperties
-              action={selectedAction}
+              action={selectedAction as Parameters<typeof ActionProperties>[0]["action"]}
               onUpdateAction={(action) =>
                 handleUpdateAction(action as unknown as Action)
               }

@@ -78,16 +78,23 @@ export function useProjectAutoSave({
       const currentProjectId = projectIdRef.current;
       if (!currentProjectId) return;
 
-      const config = getConfigurationRef.current();
+      const config = getConfigurationRef.current() as Record<string, unknown>;
+
+      // Type assertion for configuration object
+      const typedConfig = config as {
+        workflows?: unknown[];
+        states?: unknown[];
+        [key: string]: unknown;
+      };
 
       projectLogger.debug("AutoSave", "Saving to backend via coordinator", {
         projectId: currentProjectId,
-        workflowCount: (config.workflows as unknown[])?.length ?? 0,
-        stateCount: (config.states as unknown[])?.length ?? 0,
+        workflowCount: typedConfig.workflows?.length ?? 0,
+        stateCount: typedConfig.states?.length ?? 0,
       });
 
       await projectService.updateProject(currentProjectId, {
-        configuration: config,
+        configuration: typedConfig,
       });
 
       projectLogger.debug("AutoSave", "Backend save complete", {
@@ -100,8 +107,9 @@ export function useProjectAutoSave({
 
   // Register configuration getter
   useEffect(() => {
-    syncCoordinator.registerConfigurationGetter(() =>
-      getConfigurationRef.current()
+    syncCoordinator.registerConfigurationGetter(
+      () =>
+      getConfigurationRef.current() as Record<string, unknown>
     );
   }, []);
 

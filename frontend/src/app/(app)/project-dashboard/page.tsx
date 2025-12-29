@@ -71,6 +71,7 @@ import {
   PolarRadiusAxis,
   Radar,
 } from "recharts";
+import type { TreemapNode } from "recharts";
 
 // ============================================================================
 // Types
@@ -940,7 +941,7 @@ function ResourceOverviewTabs({
                   data={data.imagesByFolder}
                   dataKey="size"
                   stroke="#1A1A1B"
-                  content={TreemapContent as React.ComponentType<unknown>}
+                  content={(props: TreemapNode) => TreemapContent(props) as React.ReactElement}
                 />
               </ResponsiveContainer>
             </CardContent>

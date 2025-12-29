@@ -39,7 +39,7 @@ async function downloadSchema(url: string, outputPath: string): Promise<void> {
     const schema = await response.json();
     fs.writeFileSync(outputPath, JSON.stringify(schema, null, 2));
     console.log(`✅ Schema downloaded to ${outputPath}`);
-  } catch (_error) {
+  } catch (error) {
     console.error(`❌ Failed to download schema from ${url}:`, error);
     throw error;
   }
@@ -54,7 +54,7 @@ async function generateTypes(schemaPath: string, outputPath: string, serviceName
       stdio: 'inherit'
     });
     console.log(`✅ Types generated successfully at ${outputPath}`);
-  } catch (_error) {
+  } catch (error) {
     console.error(`❌ Failed to generate types:`, error);
     throw error;
   }
@@ -114,7 +114,7 @@ async function main() {
     console.log('   type User = components["schemas"]["UserRead"]');
     console.log('   type Projects = paths["/api/v1/projects/"]["get"]["responses"]["200"]["content"]["application/json"]');
 
-  } catch (_error) {
+  } catch (error) {
     console.error('\n❌ Type generation failed:', error);
     process.exit(1);
   }

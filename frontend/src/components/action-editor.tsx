@@ -33,6 +33,7 @@ interface Action {
     | "KEY_DOWN"
     | "KEY_UP"
     | "KEY_PRESS"
+    | "HOTKEY"
     // Combined mouse actions
     | "CLICK"
     | "DOUBLE_CLICK"

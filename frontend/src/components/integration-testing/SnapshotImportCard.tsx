@@ -28,7 +28,6 @@ export function SnapshotImportCard({
     // Create a hidden input element for directory selection
     const input = document.createElement("input");
     input.type = "file";
-    // @ts-expect-error - webkitdirectory is not in standard types but widely supported
     input.webkitdirectory = true;
     // @ts-expect-error - directory is not in standard types but widely supported
     input.directory = true;

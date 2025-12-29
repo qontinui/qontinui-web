@@ -71,7 +71,7 @@ export function AnalysisPanel() {
     try {
       await startAnalysis();
       toast.success("Analysis complete");
-    } catch (_error) {
+    } catch (error) {
       console.error("Analysis error in handleStartAnalysis:", error);
       toast.error("Analysis failed");
     }
@@ -213,7 +213,7 @@ export function AnalysisPanel() {
         }
 
         setShowStateImageDialog(false);
-      } catch (_error) {
+      } catch (error) {
         console.error("Failed to create StateImages:", error);
         toast.error("Failed to create StateImages", {
           description: error instanceof Error ? error.message : "Unknown error",

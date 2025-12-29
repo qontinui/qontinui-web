@@ -483,7 +483,7 @@ export function DocumentationViewer({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   onClick={() =>
-                    copyLinkToSection(activeSection || sections[0]?.id ?? "")
+                    copyLinkToSection(activeSection || (sections[0]?.id ?? ""))
                   }
                 >
                   {copiedLink ? (

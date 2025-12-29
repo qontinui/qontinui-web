@@ -452,7 +452,7 @@ export default function WorkflowVisualizationPage() {
     // For STATE_ACTIVATOR actions, activate the specified state
     if ((action.type as string) === "STATE_ACTIVATOR" && action.config) {
       const config = action.config as Record<string, unknown>;
-      const stateIds = config.stateIds || [];
+      const stateIds = (config.stateIds as string[]) || [];
       setActiveStateIds((prev) => {
         const newIds = [...prev];
         stateIds.forEach((id: string) => {

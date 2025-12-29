@@ -14,6 +14,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Globe, ArrowLeft, Eye, Lock } from "lucide-react";
 
+interface WorkflowConfig {
+  name?: string;
+  description?: string;
+  actions?: unknown[];
+}
+
+interface ActionConfig {
+  name?: string;
+  type?: string;
+}
+
 interface PublicProject {
   id: string;
   name: string;
@@ -51,7 +62,7 @@ export default function DemoProjectPage() {
         const data = await response.json();
         setProject(data);
       } catch (err: unknown) {
-        setError((err instanceof Error ? err.message : "An error occurred"));
+        setError(err instanceof Error ? err.message : "An error occurred");
       } finally {
         setLoading(false);
       }
@@ -91,8 +102,13 @@ export default function DemoProjectPage() {
     );
   }
 
-  const workflows = (project.configuration as Record<string, unknown>)?.workflows as unknown[] || [];
-  const actions = (project.configuration as Record<string, unknown>)?.actions as unknown[] || [];
+  const config = project.configuration as Record<string, unknown> | null;
+  const workflows = (
+    Array.isArray(config?.workflows) ? config.workflows : []
+  ) as WorkflowConfig[];
+  const actions = (
+    Array.isArray(config?.actions) ? config.actions : []
+  ) as ActionConfig[];
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -104,7 +120,8 @@ export default function DemoProjectPage() {
             <div>
               <p className="font-semibold">Demo Mode - Read Only</p>
               <p className="text-sm text-blue-100">
-                You&apos;re viewing a public project. Sign up to create your own!
+                You&apos;re viewing a public project. Sign up to create your
+                own!
               </p>
             </div>
           </div>
@@ -177,7 +194,7 @@ export default function DemoProjectPage() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {workflows.map((workflow: Record<string, unknown>, index: number) => (
+                    {workflows.map((workflow, index) => (
                       <div
                         key={index}
                         className="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4"
@@ -219,7 +236,7 @@ export default function DemoProjectPage() {
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {actions.slice(0, 10).map((action: Record<string, unknown>, index: number) => (
+                    {actions.slice(0, 10).map((action, index) => (
                       <div
                         key={index}
                         className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-md"

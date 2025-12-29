@@ -198,7 +198,6 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
                   <p className="text-xs text-gray-500 font-mono">{action.id}</p>
                 </div>
                 <Badge variant="secondary" className="text-xs">
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {actionConfigRegistry.getDisplayName(action.type as import('@/components/action-properties/types').Action['type'])}
                 </Badge>
               </div>
