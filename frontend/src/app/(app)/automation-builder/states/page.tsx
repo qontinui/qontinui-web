@@ -297,7 +297,7 @@ function TransitionVisualizationTab() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
       {/* Left Panel - Transition Selection */}
-      <Card className="lg:col-span-1 flex flex-col overflow-hidden border-4 border-yellow-500">
+      <Card className="lg:col-span-1 flex flex-col overflow-hidden">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center justify-between">
             <span>Transitions</span>
@@ -317,7 +317,7 @@ function TransitionVisualizationTab() {
       </Card>
 
       {/* Right Panel - Animation Canvas */}
-      <Card className="lg:col-span-3 h-full flex flex-col border-4 border-green-500">
+      <Card className="lg:col-span-3 h-full flex flex-col">
         <CardHeader className="pb-3 flex-shrink-0">
           <CardTitle className="flex items-center justify-between">
             <span>Transition Animation</span>
@@ -340,9 +340,9 @@ function TransitionVisualizationTab() {
               : "Select a transition from the list"}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex-1 min-h-0 flex flex-col p-4 border-4 border-blue-500">
+        <CardContent className="flex-1 min-h-0 flex flex-col p-4">
           {/* Canvas - takes available space minus controls */}
-          <div data-debug="canvas-container" className="flex-1 min-h-0 overflow-hidden rounded-lg border-4 border-purple-500">
+          <div className="flex-1 min-h-0 overflow-hidden rounded-lg">
             <TransitionAnimationCanvas
               transition={selectedTransition}
               states={states}
@@ -356,8 +356,7 @@ function TransitionVisualizationTab() {
 
           {/* Playback Controls - fixed height at bottom */}
           {selectedTransition && (
-            <div data-debug="playback-controls" className="mt-4 flex-shrink-0 border-4 border-orange-500 bg-orange-500/20 min-h-[100px]">
-              <p className="text-orange-500 font-bold p-2">PLAYBACK CONTROLS HERE</p>
+            <div className="mt-4 flex-shrink-0">
               <TransitionPlaybackControls
                 state={animation.state}
                 onPlay={() => animation.play()}
@@ -385,32 +384,16 @@ function StatesPageContent() {
     "definition" | "state-view" | "transitions"
   >("definition");
 
-  // DEBUG: Log page dimensions - must be before early return
-  useEffect(() => {
-    if (isLoading) return;
-    console.log('[DEBUG] StatesPageContent mounted');
-    const logPageDimensions = () => {
-      const pageWrapper = document.querySelector('[data-debug="page-wrapper"]');
-      const tabs = document.querySelector('[data-debug="tabs-container"]');
-      const tabsContent = document.querySelector('[data-debug="transitions-tab"]');
-      if (pageWrapper) console.log('[DEBUG] Page wrapper:', pageWrapper.getBoundingClientRect());
-      if (tabs) console.log('[DEBUG] Tabs container:', tabs.getBoundingClientRect());
-      if (tabsContent) console.log('[DEBUG] Transitions tab content:', tabsContent.getBoundingClientRect());
-    };
-    setTimeout(logPageDimensions, 1000);
-  }, [activeTab, isLoading]);
-
   if (isLoading) {
     return <LoadingFallback />;
   }
 
   return (
-    <div data-debug="page-wrapper" className="h-full flex flex-col border-4 border-pink-500">
+    <div className="h-full flex flex-col">
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as typeof activeTab)}
-        data-debug="tabs-container"
-        className="flex-1 flex flex-col min-h-0 border-4 border-cyan-500"
+        className="flex-1 flex flex-col min-h-0"
       >
         <div className="px-4 pt-4 pb-2">
           <TabsList>
@@ -440,7 +423,7 @@ function StatesPageContent() {
         </TabsContent>
 
         {/* Transitions Tab - Transition Animation */}
-        <TabsContent data-debug="transitions-tab" value="transitions" className="flex-1 min-h-0 mt-0 p-4 border-4 border-lime-500">
+        <TabsContent value="transitions" className="flex-1 min-h-0 mt-0 p-4">
           <TransitionVisualizationTab />
         </TabsContent>
       </Tabs>
