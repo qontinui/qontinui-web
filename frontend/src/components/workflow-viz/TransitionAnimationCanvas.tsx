@@ -104,8 +104,8 @@ export function TransitionAnimationCanvas({
     }
   }, [animation, controllerRef]);
 
-  // Monitor filter state
-  const [showOnlyWithElements, setShowOnlyWithElements] = useState(false);
+  // Monitor filter state - default to showing only monitors with elements
+  const [showOnlyWithElements, setShowOnlyWithElements] = useState(true);
 
   // Calculate which monitors have elements (states with positioned images)
   const monitorsWithElements = useMemo(() => {
@@ -144,6 +144,7 @@ export function TransitionAnimationCanvas({
     showOnlyWithElements,
     maxZoom: 5,
     defaultDimensions: { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
+    pinToTop: true,
   });
 
   // Loaded images cache

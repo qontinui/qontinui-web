@@ -33,6 +33,8 @@ export interface MonitorCanvasOptions {
   fitPadding?: number;
   /** Default canvas dimensions when no monitors (default: 1920x1080) */
   defaultDimensions?: { width: number; height: number };
+  /** Pin content to top instead of centering vertically (default: false) */
+  pinToTop?: boolean;
 }
 
 export interface MonitorCanvasBounds {
@@ -107,6 +109,7 @@ export function useMonitorCanvas(
     minZoomFloor = DEFAULT_MIN_ZOOM_FLOOR,
     fitPadding = DEFAULT_FIT_PADDING,
     defaultDimensions = DEFAULT_DIMENSIONS,
+    pinToTop = false,
   } = options;
 
   // Refs
@@ -213,7 +216,10 @@ export function useMonitorCanvas(
     setZoom(fitZoom);
     setPan({
       x: (containerSize.width - bounds.width * fitZoom) / 2,
-      y: (containerSize.height - bounds.height * fitZoom) / 2,
+      // Pin to top with padding, or center vertically
+      y: pinToTop
+        ? fitPadding
+        : (containerSize.height - bounds.height * fitZoom) / 2,
     });
   }, [
     containerSize.width,
@@ -221,6 +227,7 @@ export function useMonitorCanvas(
     bounds.width,
     bounds.height,
     fitPadding,
+    pinToTop,
   ]);
 
   // Track if we've done initial fit and previous bounds for change detection
@@ -242,7 +249,10 @@ export function useMonitorCanvas(
       setZoom(fitZoom);
       setPan({
         x: (containerSize.width - bounds.width * fitZoom) / 2,
-        y: (containerSize.height - bounds.height * fitZoom) / 2,
+        // Pin to top with padding, or center vertically
+        y: pinToTop
+          ? fitPadding
+          : (containerSize.height - bounds.height * fitZoom) / 2,
       });
       prevBoundsRef.current = {
         width: bounds.width,
@@ -259,6 +269,7 @@ export function useMonitorCanvas(
     bounds.minX,
     bounds.minY,
     fitPadding,
+    pinToTop,
   ]);
 
   // Re-fit when bounds actually change (monitors added/removed/repositioned)
@@ -278,7 +289,10 @@ export function useMonitorCanvas(
       setZoom(fitZoom);
       setPan({
         x: (containerSize.width - bounds.width * fitZoom) / 2,
-        y: (containerSize.height - bounds.height * fitZoom) / 2,
+        // Pin to top with padding, or center vertically
+        y: pinToTop
+          ? fitPadding
+          : (containerSize.height - bounds.height * fitZoom) / 2,
       });
       prevBoundsRef.current = {
         width: bounds.width,
@@ -295,9 +309,10 @@ export function useMonitorCanvas(
     containerSize.width,
     containerSize.height,
     fitPadding,
+    pinToTop,
   ]);
 
-  // Constrain pan to keep monitors visible and centered when smaller than container
+  // Constrain pan to keep monitors visible and centered/pinned when smaller than container
   // Use primitive values in deps to ensure stable reference
   const constrainPan = useCallback(
     (newPan: { x: number; y: number }, currentZoom: number) => {
@@ -310,7 +325,7 @@ export function useMonitorCanvas(
       let x: number;
       let y: number;
 
-      // If content is smaller than container, center it
+      // If content is smaller than container, center it horizontally
       if (scaledWidth <= containerSize.width - 2 * fitPadding) {
         x = (containerSize.width - scaledWidth) / 2;
       } else {
@@ -320,8 +335,9 @@ export function useMonitorCanvas(
         x = Math.max(minPanX, Math.min(maxPanX, newPan.x));
       }
 
+      // If content is smaller than container, center or pin to top
       if (scaledHeight <= containerSize.height - 2 * fitPadding) {
-        y = (containerSize.height - scaledHeight) / 2;
+        y = pinToTop ? fitPadding : (containerSize.height - scaledHeight) / 2;
       } else {
         const minPanY = containerSize.height - scaledHeight - fitPadding;
         const maxPanY = fitPadding;
@@ -336,6 +352,7 @@ export function useMonitorCanvas(
       bounds.width,
       bounds.height,
       fitPadding,
+      pinToTop,
     ]
   );
 
