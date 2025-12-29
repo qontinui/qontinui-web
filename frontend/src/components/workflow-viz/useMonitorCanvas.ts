@@ -29,6 +29,8 @@ export interface MonitorCanvasOptions {
   maxZoom?: number;
   /** Minimum zoom level floor (default: 0.05) */
   minZoomFloor?: number;
+  /** Minimum zoom level for fit-to-view, prevents too-small zoom with multi-monitor (default: none) */
+  minFitZoom?: number;
   /** Padding around monitors when calculating fit (default: 40) */
   fitPadding?: number;
   /** Default canvas dimensions when no monitors (default: 1920x1080) */
@@ -107,6 +109,7 @@ export function useMonitorCanvas(
     showOnlyWithElements = false,
     maxZoom = DEFAULT_MAX_ZOOM,
     minZoomFloor = DEFAULT_MIN_ZOOM_FLOOR,
+    minFitZoom,
     fitPadding = DEFAULT_FIT_PADDING,
     defaultDimensions = DEFAULT_DIMENSIONS,
     pinToTop = false,
@@ -211,7 +214,8 @@ export function useMonitorCanvas(
 
     const zoomX = (containerSize.width - fitPadding) / bounds.width;
     const zoomY = (containerSize.height - fitPadding) / bounds.height;
-    const fitZoom = Math.min(zoomX, zoomY, 1); // Don't zoom in beyond 1x
+    // Don't zoom in beyond 1x, and optionally enforce minimum fit zoom
+    const fitZoom = Math.max(Math.min(zoomX, zoomY, 1), minFitZoom ?? 0);
 
     setZoom(fitZoom);
     setPan({
@@ -228,6 +232,7 @@ export function useMonitorCanvas(
     bounds.height,
     fitPadding,
     pinToTop,
+    minFitZoom,
   ]);
 
   // Track if we've done initial fit and previous bounds for change detection
@@ -245,7 +250,8 @@ export function useMonitorCanvas(
       // Calculate fit values inline to avoid dependency on handleFitView
       const zoomX = (containerSize.width - fitPadding) / bounds.width;
       const zoomY = (containerSize.height - fitPadding) / bounds.height;
-      const fitZoom = Math.min(zoomX, zoomY, 1);
+      // Don't zoom in beyond 1x, and optionally enforce minimum fit zoom
+      const fitZoom = Math.max(Math.min(zoomX, zoomY, 1), minFitZoom ?? 0);
       setZoom(fitZoom);
       setPan({
         x: (containerSize.width - bounds.width * fitZoom) / 2,
@@ -270,6 +276,7 @@ export function useMonitorCanvas(
     bounds.minY,
     fitPadding,
     pinToTop,
+    minFitZoom,
   ]);
 
   // Re-fit when bounds actually change (monitors added/removed/repositioned)
@@ -285,7 +292,8 @@ export function useMonitorCanvas(
     if (boundsChanged && containerSize.width > 0 && containerSize.height > 0) {
       const zoomX = (containerSize.width - fitPadding) / bounds.width;
       const zoomY = (containerSize.height - fitPadding) / bounds.height;
-      const fitZoom = Math.min(zoomX, zoomY, 1);
+      // Don't zoom in beyond 1x, and optionally enforce minimum fit zoom
+      const fitZoom = Math.max(Math.min(zoomX, zoomY, 1), minFitZoom ?? 0);
       setZoom(fitZoom);
       setPan({
         x: (containerSize.width - bounds.width * fitZoom) / 2,
@@ -310,6 +318,7 @@ export function useMonitorCanvas(
     containerSize.height,
     fitPadding,
     pinToTop,
+    minFitZoom,
   ]);
 
   // Constrain pan to keep monitors visible and centered/pinned when smaller than container

@@ -295,7 +295,7 @@ function TransitionVisualizationTab() {
   }, [selectedTransition?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full overflow-hidden">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
       {/* Left Panel - Transition Selection */}
       <Card className="lg:col-span-1 flex flex-col overflow-hidden">
         <CardHeader className="pb-3">
@@ -317,7 +317,7 @@ function TransitionVisualizationTab() {
       </Card>
 
       {/* Right Panel - Animation Canvas */}
-      <Card className="lg:col-span-3 flex flex-col overflow-hidden">
+      <Card className="lg:col-span-3 h-full flex flex-col">
         <CardHeader className="pb-3 flex-shrink-0">
           <CardTitle className="flex items-center justify-between">
             <span>Transition Animation</span>
@@ -340,14 +340,9 @@ function TransitionVisualizationTab() {
               : "Select a transition from the list"}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex-1 min-h-0 flex flex-col">
-          {/* Canvas - takes remaining space minus controls height */}
-          <div
-            className="overflow-hidden"
-            style={{
-              height: selectedTransition ? "calc(100% - 80px)" : "100%",
-            }}
-          >
+        <CardContent className="flex-1 min-h-0 flex flex-col p-4">
+          {/* Canvas - takes available space minus controls */}
+          <div className="flex-1 min-h-0 overflow-hidden rounded-lg border border-zinc-800">
             <TransitionAnimationCanvas
               transition={selectedTransition}
               states={states}
@@ -361,7 +356,7 @@ function TransitionVisualizationTab() {
 
           {/* Playback Controls - fixed height at bottom */}
           {selectedTransition && (
-            <div className="h-[80px] pt-4 flex-shrink-0">
+            <div className="mt-4 flex-shrink-0">
               <TransitionPlaybackControls
                 state={animation.state}
                 onPlay={() => animation.play()}

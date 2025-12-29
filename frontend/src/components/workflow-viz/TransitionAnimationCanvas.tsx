@@ -143,6 +143,7 @@ export function TransitionAnimationCanvas({
     monitorsWithElements,
     showOnlyWithElements,
     maxZoom: 5,
+    minFitZoom: 0.4, // Minimum 40% zoom to prevent very small display with multi-monitor
     defaultDimensions: { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
     pinToTop: true,
   });
