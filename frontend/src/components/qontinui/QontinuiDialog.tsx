@@ -21,9 +21,7 @@ import { styles } from "@/config/theme";
  * Extends the base Dialog component with dark theme styling
  */
 
-interface QontinuiDialogContentProps extends React.ComponentProps<
-  typeof DialogContent
-> {}
+type QontinuiDialogContentProps = React.ComponentProps<typeof DialogContent>;
 
 export function QontinuiDialogContent({
   className,

@@ -128,7 +128,7 @@ export function IncomingTransitionBuilder({
             <p className="text-sm text-gray-400">
               IncomingTransitions are executed automatically after any
               successful OutgoingTransition that navigates to this state.
-              They're useful for setup actions that should always happen when
+              They&apos;re useful for setup actions that should always happen when
               entering a state.
             </p>
           </div>

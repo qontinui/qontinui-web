@@ -191,7 +191,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-500">
-                Connection type is determined by the source action's output
+                Connection type is determined by the source action&apos;s output
               </p>
             </div>
 

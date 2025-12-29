@@ -108,7 +108,7 @@ export default function ImageRecognitionDocPage() {
                 <span className="font-bold text-primary">4.</span>
                 <span>
                   If the score exceeds your threshold, the element is considered
-                  "found"
+                  &quot;found&quot;
                 </span>
               </li>
               <li className="flex items-start gap-2">

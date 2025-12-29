@@ -146,7 +146,7 @@ function VariableRow({ variable }: { variable: WorkflowVariable }) {
           : String(variable.value);
       await navigator.clipboard.writeText(text);
       toast.success(`Copied "${variable.name}" to clipboard`);
-    } catch (error) {
+    } catch {
       toast.error("Failed to copy to clipboard");
     }
   };
@@ -313,7 +313,7 @@ export function VariableMonitor({
       URL.revokeObjectURL(url);
 
       toast.success("Variables exported successfully");
-    } catch (error) {
+    } catch {
       toast.error("Failed to export variables");
     }
   };

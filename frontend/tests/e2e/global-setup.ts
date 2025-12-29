@@ -17,7 +17,7 @@ async function waitForBackend(url: string, maxAttempts = 30): Promise<boolean> {
         console.log('Backend is ready');
         return true;
       }
-    } catch (error) {
+    } catch (_error) {
       // Backend not ready yet
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -25,7 +25,7 @@ async function waitForBackend(url: string, maxAttempts = 30): Promise<boolean> {
   return false;
 }
 
-async function globalSetup(config: FullConfig) {
+async function globalSetup(_config: FullConfig) {
   console.log('Starting global E2E test setup...');
 
   // Setup test environment variables
@@ -44,7 +44,7 @@ async function globalSetup(config: FullConfig) {
       console.log('Backend is already running, skipping startup');
       return;
     }
-  } catch (error) {
+  } catch (_error) {
     // Backend not running, start it
   }
 
@@ -77,7 +77,7 @@ async function globalSetup(config: FullConfig) {
 
   // Store process ID for cleanup
   if (backendProcess.pid) {
-    (global as any).__BACKEND_PID__ = backendProcess.pid;
+    (global as unknown as { __BACKEND_PID__?: number }).__BACKEND_PID__ = backendProcess.pid;
   }
 
   // Log backend output
@@ -116,11 +116,11 @@ async function globalSetup(config: FullConfig) {
   );
 
   await new Promise<void>((resolve, reject) => {
-    let output = '';
+    let _output = '';
     let errorOutput = '';
 
     seedProcess.stdout?.on('data', (data) => {
-      output += data.toString();
+      _output += data.toString();
       console.log(`Seed: ${data}`);
     });
 

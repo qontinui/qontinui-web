@@ -940,7 +940,7 @@ function ResourceOverviewTabs({
                   data={data.imagesByFolder}
                   dataKey="size"
                   stroke="#1A1A1B"
-                  content={TreemapContent as any}
+                  content={TreemapContent as React.ComponentType<unknown>}
                 />
               </ResponsiveContainer>
             </CardContent>

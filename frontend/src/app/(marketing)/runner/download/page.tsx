@@ -165,7 +165,7 @@ export default function DownloadPage() {
                 </h2>
               </div>
               <p className="text-slate-700 mb-4">
-                We've detected you&apos;re using {getPlatformName(platform)}.
+                We&apos;ve detected you&apos;re using {getPlatformName(platform)}.
                 Download the recommended version below.
               </p>
               {platform === "windows" && (
@@ -239,7 +239,7 @@ export default function DownloadPage() {
             <AlertCircle className="h-4 w-4 text-amber-600" />
             <AlertDescription className="text-slate-700">
               <strong>First time installation:</strong> You may see security
-              warnings because the app is not yet code-signed. We're working on
+              warnings because the app is not yet code-signed. We&apos;re working on
               this!{" "}
               <Link
                 href="/docs/runner/installation"

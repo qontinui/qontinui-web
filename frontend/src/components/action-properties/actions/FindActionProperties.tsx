@@ -28,7 +28,7 @@ export function FindActionProperties({
   // Handle stateImage target type (Find State) - convert to image target type with ImageSelector
   // This provides a consistent UI with state filtering capabilities
   if (targetType === "stateImage") {
-    const currentImageIds = (config.target as any)?.imageIds || [];
+    const currentImageIds = (config.target as { imageIds?: string[] })?.imageIds || [];
 
     const handleImagesSelect = (selectedImageIds: string[]) => {
       // Convert to standard image target type for consistency
@@ -68,7 +68,7 @@ export function FindActionProperties({
 
   // Default: Handle image target type
   const imageIds =
-    config.target?.type === "image" ? (config.target as any).imageIds : null;
+    config.target?.type === "image" ? (config.target as { imageIds?: string[] }).imageIds : null;
 
   const hasImageIds = imageIds && Array.isArray(imageIds);
 
@@ -85,10 +85,10 @@ export function FindActionProperties({
         <Label className="text-xs text-gray-400">
           Images (multi-select enabled)
         </Label>
-        {(action.config as any).removedImage && (
+        {(action.config as Record<string, unknown>).removedImage && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
             <span className="font-medium">Removed Image:</span>{" "}
-            {(action.config as any).removedImage as string}
+            {(action.config as Record<string, unknown>).removedImage as string}
             <p className="text-xs text-red-400 mt-1">
               This image was deleted. Please select new images.
             </p>

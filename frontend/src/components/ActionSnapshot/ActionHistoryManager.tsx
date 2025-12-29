@@ -219,7 +219,7 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
                                 <div>Matches: {snapshot.matches.length}</div>
                               )}
                               {snapshot.text && (
-                                <div>Text: "{snapshot.text}"</div>
+                                <div>Text: &quot;{snapshot.text}&quot;</div>
                               )}
                               {snapshot.nextScreenshotId && (
                                 <div className="flex items-center gap-1">

@@ -407,8 +407,8 @@ describe("Node Utilities", () => {
 });
 
 describe("Node Registry", () => {
-  it("exports all 30+ action types", () => {
-    const { NODE_TYPES } = require("./node-registry");
+  it("exports all 30+ action types", async () => {
+    const { NODE_TYPES } = await import("./node-registry");
     const registeredTypes = Object.keys(NODE_TYPES);
 
     // Should have all action types registered

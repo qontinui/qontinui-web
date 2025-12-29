@@ -276,7 +276,7 @@ export function DeficiencyWorkflow({
               <strong>Closed:</strong> Fix has been verified and deployed
             </p>
             <p>
-              <strong>Won't Fix:</strong> Issue will not be addressed (by
+              <strong>Won&apos;t Fix:</strong> Issue will not be addressed (by
               design, out of scope, etc.)
             </p>
           </div>

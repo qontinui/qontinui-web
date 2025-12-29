@@ -68,7 +68,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
       await expect(
         page.locator('text=Select a process')
       ).not.toBeVisible();
-    } catch (error) {
+    } catch (_error) {
       // No processes available - this is expected in test environment without workflow data
       console.log('No processes available to select - skipping process selection');
       // Close the dropdown
@@ -193,7 +193,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
           '[data-testid="execution-visualization"], [data-testid="action-timeline"]'
         )
       ).toBeVisible();
-    } catch (error) {
+    } catch (_error) {
       // Execute button not available - skip test (requires process selection)
       console.log('Execute button not available - skipping execution test');
     }
@@ -256,7 +256,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
           'button:has-text("Pause"), [data-testid="pause-button"], [aria-label="Pause"]'
         )
       ).toBeVisible({ timeout: 3000 });
-    } catch (error) {
+    } catch (_error) {
       // Execute button not available - skip test (requires process selection)
       console.log('Execute/Play button not available - skipping timeline test');
     }
@@ -284,7 +284,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
         page.getByText('States').first()
           .or(page.getByText('Covered').first())
       ).toBeVisible();
-    } catch (error) {
+    } catch (_error) {
       // Coverage panel not available - skip test
       console.log('Coverage panel not available - skipping coverage test');
     }
@@ -351,7 +351,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
 
       // Verify download filename
       expect(download.suggestedFilename()).toContain('.pdf');
-    } catch (error) {
+    } catch (_error) {
       // Export button not available - skip test (requires execution)
       console.log('PDF export not available - skipping PDF export test');
     }
@@ -431,7 +431,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
       await expect(
         page.locator('text=Video Export, text=Exporting')
       ).toBeVisible({ timeout: 5000 });
-    } catch (error) {
+    } catch (_error) {
       // Export button not available - skip test (requires execution)
       console.log('Video export not available - skipping video export test');
     }
@@ -458,7 +458,7 @@ test.describe('Integration Testing - Manual Selection Mode', () => {
       await expect(
         page.locator('[data-testid="manual-snapshot-selector"]')
       ).toBeVisible();
-    } catch (error) {
+    } catch (_error) {
       // Manual mode toggle not available - skip test
       console.log('Manual mode toggle not available - skipping manual selection test');
     }
@@ -536,7 +536,7 @@ test.describe('Integration Testing - Error States', () => {
       await expect(
         page.locator('text=Failed, text=Error, [role="alert"]')
       ).toBeVisible({ timeout: 10000 });
-    } catch (error) {
+    } catch (_error) {
       // Execute button not available - skip test (requires process selection)
       console.log('Execute button not available - skipping error handling test');
     }
@@ -562,7 +562,7 @@ test.describe('Integration Testing - Error States', () => {
       await expect(
         page.locator('text=Error, text=Failed, [role="alert"]')
       ).toBeVisible({ timeout: 10000 });
-    } catch (error) {
+    } catch (_error) {
       // Execute button not available - skip test (requires process selection)
       console.log('Execute button not available - skipping network error test');
     }
@@ -585,7 +585,7 @@ test.describe('Integration Testing - Error States', () => {
           'text=Please select, text=No snapshots, text=Required'
         )
       ).toBeVisible({ timeout: 5000 });
-    } catch (error) {
+    } catch (_error) {
       // Execute button not available - skip test (requires process selection)
       console.log('Execute button not available - skipping validation error test');
     }
@@ -690,7 +690,7 @@ test.describe('Integration Testing - Visualization', () => {
           await expect(actionElement).toBeVisible();
         }
       }
-    } catch (error) {
+    } catch (_error) {
       // Execute button not available - skip test (requires process selection)
       console.log('Execute button not available - skipping visualization test');
     }
@@ -729,7 +729,7 @@ test.describe('Integration Testing - Visualization', () => {
           await page.waitForTimeout(300);
         }
       }
-    } catch (error) {
+    } catch (_error) {
       // Execute button not available - skip test (requires process selection)
       console.log('Execute button not available - skipping timeline navigation test');
     }
@@ -762,7 +762,7 @@ test.describe('Integration Testing - Visualization', () => {
           )
         ).toBeVisible();
       }
-    } catch (error) {
+    } catch (_error) {
       // Execute button not available - skip test (requires process selection)
       console.log('Execute button not available - skipping action details test');
     }

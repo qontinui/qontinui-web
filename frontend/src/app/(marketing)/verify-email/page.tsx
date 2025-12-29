@@ -52,7 +52,7 @@ export default function VerifyEmail() {
               "Verification failed. The link may be invalid or expired."
           );
         }
-      } catch (error: unknown) {
+      } catch (_error: unknown) {
         setStatus("error");
         setMessage("Failed to verify email. Please try again later.");
       }

@@ -145,7 +145,7 @@ export function DragActionProperties({
         <ImageSelector
           selectedImage={toImageId}
           onSelectImage={handleToImageChange}
-          images={images as any[]}
+          images={images as ImageAsset[]}
           placeholder="Select target image"
         />
       </div>

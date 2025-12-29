@@ -116,7 +116,7 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
               <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
                 <li>Draw a selection box on the image</li>
                 <li>Choose processing mode</li>
-                <li>Click "Extract Image"</li>
+                <li>Click &quot;Extract Image&quot;</li>
                 <li>Create StateImage from result</li>
               </ol>
             )}

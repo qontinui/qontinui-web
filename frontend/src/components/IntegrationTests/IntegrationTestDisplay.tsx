@@ -373,7 +373,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
                               <div>Matches: {snapshot.matches.length}</div>
                             )}
                             {snapshot.text && (
-                              <div>Text: "{snapshot.text}"</div>
+                              <div>Text: &quot;{snapshot.text}&quot;</div>
                             )}
                             <div>Duration: {snapshot.duration}ms</div>
                           </div>

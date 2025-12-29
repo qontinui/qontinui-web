@@ -39,7 +39,7 @@ interface ExecutionDebuggerStore extends ExecutionDebuggerState {
 
   // Variable management
   setVariable: (name: string, value: unknown, actionIndex: number) => void;
-  getVariable: (name: string) => any;
+  getVariable: (name: string) => unknown;
   deleteVariable: (name: string) => void;
 
   // Breakpoint management

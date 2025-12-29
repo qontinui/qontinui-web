@@ -167,7 +167,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
               <SelectItem value="open">Open</SelectItem>
               <SelectItem value="in_progress">In Progress</SelectItem>
               <SelectItem value="resolved">Resolved</SelectItem>
-              <SelectItem value="wont_fix">Won't Fix</SelectItem>
+              <SelectItem value="wont_fix">Won&apos;t Fix</SelectItem>
             </SelectContent>
           </Select>
         </div>

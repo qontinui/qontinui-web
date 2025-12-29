@@ -41,7 +41,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           p: ({ children, node }) => {
             // Check if any child is a block-level element to avoid nesting errors
             const hasBlockChild = node?.children?.some(
-              (child: any) =>
+              (child: { type?: string; tagName?: string }) =>
                 child &&
                 typeof child === "object" &&
                 child.type === "element" &&
@@ -69,7 +69,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
               {children}
             </pre>
           ),
-          code: ({ inline, className, children, ...props }: any) => {
+          code: ({ inline, className, children, ...props }: { inline?: boolean; className?: string; children?: React.ReactNode }) => {
             const match = /language-(\w+)/.exec(className || "");
             const language = match ? match[1] : "";
             const codeString = String(children).replace(/\n$/, "");

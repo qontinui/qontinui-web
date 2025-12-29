@@ -188,8 +188,8 @@ export function ClickActionProperties({
             selectedImages={currentImageIds}
             onSelectImages={handleImageIdsChange}
             multiSelect={true}
-            images={images as any[]}
-            states={states as any[]}
+            images={images as ImageAsset[]}
+            states={states as State[]}
             placeholder="Select images to find and click"
             showStateFilter={true}
           />

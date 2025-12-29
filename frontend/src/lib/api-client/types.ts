@@ -143,10 +143,12 @@ export type ApiMethod<
       parameters?: { path?: infer PathParams; query?: infer QueryParams };
     }
     ? (
-        params: (PathParams extends Record<string, unknown> ? PathParams : {}) &
+        params: (PathParams extends Record<string, unknown>
+          ? PathParams
+          : Record<string, never>) &
           (QueryParams extends Record<string, unknown>
             ? { query?: QueryParams }
-            : {}),
+            : Record<string, never>),
         body?: Body
       ) => Promise<Response>
     : never

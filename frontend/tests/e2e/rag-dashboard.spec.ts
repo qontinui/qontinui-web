@@ -6,7 +6,7 @@ test.describe("RAG Dashboard / Visual Index", () => {
   test.setTimeout(90000);
 
   // Helper function to login via modal
-  async function loginUser(page: import("@playwright/test").Page) {
+  async function _loginUser(page: import("@playwright/test").Page) {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 

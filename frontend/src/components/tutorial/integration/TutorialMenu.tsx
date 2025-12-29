@@ -328,7 +328,7 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
             tutorial.learningObjectives.length > 0 && (
               <div className="mt-3 space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">
-                  You'll learn:
+                  You&apos;ll learn:
                 </p>
                 <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
                   {tutorial.learningObjectives

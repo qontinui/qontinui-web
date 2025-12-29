@@ -292,10 +292,10 @@ export function FirstProjectWizard({
               </div>
               <div className="space-y-3">
                 <h2 className="text-3xl font-bold">
-                  Let's Create Your First Automation
+                  Let&apos;s Create Your First Automation
                 </h2>
                 <p className="text-lg text-gray-400 max-w-2xl mx-auto">
-                  We'll guide you through building a simple automation
+                  We&apos;ll guide you through building a simple automation
                   step-by-step
                 </p>
               </div>

@@ -322,7 +322,7 @@ export function ComponentEditor({
               <CardHeader>
                 <CardTitle>Basic Information</CardTitle>
                 <CardDescription>
-                  Define the component's name, description, and organization
+                  Define the component&apos;s name, description, and organization
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -498,7 +498,7 @@ export function ComponentEditor({
                     <FileText className="size-12 mb-4" />
                     <p className="font-medium">No actions defined</p>
                     <p className="text-sm">
-                      Add actions to define the component's behavior
+                      Add actions to define the component&apos;s behavior
                     </p>
                   </div>
                 ) : (

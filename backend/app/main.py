@@ -1,5 +1,6 @@
 import asyncio
 import time
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -24,13 +25,12 @@ from app.middleware.error_handler import (
     http_exception_handler,
     validation_exception_handler,
 )
+from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
-from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.sliding_window_session import SlidingWindowSessionMiddleware
-from pathlib import Path
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)

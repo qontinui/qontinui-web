@@ -268,7 +268,7 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
   const handleReset = useCallback(() => {
     setCurrentRegion(null);
     if (screenshot) {
-      setRegion(screenshot.id, null as any);
+      setRegion(screenshot.id, null);
     }
     toast.success("Region cleared");
   }, [screenshot, setRegion]);

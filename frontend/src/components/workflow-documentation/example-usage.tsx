@@ -224,7 +224,7 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
       </TabsContent>
 
       <TabsContent value="comments" className="flex-1 m-0">
-        {/* @ts-ignore - example code uses incomplete props */}
+        {/* @ts-expect-error - example code uses incomplete props */}
         <ActionCommentsPanel
           workflow={workflow}
           comments={comments}

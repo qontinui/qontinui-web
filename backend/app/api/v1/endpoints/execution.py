@@ -1723,17 +1723,14 @@ def _build_display_node(
     if node_data.get("metadata"):
         metadata = SchemaNodeMetadata(**node_data["metadata"])
 
+    duration_ms = node_data.get("duration_ms")
     return SchemaDisplayNode(
         id=node_data["id"],
         node_type=SchemaNodeType(node_data["node_type"]),
         name=node_data["name"],
         timestamp=node_data.get("timestamp") or 0.0,
         end_timestamp=node_data.get("end_timestamp"),
-        duration=(
-            node_data.get("duration_ms") / 1000
-            if node_data.get("duration_ms")
-            else None
-        ),
+        duration=(duration_ms / 1000 if duration_ms is not None else None),
         status=SchemaNodeStatus(node_data["status"]),
         metadata=metadata or SchemaNodeMetadata(),
         error=node_data.get("error"),

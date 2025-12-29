@@ -92,9 +92,9 @@ export default function OrganizationSettingsPage() {
       // Reload organization data
       const org = await organizationService.getOrganization(orgId);
       setOrganization(org);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to update organization:", err);
-      toast.error(err.message || "Failed to update organization");
+      toast.error((err instanceof Error ? err.message : "Failed to update organization"));
     } finally {
       setSaving(false);
     }
@@ -108,9 +108,9 @@ export default function OrganizationSettingsPage() {
       await deleteOrg(orgId);
       toast.success("Organization deleted successfully");
       router.push("/organizations");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to delete organization:", err);
-      toast.error(err.message || "Failed to delete organization");
+      toast.error((err instanceof Error ? err.message : "Failed to delete organization"));
       setDeleting(false);
     }
   };
@@ -123,9 +123,9 @@ export default function OrganizationSettingsPage() {
       await leaveOrg(orgId);
       toast.success("You have left the organization");
       router.push("/organizations");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to leave organization:", err);
-      toast.error(err.message || "Failed to leave organization");
+      toast.error((err instanceof Error ? err.message : "Failed to leave organization"));
       setLeaving(false);
     }
   };

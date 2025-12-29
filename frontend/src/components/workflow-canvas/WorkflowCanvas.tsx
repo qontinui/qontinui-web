@@ -858,7 +858,7 @@ function WorkflowCanvasInner({
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
-        nodeTypes={nodeTypes as any}
+        nodeTypes={nodeTypes as unknown as typeof nodeTypes}
         edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{ padding: 0.1 }}

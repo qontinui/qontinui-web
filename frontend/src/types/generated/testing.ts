@@ -3,6 +3,8 @@
  * DO NOT EDIT - regenerate with: poetry run python scripts/generate_typescript.py
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Auto-generated types from Python schema; any is intentional for generic metadata fields */
+
 export enum TestRunStatus {
   RUNNING = "running",
   COMPLETED = "completed",

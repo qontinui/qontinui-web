@@ -481,7 +481,7 @@ export interface AutomationContextType {
   getScheduleExecutions: (scheduleId: string) => ExecutionRecord[];
 
   // Configuration
-  getConfiguration: () => any;
+  getConfiguration: () => unknown;
   loadConfiguration: (config: unknown) => Promise<void>;
   clearAllData: () => void;
   syncScreenshotsFromBackend: (projectId: string) => Promise<void>;

@@ -50,8 +50,8 @@ export default function DemoProjectPage() {
 
         const data = await response.json();
         setProject(data);
-      } catch (err: any) {
-        setError(err.message || "An error occurred");
+      } catch (err: unknown) {
+        setError((err instanceof Error ? err.message : "An error occurred"));
       } finally {
         setLoading(false);
       }
@@ -91,8 +91,8 @@ export default function DemoProjectPage() {
     );
   }
 
-  const workflows = (project.configuration as any)?.workflows || [];
-  const actions = (project.configuration as any)?.actions || [];
+  const workflows = (project.configuration as Record<string, unknown>)?.workflows as unknown[] || [];
+  const actions = (project.configuration as Record<string, unknown>)?.actions as unknown[] || [];
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -104,7 +104,7 @@ export default function DemoProjectPage() {
             <div>
               <p className="font-semibold">Demo Mode - Read Only</p>
               <p className="text-sm text-blue-100">
-                You're viewing a public project. Sign up to create your own!
+                You&apos;re viewing a public project. Sign up to create your own!
               </p>
             </div>
           </div>
@@ -177,7 +177,7 @@ export default function DemoProjectPage() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {workflows.map((workflow: any, index: number) => (
+                    {workflows.map((workflow: Record<string, unknown>, index: number) => (
                       <div
                         key={index}
                         className="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4"
@@ -219,7 +219,7 @@ export default function DemoProjectPage() {
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {actions.slice(0, 10).map((action: any, index: number) => (
+                    {actions.slice(0, 10).map((action: Record<string, unknown>, index: number) => (
                       <div
                         key={index}
                         className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-md"

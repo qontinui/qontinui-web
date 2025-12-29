@@ -1020,7 +1020,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <SidebarFlyout
                   parentLabel={item.label}
                   parentColor={item.color}
-                  children={item.children.map((child) => ({
+                  items={item.children.map((child) => ({
                     id: child.id,
                     label: child.label,
                     description: child.description,
@@ -1040,7 +1040,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <CollapsedMenuPopover
                   parentId={item.id}
                   parentColor={item.color}
-                  children={item.children}
+                  items={item.children}
                   onNavigate={handleNavigation}
                   onClose={() => setHoveredItem(null)}
                   onClearTimer={() => {

@@ -80,7 +80,7 @@ export function QontinuiHeaderTitle({
   );
 }
 
-interface QontinuiHeaderActionsProps extends React.ComponentProps<"div"> {}
+type QontinuiHeaderActionsProps = React.ComponentProps<"div">;
 
 /**
  * Container for header actions (buttons, etc.)
@@ -97,7 +97,7 @@ export function QontinuiHeaderActions({
   );
 }
 
-interface QontinuiMainProps extends React.ComponentProps<"main"> {}
+type QontinuiMainProps = React.ComponentProps<"main">;
 
 /**
  * Main content area with scrolling
@@ -157,7 +157,7 @@ export function QontinuiContainer({
   );
 }
 
-interface QontinuiSidebarProps extends React.ComponentProps<"aside"> {}
+type QontinuiSidebarProps = React.ComponentProps<"aside">;
 
 /**
  * Themed sidebar with dark panel background
@@ -177,7 +177,7 @@ export function QontinuiSidebar({
   );
 }
 
-interface QontinuiToolbarProps extends React.ComponentProps<"div"> {}
+type QontinuiToolbarProps = React.ComponentProps<"div">;
 
 /**
  * Toolbar section (similar to header but can be used anywhere)

@@ -173,7 +173,7 @@ type MigrationFunction = (
     preserveUnknown: boolean;
     strict: boolean;
   }
-) => any;
+) => unknown;
 
 /**
  * Get the migration path from one version to another
@@ -279,8 +279,8 @@ function migrateV09ToV10(
     format: "graph",
     actions: [],
     connections: {},
-    variables: sourceData.variables as any,
-    settings: sourceData.settings as any,
+    variables: sourceData.variables as Workflow["variables"],
+    settings: sourceData.settings as Workflow["settings"],
     metadata: (sourceData.metadata || {}) as Record<string, unknown>,
     tags: sourceData.tags as string[] | undefined,
   };
@@ -296,7 +296,7 @@ function migrateV09ToV10(
         return {
           ...actionData,
           position: [x, y] as [number, number],
-        } as any;
+        } as Workflow["actions"][number];
       }
     );
 

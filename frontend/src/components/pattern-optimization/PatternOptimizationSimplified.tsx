@@ -550,7 +550,7 @@ const PatternOptimizationContent: React.FC = () => {
                 <ImageIcon className="w-12 h-12 mx-auto mb-2 text-gray-500" />
                 <p className="text-sm text-gray-500">No screenshots uploaded</p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Click "Add" to upload screenshots
+                  Click &quot;Add&quot; to upload screenshots
                 </p>
               </div>
             )}

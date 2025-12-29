@@ -251,7 +251,7 @@ export function ReportExportButton({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="letter">Letter (8.5" x 11")</SelectItem>
+                  <SelectItem value="letter">Letter (8.5&quot; x 11&quot;)</SelectItem>
                   <SelectItem value="a4">A4 (210mm x 297mm)</SelectItem>
                 </SelectContent>
               </Select>

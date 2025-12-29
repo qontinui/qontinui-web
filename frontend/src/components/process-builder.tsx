@@ -140,7 +140,7 @@ export function ProcessBuilder() {
   };
 
   const handleConversionComplete = (
-    converted: Workflow | any,
+    converted: Workflow,
     originalType: "process" | "workflow"
   ) => {
     // Both types are stored as workflows, just update the existing one
@@ -170,12 +170,12 @@ export function ProcessBuilder() {
           </Button>
 
           <UnifiedProcessLibrary
-            selectedItem={selectedItem as any}
-            onSelectItem={handleSelectItem as any}
-            onDeleteItem={handleDeleteItem as any}
-            onUpdateWorkflow={handleUpdateProcess as any}
+            selectedItem={selectedItem}
+            onSelectItem={handleSelectItem}
+            onDeleteItem={handleDeleteItem}
+            onUpdateWorkflow={handleUpdateProcess}
             onCreateSequential={createNewProcess}
-            onConvertItem={handleConvertItem as any}
+            onConvertItem={handleConvertItem}
           />
         </div>
       </div>
@@ -409,10 +409,10 @@ export function ProcessBuilder() {
             </div>
 
             <ActionEditor
-              process={selectedProcess as any}
-              selectedAction={selectedAction as any}
-              onSelectAction={setSelectedAction as any}
-              onUpdateProcess={handleUpdateProcess as any}
+              process={selectedProcess}
+              selectedAction={selectedAction}
+              onSelectAction={setSelectedAction}
+              onUpdateProcess={handleUpdateProcess}
             />
           </div>
         ) : (
@@ -429,8 +429,8 @@ export function ProcessBuilder() {
       {/* Right Panel - Action Properties */}
       <div className="flex-[2] min-w-[300px] max-w-[600px] border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
         <ActionProperties
-          action={selectedAction as any}
-          onUpdateAction={(updated: any) => {
+          action={selectedAction}
+          onUpdateAction={(updated: Action) => {
             if (selectedProcess && selectedAction) {
               const updatedProcess = {
                 ...selectedProcess,
@@ -438,7 +438,7 @@ export function ProcessBuilder() {
                   a.id === updated.id ? updated : a
                 ),
               };
-              handleUpdateProcess(updatedProcess as any);
+              handleUpdateProcess(updatedProcess);
               // useEffect will handle updating selectedAction
             }
           }}
@@ -469,8 +469,8 @@ export function ProcessBuilder() {
       <FormatConversionDialog
         open={conversionDialogOpen}
         onOpenChange={setConversionDialogOpen}
-        item={conversionItem as any}
-        onConvert={handleConversionComplete as any}
+        item={conversionItem}
+        onConvert={handleConversionComplete}
       />
     </div>
   );

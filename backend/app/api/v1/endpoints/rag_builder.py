@@ -54,7 +54,9 @@ def extract_dimensions_from_data_url(data_url: str) -> tuple[int, int] | None:
 
         # Use PIL to get dimensions
         with Image.open(io.BytesIO(image_data)) as img:
-            return img.size  # Returns (width, height)
+            width: int = img.size[0]
+            height: int = img.size[1]
+            return (width, height)
     except Exception as e:
         logger.debug(
             "failed_to_extract_image_dimensions",

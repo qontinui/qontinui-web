@@ -60,20 +60,20 @@ export default function TransitionsDocPage() {
               <li className="flex items-start gap-2">
                 <span className="font-bold text-primary">1.</span>
                 <span>
-                  Automation is in the source state (e.g., "Login Screen")
+                  Automation is in the source state (e.g., &quot;Login Screen&quot;)
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-primary">2.</span>
                 <span>
-                  Transition's process executes (e.g., type username, click
+                  Transition&apos;s process executes (e.g., type username, click
                   submit)
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-primary">3.</span>
                 <span>
-                  Destination state becomes active (e.g., "Dashboard")
+                  Destination state becomes active (e.g., &quot;Dashboard&quot;)
                 </span>
               </li>
               <li className="flex items-start gap-2">
@@ -487,11 +487,11 @@ function ParallelStateExample({
       <div className="bg-card border border-border rounded p-3 font-mono text-xs mb-3">
         <div className="space-y-1">
           <div>
-            <span className="text-primary">from_state:</span> "
-            {config.from_state}"
+            <span className="text-primary">from_state:</span> &quot;
+            {config.from_state}&quot;
           </div>
           <div>
-            <span className="text-primary">to_state:</span> "{config.to_state}"
+            <span className="text-primary">to_state:</span> &quot;{config.to_state}&quot;
           </div>
           {config.stays_visible !== undefined && (
             <div>
@@ -512,7 +512,7 @@ function ParallelStateExample({
             </div>
           )}
           <div>
-            <span className="text-primary">process:</span> "{config.process}"
+            <span className="text-primary">process:</span> &quot;{config.process}&quot;
           </div>
         </div>
       </div>

@@ -28,9 +28,9 @@ export function SnapshotImportCard({
     // Create a hidden input element for directory selection
     const input = document.createElement("input");
     input.type = "file";
-    // @ts-ignore - webkitdirectory is not in standard types but widely supported
+    // @ts-expect-error - webkitdirectory is not in standard types but widely supported
     input.webkitdirectory = true;
-    // @ts-ignore
+    // @ts-expect-error - directory is not in standard types but widely supported
     input.directory = true;
 
     input.onchange = (e) => {
@@ -40,7 +40,7 @@ export function SnapshotImportCard({
         // In browser context, we get relative path; for actual import,
         // users need to enter the absolute server path
         const firstFile = files[0];
-        // @ts-ignore - webkitRelativePath exists on File in browsers
+        // @ts-expect-error - webkitRelativePath exists on File in browsers
         const relativePath = firstFile.webkitRelativePath || firstFile.name;
         const dirPath = relativePath.split("/")[0];
 

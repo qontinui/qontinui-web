@@ -132,9 +132,9 @@ export default function MembersPage() {
       setInviteEmail("");
       setInviteRole("member");
       await getMembers(orgId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to invite member:", err);
-      toast.error(err.message || "Failed to send invitation");
+      toast.error((err instanceof Error ? err.message : "Failed to send invitation"));
     } finally {
       setInviting(false);
     }
@@ -156,9 +156,9 @@ export default function MembersPage() {
       setEditDialogOpen(false);
       setEditMember(null);
       await getMembers(orgId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to update role:", err);
-      toast.error(err.message || "Failed to update member role");
+      toast.error((err instanceof Error ? err.message : "Failed to update member role"));
     } finally {
       setUpdating(false);
     }
@@ -179,9 +179,9 @@ export default function MembersPage() {
       setRemoveDialogOpen(false);
       setRemoveMemberData(null);
       await getMembers(orgId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to remove member:", err);
-      toast.error(err.message || "Failed to remove member");
+      toast.error((err instanceof Error ? err.message : "Failed to remove member"));
     } finally {
       setRemoving(false);
     }

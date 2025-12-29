@@ -3,7 +3,7 @@
  * Captures console logs to diagnose 1005 disconnect
  */
 
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 import { TEST_USER } from './test-credentials';
 
 // Valid project ID from the bug report URL
@@ -20,7 +20,7 @@ test.describe('Web Extraction Debug', () => {
     });
 
     // Store logs on page context for later
-    (page as any).__consoleLogs = logs;
+    (page as unknown as { __consoleLogs?: string[] }).__consoleLogs = logs;
 
     // Login flow
     await page.goto('/');
@@ -43,7 +43,7 @@ test.describe('Web Extraction Debug', () => {
   });
 
   test('capture WebSocket logs when starting extraction', async ({ page }) => {
-    const logs = (page as any).__consoleLogs as string[];
+    const logs = (page as unknown as { __consoleLogs?: string[] }).__consoleLogs as string[];
 
     // Navigate to web extraction page with project
     await page.goto(`/automation-builder/web-extraction?project=${PROJECT_ID}`);

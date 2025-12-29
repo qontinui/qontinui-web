@@ -1026,10 +1026,9 @@ export const useCanvasStore = create<CanvasStore>()(
               return { valid: true, errors: [], warnings: [] };
             }
 
-            // Import validation functions from canvas-validation
-            const {
-              validateWorkflow: validate,
-            } = require("./canvas-validation");
+            // Dynamic import to avoid circular dependency
+            // eslint-disable-next-line @typescript-eslint/no-require-imports -- Dynamic import needed to avoid circular dependency
+            const { validateWorkflow: validate } = require("./canvas-validation");
 
             // Run comprehensive validation
             const result = validate(workflow, {

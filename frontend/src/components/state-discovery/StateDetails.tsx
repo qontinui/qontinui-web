@@ -47,26 +47,15 @@ const StateDetails: React.FC<StateDetailsProps> = ({
   const [showAllStateImages, setShowAllStateImages] = useState(false);
   const [thumbnails, setThumbnails] = useState<{ [key: string]: string }>({});
 
-  // State and stateImages received
-
-  if (!state) {
-    return (
-      <div className="h-full flex items-center justify-center text-gray-400">
-        <div className="text-center">
-          <Info className="mx-auto h-12 w-12 mb-2" />
-          <p>Select a state to view details</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Get the StateImage objects for this state
-  const stateImageObjects = stateImages.filter((si) =>
-    state.stateImageIds?.includes(si.id)
-  );
+  // Get the StateImage objects for this state (moved before useEffect)
+  const stateImageObjects = state
+    ? stateImages.filter((si) => state.stateImageIds?.includes(si.id))
+    : [];
 
   // Generate thumbnails for state images
   useEffect(() => {
+    if (!state) return;
+
     const generateThumbnails = async () => {
       const newThumbnails: { [key: string]: string } = {};
 
@@ -87,7 +76,18 @@ const StateDetails: React.FC<StateDetailsProps> = ({
     if (stateImageObjects.length > 0 && screenshots.length > 0) {
       generateThumbnails();
     }
-  }, [stateImageObjects, screenshots, currentScreenshotIndex]);
+  }, [state, stateImageObjects, screenshots, currentScreenshotIndex]);
+
+  if (!state) {
+    return (
+      <div className="h-full flex items-center justify-center text-gray-400">
+        <div className="text-center">
+          <Info className="mx-auto h-12 w-12 mb-2" />
+          <p>Select a state to view details</p>
+        </div>
+      </div>
+    );
+  }
 
   // Handle screenshot click to show that screenshot
   const handleScreenshotClick = (screenshotId: string) => {
@@ -132,7 +132,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
                 <TooltipContent side="right" className="max-w-xs">
                   <p className="text-xs">
                     The confidence score indicates how reliably this state can
-                    be identified. It's calculated based on:
+                    be identified. It&apos;s calculated based on:
                   </p>
                   <ul className="text-xs mt-1 space-y-0.5">
                     <li>• Consistency of state images across screenshots</li>

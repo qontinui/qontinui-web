@@ -258,7 +258,7 @@ export function ConflictResolutionDialog({
                 <div className="flex items-center gap-2">
                   <Users className="h-3 w-3" />
                   <span className="text-xs font-medium text-muted-foreground">
-                    {currentConflict?.remote_user_name ?? "Unknown user"}'s
+                    {currentConflict?.remote_user_name ?? "Unknown user"}&apos;s
                     Changes
                   </span>
                 </div>
@@ -322,7 +322,7 @@ export function ConflictResolutionDialog({
               <div className="flex items-center gap-2 mb-1">
                 <ChevronRight className="h-3 w-3 text-blue-500" />
                 <span className="text-xs font-medium">
-                  {currentConflict?.remote_user_name ?? "Unknown user"}'s
+                  {currentConflict?.remote_user_name ?? "Unknown user"}&apos;s
                   Changes
                 </span>
                 {mergeChoices[change.field] === "remote" && (

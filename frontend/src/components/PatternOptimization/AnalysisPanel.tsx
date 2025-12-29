@@ -71,7 +71,7 @@ export function AnalysisPanel() {
     try {
       await startAnalysis();
       toast.success("Analysis complete");
-    } catch (error) {
+    } catch (_error) {
       console.error("Analysis error in handleStartAnalysis:", error);
       toast.error("Analysis failed");
     }
@@ -87,7 +87,7 @@ export function AnalysisPanel() {
         };
         await evaluateStrategy(strategy);
         toast.success(`${type} strategy evaluated`);
-      } catch (error) {
+      } catch (_error) {
         toast.error("Evaluation failed");
       } finally {
         setEvaluating(null);
@@ -213,7 +213,7 @@ export function AnalysisPanel() {
         }
 
         setShowStateImageDialog(false);
-      } catch (error) {
+      } catch (_error) {
         console.error("Failed to create StateImages:", error);
         toast.error("Failed to create StateImages", {
           description: error instanceof Error ? error.message : "Unknown error",
@@ -580,8 +580,8 @@ export function AnalysisPanel() {
                       patterns → 2) Select a strategy → 3) Create StateImages
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      The "Select This Strategy" button chooses which method to
-                      use. The "Create StateImages" button adds them to your
+                      The &quot;Select This Strategy&quot; button chooses which method to
+                      use. The &quot;Create StateImages&quot; button adds them to your
                       project.
                     </p>
                   </div>

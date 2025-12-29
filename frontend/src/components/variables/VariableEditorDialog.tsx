@@ -122,7 +122,7 @@ export function VariableEditorDialog({
       } else {
         try {
           JSON.parse(jsonValue);
-        } catch (e) {
+        } catch (_e) {
           newErrors.value = "Invalid JSON syntax";
         }
       }

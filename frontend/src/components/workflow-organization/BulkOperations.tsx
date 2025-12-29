@@ -271,7 +271,7 @@ export function BulkOperations({
         setOperationProgress(null);
         toast.success(`Ran tests for ${selectedWorkflows.length} workflow(s)`);
       }, 1000);
-    } catch (error) {
+    } catch {
       setOperationProgress({
         current: 0,
         total: selectedWorkflows.length,

@@ -308,11 +308,11 @@ export function StateImageCreationDialog({
                 {patterns.length > 1 ? "s" : ""} in{" "}
                 {createNewState ? (
                   <span className="font-medium">
-                    new state "{newStateName}"
+                    new state &quot;{newStateName}&quot;
                   </span>
                 ) : (
                   <span className="font-medium">
-                    state "{states.find((s) => s.id === selectedStateId)?.name}"
+                    state &quot;{states.find((s) => s.id === selectedStateId)?.name}&quot;
                   </span>
                 )}
                 {includeSearchRegions && " with search regions"}.

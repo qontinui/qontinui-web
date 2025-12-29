@@ -18,7 +18,7 @@ interface FlyoutChild {
 interface SidebarFlyoutProps {
   parentLabel: string;
   parentColor: string;
-  children: FlyoutChild[];
+  items: FlyoutChild[];
   onNavigate: (route: string) => void;
   onClose: () => void;
   activeRoute?: string;
@@ -27,7 +27,7 @@ interface SidebarFlyoutProps {
 export function SidebarFlyout({
   parentLabel,
   parentColor,
-  children,
+  items,
   onNavigate,
   onClose,
   activeRoute,
@@ -131,7 +131,7 @@ export function SidebarFlyout({
 
       {/* Menu Items */}
       <div className="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1">
-        {children.map((child, index) => {
+        {items.map((child, index) => {
           const isActive = isChildActive(child.route);
 
           return (

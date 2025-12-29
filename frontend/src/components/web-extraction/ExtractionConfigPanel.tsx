@@ -150,7 +150,7 @@ export function ExtractionConfigPanel({
     for (const url of validUrls) {
       try {
         new URL(url);
-      } catch (e) {
+      } catch (_e) {
         toast.error(`Invalid URL: ${url}`);
         return;
       }

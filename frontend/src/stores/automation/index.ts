@@ -36,9 +36,9 @@ import type { State, Transition, ImageAsset } from "./types";
 interface LegacyActionConfig {
   processId?: string;
   workflowId?: string;
-  processRepetition?: any;
-  repetition?: any;
-  [key: string]: any;
+  processRepetition?: unknown;
+  repetition?: unknown;
+  [key: string]: unknown;
 }
 
 // Debounce timers for persistence
@@ -71,7 +71,7 @@ function migrateWorkflows(workflows: Workflow[]): Workflow[] {
 
         return {
           ...action,
-          type: "RUN_WORKFLOW" as any,
+          type: "RUN_WORKFLOW" as const,
           config,
         };
       }
@@ -81,7 +81,7 @@ function migrateWorkflows(workflows: Workflow[]): Workflow[] {
 
     return {
       ...workflow,
-      actions: migratedActions as any,
+      actions: migratedActions as Workflow["actions"],
     };
   });
 }
@@ -127,7 +127,7 @@ function migratePatternImages(
       }
 
       const migratedPatterns = stateImage.patterns.map((pattern) => {
-        const patternAny = pattern as any;
+        const patternAny = pattern as Record<string, unknown>;
 
         // Check if pattern has embedded image data but no imageId
         // OR if pattern.imageId accidentally contains base64 data (fix for corrupted data)
@@ -160,7 +160,7 @@ function migratePatternImages(
               size: 0, // Unknown size for migrated images
               createdAt: new Date(),
               usageCount: 0,
-              source: "migration" as any,
+              source: "migration" as ImageAsset["source"],
             };
             newImages.push(newImage);
             matchingImage = newImage;
@@ -168,11 +168,11 @@ function migratePatternImages(
           }
 
           // Return pattern with imageId reference (remove embedded data)
-          const cleanPattern = { ...pattern };
-          delete (cleanPattern as any).image;
-          delete (cleanPattern as any).mask;
+          const cleanPattern = { ...pattern } as Record<string, unknown>;
+          delete cleanPattern.image;
+          delete cleanPattern.mask;
           cleanPattern.imageId = matchingImage.id;
-          return cleanPattern;
+          return cleanPattern as typeof pattern;
         }
 
         return pattern;

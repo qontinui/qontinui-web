@@ -114,7 +114,7 @@ describe('DeficiencyList', () => {
 
   describe('Status Updates', () => {
     it('should update deficiency status', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       // Select deficiency, change status dropdown, verify API call
       expect(true).toBe(true);
     });
@@ -134,7 +134,7 @@ describe('DeficiencyList', () => {
 
   describe('Assignment', () => {
     it('should assign deficiency to user', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       // Click assign button, select user, verify API call
       expect(true).toBe(true);
     });
@@ -154,7 +154,7 @@ describe('DeficiencyList', () => {
 
   describe('Detail View', () => {
     it('should open deficiency details on click', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       expect(true).toBe(true);
     });
 
@@ -178,7 +178,7 @@ describe('DeficiencyList', () => {
 
   describe('Bulk Operations', () => {
     it('should select multiple deficiencies', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       expect(true).toBe(true);
     });
 
@@ -215,7 +215,7 @@ describe('DeficiencyList', () => {
     });
 
     it('should add comment to deficiency', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       expect(true).toBe(true);
     });
 

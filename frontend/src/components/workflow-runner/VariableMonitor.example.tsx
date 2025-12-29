@@ -172,14 +172,14 @@ export function WorkflowRunnerDashboard() {
           <div className="bg-gray-900 rounded p-4 font-mono text-sm text-gray-300 h-48 overflow-y-auto">
             <div>[2025-11-23 10:15:23] Workflow started</div>
             <div>[2025-11-23 10:15:24] Initializing variables...</div>
-            <div>[2025-11-23 10:15:25] Action 'Data Fetch' started</div>
+            <div>[2025-11-23 10:15:25] Action &apos;Data Fetch&apos; started</div>
             <div className="text-[#00D9FF]">
-              [2025-11-23 10:15:26] Variable 'data' created
+              [2025-11-23 10:15:26] Variable &apos;data&apos; created
             </div>
-            <div>[2025-11-23 10:15:27] Action 'Data Fetch' completed</div>
-            <div>[2025-11-23 10:15:28] Action 'Data Processing' started</div>
+            <div>[2025-11-23 10:15:27] Action &apos;Data Fetch&apos; completed</div>
+            <div>[2025-11-23 10:15:28] Action &apos;Data Processing&apos; started</div>
             <div className="text-[#00D9FF]">
-              [2025-11-23 10:15:29] Variable 'processed_data' created
+              [2025-11-23 10:15:29] Variable &apos;processed_data&apos; created
             </div>
           </div>
         </Card>

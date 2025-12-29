@@ -39,7 +39,7 @@ async function downloadSchema(url: string, outputPath: string): Promise<void> {
     const schema = await response.json();
     fs.writeFileSync(outputPath, JSON.stringify(schema, null, 2));
     console.log(`✅ Schema downloaded to ${outputPath}`);
-  } catch (error) {
+  } catch (_error) {
     console.error(`❌ Failed to download schema from ${url}:`, error);
     throw error;
   }
@@ -54,7 +54,7 @@ async function generateTypes(schemaPath: string, outputPath: string, serviceName
       stdio: 'inherit'
     });
     console.log(`✅ Types generated successfully at ${outputPath}`);
-  } catch (error) {
+  } catch (_error) {
     console.error(`❌ Failed to generate types:`, error);
     throw error;
   }
@@ -80,7 +80,7 @@ async function main() {
       // Try to download backend schema
       try {
         await downloadSchema(`${BACKEND_URL}/api/v1/openapi.json`, SCHEMA_PATH);
-      } catch (error) {
+      } catch (_error) {
         console.warn('⚠️  Backend schema download failed, trying local file...');
         if (!fs.existsSync(SCHEMA_PATH)) {
           throw new Error('No local schema file found and backend is not accessible');
@@ -94,7 +94,7 @@ async function main() {
 
         // Generate Qontinui types if schema was downloaded
         await generateTypes(qontinuiSchemaPath, QONTINUI_OUTPUT_PATH, 'Qontinui API');
-      } catch (error) {
+      } catch (_error) {
         console.warn('⚠️  Qontinui API not available, skipping type generation for it');
       }
     } else {
@@ -114,7 +114,7 @@ async function main() {
     console.log('   type User = components["schemas"]["UserRead"]');
     console.log('   type Projects = paths["/api/v1/projects/"]["get"]["responses"]["200"]["content"]["application/json"]');
 
-  } catch (error) {
+  } catch (_error) {
     console.error('\n❌ Type generation failed:', error);
     process.exit(1);
   }

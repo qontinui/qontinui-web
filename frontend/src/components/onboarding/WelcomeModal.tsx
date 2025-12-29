@@ -229,7 +229,7 @@ export function WelcomeModal() {
               htmlFor="dontShowAgain"
               className="text-sm text-gray-400 cursor-pointer select-none"
             >
-              Don't show this again
+              Don&apos;t show this again
             </Label>
           </div>
 

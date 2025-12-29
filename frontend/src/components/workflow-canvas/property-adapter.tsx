@@ -229,7 +229,7 @@ export interface MultiPropertyAdapterResult {
   updateCommonConfig: (key: string, value: unknown) => void;
 
   /** Get common value for a property (or undefined if mixed) */
-  getCommonValue: (key: string) => any | undefined;
+  getCommonValue: (key: string) => unknown;
 
   /** Check if property has mixed values across selections */
   isMixedValue: (key: string) => boolean;

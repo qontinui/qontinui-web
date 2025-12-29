@@ -22,7 +22,7 @@ import {
   Cloud,
   PlayCircle,
   RefreshCw,
-  Image,
+  Image as ImageIcon,
   FileSearch,
 } from "lucide-react";
 
@@ -144,7 +144,7 @@ const ARCHITECTURE_DIAGRAMS: ArchitectureDiagram[] = [
     title: "Image Processing Pipeline",
     description: "Upload, storage, and computer vision pattern matching",
     category: "supporting",
-    icon: <Image className="h-5 w-5" />,
+    icon: <ImageIcon className="h-5 w-5" />,
     filePath: "/docs/architecture/image-processing-architecture.md",
   },
 ];

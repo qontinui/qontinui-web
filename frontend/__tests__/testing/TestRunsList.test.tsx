@@ -5,13 +5,13 @@
  * for the test runs list display.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor as _waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Mock the TestRunsList component (create actual component based on your structure)
-const TestRunsList = ({ projectId }: { projectId: number }) => {
+const TestRunsList = ({ projectId: _projectId }: { projectId: number }) => {
   return (
     <div data-testid="test-runs-list">
       <h2>Test Runs</h2>
@@ -128,7 +128,7 @@ describe('TestRunsList', () => {
 
   describe('Filtering', () => {
     it('should filter by status when dropdown changes', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -140,7 +140,7 @@ describe('TestRunsList', () => {
     });
 
     it('should search by run name', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -152,7 +152,7 @@ describe('TestRunsList', () => {
     });
 
     it('should combine multiple filters', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -170,7 +170,7 @@ describe('TestRunsList', () => {
 
   describe('Interactions', () => {
     it('should navigate to test run details when row is clicked', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       const mockNavigate = vi.fn();
 
       // Mock useRouter or useNavigate depending on your router
@@ -234,7 +234,7 @@ describe('TestRunsList', () => {
     });
 
     it('should navigate to next page', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -286,7 +286,7 @@ describe('TestRunsList', () => {
 
   describe('Sorting', () => {
     it('should sort by run name', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -298,7 +298,7 @@ describe('TestRunsList', () => {
     });
 
     it('should sort by date', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -310,7 +310,7 @@ describe('TestRunsList', () => {
     });
 
     it('should toggle sort direction', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -333,7 +333,7 @@ describe('TestRunsList', () => {
     });
 
     it('should export selected runs to CSV', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });

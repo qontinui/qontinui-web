@@ -17,7 +17,7 @@ import {
 function createTestAction(
   type: string,
   id: string,
-  config: any = {},
+  config: Record<string, unknown> = {},
   position: [number, number] = [0, 0]
 ): Action {
   return {
@@ -111,7 +111,7 @@ describe('GraphToSequentialConverter', () => {
 
   describe('Validation', () => {
     test('should throw error for non-graph workflow', () => {
-      const workflow: any = {
+      const workflow = {
         id: 'test',
         name: 'Test',
         version: '1.0.0',
@@ -123,7 +123,7 @@ describe('GraphToSequentialConverter', () => {
     });
 
     test('should throw error for graph workflow without connections', () => {
-      const workflow: any = {
+      const workflow = {
         id: 'test',
         name: 'Test',
         version: '1.0.0',
@@ -224,8 +224,8 @@ describe('GraphToSequentialConverter', () => {
 
       expect(result).toHaveLength(1); // Only IF action in result
       expect(result[0].type).toBe('IF');
-      expect((result[0].config as any).thenActions).toContain('then-1');
-      expect((result[0].config as any).elseActions).toContain('else-1');
+      expect((result[0].config as Record<string, unknown>).thenActions).toContain('then-1');
+      expect((result[0].config as Record<string, unknown>).elseActions).toContain('else-1');
     });
 
     test('should reconstruct IF with multiple actions in branches', () => {
@@ -254,7 +254,7 @@ describe('GraphToSequentialConverter', () => {
       const result = converter.convert(workflow);
 
       expect(result).toHaveLength(1);
-      const ifConfig = result[0].config as any;
+      const ifConfig = result[0].config as Record<string, unknown>;
       expect(ifConfig.thenActions).toHaveLength(2);
       expect(ifConfig.thenActions).toContain('then-1');
       expect(ifConfig.thenActions).toContain('then-2');
@@ -299,7 +299,7 @@ describe('GraphToSequentialConverter', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe('IF');
-      const outerConfig = result[0].config as any;
+      const outerConfig = result[0].config as Record<string, unknown>;
       expect(outerConfig.thenActions).toContain('inner-if');
       expect(outerConfig.elseActions).toContain('outer-else');
     });
@@ -326,7 +326,7 @@ describe('GraphToSequentialConverter', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe('LOOP');
-      expect((result[0].config as any).actions).toContain('body-1');
+      expect((result[0].config as Record<string, unknown>).actions).toContain('body-1');
     });
 
     test('should reconstruct LOOP with multiple body actions', () => {
@@ -352,7 +352,7 @@ describe('GraphToSequentialConverter', () => {
       const result = converter.convert(workflow);
 
       expect(result).toHaveLength(1);
-      const loopConfig = result[0].config as any;
+      const loopConfig = result[0].config as Record<string, unknown>;
       expect(loopConfig.actions).toHaveLength(3);
       expect(loopConfig.actions).toContain('body-1');
       expect(loopConfig.actions).toContain('body-2');
@@ -385,7 +385,7 @@ describe('GraphToSequentialConverter', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe('LOOP');
-      const outerConfig = result[0].config as any;
+      const outerConfig = result[0].config as Record<string, unknown>;
       expect(outerConfig.actions).toContain('inner-loop');
     });
   });
@@ -422,7 +422,7 @@ describe('GraphToSequentialConverter', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe('LOOP');
-      const loopConfig = result[0].config as any;
+      const loopConfig = result[0].config as Record<string, unknown>;
       expect(loopConfig.actions).toContain('if-1');
     });
 
@@ -458,7 +458,7 @@ describe('GraphToSequentialConverter', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe('IF');
-      const ifConfig = result[0].config as any;
+      const ifConfig = result[0].config as Record<string, unknown>;
       expect(ifConfig.thenActions).toContain('loop-1');
       expect(ifConfig.elseActions).toContain('else-1');
     });

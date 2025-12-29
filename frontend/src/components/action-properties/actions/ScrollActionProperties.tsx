@@ -61,7 +61,7 @@ export function ScrollActionProperties({
         <Input
           type="number"
           min="0"
-          value={((config as any).scroll_duration as number) || 0}
+          value={((config as Record<string, unknown>).scroll_duration as number) || 0}
           onChange={(e) =>
             updateConfig("scroll_duration", Number.parseInt(e.target.value))
           }
@@ -72,7 +72,7 @@ export function ScrollActionProperties({
       <div className="flex items-center space-x-2">
         <Checkbox
           id="smooth_scroll"
-          checked={((config as any).smooth_scroll as boolean) || false}
+          checked={((config as Record<string, unknown>).smooth_scroll as boolean) || false}
           onCheckedChange={(checked) => updateConfig("smooth_scroll", checked)}
         />
         <Label htmlFor="smooth_scroll" className="text-xs text-gray-400">

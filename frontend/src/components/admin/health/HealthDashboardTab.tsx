@@ -122,7 +122,7 @@ export default function HealthDashboardTab() {
       const data = await healthService.exportHealthReport();
       healthService.downloadHealthReportJSON(data);
       toast.success("Health report exported as JSON");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to export health report");
     }
   };
@@ -132,7 +132,7 @@ export default function HealthDashboardTab() {
       const data = await healthService.exportHealthReport();
       healthService.downloadHealthReportCSV(data);
       toast.success("Health report exported as CSV");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to export health report");
     }
   };

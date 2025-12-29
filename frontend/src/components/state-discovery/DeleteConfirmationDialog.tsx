@@ -76,7 +76,7 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
             Delete StateImage?
           </DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete "{stateImage.name}"?
+            Are you sure you want to delete &quot;{stateImage.name}&quot;?
           </DialogDescription>
         </DialogHeader>
 

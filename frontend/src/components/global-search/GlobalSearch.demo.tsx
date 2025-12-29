@@ -492,7 +492,7 @@ export function GlobalSearchDemo() {
                       Cmd/Ctrl + K
                     </kbd>
                   </li>
-                  <li>Or click the "Search..." button above</li>
+                  <li>Or click the &quot;Search...&quot; button above</li>
                 </ul>
               </div>
 

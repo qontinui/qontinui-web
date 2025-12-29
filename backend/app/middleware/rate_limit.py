@@ -87,14 +87,14 @@ _api_limits = (
 
 auth_limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=_auth_limits,
+    default_limits=_auth_limits,  # type: ignore[arg-type]
     storage_uri=storage_uri,
     enabled=settings.RATE_LIMIT_ENABLED,
 )
 
 api_limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=_api_limits,
+    default_limits=_api_limits,  # type: ignore[arg-type]
     storage_uri=storage_uri,
     enabled=settings.RATE_LIMIT_ENABLED,
 )

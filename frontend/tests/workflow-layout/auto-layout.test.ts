@@ -52,9 +52,9 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'TYPE', config: {} as any, position: [0, 0] },
-          { id: 'a3', type: 'CLICK', config: {} as any, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a3', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           a1: { main: [[{ action: 'a2', type: 'main', index: 0 }]] },
@@ -83,7 +83,7 @@ describe('AutoLayout', () => {
         name: 'Single Action',
         version: '1.0.0',
         format: 'graph',
-        actions: [{ id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] }],
+        actions: [{ id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] }],
         connections: {},
       };
 
@@ -116,11 +116,11 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'if1', type: 'IF', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'CLICK', config: {} as any, position: [0, 0] }, // True branch
-          { id: 'a3', type: 'TYPE', config: {} as any, position: [0, 0] }, // False branch
-          { id: 'a4', type: 'CLICK', config: {} as any, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'if1', type: 'IF', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] }, // True branch
+          { id: 'a3', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] }, // False branch
+          { id: 'a4', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           a1: { main: [[{ action: 'if1', type: 'main', index: 0 }]] },
@@ -158,11 +158,11 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'if1', type: 'IF', config: {} as any, position: [0, 0] },
-          { id: 'if2', type: 'IF', config: {} as any, position: [0, 0] },
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a3', type: 'CLICK', config: {} as any, position: [0, 0] },
+          { id: 'if1', type: 'IF', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'if2', type: 'IF', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a3', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           if1: {
@@ -199,10 +199,10 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'loop1', type: 'LOOP', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'TYPE', config: {} as any, position: [0, 0] },
-          { id: 'a3', type: 'CLICK', config: {} as any, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'loop1', type: 'LOOP', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a3', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           a1: { main: [[{ action: 'loop1', type: 'main', index: 0 }]] },
@@ -230,11 +230,11 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'switch1', type: 'SWITCH', config: {} as any, position: [0, 0] },
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'TYPE', config: {} as any, position: [0, 0] },
-          { id: 'a3', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'default', type: 'CLICK', config: {} as any, position: [0, 0] },
+          { id: 'switch1', type: 'SWITCH', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a3', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'default', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           switch1: {
@@ -271,7 +271,7 @@ describe('AutoLayout', () => {
         actions: Array.from({ length: 10 }, (_, i) => ({
           id: `a${i}`,
           type: 'CLICK' as const,
-          config: {} as any,
+          config: {} as Record<string, unknown>,
           position: [0, 0] as [number, number],
         })),
         connections: {},
@@ -310,10 +310,10 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'TYPE', config: {} as any, position: [0, 0] },
-          { id: 'a3', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a4', type: 'TYPE', config: {} as any, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a3', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a4', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           a1: { main: [[{ action: 'a2', type: 'main', index: 0 }]] },
@@ -394,10 +394,10 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'start', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'branch1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'branch2', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'merge', type: 'CLICK', config: {} as any, position: [0, 0] },
+          { id: 'start', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'branch1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'branch2', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'merge', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           start: {
@@ -436,9 +436,9 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'TYPE', config: {} as any, position: [0, 0] },
-          { id: 'a3', type: 'CLICK', config: {} as any, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a3', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           a1: { main: [[{ action: 'a2', type: 'main', index: 0 }]] },
@@ -462,10 +462,10 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'entry1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'entry2', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a1', type: 'TYPE', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'TYPE', config: {} as any, position: [0, 0] },
+          { id: 'entry1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'entry2', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a1', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           entry1: { main: [[{ action: 'a1', type: 'main', index: 0 }]] },
@@ -487,11 +487,11 @@ describe('AutoLayout', () => {
       const actions = Array.from({ length: 100 }, (_, i) => ({
         id: `action-${i}`,
         type: 'CLICK' as const,
-        config: {} as any,
+        config: {} as Record<string, unknown>,
         position: [0, 0] as [number, number],
       }));
 
-      const connections: any = {};
+      const connections: Record<string, { main: { action: string; type: string; index: number }[][] }> = {};
       for (let i = 0; i < 99; i++) {
         connections[`action-${i}`] = {
           main: [[{ action: `action-${i + 1}`, type: 'main', index: 0 }]],
@@ -529,9 +529,9 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'TYPE', config: {} as any, position: [0, 0] },
-          { id: 'a3', type: 'CLICK', config: {} as any, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a3', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           a1: { main: [[{ action: 'a2', type: 'main', index: 0 }]] },
@@ -559,8 +559,8 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'TYPE', config: {} as any, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           a1: { main: [[{ action: 'a2', type: 'main', index: 0 }]] },
@@ -585,8 +585,8 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
-          { id: 'a2', type: 'TYPE', config: {} as any, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
+          { id: 'a2', type: 'TYPE', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {
           a1: { main: [[{ action: 'a2', type: 'main', index: 0 }]] },
@@ -606,7 +606,7 @@ describe('AutoLayout', () => {
         version: '1.0.0',
         format: 'graph',
         actions: [
-          { id: 'a1', type: 'CLICK', config: {} as any, position: [0, 0] },
+          { id: 'a1', type: 'CLICK', config: {} as Record<string, unknown>, position: [0, 0] },
         ],
         connections: {},
       };

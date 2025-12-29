@@ -21,7 +21,7 @@ import type { Action, Workflow } from "../lib/action-schema/action-types";
 /**
  * Debounce function - delays execution until after wait time
  */
-export function debounce<T extends (...args: unknown[]) => any>(
+export function debounce<T extends (...args: unknown[]) => unknown>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
@@ -44,7 +44,7 @@ export function debounce<T extends (...args: unknown[]) => any>(
 /**
  * Throttle function - limits execution to once per wait time
  */
-export function throttle<T extends (...args: unknown[]) => any>(
+export function throttle<T extends (...args: unknown[]) => unknown>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
@@ -65,7 +65,7 @@ export function throttle<T extends (...args: unknown[]) => any>(
 /**
  * Request animation frame throttle
  */
-export function rafThrottle<T extends (...args: unknown[]) => any>(
+export function rafThrottle<T extends (...args: unknown[]) => unknown>(
   func: T
 ): (...args: Parameters<T>) => void {
   let rafId: number | null = null;
@@ -135,7 +135,7 @@ export function useThrottle<T>(value: T, interval: number): T {
 /**
  * Hook for debounced callback
  */
-export function useDebouncedCallback<T extends (...args: unknown[]) => any>(
+export function useDebouncedCallback<T extends (...args: unknown[]) => unknown>(
   callback: T,
   delay: number
 ): (...args: Parameters<T>) => void {
@@ -166,7 +166,7 @@ export function useDebouncedCallback<T extends (...args: unknown[]) => any>(
 /**
  * Hook for throttled callback
  */
-export function useThrottledCallback<T extends (...args: unknown[]) => any>(
+export function useThrottledCallback<T extends (...args: unknown[]) => unknown>(
   callback: T,
   delay: number
 ): (...args: Parameters<T>) => void {

@@ -56,10 +56,8 @@ export interface WorkflowState {
   isValidating: boolean;
 }
 
-export interface ActionState {
-  // Actions are stored in workflow.actions
-  // This slice manages CRUD operations only
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- Actions are stored in workflow.actions; this slice manages CRUD operations only
+export interface ActionState {}
 
 export interface ConnectionState {
   isConnecting: boolean;

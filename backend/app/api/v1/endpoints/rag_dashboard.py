@@ -207,7 +207,8 @@ async def list_embeddings(
 
     # Get project to access configuration for image lookup
     project = await get_project(db, project_id=project_id)
-    config: dict[str, Any] = project.configuration or {} if project else {}
+    raw_config = project.configuration if project else None
+    config: dict[str, Any] = dict(raw_config) if raw_config else {}
 
     # Build image lookup for resolving inline: storage paths
     image_lookup: dict[str, dict[str, Any]] = {}
@@ -317,11 +318,12 @@ async def search_embeddings(
 
     # Get project to access configuration for image lookup
     project = await get_project(db, project_id=project_id)
-    config: dict[str, Any] = project.configuration or {} if project else {}
+    raw_config_2 = project.configuration if project else None
+    config_2: dict[str, Any] = dict(raw_config_2) if raw_config_2 else {}
 
     # Build image lookup for resolving inline: storage paths
     image_lookup: dict[str, dict[str, Any]] = {}
-    for image in config.get("images", []):
+    for image in config_2.get("images", []):
         image_id = image.get("id")
         if image_id:
             image_lookup[image_id] = image

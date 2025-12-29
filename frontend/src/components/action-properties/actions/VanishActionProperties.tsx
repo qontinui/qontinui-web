@@ -20,7 +20,7 @@ export function VanishActionProperties({
 
   // Extract imageId from the new target structure
   const imageId =
-    config.target?.type === "image" ? (config.target as any).imageId : null;
+    config.target?.type === "image" ? (config.target as { imageId?: string }).imageId : null;
 
   const handleImageSelect = (selectedImageId: string | null) => {
     if (!selectedImageId) return;
@@ -35,10 +35,10 @@ export function VanishActionProperties({
     <>
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Image to Wait For</Label>
-        {(action.config as any).removedImage && (
+        {(action.config as Record<string, unknown>).removedImage && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
             <span className="font-medium">Removed Image:</span>{" "}
-            {(action.config as any).removedImage as string}
+            {(action.config as Record<string, unknown>).removedImage as string}
             <p className="text-xs text-red-400 mt-1">
               This image was deleted. Please select a new image.
             </p>

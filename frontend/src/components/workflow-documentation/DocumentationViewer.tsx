@@ -423,7 +423,7 @@ export function DocumentationViewer({
             variant="outline"
             size="sm"
             className="w-full"
-            onClick={() => scrollToSection(sections[0]?.id!)}
+            onClick={() => scrollToSection(sections[0]?.id ?? "")}
           >
             Back to Top
           </Button>
@@ -483,7 +483,7 @@ export function DocumentationViewer({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   onClick={() =>
-                    copyLinkToSection(activeSection || sections[0]?.id!)
+                    copyLinkToSection(activeSection || sections[0]?.id ?? "")
                   }
                 >
                   {copiedLink ? (

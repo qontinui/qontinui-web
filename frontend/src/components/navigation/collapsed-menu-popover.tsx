@@ -14,7 +14,7 @@ interface PopoverChild {
 interface CollapsedMenuPopoverProps {
   parentId: string;
   parentColor: string;
-  children: PopoverChild[];
+  items: PopoverChild[];
   onNavigate: (route: string) => void;
   onClose: () => void;
   onClearTimer?: () => void;
@@ -23,7 +23,7 @@ interface CollapsedMenuPopoverProps {
 export function CollapsedMenuPopover({
   parentId,
   parentColor,
-  children,
+  items,
   onNavigate,
   onClose,
   onClearTimer,
@@ -141,7 +141,7 @@ export function CollapsedMenuPopover({
           onClose();
         }}
       >
-        {children.map((child) => {
+        {items.map((child) => {
           const childIconColor =
             parentId === "create" ? parentColor : child.color;
 

@@ -378,7 +378,7 @@ export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
 
           {filteredShortcuts.length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              No shortcuts found matching "{searchQuery}"
+              No shortcuts found matching &quot;{searchQuery}&quot;
             </div>
           )}
         </div>

@@ -85,10 +85,10 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
       const parent = parts[0];
       const child = parts[1];
       if (parent && child) {
-        (updated[index] as any)[parent][child] = value;
+        (updated[index] as Record<string, Record<string, unknown>>)[parent][child] = value;
       }
     } else {
-      (updated[index] as any)[field] = value;
+      (updated[index] as Record<string, Record<string, unknown>>)[field] = value;
     }
     setMatches(updated);
   };

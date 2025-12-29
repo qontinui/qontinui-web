@@ -366,7 +366,7 @@ export function useLayoutAnimation(): UseLayoutAnimationResult {
             },
           }
         );
-      } catch (error) {
+      } catch {
         setIsAnimating(false);
         setProgress(0);
       }

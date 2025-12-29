@@ -376,7 +376,7 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
         position: [0, 0],
       },
     ],
-    // @ts-ignore - example code uses simplified connection format
+    // @ts-expect-error - example code uses simplified connection format
     connections: {
       "action-1": {
         main: [

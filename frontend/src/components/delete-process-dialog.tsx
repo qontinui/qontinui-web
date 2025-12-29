@@ -31,7 +31,7 @@ export function DeleteWorkflowDialog({
             Delete Workflow
           </DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete "{workflowName}"? This action cannot
+            Are you sure you want to delete &quot;{workflowName}&quot;? This action cannot
             be undone.
           </DialogDescription>
         </DialogHeader>

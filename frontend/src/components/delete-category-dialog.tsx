@@ -34,7 +34,7 @@ export function DeleteCategoryDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />
-            Delete Category "{categoryName}"
+            Delete Category &quot;{categoryName}&quot;
           </DialogTitle>
           <DialogDescription>
             This category contains {processCount} workflow

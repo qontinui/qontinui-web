@@ -415,7 +415,7 @@ export function ProjectExportDialog({
           projectId: projectId || undefined, // Include project ID for test run reporting
         },
         settings,
-        screenshots as any // Type cast needed: context uses different Screenshot type than ConfigExporter
+        screenshots as unknown as import("@/lib/export/config-exporter").Screenshot[] // Type cast needed: context uses different Screenshot type than ConfigExporter
       );
 
       // Validate the configuration

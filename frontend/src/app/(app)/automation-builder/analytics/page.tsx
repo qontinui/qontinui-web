@@ -1182,17 +1182,17 @@ export default function WorkflowAnalyticsPage() {
               {selectedWorkflow && selectedWorkflowData ? (
                 <>
                   <WorkflowMetricsPanel
-                    workflow={selectedWorkflowData.workflow as any}
+                    workflow={selectedWorkflowData.workflow as Workflow}
                     metrics={selectedWorkflowData.metrics}
                     complexityMetrics={
-                      selectedWorkflowData.complexityMetrics as any
+                      selectedWorkflowData.complexityMetrics as WorkflowComplexityMetrics
                     }
                     executionHistory={
-                      selectedWorkflowData.executionHistory as any
+                      selectedWorkflowData.executionHistory as WorkflowExecution[]
                     }
                   />
                   <PerformanceAnalyzer
-                    workflow={selectedWorkflowData.workflow as any}
+                    workflow={selectedWorkflowData.workflow as Workflow}
                     onAnalyze={() => {}}
                     onApplySuggestion={() => {}}
                   />

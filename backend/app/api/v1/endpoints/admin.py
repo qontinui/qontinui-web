@@ -833,7 +833,9 @@ async def get_download_analytics(
     recent_downloads: list[dict[str, Any]] = []
 
     for metric in metrics:
-        metadata = metric.metric_metadata or {}
+        metadata: dict[str, Any] = (
+            dict(metric.metric_metadata) if metric.metric_metadata else {}
+        )
 
         # Unique downloads
         ip_hash = metadata.get("ip_hash")

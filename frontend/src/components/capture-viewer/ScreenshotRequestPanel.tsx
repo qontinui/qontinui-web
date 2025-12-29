@@ -365,8 +365,8 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                 minutes depending on the number of events.
               </p>
               <p>
-                You'll receive a notification when processing is complete, and
-                screenshots will be available in the project's screenshots
+                You&apos;ll receive a notification when processing is complete, and
+                screenshots will be available in the project&apos;s screenshots
                 section.
               </p>
             </div>

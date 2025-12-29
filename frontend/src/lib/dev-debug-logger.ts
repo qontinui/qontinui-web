@@ -151,7 +151,8 @@ class DevDebugLogger {
     if (typeof window === "undefined") return;
 
     this.originalFetch = window.fetch.bind(window);
-    const self = this;
+    const boundOriginalFetch = this.originalFetch;
+    const addLogFn = this.addLog.bind(this);
 
     window.fetch = async function (
       input: RequestInfo | URL,
@@ -168,7 +169,7 @@ class DevDebugLogger {
 
       // Skip logging our own debug endpoint
       if (url.includes("/api/dev-debug")) {
-        return self.originalFetch!(input, init);
+        return boundOriginalFetch(input, init);
       }
 
       const logData: NetworkLogData = {
@@ -188,7 +189,7 @@ class DevDebugLogger {
       }
 
       try {
-        const response = await self.originalFetch!(input, init);
+        const response = await boundOriginalFetch(input, init);
         const duration = Date.now() - startTime;
 
         logData.status = response.status;
@@ -210,7 +211,7 @@ class DevDebugLogger {
             }
 
             const level: LogLevel = response.ok ? "info" : "error";
-            self.addLog({
+            addLogFn({
               level,
               source: "network",
               message: `${method} ${url} - ${response.status} (${duration}ms)`,
@@ -223,7 +224,7 @@ class DevDebugLogger {
           })
           .catch(() => {
             // Ignore read errors
-            self.addLog({
+            addLogFn({
               level: response.ok ? "info" : "error",
               source: "network",
               message: `${method} ${url} - ${response.status} (${duration}ms)`,
@@ -241,7 +242,7 @@ class DevDebugLogger {
         logData.duration = duration;
         logData.error = error instanceof Error ? error.message : String(error);
 
-        self.addLog({
+        addLogFn({
           level: "error",
           source: "network",
           message: `${method} ${url} - FAILED: ${logData.error} (${duration}ms)`,

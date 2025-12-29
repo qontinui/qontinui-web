@@ -212,7 +212,7 @@ export function AutomationStreamingCard({
                   <Alert className="bg-yellow-500/10 border-yellow-500/30">
                     <Info className="w-4 h-4 text-yellow-500" />
                     <AlertDescription className="text-gray-300">
-                      You've reached your monthly streaming limit. Upgrade to a
+                      You&apos;ve reached your monthly streaming limit. Upgrade to a
                       paid plan for unlimited sessions.
                     </AlertDescription>
                   </Alert>

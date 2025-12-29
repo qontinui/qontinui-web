@@ -65,7 +65,7 @@ export function SecurityWarningsCard({
       await healthService.resolveSecurityWarning(warningId);
       toast.success("Security warning resolved");
       onRefresh?.();
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to resolve warning");
     } finally {
       setResolvingIds((prev) => {
