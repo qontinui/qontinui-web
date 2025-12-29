@@ -25,6 +25,7 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from qontinui_schemas.common import utc_now
 from sqlalchemy import String, and_, cast, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.expression import ColumnElement
@@ -438,7 +439,7 @@ async def update_image(
         image.reviewed = image_in.reviewed  # type: ignore[assignment]
         if image_in.reviewed:
             image.reviewed_by_id = current_user.id  # type: ignore[assignment]
-            image.reviewed_at = datetime.utcnow()  # type: ignore[assignment]
+            image.reviewed_at = utc_now()  # type: ignore[assignment]
         else:
             image.reviewed_by_id = None  # type: ignore[assignment]
             image.reviewed_at = None  # type: ignore[assignment]
@@ -678,7 +679,7 @@ async def update_annotation(
     if annotation_in.review_status is not None:
         ann.review_status = ReviewStatus(annotation_in.review_status)
         ann.reviewed_by_id = current_user.id  # type: ignore[assignment]
-        ann.reviewed_at = datetime.utcnow()  # type: ignore[assignment]
+        ann.reviewed_at = utc_now()  # type: ignore[assignment]
     if annotation_in.reviewer_notes is not None:
         ann.reviewer_notes = annotation_in.reviewer_notes  # type: ignore[assignment]
 
@@ -751,7 +752,7 @@ async def bulk_update_annotations(
             if update_data.review_status is not None:
                 ann.review_status = ReviewStatus(update_data.review_status)
                 ann.reviewed_by_id = current_user.id  # type: ignore[assignment]
-                ann.reviewed_at = datetime.utcnow()  # type: ignore[assignment]
+                ann.reviewed_at = utc_now()  # type: ignore[assignment]
             if update_data.reviewer_notes is not None:
                 ann.reviewer_notes = update_data.reviewer_notes  # type: ignore[assignment]
             if update_data.verified is not None:
@@ -1277,7 +1278,7 @@ async def start_export(
 
         job.status = ExportJobStatus.COMPLETED
         job.download_url = download_url  # type: ignore[assignment]
-        job.completed_at = datetime.utcnow()  # type: ignore[assignment]
+        job.completed_at = utc_now()  # type: ignore[assignment]
         job.progress = 100  # type: ignore[assignment]
         await db.commit()
 
@@ -1366,7 +1367,7 @@ def generate_image_manifest(images: Any, dataset: Any) -> dict[str, Any]:
         "version": "1.0",
         "dataset_id": str(dataset.id),
         "dataset_name": dataset.name,
-        "export_date": datetime.utcnow().isoformat(),
+        "export_date": utc_now().isoformat(),
         "total_images": len(images),
         "images": [
             {
@@ -1390,9 +1391,9 @@ def generate_coco_export(images: Any, annotations: Any, dataset: Any) -> dict[st
         "info": {
             "description": dataset.name,
             "version": dataset.dataset_version or "1.0",
-            "year": datetime.utcnow().year,
+            "year": utc_now().year,
             "contributor": "qontinui",
-            "date_created": datetime.utcnow().isoformat(),
+            "date_created": utc_now().isoformat(),
         },
         "images": [],
         "annotations": [],
@@ -1501,7 +1502,7 @@ def generate_yolo_export(
     # Generate data.yaml (YOLO configuration)
     data_yaml_content = f"""# YOLO Dataset Configuration
 # Dataset: {dataset.name}
-# Exported: {datetime.utcnow().isoformat()}
+# Exported: {utc_now().isoformat()}
 #
 # IMPORTANT: This export contains annotations only.
 # Use qontinui-runner to package your local images.
@@ -1557,7 +1558,7 @@ names:
     readme_content = f"""# YOLO Dataset Export
 
 **Dataset:** {dataset.name}
-**Exported:** {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")} UTC
+**Exported:** {utc_now().strftime("%Y-%m-%d %H:%M:%S")} UTC
 **Images:** {len(images)}
 **Classes:** {len(class_names)}
 

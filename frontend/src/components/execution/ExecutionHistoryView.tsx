@@ -82,6 +82,7 @@ export function ExecutionHistoryView({
     status,
     durationMs,
     initialStateIds,
+    stateNameMap,
     refresh,
   } = useTreeEvents({ runId, autoFetch: true });
 
@@ -206,7 +207,14 @@ export function ExecutionHistoryView({
           initialStates={initialStates}
           finalStates={finalStates}
           isLive={false}
-          nameMap={nameMap}
+          nameMap={
+            // Merge parent nameMap with stateNameMap from API (API takes precedence)
+            nameMap
+              ? new Map([...nameMap, ...stateNameMap])
+              : stateNameMap.size > 0
+                ? stateNameMap
+                : undefined
+          }
         />
       ) : (
         <Card className="bg-[#1A1A1B]/50 border-gray-800/50">

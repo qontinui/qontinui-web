@@ -87,7 +87,10 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
       if (parent && child) {
         const match = updated[index];
         if (!match) return;
-        const matchRecord = match as unknown as Record<string, Record<string, unknown>>;
+        const matchRecord = match as unknown as Record<
+          string,
+          Record<string, unknown>
+        >;
         const parentObj = matchRecord[parent];
         if (parentObj) {
           parentObj[child] = value;

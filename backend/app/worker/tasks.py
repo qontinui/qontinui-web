@@ -372,15 +372,16 @@ async def cleanup_old_data_task(
     logger.info("running_cleanup_task", days_to_keep=days_to_keep)
 
     try:
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
+        from qontinui_schemas.common import utc_now
         from sqlalchemy import delete
 
         from app.db.session import AsyncSessionLocal
         from app.models.audit_log import AuditLog
         from app.models.usage_metric import UsageMetric
 
-        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+        cutoff_date = utc_now() - timedelta(days=days_to_keep)
         audit_logs_deleted = 0
         metrics_deleted = 0
 
@@ -442,8 +443,7 @@ async def send_analytics_report_task(
     logger.info("generating_analytics_report", report_type=report_type, user_id=user_id)
 
     try:
-        from datetime import datetime
-
+        from qontinui_schemas.common import utc_now
         from sqlalchemy import select
 
         from app.core.config import settings
@@ -543,7 +543,7 @@ async def send_analytics_report_task(
                 </div>
 
                 <div class="footer">
-                    <p>Generated on {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")} UTC</p>
+                    <p>Generated on {utc_now().strftime("%Y-%m-%d %H:%M:%S")} UTC</p>
                     <p><a href="{settings.FRONTEND_URL}/admin/analytics">View Detailed Analytics</a></p>
                 </div>
             </body>
@@ -565,7 +565,7 @@ async def send_analytics_report_task(
             - Storage Used: {summary.total_storage_bytes / (1024**2):.2f} MB
             - Avg Response Time: {summary.avg_response_time_seconds:.3f}s
 
-            Generated on {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")} UTC
+            Generated on {utc_now().strftime("%Y-%m-%d %H:%M:%S")} UTC
             View details: {settings.FRONTEND_URL}/admin/analytics
             """
 

@@ -12,6 +12,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from qontinui_schemas.common import utc_now
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
@@ -973,7 +974,7 @@ async def get_screenshot_presigned_url(
         )
 
     # Calculate expiration timestamp
-    expires_at = datetime.utcnow() + timedelta(seconds=expiration_seconds)
+    expires_at = utc_now() + timedelta(seconds=expiration_seconds)
 
     logger.info(
         "screenshot_presigned_url_generated",

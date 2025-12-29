@@ -12,7 +12,13 @@
  */
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import type { RunnerMonitor } from "@/lib/runner-client";
+import type { Monitor } from "@/lib/schemas/geometry";
+
+// Re-export Monitor type for convenience
+export type { Monitor } from "@/lib/schemas/geometry";
+
+// Use the base Monitor type - compatible with both RunnerMonitor and schema Monitor
+export type MonitorLike = Monitor;
 
 // ============================================================================
 // Types
@@ -20,7 +26,7 @@ import type { RunnerMonitor } from "@/lib/runner-client";
 
 export interface MonitorCanvasOptions {
   /** All available monitors */
-  monitors: RunnerMonitor[];
+  monitors: MonitorLike[];
   /** Indices of monitors that have elements (for filtering) */
   monitorsWithElements?: number[];
   /** Whether to show only monitors with elements */
@@ -68,7 +74,7 @@ export interface UseMonitorCanvasResult {
   // Calculated values
   minZoom: number;
   bounds: MonitorCanvasBounds;
-  displayedMonitors: RunnerMonitor[];
+  displayedMonitors: MonitorLike[];
 
   // Actions
   setZoom: React.Dispatch<React.SetStateAction<number>>;
@@ -217,14 +223,22 @@ export function useMonitorCanvas(
     // Don't zoom in beyond 1x, and optionally enforce minimum fit zoom
     const fitZoom = Math.max(Math.min(zoomX, zoomY, 1), minFitZoom ?? 0);
 
+    const scaledWidth = bounds.width * fitZoom;
+    const scaledHeight = bounds.height * fitZoom;
+
+    // If content fits within container, center it. Otherwise, show left/top edge.
+    const panX =
+      scaledWidth <= containerSize.width - 2 * fitPadding
+        ? (containerSize.width - scaledWidth) / 2 // Center horizontally
+        : fitPadding; // Pin to left edge
+
+    const panY =
+      pinToTop || scaledHeight > containerSize.height - 2 * fitPadding
+        ? fitPadding // Pin to top
+        : (containerSize.height - scaledHeight) / 2; // Center vertically
+
     setZoom(fitZoom);
-    setPan({
-      x: (containerSize.width - bounds.width * fitZoom) / 2,
-      // Pin to top with padding, or center vertically
-      y: pinToTop
-        ? fitPadding
-        : (containerSize.height - bounds.height * fitZoom) / 2,
-    });
+    setPan({ x: panX, y: panY });
   }, [
     containerSize.width,
     containerSize.height,
@@ -252,14 +266,23 @@ export function useMonitorCanvas(
       const zoomY = (containerSize.height - fitPadding) / bounds.height;
       // Don't zoom in beyond 1x, and optionally enforce minimum fit zoom
       const fitZoom = Math.max(Math.min(zoomX, zoomY, 1), minFitZoom ?? 0);
+
+      const scaledWidth = bounds.width * fitZoom;
+      const scaledHeight = bounds.height * fitZoom;
+
+      // If content fits within container, center it. Otherwise, show left/top edge.
+      const panX =
+        scaledWidth <= containerSize.width - 2 * fitPadding
+          ? (containerSize.width - scaledWidth) / 2 // Center horizontally
+          : fitPadding; // Pin to left edge
+
+      const panY =
+        pinToTop || scaledHeight > containerSize.height - 2 * fitPadding
+          ? fitPadding // Pin to top
+          : (containerSize.height - scaledHeight) / 2; // Center vertically
+
       setZoom(fitZoom);
-      setPan({
-        x: (containerSize.width - bounds.width * fitZoom) / 2,
-        // Pin to top with padding, or center vertically
-        y: pinToTop
-          ? fitPadding
-          : (containerSize.height - bounds.height * fitZoom) / 2,
-      });
+      setPan({ x: panX, y: panY });
       prevBoundsRef.current = {
         width: bounds.width,
         height: bounds.height,
@@ -294,14 +317,23 @@ export function useMonitorCanvas(
       const zoomY = (containerSize.height - fitPadding) / bounds.height;
       // Don't zoom in beyond 1x, and optionally enforce minimum fit zoom
       const fitZoom = Math.max(Math.min(zoomX, zoomY, 1), minFitZoom ?? 0);
+
+      const scaledWidth = bounds.width * fitZoom;
+      const scaledHeight = bounds.height * fitZoom;
+
+      // If content fits within container, center it. Otherwise, show left/top edge.
+      const panX =
+        scaledWidth <= containerSize.width - 2 * fitPadding
+          ? (containerSize.width - scaledWidth) / 2 // Center horizontally
+          : fitPadding; // Pin to left edge
+
+      const panY =
+        pinToTop || scaledHeight > containerSize.height - 2 * fitPadding
+          ? fitPadding // Pin to top
+          : (containerSize.height - scaledHeight) / 2; // Center vertically
+
       setZoom(fitZoom);
-      setPan({
-        x: (containerSize.width - bounds.width * fitZoom) / 2,
-        // Pin to top with padding, or center vertically
-        y: pinToTop
-          ? fitPadding
-          : (containerSize.height - bounds.height * fitZoom) / 2,
-      });
+      setPan({ x: panX, y: panY });
       prevBoundsRef.current = {
         width: bounds.width,
         height: bounds.height,
@@ -532,7 +564,7 @@ export const DARK_THEME: MonitorCanvasTheme = {
 export function drawMonitorBackground(
   ctx: CanvasRenderingContext2D,
   bounds: MonitorCanvasBounds,
-  monitors: RunnerMonitor[],
+  monitors: MonitorLike[],
   theme: MonitorCanvasTheme = DEFAULT_THEME
 ): void {
   // Fill entire canvas with outside color (grey)
@@ -654,7 +686,7 @@ export function canvasToScreen(
 export function isPointInMonitors(
   x: number,
   y: number,
-  monitors: RunnerMonitor[]
+  monitors: MonitorLike[]
 ): boolean {
   return monitors.some(
     (m) => x >= m.x && x <= m.x + m.width && y >= m.y && y <= m.y + m.height
@@ -667,8 +699,8 @@ export function isPointInMonitors(
 export function getMonitorAtPoint(
   x: number,
   y: number,
-  monitors: RunnerMonitor[]
-): RunnerMonitor | undefined {
+  monitors: MonitorLike[]
+): MonitorLike | undefined {
   return monitors.find(
     (m) => x >= m.x && x <= m.x + m.width && y >= m.y && y <= m.y + m.height
   );

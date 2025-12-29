@@ -17,7 +17,8 @@ interface RAGSearchPanelProps {
 
 export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
   const [query, setQuery] = useState("");
-  const [minSimilarity, setMinSimilarity] = useState(0.5);
+  // CLIP text-to-image similarity is typically 0.15-0.35, so default to 0.2
+  const [minSimilarity, setMinSimilarity] = useState(0.2);
   const [limit, setLimit] = useState(20);
 
   const { mutate: search, data, isPending, error } = useRAGSearch(projectId);

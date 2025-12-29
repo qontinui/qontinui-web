@@ -7,11 +7,11 @@ Runners connect to stream test results, dashboard clients connect to receive upd
 
 import time
 from collections import defaultdict
-from datetime import datetime
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 
 from app.api.deps import get_async_db, get_current_user_from_ws
@@ -132,7 +132,7 @@ async def websocket_runner_endpoint(
                 {
                     "type": "error",
                     "message": "Authentication required. Provide token query param or access_token cookie.",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -150,7 +150,7 @@ async def websocket_runner_endpoint(
                 {
                     "type": "error",
                     "message": "Authentication failed",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -169,7 +169,7 @@ async def websocket_runner_endpoint(
                 "type": "connected",
                 "runner_id": runner_id,
                 "user_id": str(user.id),
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
         )
 
@@ -189,7 +189,7 @@ async def websocket_runner_endpoint(
 
                 # Add timestamp if not present
                 if "timestamp" not in data:
-                    data["timestamp"] = datetime.utcnow().isoformat() + "Z"
+                    data["timestamp"] = utc_now().isoformat() + "Z"
 
                 # Validate message has required fields
                 if "type" not in data:
@@ -197,7 +197,7 @@ async def websocket_runner_endpoint(
                         {
                             "type": "error",
                             "message": "Message must have 'type' field",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
                     continue
@@ -216,7 +216,7 @@ async def websocket_runner_endpoint(
                 await websocket.send_json(
                     {
                         "type": "ack",
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "timestamp": utc_now().isoformat() + "Z",
                     }
                 )
 
@@ -241,7 +241,7 @@ async def websocket_runner_endpoint(
                         {
                             "type": "error",
                             "message": f"Message processing error: {str(e)}",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
                 except Exception:
@@ -348,7 +348,7 @@ async def websocket_dashboard_endpoint(
                 {
                     "type": "error",
                     "message": "Authentication required. Provide token query param or access_token cookie.",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -366,7 +366,7 @@ async def websocket_dashboard_endpoint(
                 {
                     "type": "error",
                     "message": "Authentication failed",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -383,7 +383,7 @@ async def websocket_dashboard_endpoint(
                 {
                     "type": "error",
                     "message": "Database connection failed",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
@@ -401,7 +401,7 @@ async def websocket_dashboard_endpoint(
                 {
                     "type": "error",
                     "message": "Invalid project ID format",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -428,7 +428,7 @@ async def websocket_dashboard_endpoint(
                 {
                     "type": "error",
                     "message": "Project not found or access denied",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -445,7 +445,7 @@ async def websocket_dashboard_endpoint(
             {
                 "type": "connected",
                 "project_id": project_id,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
         )
 
@@ -470,7 +470,7 @@ async def websocket_dashboard_endpoint(
                     await websocket.send_json(
                         {
                             "type": "heartbeat_ack",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
                 else:

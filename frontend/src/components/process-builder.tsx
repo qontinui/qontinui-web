@@ -32,22 +32,33 @@ import { IncomingTransitionBuilder } from "@/components/incoming-transition-buil
 import { FormatConversionDialog } from "@/components/format-conversion-dialog";
 import { toast } from "sonner";
 import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import type { Action as ActionPropertiesAction } from "@/components/action-properties/types";
 
-type LibraryItem =
-  | { type: "process"; data: Workflow }
-  | { type: "workflow"; data: Workflow };
+/**
+ * Check if a workflow has non-linear connections (branching)
+ */
+function hasNonLinearConnections(workflow: Workflow): boolean {
+  for (const sourceId in workflow.connections) {
+    const outputs = workflow.connections[sourceId];
+    if (!outputs) continue;
+    // Check if there's more than one output from main connections
+    if (outputs.main && outputs.main.length > 1) return true;
+    // Check if there are error or success connections (indicates branching)
+    if (outputs.error && outputs.error.length > 0) return true;
+    if (outputs.success && outputs.success.length > 0) return true;
+  }
+  return false;
+}
 
 export function ProcessBuilder() {
-  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
+  const [selectedItem, setSelectedItem] = useState<Workflow | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [showTransitionDialog, setShowTransitionDialog] = useState(false);
   const [transitionType, setTransitionType] = useState<
     "incoming" | "outgoing" | null
   >(null);
   const [optionsExpanded, setOptionsExpanded] = useState(false);
-  const [conversionItem, setConversionItem] = useState<LibraryItem | null>(
-    null
-  );
+  const [conversionItem, setConversionItem] = useState<Workflow | null>(null);
   const [conversionDialogOpen, setConversionDialogOpen] = useState(false);
   const {
     workflows,
@@ -59,9 +70,8 @@ export function ProcessBuilder() {
     states,
   } = useAutomation();
 
-  // Get selected process from selected item
-  const selectedProcess =
-    selectedItem?.type === "process" ? selectedItem.data : null;
+  // Get selected process from selected item (selectedItem is now Workflow directly)
+  const selectedProcess = selectedItem;
 
   // Get all unique categories from workflows and context
   const allCategories = [
@@ -79,7 +89,7 @@ export function ProcessBuilder() {
     if (selectedProcess) {
       const updatedProcess = workflows.find((w) => w.id === selectedProcess.id);
       if (updatedProcess && updatedProcess !== selectedProcess) {
-        setSelectedItem({ type: "process", data: updatedProcess });
+        setSelectedItem(updatedProcess);
         // Also update selectedAction if it exists
         if (selectedAction) {
           const updatedAction = updatedProcess.actions.find(
@@ -105,7 +115,7 @@ export function ProcessBuilder() {
       connections: {},
     };
     addWorkflow(newProcess);
-    setSelectedItem({ type: "process", data: newProcess });
+    setSelectedItem(newProcess);
   };
 
   const handleUpdateProcess = (updatedProcess: Workflow) => {
@@ -113,9 +123,12 @@ export function ProcessBuilder() {
     // Don't set selectedItem here - let useEffect handle it
   };
 
-  const handleSelectItem = (item: LibraryItem) => {
-    if (item.type === "workflow") {
-      // Workflows can&apos;t be edited in the sequential builder
+  const handleSelectItem = (item: Workflow) => {
+    // Check if this is a graph workflow (has non-linear connections)
+    const isGraphWorkflow =
+      item.metadata?.viewMode === "graph" || hasNonLinearConnections(item);
+    if (isGraphWorkflow) {
+      // Graph workflows can't be edited in the sequential builder
       toast.info("Graph workflows can only be edited in the Graph Builder", {
         description: "Switch to the Graph Builder tab to edit this workflow.",
       });
@@ -125,35 +138,25 @@ export function ProcessBuilder() {
     setSelectedAction(null);
   };
 
-  const handleDeleteItem = (item: LibraryItem) => {
-    // Both 'process' and 'workflow' types are stored as workflows
-    deleteWorkflow(item.data.id);
-    if (selectedItem && selectedItem.data.id === item.data.id) {
+  const handleDeleteItem = (item: Workflow) => {
+    deleteWorkflow(item.id);
+    if (selectedItem && selectedItem.id === item.id) {
       setSelectedItem(null);
       setSelectedAction(null);
     }
   };
 
-  const handleConvertItem = (item: LibraryItem) => {
+  const handleConvertItem = (item: Workflow) => {
     setConversionItem(item);
     setConversionDialogOpen(true);
   };
 
-  const handleConversionComplete = (
-    converted: Workflow,
-    originalType: "process" | "workflow"
-  ) => {
+  const handleConversionComplete = (converted: Workflow) => {
     // Both types are stored as workflows, just update the existing one
     addWorkflow(converted);
-    if (originalType === "process") {
-      toast.success("Converted to graph workflow", {
-        description: `"${converted.name}" can now be edited in graph mode.`,
-      });
-    } else {
-      toast.success("Converted to sequential workflow", {
-        description: `"${converted.name}" can now be edited in sequential mode.`,
-      });
-    }
+    toast.success("Workflow converted", {
+      description: `"${converted.name}" has been converted.`,
+    });
   };
 
   return (
@@ -409,10 +412,33 @@ export function ProcessBuilder() {
             </div>
 
             <ActionEditor
-              process={selectedProcess}
-              selectedAction={selectedAction}
-              onSelectAction={setSelectedAction}
-              onUpdateProcess={handleUpdateProcess}
+              process={
+                {
+                  id: selectedProcess.id,
+                  name: selectedProcess.name,
+                  description: selectedProcess.description || "",
+                  actions: selectedProcess.actions,
+                } as unknown as Parameters<typeof ActionEditor>[0]["process"]
+              }
+              selectedAction={
+                selectedAction as Parameters<
+                  typeof ActionEditor
+                >[0]["selectedAction"]
+              }
+              onSelectAction={(action) => {
+                // Convert ActionEditor's Action to our Action type
+                setSelectedAction(action as unknown as Action);
+              }}
+              onUpdateProcess={(process) => {
+                // Convert ActionEditor's Process back to Workflow
+                const updatedWorkflow: Workflow = {
+                  ...selectedProcess,
+                  name: process.name,
+                  description: process.description,
+                  actions: process.actions as unknown as Action[],
+                };
+                handleUpdateProcess(updatedWorkflow);
+              }}
             />
           </div>
         ) : (
@@ -429,13 +455,13 @@ export function ProcessBuilder() {
       {/* Right Panel - Action Properties */}
       <div className="flex-[2] min-w-[300px] max-w-[600px] border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
         <ActionProperties
-          action={selectedAction}
-          onUpdateAction={(updated: Action) => {
+          action={selectedAction as ActionPropertiesAction | null}
+          onUpdateAction={(updated: ActionPropertiesAction) => {
             if (selectedProcess && selectedAction) {
               const updatedProcess = {
                 ...selectedProcess,
                 actions: selectedProcess.actions.map((a) =>
-                  a.id === updated.id ? updated : a
+                  a.id === updated.id ? (updated as unknown as Action) : a
                 ),
               };
               handleUpdateProcess(updatedProcess);

@@ -27,12 +27,15 @@ import {
   Clock,
   Calendar,
 } from "lucide-react";
+import { safeParseUTCDate } from "@/lib/time-utils";
 
 /**
  * Format a date string for display in the run dropdown
  */
 function formatRunDateTime(dateString: string): string {
-  const date = new Date(dateString);
+  const date = safeParseUTCDate(dateString);
+  if (!date) return "Unknown";
+
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));

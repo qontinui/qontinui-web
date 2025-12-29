@@ -22,7 +22,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import type { State, ImageAsset } from "@/contexts/automation-context/types";
-import type { RunnerMonitor } from "@/lib/runner-client";
+import type { Monitor } from "@/lib/schemas/geometry";
 import type {
   ImageRecognitionEvent,
   ConnectionState,
@@ -54,7 +54,7 @@ interface ActiveStatesCanvasProps {
   /** All images in the project (used to load image assets) */
   images: ImageAsset[];
   /** Monitor info for multi-monitor coordinate handling */
-  monitors?: RunnerMonitor[];
+  monitors?: Monitor[];
   /** Rendering mode: 'perception' for live execution, 'config' for static preview */
   mode?: CanvasMode;
   /** Currently active state IDs (for perception mode, required) */
@@ -230,7 +230,7 @@ export function ActiveStatesCanvas({
 
   // Build a map of monitor index to monitor info for coordinate translation
   const monitorMap = useMemo(() => {
-    const map = new Map<number, RunnerMonitor>();
+    const map = new Map<number, Monitor>();
     monitors.forEach((m) => map.set(m.index, m));
     return map;
   }, [monitors]);
@@ -484,15 +484,28 @@ export function ActiveStatesCanvas({
     const ctx = canvasEl.getContext("2d");
     if (!ctx) return;
 
-    // Set canvas size to bounds
-    canvasEl.width = canvas.bounds.width;
-    canvasEl.height = canvas.bounds.height;
+    // Skip rendering if container hasn't been measured yet
+    if (canvas.containerSize.width === 0 || canvas.containerSize.height === 0) {
+      return;
+    }
+
+    // Set canvas size to container size (NOT bounds!)
+    // The pan/zoom transforms are calculated based on containerSize,
+    // so the canvas buffer must match for correct rendering.
+    const dpr = window.devicePixelRatio || 1;
+    canvasEl.width = canvas.containerSize.width * dpr;
+    canvasEl.height = canvas.containerSize.height * dpr;
 
     // Clear canvas
     ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
     // Apply transformations
     ctx.save();
+
+    // Scale for high DPI displays
+    ctx.scale(dpr, dpr);
+
+    // Apply pan and zoom
     ctx.translate(canvas.pan.x, canvas.pan.y);
     ctx.scale(canvas.zoom, canvas.zoom);
 
@@ -652,6 +665,7 @@ export function ActiveStatesCanvas({
     canvas.zoom,
     canvas.pan,
     canvas.bounds,
+    canvas.containerSize,
     canvas.displayedMonitors,
     loadedImages,
     monitorOffset,

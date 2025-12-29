@@ -26,6 +26,7 @@ from fastapi import (
 )
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from PIL import Image
+from qontinui_schemas.common import utc_now
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -308,7 +309,7 @@ async def create_test_run(
         runner_connection_id=None,
         workflow_id=run_in.workflow_metadata.get("workflow_id"),
         status=TestRunStatus.RUNNING,
-        started_at=datetime.utcnow(),
+        started_at=utc_now(),
         runner_metadata=run_in.runner_metadata,
         configuration_snapshot={
             **run_in.configuration_snapshot,
@@ -604,8 +605,8 @@ async def report_deficiencies(
             status=DeficiencyStatus.NEW,
             environment_info=d.metadata.get("environment", {}),
             custom_fields=d.metadata,
-            first_seen_at=datetime.utcnow(),
-            last_seen_at=datetime.utcnow(),
+            first_seen_at=utc_now(),
+            last_seen_at=utc_now(),
         )
         db.add(deficiency)
         await db.flush()
@@ -1084,7 +1085,7 @@ async def upload_screenshot(
             run_id=run_id,
             image_url=image_url,
             thumbnail_url=thumbnail_url,
-            uploaded_at=datetime.utcnow(),
+            uploaded_at=utc_now(),
             file_size_bytes=file_size,
             state_name=screenshot_meta.state,
             visual_comparison=visual_comparison_result,
@@ -1691,19 +1692,19 @@ async def update_deficiency(
     if update_in.status is not None and update_in.status in status_map:
         deficiency.status = status_map[update_in.status]
         if update_in.status == "resolved":
-            deficiency.resolved_at = datetime.utcnow()
+            deficiency.resolved_at = utc_now()
 
     if update_in.severity is not None and update_in.severity in severity_map:
         deficiency.severity = severity_map[update_in.severity]
 
     if update_in.assigned_to_user_id is not None:
         deficiency.assigned_to_user_id = update_in.assigned_to_user_id
-        deficiency.assigned_at = datetime.utcnow()
+        deficiency.assigned_at = utc_now()
 
     if update_in.resolution_notes is not None:
         deficiency.resolution = update_in.resolution_notes
 
-    deficiency.updated_at = datetime.utcnow()
+    deficiency.updated_at = utc_now()
 
     await db.commit()
     await db.refresh(deficiency)
@@ -2109,7 +2110,7 @@ async def add_deficiency_comment(
         "user_full_name": getattr(current_user, "full_name", None),
         "comment": comment_in.comment,
         "metadata": comment_in.metadata,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": utc_now().isoformat(),
     }
 
     # Store comments in custom_fields under "comments" key
@@ -2120,7 +2121,7 @@ async def add_deficiency_comment(
 
     # Update the deficiency
     deficiency.custom_fields = custom_fields
-    deficiency.updated_at = datetime.utcnow()
+    deficiency.updated_at = utc_now()
     await db.commit()
     await db.refresh(deficiency)
 
@@ -2140,7 +2141,7 @@ async def add_deficiency_comment(
             "full_name": getattr(current_user, "full_name", None),
         },
         comment=comment_in.comment,
-        created_at=datetime.utcnow(),
+        created_at=utc_now(),
     )
 
 

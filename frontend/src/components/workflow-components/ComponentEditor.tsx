@@ -322,7 +322,8 @@ export function ComponentEditor({
               <CardHeader>
                 <CardTitle>Basic Information</CardTitle>
                 <CardDescription>
-                  Define the component&apos;s name, description, and organization
+                  Define the component&apos;s name, description, and
+                  organization
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">

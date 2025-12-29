@@ -87,6 +87,7 @@ class Organization(Base):
     __table_args__ = (Index("idx_org_slug", "slug"),)
 
     def __repr__(self):
+        """Return string representation of Organization."""
         return f"<Organization(id={self.id}, name={self.name}, slug={self.slug})>"
 
 
@@ -141,6 +142,7 @@ class TeamMember(Base):
     )
 
     def __repr__(self):
+        """Return string representation of TeamMember."""
         return f"<TeamMember(org={self.organization_id}, user={self.user_id}, role={self.role})>"
 
 
@@ -190,6 +192,7 @@ class OrganizationInvitation(Base):
     )
 
     def __repr__(self):
+        """Return string representation of OrganizationInvitation."""
         return (
             f"<OrganizationInvitation(org={self.organization_id}, email={self.email})>"
         )
@@ -279,6 +282,7 @@ class ProjectAccessControl(Base):
     )
 
     def __repr__(self):
+        """Return string representation of ProjectAccessControl."""
         target = (
             f"user={self.user_id}" if self.user_id else f"org={self.organization_id}"
         )

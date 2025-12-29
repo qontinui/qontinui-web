@@ -85,8 +85,8 @@ export function StorageUsageCard({
         {usedPercentage >= 90 && (
           <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
             <p className="text-sm text-red-400">
-              You&apos;re running low on storage space. Consider upgrading your plan
-              or removing unused files.
+              You&apos;re running low on storage space. Consider upgrading your
+              plan or removing unused files.
             </p>
           </div>
         )}
@@ -94,8 +94,8 @@ export function StorageUsageCard({
         {usedPercentage >= 75 && usedPercentage < 90 && (
           <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
             <p className="text-sm text-yellow-400">
-              You&apos;re using more than 75% of your storage. Consider managing your
-              files.
+              You&apos;re using more than 75% of your storage. Consider managing
+              your files.
             </p>
           </div>
         )}

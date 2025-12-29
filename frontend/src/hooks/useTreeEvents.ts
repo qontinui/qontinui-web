@@ -51,6 +51,7 @@ interface ApiExecutionTreeResponse {
   status: string;
   duration_ms: number | null;
   initial_state_ids: string[];
+  state_name_map?: Record<string, string>;
 }
 
 interface UseTreeEventsOptions {
@@ -83,6 +84,8 @@ interface UseTreeEventsReturn {
   durationMs: number | null;
   /** Initial state IDs from workflow metadata */
   initialStateIds: string[];
+  /** State name map (ID -> display name) */
+  stateNameMap: Map<string, string>;
   /** Manually refresh data */
   refresh: () => Promise<void>;
   /** Fetch more events (pagination) */
@@ -202,6 +205,10 @@ export function useTreeEvents({
   const status = useMemo(() => tree?.status ?? null, [tree]);
   const durationMs = useMemo(() => tree?.duration_ms ?? null, [tree]);
   const initialStateIds = useMemo(() => tree?.initial_state_ids ?? [], [tree]);
+  const stateNameMap = useMemo(
+    () => new Map(Object.entries(tree?.state_name_map ?? {})),
+    [tree]
+  );
 
   return {
     events,
@@ -214,6 +221,7 @@ export function useTreeEvents({
     status,
     durationMs,
     initialStateIds,
+    stateNameMap,
     refresh,
     fetchMore,
     clear,

@@ -959,6 +959,24 @@ class ApiClient {
   }
 
   /**
+   * Get WebSocket URL for real-time runner status updates (session start, logs, screenshots)
+   */
+  async getRunnerStatusWebSocketUrl(): Promise<string> {
+    const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
+    const url = API_BASE_URL.replace(/^https?:\/\//, "");
+    const baseUrl = `${wsProtocol}://${url}/api/v1/ws/runner/status`;
+
+    // Get token for WebSocket authentication
+    const token = await this.getWebSocketToken();
+    if (token) {
+      return `${baseUrl}?token=${encodeURIComponent(token)}`;
+    }
+
+    // Fallback without token (backend will try cookie auth)
+    return baseUrl;
+  }
+
+  /**
    * Get WebSocket URL for monitoring a specific session
    */
   async getMonitorWebSocketUrl(sessionId: string): Promise<string> {

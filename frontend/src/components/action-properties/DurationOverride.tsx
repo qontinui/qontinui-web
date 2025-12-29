@@ -19,7 +19,10 @@ export function DurationOverride({
   action,
   updateConfig,
 }: DurationOverrideProps) {
-  const timeout = (action.config as Record<string, unknown>).timeout as number | null | undefined;
+  const timeout = (action.config as Record<string, unknown>).timeout as
+    | number
+    | null
+    | undefined;
 
   return (
     <div className="space-y-2">
@@ -33,7 +36,10 @@ export function DurationOverride({
             size="sm"
             className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
             onClick={() => {
-              const { timeout: _timeout, ...rest } = action.config as Record<string, unknown>;
+              const { timeout: _timeout, ...rest } = action.config as Record<
+                string,
+                unknown
+              >;
               updateConfig("__reset__", rest);
             }}
             title="Remove override (use project default)"

@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { runnerClient, type RunnerMonitor } from "@/lib/runner-client";
+import { runnerClient } from "@/lib/runner-client";
+import type { RunnerMonitor } from "@/lib/schemas/geometry";
 
 /**
  * Default monitor information when runner is not available

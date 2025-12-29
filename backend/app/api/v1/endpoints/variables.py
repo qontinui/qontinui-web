@@ -699,7 +699,7 @@ async def get_run_variables_snapshot(
     )
 
     # Convert to snapshot format
-    from datetime import datetime
+    from qontinui_schemas.common import utc_now
 
     snapshots = [
         VariableSnapshot(
@@ -714,7 +714,7 @@ async def get_run_variables_snapshot(
     return VariableSnapshotResponse(
         run_id=run_id,
         variables=snapshots,
-        timestamp=datetime.utcnow(),
+        timestamp=utc_now(),
     )
 
 

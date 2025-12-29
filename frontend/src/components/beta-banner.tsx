@@ -42,8 +42,8 @@ export function BetaBanner() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                 <span className="font-semibold text-sm">Beta!</span>
                 <span className="text-xs opacity-90">
-                  We&apos;re actively developing new features. Your feedback helps us
-                  improve.
+                  We&apos;re actively developing new features. Your feedback
+                  helps us improve.
                 </span>
               </div>
             </div>

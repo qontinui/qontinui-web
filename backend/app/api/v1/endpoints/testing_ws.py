@@ -11,7 +11,6 @@ import base64
 import io
 import time
 from collections import defaultdict
-from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -19,6 +18,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 from PIL import Image
 from pydantic import ValidationError
+from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -163,7 +163,7 @@ async def handle_session_start(
             return {
                 "type": "error",
                 "message": f"Invalid session_start data: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Verify project exists and user has access
@@ -181,7 +181,7 @@ async def handle_session_start(
             return {
                 "type": "error",
                 "message": f"Project {session_data.project_id} not found or access denied",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Create test run record
@@ -190,7 +190,7 @@ async def handle_session_start(
             runner_connection_id=connection_record_id,
             workflow_id=session_data.workflow_id,
             status=TestRunStatus.RUNNING,
-            started_at=datetime.utcnow(),
+            started_at=utc_now(),
             configuration_snapshot=session_data.configuration_snapshot,
             test_mode=session_data.test_mode,
             max_duration_seconds=session_data.max_duration_seconds,
@@ -213,7 +213,7 @@ async def handle_session_start(
         return {
             "type": "session_started",
             "test_run_id": str(test_run.id),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
     except Exception as e:
@@ -221,7 +221,7 @@ async def handle_session_start(
         return {
             "type": "error",
             "message": f"Failed to start test session: {str(e)}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
 
@@ -248,7 +248,7 @@ async def handle_transition_started(
             return {
                 "type": "error",
                 "message": "No active test session. Start session first.",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Validate and parse message data
@@ -258,7 +258,7 @@ async def handle_transition_started(
             return {
                 "type": "error",
                 "message": f"Invalid transition_started data: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Create transition execution record
@@ -288,7 +288,7 @@ async def handle_transition_started(
         return {
             "type": "transition_started_ack",
             "transition_execution_id": str(transition_execution.id),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
     except Exception as e:
@@ -298,7 +298,7 @@ async def handle_transition_started(
         return {
             "type": "error",
             "message": f"Failed to record transition start: {str(e)}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
 
@@ -325,7 +325,7 @@ async def handle_transition_completed(
             return {
                 "type": "error",
                 "message": "No active test session. Start session first.",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Validate and parse message data
@@ -335,7 +335,7 @@ async def handle_transition_completed(
             return {
                 "type": "error",
                 "message": f"Invalid transition_completed data: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Find the transition execution record by transition_id and sequence_number
@@ -351,7 +351,7 @@ async def handle_transition_completed(
             return {
                 "type": "error",
                 "message": f"Transition execution not found for sequence {transition_data.sequence_number}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Update transition execution record
@@ -403,7 +403,7 @@ async def handle_transition_completed(
         return {
             "type": "transition_completed_ack",
             "transition_execution_id": str(transition_execution.id),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
     except Exception as e:
@@ -413,7 +413,7 @@ async def handle_transition_completed(
         return {
             "type": "error",
             "message": f"Failed to record transition completion: {str(e)}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
 
@@ -440,7 +440,7 @@ async def handle_screenshot(
             return {
                 "type": "error",
                 "message": "No active test session. Start session first.",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Validate and parse message data
@@ -450,7 +450,7 @@ async def handle_screenshot(
             return {
                 "type": "error",
                 "message": f"Invalid screenshot data: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Decode base64 image
@@ -461,7 +461,7 @@ async def handle_screenshot(
             return {
                 "type": "error",
                 "message": f"Failed to decode base64 image: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Validate image MIME type
@@ -472,7 +472,7 @@ async def handle_screenshot(
             return {
                 "type": "error",
                 "message": str(e.detail),
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Validate file size (10MB limit)
@@ -481,7 +481,7 @@ async def handle_screenshot(
             return {
                 "type": "error",
                 "message": "Screenshot too large. Maximum size: 10.0MB",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Validate magic bytes
@@ -491,7 +491,7 @@ async def handle_screenshot(
             return {
                 "type": "error",
                 "message": str(e.detail),
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Extract image dimensions
@@ -504,7 +504,7 @@ async def handle_screenshot(
             return {
                 "type": "error",
                 "message": f"Failed to extract image dimensions: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Generate unique screenshot ID and S3 key
@@ -547,7 +547,7 @@ async def handle_screenshot(
             return {
                 "type": "error",
                 "message": f"Failed to upload screenshot: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Link screenshot to transition execution if provided
@@ -576,7 +576,7 @@ async def handle_screenshot(
         return {
             "type": "screenshot_stored",
             "screenshot_id": str(screenshot_id),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
     except Exception as e:
@@ -588,7 +588,7 @@ async def handle_screenshot(
         return {
             "type": "error",
             "message": f"Failed to process screenshot: {str(e)}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
 
@@ -615,7 +615,7 @@ async def handle_deficiency(
             return {
                 "type": "error",
                 "message": "No active test session. Start session first.",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Validate and parse message data
@@ -625,7 +625,7 @@ async def handle_deficiency(
             return {
                 "type": "error",
                 "message": f"Invalid deficiency data: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Find transition execution if provided
@@ -687,7 +687,7 @@ async def handle_deficiency(
         return {
             "type": "deficiency_recorded",
             "deficiency_id": str(deficiency.id),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
     except Exception as e:
@@ -699,7 +699,7 @@ async def handle_deficiency(
         return {
             "type": "error",
             "message": f"Failed to record deficiency: {str(e)}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
 
@@ -726,7 +726,7 @@ async def handle_session_end(
             return {
                 "type": "error",
                 "message": "No active test session to end.",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Validate and parse message data
@@ -736,7 +736,7 @@ async def handle_session_end(
             return {
                 "type": "error",
                 "message": f"Invalid session_end data: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         # Update test run record
@@ -748,11 +748,11 @@ async def handle_session_end(
             return {
                 "type": "error",
                 "message": f"Test run {test_run_id} not found",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
 
         test_run.status = TestRunStatus(session_data.status)
-        test_run.completed_at = datetime.utcnow()
+        test_run.completed_at = utc_now()
         test_run.error_summary = session_data.error_summary
         test_run.total_transitions = session_data.total_transitions
         test_run.successful_transitions = session_data.successful_transitions
@@ -778,7 +778,7 @@ async def handle_session_end(
             "type": "session_ended",
             "test_run_id": str(test_run_id),
             "status": session_data.status,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
     except Exception as e:
@@ -786,7 +786,7 @@ async def handle_session_end(
         return {
             "type": "error",
             "message": f"Failed to end test session: {str(e)}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
 
 
@@ -877,7 +877,7 @@ async def websocket_testing_runner_endpoint(
                 {
                     "type": "error",
                     "message": "Authentication required. Provide token query param or access_token cookie.",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -891,7 +891,7 @@ async def websocket_testing_runner_endpoint(
                 {
                     "type": "error",
                     "message": "Authentication failed",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -908,7 +908,7 @@ async def websocket_testing_runner_endpoint(
                 {
                     "type": "error",
                     "message": "Database connection failed",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
@@ -928,7 +928,7 @@ async def websocket_testing_runner_endpoint(
                 {
                     "type": "error",
                     "message": "User not found",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": utc_now().isoformat() + "Z",
                 }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -965,7 +965,7 @@ async def websocket_testing_runner_endpoint(
                 "type": "connected",
                 "user_id": str(user.id),
                 "auth_method": "jwt",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat() + "Z",
             }
         )
 
@@ -992,7 +992,7 @@ async def websocket_testing_runner_endpoint(
                         {
                             "type": "error",
                             "message": "Message rate limit exceeded. Maximum 100 messages per minute.",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
                     logger.warning(
@@ -1010,7 +1010,7 @@ async def websocket_testing_runner_endpoint(
                         {
                             "type": "error",
                             "message": f"Invalid message format: {str(e)}",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
                     continue
@@ -1025,7 +1025,7 @@ async def websocket_testing_runner_endpoint(
                     await websocket.send_json(
                         {
                             "type": "heartbeat_ack",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
 
@@ -1045,7 +1045,7 @@ async def websocket_testing_runner_endpoint(
                                 {
                                     "type": "test_run_started",
                                     "test_run_id": str(test_run_id),
-                                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                                    "timestamp": utc_now().isoformat() + "Z",
                                 },
                             )
                     await websocket.send_json(response)
@@ -1061,7 +1061,7 @@ async def websocket_testing_runner_endpoint(
                             {
                                 "type": "transition_started",
                                 **message.data,
-                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "timestamp": utc_now().isoformat() + "Z",
                             },
                         )
                     await websocket.send_json(response)
@@ -1077,7 +1077,7 @@ async def websocket_testing_runner_endpoint(
                             {
                                 "type": "transition_completed",
                                 **message.data,
-                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "timestamp": utc_now().isoformat() + "Z",
                             },
                         )
                     await websocket.send_json(response)
@@ -1099,7 +1099,7 @@ async def websocket_testing_runner_endpoint(
                                 "deficiency_id": response["deficiency_id"],
                                 "severity": message.data.get("severity"),
                                 "title": message.data.get("title"),
-                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "timestamp": utc_now().isoformat() + "Z",
                             },
                         )
                     await websocket.send_json(response)
@@ -1114,7 +1114,7 @@ async def websocket_testing_runner_endpoint(
                                 "type": "test_run_ended",
                                 "test_run_id": str(test_run_id),
                                 "status": response["status"],
-                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "timestamp": utc_now().isoformat() + "Z",
                             },
                         )
                     await websocket.send_json(response)
@@ -1127,7 +1127,7 @@ async def websocket_testing_runner_endpoint(
                     await websocket.send_json(
                         {
                             "type": "pong",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
 
@@ -1136,7 +1136,7 @@ async def websocket_testing_runner_endpoint(
                         {
                             "type": "error",
                             "message": f"Unknown message type: {message_type}",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
 
@@ -1153,7 +1153,7 @@ async def websocket_testing_runner_endpoint(
                         {
                             "type": "error",
                             "message": "Connection stale - no activity for 90s",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
                     break
@@ -1163,7 +1163,7 @@ async def websocket_testing_runner_endpoint(
                     await websocket.send_json(
                         {
                             "type": "ping",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
                     logger.debug(
@@ -1197,7 +1197,7 @@ async def websocket_testing_runner_endpoint(
                         {
                             "type": "error",
                             "message": f"Message processing error: {str(e)}",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
                 except Exception:

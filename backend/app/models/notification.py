@@ -93,13 +93,13 @@ class Notification(Base):
 
     def mark_as_read(self) -> None:
         """Mark notification as read."""
-        self.read = True  # type: ignore[assignment]
-        self.read_at = datetime.utcnow()  # type: ignore[assignment]
+        self.read = True
+        self.read_at = datetime.utcnow()
 
     def mark_as_unread(self) -> None:
         """Mark notification as unread."""
-        self.read = False  # type: ignore[assignment]
-        self.read_at = None  # type: ignore[assignment]
+        self.read = False
+        self.read_at = None
 
 
 class NotificationPreferences(Base):

@@ -15,7 +15,9 @@ export function KeyboardActionProperties({
   action,
   updateConfig,
 }: ActionPropertiesComponentProps) {
-  const key = (action.config as Record<string, unknown>).key as string | undefined;
+  const key = (action.config as Record<string, unknown>).key as
+    | string
+    | undefined;
 
   return (
     <>

@@ -478,8 +478,8 @@ export function CompleteTutorialWorkflowExample() {
           Congratulations!
         </h4>
         <p className="text-green-800 dark:text-green-200">
-          You&apos;ve successfully created your first game automation! You can now
-          use this automation in Qontinui to automate your gameplay.
+          You&apos;ve successfully created your first game automation! You can
+          now use this automation in Qontinui to automate your gameplay.
         </p>
       </div>
     </div>

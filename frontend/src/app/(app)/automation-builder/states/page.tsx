@@ -288,11 +288,11 @@ function TransitionVisualizationTab() {
   // Load transition when selection changes
   useEffect(() => {
     if (selectedTransition) {
-      animation.loadTransition(selectedTransition, states, workflows);
+      animation.loadTransition(selectedTransition, states, workflows, monitors);
     } else {
       animation.cancel();
     }
-  }, [selectedTransition?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedTransition?.id, monitors]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">

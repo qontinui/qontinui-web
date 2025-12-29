@@ -62,57 +62,118 @@ export function RunnerMonitor({ projectId: _projectId }: RunnerMonitorProps) {
 
   const initializeWebSocket = async () => {
     try {
-      const wsUrl = await apiClient.getRunnerWebSocketUrl();
+      // Connect to the runner status WebSocket to receive real-time session events
+      const wsUrl = await apiClient.getRunnerStatusWebSocketUrl();
+      console.log("[RunnerMonitor] Connecting to status WebSocket:", wsUrl);
 
-      wsRef.current = new RunnerWebSocket({
-        url: wsUrl,
-        onConnect: () => {
-          setIsConnected(true);
-          toast.success("Connected to runner");
-        },
-        onDisconnect: () => {
-          setIsConnected(false);
-          toast.info("Disconnected from runner");
-        },
-        onError: (error) => {
-          console.debug(
-            "WebSocket connection error (runner may not be active):",
-            error
-          );
-          // Don't show toast for connection errors - runner may not be running
-        },
-        onSessionStart: (data) => {
-          setCurrentSession({
-            ...data,
-            status: "running",
-          });
-          setScreenshots([]);
-          setLogs([]);
-          setSelectedScreenshot(null);
-          toast.success(`Session started: ${data.session_id.slice(0, 8)}...`);
-        },
-        onScreenshot: (data) => {
-          setScreenshots((prev) => [...prev, data]);
-          setSelectedScreenshot(data); // Auto-select latest screenshot
-        },
-        onLog: (data) => {
-          setLogs((prev) => [...prev, data]);
-        },
-        onSessionEnd: (data) => {
-          setCurrentSession((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  status: data.status,
-                  error_message: data.error_message,
-                }
-              : null
-          );
-          toast.info(`Session ended: ${data.status}`);
-        },
-      });
+      // Create a simple WebSocket connection for status updates
+      const ws = new WebSocket(wsUrl);
 
-      wsRef.current.connect();
+      ws.onopen = () => {
+        console.log("[RunnerMonitor] Status WebSocket connected");
+        setIsConnected(true);
+        toast.success("Connected to runner status");
+      };
+
+      ws.onclose = () => {
+        console.log("[RunnerMonitor] Status WebSocket disconnected");
+        setIsConnected(false);
+      };
+
+      ws.onerror = (error) => {
+        console.debug("[RunnerMonitor] WebSocket error:", error);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log(
+            "[RunnerMonitor] Received message:",
+            message.type,
+            message
+          );
+
+          switch (message.type) {
+            case "initial_state":
+              console.log("[RunnerMonitor] Initial state received");
+              break;
+
+            case "session_start":
+              setCurrentSession({
+                session_id: message.session_id,
+                project_id: message.project_id,
+                runner_version: message.runner_version,
+                runner_os: message.runner_os,
+                runner_hostname: message.runner_hostname,
+                timestamp: message.timestamp,
+                status: "running",
+              });
+              setScreenshots([]);
+              setLogs([]);
+              setSelectedScreenshot(null);
+              toast.success(
+                `Session started: ${message.session_id?.slice(0, 8) || "unknown"}...`
+              );
+              break;
+
+            case "session_end":
+              setCurrentSession((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      status: message.status,
+                      error_message: message.error_message,
+                    }
+                  : null
+              );
+              toast.info(`Session ended: ${message.status}`);
+              break;
+
+            case "log":
+              setLogs((prev) => [
+                ...prev,
+                {
+                  log_id: message.log_id,
+                  session_id: message.session_id,
+                  level: message.level,
+                  message: message.message,
+                  log_data: message.log_data,
+                  sequence_number: message.sequence_number,
+                  timestamp: message.timestamp,
+                },
+              ]);
+              break;
+
+            case "screenshot":
+              setScreenshots((prev) => [...prev, message]);
+              setSelectedScreenshot(message);
+              break;
+
+            case "runner_connected":
+            case "runner_disconnected":
+            case "runner_name_updated":
+              // Handle runner connection status changes
+              console.log("[RunnerMonitor] Runner status:", message.type);
+              break;
+
+            default:
+              console.log(
+                "[RunnerMonitor] Unknown message type:",
+                message.type
+              );
+          }
+        } catch (error) {
+          console.error("[RunnerMonitor] Failed to parse message:", error);
+        }
+      };
+
+      // Store WebSocket in ref for cleanup
+      wsRef.current = {
+        connect: () => {},
+        disconnect: () => ws.close(),
+        isConnected: () => ws.readyState === WebSocket.OPEN,
+        send: () => {},
+      } as unknown as RunnerWebSocket;
     } catch (error) {
       console.error("Failed to initialize WebSocket:", error);
       toast.error("Failed to connect to runner");

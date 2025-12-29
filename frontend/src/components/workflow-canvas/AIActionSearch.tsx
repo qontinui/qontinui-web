@@ -255,7 +255,9 @@ export function AIActionSearch({
         ) : query.trim() && !loading ? (
           <div className="p-8 text-center text-gray-500 dark:text-gray-400">
             <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p className="text-sm">No actions found matching &quot;{query}&quot;</p>
+            <p className="text-sm">
+              No actions found matching &quot;{query}&quot;
+            </p>
             <p className="text-xs mt-2">Try a different search term</p>
           </div>
         ) : !query.trim() ? (
@@ -263,7 +265,8 @@ export function AIActionSearch({
             <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p className="text-sm font-medium mb-2">AI-Powered Action Search</p>
             <p className="text-xs">
-              Try: &quot;click the submit button&quot; or &quot;find an image on screen&quot;
+              Try: &quot;click the submit button&quot; or &quot;find an image on
+              screen&quot;
             </p>
           </div>
         ) : null}

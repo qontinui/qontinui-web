@@ -17,7 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
-import type { RunnerMonitor } from "@/lib/runner-client";
+import type { RunnerMonitor } from "@/lib/schemas/geometry";
 
 interface MonitorSelectorProps {
   monitors?: number[];

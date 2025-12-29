@@ -126,14 +126,22 @@ export default function Dashboard() {
   // Transform API projects to match our interface
   const projects = useMemo(
     () =>
-      apiProjects.map((p: { id: string; name: string; description?: string | null; created_at: string; updated_at: string }) => ({
-        id: p.id.toString(),
-        name: p.name,
-        description: p.description || "No description",
-        created_at: p.created_at,
-        updated_at: p.updated_at,
-        status: "draft" as const, // Default status since API doesn't have this field yet
-      })),
+      apiProjects.map(
+        (p: {
+          id: string;
+          name: string;
+          description?: string | null;
+          created_at: string;
+          updated_at: string;
+        }) => ({
+          id: p.id.toString(),
+          name: p.name,
+          description: p.description || "No description",
+          created_at: p.created_at,
+          updated_at: p.updated_at,
+          status: "draft" as const, // Default status since API doesn't have this field yet
+        })
+      ),
     [apiProjects]
   );
 
@@ -204,7 +212,8 @@ export default function Dashboard() {
       toast.success("Project created and selected");
     } catch (error: unknown) {
       console.error("Failed to create project:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to create new project";
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to create new project";
       toast.error(errorMessage);
       throw error; // Re-throw so the dialog knows it failed
     }
@@ -222,7 +231,11 @@ export default function Dashboard() {
       toast.success("Project name updated");
     } catch (error: unknown) {
       console.error("Failed to update project name:", error);
-      const errMsg = error instanceof Error ? error.message : "Failed to update project name"; toast.error(errMsg);
+      const errMsg =
+        error instanceof Error
+          ? error.message
+          : "Failed to update project name";
+      toast.error(errMsg);
       throw error;
     }
   };
@@ -284,7 +297,8 @@ export default function Dashboard() {
         router.push(`/automation-builder?project=${newProject.id}`);
       } catch (error: unknown) {
         console.error("Import failed:", error);
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
         toast.error(`Failed to import project: ${errorMessage}`);
       }
     };

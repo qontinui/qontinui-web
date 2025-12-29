@@ -306,7 +306,8 @@ function LandingContent() {
             </h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Qontinui is based on peer-reviewed research published in
-              Springer&apos;s Software and Systems Modeling journal (October 2025)
+              Springer&apos;s Software and Systems Modeling journal (October
+              2025)
             </p>
           </div>
 

@@ -19,13 +19,16 @@ import type {
   ImageAsset,
 } from "@/contexts/automation-context/types";
 import type { Workflow } from "@/lib/action-schema/action-types";
-import type { RunnerMonitor } from "@/lib/runner-client";
+import type { Monitor } from "@/lib/schemas/geometry";
 import {
   useTransitionAnimation,
   type UseTransitionAnimationResult,
 } from "./TransitionAnimationController";
 import { renderActionAnimation } from "./ActionAnimations";
-import type { TransitionAnimationState } from "@/types/transition-animation";
+import type {
+  TransitionAnimationState,
+  ActionAnimationConfig,
+} from "@/types/transition-animation";
 import {
   useMonitorCanvas,
   drawMonitorBackground,
@@ -51,7 +54,7 @@ interface TransitionAnimationCanvasProps {
   /** All images in the project */
   images: ImageAsset[];
   /** Monitor info for multi-monitor coordinate handling */
-  monitors?: RunnerMonitor[];
+  monitors?: Monitor[];
   /** Additional class names */
   className?: string;
   /** Animation controller (if provided externally) */
@@ -135,7 +138,7 @@ export function TransitionAnimationCanvas({
     });
 
     return Array.from(monitorIndices);
-  }, [animation.data]);
+  }, [animation.data, monitors]);
 
   // Use the shared monitor canvas hook
   const canvas = useMonitorCanvas({
@@ -156,11 +159,11 @@ export function TransitionAnimationCanvas({
   // Load transition when it changes
   useEffect(() => {
     if (transition) {
-      animation.loadTransition(transition, states, workflows);
+      animation.loadTransition(transition, states, workflows, monitors);
     } else {
       animation.cancel();
     }
-  }, [transition?.id]); // Only reload when transition ID changes
+  }, [transition?.id, monitors]); // Only reload when transition ID or monitors change
 
   // Build map of imageId -> loaded HTMLImageElement
   const getImageUrl = useCallback(
@@ -223,15 +226,28 @@ export function TransitionAnimationCanvas({
     const ctx = canvasEl.getContext("2d");
     if (!ctx) return;
 
-    // Set canvas size to bounds
-    canvasEl.width = canvas.bounds.width;
-    canvasEl.height = canvas.bounds.height;
+    // Skip rendering if container hasn't been measured yet
+    if (canvas.containerSize.width === 0 || canvas.containerSize.height === 0) {
+      return;
+    }
+
+    // Set canvas size to container size (NOT bounds!)
+    // The pan/zoom transforms are calculated based on containerSize,
+    // so the canvas buffer must match for correct rendering.
+    const dpr = window.devicePixelRatio || 1;
+    canvasEl.width = canvas.containerSize.width * dpr;
+    canvasEl.height = canvas.containerSize.height * dpr;
 
     // Clear canvas
     ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
     // Apply transforms
     ctx.save();
+
+    // Scale for high DPI displays
+    ctx.scale(dpr, dpr);
+
+    // Apply pan and zoom
     ctx.translate(canvas.pan.x, canvas.pan.y);
     ctx.scale(canvas.zoom, canvas.zoom);
 
@@ -252,7 +268,7 @@ export function TransitionAnimationCanvas({
       drawPlaceholder(ctx, canvas.bounds);
     } else {
       // Draw states based on animation phase
-      drawStates(ctx, data, state, loadedImages, canvas.bounds);
+      drawStates(ctx, data, state, loadedImages, canvas.bounds, monitors);
 
       // Draw current action animation if in executing phase
       if (state.phase === "executing-action") {
@@ -262,9 +278,17 @@ export function TransitionAnimationCanvas({
             x: canvas.bounds.width / 2,
             y: canvas.bounds.height / 2,
           };
+
+          // Transform action coordinates from absolute screen coordinates
+          // to canvas coordinates (relative to bounds)
+          const transformedAction = transformActionCoordinates(
+            currentAction,
+            canvas.bounds
+          );
+
           renderActionAnimation(
             ctx,
-            currentAction,
+            transformedAction,
             state.progress,
             canvasCenter
           );
@@ -283,8 +307,10 @@ export function TransitionAnimationCanvas({
     canvas.pan,
     canvas.zoom,
     canvas.bounds,
+    canvas.containerSize,
     canvas.displayedMonitors,
     loadedImages,
+    monitors,
   ]);
 
   return (
@@ -302,9 +328,7 @@ export function TransitionAnimationCanvas({
     >
       <canvas
         ref={canvas.canvasRef}
-        width={canvas.bounds.width}
-        height={canvas.bounds.height}
-        className="absolute top-0 left-0"
+        className="absolute inset-0 w-full h-full"
       />
 
       {/* Monitor filter */}
@@ -375,6 +399,50 @@ export function TransitionAnimationCanvas({
 }
 
 // ============================================================================
+// Coordinate Transformation
+// ============================================================================
+
+/**
+ * Transform action coordinates from absolute screen coordinates to canvas coordinates.
+ * Action coordinates are stored as absolute screen coordinates (matching monitor layout),
+ * but the canvas renders relative to bounds.minX/minY, so we need to subtract those.
+ */
+function transformActionCoordinates(
+  action: ActionAnimationConfig,
+  bounds: MonitorCanvasBounds
+): ActionAnimationConfig {
+  const transformed = { ...action };
+
+  // Transform startPosition if present
+  if (action.startPosition) {
+    transformed.startPosition = {
+      x: action.startPosition.x - bounds.minX,
+      y: action.startPosition.y - bounds.minY,
+    };
+  }
+
+  // Transform endPosition if present
+  if (action.endPosition) {
+    transformed.endPosition = {
+      x: action.endPosition.x - bounds.minX,
+      y: action.endPosition.y - bounds.minY,
+    };
+  }
+
+  // Transform targetRegion if present
+  if (action.targetRegion) {
+    transformed.targetRegion = {
+      x: action.targetRegion.x - bounds.minX,
+      y: action.targetRegion.y - bounds.minY,
+      width: action.targetRegion.width,
+      height: action.targetRegion.height,
+    };
+  }
+
+  return transformed;
+}
+
+// ============================================================================
 // Drawing Functions
 // ============================================================================
 
@@ -398,7 +466,8 @@ function drawStates(
   data: NonNullable<UseTransitionAnimationResult["data"]>,
   state: TransitionAnimationState,
   loadedImages: Map<string, HTMLImageElement>,
-  bounds: MonitorCanvasBounds
+  bounds: MonitorCanvasBounds,
+  monitors: Monitor[]
 ): void {
   // Determine which states to show and their opacity based on phase
   let originOpacity = 1;
@@ -435,7 +504,8 @@ function drawStates(
         loadedImages,
         bounds,
         originOpacity,
-        false
+        false,
+        monitors
       );
     });
   }
@@ -453,7 +523,8 @@ function drawStates(
         loadedImages,
         bounds,
         targetOpacity,
-        true
+        true,
+        monitors
       );
     });
   }
@@ -466,12 +537,21 @@ function drawState(
   loadedImages: Map<string, HTMLImageElement>,
   bounds: MonitorCanvasBounds,
   opacity: number,
-  isTarget: boolean
+  isTarget: boolean,
+  monitors: Monitor[]
 ): void {
   ctx.globalAlpha = opacity;
 
+  // Build monitor map for coordinate translation
+  const monitorMap = new Map<number, Monitor>();
+  monitors.forEach((m) => monitorMap.set(m.index, m));
+
   // Draw state images
   for (const stateImage of state.stateImages || []) {
+    // Get the monitor this image belongs to
+    const monitorIndex = stateImage.monitors?.[0] ?? 0;
+    const monitor = monitorMap.get(monitorIndex);
+
     for (const pattern of stateImage.patterns || []) {
       const imageId = pattern.imageId;
       if (!imageId) continue;
@@ -479,21 +559,32 @@ function drawState(
       const img = loadedImages.get(imageId);
       if (!img) continue;
 
-      // Get position (translate from absolute screen coords to canvas coords)
+      // Get position - try searchRegions first, then fallback to offsetX/offsetY
+      // Note: offsetX/offsetY are technically click offsets, but some legacy data
+      // may store actual position there. searchRegions is the correct source.
       let x = 0,
         y = 0;
       let width = img.naturalWidth;
       let height = img.naturalHeight;
 
-      if (pattern.offsetX !== undefined && pattern.offsetY !== undefined) {
-        x = pattern.offsetX - bounds.minX;
-        y = pattern.offsetY - bounds.minY;
-      } else if (pattern.searchRegions?.[0]) {
+      if (pattern.searchRegions?.[0]) {
+        // searchRegion coordinates are RELATIVE to the monitor they were captured on
         const sr = pattern.searchRegions[0];
-        x = sr.x - bounds.minX;
-        y = sr.y - bounds.minY;
+        const absX = monitor ? monitor.x + sr.x : sr.x;
+        const absY = monitor ? monitor.y + sr.y : sr.y;
+        x = absX - bounds.minX;
+        y = absY - bounds.minY;
         width = sr.width || width;
         height = sr.height || height;
+      } else if (
+        pattern.offsetX !== undefined &&
+        pattern.offsetY !== undefined
+      ) {
+        // Fallback: use offsetX/offsetY (legacy data may store position here)
+        const absX = monitor ? monitor.x + pattern.offsetX : pattern.offsetX;
+        const absY = monitor ? monitor.y + pattern.offsetY : pattern.offsetY;
+        x = absX - bounds.minX;
+        y = absY - bounds.minY;
       }
 
       // Draw image

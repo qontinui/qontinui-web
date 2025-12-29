@@ -567,8 +567,14 @@ export function AutomationBuilder() {
         ) : (
           // Show action properties when an action is selected
           <ActionProperties
-            action={selectedAction as import("@/components/action-properties/types").Action}
-            onUpdateAction={handleUpdateAction as (action: import("@/components/action-properties/types").Action) => void}
+            action={
+              selectedAction as import("@/components/action-properties/types").Action
+            }
+            onUpdateAction={
+              handleUpdateAction as (
+                action: import("@/components/action-properties/types").Action
+              ) => void
+            }
           />
         )}
       </div>

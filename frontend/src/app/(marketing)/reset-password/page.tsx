@@ -71,7 +71,8 @@ export default function ResetPassword() {
     } catch (error: unknown) {
       toast.error("Failed to reset password", {
         description:
-          (error instanceof Error ? error.message : null) || "The reset link may be invalid or expired.",
+          (error instanceof Error ? error.message : null) ||
+          "The reset link may be invalid or expired.",
       });
     } finally {
       setIsSubmitting(false);

@@ -52,9 +52,7 @@ class ProcessingPhase(str, enum.Enum):
 
 
 class Recording(Base):
-    """
-    A recording session containing frames and interactions for state discovery
-    """
+    """A recording session containing frames and interactions for state discovery."""
 
     __tablename__ = "recordings"
 
@@ -192,9 +190,7 @@ class Recording(Base):
 
 
 class RecordingFrame(Base):
-    """
-    Individual frame from a recording
-    """
+    """Individual frame from a recording."""
 
     __tablename__ = "recording_frames"
 
@@ -264,9 +260,7 @@ class RecordingFrame(Base):
 
 
 class RecordingInteraction(Base):
-    """
-    User interaction event (click, key, drag, etc.)
-    """
+    """User interaction event (click, key, drag, etc.)."""
 
     __tablename__ = "recording_interactions"
 
@@ -352,9 +346,7 @@ class RecordingInteraction(Base):
 
 
 class RecordingContext(Base):
-    """
-    Context events (window changes, URL navigation, focus changes)
-    """
+    """Context events (window changes, URL navigation, focus changes)."""
 
     __tablename__ = "recording_contexts"
 
@@ -427,9 +419,7 @@ class RecordingContext(Base):
 
 
 class DiscoveredTransition(Base):
-    """
-    A transition discovered through automated analysis
-    """
+    """A transition discovered through automated analysis."""
 
     __tablename__ = "discovered_transitions"
 
@@ -508,9 +498,7 @@ class DiscoveredTransition(Base):
 
 
 class ProcessingLog(Base):
-    """
-    Logs for processing steps (for debugging and progress tracking)
-    """
+    """Logs for processing steps (for debugging and progress tracking)."""
 
     __tablename__ = "processing_logs"
 

@@ -1,4 +1,19 @@
-import { formatDistanceToNow, formatDistance, parseISO } from "date-fns";
+import { formatDistance, parseISO } from "date-fns";
+
+// Re-export utilities from time-utils for consistent timestamp handling
+export {
+  formatRelativeTime,
+  formatTimestampRelative,
+  formatLocalDateTime,
+  formatTimestampLocal,
+  parseUTCDate,
+  safeParseUTCDate,
+  formatDurationMs,
+  getDurationMs,
+  isPast,
+  isFuture,
+  nowUTC,
+} from "@/lib/time-utils";
 
 /**
  * Format seconds into human-readable duration
@@ -36,20 +51,6 @@ export function formatDuration(seconds: number): string {
   }
 
   return `${secs}s`;
-}
-
-/**
- * Format a date string or Date object into relative time
- * Examples: "2 minutes ago", "3 hours ago", "5 days ago"
- */
-export function formatRelativeTime(date: string | Date): string {
-  try {
-    const dateObj = typeof date === "string" ? parseISO(date) : date;
-    return formatDistanceToNow(dateObj, { addSuffix: true });
-  } catch (error) {
-    console.error("Error formatting relative time:", error);
-    return "Unknown";
-  }
 }
 
 /**

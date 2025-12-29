@@ -173,8 +173,8 @@ export function ScheduleManager() {
                     <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No schedules configured yet.</p>
                     <p className="text-sm mt-2">
-                      Click &quot;New Schedule&quot; to create your first automated
-                      schedule.
+                      Click &quot;New Schedule&quot; to create your first
+                      automated schedule.
                     </p>
                   </CardContent>
                 </Card>

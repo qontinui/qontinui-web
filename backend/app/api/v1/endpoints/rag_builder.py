@@ -6,6 +6,7 @@ and transitions stored in project rag_config.
 
 import base64
 import io
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -20,6 +21,7 @@ from app.api.deps import get_async_db, get_current_active_user_async
 from app.crud.project import get_project
 from app.crud.runner import get_active_connection_for_project
 from app.middleware.error_handler import not_found_error
+from app.models.embedding_generation_job import EmbeddingGenerationJob
 from app.models.organization import PermissionLevel
 from app.models.project_embedding import ProjectEmbedding
 from app.models.user import User
@@ -692,6 +694,38 @@ async def receive_embedding_results(
 
     # Get current configuration
     config: dict[str, Any] = project.configuration or {}  # type: ignore[assignment]
+
+    # Create a job record to track this processing in the Processing History tab
+    successful_count = sum(1 for r in request.results if r.success)
+    failed_count = len(request.results) - successful_count
+
+    job = EmbeddingGenerationJob(
+        project_id=project_id,
+        user_id=current_user.id,
+        status="completed",
+        total_patterns=len(request.results),
+        processed_patterns=successful_count,
+        error_message=f"{failed_count} embeddings failed" if failed_count > 0 else None,
+        job_metadata={
+            "source": "runner",
+            "embedding_model": "clip-vit-base-patch32",
+            "embedding_version": "1.0.0",
+            "total_received": request.total_processed,
+            "successful": request.successful,
+            "failed": request.failed,
+        },
+        started_at=datetime.utcnow(),
+        completed_at=datetime.utcnow(),
+    )
+    db.add(job)
+    logger.info(
+        "embedding_job_created",
+        project_id=str(project_id),
+        job_id=str(job.id) if job.id else "pending",
+        total_patterns=len(request.results),
+        successful=successful_count,
+        failed=failed_count,
+    )
 
     # Convert results to dict format
     results_dicts = [

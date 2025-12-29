@@ -59,6 +59,7 @@ from qontinui_schemas.api.execution import (
     RunType,
     ScreenshotType,
 )
+from qontinui_schemas.common import utc_now
 
 # Import tree event schemas
 from qontinui_schemas.events import DisplayNode as SchemaDisplayNode
@@ -340,23 +341,16 @@ async def create_run(
     current_user: User = Depends(current_active_user),
 ) -> ExecutionRunResponse:
     """Create a new execution run."""
-    now = datetime.utcnow()
+    now = utc_now()
 
-    # Debug: write to file to verify code is executing
-
-    debug_file = "C:/Users/Joshua/Documents/qontinui_parent_directory/.dev-logs/execution_debug.txt"
-    with open(debug_file, "a") as f:
-        f.write(f"\n{'='*60}\n")
-        f.write(f"create_run called at {now}\n")
-        if run_data.workflow_metadata:
-            f.write(f"workflow_metadata received: {run_data.workflow_metadata}\n")
-            f.write(
-                f"initial_state_ids: {run_data.workflow_metadata.initial_state_ids}\n"
-            )
-            f.write(f"model_dump: {run_data.workflow_metadata.model_dump()}\n")
-        else:
-            f.write("No workflow_metadata\n")
-        f.write(f"{'='*60}\n")
+    # Log timezone info for debugging
+    logger.info(
+        "create_run_timestamp",
+        now_str=str(now),
+        now_repr=repr(now),
+        now_iso=now.isoformat(),
+        tzinfo=str(now.tzinfo),
+    )
 
     # FIX: Ensure model_dump includes initial_state_ids
     if run_data.workflow_metadata:
@@ -668,7 +662,7 @@ async def complete_run(
         complete_data.coverage.model_dump() if complete_data.coverage else None
     )
     run.error_message = complete_data.error_message
-    run.updated_at = datetime.utcnow()
+    run.updated_at = utc_now()
 
     await db.commit()
     await db.refresh(run)
@@ -717,7 +711,7 @@ async def delete_run(
     # If running, mark as cancelled
     if run.status == ExecutionRunStatus.RUNNING:
         run.status = ExecutionRunStatus.CANCELLED
-        run.ended_at = datetime.utcnow()
+        run.ended_at = utc_now()
         run.duration_seconds = int((run.ended_at - run.started_at).total_seconds())
         await db.commit()
         logger.info(
@@ -1414,7 +1408,7 @@ async def update_issue(
     if update_data.resolution_notes is not None:
         issue.resolution_notes = update_data.resolution_notes
 
-    issue.updated_at = datetime.utcnow()
+    issue.updated_at = utc_now()
 
     await db.commit()
     await db.refresh(issue)
@@ -1559,7 +1553,7 @@ async def get_reliability_stats(
     current_user: User = Depends(current_active_user),
 ) -> list[ActionReliabilityStats]:
     """Get action reliability statistics."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utc_now() - timedelta(days=days)
 
     # Get runs in time range
     run_query = select(ExecutionRun.id).where(
@@ -1807,12 +1801,17 @@ async def get_execution_tree(
     current_user: User = Depends(current_active_user),
 ) -> ExecutionTreeResponse:
     """Get the reconstructed execution tree for a run."""
+    logger.info(
+        "get_execution_tree called", run_id=str(run_id), user_id=str(current_user.id)
+    )
+
     # Verify run exists
     run_query = select(ExecutionRun).where(ExecutionRun.id == run_id)
     run_result = await db.execute(run_query)
     run = run_result.scalar_one_or_none()
 
     if not run:
+        logger.warning("Execution run not found", run_id=str(run_id))
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Execution run {run_id} not found",
@@ -1827,6 +1826,15 @@ async def get_execution_tree(
 
     result = await db.execute(query)
     events = result.scalars().all()
+
+    logger.info("Tree events found", run_id=str(run_id), event_count=len(events))
+
+    # If no tree events, fall back to building tree from action_executions
+    if not events:
+        logger.info(
+            "No tree events, falling back to action_executions", run_id=str(run_id)
+        )
+        return await _build_tree_from_actions(run_id, run, db)
 
     # Build node map from events
     nodes: dict[str, dict[str, Any]] = {}
@@ -1895,10 +1903,12 @@ async def get_execution_tree(
     if start_times and end_times:
         duration_ms = (max(end_times) - min(start_times)) * 1000
 
-    # Extract initial states from workflow metadata
+    # Extract initial states and state name map from workflow metadata
     initial_state_ids: list[str] = []
+    state_name_map: dict[str, str] = {}
     if run.workflow_metadata:
         initial_state_ids = run.workflow_metadata.get("initial_state_ids", [])
+        state_name_map = run.workflow_metadata.get("state_name_map", {})
 
     return ExecutionTreeResponse(
         run_id=run_id,
@@ -1908,4 +1918,128 @@ async def get_execution_tree(
         status=overall_status,
         duration_ms=duration_ms,
         initial_state_ids=initial_state_ids,
+        state_name_map=state_name_map,
+    )
+
+
+async def _build_tree_from_actions(
+    run_id: UUID, run: ExecutionRun, db: AsyncSession
+) -> ExecutionTreeResponse:
+    """
+    Build an execution tree from action_executions when no tree_events exist.
+    This provides backward compatibility with runners that report actions
+    but not tree events.
+    """
+    logger.info("_build_tree_from_actions called", run_id=str(run_id))
+
+    # Get all actions for this run
+    action_query = (
+        select(ActionExecution)
+        .where(ActionExecution.run_id == run_id)
+        .order_by(ActionExecution.sequence_number)
+    )
+    action_result = await db.execute(action_query)
+    actions = action_result.scalars().all()
+
+    logger.info(
+        "Actions found for tree building", run_id=str(run_id), action_count=len(actions)
+    )
+
+    # Build flat list of display nodes from actions
+    root_nodes: list[SchemaDisplayNode] = []
+    for action in actions:
+        # Convert action to display node
+        node_type = SchemaNodeType.ACTION
+        action_type_str = (
+            action.action_type.value
+            if hasattr(action.action_type, "value")
+            else str(action.action_type)
+        )
+        if "transition" in action_type_str.lower():
+            node_type = SchemaNodeType.TRANSITION
+
+        # Map action status to node status
+        status_str = (
+            action.status.value
+            if hasattr(action.status, "value")
+            else str(action.status)
+        )
+        if status_str == "success":
+            node_status = SchemaNodeStatus.SUCCESS
+        elif status_str in ("failed", "error", "timeout"):
+            # Timeout is treated as failed since NodeStatus doesn't have TIMEOUT
+            node_status = SchemaNodeStatus.FAILED
+        elif status_str == "skipped":
+            # Skipped actions are shown as pending since NodeStatus doesn't have SKIPPED
+            node_status = SchemaNodeStatus.PENDING
+        else:
+            node_status = SchemaNodeStatus.PENDING
+
+        # Build metadata
+        metadata = SchemaNodeMetadata(
+            action_type=action_type_str,
+            state_context={
+                "active_before": [action.from_state] if action.from_state else [],
+                "active_after": [action.to_state] if action.to_state else [],
+            },
+        )
+
+        # Calculate timestamps
+        start_ts = action.started_at.timestamp() if action.started_at else 0
+        end_ts = action.completed_at.timestamp() if action.completed_at else None
+        duration_sec = (action.duration_ms / 1000) if action.duration_ms else None
+
+        node = SchemaDisplayNode(
+            id=str(action.id),
+            node_type=node_type,
+            name=action.action_name or f"Action {action.sequence_number}",
+            timestamp=start_ts,
+            end_timestamp=end_ts,
+            duration=duration_sec,
+            status=node_status,
+            metadata=metadata,
+            error=action.error_message,
+            children=[],
+            is_expanded=True,
+            level=0,
+        )
+        root_nodes.append(node)
+
+    # Calculate overall status
+    if not root_nodes:
+        overall_status = SchemaNodeStatus.PENDING
+    elif any(n.status == SchemaNodeStatus.FAILED for n in root_nodes):
+        overall_status = SchemaNodeStatus.FAILED
+    elif all(n.status == SchemaNodeStatus.SUCCESS for n in root_nodes):
+        overall_status = SchemaNodeStatus.SUCCESS
+    else:
+        overall_status = SchemaNodeStatus.PENDING
+
+    # Calculate total duration from run data or from actions
+    duration_ms = None
+    if run.duration_seconds:
+        duration_ms = run.duration_seconds * 1000
+    elif root_nodes:
+        total_ms = sum(
+            (n.duration or 0) * 1000 for n in root_nodes if n.duration is not None
+        )
+        if total_ms > 0:
+            duration_ms = total_ms
+
+    # Extract initial states and state name map from workflow metadata
+    initial_state_ids: list[str] = []
+    state_name_map: dict[str, str] = {}
+    if run.workflow_metadata:
+        initial_state_ids = run.workflow_metadata.get("initial_state_ids", [])
+        state_name_map = run.workflow_metadata.get("state_name_map", {})
+
+    return ExecutionTreeResponse(
+        run_id=run_id,
+        root_nodes=root_nodes,
+        total_events=len(root_nodes),
+        workflow_name=run.run_name,
+        status=overall_status,
+        duration_ms=duration_ms,
+        initial_state_ids=initial_state_ids,
+        state_name_map=state_name_map,
     )

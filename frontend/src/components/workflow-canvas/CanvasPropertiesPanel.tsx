@@ -156,7 +156,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
       // Get the property component for this action type
 
       const PropertyComponent = actionConfigRegistry.getComponent(
-        action.type as import('@/components/action-properties/types').Action['type']
+        action.type as import("@/components/action-properties/types").Action["type"]
       );
 
       if (!PropertyComponent) {
@@ -198,7 +198,9 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
                   <p className="text-xs text-gray-500 font-mono">{action.id}</p>
                 </div>
                 <Badge variant="secondary" className="text-xs">
-                  {actionConfigRegistry.getDisplayName(action.type as import('@/components/action-properties/types').Action['type'])}
+                  {actionConfigRegistry.getDisplayName(
+                    action.type as import("@/components/action-properties/types").Action["type"]
+                  )}
                 </Badge>
               </div>
 

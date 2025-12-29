@@ -1193,12 +1193,8 @@ export default function WorkflowAnalyticsPage() {
                   <WorkflowMetricsPanel
                     workflow={selectedWorkflowData.workflow}
                     metrics={selectedWorkflowData.metrics}
-                    complexityMetrics={
-                      selectedWorkflowData.complexityMetrics
-                    }
-                    executionHistory={
-                      selectedWorkflowData.executionHistory
-                    }
+                    complexityMetrics={selectedWorkflowData.complexityMetrics}
+                    executionHistory={selectedWorkflowData.executionHistory}
                   />
                   <PerformanceAnalyzer
                     workflow={selectedWorkflowData.workflow}

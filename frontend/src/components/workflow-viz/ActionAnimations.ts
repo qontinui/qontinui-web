@@ -155,11 +155,14 @@ export function renderFindAnimation(
 export function renderClickAnimation(
   ctx: CanvasRenderingContext2D,
   config: ActionAnimationConfig,
-  progress: number
+  progress: number,
+  canvasCenter?: { x: number; y: number }
 ): void {
-  if (!config.endPosition) return;
+  // Use endPosition if available, otherwise use canvasCenter
+  const position = config.endPosition || canvasCenter;
+  if (!position) return;
 
-  const { x, y } = config.endPosition;
+  const { x, y } = position;
   const colors = ACTION_CATEGORY_COLORS.mouse;
 
   // Multiple expanding rings
@@ -199,11 +202,16 @@ export function renderClickAnimation(
 export function renderTypeAnimation(
   ctx: CanvasRenderingContext2D,
   config: ActionAnimationConfig,
-  progress: number
+  progress: number,
+  canvasCenter?: { x: number; y: number }
 ): void {
-  if (!config.text || !config.endPosition) return;
+  if (!config.text) return;
 
-  const { x, y } = config.endPosition;
+  // Use endPosition if available, otherwise use canvasCenter
+  const position = config.endPosition || canvasCenter;
+  if (!position) return;
+
+  const { x, y } = position;
   const colors = ACTION_CATEGORY_COLORS.keyboard;
   const text = config.text;
   const visibleChars = Math.floor(text.length * progress);
@@ -327,11 +335,16 @@ export function renderDragAnimation(
 export function renderScrollAnimation(
   ctx: CanvasRenderingContext2D,
   config: ActionAnimationConfig,
-  progress: number
+  progress: number,
+  canvasCenter?: { x: number; y: number }
 ): void {
-  if (!config.endPosition || !config.direction) return;
+  if (!config.direction) return;
 
-  const { x, y } = config.endPosition;
+  // Use endPosition if available, otherwise use canvasCenter
+  const position = config.endPosition || canvasCenter;
+  if (!position) return;
+
+  const { x, y } = position;
   const direction = config.direction;
   const colors = ACTION_CATEGORY_COLORS.mouse;
 
@@ -455,11 +468,14 @@ export function renderMouseMoveAnimation(
 export function renderKeyPressAnimation(
   ctx: CanvasRenderingContext2D,
   config: ActionAnimationConfig,
-  progress: number
+  progress: number,
+  canvasCenter?: { x: number; y: number }
 ): void {
-  if (!config.endPosition) return;
+  // Use endPosition if available, otherwise use canvasCenter
+  const position = config.endPosition || canvasCenter;
+  if (!position) return;
 
-  const { x, y } = config.endPosition;
+  const { x, y } = position;
   const colors = ACTION_CATEGORY_COLORS.keyboard;
   const keyText = config.label || config.text || "KEY";
 
@@ -524,11 +540,14 @@ export function renderKeyPressAnimation(
 export function renderGoToStateAnimation(
   ctx: CanvasRenderingContext2D,
   config: ActionAnimationConfig,
-  progress: number
+  progress: number,
+  canvasCenter?: { x: number; y: number }
 ): void {
-  if (!config.endPosition) return;
+  // Use endPosition if available, otherwise use canvasCenter
+  const position = config.endPosition || canvasCenter;
+  if (!position) return;
 
-  const { x, y } = config.endPosition;
+  const { x, y } = position;
   const colors = ACTION_CATEGORY_COLORS.state;
   const stateNames =
     config.targetStateIds?.join(", ") || config.label || "State";
@@ -749,40 +768,55 @@ export function renderActionAnimation(
     case "FIND":
     case "VANISH":
     case "RAG_FIND":
-      renderFindAnimation(ctx, config, progress);
+      // FIND requires targetRegion
+      if (config.targetRegion) {
+        renderFindAnimation(ctx, config, progress);
+      } else {
+        renderNonVisualActionIndicator(ctx, config, progress, canvasCenter);
+      }
       break;
 
     case "CLICK":
     case "MOUSE_DOWN":
     case "MOUSE_UP":
-      renderClickAnimation(ctx, config, progress);
+      renderClickAnimation(ctx, config, progress, canvasCenter);
       break;
 
     case "MOUSE_MOVE":
-      renderMouseMoveAnimation(ctx, config, progress);
+      // MOUSE_MOVE requires both start and end positions
+      if (config.startPosition && config.endPosition) {
+        renderMouseMoveAnimation(ctx, config, progress);
+      } else {
+        renderNonVisualActionIndicator(ctx, config, progress, canvasCenter);
+      }
       break;
 
     case "DRAG":
-      renderDragAnimation(ctx, config, progress);
+      // DRAG requires both start and end positions
+      if (config.startPosition && config.endPosition) {
+        renderDragAnimation(ctx, config, progress);
+      } else {
+        renderNonVisualActionIndicator(ctx, config, progress, canvasCenter);
+      }
       break;
 
     case "SCROLL":
-      renderScrollAnimation(ctx, config, progress);
+      renderScrollAnimation(ctx, config, progress, canvasCenter);
       break;
 
     case "TYPE":
-      renderTypeAnimation(ctx, config, progress);
+      renderTypeAnimation(ctx, config, progress, canvasCenter);
       break;
 
     case "KEY_PRESS":
     case "KEY_DOWN":
     case "KEY_UP":
     case "HOTKEY":
-      renderKeyPressAnimation(ctx, config, progress);
+      renderKeyPressAnimation(ctx, config, progress, canvasCenter);
       break;
 
     case "GO_TO_STATE":
-      renderGoToStateAnimation(ctx, config, progress);
+      renderGoToStateAnimation(ctx, config, progress, canvasCenter);
       break;
 
     default:

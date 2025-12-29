@@ -630,51 +630,51 @@ export function useContextMenu() {
               label: "Find Actions",
               icon: icons.select,
               submenu: [
-                { label: "Find", onClick: () => console.log("Add Find") },
+                { label: "Find", onClick: () => {} },
                 {
                   label: "Find State",
-                  onClick: () => console.log("Add Find State"),
+                  onClick: () => {},
                 },
-                { label: "Vanish", onClick: () => console.log("Add Vanish") },
-                { label: "Exists", onClick: () => console.log("Add Exists") },
-                { label: "Wait", onClick: () => console.log("Add Wait") },
+                { label: "Vanish", onClick: () => {} },
+                { label: "Exists", onClick: () => {} },
+                { label: "Wait", onClick: () => {} },
               ],
             },
             {
               label: "Mouse Actions",
               icon: icons.select,
               submenu: [
-                { label: "Click", onClick: () => console.log("Add Click") },
+                { label: "Click", onClick: () => {} },
                 {
                   label: "Double Click",
-                  onClick: () => console.log("Add Double Click"),
+                  onClick: () => {},
                 },
                 {
                   label: "Right Click",
-                  onClick: () => console.log("Add Right Click"),
+                  onClick: () => {},
                 },
-                { label: "Drag", onClick: () => console.log("Add Drag") },
+                { label: "Drag", onClick: () => {} },
               ],
             },
             {
               label: "Keyboard Actions",
               icon: icons.select,
               submenu: [
-                { label: "Type", onClick: () => console.log("Add Type") },
+                { label: "Type", onClick: () => {} },
                 {
                   label: "Key Press",
-                  onClick: () => console.log("Add Key Press"),
+                  onClick: () => {},
                 },
-                { label: "Hotkey", onClick: () => console.log("Add Hotkey") },
+                { label: "Hotkey", onClick: () => {} },
               ],
             },
             {
               label: "Control Flow",
               icon: icons.select,
               submenu: [
-                { label: "If", onClick: () => console.log("Add If") },
-                { label: "Loop", onClick: () => console.log("Add Loop") },
-                { label: "Switch", onClick: () => console.log("Add Switch") },
+                { label: "If", onClick: () => {} },
+                { label: "Loop", onClick: () => {} },
+                { label: "Switch", onClick: () => {} },
               ],
             },
           ],
@@ -697,13 +697,13 @@ export function useContextMenu() {
           label: "Fit View",
           icon: icons.fitView,
           shortcut: "Ctrl+F",
-          onClick: () => console.log("Fit view"),
+          onClick: () => {},
         },
         {
           label: "Auto Layout",
           icon: icons.layout,
           shortcut: "Ctrl+L",
-          onClick: () => console.log("Auto layout"),
+          onClick: () => {},
         },
         { divider: true },
         {
@@ -721,15 +721,15 @@ export function useContextMenu() {
             { divider: true },
             {
               label: "Grid Size: 10px",
-              onClick: () => console.log("Set grid 10"),
+              onClick: () => {},
             },
             {
               label: "Grid Size: 20px",
-              onClick: () => console.log("Set grid 20"),
+              onClick: () => {},
             },
             {
               label: "Grid Size: 25px",
-              onClick: () => console.log("Set grid 25"),
+              onClick: () => {},
             },
           ],
         },
@@ -751,7 +751,7 @@ export function useContextMenu() {
           label: "Edit Properties",
           icon: icons.edit,
           shortcut: "Enter",
-          onClick: () => console.log("Edit node", nodeId),
+          onClick: () => {},
         },
         { divider: true },
         {
@@ -776,22 +776,22 @@ export function useContextMenu() {
         {
           label: "Enable/Disable",
           icon: icons.disable,
-          onClick: () => console.log("Toggle disable", nodeId),
+          onClick: () => {},
         },
         {
           label: "Add to Favorites",
           icon: icons.star,
-          onClick: () => console.log("Add to favorites", nodeId),
+          onClick: () => {},
         },
         {
           label: "Create Snapshot",
           icon: icons.snapshot,
-          onClick: () => console.log("Create snapshot", nodeId),
+          onClick: () => {},
         },
         {
           label: "Add Comment",
           icon: icons.comment,
-          onClick: () => console.log("Add comment", nodeId),
+          onClick: () => {},
         },
         { divider: true },
         {
@@ -819,29 +819,29 @@ export function useContextMenu() {
         {
           label: "Edit Connection",
           icon: icons.edit,
-          onClick: () => console.log("Edit edge", edgeId),
+          onClick: () => {},
         },
         {
           label: "Add Intermediate Node",
           icon: icons.add,
-          onClick: () => console.log("Add intermediate node", edgeId),
+          onClick: () => {},
         },
         {
           label: "Change Connection Type",
           icon: icons.connection,
           submenu: [
-            { label: "Main Flow", onClick: () => console.log("Set main") },
+            { label: "Main Flow", onClick: () => {} },
             {
               label: "Error Handling",
-              onClick: () => console.log("Set error"),
+              onClick: () => {},
             },
             {
               label: "Success Condition",
-              onClick: () => console.log("Set success"),
+              onClick: () => {},
             },
             {
               label: "Parallel Execution",
-              onClick: () => console.log("Set parallel"),
+              onClick: () => {},
             },
           ],
         },
@@ -850,7 +850,7 @@ export function useContextMenu() {
           label: "Delete Connection",
           icon: icons.delete,
           shortcut: "Del",
-          onClick: () => console.log("Delete edge", edgeId),
+          onClick: () => {},
           danger: true,
         },
       ];
@@ -872,20 +872,20 @@ export function useContextMenu() {
           label: "Align",
           icon: icons.align,
           submenu: [
-            { label: "Align Left", onClick: () => console.log("Align left") },
-            { label: "Align Right", onClick: () => console.log("Align right") },
-            { label: "Align Top", onClick: () => console.log("Align top") },
+            { label: "Align Left", onClick: () => {} },
+            { label: "Align Right", onClick: () => {} },
+            { label: "Align Top", onClick: () => {} },
             {
               label: "Align Bottom",
-              onClick: () => console.log("Align bottom"),
+              onClick: () => {},
             },
             {
               label: "Align Center Horizontal",
-              onClick: () => console.log("Align center H"),
+              onClick: () => {},
             },
             {
               label: "Align Center Vertical",
-              onClick: () => console.log("Align center V"),
+              onClick: () => {},
             },
           ],
         },
@@ -895,22 +895,22 @@ export function useContextMenu() {
           submenu: [
             {
               label: "Distribute Horizontally",
-              onClick: () => console.log("Distribute H"),
+              onClick: () => {},
             },
             {
               label: "Distribute Vertically",
-              onClick: () => console.log("Distribute V"),
+              onClick: () => {},
             },
             {
               label: "Distribute Evenly",
-              onClick: () => console.log("Distribute even"),
+              onClick: () => {},
             },
           ],
         },
         {
           label: "Group",
           icon: icons.group,
-          onClick: () => console.log("Group nodes"),
+          onClick: () => {},
         },
         { divider: true },
         {

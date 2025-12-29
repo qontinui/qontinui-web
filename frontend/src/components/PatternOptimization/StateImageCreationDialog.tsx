@@ -312,7 +312,8 @@ export function StateImageCreationDialog({
                   </span>
                 ) : (
                   <span className="font-medium">
-                    state &quot;{states.find((s) => s.id === selectedStateId)?.name}&quot;
+                    state &quot;
+                    {states.find((s) => s.id === selectedStateId)?.name}&quot;
                   </span>
                 )}
                 {includeSearchRegions && " with search regions"}.

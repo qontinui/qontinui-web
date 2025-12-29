@@ -111,9 +111,6 @@ async def login(
     in response body for backward compatibility during migration.
 
     Rate limited to 5 attempts per minute to prevent brute force attacks.
-
-    Args:
-        remember_me: If True, issues 90-day refresh token; if False, 30-day token
     """
     # Authenticate user (supports both username and email)
     from app.crud.user import authenticate_user
@@ -363,10 +360,6 @@ async def refresh_token(
     Sets new tokens as HttpOnly cookies in response.
 
     Rate limited to 10 attempts per minute to prevent token abuse.
-
-    Args:
-        body.refresh_token: Current refresh token (optional, read from cookie if not provided)
-        body.extend_session: If True, resets absolute expiry to current time + MAX_SESSION_DAYS
     """
     # Try to read refresh token from cookie first (preferred method)
     refresh_token_value = request.cookies.get("refresh_token")
@@ -666,13 +659,7 @@ async def update_device(
     current_user: User = Depends(current_active_user),
     device_update: DeviceSessionUpdate,
 ):
-    """
-    Update a device session (e.g., mark as trusted, set device name).
-
-    Args:
-        device_id: Device session ID
-        device_update: Fields to update
-    """
+    """Update a device session (e.g., mark as trusted, set device name)."""
     # Get device session with ownership verification
     device_session = await device_session_service.get_device_session_by_id(
         db, device_id, current_user.id
@@ -743,9 +730,6 @@ async def delete_device(
 
     This removes the device from the user's trusted devices list.
     The user will need to re-authenticate from this device.
-
-    Args:
-        device_id: Device session ID
     """
     # Get device session with ownership verification
     device_session = await device_session_service.get_device_session_by_id(

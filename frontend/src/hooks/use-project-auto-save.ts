@@ -108,8 +108,7 @@ export function useProjectAutoSave({
   // Register configuration getter
   useEffect(() => {
     syncCoordinator.registerConfigurationGetter(
-      () =>
-      getConfigurationRef.current() as Record<string, unknown>
+      () => getConfigurationRef.current() as Record<string, unknown>
     );
   }, []);
 

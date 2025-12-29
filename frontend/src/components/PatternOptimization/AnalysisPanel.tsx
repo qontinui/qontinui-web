@@ -580,9 +580,9 @@ export function AnalysisPanel() {
                       patterns → 2) Select a strategy → 3) Create StateImages
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      The &quot;Select This Strategy&quot; button chooses which method to
-                      use. The &quot;Create StateImages&quot; button adds them to your
-                      project.
+                      The &quot;Select This Strategy&quot; button chooses which
+                      method to use. The &quot;Create StateImages&quot; button
+                      adds them to your project.
                     </p>
                   </div>
                   <p className="font-medium text-gray-300 mb-2">

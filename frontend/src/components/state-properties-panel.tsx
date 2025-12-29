@@ -1261,7 +1261,10 @@ export function StatePropertiesPanel({
                                               stateImage;
                                             updateStateImage(
                                               index,
-                                              rest as Omit<typeof stateImage, "probability">
+                                              rest as Omit<
+                                                typeof stateImage,
+                                                "probability"
+                                              >
                                             );
                                           }}
                                           title="Remove override (use project default)"

@@ -5,24 +5,18 @@
  * This client handles fetching monitor information and other runner status.
  */
 
+import type { RunnerMonitor } from "@/lib/schemas/geometry";
+
+// Re-export types for backward compatibility
+export type {
+  RunnerMonitor,
+  Monitor,
+  MonitorPosition,
+} from "@/lib/schemas/geometry";
+
 // Default runner URL - can be overridden via environment variable
 const RUNNER_BASE_URL =
   process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
-
-/**
- * Monitor information from the runner
- */
-export interface RunnerMonitor {
-  index: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  is_primary: boolean;
-  position: "left" | "middle" | "right" | "primary";
-  name: string;
-  description: string;
-}
 
 /**
  * Response from GET /monitors endpoint

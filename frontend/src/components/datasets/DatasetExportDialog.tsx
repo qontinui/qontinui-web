@@ -213,7 +213,8 @@ export function DatasetExportDialog({
         <DialogHeader>
           <DialogTitle>Export Dataset</DialogTitle>
           <DialogDescription>
-            Export &quot;{datasetName}&quot; to a format suitable for ML training.
+            Export &quot;{datasetName}&quot; to a format suitable for ML
+            training.
           </DialogDescription>
         </DialogHeader>
 

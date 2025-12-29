@@ -27,6 +27,7 @@ import type {
   Action,
   Connections,
 } from "@/lib/action-schema/action-types";
+import type { Monitor } from "@/lib/schemas/geometry";
 import { EASING_FUNCTIONS } from "@/components/workflow-canvas/layout-animation";
 
 // ============================================================================
@@ -36,6 +37,7 @@ import { EASING_FUNCTIONS } from "@/components/workflow-canvas/layout-animation"
 export class TransitionAnimationController {
   private state: TransitionAnimationState;
   private data: TransitionVisualizationData | null = null;
+  private monitors: Monitor[] = [];
   private animationFrameId: number | null = null;
   private startTime: number = 0;
   private onStateChange: (state: TransitionAnimationState) => void;
@@ -55,8 +57,11 @@ export class TransitionAnimationController {
   loadTransition(
     transition: Transition,
     states: State[],
-    workflows: Workflow[]
+    workflows: Workflow[],
+    monitors: Monitor[] = []
   ): void {
+    // Store monitors for coordinate translation
+    this.monitors = monitors;
     this.cancel();
 
     // Build visualization data
@@ -299,19 +304,18 @@ export class TransitionAnimationController {
       case "CLICK":
       case "MOUSE_DOWN":
       case "MOUSE_UP": {
-        // Try to get position from config
         if (config.x !== undefined && config.y !== undefined) {
+          // Explicit coordinates
           animConfig.endPosition = {
             x: config.x as number,
             y: config.y as number,
           };
-        } else if (config.targetStateImageId) {
-          // Look up position from state image
-          const pos = this.getStateImagePosition(
-            config.targetStateImageId as string,
-            states
-          );
-          if (pos) animConfig.endPosition = pos;
+        } else {
+          // Try to resolve position from target
+          const pos = this.resolveClickTargetPosition(config, states);
+          if (pos) {
+            animConfig.endPosition = pos;
+          }
         }
         break;
       }
@@ -319,14 +323,42 @@ export class TransitionAnimationController {
       case "FIND":
       case "VANISH":
       case "RAG_FIND": {
-        if (config.targetStateImageId) {
-          const region = this.getStateImageRegion(
-            config.targetStateImageId as string,
+        // FindActionConfig uses: target (TargetConfig object with type, imageId/stateImageId)
+        const targetConfig = config.target as
+          | Record<string, unknown>
+          | undefined;
+        const { stateImageId, imageId } =
+          this.extractImageIdsFromTarget(targetConfig);
+
+        // Try stateImageId first, then fall back to finding StateImage by imageAssetId
+        let resolvedStateImageId = stateImageId;
+        if (!resolvedStateImageId && imageId) {
+          resolvedStateImageId = this.findStateImageByImageAssetId(
+            imageId,
             states
           );
+        }
+
+        if (resolvedStateImageId) {
+          const region = this.getStateImageRegion(resolvedStateImageId, states);
           if (region) {
             animConfig.targetRegion = region;
-            animConfig.targetImageId = config.targetStateImageId as string;
+            animConfig.targetImageId = resolvedStateImageId;
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] actionToAnimationConfig: ${action.type} action="${action.name}" ` +
+                  `resolved region: (${region.x}, ${region.y}, ${region.width}x${region.height}), ` +
+                  `stateImageId="${resolvedStateImageId}"`
+              );
+            }
+          }
+        } else {
+          if (process.env.NODE_ENV === "development") {
+            console.log(
+              `[TransitionAnimation] actionToAnimationConfig: ${action.type} action="${action.name}" ` +
+                `could NOT resolve stateImageId, target=`,
+              targetConfig
+            );
           }
         }
         break;
@@ -442,34 +474,64 @@ export class TransitionAnimationController {
 
   /**
    * Get position from a state image
+   * Coordinates are returned as absolute screen coordinates (suitable for canvas rendering)
+   *
+   * The position is determined from searchRegions, which contain the on-screen location
+   * where the pattern was captured. pattern.offsetX/offsetY are click offsets (not position).
    */
   private getStateImagePosition(
     stateImageId: string,
     states: State[]
   ): { x: number; y: number } | undefined {
+    // Build monitor map for coordinate translation
+    const monitorMap = new Map<number, Monitor>();
+    this.monitors.forEach((m) => monitorMap.set(m.index, m));
+
     for (const state of states) {
       for (const stateImage of state.stateImages || []) {
         if (stateImage.id === stateImageId) {
-          // Try to get from pattern offsets
+          const monitorIndex = stateImage.monitors?.[0] ?? 0;
+          const monitor = monitorMap.get(monitorIndex);
           const pattern = stateImage.patterns?.[0];
+
+          // Try pattern's searchRegions first (preferred source)
+          if (pattern?.searchRegions?.[0]) {
+            const sr = pattern.searchRegions[0];
+            const absX = monitor ? monitor.x + sr.x : sr.x;
+            const absY = monitor ? monitor.y + sr.y : sr.y;
+            return {
+              x: absX + sr.width / 2,
+              y: absY + sr.height / 2,
+            };
+          }
+
+          // Try StateImage-level searchRegions
+          if (stateImage.searchRegions?.[0]) {
+            const sr = stateImage.searchRegions[0];
+            const absX = monitor ? monitor.x + sr.x : sr.x;
+            const absY = monitor ? monitor.y + sr.y : sr.y;
+            return {
+              x: absX + sr.width / 2,
+              y: absY + sr.height / 2,
+            };
+          }
+
+          // Fallback: try pattern.offsetX/offsetY (legacy data may store position here)
           if (
             pattern?.offsetX !== undefined &&
             pattern?.offsetY !== undefined
           ) {
+            const absX = monitor
+              ? monitor.x + pattern.offsetX
+              : pattern.offsetX;
+            const absY = monitor
+              ? monitor.y + pattern.offsetY
+              : pattern.offsetY;
+            const width = pattern.searchRegions?.[0]?.width || 50;
+            const height = pattern.searchRegions?.[0]?.height || 50;
             return {
-              x:
-                pattern.offsetX + (pattern.searchRegions?.[0]?.width || 50) / 2,
-              y:
-                pattern.offsetY +
-                (pattern.searchRegions?.[0]?.height || 50) / 2,
-            };
-          }
-          // Try from search region
-          if (pattern?.searchRegions?.[0]) {
-            const sr = pattern.searchRegions[0];
-            return {
-              x: sr.x + sr.width / 2,
-              y: sr.y + sr.height / 2,
+              x: absX + width / 2,
+              y: absY + height / 2,
             };
           }
         }
@@ -480,34 +542,212 @@ export class TransitionAnimationController {
 
   /**
    * Get region from a state image
+   * Coordinates are returned as absolute screen coordinates (suitable for canvas rendering)
    */
   private getStateImageRegion(
     stateImageId: string,
     states: State[]
   ): { x: number; y: number; width: number; height: number } | undefined {
+    // Build monitor map for coordinate translation
+    const monitorMap = new Map<number, Monitor>();
+    this.monitors.forEach((m) => monitorMap.set(m.index, m));
+
     for (const state of states) {
       for (const stateImage of state.stateImages || []) {
         if (stateImage.id === stateImageId) {
+          const monitorIndex = stateImage.monitors?.[0] ?? 0;
+          const monitor = monitorMap.get(monitorIndex);
           const pattern = stateImage.patterns?.[0];
+
+          // Try pattern's searchRegions first
+          if (pattern?.searchRegions?.[0]) {
+            const sr = pattern.searchRegions[0];
+            const absX = monitor ? monitor.x + sr.x : sr.x;
+            const absY = monitor ? monitor.y + sr.y : sr.y;
+            return { x: absX, y: absY, width: sr.width, height: sr.height };
+          }
+
+          // Try StateImage-level searchRegions
+          if (stateImage.searchRegions?.[0]) {
+            const sr = stateImage.searchRegions[0];
+            const absX = monitor ? monitor.x + sr.x : sr.x;
+            const absY = monitor ? monitor.y + sr.y : sr.y;
+            return { x: absX, y: absY, width: sr.width, height: sr.height };
+          }
+
+          // Fallback: try pattern.offsetX/offsetY (legacy data)
           if (
             pattern?.offsetX !== undefined &&
             pattern?.offsetY !== undefined
           ) {
-            return {
-              x: pattern.offsetX,
-              y: pattern.offsetY,
-              width: pattern.searchRegions?.[0]?.width || 100,
-              height: pattern.searchRegions?.[0]?.height || 100,
-            };
+            const absX = monitor
+              ? monitor.x + pattern.offsetX
+              : pattern.offsetX;
+            const absY = monitor
+              ? monitor.y + pattern.offsetY
+              : pattern.offsetY;
+            return { x: absX, y: absY, width: 100, height: 100 };
           }
-          if (pattern?.searchRegions?.[0]) {
-            const sr = pattern.searchRegions[0];
-            return {
-              x: sr.x,
-              y: sr.y,
-              width: sr.width,
-              height: sr.height,
-            };
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Extract image ID from a target configuration.
+   */
+  private extractImageIdsFromTarget(
+    targetConfig: Record<string, unknown> | undefined
+  ): { stateImageId?: string; imageId?: string } {
+    if (!targetConfig) return {};
+
+    const targetType = targetConfig.type as string | undefined;
+
+    switch (targetType) {
+      case "stateImage":
+        return { stateImageId: targetConfig.stateImageId as string | undefined };
+
+      case "StateImage":
+      case "image":
+        if (targetConfig.imageId) {
+          return { imageId: targetConfig.imageId as string };
+        }
+        if (Array.isArray(targetConfig.imageIds) && targetConfig.imageIds.length > 0) {
+          return { imageId: targetConfig.imageIds[0] as string };
+        }
+        return {};
+
+      default:
+        if (targetConfig.stateImageId) {
+          return { stateImageId: targetConfig.stateImageId as string };
+        }
+        if (targetConfig.imageId) {
+          return { imageId: targetConfig.imageId as string };
+        }
+        if (Array.isArray(targetConfig.imageIds) && targetConfig.imageIds.length > 0) {
+          return { imageId: targetConfig.imageIds[0] as string };
+        }
+        return {};
+    }
+  }
+
+  /**
+   * Find a StateImage that uses a given ImageAsset ID
+   */
+  private findStateImageByImageAssetId(
+    imageAssetId: string,
+    states: State[]
+  ): string | undefined {
+    for (const state of states) {
+      for (const stateImage of state.stateImages || []) {
+        for (const pattern of stateImage.patterns || []) {
+          if (pattern.imageId === imageAssetId) {
+            return stateImage.id;
+          }
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Resolve click target position from action config.
+   */
+  private resolveClickTargetPosition(
+    config: Record<string, unknown>,
+    states: State[]
+  ): { x: number; y: number } | undefined {
+    const target = config.target as string | Record<string, unknown> | undefined;
+
+    // Handle string target types (ClickActionConfig format)
+    if (typeof target === "string") {
+      switch (target) {
+        case "StateImage": {
+          const stateImageId = config.stateImageId as string | undefined;
+          const imageId = config.imageId as string | undefined;
+          const imageIds = config.imageIds as string[] | undefined;
+
+          // Try stateImageId first (direct StateImage reference)
+          if (stateImageId) {
+            return this.getStateImagePosition(stateImageId, states);
+          }
+
+          // Try imageIds array - these are typically StateImage IDs
+          if (imageIds && Array.isArray(imageIds) && imageIds.length > 0) {
+            const firstId = imageIds[0] as string;
+            // First try as StateImage ID
+            const pos = this.getStateImagePosition(firstId, states);
+            if (pos) return pos;
+            // Fall back to ImageAsset ID
+            const resolved = this.findStateImageByImageAssetId(firstId, states);
+            if (resolved) return this.getStateImagePosition(resolved, states);
+          }
+
+          // Try single imageId field
+          if (imageId) {
+            const resolved = this.findStateImageByImageAssetId(imageId, states);
+            if (resolved) return this.getStateImagePosition(resolved, states);
+          }
+          break;
+        }
+
+        case "StateLocation": {
+          const locationId = config.locationId as string | undefined;
+          if (locationId) {
+            return this.getStateLocationPosition(locationId, states);
+          }
+          break;
+        }
+
+        case "Coordinates":
+        case "Last Find Result":
+        case "Current Position":
+        default:
+          return undefined;
+      }
+    }
+
+    // Handle object target types
+    if (typeof target === "object" && target !== null) {
+      const { stateImageId, imageId } = this.extractImageIdsFromTarget(
+        target as Record<string, unknown>
+      );
+
+      if (stateImageId) {
+        const pos = this.getStateImagePosition(stateImageId, states);
+        if (pos) return pos;
+      }
+
+      if (imageId) {
+        // First try as StateImage ID
+        const pos = this.getStateImagePosition(imageId, states);
+        if (pos) return pos;
+        // Fall back to ImageAsset ID lookup
+        const resolved = this.findStateImageByImageAssetId(imageId, states);
+        if (resolved) {
+          const resolvedPos = this.getStateImagePosition(resolved, states);
+          if (resolvedPos) return resolvedPos;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Get position from a state location
+   */
+  private getStateLocationPosition(
+    locationId: string,
+    states: State[]
+  ): { x: number; y: number } | undefined {
+    for (const state of states) {
+      for (const location of state.locations || []) {
+        if (location.id === locationId) {
+          // Location coordinates are absolute (no monitor offset needed for locations)
+          if (location.x !== undefined && location.y !== undefined) {
+            return { x: location.x, y: location.y };
           }
         }
       }
@@ -811,7 +1051,7 @@ export class TransitionAnimationController {
 // React Hook
 // ============================================================================
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 export interface UseTransitionAnimationResult {
   /** Current animation state */
@@ -827,7 +1067,8 @@ export interface UseTransitionAnimationResult {
   loadTransition: (
     transition: Transition,
     states: State[],
-    workflows: Workflow[]
+    workflows: Workflow[],
+    monitors?: Monitor[]
   ) => void;
 
   /** Playback controls */
@@ -848,10 +1089,17 @@ export function useTransitionAnimation(): UseTransitionAnimationResult {
   const [state, setState] = useState<TransitionAnimationState>(
     INITIAL_ANIMATION_STATE
   );
+  // Store data in state so it's reactive
+  const [data, setData] = useState<TransitionVisualizationData | null>(null);
   const controllerRef = useRef<TransitionAnimationController | null>(null);
 
   useEffect(() => {
-    controllerRef.current = new TransitionAnimationController(setState);
+    // Create controller with a callback that updates both state and data
+    controllerRef.current = new TransitionAnimationController((newState) => {
+      setState(newState);
+      // Also sync data from controller when state changes
+      setData(controllerRef.current?.getData() || null);
+    });
 
     return () => {
       controllerRef.current?.cancel();
@@ -859,8 +1107,20 @@ export function useTransitionAnimation(): UseTransitionAnimationResult {
   }, []);
 
   const loadTransition = useCallback(
-    (transition: Transition, states: State[], workflows: Workflow[]) => {
-      controllerRef.current?.loadTransition(transition, states, workflows);
+    (
+      transition: Transition,
+      states: State[],
+      workflows: Workflow[],
+      monitors?: Monitor[]
+    ) => {
+      controllerRef.current?.loadTransition(
+        transition,
+        states,
+        workflows,
+        monitors
+      );
+      // Immediately sync data after loading
+      setData(controllerRef.current?.getData() || null);
     },
     []
   );
@@ -884,12 +1144,21 @@ export function useTransitionAnimation(): UseTransitionAnimationResult {
     (index: number) => controllerRef.current?.seekTo(index),
     []
   );
-  const cancel = useCallback(() => controllerRef.current?.cancel(), []);
+  const cancel = useCallback(() => {
+    controllerRef.current?.cancel();
+    setData(null);
+  }, []);
+
+  // Derive currentAction from state and data (reactive)
+  const currentAction = useMemo(() => {
+    if (!data || state.phase !== "executing-action") return null;
+    return data.actionSequence[state.globalActionIndex] || null;
+  }, [data, state.phase, state.globalActionIndex]);
 
   return {
     state,
-    data: controllerRef.current?.getData() || null,
-    currentAction: controllerRef.current?.getCurrentAction() || null,
+    data,
+    currentAction,
     loadTransition,
     play,
     pause,

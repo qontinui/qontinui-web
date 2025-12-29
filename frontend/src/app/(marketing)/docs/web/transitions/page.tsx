@@ -60,7 +60,8 @@ export default function TransitionsDocPage() {
               <li className="flex items-start gap-2">
                 <span className="font-bold text-primary">1.</span>
                 <span>
-                  Automation is in the source state (e.g., &quot;Login Screen&quot;)
+                  Automation is in the source state (e.g., &quot;Login
+                  Screen&quot;)
                 </span>
               </li>
               <li className="flex items-start gap-2">
@@ -491,7 +492,8 @@ function ParallelStateExample({
             {config.from_state}&quot;
           </div>
           <div>
-            <span className="text-primary">to_state:</span> &quot;{config.to_state}&quot;
+            <span className="text-primary">to_state:</span> &quot;
+            {config.to_state}&quot;
           </div>
           {config.stays_visible !== undefined && (
             <div>
@@ -512,7 +514,8 @@ function ParallelStateExample({
             </div>
           )}
           <div>
-            <span className="text-primary">process:</span> &quot;{config.process}&quot;
+            <span className="text-primary">process:</span> &quot;
+            {config.process}&quot;
           </div>
         </div>
       </div>

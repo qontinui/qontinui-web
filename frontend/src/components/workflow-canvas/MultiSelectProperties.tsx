@@ -293,8 +293,8 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
         <div className="p-3 rounded bg-blue-900/20 border border-blue-700/30">
           <div className="text-xs text-gray-300">
             <strong>Batch Editing:</strong> Changes apply to all selected
-            actions. Properties with different values show &quot;(mixed)&quot;. Edit to
-            override with common value.
+            actions. Properties with different values show &quot;(mixed)&quot;.
+            Edit to override with common value.
           </div>
         </div>
       </div>

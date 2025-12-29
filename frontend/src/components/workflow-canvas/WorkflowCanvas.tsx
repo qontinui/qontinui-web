@@ -192,18 +192,7 @@ function WorkflowCanvasInner({
       return;
     }
 
-    console.log("[WorkflowCanvas] External workflow change detected:", {
-      id: workflow.id,
-      name: workflow.name,
-      actionsCount: workflow.actions.length,
-    });
-
     const { nodes: newNodes, edges: newEdges } = workflowToReactFlow(workflow);
-
-    console.log("[WorkflowCanvas] Converted to React Flow format:", {
-      nodesCount: newNodes.length,
-      edgesCount: newEdges.length,
-    });
 
     setNodes(newNodes as unknown as Node[]);
     setEdges(newEdges as unknown as Edge[]);
@@ -222,8 +211,6 @@ function WorkflowCanvasInner({
     (changes: NodeChange[]) => {
       if (readonly) return;
 
-      console.log("[WorkflowCanvas] handleNodesChange:", changes);
-
       // Apply changes first
       onNodesChange(changes);
 
@@ -232,13 +219,6 @@ function WorkflowCanvasInner({
       const removals = changes.filter((c) => c.type === "remove");
 
       if (positionChanges.length > 0 || removals.length > 0) {
-        console.log(
-          "[WorkflowCanvas] Node changes detected - position:",
-          positionChanges.length,
-          "removals:",
-          removals.length
-        );
-
         // IMPORTANT: Mark as internal change IMMEDIATELY to prevent race conditions
         // where external updates could overwrite our pending changes
         isInternalChangeRef.current = true;
@@ -254,17 +234,6 @@ function WorkflowCanvasInner({
                   currentEdges as unknown as CanvasEdge[],
                   workflow.id,
                   workflow.name
-                );
-                console.log(
-                  "[WorkflowCanvas] Updated workflow after node changes:",
-                  {
-                    id: updatedWorkflow.id,
-                    actionsCount: updatedWorkflow.actions.length,
-                    actions: updatedWorkflow.actions.map((a) => ({
-                      id: a.id,
-                      type: a.type,
-                    })),
-                  }
                 );
                 // Re-set the flag before calling onWorkflowChange to ensure
                 // the subsequent useEffect sees it as an internal change
@@ -296,19 +265,12 @@ function WorkflowCanvasInner({
     (changes: EdgeChange[]) => {
       if (readonly) return;
 
-      console.log("[WorkflowCanvas] handleEdgesChange:", changes);
-
       // Apply changes first
       onEdgesChange(changes);
 
       // Update workflow if edges were removed
       const removals = changes.filter((c) => c.type === "remove");
       if (removals.length > 0) {
-        console.log(
-          "[WorkflowCanvas] Edge removals detected:",
-          removals.length
-        );
-
         // IMPORTANT: Mark as internal change IMMEDIATELY to prevent race conditions
         isInternalChangeRef.current = true;
 
@@ -323,16 +285,6 @@ function WorkflowCanvasInner({
                   currentEdges as unknown as CanvasEdge[],
                   workflow.id,
                   workflow.name
-                );
-                console.log(
-                  "[WorkflowCanvas] Updated workflow after edge changes:",
-                  {
-                    id: updatedWorkflow.id,
-                    actionsCount: updatedWorkflow.actions.length,
-                    connectionsCount: Object.keys(
-                      updatedWorkflow.connections || {}
-                    ).length,
-                  }
                 );
                 isInternalChangeRef.current = true;
                 onWorkflowChange(updatedWorkflow);
@@ -362,13 +314,6 @@ function WorkflowCanvasInner({
     (connection: ReactFlowConnection) => {
       if (readonly) return;
 
-      console.log("[WorkflowCanvas] handleConnect called:", {
-        source: connection.source,
-        sourceHandle: connection.sourceHandle,
-        target: connection.target,
-        targetHandle: connection.targetHandle,
-      });
-
       // Validate connection
       const attempt: ConnectionAttempt = {
         source: connection.source!,
@@ -397,12 +342,6 @@ function WorkflowCanvasInner({
 
       if (connection.sourceHandle) {
         const parts = connection.sourceHandle.split("-");
-        console.log(
-          "[WorkflowCanvas] Parsing sourceHandle:",
-          connection.sourceHandle,
-          "parts:",
-          parts
-        );
         if (parts.length >= 2) {
           const handleType = parts[0];
           const handleIndex = parseInt(parts[1] || "0", 10);
@@ -418,14 +357,6 @@ function WorkflowCanvasInner({
           }
 
           outputIndex = isNaN(handleIndex) ? 0 : handleIndex;
-          console.log(
-            "[WorkflowCanvas] Parsed - handleType:",
-            handleType,
-            "connType:",
-            connType,
-            "outputIndex:",
-            outputIndex
-          );
         }
       }
 
@@ -434,13 +365,6 @@ function WorkflowCanvasInner({
         | CanvasNode
         | undefined;
       const sourceAction = sourceNode?.data.action;
-
-      console.log("[WorkflowCanvas] Source action:", {
-        type: sourceAction?.type,
-        id: sourceAction?.id,
-        connType,
-        outputIndex,
-      });
 
       // Generate edge label
       let label: string | undefined;
@@ -474,17 +398,9 @@ function WorkflowCanvasInner({
         }
       }
 
-      console.log(
-        "[WorkflowCanvas] Generated label:",
-        label,
-        "for connType:",
-        connType
-      );
-
       // Get color and style
       const color = getConnectionColor(connType);
       const style = getConnectionStyle(connType);
-      console.log("[WorkflowCanvas] Color:", color, "for connType:", connType);
 
       // Create enriched edge with full data
       const enrichedEdge: CanvasEdge = {

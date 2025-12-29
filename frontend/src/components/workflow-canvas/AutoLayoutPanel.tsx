@@ -23,7 +23,10 @@ import {
 import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
 import { LayoutPreview } from "./LayoutPreview";
 import { LayoutSuggestions } from "./LayoutSuggestions";
-import { formatStatistics, LayoutStatistics } from "@/services/layout-statistics";
+import {
+  formatStatistics,
+  LayoutStatistics,
+} from "@/services/layout-statistics";
 
 // ============================================================================
 // Types
@@ -587,7 +590,8 @@ export function AutoLayoutPanel({
                 <h4>Before</h4>
                 {Object.entries(
                   formatStatistics(
-                    previewResult.comparison.metrics.overlaps.before as unknown as LayoutStatistics
+                    previewResult.comparison.metrics.overlaps
+                      .before as unknown as LayoutStatistics
                   )
                 )
                   .slice(0, 5)

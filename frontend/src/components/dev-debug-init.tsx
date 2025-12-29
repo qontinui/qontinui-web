@@ -20,16 +20,18 @@ export function DevDebugInit() {
         console.info("[DevDebugInit] Dev debug logger active");
 
         // Expose helper function to window for easy access
-        (window as unknown as Record<string, unknown>).getDevLogs = async () => {
-          const response = await fetch("/api/dev-debug/logs?limit=200");
-          const data = await response.json();
-          console.table(data.stats);
-          return data;
-        };
-        (window as unknown as Record<string, unknown>).clearDevLogs = async () => {
-          await fetch("/api/dev-debug/logs", { method: "DELETE" });
-          console.info("[DevDebugInit] Logs cleared");
-        };
+        (window as unknown as Record<string, unknown>).getDevLogs =
+          async () => {
+            const response = await fetch("/api/dev-debug/logs?limit=200");
+            const data = await response.json();
+            console.table(data.stats);
+            return data;
+          };
+        (window as unknown as Record<string, unknown>).clearDevLogs =
+          async () => {
+            await fetch("/api/dev-debug/logs", { method: "DELETE" });
+            console.info("[DevDebugInit] Logs cleared");
+          };
 
         // Log helpful message
         console.info("[DevDebugInit] Use window.getDevLogs() to retrieve logs");

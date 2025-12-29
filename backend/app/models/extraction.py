@@ -1,6 +1,4 @@
-"""
-Database models for web extraction.
-"""
+"""Database models for web extraction."""
 
 from datetime import datetime
 from uuid import uuid4
@@ -25,7 +23,7 @@ class ExtractionSession(Base):
     )
 
     # Source configuration
-    source_urls = Column(ARRAY(String), nullable=False, default=list)  # type: ignore[var-annotated]
+    source_urls = Column(ARRAY(String), nullable=False, default=list)
     config = Column(JSON, nullable=False, default=dict)
 
     # Status

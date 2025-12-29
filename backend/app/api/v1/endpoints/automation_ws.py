@@ -1062,20 +1062,74 @@ async def websocket_runner_endpoint(
                         sessions_used=user.automation_sessions_used,
                     )
 
-                    await websocket.send_json(
-                        {
-                            "type": "session_started",
-                            "workflow_name": workflow_name,
-                            "sessions_used": user.automation_sessions_used,
-                            "sessions_remaining": (
-                                user.automation_sessions_limit
-                                - user.automation_sessions_used
-                                if user.automation_sessions_limit is not None
+                    # Echo request_id if provided for request-response correlation
+                    # Note: request_id is at root level of JSON, not in message.data
+                    incoming_request_id = data.get("request_id")
+                    logger.info(
+                        "session_start_request_id_check",
+                        incoming_request_id=incoming_request_id,
+                        data_keys=list(data.keys()) if data else None,
+                    )
+                    response_data = {
+                        "type": "session_started",
+                        "success": True,  # Add success field for compatibility
+                        "workflow_name": workflow_name,
+                        "sessions_used": user.automation_sessions_used,
+                        "sessions_remaining": (
+                            user.automation_sessions_limit
+                            - user.automation_sessions_used
+                            if user.automation_sessions_limit is not None
+                            else None
+                        ),
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "data": {
+                            "session_id": (
+                                str(current_session_id) if current_session_id else None
+                            )
+                        },
+                    }
+                    # Check for request_id in the raw data (not message.data)
+                    if incoming_request_id:
+                        response_data["request_id"] = incoming_request_id
+                    logger.info(
+                        "session_start_response",
+                        response_has_request_id="request_id" in response_data,
+                        response_request_id=response_data.get("request_id"),
+                    )
+                    await websocket.send_json(response_data)
+
+                    # Broadcast session_start event to status channel for frontend monitoring
+                    if runner_manager and redis_client:
+                        session_start_event = {
+                            "type": "session_start",
+                            "session_id": (
+                                str(current_session_id)
+                                if current_session_id
+                                else str(uuid.uuid4())
+                            ),
+                            "project_id": (
+                                str(message.data.get("project_id"))
+                                if message.data.get("project_id")
                                 else None
                             ),
+                            "runner_version": message.data.get("runner_version"),
+                            "runner_os": message.data.get("runner_os"),
+                            "runner_hostname": message.data.get("runner_hostname"),
+                            "workflow_name": workflow_name,
                             "timestamp": datetime.utcnow().isoformat() + "Z",
                         }
-                    )
+                        channel = f"runner:status:updates:{user.id}"
+                        try:
+                            await redis_client.publish(
+                                channel, json.dumps(session_start_event)
+                            )
+                            logger.info(
+                                "session_start_broadcast",
+                                user_id=str(user.id),
+                                channel=channel,
+                            )
+                        except Exception as e:
+                            logger.error("session_start_broadcast_failed", error=str(e))
 
                 elif message_type == "session_end":
                     # End session
@@ -1103,6 +1157,30 @@ async def websocket_runner_endpoint(
                             "timestamp": datetime.utcnow().isoformat() + "Z",
                         }
                     )
+
+                    # Broadcast session_end event to status channel for frontend monitoring
+                    if runner_manager and redis_client:
+                        session_end_event = {
+                            "type": "session_end",
+                            "session_id": (
+                                str(current_session_id) if current_session_id else None
+                            ),
+                            "status": session_status,
+                            "error_message": message.data.get("error_message"),
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                        channel = f"runner:status:updates:{user.id}"
+                        try:
+                            await redis_client.publish(
+                                channel, json.dumps(session_end_event)
+                            )
+                            logger.info(
+                                "session_end_broadcast",
+                                user_id=str(user.id),
+                                channel=channel,
+                            )
+                        except Exception as e:
+                            logger.error("session_end_broadcast_failed", error=str(e))
 
                     session_started = False
                     current_session_id = None
@@ -1137,6 +1215,26 @@ async def websocket_runner_endpoint(
                         }
                     )
 
+                    # Broadcast log event to status channel for frontend monitoring
+                    if runner_manager and redis_client:
+                        log_event = {
+                            "type": "log",
+                            "log_id": str(uuid.uuid4()),
+                            "session_id": (
+                                str(current_session_id) if current_session_id else None
+                            ),
+                            "level": log_level,
+                            "message": log_message,
+                            "log_data": message.data.get("data"),
+                            "sequence_number": message.data.get("sequence_number", 0),
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                        channel = f"runner:status:updates:{user.id}"
+                        try:
+                            await redis_client.publish(channel, json.dumps(log_event))
+                        except Exception as e:
+                            logger.error("log_broadcast_failed", error=str(e))
+
                 elif message_type == "screenshot":
                     # Handle screenshot with full S3 upload and database storage
                     if not session_started:
@@ -1155,6 +1253,68 @@ async def websocket_runner_endpoint(
                         current_session_id,
                     )
                     await websocket.send_json(response)
+
+                    # Broadcast screenshot event to status channel for frontend monitoring
+                    if (
+                        response.get("type") == "screenshot_stored"
+                        and runner_manager
+                        and redis_client
+                    ):
+                        # Generate presigned URL for the screenshot
+                        screenshot_id = response.get("screenshot_id")
+                        metadata = message.data.get("metadata", {})
+
+                        # Get presigned URL from object storage
+                        try:
+                            from app.services.storage.object_storage import (
+                                object_storage,
+                            )
+
+                            s3_key = f"automation/{user.id}/{current_session_id}/{screenshot_id}.png"
+                            presigned_url = (
+                                object_storage.backend.generate_presigned_url(
+                                    key=s3_key,
+                                    expiration=3600 * 24 * 7,  # 7 days
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "screenshot_presigned_url_failed", error=str(e)
+                            )
+                            presigned_url = None
+
+                        # Extract dimensions from metadata or use defaults
+                        width = metadata.get("width", 0)
+                        height = metadata.get("height", 0)
+
+                        screenshot_event = {
+                            "type": "screenshot",
+                            "screenshot_id": screenshot_id,
+                            "session_id": (
+                                str(current_session_id) if current_session_id else None
+                            ),
+                            "name": metadata.get(
+                                "name",
+                                f"Screenshot {datetime.utcnow().strftime('%H:%M:%S')}",
+                            ),
+                            "width": width,
+                            "height": height,
+                            "presigned_url": presigned_url,
+                            "automation_metadata": metadata,
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                        channel = f"runner:status:updates:{user.id}"
+                        try:
+                            await redis_client.publish(
+                                channel, json.dumps(screenshot_event)
+                            )
+                            logger.info(
+                                "screenshot_broadcast",
+                                user_id=str(user.id),
+                                screenshot_id=screenshot_id,
+                            )
+                        except Exception as e:
+                            logger.error("screenshot_broadcast_failed", error=str(e))
 
                 elif message_type == "input_event":
                     # Handle input event

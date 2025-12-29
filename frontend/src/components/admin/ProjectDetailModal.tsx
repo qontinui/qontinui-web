@@ -193,7 +193,14 @@ export default function ProjectDetailModal({
                               </p>
                               <div className="grid gap-2">
                                 {state.transitions.map(
-                                  (transition: { id?: string; name?: string; target?: string }, tIndex: number) => (
+                                  (
+                                    transition: {
+                                      id?: string;
+                                      name?: string;
+                                      target?: string;
+                                    },
+                                    tIndex: number
+                                  ) => (
                                     <div
                                       key={transition.id || tIndex}
                                       className="flex items-center gap-2 p-2 rounded-md bg-muted/50 text-sm"

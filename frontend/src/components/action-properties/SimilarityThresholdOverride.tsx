@@ -35,7 +35,8 @@ export function SimilarityThresholdOverride({
             size="sm"
             className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
             onClick={() => {
-              const { similarity: _similarity, ...rest } = action.config as Record<string, unknown>;
+              const { similarity: _similarity, ...rest } =
+                action.config as Record<string, unknown>;
               updateConfig("__reset__", rest);
             }}
             title="Remove override (use project default)"

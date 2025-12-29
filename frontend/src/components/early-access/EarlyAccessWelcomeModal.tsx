@@ -122,7 +122,8 @@ export function EarlyAccessWelcomeModal({
               Welcome to Qontinui Early Access! 🎉
             </DialogTitle>
             <DialogDescription className="text-gray-300 text-base">
-              Thanks for being an early tester! Here&apos;s what you need to know:
+              Thanks for being an early tester! Here&apos;s what you need to
+              know:
             </DialogDescription>
           </DialogHeader>
 
@@ -177,8 +178,9 @@ export function EarlyAccessWelcomeModal({
               </li>
             </ul>
             <p className="text-gray-400 text-sm mt-3 ml-9 italic">
-              Think of Export like &quot;Save&quot; - do it often! Files are versioned
-              (v2.0) and migration tools will be provided if format changes.
+              Think of Export like &quot;Save&quot; - do it often! Files are
+              versioned (v2.0) and migration tools will be provided if format
+              changes.
             </p>
           </div>
 

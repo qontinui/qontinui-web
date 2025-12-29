@@ -285,8 +285,8 @@ export const QuickStartChecklist: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    You&apos;ve completed all quick start tasks. You&apos;re ready to
-                    build amazing automations!
+                    You&apos;ve completed all quick start tasks. You&apos;re
+                    ready to build amazing automations!
                   </p>
                 </div>
               ) : (

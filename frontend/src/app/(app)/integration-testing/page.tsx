@@ -17,6 +17,7 @@ import { IntegrationTestControlPanel } from "@/components/testing/IntegrationTes
 import { VisualPlayback } from "@/components/testing/VisualPlayback";
 import { integrationTestingService } from "@/services/integration-testing";
 import { RequireProject } from "@/components/require-project";
+import { formatTimestampLocal } from "@/lib/time-utils";
 import {
   ArrowLeft,
   RefreshCw,
@@ -557,8 +558,7 @@ function IntegrationTestRunsList({
   };
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleString();
+    return formatTimestampLocal(dateStr);
   };
 
   const formatDuration = (ms: number) => {

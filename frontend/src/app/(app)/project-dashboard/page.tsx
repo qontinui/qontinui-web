@@ -941,7 +941,9 @@ function ResourceOverviewTabs({
                   data={data.imagesByFolder}
                   dataKey="size"
                   stroke="#1A1A1B"
-                  content={(props: TreemapNode) => TreemapContent(props) as React.ReactElement}
+                  content={(props: TreemapNode) =>
+                    TreemapContent(props) as React.ReactElement
+                  }
                 />
               </ResponsiveContainer>
             </CardContent>

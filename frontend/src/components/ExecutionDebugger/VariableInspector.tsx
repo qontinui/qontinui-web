@@ -39,7 +39,9 @@ const VariableNode: React.FC<VariableNodeProps> = ({
 
     switch (type) {
       case "string":
-        return <span className="text-green-600">&quot;{String(value)}&quot;</span>;
+        return (
+          <span className="text-green-600">&quot;{String(value)}&quot;</span>
+        );
       case "number":
         return <span className="text-blue-600">{String(value)}</span>;
       case "boolean":

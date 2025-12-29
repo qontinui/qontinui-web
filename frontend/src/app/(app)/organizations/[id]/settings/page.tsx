@@ -94,7 +94,9 @@ export default function OrganizationSettingsPage() {
       setOrganization(org);
     } catch (err: unknown) {
       console.error("Failed to update organization:", err);
-      toast.error((err instanceof Error ? err.message : "Failed to update organization"));
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update organization"
+      );
     } finally {
       setSaving(false);
     }
@@ -110,7 +112,9 @@ export default function OrganizationSettingsPage() {
       router.push("/organizations");
     } catch (err: unknown) {
       console.error("Failed to delete organization:", err);
-      toast.error((err instanceof Error ? err.message : "Failed to delete organization"));
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete organization"
+      );
       setDeleting(false);
     }
   };
@@ -125,7 +129,9 @@ export default function OrganizationSettingsPage() {
       router.push("/organizations");
     } catch (err: unknown) {
       console.error("Failed to leave organization:", err);
-      toast.error((err instanceof Error ? err.message : "Failed to leave organization"));
+      toast.error(
+        err instanceof Error ? err.message : "Failed to leave organization"
+      );
       setLeaving(false);
     }
   };

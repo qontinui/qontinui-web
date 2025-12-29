@@ -62,7 +62,9 @@ export default function NewOrganizationPage() {
       router.push(`/organizations/${newOrg.id}`);
     } catch (err: unknown) {
       console.error("Failed to create organization:", err);
-      toast.error((err instanceof Error ? err.message : "Failed to create organization"));
+      toast.error(
+        err instanceof Error ? err.message : "Failed to create organization"
+      );
     } finally {
       setCreating(false);
     }

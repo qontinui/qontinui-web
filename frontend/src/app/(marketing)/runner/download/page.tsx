@@ -165,8 +165,9 @@ export default function DownloadPage() {
                 </h2>
               </div>
               <p className="text-slate-700 mb-4">
-                We&apos;ve detected you&apos;re using {getPlatformName(platform)}.
-                Download the recommended version below.
+                We&apos;ve detected you&apos;re using{" "}
+                {getPlatformName(platform)}. Download the recommended version
+                below.
               </p>
               {platform === "windows" && (
                 <Button
@@ -239,8 +240,8 @@ export default function DownloadPage() {
             <AlertCircle className="h-4 w-4 text-amber-600" />
             <AlertDescription className="text-slate-700">
               <strong>First time installation:</strong> You may see security
-              warnings because the app is not yet code-signed. We&apos;re working on
-              this!{" "}
+              warnings because the app is not yet code-signed. We&apos;re
+              working on this!{" "}
               <Link
                 href="/docs/runner/installation"
                 className="underline text-blue-600 hover:text-blue-800"

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { IntegrationTestResults } from "@/components/testing/IntegrationTestResults";
 import { VisualPlayback } from "@/components/testing/VisualPlayback";
 import { integrationTestingService } from "@/services/integration-testing";
+import { formatTimestampLocal } from "@/lib/time-utils";
 import {
   ArrowLeft,
   Play,
@@ -467,8 +468,7 @@ function IntegrationTestRunsList({
   };
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleString();
+    return formatTimestampLocal(dateStr);
   };
 
   const formatDuration = (ms: number) => {

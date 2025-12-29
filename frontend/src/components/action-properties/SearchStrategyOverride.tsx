@@ -37,7 +37,9 @@ export function SearchStrategyOverride({
   updateConfig,
 }: SearchStrategyOverrideProps) {
   // Strategy is nested in target.searchOptions.searchStrategy
-  const target = (action.config as Record<string, unknown>).target as TargetWithSearchOptions | undefined;
+  const target = (action.config as Record<string, unknown>).target as
+    | TargetWithSearchOptions
+    | undefined;
   const currentStrategy = target?.searchOptions?.searchStrategy as
     | string
     | undefined;
@@ -47,7 +49,8 @@ export function SearchStrategyOverride({
       type: "image",
       imageIds: [],
     };
-    const currentSearchOptions = (currentTarget as TargetWithSearchOptions).searchOptions || {};
+    const currentSearchOptions =
+      (currentTarget as TargetWithSearchOptions).searchOptions || {};
 
     updateConfig("target", {
       ...currentTarget,
@@ -63,8 +66,10 @@ export function SearchStrategyOverride({
       type: "image",
       imageIds: [],
     };
-    const currentSearchOptions = (currentTarget as TargetWithSearchOptions).searchOptions || {};
-    const { searchStrategy: _searchStrategy, ...restSearchOptions } = currentSearchOptions;
+    const currentSearchOptions =
+      (currentTarget as TargetWithSearchOptions).searchOptions || {};
+    const { searchStrategy: _searchStrategy, ...restSearchOptions } =
+      currentSearchOptions;
 
     updateConfig("target", {
       ...currentTarget,

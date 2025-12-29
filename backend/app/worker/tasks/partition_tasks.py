@@ -11,10 +11,11 @@ and old data is automatically cleaned up according to retention policies.
 """
 
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any, TypedDict, cast
 
 import structlog
+from qontinui_schemas.common import utc_now
 
 from app.core.config import settings
 from app.db.partition_manager import (
@@ -139,7 +140,7 @@ async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
         }
 
         async with AsyncSessionLocal() as db:
-            current_date = datetime.utcnow()
+            current_date = utc_now()
 
             # Process each table according to its configuration
             for table_name, config in PARTITION_CONFIG.items():
@@ -214,7 +215,7 @@ async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
         )
 
         results["execution_time_seconds"] = round(execution_time, 2)
-        results["timestamp"] = datetime.utcnow().isoformat()
+        results["timestamp"] = utc_now().isoformat()
 
         return cast(dict[str, Any], results)
 
@@ -230,7 +231,7 @@ async def auto_create_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
             "status": "error",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
         return cast(dict[str, Any], error_result)
 
@@ -332,7 +333,7 @@ async def cleanup_old_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
         )
 
         results["execution_time_seconds"] = round(execution_time, 2)
-        results["timestamp"] = datetime.utcnow().isoformat()
+        results["timestamp"] = utc_now().isoformat()
 
         return cast(dict[str, Any], results)
 
@@ -348,7 +349,7 @@ async def cleanup_old_partitions(ctx: dict[str, Any]) -> dict[str, Any]:
             "status": "error",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
         return cast(dict[str, Any], error_result)
 
@@ -435,7 +436,7 @@ async def get_partition_statistics(ctx: dict[str, Any]) -> dict[str, Any]:
         )
 
         results["execution_time_seconds"] = round(execution_time, 2)
-        results["timestamp"] = datetime.utcnow().isoformat()
+        results["timestamp"] = utc_now().isoformat()
 
         return cast(dict[str, Any], results)
 
@@ -450,7 +451,7 @@ async def get_partition_statistics(ctx: dict[str, Any]) -> dict[str, Any]:
             "status": "error",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
         return cast(dict[str, Any], error_result)
 

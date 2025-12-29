@@ -2,11 +2,12 @@
 
 import io
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 import pandas as pd  # type: ignore[import-untyped]
 import structlog
+from qontinui_schemas.common import utc_now
 
 from app.core.config import settings
 
@@ -36,7 +37,7 @@ async def cleanup_expired_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
 
         async with AsyncSessionLocal() as db:
             # Delete sessions that have passed their absolute expiry
-            now = datetime.utcnow()
+            now = utc_now()
             delete_stmt = delete(SessionActivity).where(
                 SessionActivity.absolute_expiry_at < now
             )
@@ -58,7 +59,7 @@ async def cleanup_expired_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
             "task": "cleanup_expired_sessions",
             "deleted_count": deleted_count,
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
     except Exception as e:
@@ -74,7 +75,7 @@ async def cleanup_expired_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
             "task": "cleanup_expired_sessions",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
 
@@ -99,7 +100,7 @@ async def cleanup_expired_device_sessions(ctx: dict[str, Any]) -> dict[str, Any]
 
         # Use configured cleanup days
         days_to_keep = settings.CLEANUP_SESSION_DAYS
-        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+        cutoff_date = utc_now() - timedelta(days=days_to_keep)
 
         async with AsyncSessionLocal() as db:
             # Delete device sessions not accessed since cutoff date
@@ -126,7 +127,7 @@ async def cleanup_expired_device_sessions(ctx: dict[str, Any]) -> dict[str, Any]
             "deleted_count": deleted_count,
             "days_to_keep": days_to_keep,
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
     except Exception as e:
@@ -142,7 +143,7 @@ async def cleanup_expired_device_sessions(ctx: dict[str, Any]) -> dict[str, Any]
             "task": "cleanup_expired_device_sessions",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
 
@@ -167,7 +168,7 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> dict[str, Any]:
 
         # Use configured cleanup days
         days_to_keep = settings.CLEANUP_ANALYTICS_DAYS
-        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+        cutoff_date = utc_now() - timedelta(days=days_to_keep)
 
         async with AsyncSessionLocal() as db:
             # Delete analytics events older than cutoff date
@@ -194,7 +195,7 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> dict[str, Any]:
             "deleted_count": deleted_count,
             "days_to_keep": days_to_keep,
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
     except Exception as e:
@@ -210,7 +211,7 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> dict[str, Any]:
             "task": "cleanup_old_analytics_events",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
 
@@ -252,7 +253,7 @@ async def cleanup_token_blacklist(ctx: dict[str, Any]) -> dict[str, Any]:
                 else "In-memory cleanup"
             ),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
     except Exception as e:
@@ -268,7 +269,7 @@ async def cleanup_token_blacklist(ctx: dict[str, Any]) -> dict[str, Any]:
             "task": "cleanup_token_blacklist",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
 
@@ -308,7 +309,7 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
 
         # Archive sessions older than 180 days
         days_to_keep = 180
-        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+        cutoff_date = utc_now() - timedelta(days=days_to_keep)
 
         sessions_archived = 0
         logs_archived = 0
@@ -342,7 +343,7 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
                     "sessions_archived": 0,
                     "records_deleted": 0,
                     "execution_time_seconds": round(execution_time, 2),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": utc_now().isoformat(),
                 }
 
             logger.info(
@@ -461,7 +462,7 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
             )
 
             # Generate S3 keys with date-based partitioning
-            archive_date = datetime.utcnow()
+            archive_date = utc_now()
             year = archive_date.strftime("%Y")
             month = archive_date.strftime("%m")
             date_str = archive_date.strftime("%Y%m%d")
@@ -625,7 +626,7 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
             "upload_results": upload_results,
             "cutoff_date": cutoff_date.isoformat(),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
     except Exception as e:
@@ -641,7 +642,7 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
             "task": "cleanup_old_automation_data",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
 
@@ -680,7 +681,7 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
 
         # Archive events older than 90 days
         days_to_keep = settings.CLEANUP_ANALYTICS_DAYS
-        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+        cutoff_date = utc_now() - timedelta(days=days_to_keep)
 
         events_archived = 0
         events_deleted = 0
@@ -703,7 +704,7 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
                     "events_archived": 0,
                     "events_deleted": 0,
                     "execution_time_seconds": round(execution_time, 2),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": utc_now().isoformat(),
                 }
 
             logger.info(
@@ -751,7 +752,7 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
             ]
 
             # Generate S3 keys with date-based partitioning
-            archive_date = datetime.utcnow()
+            archive_date = utc_now()
             year = archive_date.strftime("%Y")
             month = archive_date.strftime("%m")
             date_str = archive_date.strftime("%Y%m%d")
@@ -870,7 +871,7 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
             "cutoff_date": cutoff_date.isoformat(),
             "days_to_keep": days_to_keep,
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
     except Exception as e:
@@ -886,7 +887,7 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
             "task": "archive_old_analytics_to_s3",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
 
@@ -920,7 +921,7 @@ async def cleanup_orphaned_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
 
         # Find sessions active for more than 1 hour
         orphan_threshold_minutes = 60
-        cutoff_time = datetime.utcnow() - timedelta(minutes=orphan_threshold_minutes)
+        cutoff_time = utc_now() - timedelta(minutes=orphan_threshold_minutes)
 
         async with AsyncSessionLocal() as db:
             # Query active sessions older than threshold
@@ -947,22 +948,21 @@ async def cleanup_orphaned_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
                     "sessions_aborted": 0,
                     "threshold_minutes": orphan_threshold_minutes,
                     "execution_time_seconds": round(execution_time, 2),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": utc_now().isoformat(),
                 }
 
             # Abort each orphaned session
             aborted_count = 0
             for session in orphaned_sessions:
                 session.status = "aborted"
-                session.ended_at = datetime.utcnow()
+                session.ended_at = utc_now()
                 aborted_count += 1
 
                 logger.info(
                     "orphaned_session_aborted",
                     session_id=str(session.id),
                     user_id=str(session.user_id),
-                    age_minutes=(datetime.utcnow() - session.created_at).total_seconds()
-                    / 60,
+                    age_minutes=(utc_now() - session.created_at).total_seconds() / 60,
                 )
 
             await db.commit()
@@ -982,7 +982,7 @@ async def cleanup_orphaned_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
             "sessions_aborted": aborted_count,
             "threshold_minutes": orphan_threshold_minutes,
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
     except Exception as e:
@@ -998,7 +998,7 @@ async def cleanup_orphaned_sessions(ctx: dict[str, Any]) -> dict[str, Any]:
             "task": "cleanup_orphaned_sessions",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
 
@@ -1044,7 +1044,7 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> dict[str, Any]:
             if hasattr(settings, "SCREENSHOT_RETENTION_DAYS_FREE")
             else 30
         )
-        cutoff_date = datetime.utcnow() - timedelta(days=retention_days_free)
+        cutoff_date = utc_now() - timedelta(days=retention_days_free)
 
         deleted_count = 0
         s3_delete_errors = 0
@@ -1090,7 +1090,7 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> dict[str, Any]:
                     "db_errors": 0,
                     "retention_days": retention_days_free,
                     "execution_time_seconds": round(execution_time, 2),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": utc_now().isoformat(),
                 }
 
             logger.info(
@@ -1171,7 +1171,7 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> dict[str, Any]:
             "retention_days": retention_days_free,
             "cutoff_date": cutoff_date.isoformat(),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
     except Exception as e:
@@ -1187,7 +1187,7 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> dict[str, Any]:
             "task": "cleanup_old_screenshots",
             "error": str(e),
             "execution_time_seconds": round(execution_time, 2),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
 
