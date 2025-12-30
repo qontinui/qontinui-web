@@ -1,9 +1,14 @@
 /**
  * Qontinui Automation Configuration Schema
- * Version 2.9.0
+ * Version 2.11.0
  *
  * This defines the structure for exported automation configurations
  * that can be consumed by the Qontinui runner.
+ *
+ * CHANGELOG v2.11.0:
+ * - Changed categories from string[] to Category[] with automationEnabled flag
+ * - Allows any category to be made available for runner automation (not just "Main")
+ * - "Main" category has automationEnabled: true by default
  *
  * CHANGELOG v2.9.0:
  * - Added searchMode to StateImage for controlling how multiple patterns are searched
@@ -21,7 +26,6 @@
  *
  * CHANGELOG v2.10.0:
  * - Replaced TRIGGER_AI_ANALYSIS with AI_PROMPT action type
- * - Added RUN_PROMPT_SEQUENCE action type for multi-step AI prompts
  *
  * CHANGELOG v2.5.0:
  * - Added AI_PROMPT action type for autonomous debugging (originally named TRIGGER_AI_ANALYSIS)
@@ -55,6 +59,11 @@
 
 import type { WorkflowExpectations, ActionExpectations } from "./expectations";
 
+// Import Category from qontinui-schemas (single source of truth)
+import type { Category } from "@qontinui/schemas/config";
+// Re-export for backward compatibility with existing imports
+export type { Category };
+
 export interface QontinuiConfig {
   version: string;
   metadata: ConfigMetadata;
@@ -62,7 +71,7 @@ export interface QontinuiConfig {
   workflows: Workflow[]; // Unified graph-format workflows (replaces processes)
   states: State[];
   transitions: Transition[];
-  categories: string[]; // List of workflow categories
+  categories: Category[]; // List of workflow categories with automation settings
   settings?: ConfigSettings;
   schedules?: Schedule[]; // Automated workflow schedules
   executionRecords?: ExecutionRecord[]; // Schedule execution history
@@ -194,8 +203,6 @@ export type ActionType =
   | "SHELL_SCRIPT"
   // AI actions
   | "AI_PROMPT"
-  | "RUN_PROMPT_SEQUENCE"
-  | "CHECKPOINT_WORKFLOW"
   // State/navigation actions
   | "GO_TO_STATE"
   | "RUN_WORKFLOW"
@@ -905,7 +912,14 @@ export const configJsonSchema = {
     },
     categories: {
       type: "array",
-      items: { type: "string" },
+      items: {
+        type: "object",
+        required: ["name", "automationEnabled"],
+        properties: {
+          name: { type: "string", minLength: 1 },
+          automationEnabled: { type: "boolean" },
+        },
+      },
     },
   },
 };

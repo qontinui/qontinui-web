@@ -86,9 +86,12 @@ export function ProcessList({
     ...new Set(processes.map((p) => p.category || "Main")),
   ];
 
+  // Get category names from the Category[] array
+  const categoryNames = categories.map((c) => c.name);
+
   // Combine all categories (default, custom from context, and those from processes)
   const allCategories = [
-    ...new Set([...defaultCategories, ...categories, ...processCategories]),
+    ...new Set([...defaultCategories, ...categoryNames, ...processCategories]),
   ];
 
   // Group processes by category

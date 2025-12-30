@@ -30,7 +30,6 @@ class ActionExecutionType(str, PyEnum):
     SCROLL = "scroll"
     DRAG = "drag"
     HOVER = "hover"
-    WAIT = "wait"
     SCREENSHOT = "screenshot"
     # State actions
     GO_TO_STATE = "go_to_state"

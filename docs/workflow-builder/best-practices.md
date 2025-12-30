@@ -269,23 +269,24 @@ const regressionSuite = {
 
 ## Performance
 
-### Avoid Unnecessary Waits
+### Use Intelligent Waits
 
 ```typescript
-// ✅ Good: Use FIND instead of WAIT
+// ✅ Good: Use FIND with timeout - waits intelligently for element
 {
   type: 'FIND',
   config: {
     target: 'Login Button',
-    timeout: 5000
+    timeout: 5000  // Waits up to 5 seconds, succeeds as soon as element appears
   }
 }
 
-// ❌ Bad: Fixed waits
+// ✅ Good: Use VANISH to wait for element to disappear
 {
-  type: 'WAIT',
+  type: 'VANISH',
   config: {
-    duration: 3000  // Always waits 3 seconds
+    target: 'Loading Spinner',
+    maxWaitTime: 10000  // Waits up to 10 seconds for spinner to vanish
   }
 }
 ```

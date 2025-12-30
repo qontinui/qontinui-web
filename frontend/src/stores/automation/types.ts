@@ -37,6 +37,7 @@ import type {
   SchedulerStatistics,
   StateCheckResult,
   RAGEmbeddingResult,
+  Category,
 } from "@/contexts/automation-context/types";
 import type { ProjectSettings } from "@/types/project-settings";
 import type { Workflow } from "@/lib/action-schema/action-types";
@@ -76,6 +77,7 @@ export type {
   SchedulerStatistics,
   StateCheckResult,
   RAGEmbeddingResult,
+  Category,
 };
 
 // Re-export enums (need value export, not just type)
@@ -91,7 +93,7 @@ export interface ProjectSlice {
   projectId: string | null;
   lastSaved: string | null;
   isLoadingFromBackend: boolean;
-  categories: string[];
+  categories: Category[];
 
   // Actions
   setProjectName: (name: string) => void;
@@ -102,6 +104,8 @@ export interface ProjectSlice {
   renameProject: (newName: string) => Promise<void>;
   addCategory: (category: string) => void;
   deleteCategory: (category: string) => void;
+  updateCategory: (category: Category) => void;
+  setCategories: (categories: Category[]) => void;
 }
 
 export interface WorkflowSlice {

@@ -202,18 +202,25 @@ export function AIPromptActionProperties({
         </div>
       )}
 
-      {/* Fresh Context */}
-      <div className="flex items-center justify-between">
-        <div>
-          <Label className="text-xs text-gray-400">Fresh Context</Label>
-          <p className="text-xs text-gray-500">
-            Start new AI session (recommended)
-          </p>
-        </div>
-        <Switch
-          checked={config.freshContext !== false}
-          onCheckedChange={(checked) => updateConfig("freshContext", checked)}
+      {/* Max Sessions */}
+      <div className="space-y-2">
+        <Label className="text-xs text-gray-400">Max Sessions</Label>
+        <Input
+          type="number"
+          min={1}
+          value={config.maxSessions ?? 1}
+          onChange={(e) =>
+            updateConfig(
+              "maxSessions",
+              e.target.value ? parseInt(e.target.value) : 1
+            )
+          }
+          placeholder="1"
+          className="bg-transparent border-gray-700 w-24"
         />
+        <p className="text-xs text-gray-500">
+          1 = one-shot, higher = auto-continue until complete
+        </p>
       </div>
 
       {/* Output Variable */}

@@ -57,7 +57,6 @@ class JSONConfigValidator:
         "AI_PROMPT",
         "RUN_PROMPT_SEQUENCE",
         # Other actions
-        "WAIT",
         "VANISH",
         "GO_TO_STATE",
         "RUN_WORKFLOW",

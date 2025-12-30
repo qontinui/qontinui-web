@@ -38,7 +38,7 @@ import {
   type IncomingTransition,
 } from "@/hooks/automation";
 import { useAutomation } from "@/contexts/automation-context";
-import { StateUpdateCoordinator } from "@/stores/automation";
+import { StateUpdateCoordinator } from "@/contexts/automation-context/state-update-coordinator";
 import { OutgoingTransitionBuilder } from "@/components/outgoing-transition-builder";
 import { StatePropertiesPanel } from "@/components/state-properties-panel";
 import { TransitionPropertiesPanel } from "@/components/transition-properties-panel";
@@ -408,6 +408,41 @@ export function StateStructure() {
       if (!clickWorkflow) {
         clickWorkflow = createClickStateImageWorkflow(sourceState, stateImage);
         addWorkflow(clickWorkflow);
+      } else {
+        // Validate and fix the existing workflow's FIND action if it has incorrect config
+        // This can happen with old workflows that used 'stateImage' target type instead of 'image'
+        const findAction = clickWorkflow.actions.find((a) => a.type === "FIND");
+        if (findAction) {
+          const target = (
+            findAction.config as {
+              target?: { type?: string; imageIds?: string[] };
+            }
+          )?.target;
+          // If the FIND action uses 'stateImage' type instead of 'image', fix it
+          if (target?.type === "stateImage" || target?.type !== "image") {
+            const updatedActions = clickWorkflow.actions.map((action) => {
+              if (action.type === "FIND") {
+                return {
+                  ...action,
+                  config: {
+                    ...action.config,
+                    target: {
+                      type: "image" as const,
+                      imageIds: [stateImage.id],
+                    },
+                  },
+                };
+              }
+              return action;
+            });
+            const updatedWorkflow = {
+              ...clickWorkflow,
+              actions: updatedActions,
+            };
+            updateWorkflow(updatedWorkflow);
+            clickWorkflow = updatedWorkflow;
+          }
+        }
       }
 
       // Find existing "Find State" workflow for the target state, or create a new one
@@ -480,6 +515,7 @@ export function StateStructure() {
       addWorkflow,
       addTransition,
       updateTransition,
+      updateWorkflow,
     ]
   );
 

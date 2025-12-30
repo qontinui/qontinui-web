@@ -302,8 +302,6 @@ export const ACTION_TYPE_TO_CATEGORY: Record<ActionType, ActionCategory> = {
 
   // AI actions
   AI_PROMPT: ActionCategory.DATA,
-  RUN_PROMPT_SEQUENCE: ActionCategory.DATA,
-  CHECKPOINT_WORKFLOW: ActionCategory.DATA,
 };
 
 /**

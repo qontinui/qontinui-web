@@ -244,11 +244,16 @@ async def update_annotations(
     if annotation:
         annotation.elements = [e.model_dump() for e in data.elements]  # type: ignore[assignment]
         annotation.states = [s.model_dump() for s in data.states]  # type: ignore[assignment]
+        annotation.source_url = data.source_url or annotation.source_url  # type: ignore[assignment]
+        annotation.viewport_width = data.viewport_width  # type: ignore[assignment]
+        annotation.viewport_height = data.viewport_height  # type: ignore[assignment]
     else:
         annotation = ExtractionAnnotation(
             session_id=extraction_uuid,
             screenshot_id=data.screenshot_id,
-            source_url="",  # Would need to be provided
+            source_url=data.source_url,
+            viewport_width=data.viewport_width,
+            viewport_height=data.viewport_height,
             elements=[e.model_dump() for e in data.elements],
             states=[s.model_dump() for s in data.states],
         )

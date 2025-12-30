@@ -28,6 +28,7 @@ import {
   Globe,
   FileSearch,
   Component,
+  ArrowRightLeft,
 } from "lucide-react";
 import type { ExtractionSession } from "@/services/extraction-service";
 import { formatDistanceToNow } from "date-fns";
@@ -111,7 +112,7 @@ export function ExtractionProgress({ session }: ExtractionProgressProps) {
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Globe className="h-4 w-4" />
@@ -139,6 +140,16 @@ export function ExtractionProgress({ session }: ExtractionProgressProps) {
             </div>
             <div className="text-2xl font-bold">
               {session.stats.states_found || 0}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <ArrowRightLeft className="h-4 w-4" />
+              <span>Transitions</span>
+            </div>
+            <div className="text-2xl font-bold">
+              {session.stats.transitions_found || 0}
             </div>
           </div>
         </div>

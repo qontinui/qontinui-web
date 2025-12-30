@@ -43,11 +43,16 @@ import {
 } from "./index";
 import { ShareProjectDialog } from "./components/ShareProjectDialog";
 import { ProjectExportDialog } from "./components/ProjectExportDialog";
+import { ValidationResultsDialog } from "./components/ValidationResultsDialog";
 import { useProjectSharing } from "./hooks/useProjectSharing";
 import {
   ExportDialog,
   ImportDialog,
 } from "@/components/workflow-canvas/ImportExportDialog";
+import {
+  validateProject,
+  type ProjectValidationResult,
+} from "@/lib/project-validator";
 
 export function AutomationBuilder() {
   // State
@@ -58,10 +63,20 @@ export function AutomationBuilder() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [projectExportDialogOpen, setProjectExportDialogOpen] = useState(false);
+  const [validationDialogOpen, setValidationDialogOpen] = useState(false);
+  const [validationResults, setValidationResults] =
+    useState<ProjectValidationResult | null>(null);
 
   // Context
-  const { addWorkflow, updateWorkflow, states, workflows, projectId } =
-    useAutomation();
+  const {
+    addWorkflow,
+    updateWorkflow,
+    states,
+    workflows,
+    transitions,
+    images,
+    projectId,
+  } = useAutomation();
 
   // URL params for deep linking
   const searchParams = useSearchParams();
@@ -400,6 +415,38 @@ export function AutomationBuilder() {
   }, []);
 
   /**
+   * Handle verifying the project configuration
+   */
+  const handleVerifyProject = useCallback(() => {
+    const results = validateProject({
+      workflows,
+      states,
+      transitions,
+      images,
+    });
+
+    setValidationResults(results);
+    setValidationDialogOpen(true);
+  }, [workflows, states, transitions, images]);
+
+  /**
+   * Handle navigating to a workflow from validation results
+   */
+  const handleNavigateToWorkflow = useCallback(
+    (workflowId: string) => {
+      const workflow = workflows.find((w) => w.id === workflowId);
+      if (workflow) {
+        setSelectedItem(workflow);
+        // Set mode based on workflow type
+        const isLinear = isLinearWorkflow(workflow);
+        setMode(isLinear ? "sequential" : "graph");
+        setSelectedAction(null);
+      }
+    },
+    [workflows]
+  );
+
+  /**
    * Handle importing a workflow
    */
   const handleImportWorkflow = useCallback(
@@ -538,6 +585,7 @@ export function AutomationBuilder() {
           onShare={handleShare}
           onExport={handleExport}
           onImport={handleImport}
+          onVerifyProject={handleVerifyProject}
           onExportProject={handleExportProject}
         />
 
@@ -619,6 +667,14 @@ export function AutomationBuilder() {
       <ProjectExportDialog
         open={projectExportDialogOpen}
         onOpenChange={setProjectExportDialogOpen}
+      />
+
+      {/* Validation Results Dialog */}
+      <ValidationResultsDialog
+        open={validationDialogOpen}
+        onOpenChange={setValidationDialogOpen}
+        results={validationResults}
+        onNavigateToWorkflow={handleNavigateToWorkflow}
       />
     </div>
   );

@@ -65,14 +65,7 @@ const ACTION_GROUPS = {
     { type: "SHELL", label: "Run Command", color: "bg-slate-500" },
     { type: "SHELL_SCRIPT", label: "Run Script", color: "bg-slate-600" },
   ],
-  AI: [
-    { type: "AI_PROMPT", label: "AI Prompt", color: "bg-violet-500" },
-    {
-      type: "RUN_PROMPT_SEQUENCE",
-      label: "Run Prompt Sequence",
-      color: "bg-violet-600",
-    },
-  ],
+  AI: [{ type: "AI_PROMPT", label: "AI Prompt", color: "bg-violet-500" }],
 } as const;
 
 // Flat list for finding action types by type
@@ -558,10 +551,6 @@ function getDefaultConfig(type: Action["type"]): Record<string, unknown> {
         timeout: 600000,
         failOnError: true,
       };
-    case "RUN_PROMPT_SEQUENCE":
-      return {
-        sequenceId: "",
-      };
     default:
       return {};
   }
@@ -1033,19 +1022,6 @@ function getActionSummary(
         return `AI Prompt (${provider}): ${displayPrompt}`;
       }
       return `AI Prompt (${provider})`;
-    }
-    case "RUN_PROMPT_SEQUENCE": {
-      const config = action.config as {
-        sequenceId?: string;
-        description?: string;
-      };
-      if (config.description) {
-        return config.description;
-      }
-      if (config.sequenceId) {
-        return `Run sequence: ${config.sequenceId}`;
-      }
-      return "No sequence selected";
     }
     default:
       return "Configure action";

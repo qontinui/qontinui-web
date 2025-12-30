@@ -11,6 +11,7 @@ import {
   ActionConfig as ExportActionConfig,
   WorkflowConnections,
   ActionOutputs,
+  Category,
 } from "./export-schema";
 
 import { validateWorkflowConnections } from "./workflow-validator";
@@ -39,7 +40,7 @@ export class ConfigExporter {
     workflows: Workflow[],
     states: State[],
     transitions: Transition[],
-    categories: string[],
+    categories: Category[],
     metadata?: Partial<ConfigMetadata>,
     _settings?: Partial<ProjectSettings>,
     screenshots?: Screenshot[]
@@ -98,7 +99,7 @@ export class ConfigExporter {
       workflows: this.exportWorkflows(allWorkflows, states || []),
       states: this.exportStates(states || [], screenshots, base64ToImageId),
       transitions: this.exportTransitions(transitions || []),
-      categories: categories || ["Main"],
+      categories: categories || [{ name: "Main", automationEnabled: true }],
       settings: configSettings,
     };
 

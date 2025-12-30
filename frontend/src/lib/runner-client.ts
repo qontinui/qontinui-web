@@ -283,6 +283,54 @@ class RunnerClient {
       };
     }
   }
+
+  /**
+   * Get extraction screenshot URL
+   *
+   * Returns the URL to fetch a screenshot from the runner.
+   * The screenshot is stored locally on the runner machine.
+   */
+  getExtractionScreenshotUrl(
+    extractionId: string,
+    screenshotId: string
+  ): string {
+    return `${this.baseUrl}/extraction/${extractionId}/screenshot/${screenshotId}`;
+  }
+
+  /**
+   * Fetch extraction screenshot as a blob
+   */
+  async getExtractionScreenshot(
+    extractionId: string,
+    screenshotId: string
+  ): Promise<{ success: boolean; blob?: Blob; error?: string }> {
+    try {
+      const url = this.getExtractionScreenshotUrl(extractionId, screenshotId);
+      const response = await fetch(url, {
+        method: "GET",
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return { success: false, error: "Screenshot not found" };
+        }
+        return {
+          success: false,
+          error: `Failed to fetch screenshot: ${response.status}`,
+        };
+      }
+
+      const blob = await response.blob();
+      return { success: true, blob };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to fetch screenshot",
+      };
+    }
+  }
 }
 
 export const runnerClient = new RunnerClient();

@@ -24,13 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  ArrowRight,
-  ArrowDown,
-  Workflow as WorkflowIcon,
-  Eye,
-  Layers,
-} from "lucide-react";
+import { ArrowRight, ArrowDown, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TransitionListProps {
@@ -49,10 +43,12 @@ interface TransitionListProps {
 export function TransitionList({
   transitions,
   states,
-  workflows,
+  workflows: _workflows,
   selectedTransition,
   onTransitionSelect,
 }: TransitionListProps) {
+  // workflows prop kept for API compatibility but not currently used
+  void _workflows;
   const [originStateFilter, setOriginStateFilter] = useState<string>("all");
   const [targetStateFilter, setTargetStateFilter] = useState<string>("all");
 
@@ -60,14 +56,6 @@ export function TransitionList({
   const getStateName = (stateId: string): string => {
     const state = states.find((s) => s.id === stateId);
     return state?.name || stateId;
-  };
-
-  // Get workflow action count
-  const getActionCount = (workflowIds: string[]): number => {
-    return workflowIds.reduce((count, wfId) => {
-      const workflow = workflows.find((w) => w.id === wfId);
-      return count + (workflow?.actions?.length || 0);
-    }, 0);
   };
 
   // Get unique origin states from transitions
@@ -146,107 +134,70 @@ export function TransitionList({
     return { outgoingTransitions: outgoing, incomingTransitions: incoming };
   }, [filteredTransitions]);
 
-  const renderOutgoingTransition = (transition: OutgoingTransition) => {
+  const renderOutgoingTransition = (
+    transition: OutgoingTransition,
+    index: number
+  ) => {
     const isSelected = selectedTransition?.id === transition.id;
     const fromName = getStateName(transition.fromState);
     const toNames = transition.activateStates.map((id) => getStateName(id));
-    const actionCount = getActionCount(transition.workflows);
+    const isEven = index % 2 === 0;
 
     return (
       <div
         key={transition.id}
         className={cn(
-          "p-3 rounded-lg border cursor-pointer transition-colors",
+          "px-2 py-1.5 cursor-pointer transition-colors border-l-2",
           isSelected
-            ? "bg-primary/10 border-primary"
-            : "hover:bg-muted/50 border-transparent hover:border-muted-foreground/20"
+            ? "bg-primary/15 border-l-primary"
+            : isEven
+              ? "bg-muted/30 border-l-transparent hover:bg-muted/50"
+              : "bg-transparent border-l-transparent hover:bg-muted/30"
         )}
         onClick={() => onTransitionSelect(isSelected ? null : transition)}
       >
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-2">
-          <ArrowRight className="h-4 w-4 text-fuchsia-500 flex-shrink-0" />
-          <span className="font-medium text-sm truncate">{fromName}</span>
-          <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-          <span className="text-sm text-muted-foreground truncate">
+        <div className="flex items-center gap-1.5 text-xs">
+          <ArrowRight className="h-3 w-3 text-fuchsia-500 flex-shrink-0" />
+          <span className="font-medium truncate">{fromName}</span>
+          <ArrowRight className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
+          <span className="text-muted-foreground truncate flex-1">
             {toNames.length === 1 ? toNames[0] : `${toNames.length} states`}
           </span>
-        </div>
-
-        {/* Details */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline" className="h-5 text-xs">
-            <WorkflowIcon className="h-3 w-3 mr-1" />
-            {transition.workflows.length} workflow
-            {transition.workflows.length !== 1 ? "s" : ""}
-          </Badge>
-          {actionCount > 0 && (
-            <Badge variant="outline" className="h-5 text-xs">
-              {actionCount} action{actionCount !== 1 ? "s" : ""}
-            </Badge>
-          )}
           {transition.staysVisible && (
-            <Badge variant="secondary" className="h-5 text-xs">
-              <Eye className="h-3 w-3 mr-1" />
-              stays
-            </Badge>
+            <Eye className="h-3 w-3 text-muted-foreground flex-shrink-0" />
           )}
         </div>
-
-        {/* Target states expansion */}
-        {toNames.length > 1 && (
-          <div className="mt-2 pl-6 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1 mb-1">
-              <Layers className="h-3 w-3" />
-              Activates:
-            </div>
-            <ul className="space-y-0.5 ml-4">
-              {toNames.map((name, i) => (
-                <li key={i} className="text-foreground">
-                  {name}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </div>
     );
   };
 
-  const renderIncomingTransition = (transition: IncomingTransition) => {
+  const renderIncomingTransition = (
+    transition: IncomingTransition,
+    index: number
+  ) => {
     const isSelected = selectedTransition?.id === transition.id;
     const toName = getStateName(transition.toState);
-    const actionCount = getActionCount(transition.workflows);
+    const isEven = index % 2 === 0;
 
     return (
       <div
         key={transition.id}
         className={cn(
-          "p-3 rounded-lg border cursor-pointer transition-colors",
+          "px-2 py-1.5 cursor-pointer transition-colors border-l-2",
           isSelected
-            ? "bg-primary/10 border-primary"
-            : "hover:bg-muted/50 border-transparent hover:border-muted-foreground/20"
+            ? "bg-primary/15 border-l-primary"
+            : isEven
+              ? "bg-muted/30 border-l-transparent hover:bg-muted/50"
+              : "bg-transparent border-l-transparent hover:bg-muted/30"
         )}
         onClick={() => onTransitionSelect(isSelected ? null : transition)}
       >
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-2">
-          <ArrowDown className="h-4 w-4 text-green-500 flex-shrink-0" />
-          <span className="font-medium text-sm">→ {toName}</span>
-        </div>
-
-        {/* Details */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline" className="h-5 text-xs">
-            <WorkflowIcon className="h-3 w-3 mr-1" />
-            {transition.workflows.length} workflow
-            {transition.workflows.length !== 1 ? "s" : ""}
-          </Badge>
-          {actionCount > 0 && (
-            <Badge variant="outline" className="h-5 text-xs">
-              {actionCount} action{actionCount !== 1 ? "s" : ""}
-            </Badge>
-          )}
+        <div className="flex items-center gap-1.5 text-xs">
+          <ArrowDown className="h-3 w-3 text-green-500 flex-shrink-0" />
+          <span className="font-medium truncate flex-1">→ {toName}</span>
+          <span className="text-muted-foreground text-[10px]">
+            {transition.workflows.length} wf
+          </span>
         </div>
       </div>
     );
@@ -311,21 +262,23 @@ export function TransitionList({
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Outgoing transitions */}
             {outgoingTransitions.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 mb-2 px-1">
+                <div className="flex items-center gap-2 mb-1 px-1">
                   <ArrowRight className="h-3 w-3 text-fuchsia-500" />
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Outgoing Transitions
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Outgoing
                   </span>
-                  <Badge variant="outline" className="h-4 text-xs">
+                  <Badge variant="outline" className="h-4 text-[10px] px-1">
                     {outgoingTransitions.length}
                   </Badge>
                 </div>
-                <div className="space-y-2">
-                  {outgoingTransitions.map(renderOutgoingTransition)}
+                <div className="rounded-md overflow-hidden border border-border/50">
+                  {outgoingTransitions.map((t, i) =>
+                    renderOutgoingTransition(t, i)
+                  )}
                 </div>
               </div>
             )}
@@ -333,17 +286,19 @@ export function TransitionList({
             {/* Incoming transitions */}
             {incomingTransitions.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 mb-2 px-1">
+                <div className="flex items-center gap-2 mb-1 px-1">
                   <ArrowDown className="h-3 w-3 text-green-500" />
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Incoming Transitions
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Incoming
                   </span>
-                  <Badge variant="outline" className="h-4 text-xs">
+                  <Badge variant="outline" className="h-4 text-[10px] px-1">
                     {incomingTransitions.length}
                   </Badge>
                 </div>
-                <div className="space-y-2">
-                  {incomingTransitions.map(renderIncomingTransition)}
+                <div className="rounded-md overflow-hidden border border-border/50">
+                  {incomingTransitions.map((t, i) =>
+                    renderIncomingTransition(t, i)
+                  )}
                 </div>
               </div>
             )}

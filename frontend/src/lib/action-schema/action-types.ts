@@ -71,11 +71,7 @@ import {
   ShellScriptActionConfig,
 } from "./configs/shell-actions";
 
-import {
-  AIPromptActionConfig,
-  RunPromptSequenceActionConfig,
-  CheckpointWorkflowActionConfig,
-} from "./configs/ai-actions";
+import { AIPromptActionConfig } from "./configs/ai-actions";
 
 // ============================================================================
 // Action Types
@@ -122,10 +118,7 @@ export type CodeActionType = "CODE_BLOCK" | "CUSTOM_FUNCTION";
 
 export type ShellActionType = "SHELL" | "SHELL_SCRIPT";
 
-export type AIActionType =
-  | "AI_PROMPT"
-  | "RUN_PROMPT_SEQUENCE"
-  | "CHECKPOINT_WORKFLOW";
+export type AIActionType = "AI_PROMPT";
 
 export type ActionType =
   | FindActionType
@@ -196,8 +189,6 @@ export interface ActionConfigMap {
 
   // AI actions
   AI_PROMPT: AIPromptActionConfig;
-  RUN_PROMPT_SEQUENCE: RunPromptSequenceActionConfig;
-  CHECKPOINT_WORKFLOW: CheckpointWorkflowActionConfig;
 }
 
 // ============================================================================

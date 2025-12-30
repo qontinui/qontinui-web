@@ -280,8 +280,6 @@ export function getActionCategory(type: ActionType | string): ActionCategory {
       return "shell";
 
     case "AI_PROMPT":
-    case "RUN_PROMPT_SEQUENCE":
-    case "CHECKPOINT_WORKFLOW":
       return "ai";
 
     case "BRANCH_START":

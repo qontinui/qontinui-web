@@ -297,7 +297,9 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
                 {results.length} result{results.length !== 1 ? "s" : ""}
               </span>
               {query && (
-                <span className="text-xs text-gray-500">for "{query}"</span>
+                <span className="text-xs text-gray-500">
+                  for &quot;{query}&quot;
+                </span>
               )}
             </div>
             <div className="node-search__results-list">

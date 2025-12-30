@@ -8,7 +8,7 @@ import type { StateCreator } from "zustand";
 import type { AutomationStore, TransitionSlice } from "../types";
 import type { Transition } from "@/contexts/automation-context/types";
 import { projectLogger } from "@/lib/project-logger";
-import { TransitionReferenceUpdater } from "@/stores/automation";
+import { TransitionReferenceUpdater } from "@/contexts/automation-context/transition-reference-updater";
 
 /**
  * Check if a transition is a duplicate of an existing transition.

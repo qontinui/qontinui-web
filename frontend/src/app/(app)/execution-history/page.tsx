@@ -230,9 +230,10 @@ export default function ExecutionHistoryPage() {
                                   workflow.workflow_id || workflow.workflow_name
                                 }
                                 value={workflow.workflow_name}
+                                textValue={workflow.workflow_name}
                                 className="text-white hover:bg-gray-800"
                               >
-                                <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center justify-between gap-4 w-full">
                                   <span>{workflow.workflow_name}</span>
                                   <span className="text-xs text-gray-500">
                                     {workflow.run_count} run
@@ -281,6 +282,7 @@ export default function ExecutionHistoryPage() {
                               <SelectItem
                                 key={run.id}
                                 value={run.id}
+                                textValue={formatRunDateTime(run.started_at)}
                                 className="text-white hover:bg-gray-800"
                               >
                                 <div className="flex items-center gap-3">

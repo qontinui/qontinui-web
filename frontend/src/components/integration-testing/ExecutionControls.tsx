@@ -74,9 +74,10 @@ export function ExecutionControls({
   // Group processes by category
   const processesByCategory = useMemo(() => {
     const grouped = new Map<string, typeof processes>();
+    const categoryNames = categories?.map((c) => c.name) || [];
 
-    if (categories && categories.length > 0) {
-      categories.forEach((categoryName) => {
+    if (categoryNames.length > 0) {
+      categoryNames.forEach((categoryName) => {
         const categoryProcesses = processes.filter(
           (p) => p.category === categoryName
         );
@@ -88,7 +89,10 @@ export function ExecutionControls({
 
     // Add uncategorized processes
     const uncategorized = processes.filter(
-      (p) => !p.category || !categories || !categories.includes(p.category)
+      (p) =>
+        !p.category ||
+        categoryNames.length === 0 ||
+        !categoryNames.includes(p.category)
     );
     if (uncategorized.length > 0) {
       grouped.set("Uncategorized", uncategorized);

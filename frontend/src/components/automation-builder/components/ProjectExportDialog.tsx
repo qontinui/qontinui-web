@@ -37,10 +37,8 @@ import {
   ragSetupService,
   type RAGSetupProgress,
 } from "@/services/rag-setup-service";
-import {
-  validateMonitorAssociations,
-  type MonitorValidationError,
-} from "@/lib/monitor-validation";
+import { validateProject } from "@/lib/project-validator";
+import { type MonitorValidationError } from "@/lib/monitor-validation";
 import {
   MissingMonitorsDialog,
   type MonitorUpdate,
@@ -300,21 +298,31 @@ export function ProjectExportDialog({
         updateState(updatedState);
       });
 
-      // Re-validate after updates
-      const newErrors = validateMonitorAssociations(states);
-      if (newErrors.length === 0) {
+      // Re-validate after updates using consolidated validator
+      const validationResult = validateProject({
+        workflows,
+        states,
+        transitions,
+        images,
+      });
+
+      if (validationResult.monitorErrors.length === 0) {
         toast.success("All elements now have monitors assigned");
         // Automatically trigger export after fixing
         setTimeout(() => {
           handleExport();
         }, 100);
       } else {
-        toast.warning(`${newErrors.length} element(s) still need monitors`);
-        setMonitorValidationErrors(newErrors);
+        toast.warning(
+          `${validationResult.monitorErrors.length} element(s) still need monitors`
+        );
+        setMonitorValidationErrors(validationResult.monitorErrors);
         setShowMonitorDialog(true);
       }
     },
-    [states, updateState]
+    // Note: handleExport is intentionally excluded - it's called via setTimeout which uses the current closure
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [states, updateState, workflows, transitions, images]
   );
 
   /**
@@ -382,13 +390,33 @@ export function ProjectExportDialog({
   }, [workflows, transitions, updateWorkflow, updateTransition, projectName]);
 
   const handleExport = useCallback(async () => {
-    // First, validate monitor associations
-    const monitorErrors = validateMonitorAssociations(states);
-    if (monitorErrors.length > 0) {
-      setMonitorValidationErrors(monitorErrors);
+    // First, run consolidated validation (same as Verify button)
+    const validationResult = validateProject({
+      workflows,
+      states,
+      transitions,
+      images,
+    });
+
+    // Check for monitor validation errors specifically (need separate dialog for fixing)
+    if (validationResult.monitorErrors.length > 0) {
+      setMonitorValidationErrors(validationResult.monitorErrors);
       setShowMonitorDialog(true);
       toast.error("Monitor validation failed", {
-        description: `${monitorErrors.length} element(s) need monitor assignments`,
+        description: `${validationResult.monitorErrors.length} element(s) need monitor assignments`,
+      });
+      return;
+    }
+
+    // Check for other errors (excluding monitor errors)
+    const nonMonitorErrors = validationResult.issues.filter(
+      (i) => i.severity === "error" && i.category !== "monitor"
+    );
+
+    if (nonMonitorErrors.length > 0) {
+      setValidationErrors(nonMonitorErrors.map((e) => e.message));
+      toast.error("Validation failed", {
+        description: `${nonMonitorErrors.length} error(s) must be fixed before export`,
       });
       return;
     }
@@ -419,16 +447,15 @@ export function ProjectExportDialog({
         screenshots as unknown as Screenshot[] // Type cast needed: context uses different Screenshot type than ConfigExporter
       );
 
-      // Validate the configuration
-      const validation = exporter.validateConfiguration(config);
-      if (!validation.valid) {
-        setValidationErrors(validation.errors);
-        // Still allow export with warnings
-        if (validation.errors.length > 0) {
-          toast.warning("Export completed with warnings", {
-            description: `${validation.errors.length} validation issue(s) found`,
-          });
-        }
+      // Show warnings if any (don't block export)
+      const warnings = validationResult.issues.filter(
+        (i) => i.severity === "warning"
+      );
+      if (warnings.length > 0) {
+        setValidationErrors(warnings.map((w) => w.message));
+        toast.warning("Export completed with warnings", {
+          description: `${warnings.length} warning(s) found`,
+        });
       }
 
       // Download the configuration
@@ -453,6 +480,7 @@ export function ProjectExportDialog({
     exportName,
     description,
     projectName,
+    projectId,
     images,
     workflows,
     states,

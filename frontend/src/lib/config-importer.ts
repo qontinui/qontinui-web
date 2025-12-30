@@ -5,6 +5,7 @@ import {
   State as ExportState,
   Transition as ExportTransition,
   Action as ExportAction,
+  Category,
 } from "./export-schema";
 import { Workflow, Action } from "./action-schema";
 import { migrateConfigToLatest, needsMigration } from "./config-migration";
@@ -91,7 +92,7 @@ export interface ImportResult {
   workflows: Workflow[];
   states: State[];
   transitions: Transition[];
-  categories?: string[]; // Workflow categories
+  categories?: Category[]; // Workflow categories with automation settings
   settings?: unknown; // QontinuiConfig.settings
   errors: string[];
   warnings: string[];

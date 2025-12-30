@@ -263,8 +263,34 @@ export function TransitionAnimationCanvas({
     const data = animation.data;
     const state = animation.state;
 
+    // Debug: Log every render during executing-action phase
+    if (
+      process.env.NODE_ENV === "development" &&
+      state.phase === "executing-action"
+    ) {
+      console.log(
+        "[TransitionAnimation] Canvas RENDER during executing-action:",
+        {
+          phase: state.phase,
+          progress: state.progress,
+          globalActionIndex: state.globalActionIndex,
+          currentAction: animation.currentAction?.type,
+          currentActionName: animation.currentAction?.name,
+        }
+      );
+    }
+
     if (!data) {
       // No transition loaded - show placeholder
+      if (process.env.NODE_ENV === "development") {
+        console.log(
+          "[TransitionAnimation] Canvas: rendering with no data (showing placeholder)",
+          {
+            phase: state.phase,
+            hasTransition: !!transition,
+          }
+        );
+      }
       drawPlaceholder(ctx, canvas.bounds);
     } else {
       // Draw states based on animation phase
@@ -273,6 +299,20 @@ export function TransitionAnimationCanvas({
       // Draw current action animation if in executing phase
       if (state.phase === "executing-action") {
         const currentAction = animation.currentAction;
+        if (!currentAction) {
+          if (process.env.NODE_ENV === "development") {
+            console.warn(
+              "[TransitionAnimation] Canvas: executing-action phase but no currentAction",
+              {
+                phase: state.phase,
+                globalActionIndex: state.globalActionIndex,
+                totalActions: state.totalActions,
+                dataExists: !!data,
+                sequenceLength: data?.actionSequence?.length ?? 0,
+              }
+            );
+          }
+        }
         if (currentAction) {
           const canvasCenter = {
             x: canvas.bounds.width / 2,
@@ -469,6 +509,9 @@ function drawStates(
   bounds: MonitorCanvasBounds,
   monitors: Monitor[]
 ): void {
+  // Build set of target state IDs for quick lookup
+  const targetStateIds = new Set(data.targetStates.map((s) => s.id));
+
   // Determine which states to show and their opacity based on phase
   let originOpacity = 1;
   let targetOpacity = 0;
@@ -494,27 +537,35 @@ function drawStates(
       break;
   }
 
-  // Draw origin states (fading out during transition)
-  if (originOpacity > 0) {
-    data.originStates.forEach((stateObj, index) => {
+  // Draw origin states
+  // States that "staysVisible" (in both origin and target) should remain at full opacity
+  data.originStates.forEach((stateObj, index) => {
+    const staysVisible = targetStateIds.has(stateObj.id);
+    // If this state staysVisible, keep it at full opacity; otherwise use originOpacity
+    const opacity = staysVisible ? 1 : originOpacity;
+
+    if (opacity > 0) {
       drawState(
         ctx,
         stateObj,
         getStateColor(index),
         loadedImages,
         bounds,
-        originOpacity,
+        opacity,
         false,
         monitors
       );
-    });
-  }
+    }
+  });
 
   // Draw target states (fading in during transition)
+  // Skip states that are also origin states (they were already drawn above)
   if (targetOpacity > 0) {
+    const originStateIds = new Set(data.originStates.map((s) => s.id));
+
     data.targetStates.forEach((stateObj, index) => {
-      // Skip if it's also an origin state (staysVisible)
-      if (data.originStates.find((o) => o.id === stateObj.id)) return;
+      // Skip if it's also an origin state (already drawn with staysVisible logic)
+      if (originStateIds.has(stateObj.id)) return;
 
       drawState(
         ctx,

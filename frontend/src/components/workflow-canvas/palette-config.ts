@@ -555,43 +555,6 @@ export const NODE_METADATA: Record<ActionType, NodeMetadata> = {
     ],
     tags: ["ai", "prompt", "automation"],
   },
-  RUN_PROMPT_SEQUENCE: {
-    type: "RUN_PROMPT_SEQUENCE",
-    displayName: "Prompt Sequence",
-    description: "Execute a sequence of AI prompts with context isolation",
-    category: "code",
-    icon: RotateCw,
-    keywords: [
-      "ai",
-      "sequence",
-      "multi-step",
-      "pipeline",
-      "workflow",
-      "claude",
-      "batch",
-    ],
-    tags: ["ai", "sequence", "pipeline"],
-  },
-  CHECKPOINT_WORKFLOW: {
-    type: "CHECKPOINT_WORKFLOW",
-    displayName: "Checkpoint Workflow",
-    description:
-      "Dynamic multi-session AI workflow with checkpoint-based progress tracking",
-    category: "code",
-    icon: GitBranch,
-    keywords: [
-      "ai",
-      "checkpoint",
-      "multi-session",
-      "dynamic",
-      "workflow",
-      "claude",
-      "phase",
-      "continuation",
-      "long-running",
-    ],
-    tags: ["ai", "workflow", "checkpoint", "multi-session"],
-  },
 };
 
 // ============================================================================

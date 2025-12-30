@@ -39,8 +39,6 @@ export {
 
 // Import AI Prompt components
 export { AIPromptActionProperties } from "./ai-prompts/AIPromptActionProperties";
-export { RunPromptSequenceActionProperties } from "./ai-prompts/RunPromptSequenceActionProperties";
-export { CheckpointWorkflowActionProperties } from "./ai-prompts/CheckpointWorkflowActionProperties";
 
 // Register components with the registry
 import { FindActionProperties } from "./FindActionProperties";
@@ -77,8 +75,6 @@ import {
 
 // Import AI Prompt components
 import { AIPromptActionProperties } from "./ai-prompts/AIPromptActionProperties";
-import { RunPromptSequenceActionProperties } from "./ai-prompts/RunPromptSequenceActionProperties";
-import { CheckpointWorkflowActionProperties } from "./ai-prompts/CheckpointWorkflowActionProperties";
 
 // Register all action types with their components
 actionConfigRegistry.register("FIND", FindActionProperties, "FIND");
@@ -146,14 +142,4 @@ actionConfigRegistry.register(
   "AI_PROMPT",
   AIPromptActionProperties,
   "AI_PROMPT"
-);
-actionConfigRegistry.register(
-  "RUN_PROMPT_SEQUENCE",
-  RunPromptSequenceActionProperties,
-  "RUN_PROMPT_SEQUENCE"
-);
-actionConfigRegistry.register(
-  "CHECKPOINT_WORKFLOW",
-  CheckpointWorkflowActionProperties,
-  "CHECKPOINT_WORKFLOW"
 );

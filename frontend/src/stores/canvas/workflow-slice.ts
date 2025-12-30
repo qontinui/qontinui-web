@@ -8,7 +8,12 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { CanvasStore, WorkflowSlice, Workflow } from "./types";
+import type {
+  CanvasStore,
+  WorkflowSlice,
+  Workflow,
+  ValidationResult,
+} from "./types";
 
 export const createWorkflowSlice: StateCreator<
   CanvasStore,
@@ -48,15 +53,14 @@ export const createWorkflowSlice: StateCreator<
     });
   },
 
-  validateWorkflow: () => {
+  validateWorkflow: async () => {
     const { workflow } = get();
     if (!workflow) {
       return { valid: true, errors: [], warnings: [] };
     }
 
     // Dynamic import to avoid circular dependency
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Dynamic import needed to avoid circular dependency
-    const { validateWorkflow: validate } = require("../../canvas-validation");
+    const { validateWorkflow: validate } = await import("../canvas-validation");
 
     // Run comprehensive validation
     const result = validate(workflow, {
@@ -70,10 +74,10 @@ export const createWorkflowSlice: StateCreator<
     });
 
     set((state) => {
-      state.validationResult = result;
+      state.validationResult = result as unknown as ValidationResult;
     });
 
-    return result;
+    return result as ValidationResult;
   },
 
   clearValidation: () => {

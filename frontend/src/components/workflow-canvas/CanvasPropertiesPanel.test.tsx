@@ -20,9 +20,12 @@ vi.mock("@/stores/canvas-store");
 vi.mock("@/stores/properties-panel-store");
 
 // Mock action property components
+const MockPropertyComponent = () => <div>Mock Property Component</div>;
+MockPropertyComponent.displayName = "MockPropertyComponent";
+
 vi.mock("@/components/action-properties/ActionConfigRegistry", () => ({
   actionConfigRegistry: {
-    getComponent: vi.fn(() => () => <div>Mock Property Component</div>),
+    getComponent: vi.fn(() => MockPropertyComponent),
     getDisplayName: vi.fn((type) => type),
   },
 }));

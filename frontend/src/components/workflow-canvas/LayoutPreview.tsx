@@ -386,7 +386,6 @@ export function LayoutPreview({
     const colors: Record<string, string> = {
       CLICK: "#3b82f6",
       TYPE: "#10b981",
-      WAIT: "#f59e0b",
       SCREENSHOT: "#8b5cf6",
       IF: "#ec4899",
       LOOP: "#f97316",

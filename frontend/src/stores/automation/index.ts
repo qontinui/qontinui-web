@@ -30,7 +30,7 @@ import {
 import { screenshotDB } from "@/lib/screenshot-db";
 import { projectLogger } from "@/lib/project-logger";
 import type { Workflow } from "@/lib/action-schema/action-types";
-import type { State, Transition, ImageAsset, Pattern } from "./types";
+import type { State, Transition, ImageAsset, Pattern, Category } from "./types";
 
 // Legacy pattern type for migration (patterns with embedded image data)
 interface LegacyPattern {
@@ -320,6 +320,31 @@ export const useAutomationStore = create<AutomationStore>()(
               }
             }
 
+            // Convert categories from legacy string[] format to Category[] if needed
+            let categories: Category[] | undefined;
+            if (config.categories && Array.isArray(config.categories)) {
+              if (
+                config.categories.length > 0 &&
+                typeof config.categories[0] === "string"
+              ) {
+                // Legacy format: string[] - convert to Category[] with only "Main" enabled
+                categories = (config.categories as string[]).map((name) => ({
+                  name,
+                  automationEnabled: name.toLowerCase() === "main",
+                }));
+                projectLogger.info(
+                  "AutomationStore",
+                  "Migrated legacy categories to new format",
+                  {
+                    count: categories.length,
+                  }
+                );
+              } else {
+                // New format: Category[]
+                categories = config.categories as Category[];
+              }
+            }
+
             set((state) => {
               if (config.name) state.projectName = config.name as string;
               if (workflows) state.workflows = workflows;
@@ -334,8 +359,7 @@ export const useAutomationStore = create<AutomationStore>()(
                   config.schedules as AutomationStore["schedules"];
               if (config.settings)
                 state.settings = config.settings as AutomationStore["settings"];
-              if (config.categories)
-                state.categories = config.categories as string[];
+              if (categories) state.categories = categories;
             });
 
             projectLogger.info("AutomationStore", "Configuration loaded");
@@ -590,7 +614,11 @@ export function resetStore(): void {
     state.screenshots = [];
     state.schedules = [];
     state.executionRecords = [];
-    state.categories = ["Main", "Incoming Transitions", "Outgoing Transitions"];
+    state.categories = [
+      { name: "Main", automationEnabled: true },
+      { name: "Incoming Transitions", automationEnabled: false },
+      { name: "Outgoing Transitions", automationEnabled: false },
+    ];
   });
 }
 
@@ -599,7 +627,3 @@ export * from "./types";
 
 // Re-export provider
 export { AutomationProvider } from "./AutomationProvider";
-
-// Re-export utility classes from automation-context (for backward compatibility)
-export { StateUpdateCoordinator } from "@/contexts/automation-context/state-update-coordinator";
-export { TransitionReferenceUpdater } from "@/contexts/automation-context/transition-reference-updater";

@@ -120,6 +120,7 @@ export function useAutomationBridge(): AutomationContextType {
     categories: store.categories,
     addCategory: store.addCategory,
     deleteCategory: store.deleteCategory,
+    updateCategory: store.updateCategory,
 
     // Settings
     settings: store.settings,

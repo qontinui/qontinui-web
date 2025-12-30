@@ -110,11 +110,25 @@ function drawArrow(
 export function renderFindAnimation(
   ctx: CanvasRenderingContext2D,
   config: ActionAnimationConfig,
-  progress: number
+  progress: number,
+  canvasCenter?: { x: number; y: number }
 ): void {
-  if (!config.targetRegion) return;
+  // Use targetRegion if available, otherwise create a fallback region at canvasCenter
+  let x: number, y: number, width: number, height: number;
+  let isFallback = false;
 
-  const { x, y, width, height } = config.targetRegion;
+  if (config.targetRegion) {
+    ({ x, y, width, height } = config.targetRegion);
+  } else if (canvasCenter) {
+    // Create a fallback region centered at canvasCenter
+    width = 100;
+    height = 80;
+    x = canvasCenter.x - width / 2;
+    y = canvasCenter.y - height / 2;
+    isFallback = true;
+  } else {
+    return; // No position data available at all
+  }
   const colors = ACTION_CATEGORY_COLORS.find;
   const pulse = Math.sin(progress * Math.PI * 4) * 0.3 + 0.7;
 
@@ -147,6 +161,15 @@ export function renderFindAnimation(
   ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.5)`;
   ctx.lineWidth = 2;
   ctx.stroke();
+
+  // Show "unknown position" indicator when using fallback
+  if (isFallback) {
+    ctx.font = "bold 11px sans-serif";
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${pulse})`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText("(position unknown)", x + width / 2, y + height + 8);
+  }
 }
 
 /**
@@ -260,12 +283,26 @@ export function renderTypeAnimation(
 export function renderDragAnimation(
   ctx: CanvasRenderingContext2D,
   config: ActionAnimationConfig,
-  progress: number
+  progress: number,
+  canvasCenter?: { x: number; y: number }
 ): void {
-  if (!config.startPosition || !config.endPosition) return;
+  // Determine start and end positions with fallback
+  let start: { x: number; y: number };
+  let end: { x: number; y: number };
+  let isFallback = false;
 
-  const start = config.startPosition;
-  const end = config.endPosition;
+  if (config.startPosition && config.endPosition) {
+    start = config.startPosition;
+    end = config.endPosition;
+  } else if (canvasCenter) {
+    // Create a short fallback drag animation at canvasCenter
+    isFallback = true;
+    start = { x: canvasCenter.x - 40, y: canvasCenter.y };
+    end = { x: canvasCenter.x + 40, y: canvasCenter.y };
+  } else {
+    return; // No position data available at all
+  }
+
   const colors = ACTION_CATEGORY_COLORS.mouse;
 
   // Calculate current position
@@ -327,6 +364,20 @@ export function renderDragAnimation(
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 2;
   ctx.stroke();
+
+  // Show "unknown position" indicator when using fallback
+  if (isFallback) {
+    const r = parseInt(colors.primary.slice(1, 3), 16);
+    const g = parseInt(colors.primary.slice(3, 5), 16);
+    const b = parseInt(colors.primary.slice(5, 7), 16);
+    ctx.font = "bold 11px sans-serif";
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const centerX = (start.x + end.x) / 2;
+    const centerY = (start.y + end.y) / 2;
+    ctx.fillText("(position unknown)", centerX, centerY + 20);
+  }
 }
 
 /**
@@ -409,12 +460,26 @@ export function renderScrollAnimation(
 export function renderMouseMoveAnimation(
   ctx: CanvasRenderingContext2D,
   config: ActionAnimationConfig,
-  progress: number
+  progress: number,
+  canvasCenter?: { x: number; y: number }
 ): void {
-  if (!config.startPosition || !config.endPosition) return;
+  // Determine start and end positions with fallback
+  let start: { x: number; y: number };
+  let end: { x: number; y: number };
+  let isFallback = false;
 
-  const start = config.startPosition;
-  const end = config.endPosition;
+  if (config.startPosition && config.endPosition) {
+    start = config.startPosition;
+    end = config.endPosition;
+  } else if (canvasCenter) {
+    // Create a short fallback movement at canvasCenter
+    isFallback = true;
+    start = { x: canvasCenter.x - 30, y: canvasCenter.y - 15 };
+    end = { x: canvasCenter.x + 30, y: canvasCenter.y + 15 };
+  } else {
+    return; // No position data available at all
+  }
+
   const colors = ACTION_CATEGORY_COLORS.mouse;
 
   // Calculate current position
@@ -460,6 +525,20 @@ export function renderMouseMoveAnimation(
   ctx.stroke();
 
   ctx.restore();
+
+  // Show "unknown position" indicator when using fallback
+  if (isFallback) {
+    const r = parseInt(colors.primary.slice(1, 3), 16);
+    const g = parseInt(colors.primary.slice(3, 5), 16);
+    const b = parseInt(colors.primary.slice(5, 7), 16);
+    ctx.font = "bold 11px sans-serif";
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const centerX = (start.x + end.x) / 2;
+    const centerY = (start.y + end.y) / 2;
+    ctx.fillText("(position unknown)", centerX, centerY + 25);
+  }
 }
 
 /**
@@ -768,12 +847,8 @@ export function renderActionAnimation(
     case "FIND":
     case "VANISH":
     case "RAG_FIND":
-      // FIND requires targetRegion
-      if (config.targetRegion) {
-        renderFindAnimation(ctx, config, progress);
-      } else {
-        renderNonVisualActionIndicator(ctx, config, progress, canvasCenter);
-      }
+      // FIND renders with targetRegion if available, otherwise uses canvasCenter fallback
+      renderFindAnimation(ctx, config, progress, canvasCenter);
       break;
 
     case "CLICK":
@@ -783,21 +858,13 @@ export function renderActionAnimation(
       break;
 
     case "MOUSE_MOVE":
-      // MOUSE_MOVE requires both start and end positions
-      if (config.startPosition && config.endPosition) {
-        renderMouseMoveAnimation(ctx, config, progress);
-      } else {
-        renderNonVisualActionIndicator(ctx, config, progress, canvasCenter);
-      }
+      // MOUSE_MOVE renders with positions if available, otherwise uses canvasCenter fallback
+      renderMouseMoveAnimation(ctx, config, progress, canvasCenter);
       break;
 
     case "DRAG":
-      // DRAG requires both start and end positions
-      if (config.startPosition && config.endPosition) {
-        renderDragAnimation(ctx, config, progress);
-      } else {
-        renderNonVisualActionIndicator(ctx, config, progress, canvasCenter);
-      }
+      // DRAG renders with positions if available, otherwise uses canvasCenter fallback
+      renderDragAnimation(ctx, config, progress, canvasCenter);
       break;
 
     case "SCROLL":

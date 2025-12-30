@@ -9,7 +9,20 @@
  * - Empty connections
  */
 
-import { Workflow } from "./export-schema";
+import { Workflow, Action } from "./export-schema";
+
+/**
+ * Get a human-readable display name for an action
+ */
+function getActionDisplayName(action: Action | undefined): string {
+  if (!action) return "Unknown action";
+  if (action.name) return action.name;
+  // Format type as readable name (e.g., "FIND" -> "Find", "MOUSE_MOVE" -> "Mouse Move")
+  return action.type
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
 
 export interface WorkflowValidationError {
   type: "error" | "warning";
@@ -67,6 +80,9 @@ export function validateWorkflowConnections(
     });
   }
 
+  // 5. Validate action configurations
+  validateActionConfigs(workflow, errors);
+
   return {
     valid: errors.length === 0,
     errors,
@@ -89,11 +105,16 @@ function validateConnectionIndices(
     if (!actionIndexMap.has(actionId)) {
       errors.push({
         type: "error",
-        message: `Connection references non-existent action ID: ${actionId}`,
+        message: `Connection references non-existent action`,
         actionId,
       });
       return;
     }
+
+    // Get action name for error messages
+    const actionIndex = actionIndexMap.get(actionId)!;
+    const action = workflow.actions[actionIndex];
+    const actionName = getActionDisplayName(action);
 
     // Check all output paths
     ["main", "success", "error", "parallel"].forEach((outputType) => {
@@ -105,7 +126,7 @@ function validateConnectionIndices(
           if (conn.index < 0 || conn.index > maxIndex) {
             errors.push({
               type: "error",
-              message: `Invalid connection index ${conn.index} (valid range: 0-${maxIndex})`,
+              message: `Action "${actionName}" has invalid connection (index ${conn.index} out of range)`,
               actionId,
               connectionType: outputType,
             });
@@ -124,6 +145,17 @@ function detectUnreachableActions(
   _actionIndexMap: Map<string, number>,
   warnings: WorkflowValidationError[]
 ): void {
+  // If workflow has no connections or is sequential, all actions are reachable
+  // (they execute in array order)
+  const hasConnections =
+    workflow.connections && Object.keys(workflow.connections).length > 0;
+  const isSequential = workflow.metadata?.viewMode === "sequential";
+
+  if (!hasConnections || isSequential) {
+    // Sequential workflows execute all actions in order - all are reachable
+    return;
+  }
+
   const reachable = new Set<number>();
   const visited = new Set<number>();
 
@@ -140,7 +172,16 @@ function detectUnreachableActions(
     if (!action || !action.id) continue;
     const connections = workflow.connections[action.id];
 
-    if (!connections) continue;
+    if (!connections) {
+      // No explicit connections from this action - assume it continues to next action
+      // (implicit sequential flow within graph workflows)
+      const nextIndex = currentIndex + 1;
+      if (nextIndex < workflow.actions.length && !reachable.has(nextIndex)) {
+        reachable.add(nextIndex);
+        queue.push(nextIndex);
+      }
+      continue;
+    }
 
     // Follow all connection paths
     ["main", "success", "error", "parallel"].forEach((outputType) => {
@@ -163,6 +204,18 @@ function detectUnreachableActions(
         });
       });
     });
+
+    // If this action has connections but none lead anywhere, also check implicit next
+    const hasAnyOutput = ["main", "success", "error", "parallel"].some(
+      (t) => connections[t as keyof typeof connections]?.length
+    );
+    if (!hasAnyOutput) {
+      const nextIndex = currentIndex + 1;
+      if (nextIndex < workflow.actions.length && !reachable.has(nextIndex)) {
+        reachable.add(nextIndex);
+        queue.push(nextIndex);
+      }
+    }
   }
 
   // Find unreachable actions (skip index 0 as it's the entry point)
@@ -170,7 +223,7 @@ function detectUnreachableActions(
     if (index > 0 && !reachable.has(index)) {
       warnings.push({
         type: "warning",
-        message: `Action "${action.name || action.id}" is unreachable from workflow start`,
+        message: `Action "${getActionDisplayName(action)}" is unreachable from workflow start`,
         actionId: action.id,
       });
     }
@@ -247,7 +300,7 @@ function detectCycles(
     const cycleActions = Array.from(cycleDetected)
       .map((index) => {
         const action = workflow.actions[index];
-        return action ? action.name || action.id : `unknown-${index}`;
+        return getActionDisplayName(action);
       })
       .join(", ");
 
@@ -327,4 +380,248 @@ export function hasLoops(workflow: Workflow): boolean {
     }
     return false;
   });
+}
+
+/**
+ * Validate action configurations for completeness
+ */
+function validateActionConfigs(
+  workflow: Workflow,
+  errors: WorkflowValidationError[]
+): void {
+  for (const action of workflow.actions) {
+    if (!action || !action.config) continue;
+
+    const actionName = getActionDisplayName(action);
+    const config = action.config as Record<string, unknown>;
+
+    // Validate IF actions
+    if (action.type === "IF") {
+      const condition = config.condition as Record<string, unknown> | undefined;
+      if (condition) {
+        const conditionType = condition.type as string | undefined;
+        const imageId = condition.imageId as string | undefined;
+
+        // Check image-based conditions have an image selected
+        // Note: imageId can be undefined, null, or empty string "" when not selected
+        if (
+          (conditionType === "image_exists" ||
+            conditionType === "image_vanished") &&
+          (!imageId || imageId.trim() === "")
+        ) {
+          errors.push({
+            type: "error",
+            message: `Action "${actionName}" has condition "${formatConditionType(conditionType)}" but no image selected`,
+            actionId: action.id,
+          });
+        }
+
+        // Check text-based conditions have text specified
+        if (conditionType === "text_exists" && !condition.text) {
+          errors.push({
+            type: "error",
+            message: `Action "${actionName}" has condition "Text Exists" but no text specified`,
+            actionId: action.id,
+          });
+        }
+
+        // Check variable conditions have a variable name
+        if (conditionType === "variable" && !condition.variableName) {
+          errors.push({
+            type: "error",
+            message: `Action "${actionName}" has condition "Variable" but no variable name specified`,
+            actionId: action.id,
+          });
+        }
+
+        // Check expression conditions have an expression
+        if (conditionType === "expression" && !condition.expression) {
+          errors.push({
+            type: "error",
+            message: `Action "${actionName}" has condition "Expression" but no expression specified`,
+            actionId: action.id,
+          });
+        }
+      }
+    }
+
+    // Validate FIND actions have a target
+    if (action.type === "FIND") {
+      const target = config.target as Record<string, unknown> | undefined;
+      if (!target || !target.type) {
+        errors.push({
+          type: "error",
+          message: `Action "${actionName}" has no target configured`,
+          actionId: action.id,
+        });
+      } else {
+        validateTargetConfig(target, actionName, action.id, errors);
+      }
+    }
+
+    // Validate CLICK actions that use image targets
+    if (action.type === "CLICK") {
+      const target = config.target as Record<string, unknown> | undefined;
+      if (target && target.type) {
+        validateTargetConfig(target, actionName, action.id, errors);
+      }
+    }
+
+    // Validate LOOP actions with conditions
+    if (action.type === "LOOP") {
+      const loopType = config.loopType as string | undefined;
+      if (loopType === "WHILE") {
+        const condition = config.condition as
+          | Record<string, unknown>
+          | undefined;
+        if (condition) {
+          const conditionType = condition.type as string | undefined;
+          const imageId = condition.imageId as string | undefined;
+          if (
+            (conditionType === "image_exists" ||
+              conditionType === "image_vanished") &&
+            (!imageId || imageId.trim() === "")
+          ) {
+            errors.push({
+              type: "error",
+              message: `Action "${actionName}" has WHILE condition "${formatConditionType(conditionType)}" but no image selected`,
+              actionId: action.id,
+            });
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Format condition type for display
+ */
+function formatConditionType(type: string): string {
+  switch (type) {
+    case "image_exists":
+      return "Image Exists";
+    case "image_vanished":
+      return "Image Vanished";
+    case "text_exists":
+      return "Text Exists";
+    case "variable":
+      return "Variable";
+    case "expression":
+      return "Expression";
+    default:
+      return type;
+  }
+}
+
+/**
+ * Validate target configuration for completeness
+ */
+function validateTargetConfig(
+  target: Record<string, unknown>,
+  actionName: string,
+  actionId: string,
+  errors: WorkflowValidationError[]
+): void {
+  const targetType = target.type as string;
+
+  // These target types don't require additional configuration
+  const selfContainedTypes = [
+    "lastFindResult",
+    "currentPosition",
+    "allResults",
+  ];
+  if (selfContainedTypes.includes(targetType)) {
+    return; // Valid as-is
+  }
+
+  switch (targetType) {
+    case "image":
+      // Check for imageId (single) or imageIds (array)
+      const imageId = target.imageId as string | undefined;
+      const imageIds = target.imageIds as string[] | undefined;
+      if (!imageId && (!imageIds || imageIds.length === 0)) {
+        errors.push({
+          type: "error",
+          message: `Action "${actionName}" has target type "Image" but no image selected`,
+          actionId,
+        });
+      }
+      break;
+
+    case "stateImage":
+      // Check for stateId or imageIds
+      const stateId = target.stateId as string | undefined;
+      const stateImageIds = target.imageIds as string[] | undefined;
+      if (!stateId && (!stateImageIds || stateImageIds.length === 0)) {
+        errors.push({
+          type: "error",
+          message: `Action "${actionName}" has target type "State Image" but no state selected`,
+          actionId,
+        });
+      }
+      break;
+
+    case "text":
+      if (!target.text) {
+        errors.push({
+          type: "error",
+          message: `Action "${actionName}" has target type "Text" but no text specified`,
+          actionId,
+        });
+      }
+      break;
+
+    case "coordinates":
+      if (!target.coordinates) {
+        errors.push({
+          type: "error",
+          message: `Action "${actionName}" has target type "Coordinates" but no coordinates specified`,
+          actionId,
+        });
+      }
+      break;
+
+    case "region":
+      if (!target.region) {
+        errors.push({
+          type: "error",
+          message: `Action "${actionName}" has target type "Region" but no region specified`,
+          actionId,
+        });
+      }
+      break;
+
+    case "resultIndex":
+      if (target.index === undefined || target.index === null) {
+        errors.push({
+          type: "error",
+          message: `Action "${actionName}" has target type "Result Index" but no index specified`,
+          actionId,
+        });
+      }
+      break;
+
+    case "resultByImage":
+      if (!target.imageId) {
+        errors.push({
+          type: "error",
+          message: `Action "${actionName}" has target type "Result By Image" but no image specified`,
+          actionId,
+        });
+      }
+      break;
+
+    case "stateString":
+      const stringStateId = target.stateId as string | undefined;
+      const stringIds = target.stringIds as string[] | undefined;
+      if (!stringStateId && (!stringIds || stringIds.length === 0)) {
+        errors.push({
+          type: "error",
+          message: `Action "${actionName}" has target type "State String" but no state selected`,
+          actionId,
+        });
+      }
+      break;
+  }
 }

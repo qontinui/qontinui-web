@@ -4,7 +4,7 @@
  * Custom nodes for GUI automation actions:
  * - Mouse actions: CLICK, DOUBLE_CLICK, RIGHT_CLICK, DRAG, SCROLL, etc.
  * - Keyboard actions: TYPE, KEY_PRESS, HOTKEY, etc.
- * - Find actions: FIND, VANISH, EXISTS, WAIT
+ * - Find actions: FIND, VANISH, EXISTS
  * - Screenshot actions: SCREENSHOT
  */
 
@@ -216,18 +216,6 @@ export function ExistsNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   );
 }
 
-/**
- * WAIT Node
- */
-export function WaitNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
-  return (
-    <CompactNode
-      {...props}
-      className="gui-action-node find-node wait-node border-amber-300"
-    />
-  );
-}
-
 // =============================================================================
 // Screenshot Node
 // =============================================================================
@@ -269,7 +257,6 @@ export const GuiActionNodes = {
   FIND: FindNode,
   VANISH: VanishNode,
   EXISTS: ExistsNode,
-  WAIT: WaitNode,
 
   // Screenshot
   SCREENSHOT: ScreenshotNode,

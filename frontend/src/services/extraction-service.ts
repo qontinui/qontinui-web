@@ -1,24 +1,38 @@
 import { HttpClient } from "./http-client";
 import { ApiConfig } from "./api-config";
 
-export interface ExtractionSession {
-  id: string;
-  project_id: string;
-  source_urls: string[];
-  config: Record<string, unknown>;
-  status: "pending" | "running" | "completed" | "failed";
-  stats: {
-    pages_extracted?: number;
-    elements_found?: number;
-    states_found?: number;
-  };
-  error_message: string | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  created_by: string | null;
-}
+// Re-export types from shared schema
+export type {
+  ExtractionStatus,
+  StateType,
+  TriggerType,
+  BoundingBox,
+  ExtractedElement,
+  ElementAnnotation,
+  StateAnnotation,
+  InferredTransition,
+  ExtractionStats,
+  ExtractionAnnotation,
+  ExtractionSessionConfig,
+  StateImportRequest,
+  ImportResult,
+} from "@/types/extraction";
 
+// Import types for use in this file
+import type {
+  ExtractionSession as SharedExtractionSession,
+  ExtractionSessionDetail as SharedExtractionSessionDetail,
+  ExtractionAnnotation,
+  StateImportRequest,
+  ImportResult,
+} from "@/types/extraction";
+
+// Alias the shared types for backward compatibility
+// The shared types use snake_case which matches the API response
+export type ExtractionSession = SharedExtractionSession;
+export type ExtractionSessionDetail = SharedExtractionSessionDetail;
+
+// Config type for creating sessions (matches API request format)
 export interface ExtractionSessionCreate {
   source_urls: string[];
   config?: {
@@ -29,34 +43,6 @@ export interface ExtractionSessionCreate {
     max_pages?: number;
     auth_cookies?: Record<string, string>;
   };
-}
-
-export interface ExtractionSessionDetail extends ExtractionSession {
-  annotations: ExtractionAnnotation[];
-}
-
-export interface ExtractionAnnotation {
-  id: string;
-  session_id: string;
-  screenshot_id: string;
-  source_url: string;
-  viewport_width: number;
-  viewport_height: number;
-  elements: unknown[];
-  states: unknown[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface StateImportRequest {
-  state_ids?: string[];
-  target_workflow_id?: string;
-}
-
-export interface ImportResult {
-  imported_states: number;
-  imported_transitions: number;
-  workflow_id: string | null;
 }
 
 export class ExtractionService {

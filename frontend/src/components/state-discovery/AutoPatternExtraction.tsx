@@ -441,7 +441,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
             <li>Provide screenshot file paths (from server filesystem)</li>
             <li>Select which pattern types to detect</li>
             <li>Adjust confidence threshold</li>
-            <li>Click "Start Auto-Extraction"</li>
+            <li>Click &quot;Start Auto-Extraction&quot;</li>
             <li>Review detected patterns</li>
             <li>Select patterns and save to Image Library</li>
           </ol>

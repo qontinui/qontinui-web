@@ -66,12 +66,12 @@ describe("WorkflowSlice", () => {
     expect(useStore.getState().isDirty).toBe(false);
   });
 
-  it("should validate workflow", () => {
+  it("should validate workflow", async () => {
     const useStore = create(immer(createWorkflowSlice as unknown));
     const workflow = createMockWorkflow();
 
     useStore.getState().setWorkflow(workflow);
-    const result = useStore.getState().validateWorkflow();
+    const result = await useStore.getState().validateWorkflow();
 
     expect(result).toHaveProperty("valid");
     expect(result).toHaveProperty("errors");

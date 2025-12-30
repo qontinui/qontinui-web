@@ -7,7 +7,7 @@
 import type { StateCreator } from "zustand";
 import type { AutomationStore, StateSlice } from "../types";
 import { projectLogger } from "@/lib/project-logger";
-import { StateUpdateCoordinator } from "@/stores/automation";
+import { StateUpdateCoordinator } from "@/contexts/automation-context/state-update-coordinator";
 
 export const createStateSlice: StateCreator<
   AutomationStore,

@@ -24,12 +24,14 @@ import {
   ArrowRightLeft,
   CheckSquare,
   X,
+  Play,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   useAutomation,
-  DEFAULT_CATEGORIES,
+  DEFAULT_CATEGORY_NAMES,
 } from "@/contexts/automation-context";
+import type { Category } from "@/contexts/automation-context";
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog";
 import { DeleteWorkflowDialog } from "@/components/delete-process-dialog";
 import { BatchDeleteWorkflowsDialog } from "@/components/batch-delete-workflows-dialog";
@@ -59,7 +61,7 @@ export function UnifiedProcessLibrary({
   onCreateGraph,
   onConvertItem,
 }: UnifiedProcessLibraryProps) {
-  const { workflows, categories, addCategory, deleteCategory } =
+  const { workflows, categories, addCategory, deleteCategory, updateCategory } =
     useAutomation();
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
@@ -84,19 +86,29 @@ export function UnifiedProcessLibrary({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchDeleteDialog, setBatchDeleteDialog] = useState(false);
 
-  // Get all unique categories from workflows
-  const workflowCategories = [
+  // Get all unique category names from workflows
+  const workflowCategoryNames = [
     ...new Set(workflows.map((w) => w.category || "Main")),
   ];
 
-  // Combine all categories
-  const allCategories = [...new Set([...categories, ...workflowCategories])];
+  // Combine all categories - merge category objects with workflow categories
+  // Categories from workflows that don't exist yet default to automationEnabled: false
+  const categoryNames = categories.map((c) => c.name);
+  const allCategoryNames = [
+    ...new Set([...categoryNames, ...workflowCategoryNames]),
+  ];
 
-  // Group workflows by category
-  const itemsByCategory = allCategories.reduce(
-    (acc, category) => {
-      acc[category] = workflows.filter(
-        (w) => (w.category || "Main") === category
+  // Build full Category objects for all categories
+  const allCategories: Category[] = allCategoryNames.map((name) => {
+    const existing = categories.find((c) => c.name === name);
+    return existing || { name, automationEnabled: false };
+  });
+
+  // Group workflows by category name
+  const itemsByCategory = allCategoryNames.reduce(
+    (acc, categoryName) => {
+      acc[categoryName] = workflows.filter(
+        (w) => (w.category || "Main") === categoryName
       );
       return acc;
     },
@@ -244,7 +256,7 @@ export function UnifiedProcessLibrary({
   };
 
   const handleAddCategory = () => {
-    if (newCategoryName && !allCategories.includes(newCategoryName)) {
+    if (newCategoryName && !allCategoryNames.includes(newCategoryName)) {
       addCategory(newCategoryName);
       setNewCategoryName("");
       setShowNewCategoryInput(false);
@@ -252,6 +264,18 @@ export function UnifiedProcessLibrary({
         description: `"${newCategoryName}" has been added.`,
       });
     }
+  };
+
+  const handleToggleAutomation = (category: Category) => {
+    updateCategory({
+      ...category,
+      automationEnabled: !category.automationEnabled,
+    });
+    toast.success(
+      category.automationEnabled
+        ? `"${category.name}" removed from runner automation`
+        : `"${category.name}" available for runner automation`
+    );
   };
 
   const handleDeleteCategory = (category: string) => {
@@ -522,24 +546,22 @@ export function UnifiedProcessLibrary({
 
         <div className="space-y-2">
           {allCategories.map((category) => {
-            const categoryItems = itemsByCategory[category] || [];
-            const isCollapsed = collapsedCategories.has(category);
-            const isDeletable = !DEFAULT_CATEGORIES.includes(
-              category as (typeof DEFAULT_CATEGORIES)[number]
-            );
+            const categoryItems = itemsByCategory[category.name] || [];
+            const isCollapsed = collapsedCategories.has(category.name);
+            const isDeletable = !DEFAULT_CATEGORY_NAMES.includes(category.name);
 
             return (
               <div
-                key={category}
+                key={category.name}
                 className={`space-y-1 rounded-lg transition-all ${
-                  dragOverCategory === category
+                  dragOverCategory === category.name
                     ? "bg-[#00D9FF]/10 ring-2 ring-[#00D9FF]/50"
                     : ""
                 }`}
                 onDragOver={handleDragOver}
-                onDragEnter={() => handleCategoryDragEnter(category)}
+                onDragEnter={() => handleCategoryDragEnter(category.name)}
                 onDragLeave={handleCategoryDragLeave}
-                onDrop={(e) => handleDrop(e, category)}
+                onDrop={(e) => handleDrop(e, category.name)}
               >
                 <div className="flex items-center gap-1">
                   {isSelectionMode && categoryItems.length > 0 && (
@@ -548,7 +570,9 @@ export function UnifiedProcessLibrary({
                         categoryItems.length > 0 &&
                         categoryItems.every((item) => selectedIds.has(item.id))
                       }
-                      onCheckedChange={() => toggleCategorySelection(category)}
+                      onCheckedChange={() =>
+                        toggleCategorySelection(category.name)
+                      }
                       className="h-3.5 w-3.5 ml-1 border-gray-500 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
                     />
                   )}
@@ -556,7 +580,7 @@ export function UnifiedProcessLibrary({
                     variant="ghost"
                     size="sm"
                     className="h-6 p-0 px-1 text-gray-400 hover:text-white flex-1 justify-start"
-                    onClick={() => toggleCategory(category)}
+                    onClick={() => toggleCategory(category.name)}
                   >
                     {isCollapsed ? (
                       <>
@@ -570,8 +594,18 @@ export function UnifiedProcessLibrary({
                       </>
                     )}
                     <span className="text-xs font-medium">
-                      {category} ({categoryItems.length})
+                      {category.name} ({categoryItems.length})
                     </span>
+                    {category.automationEnabled && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Play className="w-2.5 h-2.5 ml-1 text-[#00FF88]" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Available for runner automation</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                   </Button>
                   <div className="flex items-center gap-1">
                     {/* Create sequential workflow button */}
@@ -579,8 +613,8 @@ export function UnifiedProcessLibrary({
                       <Button
                         size="sm"
                         className="h-6 w-6 p-0 bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
-                        onClick={() => onCreateSequential(category)}
-                        title={`Create sequential workflow in ${category}`}
+                        onClick={() => onCreateSequential(category.name)}
+                        title={`Create sequential workflow in ${category.name}`}
                       >
                         <Plus className="w-3 h-3" />
                       </Button>
@@ -590,21 +624,51 @@ export function UnifiedProcessLibrary({
                       <Button
                         size="sm"
                         className="h-6 w-6 p-0 bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
-                        onClick={() => onCreateGraph(category)}
-                        title={`Create graph workflow in ${category}`}
+                        onClick={() => onCreateGraph(category.name)}
+                        title={`Create graph workflow in ${category.name}`}
                       >
                         <Plus className="w-3 h-3" />
                       </Button>
                     )}
+                    {/* Toggle automation availability button */}
+                    {!isSelectionMode && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={`h-6 w-6 p-0 ${
+                              category.automationEnabled
+                                ? "text-[#00FF88] hover:text-[#00FF88]/80"
+                                : "text-gray-500 hover:text-gray-400"
+                            }`}
+                            onClick={() => handleToggleAutomation(category)}
+                            title={
+                              category.automationEnabled
+                                ? "Remove from runner automation"
+                                : "Add to runner automation"
+                            }
+                          >
+                            <Play className="w-3 h-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            {category.automationEnabled
+                              ? "Click to remove from runner automation"
+                              : "Click to make available for runner automation"}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                     {!isSelectionMode && (
                       <>
-                        <div className="w-5" />
                         {isDeletable ? (
                           <Button
                             variant="ghost"
                             size="sm"
                             className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
-                            onClick={() => handleDeleteCategory(category)}
+                            onClick={() => handleDeleteCategory(category.name)}
                           >
                             <Trash2 className="w-3 h-3" />
                           </Button>

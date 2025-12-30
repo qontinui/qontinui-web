@@ -2088,7 +2088,7 @@ export function StatePropertiesPanel({
                             }
                           >
                             <Sparkles className="w-3 h-3 mr-2" />
-                            Add "Find Any State Image"
+                            Add &quot;Find Any State Image&quot;
                           </Button>
                           {(!state.stateImages ||
                             state.stateImages.length === 0) && (

@@ -307,20 +307,6 @@ export function getDefaultConfig<T extends ActionType>(
         failOnError: true,
       } as unknown as ActionConfigMap[T];
 
-    case "RUN_PROMPT_SEQUENCE":
-      return {
-        sequenceId: "",
-      } as unknown as ActionConfigMap[T];
-
-    case "CHECKPOINT_WORKFLOW":
-      return {
-        phases: [],
-        checkpointFile: "",
-        maxIterations: 10,
-        timeout: 3600000,
-        failOnError: true,
-      } as unknown as ActionConfigMap[T];
-
     default:
       return {} as ActionConfigMap[T];
   }

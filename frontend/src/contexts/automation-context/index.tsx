@@ -43,6 +43,7 @@ export type {
   StateCheckResult,
   SchedulerStatistics,
   AutomationContextType,
+  Category,
 } from "./types";
 
 // Re-export utility classes
@@ -56,9 +57,14 @@ export { AutomationContext, useAutomation } from "./context";
 // Re-export provider from V2 implementation
 export { AutomationProvider } from "./AutomationProviderV2";
 
+import type { Category } from "./types";
+
 // Default workflow categories that always appear, even when empty
-export const DEFAULT_CATEGORIES = [
-  "Main",
-  "Incoming Transitions",
-  "Outgoing Transitions",
-] as const;
+export const DEFAULT_CATEGORIES: Category[] = [
+  { name: "Main", automationEnabled: true },
+  { name: "Incoming Transitions", automationEnabled: false },
+  { name: "Outgoing Transitions", automationEnabled: false },
+];
+
+// Default category names for convenience (used for checking protected categories)
+export const DEFAULT_CATEGORY_NAMES = DEFAULT_CATEGORIES.map((c) => c.name);

@@ -76,9 +76,10 @@ export const ProcessTestRunner: React.FC = () => {
   // Group workflows by category
   const workflowsByCategory = useMemo(() => {
     const grouped = new Map<string, typeof workflows>();
+    const categoryNames = categories?.map((c) => c.name) || [];
 
-    if (categories && categories.length > 0) {
-      categories.forEach((categoryName) => {
+    if (categoryNames.length > 0) {
+      categoryNames.forEach((categoryName) => {
         const categoryProcesses = workflows.filter(
           (p) => p.category === categoryName
         );
@@ -90,7 +91,10 @@ export const ProcessTestRunner: React.FC = () => {
 
     // Add uncategorized workflows
     const uncategorized = workflows.filter(
-      (p) => !p.category || !categories || !categories.includes(p.category)
+      (p) =>
+        !p.category ||
+        categoryNames.length === 0 ||
+        !categoryNames.includes(p.category)
     );
     if (uncategorized.length > 0) {
       grouped.set("uncategorized", uncategorized);
@@ -390,9 +394,9 @@ export const ProcessTestRunner: React.FC = () => {
           >
             <option value="">All Categories</option>
             {categories &&
-              categories.map((categoryName) => (
-                <option key={categoryName} value={categoryName}>
-                  {categoryName}
+              categories.map((category) => (
+                <option key={category.name} value={category.name}>
+                  {category.name}
                 </option>
               ))}
             {workflowsByCategory.has("uncategorized") && (

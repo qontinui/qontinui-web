@@ -74,12 +74,13 @@ export function ProcessBuilder() {
   const selectedProcess = selectedItem;
 
   // Get all unique categories from workflows and context
+  const categoryNames = categories.map((c) => c.name);
   const allCategories = [
     ...new Set([
       "Main",
       "Incoming Transitions",
       "Outgoing Transitions",
-      ...categories,
+      ...categoryNames,
       ...workflows.map((w) => w.category || "Main"),
     ]),
   ];

@@ -44,7 +44,6 @@ import {
   FileCode,
   Terminal,
   FileTerminal,
-  RotateCw,
   LucideIcon,
 } from "lucide-react";
 import { ActionType } from "@/lib/action-schema/action-types";
@@ -114,8 +113,6 @@ const ACTION_ICONS: Record<ActionType, LucideIcon> = {
 
   // AI Actions
   AI_PROMPT: Sparkles,
-  RUN_PROMPT_SEQUENCE: RotateCw,
-  CHECKPOINT_WORKFLOW: GitBranch,
 };
 
 /**

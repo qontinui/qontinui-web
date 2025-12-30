@@ -47,7 +47,7 @@ export function EarlyAccessSignupWarning() {
               EARLY ACCESS - Launching February 2026
             </AlertTitle>
             <AlertDescription className="space-y-2 text-sm text-gray-300">
-              <p>You're trying Qontinui before the official launch!</p>
+              <p>You&apos;re trying Qontinui before the official launch!</p>
 
               <div className="space-y-1.5 my-3">
                 <div className="flex items-start gap-2">
@@ -104,7 +104,7 @@ export function EarlyAccessSignupWarning() {
             {/* FAQ Items */}
             <div>
               <h3 className="font-semibold text-white mb-2">
-                Q: What does "early access" mean?
+                Q: What does &quot;early access&quot; mean?
               </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
                 You can use qontinui-web now, before the official February 2026
@@ -127,7 +127,7 @@ export function EarlyAccessSignupWarning() {
 
             <div>
               <h3 className="font-semibold text-white mb-2">
-                Q: What are "breaking changes"?
+                Q: What are &quot;breaking changes&quot;?
               </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
                 We might reorganize the interface, change workflows, or update
@@ -153,8 +153,8 @@ export function EarlyAccessSignupWarning() {
                 Q: How often should I export?
               </h3>
               <p className="text-gray-300 text-sm leading-relaxed">
-                After each significant change. Think of it like "Save" in a
-                document.
+                After each significant change. Think of it like &quot;Save&quot;
+                in a document.
               </p>
             </div>
 

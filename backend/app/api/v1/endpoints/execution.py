@@ -14,6 +14,7 @@ Used by:
 """
 
 import io
+import json
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -78,6 +79,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import current_active_user, get_async_db
+from app.config.redis_config import get_redis
 from app.models.action_execution import (
     ActionExecution,
     ActionExecutionStatus,
@@ -142,7 +144,6 @@ def _map_action_type_to_model(action_type: ActionType) -> ActionExecutionType:
         ActionType.KEY_PRESS: ActionExecutionType.KEY_PRESS,
         ActionType.SCROLL: ActionExecutionType.SCROLL,
         ActionType.DRAG: ActionExecutionType.DRAG,
-        ActionType.WAIT: ActionExecutionType.WAIT,
         ActionType.GO_TO_STATE: ActionExecutionType.GO_TO_STATE,
         ActionType.CUSTOM: ActionExecutionType.CUSTOM,
     }
@@ -393,6 +394,34 @@ async def create_run(
         project_id=str(run_data.project_id),
         user_id=str(current_user.id),
     )
+
+    # Broadcast session_start event to Redis for Live Monitor
+    try:
+        redis_client = await get_redis()
+        runner_meta = run_data.runner_metadata.model_dump()
+        workflow_meta = wm_dict or {}
+        session_start_event = {
+            "type": "session_start",
+            "session_id": str(run.id),
+            "project_id": str(run_data.project_id),
+            "runner_version": runner_meta.get("runner_version"),
+            "runner_os": runner_meta.get("runner_os"),
+            "runner_hostname": runner_meta.get("runner_hostname"),
+            "workflow_name": workflow_meta.get("workflow_name"),
+            "run_name": run_data.run_name,
+            "run_type": run_data.run_type.value,
+            "timestamp": now.isoformat(),
+        }
+        channel = f"runner:status:updates:{current_user.id}"
+        await redis_client.publish(channel, json.dumps(session_start_event))
+        logger.info(
+            "session_start_broadcast",
+            user_id=str(current_user.id),
+            run_id=str(run.id),
+            channel=channel,
+        )
+    except Exception as e:
+        logger.error("session_start_broadcast_failed", error=str(e))
 
     return _model_to_run_response(run)
 
@@ -674,6 +703,28 @@ async def complete_run(
         duration_seconds=duration_seconds,
         user_id=str(current_user.id),
     )
+
+    # Broadcast session_end event to Redis for Live Monitor
+    try:
+        redis_client = await get_redis()
+        session_end_event = {
+            "type": "session_end",
+            "session_id": str(run_id),
+            "status": complete_data.status.value,
+            "error_message": complete_data.error_message,
+            "duration_seconds": duration_seconds,
+            "timestamp": complete_data.ended_at.isoformat(),
+        }
+        channel = f"runner:status:updates:{current_user.id}"
+        await redis_client.publish(channel, json.dumps(session_end_event))
+        logger.info(
+            "session_end_broadcast",
+            user_id=str(current_user.id),
+            run_id=str(run_id),
+            channel=channel,
+        )
+    except Exception as e:
+        logger.error("session_end_broadcast_failed", error=str(e))
 
     return ExecutionRunCompleteResponse(
         id=run_id,
@@ -1801,8 +1852,11 @@ async def get_execution_tree(
     current_user: User = Depends(current_active_user),
 ) -> ExecutionTreeResponse:
     """Get the reconstructed execution tree for a run."""
-    logger.info(
-        "get_execution_tree called", run_id=str(run_id), user_id=str(current_user.id)
+    # Debug: verify function is called
+    logger.warning(
+        "DEBUG_get_execution_tree_ENTRY",
+        run_id=str(run_id),
+        user_id=str(current_user.id),
     )
 
     # Verify run exists
@@ -1827,13 +1881,9 @@ async def get_execution_tree(
     result = await db.execute(query)
     events = result.scalars().all()
 
-    logger.info("Tree events found", run_id=str(run_id), event_count=len(events))
-
     # If no tree events, fall back to building tree from action_executions
     if not events:
-        logger.info(
-            "No tree events, falling back to action_executions", run_id=str(run_id)
-        )
+        logger.info("no_tree_events_falling_back_to_actions", run_id=str(run_id))
         return await _build_tree_from_actions(run_id, run, db)
 
     # Build node map from events
@@ -1910,6 +1960,14 @@ async def get_execution_tree(
         initial_state_ids = run.workflow_metadata.get("initial_state_ids", [])
         state_name_map = run.workflow_metadata.get("state_name_map", {})
 
+    # If we have no root_nodes but we have actions, fall back to building from actions
+    if not root_nodes and len(events) == 0:
+        logger.info(
+            "No tree events resulted in empty root_nodes, falling back to actions",
+            run_id=str(run_id),
+        )
+        return await _build_tree_from_actions(run_id, run, db)
+
     return ExecutionTreeResponse(
         run_id=run_id,
         root_nodes=root_nodes,
@@ -1930,8 +1988,6 @@ async def _build_tree_from_actions(
     This provides backward compatibility with runners that report actions
     but not tree events.
     """
-    logger.info("_build_tree_from_actions called", run_id=str(run_id))
-
     # Get all actions for this run
     action_query = (
         select(ActionExecution)
@@ -1942,7 +1998,9 @@ async def _build_tree_from_actions(
     actions = action_result.scalars().all()
 
     logger.info(
-        "Actions found for tree building", run_id=str(run_id), action_count=len(actions)
+        "building_tree_from_actions",
+        run_id=str(run_id),
+        action_count=len(actions),
     )
 
     # Build flat list of display nodes from actions

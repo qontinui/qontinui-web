@@ -305,7 +305,7 @@ export function MissingMonitorsDialog({
                 <AlertTriangle className="w-3 h-3" />
                 <span>
                   Regions and Locations require specific monitors (cannot use
-                  "All Monitors")
+                  &quot;All Monitors&quot;)
                 </span>
               </p>
             ) : null}

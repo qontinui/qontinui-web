@@ -1,44 +1,46 @@
-"""Pydantic schemas for web extraction."""
+"""Pydantic schemas for web extraction.
+
+This module re-exports shared schemas from qontinui-schemas and adds
+backend-specific schemas (with UUID conversion, ORM integration, etc.).
+"""
 
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+# Re-export shared schemas from qontinui-schemas
+from qontinui_schemas.extraction import (
+    BoundingBox,
+    ElementAnnotation,
+    ExtractionStats,
+    InferredTransition,
+    StateAnnotation,
+    StateType,
+    TriggerType,
+)
+
 from app.schemas.base import IsoDatetime
 
-
-class BoundingBox(BaseModel):
-    """Bounding box coordinates for an element."""
-
-    x: int
-    y: int
-    width: int
-    height: int
-
-
-class ElementAnnotation(BaseModel):
-    """Annotation data for a single UI element."""
-
-    id: str
-    bbox: BoundingBox
-    element_type: str
-    text_content: str | None = None
-    selector: str
-    is_interactive: bool = True
-    is_enabled: bool = True
-    semantic_role: str | None = None
-    aria_label: str | None = None
-
-
-class StateAnnotation(BaseModel):
-    """Annotation data for a UI state."""
-
-    id: str
-    name: str
-    bbox: BoundingBox
-    state_type: str
-    element_ids: list[str] = Field(default_factory=list)
+# Re-export for backward compatibility
+__all__ = [
+    "BoundingBox",
+    "ElementAnnotation",
+    "ExtractionStats",
+    "InferredTransition",
+    "StateAnnotation",
+    "StateType",
+    "TriggerType",
+    "ExtractionConfig",
+    "ExtractionSessionCreate",
+    "ExtractionSessionUpdate",
+    "ExtractionSessionResponse",
+    "ExtractionSessionDetail",
+    "AnnotationUpdate",
+    "ExtractionAnnotationResponse",
+    "StateImportRequest",
+    "ImportResult",
+]
 
 
 class ExtractionConfig(BaseModel):
@@ -103,8 +105,11 @@ class AnnotationUpdate(BaseModel):
     """Request schema for updating annotations."""
 
     screenshot_id: str
-    elements: list[ElementAnnotation]
-    states: list[StateAnnotation]
+    source_url: str = ""
+    viewport_width: int = 1920
+    viewport_height: int = 1080
+    elements: list[ElementAnnotation] = Field(default_factory=list)
+    states: list[StateAnnotation] = Field(default_factory=list)
 
 
 class ExtractionAnnotationResponse(BaseModel):

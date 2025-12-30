@@ -135,6 +135,17 @@ export class TransitionAnimationController {
       actionSequence,
     };
 
+    if (process.env.NODE_ENV === "development") {
+      console.log("[TransitionAnimation] loadTransition: loaded", {
+        transitionId: transition.id,
+        transitionName: (transition as { name?: string }).name ?? "(no name)",
+        workflowCount: transitionWorkflows.length,
+        actionSequenceLength: actionSequence.length,
+        originStates: originStates.map((s) => s.name),
+        targetStates: targetStates.map((s) => s.name),
+      });
+    }
+
     // Reset to initial state
     this.state = {
       ...INITIAL_ANIMATION_STATE,
@@ -153,6 +164,10 @@ export class TransitionAnimationController {
   ): ActionAnimationConfig[] {
     const sequence: ActionAnimationConfig[] = [];
     let globalIndex = 0;
+    // Track last FIND result for "Last Find Result" targets
+    let lastFindRegion:
+      | { x: number; y: number; width: number; height: number }
+      | undefined;
 
     for (const workflow of workflows) {
       // Topological sort of actions
@@ -180,10 +195,28 @@ export class TransitionAnimationController {
         const config = this.actionToAnimationConfig(
           action,
           states,
-          globalIndex
+          globalIndex,
+          lastFindRegion
         );
         sequence.push(config);
         globalIndex++;
+
+        // Track last FIND result for subsequent "Last Find Result" targets
+        if (
+          action.type === "FIND" ||
+          action.type === "VANISH" ||
+          action.type === "RAG_FIND"
+        ) {
+          if (config.targetRegion) {
+            lastFindRegion = config.targetRegion;
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] Stored lastFindRegion from ${action.type}:`,
+                lastFindRegion
+              );
+            }
+          }
+        }
 
         // Add branch end indicator
         if (isBranchingAction(action.type)) {
@@ -197,6 +230,17 @@ export class TransitionAnimationController {
           });
         }
       }
+    }
+
+    if (process.env.NODE_ENV === "development" && sequence.length === 0) {
+      console.warn(
+        "[TransitionAnimation] buildActionSequence: empty sequence (causes silent skip)",
+        {
+          workflowCount: workflows.length,
+          workflowNames: workflows.map((w) => w.name),
+          workflowActionCounts: workflows.map((w) => w.actions?.length ?? 0),
+        }
+      );
     }
 
     return sequence;
@@ -284,7 +328,8 @@ export class TransitionAnimationController {
   private actionToAnimationConfig(
     action: Action,
     states: State[],
-    index: number
+    index: number,
+    lastFindRegion?: { x: number; y: number; width: number; height: number }
   ): ActionAnimationConfig {
     const category = getActionCategory(action.type);
     const config = action.config as Record<string, unknown>;
@@ -304,17 +349,60 @@ export class TransitionAnimationController {
       case "CLICK":
       case "MOUSE_DOWN":
       case "MOUSE_UP": {
+        if (process.env.NODE_ENV === "development") {
+          console.log(`[TransitionAnimation] ${action.type} action config:`, {
+            actionId: action.id,
+            actionName: action.name,
+            fullConfig: config,
+            configKeys: Object.keys(config),
+            target: config.target,
+            lastFindRegion,
+          });
+        }
+
+        // Check for "Last Find Result" target - use position from previous FIND action
+        if (config.target === "Last Find Result" && lastFindRegion) {
+          animConfig.endPosition = {
+            x: lastFindRegion.x + lastFindRegion.width / 2,
+            y: lastFindRegion.y + lastFindRegion.height / 2,
+          };
+          if (process.env.NODE_ENV === "development") {
+            console.log(
+              `[TransitionAnimation] ${action.type}: using "Last Find Result" position:`,
+              animConfig.endPosition
+            );
+          }
+          break;
+        }
+
         if (config.x !== undefined && config.y !== undefined) {
           // Explicit coordinates
           animConfig.endPosition = {
             x: config.x as number,
             y: config.y as number,
           };
+          if (process.env.NODE_ENV === "development") {
+            console.log(
+              `[TransitionAnimation] ${action.type} action "${action.name}": using explicit coords`,
+              animConfig.endPosition
+            );
+          }
         } else {
           // Try to resolve position from target
           const pos = this.resolveClickTargetPosition(config, states);
           if (pos) {
             animConfig.endPosition = pos;
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] ${action.type} action "${action.name}": resolved position`,
+                animConfig.endPosition
+              );
+            }
+          } else if (process.env.NODE_ENV === "development") {
+            console.log(
+              `[TransitionAnimation] ${action.type} action "${action.name}": NO POSITION RESOLVED - fullConfig:`,
+              config
+            );
           }
         }
         break;
@@ -324,19 +412,58 @@ export class TransitionAnimationController {
       case "VANISH":
       case "RAG_FIND": {
         // FindActionConfig uses: target (TargetConfig object with type, imageId/stateImageId)
+        if (process.env.NODE_ENV === "development") {
+          console.log(`[TransitionAnimation] ${action.type} action config:`, {
+            actionId: action.id,
+            actionName: action.name,
+            fullConfig: config,
+            configKeys: Object.keys(config),
+          });
+        }
+
         const targetConfig = config.target as
           | Record<string, unknown>
           | undefined;
         const { stateImageId, imageId } =
           this.extractImageIdsFromTarget(targetConfig);
 
-        // Try stateImageId first, then fall back to finding StateImage by imageAssetId
-        let resolvedStateImageId = stateImageId;
-        if (!resolvedStateImageId && imageId) {
-          resolvedStateImageId = this.findStateImageByImageAssetId(
+        if (process.env.NODE_ENV === "development") {
+          console.log(`[TransitionAnimation] ${action.type} extracted IDs:`, {
+            targetConfig,
+            stateImageId,
             imageId,
-            states
-          );
+          });
+        }
+
+        // Try stateImageId first
+        let resolvedStateImageId = stateImageId;
+
+        // If no stateImageId, check if imageId is actually a StateImage ID (starts with "stateimage-")
+        if (!resolvedStateImageId && imageId) {
+          if (imageId.startsWith("stateimage-")) {
+            // It's actually a StateImage ID, use it directly
+            resolvedStateImageId = imageId;
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] ${action.type}: imageId "${imageId}" is actually a StateImage ID, using directly`
+              );
+            }
+          } else {
+            // It's an ImageAsset ID, look up which StateImage uses it
+            resolvedStateImageId = this.findStateImageByImageAssetId(
+              imageId,
+              states
+            );
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] ${action.type} resolved via imageAssetId:`,
+                {
+                  imageId,
+                  resolvedStateImageId,
+                }
+              );
+            }
+          }
         }
 
         if (resolvedStateImageId) {
@@ -356,8 +483,8 @@ export class TransitionAnimationController {
           if (process.env.NODE_ENV === "development") {
             console.log(
               `[TransitionAnimation] actionToAnimationConfig: ${action.type} action="${action.name}" ` +
-                `could NOT resolve stateImageId, target=`,
-              targetConfig
+                `could NOT resolve stateImageId - fullConfig:`,
+              config
             );
           }
         }
@@ -499,10 +626,23 @@ export class TransitionAnimationController {
             const sr = pattern.searchRegions[0];
             const absX = monitor ? monitor.x + sr.x : sr.x;
             const absY = monitor ? monitor.y + sr.y : sr.y;
-            return {
+            const pos = {
               x: absX + sr.width / 2,
               y: absY + sr.height / 2,
             };
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] getStateImagePosition: "${stateImageId}" via pattern.searchRegions`,
+                {
+                  searchRegion: sr,
+                  monitor: monitor
+                    ? { index: monitor.index, x: monitor.x, y: monitor.y }
+                    : null,
+                  result: pos,
+                }
+              );
+            }
+            return pos;
           }
 
           // Try StateImage-level searchRegions
@@ -510,10 +650,23 @@ export class TransitionAnimationController {
             const sr = stateImage.searchRegions[0];
             const absX = monitor ? monitor.x + sr.x : sr.x;
             const absY = monitor ? monitor.y + sr.y : sr.y;
-            return {
+            const pos = {
               x: absX + sr.width / 2,
               y: absY + sr.height / 2,
             };
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] getStateImagePosition: "${stateImageId}" via stateImage.searchRegions`,
+                {
+                  searchRegion: sr,
+                  monitor: monitor
+                    ? { index: monitor.index, x: monitor.x, y: monitor.y }
+                    : null,
+                  result: pos,
+                }
+              );
+            }
+            return pos;
           }
 
           // Fallback: try pattern.offsetX/offsetY (legacy data may store position here)
@@ -529,13 +682,49 @@ export class TransitionAnimationController {
               : pattern.offsetY;
             const width = pattern.searchRegions?.[0]?.width || 50;
             const height = pattern.searchRegions?.[0]?.height || 50;
-            return {
+            const pos = {
               x: absX + width / 2,
               y: absY + height / 2,
             };
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] getStateImagePosition: "${stateImageId}" via pattern.offsetX/Y (legacy fallback)`,
+                {
+                  offsetX: pattern.offsetX,
+                  offsetY: pattern.offsetY,
+                  monitor: monitor
+                    ? { index: monitor.index, x: monitor.x, y: monitor.y }
+                    : null,
+                  result: pos,
+                }
+              );
+            }
+            return pos;
+          }
+
+          // No position data found
+          if (process.env.NODE_ENV === "development") {
+            console.log(
+              `[TransitionAnimation] getStateImagePosition: "${stateImageId}" - NO POSITION DATA FOUND`,
+              {
+                stateId: state.id,
+                stateName: state.name,
+                stateImageName: stateImage.name,
+                hasPatterns: !!pattern,
+                patternSearchRegions: pattern?.searchRegions?.length ?? 0,
+                patternOffsetX: pattern?.offsetX,
+                patternOffsetY: pattern?.offsetY,
+                stateImageSearchRegions: stateImage.searchRegions?.length ?? 0,
+              }
+            );
           }
         }
       }
+    }
+    if (process.env.NODE_ENV === "development") {
+      console.log(
+        `[TransitionAnimation] getStateImagePosition: "${stateImageId}" - StateImage NOT FOUND in any state`
+      );
     }
     return undefined;
   }
@@ -606,14 +795,19 @@ export class TransitionAnimationController {
 
     switch (targetType) {
       case "stateImage":
-        return { stateImageId: targetConfig.stateImageId as string | undefined };
+        return {
+          stateImageId: targetConfig.stateImageId as string | undefined,
+        };
 
       case "StateImage":
       case "image":
         if (targetConfig.imageId) {
           return { imageId: targetConfig.imageId as string };
         }
-        if (Array.isArray(targetConfig.imageIds) && targetConfig.imageIds.length > 0) {
+        if (
+          Array.isArray(targetConfig.imageIds) &&
+          targetConfig.imageIds.length > 0
+        ) {
           return { imageId: targetConfig.imageIds[0] as string };
         }
         return {};
@@ -625,7 +819,10 @@ export class TransitionAnimationController {
         if (targetConfig.imageId) {
           return { imageId: targetConfig.imageId as string };
         }
-        if (Array.isArray(targetConfig.imageIds) && targetConfig.imageIds.length > 0) {
+        if (
+          Array.isArray(targetConfig.imageIds) &&
+          targetConfig.imageIds.length > 0
+        ) {
           return { imageId: targetConfig.imageIds[0] as string };
         }
         return {};
@@ -639,14 +836,48 @@ export class TransitionAnimationController {
     imageAssetId: string,
     states: State[]
   ): string | undefined {
+    if (process.env.NODE_ENV === "development") {
+      // Collect all pattern.imageIds for debugging
+      const allPatternImageIds: string[] = [];
+      for (const state of states) {
+        for (const stateImage of state.stateImages || []) {
+          for (const pattern of stateImage.patterns || []) {
+            if (pattern.imageId) {
+              allPatternImageIds.push(pattern.imageId);
+            }
+          }
+        }
+      }
+      console.log(
+        `[TransitionAnimation] findStateImageByImageAssetId: searching for "${imageAssetId}"`,
+        {
+          statesCount: states.length,
+          stateNames: states.map((s) => s.name),
+          allPatternImageIds: allPatternImageIds.slice(0, 10), // First 10
+          totalPatternImageIds: allPatternImageIds.length,
+          exactMatch: allPatternImageIds.includes(imageAssetId),
+        }
+      );
+    }
+
     for (const state of states) {
       for (const stateImage of state.stateImages || []) {
         for (const pattern of stateImage.patterns || []) {
           if (pattern.imageId === imageAssetId) {
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] findStateImageByImageAssetId: FOUND match in state "${state.name}", stateImage "${stateImage.id}"`
+              );
+            }
             return stateImage.id;
           }
         }
       }
+    }
+    if (process.env.NODE_ENV === "development") {
+      console.log(
+        `[TransitionAnimation] findStateImageByImageAssetId: NO MATCH for "${imageAssetId}"`
+      );
     }
     return undefined;
   }
@@ -658,7 +889,19 @@ export class TransitionAnimationController {
     config: Record<string, unknown>,
     states: State[]
   ): { x: number; y: number } | undefined {
-    const target = config.target as string | Record<string, unknown> | undefined;
+    const target = config.target as
+      | string
+      | Record<string, unknown>
+      | undefined;
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("[TransitionAnimation] resolveClickTargetPosition called", {
+        target,
+        stateImageId: config.stateImageId,
+        imageId: config.imageId,
+        imageIds: config.imageIds,
+      });
+    }
 
     // Handle string target types (ClickActionConfig format)
     if (typeof target === "string") {
@@ -670,7 +913,14 @@ export class TransitionAnimationController {
 
           // Try stateImageId first (direct StateImage reference)
           if (stateImageId) {
-            return this.getStateImagePosition(stateImageId, states);
+            const pos = this.getStateImagePosition(stateImageId, states);
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] CLICK: direct stateImageId="${stateImageId}" -> position:`,
+                pos
+              );
+            }
+            return pos;
           }
 
           // Try imageIds array - these are typically StateImage IDs
@@ -678,16 +928,52 @@ export class TransitionAnimationController {
             const firstId = imageIds[0] as string;
             // First try as StateImage ID
             const pos = this.getStateImagePosition(firstId, states);
-            if (pos) return pos;
+            if (pos) {
+              if (process.env.NODE_ENV === "development") {
+                console.log(
+                  `[TransitionAnimation] CLICK: imageIds[0]="${firstId}" as StateImage -> position:`,
+                  pos
+                );
+              }
+              return pos;
+            }
             // Fall back to ImageAsset ID
             const resolved = this.findStateImageByImageAssetId(firstId, states);
-            if (resolved) return this.getStateImagePosition(resolved, states);
+            if (resolved) {
+              const resolvedPos = this.getStateImagePosition(resolved, states);
+              if (process.env.NODE_ENV === "development") {
+                console.log(
+                  `[TransitionAnimation] CLICK: imageIds[0]="${firstId}" resolved to StateImage "${resolved}" -> position:`,
+                  resolvedPos
+                );
+              }
+              return resolvedPos;
+            }
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] CLICK: imageIds[0]="${firstId}" could not be resolved`
+              );
+            }
           }
 
           // Try single imageId field
           if (imageId) {
             const resolved = this.findStateImageByImageAssetId(imageId, states);
-            if (resolved) return this.getStateImagePosition(resolved, states);
+            if (resolved) {
+              const resolvedPos = this.getStateImagePosition(resolved, states);
+              if (process.env.NODE_ENV === "development") {
+                console.log(
+                  `[TransitionAnimation] CLICK: imageId="${imageId}" resolved to StateImage "${resolved}" -> position:`,
+                  resolvedPos
+                );
+              }
+              return resolvedPos;
+            }
+            if (process.env.NODE_ENV === "development") {
+              console.log(
+                `[TransitionAnimation] CLICK: imageId="${imageId}" could not be resolved`
+              );
+            }
           }
           break;
         }
@@ -792,8 +1078,21 @@ export class TransitionAnimationController {
    * Start or resume playback
    */
   play(): void {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[TransitionAnimation] play() called", {
+        hasData: !!this.data,
+        currentPhase: this.state.phase,
+        isPlaying: this.state.isPlaying,
+        globalActionIndex: this.state.globalActionIndex,
+        totalActions: this.state.totalActions,
+        actionSequenceLength: this.data?.actionSequence?.length ?? 0,
+      });
+    }
+
     if (!this.data || this.state.phase === "completed") return;
 
+    this.frameCount = 0;
+    this.lastLogTime = 0;
     this.state.isPlaying = true;
     this.startTime = performance.now();
     this.animate();
@@ -929,15 +1228,37 @@ export class TransitionAnimationController {
   // Animation Loop
   // ==========================================================================
 
+  private frameCount = 0;
+  private lastLogTime = 0;
+
   private animate = (): void => {
     if (!this.state.isPlaying || !this.data) return;
 
     const currentTime = performance.now();
-    const elapsed = (currentTime - this.startTime) * this.state.playbackSpeed;
+    const elapsed = currentTime - this.startTime;
+    this.frameCount++;
 
     // Get current phase duration
     const phaseDuration = this.getCurrentPhaseDuration();
     const progress = Math.min(elapsed / phaseDuration, 1);
+
+    // Debug: Log every ~500ms or on phase change
+    const shouldLog =
+      process.env.NODE_ENV === "development" &&
+      (currentTime - this.lastLogTime > 500 || progress >= 1);
+
+    if (shouldLog) {
+      console.log("[TransitionAnimation] animate frame:", {
+        frameCount: this.frameCount,
+        phase: this.state.phase,
+        actionIndex: this.state.globalActionIndex,
+        elapsed: elapsed.toFixed(0) + "ms",
+        phaseDuration: phaseDuration.toFixed(0) + "ms",
+        progress: (progress * 100).toFixed(1) + "%",
+        willAdvance: progress >= 1,
+      });
+      this.lastLogTime = currentTime;
+    }
 
     // Apply easing
     this.state.progress = EASING_FUNCTIONS.easeInOutCubic(progress);
@@ -952,6 +1273,12 @@ export class TransitionAnimationController {
 
     if (this.state.isPlaying && this.state.phase !== "completed") {
       this.animationFrameId = requestAnimationFrame(this.animate);
+    } else if (process.env.NODE_ENV === "development") {
+      console.log("[TransitionAnimation] Animation loop ended:", {
+        phase: this.state.phase,
+        totalFrames: this.frameCount,
+        isPlaying: this.state.isPlaying,
+      });
     }
   };
 
@@ -981,6 +1308,9 @@ export class TransitionAnimationController {
 
   private advancePhase(): void {
     if (!this.data) return;
+
+    const prevPhase = this.state.phase;
+    const prevActionIndex = this.state.globalActionIndex;
 
     switch (this.state.phase) {
       case "showing-initial":
@@ -1016,6 +1346,16 @@ export class TransitionAnimationController {
     }
 
     this.state.progress = 0;
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("[TransitionAnimation] advancePhase:", {
+        from: prevPhase,
+        to: this.state.phase,
+        prevActionIndex,
+        newActionIndex: this.state.globalActionIndex,
+        totalActions: this.data.actionSequence.length,
+      });
+    }
   }
 
   private cancelAnimationFrame(): void {
@@ -1096,6 +1436,22 @@ export function useTransitionAnimation(): UseTransitionAnimationResult {
   useEffect(() => {
     // Create controller with a callback that updates both state and data
     controllerRef.current = new TransitionAnimationController((newState) => {
+      if (process.env.NODE_ENV === "development") {
+        // Log state changes (but not every progress update - only phase/action changes)
+        const prevPhase = controllerRef.current?.getState().phase;
+        if (
+          newState.phase !== prevPhase ||
+          newState.globalActionIndex !==
+            controllerRef.current?.getState().globalActionIndex
+        ) {
+          console.log("[TransitionAnimation] Hook setState:", {
+            phase: newState.phase,
+            progress: newState.progress.toFixed(3),
+            globalActionIndex: newState.globalActionIndex,
+            isPlaying: newState.isPlaying,
+          });
+        }
+      }
       setState(newState);
       // Also sync data from controller when state changes
       setData(controllerRef.current?.getData() || null);

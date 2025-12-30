@@ -189,40 +189,40 @@ export function ExtractionConfigPanel({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-4">
         <CardTitle>Extraction Configuration</CardTitle>
         <CardDescription>
           Configure URLs and settings for web extraction. Settings are saved
           automatically.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-4">
         {/* URLs Section */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-base font-semibold">URLs to Extract</Label>
+            <Label className="text-sm font-semibold">URLs to Extract</Label>
             <Button
               onClick={handleAddUrl}
               variant="outline"
               size="sm"
               disabled={isRunning}
             >
-              <Plus className="h-4 w-4 mr-2" />
-              Add URL
+              <Plus className="h-3 w-3 mr-1" />
+              Add
             </Button>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {urls.map((url, index) => (
               <div key={index} className="flex gap-2">
-                <div className="relative flex-1">
-                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <div className="relative max-w-lg flex-1">
+                  <Globe className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
                     type="url"
                     placeholder="https://example.com"
                     value={url}
                     onChange={(e) => handleUrlChange(index, e.target.value)}
-                    className="pl-9"
+                    className="pl-8 h-9 text-sm"
                     disabled={isRunning}
                   />
                 </div>
@@ -231,9 +231,10 @@ export function ExtractionConfigPanel({
                     onClick={() => handleRemoveUrl(index)}
                     variant="ghost"
                     size="icon"
+                    className="h-9 w-9"
                     disabled={isRunning}
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-3.5 w-3.5" />
                   </Button>
                 )}
               </div>
@@ -243,216 +244,198 @@ export function ExtractionConfigPanel({
 
         <Separator />
 
-        {/* Monitors Section */}
-        <TooltipProvider>
+        {/* Two-column grid for Options and Monitors */}
+        <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-4">
+          {/* Left Column: Options + Button */}
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Label className="text-base font-semibold">Target Monitors</Label>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="cursor-help">
-                    {isRunnerConnected ? (
-                      <Wifi className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <WifiOff className="w-4 h-4 text-gray-500" />
-                    )}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {isRunnerConnected
-                    ? `Connected to runner (${runnerMonitors.length} monitors detected)`
-                    : "Runner not connected - using default monitors"}
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Select monitors to capture. The viewport size will match each
-              monitor&apos;s resolution.
-            </p>
+            <div className="flex gap-3">
+              {/* Capture Options Card */}
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <Label className="text-sm font-semibold">Capture Options</Label>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="capture-hover"
+                      checked={captureHover}
+                      onCheckedChange={setCaptureHover}
+                      disabled={isRunning}
+                    />
+                    <Label htmlFor="capture-hover" className="text-sm">
+                      Hover States
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="capture-focus"
+                      checked={captureFocus}
+                      onCheckedChange={setCaptureFocus}
+                      disabled={isRunning}
+                    />
+                    <Label htmlFor="capture-focus" className="text-sm">
+                      Focus States
+                    </Label>
+                  </div>
+                </div>
+              </div>
 
-            {/* Monitor Cards */}
-            <div className="flex flex-wrap gap-3">
-              {sortedMonitors.map((monitor) => {
-                const isSelected = selectedMonitors.includes(monitor.index);
-                return (
+              {/* Crawl Limits Card */}
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <Label className="text-sm font-semibold">Crawl Limits</Label>
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor="max-depth"
+                      className="text-xs text-muted-foreground"
+                    >
+                      Max Depth
+                    </Label>
+                    <Input
+                      id="max-depth"
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={maxDepth}
+                      onChange={(e) =>
+                        setMaxDepth(parseInt(e.target.value) || 1)
+                      }
+                      disabled={isRunning}
+                      className="h-8 text-sm w-24"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor="max-pages"
+                      className="text-xs text-muted-foreground"
+                    >
+                      Max Pages
+                    </Label>
+                    <Input
+                      id="max-pages"
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={maxPages}
+                      onChange={(e) =>
+                        setMaxPages(parseInt(e.target.value) || 1)
+                      }
+                      disabled={isRunning}
+                      className="h-8 text-sm w-24"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Start Button - under both containers */}
+            <Button onClick={handleStartExtraction} disabled={isRunning}>
+              {isRunning ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Extraction Running...
+                </>
+              ) : (
+                <>
+                  <Globe className="mr-2 h-4 w-4" />
+                  Start Extraction
+                </>
+              )}
+            </Button>
+          </div>
+
+          {/* Right Column: Monitors */}
+          <TooltipProvider>
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-semibold">Target Monitors</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help">
+                      {isRunnerConnected ? (
+                        <Wifi className="w-3.5 h-3.5 text-green-500" />
+                      ) : (
+                        <WifiOff className="w-3.5 h-3.5 text-gray-500" />
+                      )}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {isRunnerConnected
+                      ? `Connected to runner (${runnerMonitors.length} monitors detected)`
+                      : "Runner not connected - using default monitors"}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+
+              {/* Monitor Cards */}
+              <div className="flex flex-wrap gap-2">
+                {sortedMonitors.map((monitor) => {
+                  const isSelected = selectedMonitors.includes(monitor.index);
+                  return (
+                    <button
+                      key={monitor.index}
+                      onClick={() => handleMonitorClick(monitor.index)}
+                      disabled={isRunning}
+                      className={`flex flex-col items-center gap-0.5 p-2 rounded-md border-2 transition-all min-w-[80px] ${
+                        isSelected
+                          ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/30"
+                          : "bg-background border-muted-foreground/20 text-muted-foreground hover:border-primary/50 hover:bg-muted"
+                      } ${isRunning ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      <div className="flex items-center gap-1">
+                        <Monitor className="w-4 h-4" />
+                        <span className="font-medium text-sm">
+                          [{monitor.index}]
+                        </span>
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
+                      <div className="text-[10px] text-center leading-tight">
+                        {monitor.is_primary && (
+                          <div className="text-green-500 font-medium">
+                            Primary
+                          </div>
+                        )}
+                        <div className="text-muted-foreground">
+                          {monitor.width}x{monitor.height}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {/* All button when multiple monitors available */}
+                {sortedMonitors.length > 1 && (
                   <button
-                    key={monitor.index}
-                    onClick={() => handleMonitorClick(monitor.index)}
+                    onClick={handleSelectAllMonitors}
                     disabled={isRunning}
-                    className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all min-w-[100px] ${
-                      isSelected
-                        ? "bg-primary/10 border-primary text-primary ring-2 ring-primary/30"
-                        : "bg-muted/50 border-muted-foreground/20 text-muted-foreground hover:border-primary/50 hover:bg-muted"
+                    className={`flex flex-col items-center justify-center gap-0.5 p-2 rounded-md border-2 transition-all min-w-[80px] ${
+                      selectedMonitors.length === sortedMonitors.length
+                        ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/30"
+                        : "bg-background border-muted-foreground/20 text-muted-foreground hover:border-primary/50 hover:bg-muted"
                     } ${isRunning ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                   >
-                    <div className="flex items-center gap-1.5">
-                      <Monitor className="w-5 h-5" />
-                      <span className="font-semibold text-base">
-                        [{monitor.index}]
-                      </span>
-                      {isSelected && <Check className="w-4 h-4" />}
-                    </div>
-                    <div className="text-xs space-y-0.5 text-center">
-                      {monitor.is_primary && (
-                        <div className="text-green-500 font-medium">
-                          Primary
-                        </div>
+                    <div className="flex items-center gap-1">
+                      <Monitor className="w-4 h-4" />
+                      <span className="font-medium text-sm">All</span>
+                      {selectedMonitors.length === sortedMonitors.length && (
+                        <Check className="w-3 h-3" />
                       )}
-                      <div className="capitalize">{monitor.position}</div>
-                      <div className="text-muted-foreground">
-                        {monitor.width}x{monitor.height}
-                      </div>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {sortedMonitors.length} monitors
                     </div>
                   </button>
-                );
-              })}
-
-              {/* All button when multiple monitors available */}
-              {sortedMonitors.length > 1 && (
-                <button
-                  onClick={handleSelectAllMonitors}
-                  disabled={isRunning}
-                  className={`flex flex-col items-center justify-center gap-1 p-3 rounded-lg border-2 transition-all min-w-[100px] ${
-                    selectedMonitors.length === sortedMonitors.length
-                      ? "bg-primary/10 border-primary text-primary ring-2 ring-primary/30"
-                      : "bg-muted/50 border-muted-foreground/20 text-muted-foreground hover:border-primary/50 hover:bg-muted"
-                  } ${isRunning ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Monitor className="w-5 h-5" />
-                    <span className="font-semibold text-base">All</span>
-                    {selectedMonitors.length === sortedMonitors.length && (
-                      <Check className="w-4 h-4" />
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {sortedMonitors.length} monitors
-                  </div>
-                </button>
-              )}
-            </div>
-
-            {/* Show resolved viewports */}
-            <div className="text-xs text-muted-foreground">
-              Viewports:{" "}
-              {getViewportsFromMonitors()
-                .map(([w, h]) => `${w}x${h}`)
-                .join(", ")}
-            </div>
-          </div>
-        </TooltipProvider>
-
-        <Separator />
-
-        {/* Capture Options */}
-        <div className="space-y-4">
-          <Label className="text-base font-semibold">Capture Options</Label>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="capture-hover">Capture Hover States</Label>
-                <p className="text-xs text-muted-foreground">
-                  Detect elements with hover interactions
-                </p>
+                )}
               </div>
-              <Switch
-                id="capture-hover"
-                checked={captureHover}
-                onCheckedChange={setCaptureHover}
-                disabled={isRunning}
-              />
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="capture-focus">Capture Focus States</Label>
-                <p className="text-xs text-muted-foreground">
-                  Detect elements with focus interactions
-                </p>
+              {/* Show resolved viewports */}
+              <div className="text-[10px] text-muted-foreground">
+                Viewports:{" "}
+                {getViewportsFromMonitors()
+                  .map(([w, h]) => `${w}x${h}`)
+                  .join(", ")}
               </div>
-              <Switch
-                id="capture-focus"
-                checked={captureFocus}
-                onCheckedChange={setCaptureFocus}
-                disabled={isRunning}
-              />
             </div>
-          </div>
+          </TooltipProvider>
         </div>
-
-        <Separator />
-
-        {/* Crawl Limits */}
-        <div className="space-y-4">
-          <Label className="text-base font-semibold">Crawl Limits</Label>
-
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="max-depth">Maximum Depth</Label>
-                <span className="text-sm text-muted-foreground">
-                  {maxDepth}
-                </span>
-              </div>
-              <Input
-                id="max-depth"
-                type="number"
-                min={1}
-                max={10}
-                value={maxDepth}
-                onChange={(e) => setMaxDepth(parseInt(e.target.value) || 1)}
-                disabled={isRunning}
-              />
-              <p className="text-xs text-muted-foreground">
-                How many levels deep to crawl links
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="max-pages">Maximum Pages</Label>
-                <span className="text-sm text-muted-foreground">
-                  {maxPages}
-                </span>
-              </div>
-              <Input
-                id="max-pages"
-                type="number"
-                min={1}
-                max={1000}
-                value={maxPages}
-                onChange={(e) => setMaxPages(parseInt(e.target.value) || 1)}
-                disabled={isRunning}
-              />
-              <p className="text-xs text-muted-foreground">
-                Maximum number of pages to extract
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Start Button */}
-        <Button
-          onClick={handleStartExtraction}
-          disabled={isRunning}
-          className="w-full"
-          size="lg"
-        >
-          {isRunning ? (
-            <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Extraction Running...
-            </>
-          ) : (
-            <>
-              <Globe className="mr-2 h-5 w-5" />
-              Start Extraction
-            </>
-          )}
-        </Button>
       </CardContent>
     </Card>
   );

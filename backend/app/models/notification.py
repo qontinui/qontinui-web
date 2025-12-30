@@ -77,8 +77,10 @@ class Notification(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )  # Who triggered the notification
-    read = Column(Boolean, default=False, nullable=False, index=True)
-    read_at = Column(DateTime, nullable=True)
+    read: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notification_metadata: Mapped[dict] = mapped_column(
         "metadata", JSON, nullable=True
     )  # Additional context (deep links, etc.)

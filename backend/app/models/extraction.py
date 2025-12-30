@@ -23,7 +23,7 @@ class ExtractionSession(Base):
     )
 
     # Source configuration
-    source_urls = Column(ARRAY(String), nullable=False, default=list)
+    source_urls: Column[list[str]] = Column(ARRAY(String), nullable=False, default=list)
     config = Column(JSON, nullable=False, default=dict)
 
     # Status

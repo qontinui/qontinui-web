@@ -5,13 +5,13 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { AutomationStore, ProjectSlice } from "../types";
+import type { AutomationStore, ProjectSlice, Category } from "../types";
 import { projectLogger } from "@/lib/project-logger";
 
-const DEFAULT_CATEGORIES = [
-  "Main",
-  "Incoming Transitions",
-  "Outgoing Transitions",
+const DEFAULT_CATEGORIES: Category[] = [
+  { name: "Main", automationEnabled: true },
+  { name: "Incoming Transitions", automationEnabled: false },
+  { name: "Outgoing Transitions", automationEnabled: false },
 ];
 
 export const createProjectSlice: StateCreator<
@@ -115,28 +115,55 @@ export const createProjectSlice: StateCreator<
     get().triggerSave();
   },
 
-  addCategory: (category) => {
+  addCategory: (categoryName) => {
     const { categories } = get();
-    if (!categories.includes(category)) {
-      projectLogger.debug("ProjectSlice", "addCategory", { category });
+    if (!categories.some((c) => c.name === categoryName)) {
+      projectLogger.debug("ProjectSlice", "addCategory", {
+        category: categoryName,
+      });
       set((state) => {
-        state.categories.push(category);
+        // New categories are NOT automation-enabled by default
+        state.categories.push({ name: categoryName, automationEnabled: false });
       });
     }
   },
 
-  deleteCategory: (category) => {
+  deleteCategory: (categoryName) => {
     // Protect default categories
-    if (DEFAULT_CATEGORIES.includes(category)) {
+    const defaultCategoryNames = DEFAULT_CATEGORIES.map((c) => c.name);
+    if (defaultCategoryNames.includes(categoryName)) {
       projectLogger.warn("ProjectSlice", "Cannot delete protected category", {
-        category,
+        category: categoryName,
       });
       return;
     }
 
-    projectLogger.debug("ProjectSlice", "deleteCategory", { category });
+    projectLogger.debug("ProjectSlice", "deleteCategory", {
+      category: categoryName,
+    });
     set((state) => {
-      state.categories = state.categories.filter((c) => c !== category);
+      state.categories = state.categories.filter(
+        (c) => c.name !== categoryName
+      );
+    });
+  },
+
+  updateCategory: (category) => {
+    projectLogger.debug("ProjectSlice", "updateCategory", { category });
+    set((state) => {
+      const index = state.categories.findIndex((c) => c.name === category.name);
+      if (index !== -1) {
+        state.categories[index] = category;
+      }
+    });
+  },
+
+  setCategories: (categories) => {
+    projectLogger.debug("ProjectSlice", "setCategories", {
+      count: categories.length,
+    });
+    set((state) => {
+      state.categories = categories;
     });
   },
 });

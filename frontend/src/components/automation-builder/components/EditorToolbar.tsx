@@ -25,6 +25,7 @@ import {
   Upload,
   Share2,
   FolderDown,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LibraryItem, BuilderMode } from "../types";
@@ -43,6 +44,7 @@ export interface EditorToolbarProps {
   onExport?: () => void;
   onImport?: () => void;
   onExportProject?: () => void;
+  onVerifyProject?: () => void;
   onShare?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
@@ -63,6 +65,7 @@ export function EditorToolbar({
   onExport,
   onImport,
   onExportProject,
+  onVerifyProject,
   onShare,
   canUndo = false,
   canRedo = false,
@@ -189,6 +192,20 @@ export function EditorToolbar({
         {/* Divider */}
         {item && onShare && <div className="h-6 w-px bg-gray-700 mx-1" />}
 
+        {/* Verify Project */}
+        {onVerifyProject && (
+          <Button
+            onClick={onVerifyProject}
+            size="sm"
+            variant="ghost"
+            className="text-gray-300 hover:text-white hover:bg-gray-800"
+            title="Verify project configuration"
+          >
+            <ClipboardCheck className="w-4 h-4 mr-2" />
+            Verify
+          </Button>
+        )}
+
         {/* Export Project */}
         {onExportProject && (
           <Button
@@ -204,7 +221,9 @@ export function EditorToolbar({
         )}
 
         {/* Divider */}
-        {onExportProject && <div className="h-6 w-px bg-gray-700 mx-1" />}
+        {(onVerifyProject || onExportProject) && (
+          <div className="h-6 w-px bg-gray-700 mx-1" />
+        )}
 
         {/* Import/Export Workflow */}
         {item && (

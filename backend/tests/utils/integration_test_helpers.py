@@ -342,7 +342,7 @@ def create_test_actions(count: int = 5) -> list[dict[str, Any]]:
     Returns:
         List of action specification dictionaries
     """
-    action_types = ["FIND", "CLICK", "TYPE", "WAIT", "SCROLL"]
+    action_types = ["FIND", "CLICK", "TYPE", "SCREENSHOT", "SCROLL"]
     actions = []
 
     for i in range(count):

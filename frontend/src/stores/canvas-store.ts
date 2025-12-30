@@ -193,7 +193,7 @@ export interface CanvasActions {
   setPanning: (isPanning: boolean) => void;
 
   // Validation
-  validateWorkflow: () => ValidationResult;
+  validateWorkflow: () => Promise<ValidationResult>;
   clearValidation: () => void;
 
   // UI settings
@@ -1020,17 +1020,15 @@ export const useCanvasStore = create<CanvasStore>()(
           // Validation
           // ========================================================================
 
-          validateWorkflow: () => {
+          validateWorkflow: async () => {
             const { workflow } = get();
             if (!workflow) {
               return { valid: true, errors: [], warnings: [] };
             }
 
             // Dynamic import to avoid circular dependency
-
-            const {
-              validateWorkflow: validate,
-            } = require("./canvas-validation");
+            const { validateWorkflow: validate } =
+              await import("./canvas-validation");
 
             // Run comprehensive validation
             const result = validate(workflow, {
@@ -1044,10 +1042,10 @@ export const useCanvasStore = create<CanvasStore>()(
             });
 
             set((state) => {
-              state.validationResult = result;
+              state.validationResult = result as unknown as ValidationResult;
             });
 
-            return result;
+            return result as ValidationResult;
           },
 
           clearValidation: () => {

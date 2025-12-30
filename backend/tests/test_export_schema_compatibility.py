@@ -17,7 +17,6 @@ from qontinui_schemas.config.models import (
     ClickActionConfig,
     FindActionConfig,
     TypeActionConfig,
-    WaitActionConfig,
     Workflow,
     get_typed_config,
 )
@@ -370,41 +369,6 @@ class TestActionConfigExport:
         assert typed_config.text == "Hello, World!"
         assert typed_config.type_delay == 50
 
-    def test_wait_action_time(self):
-        """Test WAIT action with time duration."""
-        action_data = {
-            "id": "wait_1",
-            "type": "WAIT",
-            "config": {"waitFor": "time", "duration": 2000},
-        }
-
-        action = Action.model_validate(action_data)
-        typed_config = get_typed_config(action)
-        assert isinstance(typed_config, WaitActionConfig)
-        assert typed_config.wait_for == "time"
-        assert typed_config.duration == 2000
-
-    def test_wait_action_target(self):
-        """Test WAIT action with target."""
-        action_data = {
-            "id": "wait_2",
-            "type": "WAIT",
-            "config": {
-                "waitFor": "target",
-                "target": {"type": "image", "imageId": "img_loading"},
-                "maxWaitTime": 30000,
-                "checkInterval": 500,
-            },
-        }
-
-        action = Action.model_validate(action_data)
-        typed_config = get_typed_config(action)
-        assert isinstance(typed_config, WaitActionConfig)
-        assert typed_config.wait_for == "target"
-        assert typed_config.target.type == "image"
-        assert typed_config.max_wait_time == 30000
-        assert typed_config.check_interval == 500
-
 
 class TestCompleteConfigExport:
     """Test complete configuration export with multiple workflows and actions."""
@@ -494,18 +458,6 @@ class TestCompleteConfigExport:
                     "config": {"target": {"type": "currentPosition"}},
                     "position": [200, 300],
                 },
-                {
-                    "id": "wait_dashboard",
-                    "type": "WAIT",
-                    "name": "Wait for Dashboard",
-                    "config": {
-                        "waitFor": "target",
-                        "target": {"type": "image", "imageId": "img_dashboard"},
-                        "maxWaitTime": 10000,
-                        "checkInterval": 500,
-                    },
-                    "position": [300, 300],
-                },
             ],
             "connections": {
                 "find_username": {
@@ -529,10 +481,7 @@ class TestCompleteConfigExport:
                 "find_submit": {
                     "main": [[{"action": "click_submit", "type": "main", "index": 0}]]
                 },
-                "click_submit": {
-                    "main": [[{"action": "wait_dashboard", "type": "main", "index": 0}]]
-                },
-                "wait_dashboard": {"main": []},
+                "click_submit": {"main": []},
             },
             "metadata": {
                 "author": "Test Suite",
@@ -549,7 +498,7 @@ class TestCompleteConfigExport:
         # Verify structure
         assert workflow.id == "complete_workflow"
         assert workflow.format == "graph"
-        assert len(workflow.actions) == 9
+        assert len(workflow.actions) == 8
 
         # Verify all actions validate
         for action in workflow.actions:
@@ -557,9 +506,9 @@ class TestCompleteConfigExport:
             assert typed_config is not None
 
         # Verify connections structure
-        assert len(workflow.connections.root) == 9
+        assert len(workflow.connections.root) == 8
         assert len(workflow.connections.get_connections("find_username", "main")) == 1
-        assert len(workflow.connections.get_connections("wait_dashboard", "main")) == 0
+        assert len(workflow.connections.get_connections("click_submit", "main")) == 0
 
     def test_multiple_workflows_validate(self):
         """Test multiple workflows in a configuration."""
@@ -572,8 +521,8 @@ class TestCompleteConfigExport:
                 "actions": [
                     {
                         "id": "action_1",
-                        "type": "WAIT",
-                        "config": {"waitFor": "time", "duration": 1000},
+                        "type": "CLICK",
+                        "config": {"target": {"type": "currentPosition"}},
                         "position": [100, 100],
                     }
                 ],
@@ -587,8 +536,8 @@ class TestCompleteConfigExport:
                 "actions": [
                     {
                         "id": "action_2",
-                        "type": "WAIT",
-                        "config": {"waitFor": "time", "duration": 2000},
+                        "type": "TYPE",
+                        "config": {"text": "test", "interval": 50},
                         "position": [200, 200],
                     }
                 ],
@@ -659,13 +608,13 @@ class TestEdgeCases:
         """Test action with only required fields."""
         action_data = {
             "id": "minimal",
-            "type": "WAIT",
-            "config": {"waitFor": "time", "duration": 1000},
+            "type": "CLICK",
+            "config": {"target": {"type": "currentPosition"}},
         }
 
         action = Action.model_validate(action_data)
         assert action.id == "minimal"
-        assert action.type == "WAIT"
+        assert action.type == "CLICK"
 
     def test_workflow_with_empty_actions(self):
         """Test workflow with no actions."""

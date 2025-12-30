@@ -83,8 +83,6 @@ export const NODE_TYPES: Record<ActionType, NodeComponent> = {
 
   // AI Actions
   AI_PROMPT: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for AI prompt
-  RUN_PROMPT_SEQUENCE: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for prompt sequence
-  CHECKPOINT_WORKFLOW: DataOperationNodes.SET_VARIABLE, // Reuse data node styling for checkpoint workflow
 };
 
 /**

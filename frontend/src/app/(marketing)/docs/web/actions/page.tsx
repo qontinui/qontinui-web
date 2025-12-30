@@ -324,16 +324,6 @@ export default function ActionsDocPage() {
               type="AI_PROMPT"
               description="Execute an AI prompt with context isolation"
             />
-            <ActionCard
-              name="Prompt Sequence"
-              type="RUN_PROMPT_SEQUENCE"
-              description="Execute a sequence of AI prompts with context isolation"
-            />
-            <ActionCard
-              name="Checkpoint Workflow"
-              type="CHECKPOINT_WORKFLOW"
-              description="Dynamic multi-session AI workflow with checkpoint-based progress tracking"
-            />
           </div>
 
           <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mt-6">

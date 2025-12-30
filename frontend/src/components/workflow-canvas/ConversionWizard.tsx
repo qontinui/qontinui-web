@@ -426,7 +426,9 @@ function ConfirmStep({
         </div>
       ) : (
         <>
-          <p>Click "Convert" to apply the changes to your workflow.</p>
+          <p>
+            Click &quot;Convert&quot; to apply the changes to your workflow.
+          </p>
           <div className="conversion-summary">
             <div className="summary-item">
               <strong>Target Format:</strong> {conversionPreview.toFormat}

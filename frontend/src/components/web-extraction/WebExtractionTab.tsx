@@ -275,7 +275,7 @@ export default function WebExtractionTab() {
 
   // Count total states from annotations
   const totalStatesCount = annotations.reduce(
-    (sum, annotation) => sum + annotation.states.length,
+    (sum, annotation) => sum + (annotation.states?.length ?? 0),
     0
   );
 
@@ -468,6 +468,11 @@ export default function WebExtractionTab() {
                       annotations={annotations}
                       selectedStateIds={selectedStateIds}
                       onSelectionChange={setSelectedStateIds}
+                      extractionId={
+                        extractionDetail?.stats?.screenshot_extraction_id ||
+                        activeExtractionId ||
+                        undefined
+                      }
                     />
                   </TabsContent>
 

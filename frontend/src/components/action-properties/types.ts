@@ -60,9 +60,7 @@ export interface Action {
     | "SHELL"
     | "SHELL_SCRIPT"
     // AI actions
-    | "AI_PROMPT"
-    | "RUN_PROMPT_SEQUENCE"
-    | "CHECKPOINT_WORKFLOW";
+    | "AI_PROMPT";
   config: Record<string, unknown>;
   /** Base settings (timing, logging, etc.) */
   base?: BaseActionSettings;

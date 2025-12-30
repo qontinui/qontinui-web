@@ -18,6 +18,8 @@ import { migrationV25ToV26 } from "./v2.5.0-to-v2.6.0";
 import { migrationV26ToV27 } from "./v2.6.0-to-v2.7.0";
 import { migrationV27ToV28 } from "./v2.7.0-to-v2.8.0";
 import { migrationV28ToV29 } from "./v2.8.0-to-v2.9.0";
+import { migrationV29ToV210 } from "./v2.9.0-to-v2.10.0";
+import { migrationV210ToV211 } from "./v2.10.0-to-v2.11.0";
 
 /**
  * Current version of the application
@@ -25,7 +27,7 @@ import { migrationV28ToV29 } from "./v2.8.0-to-v2.9.0";
  * Update this when creating new migrations.
  * This should match the version in export-schema.ts
  */
-export const CURRENT_VERSION = "2.9.0";
+export const CURRENT_VERSION = "2.11.0";
 
 /**
  * All registered migrations
@@ -54,4 +56,6 @@ export const ALL_MIGRATIONS: Migration[] = [
   migrationV26ToV27,
   migrationV27ToV28,
   migrationV28ToV29,
+  migrationV29ToV210,
+  migrationV210ToV211,
 ];

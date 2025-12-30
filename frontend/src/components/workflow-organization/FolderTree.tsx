@@ -1078,7 +1078,9 @@ export function FolderTree({
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Move "{movingFolder?.name}" to...</DialogTitle>
+            <DialogTitle>
+              Move &quot;{movingFolder?.name}&quot; to...
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">

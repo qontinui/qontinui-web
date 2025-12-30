@@ -650,7 +650,7 @@ test.describe('Integration Testing - Visualization', () => {
               duration_ms: 400,
             },
             {
-              action_type: 'WAIT',
+              action_type: 'SCREENSHOT',
               screenshot_path: 'screenshot_5.png',
               success: true,
               active_states: ['dashboard'],
@@ -682,7 +682,7 @@ test.describe('Integration Testing - Visualization', () => {
       await page.waitForTimeout(1000);
 
       // Verify different action type visualizations
-      const actionTypes = ['FIND', 'CLICK', 'TYPE', 'SCROLL', 'WAIT'];
+      const actionTypes = ['FIND', 'CLICK', 'TYPE', 'SCROLL', 'SCREENSHOT'];
 
       for (const actionType of actionTypes) {
         const actionElement = page.locator(`text=${actionType}`);
