@@ -459,13 +459,8 @@ function validateActionConfigs(
       }
     }
 
-    // Validate CLICK actions that use image targets
-    if (action.type === "CLICK") {
-      const target = config.target as Record<string, unknown> | undefined;
-      if (target && target.type) {
-        validateTargetConfig(target, actionName, action.id, errors);
-      }
-    }
+    // Note: CLICK and DRAG action config validation is handled by project-validator.ts
+    // with category "action_config". This file focuses on workflow connection/structure issues.
 
     // Validate LOOP actions with conditions
     if (action.type === "LOOP") {

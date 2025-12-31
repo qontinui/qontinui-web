@@ -291,6 +291,165 @@ export function validateProject(
         };
         issues.push(issue);
         workflowIssues.push(issue);
+      } else if (action.type === "CLICK") {
+        // CLICK actions need comprehensive target validation
+        const stringTarget = config.target as string | undefined;
+        const hasPosition = config.x !== undefined && config.y !== undefined;
+
+        // Check for missing target entirely (no target and no position)
+        if (!target && !stringTarget && !hasPosition) {
+          // CLICK without target defaults to "currentPosition" which is valid
+          // Only warn if the action seems incomplete
+        } else if (typeof stringTarget === "string") {
+          // String target like "StateImage" requires image reference in config
+          if (
+            stringTarget === "StateImage" ||
+            stringTarget === "image" ||
+            stringTarget === "stateImage"
+          ) {
+            const hasImageRef =
+              config.stateImageId ||
+              config.imageId ||
+              (Array.isArray(config.imageIds) &&
+                (config.imageIds as unknown[]).length > 0);
+            if (!hasImageRef) {
+              const issue: ValidationIssue = {
+                severity: "error",
+                category: "action_config",
+                message: `Action "${actionName}" has target "${stringTarget}" but no image selected`,
+                workflowId: workflow.id,
+                workflowName: workflow.name,
+                actionId: action.id,
+              };
+              issues.push(issue);
+              workflowIssues.push(issue);
+            }
+          }
+        } else if (target && !target.type) {
+          // Object target without type field
+          const issue: ValidationIssue = {
+            severity: "warning",
+            category: "action_config",
+            message: `Action "${actionName}" has target but no target type specified`,
+            workflowId: workflow.id,
+            workflowName: workflow.name,
+            actionId: action.id,
+          };
+          issues.push(issue);
+          workflowIssues.push(issue);
+        }
+      } else if (action.type === "DRAG") {
+        // DRAG actions need source and destination validation
+        const source = config.source as Record<string, unknown> | string | undefined;
+        const destination = config.destination as Record<string, unknown> | string | undefined;
+
+        // Validate source
+        if (!source) {
+          const issue: ValidationIssue = {
+            severity: "error",
+            category: "action_config",
+            message: `Action "${actionName}" must have a source location`,
+            workflowId: workflow.id,
+            workflowName: workflow.name,
+            actionId: action.id,
+          };
+          issues.push(issue);
+          workflowIssues.push(issue);
+        } else if (typeof source === "string") {
+          if (source === "StateImage" || source === "image" || source === "stateImage") {
+            const hasSourceImageRef =
+              config.sourceStateImageId ||
+              config.sourceImageId ||
+              (Array.isArray(config.sourceImageIds) &&
+                (config.sourceImageIds as unknown[]).length > 0);
+            if (!hasSourceImageRef) {
+              const issue: ValidationIssue = {
+                severity: "error",
+                category: "action_config",
+                message: `Action "${actionName}" has source "${source}" but no image selected`,
+                workflowId: workflow.id,
+                workflowName: workflow.name,
+                actionId: action.id,
+              };
+              issues.push(issue);
+              workflowIssues.push(issue);
+            }
+          }
+        } else if (typeof source === "object" && source !== null) {
+          const sourceType = source.type as string | undefined;
+          if (sourceType === "StateImage" || sourceType === "image" || sourceType === "stateImage") {
+            const hasSourceImageRef =
+              source.stateImageId ||
+              source.imageId ||
+              (Array.isArray(source.imageIds) && (source.imageIds as unknown[]).length > 0);
+            if (!hasSourceImageRef) {
+              const issue: ValidationIssue = {
+                severity: "error",
+                category: "action_config",
+                message: `Action "${actionName}" has source type "${sourceType}" but no image selected`,
+                workflowId: workflow.id,
+                workflowName: workflow.name,
+                actionId: action.id,
+              };
+              issues.push(issue);
+              workflowIssues.push(issue);
+            }
+          }
+        }
+
+        // Validate destination
+        if (!destination) {
+          const issue: ValidationIssue = {
+            severity: "error",
+            category: "action_config",
+            message: `Action "${actionName}" must have a destination location`,
+            workflowId: workflow.id,
+            workflowName: workflow.name,
+            actionId: action.id,
+          };
+          issues.push(issue);
+          workflowIssues.push(issue);
+        } else if (typeof destination === "string") {
+          if (destination === "StateImage" || destination === "image" || destination === "stateImage") {
+            const hasDestImageRef =
+              config.destStateImageId ||
+              config.destImageId ||
+              (Array.isArray(config.destImageIds) &&
+                (config.destImageIds as unknown[]).length > 0);
+            if (!hasDestImageRef) {
+              const issue: ValidationIssue = {
+                severity: "error",
+                category: "action_config",
+                message: `Action "${actionName}" has destination "${destination}" but no image selected`,
+                workflowId: workflow.id,
+                workflowName: workflow.name,
+                actionId: action.id,
+              };
+              issues.push(issue);
+              workflowIssues.push(issue);
+            }
+          }
+        } else if (typeof destination === "object" && destination !== null) {
+          const destType = destination.type as string | undefined;
+          if (destType === "StateImage" || destType === "image" || destType === "stateImage") {
+            const hasDestImageRef =
+              destination.stateImageId ||
+              destination.imageId ||
+              (Array.isArray(destination.imageIds) && (destination.imageIds as unknown[]).length > 0);
+            if (!hasDestImageRef) {
+              const issue: ValidationIssue = {
+                severity: "error",
+                category: "action_config",
+                message: `Action "${actionName}" has destination type "${destType}" but no image selected`,
+                workflowId: workflow.id,
+                workflowName: workflow.name,
+                actionId: action.id,
+              };
+              issues.push(issue);
+              workflowIssues.push(issue);
+            }
+          }
+        }
       }
 
       // Validate LOOP actions with conditions

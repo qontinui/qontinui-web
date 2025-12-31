@@ -623,6 +623,200 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
           message: `${action.type} action "${action.name || action.id}" must have either a target or position`,
           details: { actionId: action.id, actionType: action.type },
         });
+      } else if (config.target) {
+        // Validate target completeness based on target type
+        const target = config.target as Record<string, unknown> | string;
+
+        // Handle both string target (e.g., "StateImage") and object target
+        if (typeof target === "string") {
+          // String targets like "StateImage" require additional fields in config
+          if (
+            target === "StateImage" ||
+            target === "image" ||
+            target === "stateImage"
+          ) {
+            const hasImageRef =
+              config.stateImageId ||
+              config.imageId ||
+              (Array.isArray(config.imageIds) &&
+                (config.imageIds as unknown[]).length > 0);
+            if (!hasImageRef) {
+              errors.push({
+                id: `incomplete-click-target-${action.id}`,
+                actionId: action.id,
+                type: "invalid_config",
+                severity: "error",
+                message: `${action.type} action "${action.name || action.id}" has target "${target}" but no image selected. Select a StateImage to click.`,
+                details: {
+                  actionId: action.id,
+                  actionType: action.type,
+                  targetType: target,
+                },
+              });
+            }
+          }
+        } else if (typeof target === "object" && target !== null) {
+          // Object target with type field
+          const targetType = target.type as string | undefined;
+          if (
+            targetType === "StateImage" ||
+            targetType === "image" ||
+            targetType === "stateImage"
+          ) {
+            const hasImageRef =
+              target.stateImageId ||
+              target.imageId ||
+              (Array.isArray(target.imageIds) &&
+                (target.imageIds as unknown[]).length > 0);
+            if (!hasImageRef) {
+              errors.push({
+                id: `incomplete-click-target-${action.id}`,
+                actionId: action.id,
+                type: "invalid_config",
+                severity: "error",
+                message: `${action.type} action "${action.name || action.id}" has target type "${targetType}" but no image selected. Select a StateImage to click.`,
+                details: {
+                  actionId: action.id,
+                  actionType: action.type,
+                  targetType,
+                },
+              });
+            }
+          } else if (targetType === "coordinates") {
+            const coords = target.coordinates as
+              | { x?: number; y?: number }
+              | undefined;
+            if (
+              !coords ||
+              typeof coords.x !== "number" ||
+              typeof coords.y !== "number"
+            ) {
+              errors.push({
+                id: `incomplete-click-coords-${action.id}`,
+                actionId: action.id,
+                type: "invalid_config",
+                severity: "error",
+                message: `${action.type} action "${action.name || action.id}" has target type "coordinates" but coordinates are missing or invalid`,
+                details: { actionId: action.id, actionType: action.type },
+              });
+            }
+          } else if (targetType === "text") {
+            if (!target.text) {
+              errors.push({
+                id: `incomplete-click-text-${action.id}`,
+                actionId: action.id,
+                type: "invalid_config",
+                severity: "error",
+                message: `${action.type} action "${action.name || action.id}" has target type "text" but no text specified`,
+                details: { actionId: action.id, actionType: action.type },
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // DRAG action validation - requires source and destination
+    if (action.type === "DRAG") {
+      const source = config.source as Record<string, unknown> | string | undefined;
+      const destination = config.destination as Record<string, unknown> | string | undefined;
+
+      // Check if source is missing or incomplete
+      if (!source) {
+        errors.push({
+          id: `missing-drag-source-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `DRAG action "${action.name || action.id}" must have a source location`,
+          details: { actionId: action.id, actionType: action.type },
+        });
+      } else if (typeof source === "string") {
+        // String source like "StateImage" requires additional fields
+        if (source === "StateImage" || source === "image" || source === "stateImage") {
+          const hasSourceImageRef =
+            config.sourceStateImageId ||
+            config.sourceImageId ||
+            (Array.isArray(config.sourceImageIds) &&
+              (config.sourceImageIds as unknown[]).length > 0);
+          if (!hasSourceImageRef) {
+            errors.push({
+              id: `incomplete-drag-source-${action.id}`,
+              actionId: action.id,
+              type: "invalid_config",
+              severity: "error",
+              message: `DRAG action "${action.name || action.id}" has source "${source}" but no image selected`,
+              details: { actionId: action.id, actionType: action.type, sourceType: source },
+            });
+          }
+        }
+      } else if (typeof source === "object" && source !== null) {
+        const sourceType = source.type as string | undefined;
+        if (sourceType === "StateImage" || sourceType === "image" || sourceType === "stateImage") {
+          const hasSourceImageRef =
+            source.stateImageId ||
+            source.imageId ||
+            (Array.isArray(source.imageIds) && (source.imageIds as unknown[]).length > 0);
+          if (!hasSourceImageRef) {
+            errors.push({
+              id: `incomplete-drag-source-${action.id}`,
+              actionId: action.id,
+              type: "invalid_config",
+              severity: "error",
+              message: `DRAG action "${action.name || action.id}" has source type "${sourceType}" but no image selected`,
+              details: { actionId: action.id, actionType: action.type, sourceType },
+            });
+          }
+        }
+      }
+
+      // Check if destination is missing or incomplete
+      if (!destination) {
+        errors.push({
+          id: `missing-drag-destination-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `DRAG action "${action.name || action.id}" must have a destination location`,
+          details: { actionId: action.id, actionType: action.type },
+        });
+      } else if (typeof destination === "string") {
+        // String destination like "StateImage" requires additional fields
+        if (destination === "StateImage" || destination === "image" || destination === "stateImage") {
+          const hasDestImageRef =
+            config.destStateImageId ||
+            config.destImageId ||
+            (Array.isArray(config.destImageIds) &&
+              (config.destImageIds as unknown[]).length > 0);
+          if (!hasDestImageRef) {
+            errors.push({
+              id: `incomplete-drag-destination-${action.id}`,
+              actionId: action.id,
+              type: "invalid_config",
+              severity: "error",
+              message: `DRAG action "${action.name || action.id}" has destination "${destination}" but no image selected`,
+              details: { actionId: action.id, actionType: action.type, destType: destination },
+            });
+          }
+        }
+      } else if (typeof destination === "object" && destination !== null) {
+        const destType = destination.type as string | undefined;
+        if (destType === "StateImage" || destType === "image" || destType === "stateImage") {
+          const hasDestImageRef =
+            destination.stateImageId ||
+            destination.imageId ||
+            (Array.isArray(destination.imageIds) && (destination.imageIds as unknown[]).length > 0);
+          if (!hasDestImageRef) {
+            errors.push({
+              id: `incomplete-drag-destination-${action.id}`,
+              actionId: action.id,
+              type: "invalid_config",
+              severity: "error",
+              message: `DRAG action "${action.name || action.id}" has destination type "${destType}" but no image selected`,
+              details: { actionId: action.id, actionType: action.type, destType },
+            });
+          }
+        }
       }
     }
 
