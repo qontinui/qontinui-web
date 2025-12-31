@@ -103,8 +103,9 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
           </div>
         ) : (
           <>
-            <Table>
-              <TableHeader>
+            <div className="max-h-[500px] overflow-y-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-gray-900/95 z-10">
                 <TableRow className="border-gray-800">
                   <TableHead className="text-gray-400 w-[300px]">
                     Pattern
@@ -188,7 +189,8 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
 
             {/* Pagination */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-800">
