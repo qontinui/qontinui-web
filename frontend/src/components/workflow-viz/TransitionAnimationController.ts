@@ -139,23 +139,10 @@ export class TransitionAnimationController {
       console.log("[TransitionAnimation] loadTransition: loaded", {
         transitionId: transition.id,
         transitionName: (transition as { name?: string }).name ?? "(no name)",
-        transitionType: transition.type,
-        staysVisible:
-          transition.type === "OutgoingTransition"
-            ? (transition as OutgoingTransition).staysVisible
-            : "N/A (IncomingTransition)",
-        fromState:
-          transition.type === "OutgoingTransition"
-            ? (transition as OutgoingTransition).fromState
-            : "N/A",
         workflowCount: transitionWorkflows.length,
         actionSequenceLength: actionSequence.length,
         originStates: originStates.map((s) => s.name),
-        originStateIds: originStates.map((s) => s.id),
         targetStates: targetStates.map((s) => s.name),
-        targetStateIds: targetStates.map((s) => s.id),
-        activatedStates: activatedStates.map((s) => s.name),
-        deactivatedStates: deactivatedStates.map((s) => s.name),
       });
     }
 

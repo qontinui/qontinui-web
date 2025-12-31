@@ -544,23 +544,6 @@ function drawStates(
     // If this state staysVisible, keep it at full opacity; otherwise use originOpacity
     const opacity = staysVisible ? 1 : originOpacity;
 
-    // Debug: Log staysVisible check during final phases
-    if (
-      process.env.NODE_ENV === "development" &&
-      (state.phase === "showing-final" || state.phase === "completed")
-    ) {
-      console.log("[TransitionAnimation] drawStates: origin state visibility", {
-        stateName: stateObj.name,
-        stateId: stateObj.id,
-        phase: state.phase,
-        staysVisible,
-        originOpacity,
-        finalOpacity: opacity,
-        targetStateIds: Array.from(targetStateIds),
-        isInTargetStates: targetStateIds.has(stateObj.id),
-      });
-    }
-
     if (opacity > 0) {
       drawState(
         ctx,
