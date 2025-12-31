@@ -149,4 +149,28 @@ export class ExtractionService {
       throw new Error("Failed to delete extraction");
     }
   }
+
+  async updateExtraction(
+    extractionId: string,
+    data: {
+      status?: string;
+      error_message?: string;
+      stats?: Record<string, unknown>;
+    }
+  ): Promise<ExtractionSession> {
+    const url = `${this.apiUrl}/api/v1/extractions/${extractionId}`;
+    const response = await this.httpClient.fetch(url, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `Failed to update extraction: ${JSON.stringify(errorData)}`
+      );
+    }
+
+    return response.json();
+  }
 }

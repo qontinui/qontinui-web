@@ -182,7 +182,16 @@ export default function WebExtractionTab() {
         toast.error(
           `Failed to start extraction on runner: ${runnerResult.error || "Unknown error"}`
         );
-        // Note: Session is created but extraction failed - user can retry or delete
+        // Mark session as failed since runner couldn't start it
+        try {
+          await extractionService.updateExtraction(result.id, {
+            status: "failed",
+            error_message:
+              runnerResult.error || "Failed to start extraction on runner",
+          });
+        } catch (updateError) {
+          console.error("Failed to update extraction status:", updateError);
+        }
         return;
       }
 
