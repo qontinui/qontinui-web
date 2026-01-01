@@ -41,6 +41,7 @@ import type {
 } from "@/contexts/automation-context/types";
 import type { ProjectSettings } from "@/types/project-settings";
 import type { Workflow } from "@/lib/action-schema/action-types";
+import type { Context } from "@qontinui/schemas/config";
 
 // Re-export domain types for convenience
 export type {
@@ -56,6 +57,7 @@ export type {
   RAGSetupResults,
   ProjectSettings,
   Workflow,
+  Context,
   StateRegion,
   StateLocation,
   StateString,
@@ -240,6 +242,17 @@ export interface SettingsSlice {
   updateSettings: (settings: Partial<ProjectSettings>) => void;
 }
 
+export interface ContextsSlice {
+  // State
+  contexts: Context[];
+
+  // Actions
+  setContexts: (contexts: Context[]) => void;
+  addContext: (context: Context) => void;
+  updateContext: (context: Context) => void;
+  deleteContext: (contextId: string) => void;
+}
+
 // ============================================================================
 // Combined Store Type
 // ============================================================================
@@ -251,7 +264,8 @@ export type AutomationStore = ProjectSlice &
   ImageSlice &
   ScreenshotSlice &
   ScheduleSlice &
-  SettingsSlice & {
+  SettingsSlice &
+  ContextsSlice & {
     // Configuration operations
     getConfiguration: () => Record<string, unknown>;
     loadConfiguration: (config: Record<string, unknown>) => Promise<void>;

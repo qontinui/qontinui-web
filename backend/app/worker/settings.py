@@ -5,19 +5,17 @@ from arq.connections import RedisSettings
 from app.core.config import settings
 from app.worker.scheduler import get_cleanup_cron_jobs, run_all_cleanup_tasks
 from app.worker.tasks import (
-    process_uploaded_image,
-    send_analytics_report_task,
-    send_email_task,
-    send_password_reset_email_task,
-    send_verification_email_task,
-)
-from app.worker.tasks.cleanup_tasks import (
     archive_old_analytics_to_s3,
     cleanup_expired_device_sessions,
     cleanup_expired_sessions,
     cleanup_old_analytics_events,
     cleanup_old_automation_data,
     cleanup_token_blacklist,
+    process_uploaded_image,
+    send_analytics_report_task,
+    send_email_task,
+    send_password_reset_email_task,
+    send_verification_email_task,
 )
 from app.worker.tasks.partition_tasks import (
     auto_create_partitions,

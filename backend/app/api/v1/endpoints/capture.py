@@ -5,6 +5,7 @@ Handles creating, managing, and analyzing screenshot capture sessions
 for the workflow learning pipeline.
 """
 
+import json
 from uuid import UUID
 
 from fastapi import (
@@ -21,6 +22,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
+from app.models.capture import (
+    CaptureDetectedElement,
+    CaptureScreenshot,
+    ScreenshotStateMatch,
+)
 from app.models.user import User
 from app.schemas.capture import (
     BatchActionCreate,
@@ -33,7 +39,10 @@ from app.schemas.capture import (
     LearnedWorkflowResponse,
     ScreenshotStateMatchResponse,
 )
+from app.services.capture_response_builder import capture_response_builder
 from app.services.capture_session_service import CaptureSessionService
+from app.services.element_detection_service import ElementDetectionService
+from app.services.workflow_generation_service import WorkflowGenerationService
 
 router = APIRouter()
 
@@ -54,37 +63,14 @@ async def create_capture_session(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Create a new capture session for a project.
-
-    Args:
-        project_id: ID of the project
-        session_data: Session creation data
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        The created capture session
-    """
+    """Create a new capture session for a project."""
     session = await CaptureSessionService.create_session(
         db=db,
         project_id=project_id,
         user_id=current_user.id,
         session_data=session_data,
     )
-
-    return CaptureSessionResponse(
-        id=session.id,
-        project_id=session.project_id,
-        user_id=session.user_id,
-        name=session.name,
-        description=session.description,
-        status=session.status,
-        extra_metadata=session.extra_metadata,
-        created_at=session.created_at,
-        completed_at=session.completed_at,
-        screenshot_count=0,  # Just created
-    )
+    return capture_response_builder.build_session_response(session, screenshot_count=0)
 
 
 @router.get(
@@ -96,33 +82,11 @@ async def get_capture_session(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get a capture session by ID.
-
-    Args:
-        session_id: ID of the session
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        The capture session
-    """
+    """Get a capture session by ID."""
     session = await CaptureSessionService.get_session(
         db=db, session_id=session_id, user_id=current_user.id
     )
-
-    return CaptureSessionResponse(
-        id=session.id,
-        project_id=session.project_id,
-        user_id=session.user_id,
-        name=session.name,
-        description=session.description,
-        status=session.status,
-        extra_metadata=session.extra_metadata,
-        created_at=session.created_at,
-        completed_at=session.completed_at,
-        screenshot_count=len(session.screenshots) if session.screenshots else 0,
-    )
+    return capture_response_builder.build_session_response(session)
 
 
 @router.get(
@@ -137,20 +101,7 @@ async def list_capture_sessions(
     limit: int = Query(50, ge=1, le=100, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
 ):
-    """
-    List capture sessions for the current user.
-
-    Args:
-        current_user: Authenticated user
-        db: Database session
-        project_id: Optional project filter
-        status_filter: Optional status filter
-        limit: Maximum results
-        offset: Pagination offset
-
-    Returns:
-        Paginated list of capture sessions
-    """
+    """List capture sessions for the current user."""
     sessions, total = await CaptureSessionService.list_sessions(
         db=db,
         user_id=current_user.id,
@@ -162,19 +113,8 @@ async def list_capture_sessions(
 
     return {
         "items": [
-            CaptureSessionResponse(
-                id=session.id,
-                project_id=session.project_id,
-                user_id=session.user_id,
-                name=session.name,
-                description=session.description,
-                status=session.status,
-                extra_metadata=session.extra_metadata,
-                created_at=session.created_at,
-                completed_at=session.completed_at,
-                screenshot_count=0,  # Not loaded in list view for performance
-            )
-            for session in sessions
+            capture_response_builder.build_session_response(s, screenshot_count=0)
+            for s in sessions
         ],
         "total": total,
         "limit": limit,
@@ -192,37 +132,14 @@ async def update_capture_session(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Update a capture session.
-
-    Args:
-        session_id: ID of the session
-        update_data: Update data
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        The updated capture session
-    """
+    """Update a capture session."""
     session = await CaptureSessionService.update_session(
         db=db,
         session_id=session_id,
         user_id=current_user.id,
         update_data=update_data,
     )
-
-    return CaptureSessionResponse(
-        id=session.id,
-        project_id=session.project_id,
-        user_id=session.user_id,
-        name=session.name,
-        description=session.description,
-        status=session.status,
-        extra_metadata=session.extra_metadata,
-        created_at=session.created_at,
-        completed_at=session.completed_at,
-        screenshot_count=len(session.screenshots) if session.screenshots else 0,
-    )
+    return capture_response_builder.build_session_response(session)
 
 
 @router.delete(
@@ -234,14 +151,7 @@ async def delete_capture_session(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Delete a capture session and all related data.
-
-    Args:
-        session_id: ID of the session
-        current_user: Authenticated user
-        db: Database session
-    """
+    """Delete a capture session and all related data."""
     await CaptureSessionService.delete_session(
         db=db, session_id=session_id, user_id=current_user.id
     )
@@ -267,23 +177,7 @@ async def upload_screenshot(
         None, description="JSON string of metadata (optional)"
     ),
 ):
-    """
-    Upload a screenshot to a capture session.
-
-    Args:
-        session_id: ID of the session
-        sequence_number: Order within session
-        file: Screenshot image file
-        extra_metadata: Optional JSON metadata string
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        The created screenshot record
-    """
-    # Parse metadata if provided
-    import json
-
+    """Upload a screenshot to a capture session."""
     metadata = None
     if extra_metadata:
         try:
@@ -300,20 +194,8 @@ async def upload_screenshot(
         subscription_tier=current_user.subscription_tier,
         extra_metadata=metadata,
     )
-
-    return CaptureScreenshotResponse(
-        id=screenshot.id,
-        session_id=screenshot.session_id,
-        sequence_number=screenshot.sequence_number,
-        image_url=screenshot.image_url,
-        thumbnail_url=screenshot.thumbnail_url,
-        width=screenshot.width,
-        height=screenshot.height,
-        timestamp=screenshot.timestamp,
-        extra_metadata=screenshot.extra_metadata,
-        analysis_status=screenshot.analysis_status,
-        action_count=0,  # Just created
-        detected_element_count=0,
+    return capture_response_builder.build_screenshot_response(
+        screenshot, action_count=0, detected_element_count=0
     )
 
 
@@ -326,40 +208,11 @@ async def list_session_screenshots(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get all screenshots for a capture session.
-
-    Args:
-        session_id: ID of the session
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of screenshots, ordered by sequence number
-    """
+    """Get all screenshots for a capture session."""
     screenshots = await CaptureSessionService.get_session_screenshots(
         db=db, session_id=session_id, user_id=current_user.id
     )
-
-    return [
-        CaptureScreenshotResponse(
-            id=screenshot.id,
-            session_id=screenshot.session_id,
-            sequence_number=screenshot.sequence_number,
-            image_url=screenshot.image_url,
-            thumbnail_url=screenshot.thumbnail_url,
-            width=screenshot.width,
-            height=screenshot.height,
-            timestamp=screenshot.timestamp,
-            extra_metadata=screenshot.extra_metadata,
-            analysis_status=screenshot.analysis_status,
-            action_count=len(screenshot.actions) if screenshot.actions else 0,
-            detected_element_count=(
-                len(screenshot.detected_elements) if screenshot.detected_elements else 0
-            ),
-        )
-        for screenshot in screenshots
-    ]
+    return [capture_response_builder.build_screenshot_response(s) for s in screenshots]
 
 
 # ============================================================================
@@ -378,39 +231,12 @@ async def create_action(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Create a user action within a screenshot.
-
-    Args:
-        screenshot_id: ID of the screenshot
-        action_data: Action creation data
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        The created action
-    """
-    # Ensure screenshot_id matches
+    """Create a user action within a screenshot."""
     action_data.screenshot_id = screenshot_id
-
     action = await CaptureSessionService.create_action(
         db=db, user_id=current_user.id, action_data=action_data
     )
-
-    return CaptureActionResponse(
-        id=action.id,
-        screenshot_id=action.screenshot_id,
-        sequence_number=action.sequence_number,
-        action_type=action.action_type,
-        x=action.x,
-        y=action.y,
-        text=action.text,
-        key=action.key,
-        button=action.button,
-        scroll_delta=action.scroll_delta,
-        timestamp=action.timestamp,
-        extra_metadata=action.extra_metadata,
-    )
+    return capture_response_builder.build_action_response(action)
 
 
 @router.post(
@@ -423,38 +249,11 @@ async def batch_create_actions(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Batch create multiple actions.
-
-    Args:
-        batch_data: Batch of actions to create
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of created actions
-    """
+    """Batch create multiple actions."""
     actions = await CaptureSessionService.batch_create_actions(
         db=db, user_id=current_user.id, actions_data=batch_data.actions
     )
-
-    return [
-        CaptureActionResponse(
-            id=action.id,
-            screenshot_id=action.screenshot_id,
-            sequence_number=action.sequence_number,
-            action_type=action.action_type,
-            x=action.x,
-            y=action.y,
-            text=action.text,
-            key=action.key,
-            button=action.button,
-            scroll_delta=action.scroll_delta,
-            timestamp=action.timestamp,
-            extra_metadata=action.extra_metadata,
-        )
-        for action in actions
-    ]
+    return [capture_response_builder.build_action_response(a) for a in actions]
 
 
 @router.get(
@@ -466,38 +265,11 @@ async def list_screenshot_actions(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get all actions for a screenshot.
-
-    Args:
-        screenshot_id: ID of the screenshot
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of actions, ordered by sequence number
-    """
+    """Get all actions for a screenshot."""
     actions = await CaptureSessionService.get_screenshot_actions(
         db=db, screenshot_id=screenshot_id, user_id=current_user.id
     )
-
-    return [
-        CaptureActionResponse(
-            id=action.id,
-            screenshot_id=action.screenshot_id,
-            sequence_number=action.sequence_number,
-            action_type=action.action_type,
-            x=action.x,
-            y=action.y,
-            text=action.text,
-            key=action.key,
-            button=action.button,
-            scroll_delta=action.scroll_delta,
-            timestamp=action.timestamp,
-            extra_metadata=action.extra_metadata,
-        )
-        for action in actions
-    ]
+    return [capture_response_builder.build_action_response(a) for a in actions]
 
 
 # ============================================================================
@@ -518,22 +290,7 @@ async def match_screenshot_to_states(
         0.7, ge=0.0, le=1.0, description="Minimum confidence for a match"
     ),
 ):
-    """
-    Match a capture screenshot against known states.
-
-    Compares the screenshot against reference screenshots from snapshot runs
-    to identify which UI states are present.
-
-    Args:
-        screenshot_id: ID of the screenshot to match
-        confidence_threshold: Minimum confidence score (0.0-1.0)
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of state matches with confidence scores
-    """
-    # DEPRECATED: State matching functionality has been removed
+    """Match a capture screenshot against known states (DEPRECATED)."""
     raise HTTPException(
         status_code=status.HTTP_410_GONE,
         detail="State matching functionality has been removed. Use qontinui library for local execution.",
@@ -553,29 +310,13 @@ async def match_session_to_states(
         0.7, ge=0.0, le=1.0, description="Minimum confidence for a match"
     ),
 ):
-    """
-    Match all screenshots in a capture session against known states.
-
-    Processes all screenshots in the session and compares them against
-    reference screenshots to identify UI states throughout the capture.
-
-    Args:
-        session_id: ID of the capture session
-        confidence_threshold: Minimum confidence score (0.0-1.0)
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        Statistics about the matching results
-    """
-    result = await CaptureSessionService.match_session_to_states(
+    """Match all screenshots in a capture session against known states."""
+    return await CaptureSessionService.match_session_to_states(
         db=db,
         session_id=session_id,
         user_id=current_user.id,
         confidence_threshold=confidence_threshold,
     )
-
-    return result
 
 
 @router.get(
@@ -587,19 +328,7 @@ async def get_screenshot_state_matches(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get existing state matches for a screenshot.
-
-    Args:
-        screenshot_id: ID of the screenshot
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of existing state matches
-    """
-    from app.models.capture import CaptureScreenshot, ScreenshotStateMatch
-
+    """Get existing state matches for a screenshot."""
     # Verify access
     result = await db.execute(
         select(CaptureScreenshot)
@@ -612,8 +341,6 @@ async def get_screenshot_state_matches(
     screenshot = result.scalar_one_or_none()
 
     if not screenshot:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Screenshot not found or access denied",
@@ -627,20 +354,7 @@ async def get_screenshot_state_matches(
     )
     matches = list(matches_result.scalars().all())
 
-    return [
-        ScreenshotStateMatchResponse(
-            id=match.id,
-            screenshot_id=match.screenshot_id,
-            state_identifier=match.state_identifier,
-            state_metadata=match.state_metadata,
-            confidence=match.confidence,
-            matched_elements=match.matched_elements,
-            is_confirmed=match.is_confirmed,
-            review_notes=match.review_notes,
-            created_at=match.created_at,
-        )
-        for match in matches
-    ]
+    return [capture_response_builder.build_state_match_response(m) for m in matches]
 
 
 # ============================================================================
@@ -661,25 +375,7 @@ async def detect_elements_in_screenshot(
     detect_elements: bool = Query(True, description="Detect UI elements"),
     segment_regions: bool = Query(False, description="Segment regions"),
 ):
-    """
-    Detect UI elements in a capture screenshot.
-
-    Uses qontinui-api's computer vision to identify buttons, inputs,
-    text, images, and other UI elements.
-
-    Args:
-        screenshot_id: ID of the screenshot to analyze
-        extract_text: Whether to extract text (OCR)
-        detect_elements: Whether to detect UI elements
-        segment_regions: Whether to segment regions
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of detected elements with bounding boxes and properties
-    """
-    from app.services.element_detection_service import ElementDetectionService
-
+    """Detect UI elements in a capture screenshot."""
     detection_config = {
         "extract_text": extract_text,
         "detect_elements": detect_elements,
@@ -697,18 +393,7 @@ async def detect_elements_in_screenshot(
         "screenshot_id": str(screenshot_id),
         "element_count": len(elements),
         "elements": [
-            {
-                "id": str(elem.id),
-                "element_type": elem.element_type,
-                "x": elem.x,
-                "y": elem.y,
-                "width": elem.width,
-                "height": elem.height,
-                "text_content": elem.text_content,
-                "confidence": elem.confidence,
-                "properties": elem.properties,
-            }
-            for elem in elements
+            capture_response_builder.build_detected_element_dict(e) for e in elements
         ],
     }
 
@@ -725,37 +410,18 @@ async def detect_elements_in_session(
     extract_text: bool = Query(True, description="Extract text from elements"),
     detect_elements: bool = Query(True, description="Detect UI elements"),
 ):
-    """
-    Detect UI elements in all screenshots of a capture session.
-
-    Processes all screenshots in the session to identify UI elements.
-    Skips screenshots that have already been analyzed.
-
-    Args:
-        session_id: ID of the capture session
-        extract_text: Whether to extract text (OCR)
-        detect_elements: Whether to detect UI elements
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        Statistics about detected elements across the session
-    """
-    from app.services.element_detection_service import ElementDetectionService
-
+    """Detect UI elements in all screenshots of a capture session."""
     detection_config = {
         "extract_text": extract_text,
         "detect_elements": detect_elements,
     }
 
-    result = await ElementDetectionService.detect_elements_in_session(
+    return await ElementDetectionService.detect_elements_in_session(
         db=db,
         session_id=session_id,
         user_id=current_user.id,
         detection_config=detection_config,
     )
-
-    return result
 
 
 @router.get(
@@ -767,19 +433,7 @@ async def get_detected_elements(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get previously detected elements for a screenshot.
-
-    Args:
-        screenshot_id: ID of the screenshot
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of detected elements
-    """
-    from app.models.capture import CaptureDetectedElement, CaptureScreenshot
-
+    """Get previously detected elements for a screenshot."""
     # Verify access
     result = await db.execute(
         select(CaptureScreenshot)
@@ -792,8 +446,6 @@ async def get_detected_elements(
     screenshot = result.scalar_one_or_none()
 
     if not screenshot:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Screenshot not found or access denied",
@@ -812,19 +464,8 @@ async def get_detected_elements(
         "analysis_status": screenshot.analysis_status,
         "element_count": len(elements),
         "elements": [
-            {
-                "id": str(elem.id),
-                "element_type": elem.element_type,
-                "x": elem.x,
-                "y": elem.y,
-                "width": elem.width,
-                "height": elem.height,
-                "text_content": elem.text_content,
-                "confidence": elem.confidence,
-                "properties": elem.properties,
-                "visual_hash": elem.visual_hash,
-            }
-            for elem in elements
+            capture_response_builder.build_detected_element_dict_full(e)
+            for e in elements
         ],
     }
 
@@ -851,21 +492,7 @@ async def generate_workflow_from_session(
 
     Analyzes the sequence of screenshots, state matches, and actions to
     automatically create a workflow structure.
-
-    **Process:**
-    1. Analyze screenshot sequence and state matches
-    2. Extract unique states and transitions
-    3. Calculate confidence scores
-    4. Generate workflow JSON structure
-    5. Create LearnedWorkflow record
-
-    **Returns:**
-    - Workflow with states, transitions, and metadata
-    - Overall confidence score
-    - Warnings about low-confidence transitions or missing states
     """
-    from app.services.workflow_generation_service import WorkflowGenerationService
-
     workflow = await WorkflowGenerationService.generate_workflow_from_session(
         db=db,
         session_id=session_id,
@@ -873,22 +500,7 @@ async def generate_workflow_from_session(
         name=name,
         description=description,
     )
-
-    return LearnedWorkflowResponse(
-        id=workflow.id,
-        session_id=workflow.session_id,
-        project_id=workflow.project_id,
-        name=workflow.name,
-        description=workflow.description,
-        workflow_json=workflow.workflow_json,
-        confidence=workflow.confidence,
-        status=workflow.status,
-        warnings=workflow.warnings,
-        created_at=workflow.created_at,
-        reviewed_at=workflow.reviewed_at,
-        reviewer_id=workflow.reviewer_id,
-        published_info=workflow.published_info,
-    )
+    return capture_response_builder.build_workflow_response(workflow)
 
 
 @router.get(
@@ -901,37 +513,13 @@ async def get_session_learned_workflows(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get all learned workflows for a capture session.
-
-    Returns all workflows generated from this session, ordered by creation date (newest first).
-    """
-    from app.services.workflow_generation_service import WorkflowGenerationService
-
+    """Get all learned workflows for a capture session."""
     workflows = await WorkflowGenerationService.get_learned_workflows(
         db=db,
         session_id=session_id,
         user_id=current_user.id,
     )
-
-    return [
-        LearnedWorkflowResponse(
-            id=wf.id,
-            session_id=wf.session_id,
-            project_id=wf.project_id,
-            name=wf.name,
-            description=wf.description,
-            workflow_json=wf.workflow_json,
-            confidence=wf.confidence,
-            status=wf.status,
-            warnings=wf.warnings,
-            created_at=wf.created_at,
-            reviewed_at=wf.reviewed_at,
-            reviewer_id=wf.reviewer_id,
-            published_info=wf.published_info,
-        )
-        for wf in workflows
-    ]
+    return [capture_response_builder.build_workflow_response(wf) for wf in workflows]
 
 
 @router.patch(
@@ -952,37 +540,12 @@ async def update_learned_workflow_status(
     """
     Update the status of a learned workflow.
 
-    **Status values:**
-    - `draft` - Initial state, workflow needs review
-    - `reviewing` - Under review by user
-    - `approved` - Approved and ready to publish
-    - `rejected` - Rejected, not suitable for use
-    - `published` - Published to project configuration
-
-    When status is set to `approved` or `rejected`, the `reviewed_at` timestamp
-    and `reviewer_id` are automatically set.
+    Status values: draft, reviewing, approved, rejected, published
     """
-    from app.services.workflow_generation_service import WorkflowGenerationService
-
     workflow = await WorkflowGenerationService.update_workflow_status(
         db=db,
         workflow_id=workflow_id,
         user_id=current_user.id,
         status=new_status,
     )
-
-    return LearnedWorkflowResponse(
-        id=workflow.id,
-        session_id=workflow.session_id,
-        project_id=workflow.project_id,
-        name=workflow.name,
-        description=workflow.description,
-        workflow_json=workflow.workflow_json,
-        confidence=workflow.confidence,
-        status=workflow.status,
-        warnings=workflow.warnings,
-        created_at=workflow.created_at,
-        reviewed_at=workflow.reviewed_at,
-        reviewer_id=workflow.reviewer_id,
-        published_info=workflow.published_info,
-    )
+    return capture_response_builder.build_workflow_response(workflow)

@@ -3,17 +3,12 @@ from app.models.analytics_event import AnalyticsEvent  # noqa
 from app.models.annotation import Annotation, AnnotationSet  # noqa
 from app.models.audit_log import AuditLog  # noqa
 from app.models.capture import (  # noqa
-    ActionFrame,
     CaptureAction,
     CaptureDetectedElement,
     CaptureScreenshot,
     CaptureSession,
-    FrameIndex,
-    HistoricalResult,
-    InputEvent,
     LearnedWorkflow,
     ScreenshotStateMatch,
-    VideoCaptureSession,
 )
 from app.models.device_session import DeviceSession  # noqa
 from app.models.extraction import ExtractionAnnotation, ExtractionSession  # noqa
@@ -34,3 +29,10 @@ from app.models.usage_metric import UsageMetric  # noqa
 # Import all models here for Alembic to detect them
 # Note: Import snapshot models before project to avoid circular imports
 from app.models.user import User  # noqa
+from app.models.video_capture import (  # noqa
+    ActionFrame,
+    FrameIndex,
+    HistoricalResult,
+    InputEvent,
+    VideoCaptureSession,
+)

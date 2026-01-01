@@ -18,6 +18,7 @@ import {
   createScreenshotSlice,
   createScheduleSlice,
   createSettingsSlice,
+  createContextSlice,
 } from "./slices";
 import { createCrossEntitySlice } from "./middleware";
 import { hydrateFromIndexedDB, clearIndexedDB } from "./middleware/persistence";
@@ -266,6 +267,9 @@ export const useAutomationStore = create<AutomationStore>()(
         // Settings slice
         ...createSettingsSlice(set, get, api),
 
+        // Context slice
+        ...createContextSlice(set, get, api),
+
         // Cross-entity operations
         ...createCrossEntitySlice(set, get, api),
 
@@ -283,6 +287,7 @@ export const useAutomationStore = create<AutomationStore>()(
             schedules: state.schedules,
             settings: state.settings,
             categories: state.categories,
+            contexts: state.contexts,
           };
         },
 
@@ -360,6 +365,8 @@ export const useAutomationStore = create<AutomationStore>()(
               if (config.settings)
                 state.settings = config.settings as AutomationStore["settings"];
               if (categories) state.categories = categories;
+              if (config.contexts)
+                state.contexts = config.contexts as AutomationStore["contexts"];
             });
 
             projectLogger.info("AutomationStore", "Configuration loaded");
@@ -382,6 +389,7 @@ export const useAutomationStore = create<AutomationStore>()(
             state.screenshots = [];
             state.schedules = [];
             state.executionRecords = [];
+            state.contexts = [];
           });
 
           // Clear IndexedDB
@@ -619,6 +627,7 @@ export function resetStore(): void {
       { name: "Incoming Transitions", automationEnabled: false },
       { name: "Outgoing Transitions", automationEnabled: false },
     ];
+    state.contexts = [];
   });
 }
 

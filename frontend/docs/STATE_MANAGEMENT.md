@@ -54,6 +54,7 @@ Qontinui uses a **layered state management architecture** that separates concern
 **Purpose:** Single source of truth for ALL server data
 
 **Owns:**
+
 - Projects (CRUD operations)
 - Users and authentication state
 - Workflows and workflow metadata
@@ -66,6 +67,7 @@ Qontinui uses a **layered state management architecture** that separates concern
 **Location:** `src/hooks/use-*.ts` (e.g., `use-projects.ts`, `use-admin.ts`)
 
 **Why React Query:**
+
 - Automatic caching (1 minute stale time by default)
 - Background refetching when data becomes stale
 - Automatic retries with exponential backoff
@@ -75,6 +77,7 @@ Qontinui uses a **layered state management architecture** that separates concern
 - DevTools for debugging
 
 **Example:**
+
 ```typescript
 // ✅ CORRECT: Use React Query for server data
 import { useProjects } from '@/hooks/use-projects'
@@ -102,6 +105,7 @@ function ProjectList() {
 **Purpose:** Derived UI state that depends on user interactions with the canvas/UI
 
 **Owns:**
+
 - Canvas state (`canvas-store.ts`)
   - Viewport (zoom, pan position)
   - Selected nodes/edges (ONLY IDs, not full data)
@@ -130,6 +134,7 @@ function ProjectList() {
 **Location:** `src/stores/*.ts`
 
 **Why Zustand:**
+
 - Minimal boilerplate (no providers needed)
 - Fast performance (selective re-renders)
 - DevTools integration
@@ -137,6 +142,7 @@ function ProjectList() {
 - Simple API
 
 **Example:**
+
 ```typescript
 // ✅ CORRECT: Store only IDs, not full data
 const useCanvasStore = create<CanvasStore>()((set, get) => ({
@@ -169,6 +175,7 @@ function CanvasNode({ nodeId }: { nodeId: string }) {
 **Purpose:** Cross-cutting concerns that need to be accessible throughout the app
 
 **Owns:**
+
 - Authentication context (current user, login/logout)
 - Theme context (dark/light mode)
 - Organization context (current org, switching)
@@ -176,11 +183,13 @@ function CanvasNode({ nodeId }: { nodeId: string }) {
 **Location:** `src/lib/providers/*.tsx` or `src/contexts/*.tsx`
 
 **Why Context:**
+
 - Avoids prop drilling for universal concerns
 - Natural React pattern for app-wide state
 - Easy to compose multiple contexts
 
 **Example:**
+
 ```typescript
 // ✅ CORRECT: Use Context for cross-cutting concerns
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -212,6 +221,7 @@ export function useAuth() {
 **Purpose:** Ephemeral UI state that doesn't need to be shared
 
 **Owns:**
+
 - Form input values (before submission)
 - Dropdown open/closed
 - Modal visibility
@@ -220,6 +230,7 @@ export function useAuth() {
 - Local validation errors
 
 **Example:**
+
 ```typescript
 // ✅ CORRECT: Use useState for local UI state
 function CreateProjectDialog() {
@@ -261,21 +272,21 @@ function CreateProjectDialog() {
 const useCanvasStore = create((set) => ({
   workflow: null, // ❌ This is server data!
   selectedNodes: [],
-}))
+}));
 
 // ✅ CORRECT: Reference server data by ID only
 const useCanvasStore = create((set) => ({
   selectedNodes: [], // ✅ Only IDs
-}))
+}));
 
 // ✅ CORRECT: Fetch full data from React Query
 function CanvasView({ projectId }: { projectId: string }) {
-  const selectedNodes = useCanvasStore(state => state.selectedNodes)
-  const { data: workflow } = useProject(projectId) // ✅ From React Query
+  const selectedNodes = useCanvasStore((state) => state.selectedNodes);
+  const { data: workflow } = useProject(projectId); // ✅ From React Query
 
-  const selectedActions = workflow?.actions.filter(
-    action => selectedNodes.includes(action.id)
-  )
+  const selectedActions = workflow?.actions.filter((action) =>
+    selectedNodes.includes(action.id)
+  );
 }
 ```
 
@@ -288,22 +299,25 @@ User Interaction → Zustand (UI update) + React Query Mutation (server update)
 ```
 
 **Example:**
+
 ```typescript
 // ✅ CORRECT: Update both UI state and server data
 function NodeEditor({ nodeId }: { nodeId: string }) {
-  const updateProject = useUpdateProject()
-  const selectNode = useCanvasStore(state => state.selectNode)
+  const updateProject = useUpdateProject();
+  const selectNode = useCanvasStore((state) => state.selectNode);
 
   const handleClick = () => {
     // Update UI state immediately (optimistic)
-    selectNode(nodeId)
+    selectNode(nodeId);
 
     // If modifying server data, use React Query mutation
     updateProject.mutate({
       id: projectId,
-      data: { /* updates */ }
-    })
-  }
+      data: {
+        /* updates */
+      },
+    });
+  };
 }
 ```
 
@@ -340,30 +354,30 @@ function SelectionCount() {
 ```typescript
 // ✅ CORRECT: Optimistic update with rollback
 export function useUpdateProject() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ id, data }) => {
-      return await projectService.updateProject(id, data)
+      return await projectService.updateProject(id, data);
     },
 
     // Update UI immediately (before server responds)
     onMutate: async ({ id, data }) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: projectKeys.detail(id) })
+      await queryClient.cancelQueries({ queryKey: projectKeys.detail(id) });
 
       // Snapshot previous value
-      const previousProject = queryClient.getQueryData(projectKeys.detail(id))
+      const previousProject = queryClient.getQueryData(projectKeys.detail(id));
 
       // Optimistically update
       if (previousProject) {
         queryClient.setQueryData(projectKeys.detail(id), {
           ...previousProject,
           ...data,
-        })
+        });
       }
 
-      return { previousProject, id }
+      return { previousProject, id };
     },
 
     // Rollback on error
@@ -372,15 +386,15 @@ export function useUpdateProject() {
         queryClient.setQueryData(
           projectKeys.detail(context.id),
           context.previousProject
-        )
+        );
       }
     },
 
     // Refetch on success
     onSuccess: (_data, { id }) => {
-      queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) })
+      queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) });
     },
-  })
+  });
 }
 ```
 
@@ -399,29 +413,32 @@ export function useUpdateProject() {
    - Current execution ID, not full execution data
 
 3. **Use query keys consistently**
+
    ```typescript
    // ✅ CORRECT: Organized query key factory
    export const projectKeys = {
-     all: ['projects'] as const,
-     lists: () => [...projectKeys.all, 'list'] as const,
-     detail: (id: string) => [...projectKeys.all, 'detail', id] as const,
-   }
+     all: ["projects"] as const,
+     lists: () => [...projectKeys.all, "list"] as const,
+     detail: (id: string) => [...projectKeys.all, "detail", id] as const,
+   };
    ```
 
 4. **Invalidate queries after mutations**
+
    ```typescript
    onSuccess: () => {
-     queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
-   }
+     queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+   };
    ```
 
 5. **Use selective Zustand subscriptions**
+
    ```typescript
    // ✅ CORRECT: Only re-render when selectedNodes changes
-   const selectedNodes = useCanvasStore(state => state.selectedNodes)
+   const selectedNodes = useCanvasStore((state) => state.selectedNodes);
 
    // ❌ WRONG: Re-renders on ANY store change
-   const store = useCanvasStore()
+   const store = useCanvasStore();
    ```
 
 6. **Use Zustand middleware**
@@ -430,6 +447,7 @@ export function useUpdateProject() {
    - `immer`: Immutable updates with mutable syntax
 
 7. **Handle loading and error states**
+
    ```typescript
    const { data, isLoading, error } = useProjects()
 
@@ -441,61 +459,66 @@ export function useUpdateProject() {
 ### ❌ DON'T
 
 1. **Don't duplicate server data in Zustand**
+
    ```typescript
    // ❌ WRONG
    const useCanvasStore = create((set) => ({
      workflow: null, // This should be in React Query!
-   }))
+   }));
    ```
 
 2. **Don't fetch in Zustand actions**
+
    ```typescript
    // ❌ WRONG
    const useCanvasStore = create((set) => ({
      loadWorkflow: async (id: string) => {
-       const workflow = await fetch(`/api/projects/${id}`)
-       set({ workflow }) // ❌ Don't do this!
-     }
-   }))
+       const workflow = await fetch(`/api/projects/${id}`);
+       set({ workflow }); // ❌ Don't do this!
+     },
+   }));
    ```
 
 3. **Don't manually manage loading states for server data**
+
    ```typescript
    // ❌ WRONG: React Query does this automatically!
-   const [isLoading, setIsLoading] = useState(false)
-   const [projects, setProjects] = useState([])
+   const [isLoading, setIsLoading] = useState(false);
+   const [projects, setProjects] = useState([]);
 
    useEffect(() => {
-     setIsLoading(true)
-     fetch('/api/projects')
-       .then(res => res.json())
+     setIsLoading(true);
+     fetch("/api/projects")
+       .then((res) => res.json())
        .then(setProjects)
-       .finally(() => setIsLoading(false))
-   }, [])
+       .finally(() => setIsLoading(false));
+   }, []);
 
    // ✅ CORRECT: Use React Query
-   const { data: projects, isLoading } = useProjects()
+   const { data: projects, isLoading } = useProjects();
    ```
 
 4. **Don't store derived state**
+
    ```typescript
    // ❌ WRONG
    const useCanvasStore = create((set) => ({
      selectedNodes: [],
      selectedCount: 0, // Derived from selectedNodes.length
-   }))
+   }));
    ```
 
 5. **Don't use Context for frequently changing state**
+
    ```typescript
    // ❌ WRONG: Mouse position changes frequently
-   const MouseContext = createContext({ x: 0, y: 0 })
+   const MouseContext = createContext({ x: 0, y: 0 });
 
    // ✅ CORRECT: Use Zustand or useState
    const useMouseStore = create((set) => ({
      position: { x: 0, y: 0 },
      setPosition: (position) => set({ position }),
-   }))
+   }));
    ```
 
 ---
@@ -514,27 +537,27 @@ const useCanvasStore = create((set, get) => ({
   selectedNodes: [],
 
   deleteSelected: (workflow: Workflow) => {
-    const { selectedNodes } = get()
+    const { selectedNodes } = get();
     const updatedActions = workflow.actions.filter(
-      action => !selectedNodes.includes(action.id)
-    )
+      (action) => !selectedNodes.includes(action.id)
+    );
     // Return updated workflow for React Query mutation
-    return { ...workflow, actions: updatedActions }
+    return { ...workflow, actions: updatedActions };
   },
-}))
+}));
 
 // In component:
 function Canvas({ projectId }: { projectId: string }) {
-  const { data: workflow } = useProject(projectId)
-  const updateProject = useUpdateProject()
-  const deleteSelected = useCanvasStore(state => state.deleteSelected)
+  const { data: workflow } = useProject(projectId);
+  const updateProject = useUpdateProject();
+  const deleteSelected = useCanvasStore((state) => state.deleteSelected);
 
   const handleDelete = () => {
-    if (!workflow) return
+    if (!workflow) return;
 
-    const updated = deleteSelected(workflow)
-    updateProject.mutate({ id: projectId, data: updated })
-  }
+    const updated = deleteSelected(workflow);
+    updateProject.mutate({ id: projectId, data: updated });
+  };
 }
 ```
 
@@ -546,29 +569,29 @@ function Canvas({ projectId }: { projectId: string }) {
 
 ```typescript
 export function useUpdateProject() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ id, data }) => {
-      return await projectService.updateProject(id, data)
+      return await projectService.updateProject(id, data);
     },
 
     onMutate: async ({ id, data }) => {
       // Cancel refetches
-      await queryClient.cancelQueries({ queryKey: projectKeys.detail(id) })
+      await queryClient.cancelQueries({ queryKey: projectKeys.detail(id) });
 
       // Snapshot
-      const previous = queryClient.getQueryData(projectKeys.detail(id))
+      const previous = queryClient.getQueryData(projectKeys.detail(id));
 
       // Optimistic update
       if (previous) {
         queryClient.setQueryData(projectKeys.detail(id), {
           ...previous,
           ...data,
-        })
+        });
       }
 
-      return { previous, id }
+      return { previous, id };
     },
 
     // Rollback on error
@@ -577,15 +600,15 @@ export function useUpdateProject() {
         queryClient.setQueryData(
           projectKeys.detail(context.id),
           context.previous
-        )
+        );
       }
     },
 
     // Refetch on success
     onSuccess: (_data, { id }) => {
-      queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) })
+      queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) });
     },
-  })
+  });
 }
 ```
 
@@ -722,6 +745,7 @@ function ProjectList() {
 ### Migrating from Zustand to React Query
 
 **Before: Server data in Zustand**
+
 ```typescript
 // ❌ OLD: Server data in Zustand
 const useProjectStore = create((set) => ({
@@ -756,6 +780,7 @@ function ProjectList() {
 ```
 
 **After: Server data in React Query**
+
 ```typescript
 // ✅ NEW: Server data in React Query
 // 1. Create React Query hook (hooks/use-projects.ts)
@@ -817,11 +842,13 @@ function ProjectList() {
 ### Moving from Context to Zustand
 
 **When to migrate:**
+
 - Context causes unnecessary re-renders
 - State changes frequently (e.g., canvas viewport)
 - Performance becomes an issue
 
 **Before: Context with re-render issues**
+
 ```typescript
 // ❌ OLD: Context causes all consumers to re-render
 const CanvasContext = createContext({
@@ -849,6 +876,7 @@ function CanvasProvider({ children }) {
 ```
 
 **After: Zustand with selective subscriptions**
+
 ```typescript
 // ✅ NEW: Zustand allows selective subscriptions
 const useCanvasStore = create((set) => ({
@@ -883,17 +911,18 @@ function SelectionCount() {
 **Cause:** Forgot to invalidate queries
 
 **Solution:**
+
 ```typescript
-const updateProject = useUpdateProject()
+const updateProject = useUpdateProject();
 
 return useMutation({
   mutationFn: updateProjectAPI,
   onSuccess: () => {
     // ✅ Invalidate to trigger refetch
-    queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
-    queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) })
+    queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+    queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) });
   },
-})
+});
 ```
 
 ### Issue: Infinite Re-renders
@@ -903,27 +932,28 @@ return useMutation({
 **Cause:** Creating new objects in selectors
 
 **Solution:**
+
 ```typescript
 // ❌ WRONG: Creates new object every time
-const state = useCanvasStore(state => ({
+const state = useCanvasStore((state) => ({
   viewport: state.viewport,
   selectedNodes: state.selectedNodes,
-}))
+}));
 
 // ✅ CORRECT: Use separate selectors
-const viewport = useCanvasStore(state => state.viewport)
-const selectedNodes = useCanvasStore(state => state.selectedNodes)
+const viewport = useCanvasStore((state) => state.viewport);
+const selectedNodes = useCanvasStore((state) => state.selectedNodes);
 
 // ✅ CORRECT: Use shallow equality
-import { shallow } from 'zustand/shallow'
+import { shallow } from "zustand/shallow";
 
 const { viewport, selectedNodes } = useCanvasStore(
-  state => ({
+  (state) => ({
     viewport: state.viewport,
     selectedNodes: state.selectedNodes,
   }),
   shallow
-)
+);
 ```
 
 ### Issue: Query Not Refetching
@@ -933,20 +963,21 @@ const { viewport, selectedNodes } = useCanvasStore(
 **Cause:** Query key not changing or staleTime too long
 
 **Solution:**
+
 ```typescript
 // ✅ CORRECT: Include dependencies in query key
 const { data } = useQuery({
-  queryKey: ['project', projectId], // Changes when projectId changes
+  queryKey: ["project", projectId], // Changes when projectId changes
   queryFn: () => fetchProject(projectId),
-})
+});
 
 // ✅ CORRECT: Reduce staleTime for frequently changing data
 const { data } = useQuery({
-  queryKey: ['execution', executionId],
+  queryKey: ["execution", executionId],
   queryFn: () => fetchExecution(executionId),
   staleTime: 0, // Always fetch on mount
   refetchInterval: 1000, // Poll every second
-})
+});
 ```
 
 ### Issue: Zustand State Not Persisting
@@ -956,9 +987,10 @@ const { data } = useQuery({
 **Cause:** Missing persist middleware
 
 **Solution:**
+
 ```typescript
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 const useCanvasStore = create(
   persist(
@@ -967,14 +999,14 @@ const useCanvasStore = create(
       setViewport: (viewport) => set({ viewport }),
     }),
     {
-      name: 'canvas-storage', // localStorage key
+      name: "canvas-storage", // localStorage key
       partialize: (state) => ({
         // Only persist these fields
         viewport: state.viewport,
       }),
     }
   )
-)
+);
 ```
 
 ### Issue: React Query Mutations Not Working
@@ -984,20 +1016,21 @@ const useCanvasStore = create(
 **Cause:** Not invalidating queries or missing optimistic update
 
 **Solution:**
+
 ```typescript
 const updateProject = useMutation({
   mutationFn: updateProjectAPI,
 
   // Option 1: Invalidate and refetch
   onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) })
+    queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) });
   },
 
   // Option 2: Update cache directly
   onSuccess: (newData) => {
-    queryClient.setQueryData(projectKeys.detail(id), newData)
+    queryClient.setQueryData(projectKeys.detail(id), newData);
   },
-})
+});
 ```
 
 ### React Query DevTools
@@ -1021,6 +1054,7 @@ export function QueryProvider({ children }) {
 ```
 
 **DevTools Features:**
+
 - View all queries and their state
 - Inspect cached data
 - Manually trigger refetch
@@ -1028,6 +1062,7 @@ export function QueryProvider({ children }) {
 - Debug stale/fresh data
 
 **Usage:**
+
 1. Open DevTools (bottom-right corner in dev mode)
 2. Click on a query to inspect
 3. View query state, data, error
@@ -1043,53 +1078,53 @@ export function QueryProvider({ children }) {
 ```typescript
 // Fetch data
 useQuery({
-  queryKey: ['projects'],
+  queryKey: ["projects"],
   queryFn: fetchProjects,
   staleTime: 60000, // Data fresh for 1 minute
   refetchOnWindowFocus: true,
   retry: 3,
-})
+});
 
 // Fetch dependent data
 useQuery({
-  queryKey: ['project', projectId],
+  queryKey: ["project", projectId],
   queryFn: () => fetchProject(projectId),
   enabled: !!projectId, // Only fetch if projectId exists
-})
+});
 
 // Create/Update/Delete
 useMutation({
   mutationFn: updateProject,
   onMutate: async (variables) => {
     // Optimistic update
-    await queryClient.cancelQueries({ queryKey: ['projects'] })
-    const previous = queryClient.getQueryData(['projects'])
-    queryClient.setQueryData(['projects'], newData)
-    return { previous }
+    await queryClient.cancelQueries({ queryKey: ["projects"] });
+    const previous = queryClient.getQueryData(["projects"]);
+    queryClient.setQueryData(["projects"], newData);
+    return { previous };
   },
   onError: (err, variables, context) => {
     // Rollback
-    queryClient.setQueryData(['projects'], context.previous)
+    queryClient.setQueryData(["projects"], context.previous);
   },
   onSuccess: () => {
     // Refetch
-    queryClient.invalidateQueries({ queryKey: ['projects'] })
+    queryClient.invalidateQueries({ queryKey: ["projects"] });
   },
-})
+});
 
 // Query Client methods
-queryClient.invalidateQueries({ queryKey: ['projects'] })
-queryClient.setQueryData(['projects', id], newData)
-queryClient.getQueryData(['projects', id])
-queryClient.removeQueries({ queryKey: ['projects'] })
+queryClient.invalidateQueries({ queryKey: ["projects"] });
+queryClient.setQueryData(["projects", id], newData);
+queryClient.getQueryData(["projects", id]);
+queryClient.removeQueries({ queryKey: ["projects"] });
 ```
 
 ### Zustand Store
 
 ```typescript
-import { create } from 'zustand'
-import { devtools, persist } from 'zustand/middleware'
-import { immer } from 'zustand/middleware/immer'
+import { create } from "zustand";
+import { devtools, persist } from "zustand/middleware";
+import { immer } from "zustand/middleware/immer";
 
 const useStore = create(
   devtools(
@@ -1100,38 +1135,42 @@ const useStore = create(
         items: [],
 
         // Actions
-        increment: () => set(state => { state.count++ }),
-        addItem: (item) => set(state => {
-          state.items.push(item)
-        }),
+        increment: () =>
+          set((state) => {
+            state.count++;
+          }),
+        addItem: (item) =>
+          set((state) => {
+            state.items.push(item);
+          }),
 
         // Computed
         getTotal: () => get().items.reduce((sum, item) => sum + item.value, 0),
       })),
       {
-        name: 'storage-key',
+        name: "storage-key",
         partialize: (state) => ({ count: state.count }),
       }
     ),
-    { name: 'MyStore' }
+    { name: "MyStore" }
   )
-)
+);
 
 // Usage
 function Component() {
   // ✅ Selective subscription
-  const count = useStore(state => state.count)
-  const increment = useStore(state => state.increment)
+  const count = useStore((state) => state.count);
+  const increment = useStore((state) => state.increment);
 
   // ❌ Re-renders on any change
-  const store = useStore()
+  const store = useStore();
 
   // ✅ Multiple values with shallow equality
-  import { shallow } from 'zustand/shallow'
+  import { shallow } from "zustand/shallow";
   const { count, increment } = useStore(
-    state => ({ count: state.count, increment: state.increment }),
+    (state) => ({ count: state.count, increment: state.increment }),
     shallow
-  )
+  );
 }
 ```
 
@@ -1139,27 +1178,25 @@ function Component() {
 
 ```typescript
 // Flat structure
-['projects']
-['projects', 'list']
-['projects', 'detail', projectId]
+["projects"][("projects", "list")][("projects", "detail", projectId)];
 
 // Nested structure
 export const projectKeys = {
-  all: ['projects'] as const,
-  lists: () => [...projectKeys.all, 'list'] as const,
+  all: ["projects"] as const,
+  lists: () => [...projectKeys.all, "list"] as const,
   list: (filters) => [...projectKeys.lists(), { filters }] as const,
-  details: () => [...projectKeys.all, 'detail'] as const,
+  details: () => [...projectKeys.all, "detail"] as const,
   detail: (id: string) => [...projectKeys.details(), id] as const,
-}
+};
 
 // Invalidate all projects
-queryClient.invalidateQueries({ queryKey: projectKeys.all })
+queryClient.invalidateQueries({ queryKey: projectKeys.all });
 
 // Invalidate project lists
-queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
+queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
 
 // Invalidate specific project
-queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) })
+queryClient.invalidateQueries({ queryKey: projectKeys.detail(id) });
 ```
 
 ### Common Store Patterns
@@ -1170,24 +1207,25 @@ const useSelectionStore = create((set) => ({
   selectedIds: [],
   selectOne: (id) => set({ selectedIds: [id] }),
   selectMany: (ids) => set({ selectedIds: ids }),
-  toggleSelection: (id) => set((state) => ({
-    selectedIds: state.selectedIds.includes(id)
-      ? state.selectedIds.filter(i => i !== id)
-      : [...state.selectedIds, id],
-  })),
+  toggleSelection: (id) =>
+    set((state) => ({
+      selectedIds: state.selectedIds.includes(id)
+        ? state.selectedIds.filter((i) => i !== id)
+        : [...state.selectedIds, id],
+    })),
   clearSelection: () => set({ selectedIds: [] }),
-}))
+}));
 
 // UI state
 const useUIStore = create((set) => ({
   isOpen: false,
-  activeTab: 'home',
-  theme: 'light',
+  activeTab: "home",
+  theme: "light",
 
   toggle: () => set((state) => ({ isOpen: !state.isOpen })),
   setTab: (tab) => set({ activeTab: tab }),
   setTheme: (theme) => set({ theme }),
-}))
+}));
 
 // Viewport state
 const useViewportStore = create((set) => ({
@@ -1200,7 +1238,7 @@ const useViewportStore = create((set) => ({
   zoomIn: () => set((state) => ({ zoom: state.zoom * 1.2 })),
   zoomOut: () => set((state) => ({ zoom: state.zoom / 1.2 })),
   reset: () => set({ x: 0, y: 0, zoom: 1 }),
-}))
+}));
 ```
 
 ---
@@ -1217,6 +1255,7 @@ const useViewportStore = create((set) => ({
 **Questions or Issues?**
 
 If you encounter state management issues not covered in this guide:
+
 1. Check React Query DevTools (bottom-right in dev mode)
 2. Check Zustand DevTools (Redux DevTools browser extension)
 3. Review existing hooks in `src/hooks/` for examples

@@ -22,8 +22,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
-from app.models.capture import HistoricalResult
 from app.models.snapshot import SnapshotAction, SnapshotRun
+from app.models.video_capture import HistoricalResult
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

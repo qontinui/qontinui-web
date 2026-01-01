@@ -2,16 +2,23 @@
 
 This service provides CRUD operations for RAG elements, states, workflows,
 and transitions stored in the project's rag_config JSON field.
+
+This module acts as a facade, delegating to specialized modules:
+- entity_crud: Generic CRUD operations for elements, states, transitions
+- embedding_processor: Embedding results processing and storage
 """
 
+from collections.abc import Callable
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.project import get_project, update_project
 from app.schemas.project import ProjectUpdate
+from app.services.rag.embedding_processor import embedding_processor
+from app.services.rag.entity_crud import element_crud, state_crud, transition_crud
 
 logger = structlog.get_logger(__name__)
 
@@ -22,11 +29,18 @@ class RAGBuilderService:
 
     Stores RAG elements, states, workflows, and transitions in the
     project's rag_config JSON field.
+
+    This class acts as a facade, maintaining the public API while
+    delegating to specialized modules for implementation.
     """
 
     def __init__(self) -> None:
         """Initialize the RAG builder service."""
         pass
+
+    # ============================================================================
+    # Config Operations
+    # ============================================================================
 
     async def get_rag_config(
         self, db: AsyncSession, project_id: UUID
@@ -102,26 +116,9 @@ class RAGBuilderService:
         Returns:
             Created element with generated ID
         """
-        rag_config = await self.get_rag_config(db, project_id)
-
-        # Generate ID if not provided
-        if "id" not in element_data:
-            element_data["id"] = str(uuid4())
-
-        # Initialize elements list if not present
-        if "elements" not in rag_config:
-            rag_config["elements"] = []
-
-        rag_config["elements"].append(element_data)
-        await self.update_rag_config(db, project_id, rag_config)
-
-        logger.info(
-            "rag_element_created",
-            project_id=str(project_id),
-            element_id=element_data["id"],
+        return await element_crud.create(
+            db, project_id, element_data, self.get_rag_config, self.update_rag_config
         )
-
-        return element_data
 
     async def get_element(
         self, db: AsyncSession, project_id: UUID, element_id: str
@@ -137,15 +134,7 @@ class RAGBuilderService:
         Returns:
             Element data or None if not found
         """
-        rag_config = await self.get_rag_config(db, project_id)
-        elements = rag_config.get("elements", [])
-
-        for element in elements:
-            if element.get("id") == element_id:
-                result: dict[str, Any] = element
-                return result
-
-        return None
+        return await element_crud.get(db, project_id, element_id, self.get_rag_config)
 
     async def list_elements(
         self, db: AsyncSession, project_id: UUID
@@ -160,9 +149,7 @@ class RAGBuilderService:
         Returns:
             List of elements
         """
-        rag_config = await self.get_rag_config(db, project_id)
-        elements_result: list[dict[str, Any]] = rag_config.get("elements", [])
-        return elements_result
+        return await element_crud.list(db, project_id, self.get_rag_config)
 
     async def update_element(
         self,
@@ -183,25 +170,14 @@ class RAGBuilderService:
         Returns:
             Updated element or None if not found
         """
-        rag_config = await self.get_rag_config(db, project_id)
-        elements = rag_config.get("elements", [])
-
-        for i, element in enumerate(elements):
-            if element.get("id") == element_id:
-                # Preserve ID
-                element_data["id"] = element_id
-                elements[i] = element_data
-                await self.update_rag_config(db, project_id, rag_config)
-
-                logger.info(
-                    "rag_element_updated",
-                    project_id=str(project_id),
-                    element_id=element_id,
-                )
-
-                return element_data
-
-        return None
+        return await element_crud.update(
+            db,
+            project_id,
+            element_id,
+            element_data,
+            self.get_rag_config,
+            self.update_rag_config,
+        )
 
     async def delete_element(
         self, db: AsyncSession, project_id: UUID, element_id: str
@@ -217,23 +193,9 @@ class RAGBuilderService:
         Returns:
             True if deleted, False if not found
         """
-        rag_config = await self.get_rag_config(db, project_id)
-        elements = rag_config.get("elements", [])
-
-        for i, element in enumerate(elements):
-            if element.get("id") == element_id:
-                elements.pop(i)
-                await self.update_rag_config(db, project_id, rag_config)
-
-                logger.info(
-                    "rag_element_deleted",
-                    project_id=str(project_id),
-                    element_id=element_id,
-                )
-
-                return True
-
-        return False
+        return await element_crud.delete(
+            db, project_id, element_id, self.get_rag_config, self.update_rag_config
+        )
 
     # ============================================================================
     # State CRUD Operations
@@ -243,44 +205,21 @@ class RAGBuilderService:
         self, db: AsyncSession, project_id: UUID, state_data: dict[str, Any]
     ) -> dict[str, Any]:
         """Create a new RAG state."""
-        rag_config = await self.get_rag_config(db, project_id)
-
-        if "id" not in state_data:
-            state_data["id"] = str(uuid4())
-
-        if "states" not in rag_config:
-            rag_config["states"] = []
-
-        rag_config["states"].append(state_data)
-        await self.update_rag_config(db, project_id, rag_config)
-
-        logger.info(
-            "rag_state_created", project_id=str(project_id), state_id=state_data["id"]
+        return await state_crud.create(
+            db, project_id, state_data, self.get_rag_config, self.update_rag_config
         )
-
-        return state_data
 
     async def get_state(
         self, db: AsyncSession, project_id: UUID, state_id: str
     ) -> dict[str, Any] | None:
         """Get a RAG state by ID."""
-        rag_config = await self.get_rag_config(db, project_id)
-        states = rag_config.get("states", [])
-
-        for state in states:
-            if state.get("id") == state_id:
-                result: dict[str, Any] = state
-                return result
-
-        return None
+        return await state_crud.get(db, project_id, state_id, self.get_rag_config)
 
     async def list_states(
         self, db: AsyncSession, project_id: UUID
     ) -> list[dict[str, Any]]:
         """List all RAG states in a project."""
-        rag_config = await self.get_rag_config(db, project_id)
-        states_result: list[dict[str, Any]] = rag_config.get("states", [])
-        return states_result
+        return await state_crud.list(db, project_id, self.get_rag_config)
 
     async def update_state(
         self,
@@ -290,42 +229,22 @@ class RAGBuilderService:
         state_data: dict[str, Any],
     ) -> dict[str, Any] | None:
         """Update a RAG state."""
-        rag_config = await self.get_rag_config(db, project_id)
-        states = rag_config.get("states", [])
-
-        for i, state in enumerate(states):
-            if state.get("id") == state_id:
-                state_data["id"] = state_id
-                states[i] = state_data
-                await self.update_rag_config(db, project_id, rag_config)
-
-                logger.info(
-                    "rag_state_updated", project_id=str(project_id), state_id=state_id
-                )
-
-                return state_data
-
-        return None
+        return await state_crud.update(
+            db,
+            project_id,
+            state_id,
+            state_data,
+            self.get_rag_config,
+            self.update_rag_config,
+        )
 
     async def delete_state(
         self, db: AsyncSession, project_id: UUID, state_id: str
     ) -> bool:
         """Delete a RAG state."""
-        rag_config = await self.get_rag_config(db, project_id)
-        states = rag_config.get("states", [])
-
-        for i, state in enumerate(states):
-            if state.get("id") == state_id:
-                states.pop(i)
-                await self.update_rag_config(db, project_id, rag_config)
-
-                logger.info(
-                    "rag_state_deleted", project_id=str(project_id), state_id=state_id
-                )
-
-                return True
-
-        return False
+        return await state_crud.delete(
+            db, project_id, state_id, self.get_rag_config, self.update_rag_config
+        )
 
     # ============================================================================
     # Transition CRUD Operations
@@ -335,46 +254,23 @@ class RAGBuilderService:
         self, db: AsyncSession, project_id: UUID, transition_data: dict[str, Any]
     ) -> dict[str, Any]:
         """Create a new RAG transition."""
-        rag_config = await self.get_rag_config(db, project_id)
-
-        if "id" not in transition_data:
-            transition_data["id"] = str(uuid4())
-
-        if "transitions" not in rag_config:
-            rag_config["transitions"] = []
-
-        rag_config["transitions"].append(transition_data)
-        await self.update_rag_config(db, project_id, rag_config)
-
-        logger.info(
-            "rag_transition_created",
-            project_id=str(project_id),
-            transition_id=transition_data["id"],
+        return await transition_crud.create(
+            db, project_id, transition_data, self.get_rag_config, self.update_rag_config
         )
-
-        return transition_data
 
     async def get_transition(
         self, db: AsyncSession, project_id: UUID, transition_id: str
     ) -> dict[str, Any] | None:
         """Get a RAG transition by ID."""
-        rag_config = await self.get_rag_config(db, project_id)
-        transitions = rag_config.get("transitions", [])
-
-        for transition in transitions:
-            if transition.get("id") == transition_id:
-                result: dict[str, Any] = transition
-                return result
-
-        return None
+        return await transition_crud.get(
+            db, project_id, transition_id, self.get_rag_config
+        )
 
     async def list_transitions(
         self, db: AsyncSession, project_id: UUID
     ) -> list[dict[str, Any]]:
         """List all RAG transitions in a project."""
-        rag_config = await self.get_rag_config(db, project_id)
-        transitions_result: list[dict[str, Any]] = rag_config.get("transitions", [])
-        return transitions_result
+        return await transition_crud.list(db, project_id, self.get_rag_config)
 
     async def update_transition(
         self,
@@ -384,46 +280,22 @@ class RAGBuilderService:
         transition_data: dict[str, Any],
     ) -> dict[str, Any] | None:
         """Update a RAG transition."""
-        rag_config = await self.get_rag_config(db, project_id)
-        transitions = rag_config.get("transitions", [])
-
-        for i, transition in enumerate(transitions):
-            if transition.get("id") == transition_id:
-                transition_data["id"] = transition_id
-                transitions[i] = transition_data
-                await self.update_rag_config(db, project_id, rag_config)
-
-                logger.info(
-                    "rag_transition_updated",
-                    project_id=str(project_id),
-                    transition_id=transition_id,
-                )
-
-                return transition_data
-
-        return None
+        return await transition_crud.update(
+            db,
+            project_id,
+            transition_id,
+            transition_data,
+            self.get_rag_config,
+            self.update_rag_config,
+        )
 
     async def delete_transition(
         self, db: AsyncSession, project_id: UUID, transition_id: str
     ) -> bool:
         """Delete a RAG transition."""
-        rag_config = await self.get_rag_config(db, project_id)
-        transitions = rag_config.get("transitions", [])
-
-        for i, transition in enumerate(transitions):
-            if transition.get("id") == transition_id:
-                transitions.pop(i)
-                await self.update_rag_config(db, project_id, rag_config)
-
-                logger.info(
-                    "rag_transition_deleted",
-                    project_id=str(project_id),
-                    transition_id=transition_id,
-                )
-
-                return True
-
-        return False
+        return await transition_crud.delete(
+            db, project_id, transition_id, self.get_rag_config, self.update_rag_config
+        )
 
     # ============================================================================
     # Search Operations
@@ -474,3 +346,54 @@ class RAGBuilderService:
         )
 
         return matching_elements
+
+    # ============================================================================
+    # Embedding Results Processing
+    # ============================================================================
+
+    async def process_embedding_results(
+        self,
+        db: AsyncSession,
+        project_id: UUID,
+        user_id: UUID,
+        results: list[dict[str, Any]],
+        total_processed: int,
+        successful: int,
+        failed: int,
+        extract_dimensions_fn: Callable[[str], tuple[int, int] | None] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Process embedding results from the runner and store them.
+
+        This method:
+        1. Creates a job record for tracking in the Processing History tab
+        2. Applies embeddings to the project configuration
+        3. Stores embeddings in the project_embeddings table for RAG Dashboard
+
+        Args:
+            db: Database session
+            project_id: Project ID
+            user_id: User who triggered the processing
+            results: List of embedding results from runner
+            total_processed: Total count processed by runner
+            successful: Successful count from runner
+            failed: Failed count from runner
+            extract_dimensions_fn: Optional function to extract image dimensions from data URLs
+
+        Returns:
+            Dict with applied count, failed count, and stored embeddings count
+        """
+        return await embedding_processor.process_embedding_results(
+            db,
+            project_id,
+            user_id,
+            results,
+            total_processed,
+            successful,
+            failed,
+            extract_dimensions_fn,
+        )
+
+
+# Global instance
+rag_builder_service = RAGBuilderService()

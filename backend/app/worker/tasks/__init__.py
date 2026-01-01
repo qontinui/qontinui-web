@@ -1,6 +1,5 @@
 """Background tasks package."""
 
-# Import cleanup tasks from the cleanup_tasks submodule
 import importlib.util
 
 # Import email tasks from the parent-level tasks.py module
@@ -8,12 +7,21 @@ import importlib.util
 # Since this __init__.py creates a package that shadows it, we use importlib
 from pathlib import Path
 
-from app.worker.tasks.cleanup_tasks import (
+# Import cleanup tasks from dedicated modules
+from app.worker.tasks.automation_cleanup import (
+    cleanup_old_automation_data,
+    cleanup_orphaned_sessions,
+)
+from app.worker.tasks.database_cleanup import (
     cleanup_expired_device_sessions,
     cleanup_expired_sessions,
-    cleanup_old_analytics_events,
     cleanup_token_blacklist,
 )
+from app.worker.tasks.metrics_cleanup import (
+    archive_old_analytics_to_s3,
+    cleanup_old_analytics_events,
+)
+from app.worker.tasks.storage_cleanup import cleanup_old_screenshots
 
 # Load tasks.py from parent directory
 _tasks_py_path = Path(__file__).parent.parent / "tasks.py"
@@ -40,9 +48,16 @@ __all__ = [
     "send_analytics_report_task",
     # Image processing tasks
     "process_uploaded_image",
-    # Cleanup tasks
+    # Database cleanup tasks
     "cleanup_expired_sessions",
     "cleanup_expired_device_sessions",
-    "cleanup_old_analytics_events",
     "cleanup_token_blacklist",
+    # Storage cleanup tasks
+    "cleanup_old_screenshots",
+    # Metrics cleanup tasks
+    "cleanup_old_analytics_events",
+    "archive_old_analytics_to_s3",
+    # Automation cleanup tasks
+    "cleanup_orphaned_sessions",
+    "cleanup_old_automation_data",
 ]

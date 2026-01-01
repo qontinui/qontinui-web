@@ -5,13 +5,16 @@ This document outlines the frontend improvements implemented for bundle analysis
 ## 1. Bundle Analysis
 
 ### Setup
+
 - **Package**: `@next/bundle-analyzer` v16.0.3
 - **Installation**: Added to devDependencies in package.json
 
 ### Configuration Files
 
 #### `/frontend/package.json`
+
 Added analyze script:
+
 ```json
 "scripts": {
   "analyze": "ANALYZE=true next build"
@@ -19,22 +22,27 @@ Added analyze script:
 ```
 
 #### `/frontend/next.config.js`
-Configured bundle analyzer:
-```javascript
-const withBundleAnalyzer = require('@next/bundle-analyzer')({
-  enabled: process.env.ANALYZE === 'true',
-})
 
-module.exports = withBundleAnalyzer(nextConfig)
+Configured bundle analyzer:
+
+```javascript
+const withBundleAnalyzer = require("@next/bundle-analyzer")({
+  enabled: process.env.ANALYZE === "true",
+});
+
+module.exports = withBundleAnalyzer(nextConfig);
 ```
 
 ### Usage
+
 Run bundle analysis:
+
 ```bash
 npm run analyze
 ```
 
 This will:
+
 1. Build the application
 2. Generate interactive bundle visualizations
 3. Open browser windows showing:
@@ -52,6 +60,7 @@ This will:
 **File**: `/frontend/src/components/error-boundary.tsx`
 
 **Features**:
+
 - Catches React component errors
 - Shows user-friendly error messages
 - Provides recovery options (Reset, Reload, Go Home)
@@ -59,12 +68,13 @@ This will:
 - Ready for Sentry integration in production
 
 **Usage**:
+
 ```tsx
-import { ErrorBoundary } from '@/components/error-boundary';
+import { ErrorBoundary } from "@/components/error-boundary";
 
 <ErrorBoundary>
   <YourComponent />
-</ErrorBoundary>
+</ErrorBoundary>;
 ```
 
 ### Canvas-Specific Error Boundary
@@ -72,6 +82,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 **File**: `/frontend/src/components/canvas-error-boundary.tsx`
 
 **Features**:
+
 - Specialized for canvas components (workflow canvas, state machine, etc.)
 - Detects canvas-specific errors:
   - Canvas rendering errors
@@ -82,15 +93,17 @@ import { ErrorBoundary } from '@/components/error-boundary';
 - Enhanced error logging with context
 
 **Usage**:
+
 ```tsx
-import { CanvasErrorBoundary } from '@/components/canvas-error-boundary';
+import { CanvasErrorBoundary } from "@/components/canvas-error-boundary";
 
 <CanvasErrorBoundary onReset={handleCanvasReset}>
   <WorkflowCanvas />
-</CanvasErrorBoundary>
+</CanvasErrorBoundary>;
 ```
 
 **When to Use Canvas Error Boundary**:
+
 - Workflow canvas components
 - State machine diagrams
 - Interactive graph editors
@@ -104,9 +117,11 @@ Dynamic imports reduce initial bundle size by loading components only when neede
 ### Optimized Pages
 
 #### 1. Automation Builder
+
 **File**: `/frontend/src/components/automation-builder.tsx`
 
 **Dynamically Loaded Components** (13 components):
+
 - UnifiedAutomationBuilder (~600 lines)
 - StateStructure (~789 lines)
 - ImagesManager (~620 lines)
@@ -123,15 +138,18 @@ Dynamic imports reduce initial bundle size by loading components only when neede
 - ProjectSettingsComponent (~535 lines)
 
 **Benefits**:
+
 - Initial page load only includes tab UI
 - Components load when their tab is activated
 - Reduces initial bundle by ~5000+ lines of code
 - Faster time-to-interactive
 
 #### 2. Admin Dashboard
+
 **File**: `/frontend/src/app/(app)/admin/page.tsx`
 
 **Dynamically Loaded Components** (6 components):
+
 - OverviewTab
 - UsersTab
 - ProjectsTab
@@ -140,20 +158,24 @@ Dynamic imports reduce initial bundle size by loading components only when neede
 - HealthDashboardTab
 
 **Benefits**:
+
 - Admin pages load progressively
 - Only loads the active tab's components
 - Reduces admin bundle size significantly
 
 #### 3. Analytics Page
+
 **File**: `/frontend/src/app/(app)/analytics/page.tsx`
 
 **Dynamically Loaded Components** (4 components):
+
 - MetricCard (with skeleton loader)
 - UsageChart (chart visualization)
 - StorageBreakdown (chart visualization)
 - ActivityTimeline
 
 **Benefits**:
+
 - Chart libraries (recharts) load only when needed
 - Skeleton loaders provide instant visual feedback
 - Reduces main bundle by heavy charting dependencies
@@ -175,6 +197,7 @@ const MyComponent = dynamic(
 ### Loading States
 
 All dynamic imports include loading indicators:
+
 - **Tab components**: "Loading [Component Name]..."
 - **Analytics components**: Skeleton loaders matching component size
 - **Visual feedback**: Prevents layout shift
@@ -182,12 +205,14 @@ All dynamic imports include loading indicators:
 ## Performance Impact
 
 ### Before Optimizations
+
 - Initial bundle: ~2.5MB (estimated)
 - All components loaded upfront
 - Slower initial page load
 - No bundle visibility
 
 ### After Optimizations
+
 - Initial bundle: Reduced by ~40% (estimated)
 - Components load on-demand
 - Faster time-to-interactive
@@ -215,6 +240,7 @@ All dynamic imports include loading indicators:
 ### When to Use Dynamic Imports
 
 ✅ **Good Candidates**:
+
 - Tab content (not initially visible)
 - Modal/dialog content
 - Admin-only features
@@ -223,6 +249,7 @@ All dynamic imports include loading indicators:
 - Components with heavy dependencies
 
 ❌ **Avoid for**:
+
 - Components visible on initial load
 - Small components (<50 lines)
 - Critical UI elements
@@ -231,6 +258,7 @@ All dynamic imports include loading indicators:
 ### Error Boundary Guidelines
 
 1. **Wrap high-level sections**:
+
    ```tsx
    <ErrorBoundary>
      <FeatureSection />
@@ -238,6 +266,7 @@ All dynamic imports include loading indicators:
    ```
 
 2. **Use specific boundaries for risky areas**:
+
    ```tsx
    <CanvasErrorBoundary>
      <ComplexCanvas />
@@ -283,6 +312,7 @@ All dynamic imports include loading indicators:
 ## Testing
 
 ### Bundle Analysis
+
 ```bash
 # Run bundle analyzer
 npm run analyze
@@ -292,12 +322,14 @@ npm run build
 ```
 
 ### Error Boundaries
+
 1. Test in development mode
 2. Trigger errors intentionally
 3. Verify recovery mechanisms
 4. Check error logging
 
 ### Dynamic Imports
+
 1. Test with slow 3G throttling
 2. Verify loading states appear
 3. Check component functionality
@@ -323,6 +355,7 @@ npm run build
 ## Conclusion
 
 These optimizations provide:
+
 - **Faster initial load times**
 - **Better user experience**
 - **Improved error resilience**
@@ -330,6 +363,7 @@ These optimizations provide:
 - **Foundation for future optimizations**
 
 For questions or issues, refer to:
+
 - Next.js documentation: https://nextjs.org/docs
 - Bundle Analyzer: https://www.npmjs.com/package/@next/bundle-analyzer
 - React Error Boundaries: https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary

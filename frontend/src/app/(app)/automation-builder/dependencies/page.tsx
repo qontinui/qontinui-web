@@ -217,7 +217,6 @@ function DependenciesPageInner() {
   const stats = useMemo<DependencyStats | null>(() => {
     if (workflows.length === 0) return null;
     return workflowDependencyAnalyzer.getDependencyStats(workflows);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflows]);
 
   // Get visualization data

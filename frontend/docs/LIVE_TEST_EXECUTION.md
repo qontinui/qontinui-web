@@ -45,6 +45,7 @@ Custom React hook that manages WebSocket connection to receive live test updates
 **Location**: `src/hooks/useTestingWebSocket.ts`
 
 **Features**:
+
 - Automatic reconnection with exponential backoff
 - Heartbeat mechanism (ping/pong every 30s)
 - Connection state management
@@ -57,37 +58,38 @@ Custom React hook that manages WebSocket connection to receive live test updates
 import { useTestingWebSocket } from "@/hooks/useTestingWebSocket";
 
 const {
-  state,              // "idle" | "connecting" | "running" | "completed" | "failed" | "disconnected"
-  currentState,       // Current state name in the workflow
-  currentAction,      // Current action type being executed
-  elapsedTime,        // Elapsed time in seconds
-  transitions,        // Array of TransitionUpdate objects
-  totalTransitions,   // Total expected transitions
-  successfulTransitions,  // Count of successful transitions
-  failedTransitions,  // Count of failed transitions
-  isConnected,        // WebSocket connection status
+  state, // "idle" | "connecting" | "running" | "completed" | "failed" | "disconnected"
+  currentState, // Current state name in the workflow
+  currentAction, // Current action type being executed
+  elapsedTime, // Elapsed time in seconds
+  transitions, // Array of TransitionUpdate objects
+  totalTransitions, // Total expected transitions
+  successfulTransitions, // Count of successful transitions
+  failedTransitions, // Count of failed transitions
+  isConnected, // WebSocket connection status
 } = useTestingWebSocket({
   testRunId: "test-run-uuid",
   enabled: true,
   onConnect: () => console.log("Connected"),
   onDisconnect: () => console.log("Disconnected"),
   onError: (error) => console.error("Error:", error),
-  onTransitionComplete: (transition) => console.log("Transition done:", transition),
+  onTransitionComplete: (transition) =>
+    console.log("Transition done:", transition),
   onTestComplete: (data) => console.log("Test complete:", data),
 });
 ```
 
 **WebSocket Message Types**:
 
-| Type | Description | Data Shape |
-|------|-------------|------------|
-| `test_start` | Test execution started | `{ total_transitions: number }` |
-| `transition_start` | Transition started | `{ from_state, to_state, action_type, transition_id }` |
-| `transition_complete` | Transition succeeded | `{ transition_id, duration_ms, screenshot_url, to_state }` |
-| `transition_failed` | Transition failed | `{ transition_id, duration_ms, error_message, screenshot_url }` |
-| `test_complete` | Test execution finished | `{ success: boolean, duration: number }` |
-| `test_failed` | Test execution failed | `{}` |
-| `pong` | Heartbeat response | `{}` |
+| Type                  | Description             | Data Shape                                                      |
+| --------------------- | ----------------------- | --------------------------------------------------------------- |
+| `test_start`          | Test execution started  | `{ total_transitions: number }`                                 |
+| `transition_start`    | Transition started      | `{ from_state, to_state, action_type, transition_id }`          |
+| `transition_complete` | Transition succeeded    | `{ transition_id, duration_ms, screenshot_url, to_state }`      |
+| `transition_failed`   | Transition failed       | `{ transition_id, duration_ms, error_message, screenshot_url }` |
+| `test_complete`       | Test execution finished | `{ success: boolean, duration: number }`                        |
+| `test_failed`         | Test execution failed   | `{}`                                                            |
+| `pong`                | Heartbeat response      | `{}`                                                            |
 
 ### 2. `LiveTestExecution` Component
 
@@ -96,6 +98,7 @@ Main component that displays live test execution with real-time stats and timeli
 **Location**: `src/components/testing/LiveTestExecution.tsx`
 
 **Features**:
+
 - Header with status badge and connection indicator
 - 4-panel stats grid (Elapsed Time, Current State, Current Action, Success Rate)
 - Progress bar with transition counts
@@ -107,9 +110,10 @@ Main component that displays live test execution with real-time stats and timeli
 
 ```tsx
 interface LiveTestExecutionProps {
-  testRunId?: string;          // Test run UUID (required for WebSocket connection)
-  workflowName?: string;        // Display name of the workflow
-  onComplete?: (data: {        // Callback when test completes
+  testRunId?: string; // Test run UUID (required for WebSocket connection)
+  workflowName?: string; // Display name of the workflow
+  onComplete?: (data: {
+    // Callback when test completes
     success: boolean;
     duration: number;
   }) => void;
@@ -128,7 +132,7 @@ import { LiveTestExecution } from "@/components/testing/LiveTestExecution";
     console.log("Test finished:", data.success ? "passed" : "failed");
     console.log("Duration:", data.duration, "seconds");
   }}
-/>
+/>;
 ```
 
 ### 3. `TransitionTimeline` Component
@@ -138,6 +142,7 @@ Vertical timeline displaying transitions as they execute, with expand/collapse f
 **Location**: `src/components/testing/TransitionTimeline.tsx`
 
 **Features**:
+
 - Status icons (pending, running, completed, failed)
 - Color-coded badges
 - Expandable cards with screenshots
@@ -149,9 +154,9 @@ Vertical timeline displaying transitions as they execute, with expand/collapse f
 
 ```tsx
 interface TransitionTimelineProps {
-  transitions: TransitionUpdate[];  // Array of transitions to display
-  currentTransitionId?: string;     // ID of currently executing transition
-  autoScroll?: boolean;             // Auto-scroll to current (default: true)
+  transitions: TransitionUpdate[]; // Array of transitions to display
+  currentTransitionId?: string; // ID of currently executing transition
+  autoScroll?: boolean; // Auto-scroll to current (default: true)
 }
 ```
 
@@ -185,7 +190,7 @@ import { TransitionTimeline } from "@/components/testing/TransitionTimeline";
   transitions={transitions}
   currentTransitionId={currentTransitionId}
   autoScroll={true}
-/>
+/>;
 ```
 
 ## Integration
@@ -223,7 +228,9 @@ const router = useRouter();
 // Start test and navigate to live view
 const testRunId = "abc-123";
 const workflowName = "Login Flow";
-router.push(`/testing?testRunId=${testRunId}&workflowName=${encodeURIComponent(workflowName)}`);
+router.push(
+  `/testing?testRunId=${testRunId}&workflowName=${encodeURIComponent(workflowName)}`
+);
 ```
 
 **From URL**:
@@ -277,6 +284,7 @@ ws://localhost:8000/api/v1/testing/runs/{test_run_id}/stream
 The components use Tailwind CSS with the qontinui design system:
 
 **Color Scheme**:
+
 - Primary: `#00D9FF` (cyan)
 - Secondary: `#BD00FF` (purple)
 - Success: `green-500`
@@ -414,6 +422,7 @@ async def mock_test_execution(websocket: WebSocket):
 **Symptoms**: "Disconnected" badge, no updates
 
 **Solutions**:
+
 1. Check backend is running on port 8000
 2. Verify test run ID is valid
 3. Check browser console for WebSocket errors
@@ -424,6 +433,7 @@ async def mock_test_execution(websocket: WebSocket):
 **Symptoms**: Connected but timeline stays empty
 
 **Solutions**:
+
 1. Verify backend is sending messages in correct format
 2. Check browser DevTools > Network > WS tab for messages
 3. Ensure `test_run_id` in messages matches the connected run
@@ -434,6 +444,7 @@ async def mock_test_execution(websocket: WebSocket):
 **Symptoms**: Timeline doesn't scroll to current transition
 
 **Solutions**:
+
 1. Verify `autoScroll={true}` prop is set
 2. Check that `currentTransitionId` is being set correctly
 3. Ensure timeline container has fixed height with `overflow-y-auto`
@@ -443,6 +454,7 @@ async def mock_test_execution(websocket: WebSocket):
 **Symptoms**: Browser becomes sluggish during long tests
 
 **Solutions**:
+
 1. Limit timeline to most recent 50 transitions (add pagination)
 2. Collapse old transitions automatically
 3. Disable auto-scroll for very long tests
@@ -451,6 +463,7 @@ async def mock_test_execution(websocket: WebSocket):
 ## API Reference
 
 See:
+
 - `src/hooks/useTestingWebSocket.ts` - Hook implementation
 - `src/components/testing/LiveTestExecution.tsx` - Main component
 - `src/components/testing/TransitionTimeline.tsx` - Timeline component

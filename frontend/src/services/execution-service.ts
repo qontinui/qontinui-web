@@ -302,6 +302,145 @@ export async function updateIssue(
 }
 
 // =============================================================================
+// Screenshots (list)
+// =============================================================================
+
+/**
+ * List screenshots for a run
+ */
+export async function listScreenshots(
+  runId: string,
+  params: { limit?: number; offset?: number } = {}
+): Promise<{
+  screenshots: Array<{
+    id: string;
+    run_id: string;
+    sequence_number: number;
+    screenshot_type: string;
+    image_url: string;
+    thumbnail_url?: string;
+    state_name?: string;
+    captured_at: string;
+    file_size_bytes: number;
+  }>;
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  };
+}> {
+  const searchParams = new URLSearchParams();
+  if (params.limit) searchParams.set("limit", String(params.limit));
+  if (params.offset) searchParams.set("offset", String(params.offset));
+
+  return fetchWithAuth(
+    `/api/v1/execution/runs/${runId}/screenshots?${searchParams.toString()}`
+  );
+}
+
+// =============================================================================
+// Execution Tree
+// =============================================================================
+
+/**
+ * Tree event response type
+ */
+export interface TreeEventResponse {
+  id: string;
+  run_id: string;
+  event_type: string;
+  node_id: string;
+  node_type: string;
+  node_name: string;
+  parent_node_id: string | null;
+  path: Array<{ id: string; name: string; node_type: string }>;
+  sequence: number;
+  event_timestamp: number;
+  status: string;
+  error_message: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/**
+ * Tree event list response
+ */
+export interface TreeEventListResponse {
+  events: TreeEventResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+/**
+ * Tree node type for execution tree
+ */
+export interface ExecutionTreeNode {
+  id: string;
+  node_type: string;
+  name: string;
+  timestamp: number;
+  end_timestamp?: number | null;
+  duration?: number | null;
+  status: string;
+  metadata: Record<string, unknown>;
+  error?: string | null;
+  children: ExecutionTreeNode[];
+  is_expanded: boolean;
+  level: number;
+}
+
+/**
+ * Execution tree response
+ */
+export interface ExecutionTreeResponse {
+  run_id: string;
+  root_nodes: ExecutionTreeNode[];
+  total_events: number;
+  workflow_name: string | null;
+  status: string;
+  duration_ms: number | null;
+  initial_state_ids: string[];
+}
+
+/**
+ * List tree events for an execution run
+ */
+export async function listTreeEvents(
+  runId: string,
+  params?: {
+    event_type?: string;
+    node_type?: string;
+    offset?: number;
+    limit?: number;
+  }
+): Promise<TreeEventListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.event_type) searchParams.set("event_type", params.event_type);
+  if (params?.node_type) searchParams.set("node_type", params.node_type);
+  if (params?.offset !== undefined)
+    searchParams.set("offset", String(params.offset));
+  if (params?.limit !== undefined)
+    searchParams.set("limit", String(params.limit));
+
+  const queryString = searchParams.toString();
+  return fetchWithAuth(
+    `/api/v1/execution/runs/${runId}/tree-events${queryString ? `?${queryString}` : ""}`
+  );
+}
+
+/**
+ * Get the reconstructed execution tree for a run
+ */
+export async function getExecutionTree(
+  runId: string
+): Promise<ExecutionTreeResponse> {
+  return fetchWithAuth(`/api/v1/execution/runs/${runId}/tree`);
+}
+
+// =============================================================================
 // Analytics
 // =============================================================================
 
@@ -366,15 +505,96 @@ export const executionService = {
   listActions,
   // Screenshots
   uploadScreenshot,
+  listScreenshots,
   // Issues
   reportIssues,
   listRunIssues,
   listIssues,
   getIssue,
   updateIssue,
+  // Tree
+  listTreeEvents,
+  getTree: getExecutionTree,
   // Analytics
   getTrends: getExecutionTrends,
   getReliability: getActionReliability,
+};
+
+// =============================================================================
+// Unified Execution API (Alternative interface)
+// =============================================================================
+
+/**
+ * Unified execution API with method-style interface.
+ * This provides an alternative API surface that matches the unified execution API spec.
+ */
+export const executionApi = {
+  // Runs
+  createRun: (data: ExecutionRunCreate) => createExecutionRun(data),
+
+  getRun: (runId: string) => getExecutionRun(runId),
+
+  listRuns: (params: Parameters<typeof listExecutionRuns>[0]) =>
+    listExecutionRuns(params),
+
+  completeRun: (runId: string, data: ExecutionRunComplete) =>
+    completeExecutionRun(runId, data),
+
+  cancelRun: (runId: string) => cancelExecutionRun(runId),
+
+  // Actions
+  listActions: (runId: string, params?: Parameters<typeof listActions>[1]) =>
+    listActions(runId, params),
+
+  reportActions: (runId: string, data: ActionExecutionBatch) =>
+    reportActions(runId, data),
+
+  // Screenshots
+  listScreenshots: (
+    runId: string,
+    params?: Parameters<typeof listScreenshots>[1]
+  ) => listScreenshots(runId, params),
+
+  uploadScreenshot: (
+    runId: string,
+    metadata: Parameters<typeof uploadScreenshot>[1],
+    imageFile: File
+  ) => uploadScreenshot(runId, metadata, imageFile),
+
+  // Issues
+  listIssues: (params?: Parameters<typeof listIssues>[0]) =>
+    listIssues(params ?? {}),
+
+  listRunIssues: (
+    runId: string,
+    params?: Parameters<typeof listRunIssues>[1]
+  ) => listRunIssues(runId, params),
+
+  getIssue: (issueId: string) => getIssue(issueId),
+
+  updateIssue: (issueId: string, data: ExecutionIssueUpdate) =>
+    updateIssue(issueId, data),
+
+  reportIssues: (runId: string, data: ExecutionIssueBatch) =>
+    reportIssues(runId, data),
+
+  // Analytics
+  getTrends: (params: Parameters<typeof getExecutionTrends>[0]) =>
+    getExecutionTrends(params),
+
+  getReliability: (params: Parameters<typeof getActionReliability>[0]) =>
+    getActionReliability(params),
+
+  // Tree
+  getTree: (runId: string) => getExecutionTree(runId),
+
+  listTreeEvents: (
+    runId: string,
+    params?: Parameters<typeof listTreeEvents>[1]
+  ) => listTreeEvents(runId, params),
+
+  // Workflows
+  listWorkflows: (projectId: string) => listWorkflows(projectId),
 };
 
 export default executionService;

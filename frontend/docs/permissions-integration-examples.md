@@ -5,10 +5,10 @@
 ### 1. Project Editor Component
 
 ```tsx
-import React from 'react';
-import { useProjectPermissions } from '@/hooks/useProjectPermissions';
-import { PermissionGate } from '@/components/collaboration/PermissionGate';
-import type { Project } from '@/lib/schemas';
+import React from "react";
+import { useProjectPermissions } from "@/hooks/useProjectPermissions";
+import { PermissionGate } from "@/components/collaboration/PermissionGate";
+import type { Project } from "@/lib/schemas";
 
 interface ProjectEditorProps {
   project: Project;
@@ -83,10 +83,10 @@ export function ProjectEditor({ project }: ProjectEditorProps) {
 ### 2. Project List with Permission Indicators
 
 ```tsx
-import React from 'react';
-import { useProjects } from '@/hooks/use-projects';
-import { getPermissionLabel } from '@/lib/permissions';
-import { PermissionGate } from '@/components/collaboration/PermissionGate';
+import React from "react";
+import { useProjects } from "@/hooks/use-projects";
+import { getPermissionLabel } from "@/lib/permissions";
+import { PermissionGate } from "@/components/collaboration/PermissionGate";
 
 export function ProjectList() {
   const { data: projects, isLoading } = useProjects();
@@ -102,7 +102,7 @@ export function ProjectList() {
 
           {/* Show permission level */}
           <span className="permission-badge">
-            {getPermissionLabel(project.permission_level || 'view')}
+            {getPermissionLabel(project.permission_level || "view")}
           </span>
 
           {/* Show actions based on permission */}
@@ -131,18 +131,13 @@ export function ProjectList() {
 ### 3. Collaboration Sidebar
 
 ```tsx
-import React from 'react';
-import { useCollaboration } from '@/contexts/collaboration-context';
-import { PermissionGate } from '@/components/collaboration/PermissionGate';
+import React from "react";
+import { useCollaboration } from "@/contexts/collaboration-context";
+import { PermissionGate } from "@/components/collaboration/PermissionGate";
 
 export function CollaborationSidebar({ project }) {
-  const {
-    activeUsers,
-    comments,
-    canComment,
-    canAdmin,
-    addComment,
-  } = useCollaboration();
+  const { activeUsers, comments, canComment, canAdmin, addComment } =
+    useCollaboration();
 
   return (
     <aside className="collaboration-sidebar">
@@ -176,9 +171,15 @@ export function CollaborationSidebar({ project }) {
 ### 4. Permission Management UI
 
 ```tsx
-import React, { useState } from 'react';
-import { useProjectPermissions, useIsProjectOwner } from '@/hooks/useProjectPermissions';
-import { getPermissionLevelOptions, type PermissionLevel } from '@/lib/permissions';
+import React, { useState } from "react";
+import {
+  useProjectPermissions,
+  useIsProjectOwner,
+} from "@/hooks/useProjectPermissions";
+import {
+  getPermissionLevelOptions,
+  type PermissionLevel,
+} from "@/lib/permissions";
 
 interface CollaboratorRowProps {
   collaborator: {
@@ -190,7 +191,11 @@ interface CollaboratorRowProps {
   onRemove: (id: string) => void;
 }
 
-function CollaboratorRow({ collaborator, onUpdate, onRemove }: CollaboratorRowProps) {
+function CollaboratorRow({
+  collaborator,
+  onUpdate,
+  onRemove,
+}: CollaboratorRowProps) {
   const options = getPermissionLevelOptions();
 
   return (
@@ -199,7 +204,9 @@ function CollaboratorRow({ collaborator, onUpdate, onRemove }: CollaboratorRowPr
       <td>
         <select
           value={collaborator.permission}
-          onChange={(e) => onUpdate(collaborator.id, e.target.value as PermissionLevel)}
+          onChange={(e) =>
+            onUpdate(collaborator.id, e.target.value as PermissionLevel)
+          }
         >
           {options.map(({ value, label }) => (
             <option key={value} value={value}>
@@ -218,8 +225,8 @@ function CollaboratorRow({ collaborator, onUpdate, onRemove }: CollaboratorRowPr
 export function PermissionManagement({ project, collaborators }) {
   const isOwner = useIsProjectOwner(project);
   const [newCollaborator, setNewCollaborator] = useState({
-    email: '',
-    permission: 'view' as PermissionLevel,
+    email: "",
+    permission: "view" as PermissionLevel,
   });
 
   if (!isOwner) {
@@ -229,7 +236,7 @@ export function PermissionManagement({ project, collaborators }) {
   const handleAdd = async () => {
     // API call to add collaborator
     await addCollaborator(project.id, newCollaborator);
-    setNewCollaborator({ email: '', permission: 'view' });
+    setNewCollaborator({ email: "", permission: "view" });
   };
 
   const handleUpdate = async (id: string, permission: PermissionLevel) => {
@@ -292,9 +299,9 @@ export function PermissionManagement({ project, collaborators }) {
 ### 5. Workflow Builder with Permissions
 
 ```tsx
-import React from 'react';
-import { useProjectPermissions } from '@/hooks/useProjectPermissions';
-import { PermissionGate } from '@/components/collaboration/PermissionGate';
+import React from "react";
+import { useProjectPermissions } from "@/hooks/useProjectPermissions";
+import { PermissionGate } from "@/components/collaboration/PermissionGate";
 
 export function WorkflowBuilder({ project, workflow }) {
   const { canEdit, canComment, isLoading } = useProjectPermissions(project);
@@ -306,10 +313,7 @@ export function WorkflowBuilder({ project, workflow }) {
   return (
     <div className="workflow-builder">
       {/* Canvas - always visible */}
-      <WorkflowCanvas
-        workflow={workflow}
-        readOnly={!canEdit}
-      />
+      <WorkflowCanvas workflow={workflow} readOnly={!canEdit} />
 
       {/* Editing toolbar - only if can edit */}
       <PermissionGate
@@ -321,15 +325,10 @@ export function WorkflowBuilder({ project, workflow }) {
       </PermissionGate>
 
       {/* Properties panel */}
-      <PropertiesPanel
-        workflow={workflow}
-        readOnly={!canEdit}
-      />
+      <PropertiesPanel workflow={workflow} readOnly={!canEdit} />
 
       {/* Comment overlay - if can comment */}
-      {canComment && (
-        <CommentOverlay workflowId={workflow.id} />
-      )}
+      {canComment && <CommentOverlay workflowId={workflow.id} />}
     </div>
   );
 }
@@ -338,8 +337,8 @@ export function WorkflowBuilder({ project, workflow }) {
 ### 6. Context Menu with Permission Filtering
 
 ```tsx
-import React from 'react';
-import { useProjectPermissions } from '@/hooks/useProjectPermissions';
+import React from "react";
+import { useProjectPermissions } from "@/hooks/useProjectPermissions";
 
 interface ContextMenuProps {
   project: Project;
@@ -392,11 +391,12 @@ export function ContextMenu({ project, x, y, onClose }: ContextMenuProps) {
 ### 7. Form with Permission Checks
 
 ```tsx
-import React, { useState } from 'react';
-import { useProjectPermissions } from '@/hooks/useProjectPermissions';
+import React, { useState } from "react";
+import { useProjectPermissions } from "@/hooks/useProjectPermissions";
 
 export function ProjectSettingsForm({ project }) {
-  const { canEdit, canAdmin, isOwner, isLoading } = useProjectPermissions(project);
+  const { canEdit, canAdmin, isOwner, isLoading } =
+    useProjectPermissions(project);
   const [formData, setFormData] = useState({
     name: project.name,
     description: project.description,
@@ -406,15 +406,15 @@ export function ProjectSettingsForm({ project }) {
     e.preventDefault();
 
     if (!canEdit) {
-      toast.error('You do not have permission to edit this project');
+      toast.error("You do not have permission to edit this project");
       return;
     }
 
     try {
       await updateProject(project.id, formData);
-      toast.success('Project updated');
+      toast.success("Project updated");
     } catch (error) {
-      toast.error('Failed to update project');
+      toast.error("Failed to update project");
     }
   };
 
@@ -433,7 +433,9 @@ export function ProjectSettingsForm({ project }) {
         />
         <textarea
           value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          onChange={(e) =>
+            setFormData({ ...formData, description: e.target.value })
+          }
         />
       </fieldset>
 
@@ -466,15 +468,16 @@ export function ProjectSettingsForm({ project }) {
 ### 8. Permission-aware Navigation
 
 ```tsx
-import React from 'react';
-import { useParams, Navigate } from 'react-router-dom';
-import { useProject } from '@/hooks/use-projects';
-import { useProjectPermissions } from '@/hooks/useProjectPermissions';
+import React from "react";
+import { useParams, Navigate } from "react-router-dom";
+import { useProject } from "@/hooks/use-projects";
+import { useProjectPermissions } from "@/hooks/useProjectPermissions";
 
 export function ProjectRoute({ children, requiredPermission }) {
   const { projectId } = useParams();
   const { data: project, isLoading: projectLoading } = useProject(projectId);
-  const { hasPermission, isLoading: permissionLoading } = useProjectPermissions(project);
+  const { hasPermission, isLoading: permissionLoading } =
+    useProjectPermissions(project);
 
   if (projectLoading || permissionLoading) {
     return <LoadingPage />;
@@ -516,29 +519,25 @@ export function ProjectRoute({ children, requiredPermission }) {
       </ProjectRoute>
     }
   />
-</Route>
+</Route>;
 ```
 
 ### 9. Real-time Collaboration with Permissions
 
 ```tsx
-import React, { useEffect } from 'react';
-import { useCollaboration } from '@/contexts/collaboration-context';
-import { useProjectPermissions } from '@/hooks/useProjectPermissions';
+import React, { useEffect } from "react";
+import { useCollaboration } from "@/contexts/collaboration-context";
+import { useProjectPermissions } from "@/hooks/useProjectPermissions";
 
 export function CollaborativeEditor({ project, workflow }) {
   const { canEdit, canComment } = useProjectPermissions(project);
-  const {
-    activeUsers,
-    currentLock,
-    acquireEditLock,
-    releaseEditLock,
-  } = useCollaboration();
+  const { activeUsers, currentLock, acquireEditLock, releaseEditLock } =
+    useCollaboration();
 
   // Acquire lock when entering edit mode
   useEffect(() => {
     if (canEdit) {
-      acquireEditLock('workflow', workflow.id);
+      acquireEditLock("workflow", workflow.id);
       return () => releaseEditLock();
     }
   }, [canEdit, workflow.id]);
@@ -559,10 +558,7 @@ export function CollaborativeEditor({ project, workflow }) {
       )}
 
       {/* Editor */}
-      <Editor
-        workflow={workflow}
-        readOnly={!canEdit || isLockedByOther}
-      />
+      <Editor workflow={workflow} readOnly={!canEdit || isLockedByOther} />
 
       {/* Comment system */}
       {canComment && <CommentSystem workflowId={workflow.id} />}
@@ -574,24 +570,27 @@ export function CollaborativeEditor({ project, workflow }) {
 ### 10. Utility Functions for API Calls
 
 ```tsx
-import { canUserEdit, canUserAdmin } from '@/lib/permissions';
-import { useAuth } from '@/contexts/auth-context';
+import { canUserEdit, canUserAdmin } from "@/lib/permissions";
+import { useAuth } from "@/contexts/auth-context";
 
 export async function saveWorkflow(project: Project, workflow: Workflow) {
   const { user } = useAuth();
 
   // Check permission before making API call
   if (!canUserEdit(project, user)) {
-    throw new Error('You do not have permission to edit this project');
+    throw new Error("You do not have permission to edit this project");
   }
 
-  const response = await fetch(`/api/projects/${project.id}/workflows/${workflow.id}`, {
-    method: 'PUT',
-    body: JSON.stringify(workflow),
-  });
+  const response = await fetch(
+    `/api/projects/${project.id}/workflows/${workflow.id}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(workflow),
+    }
+  );
 
   if (!response.ok) {
-    throw new Error('Failed to save workflow');
+    throw new Error("Failed to save workflow");
   }
 
   return response.json();
@@ -606,16 +605,16 @@ export async function shareProject(
 
   // Only admins can share projects
   if (!canUserAdmin(project, user)) {
-    throw new Error('You do not have permission to share this project');
+    throw new Error("You do not have permission to share this project");
   }
 
   const response = await fetch(`/api/projects/${project.id}/share`, {
-    method: 'POST',
+    method: "POST",
     body: JSON.stringify({ email, permission }),
   });
 
   if (!response.ok) {
-    throw new Error('Failed to share project');
+    throw new Error("Failed to share project");
   }
 
   return response.json();

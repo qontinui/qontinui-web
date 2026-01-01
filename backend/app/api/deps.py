@@ -134,3 +134,83 @@ async def get_current_user_from_ws(token: str) -> User:
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Database connection error",
     )
+
+
+async def get_runner_user_from_token(
+    token: str,
+    db: "AsyncSession",
+) -> User:
+    """
+    Validate JWT and return associated user for runner endpoints.
+
+    This is used by the desktop runner when making API calls.
+
+    Args:
+        token: JWT access token
+        db: Database session
+
+    Returns:
+        User object if authenticated
+
+    Raises:
+        HTTPException if authentication fails
+    """
+    from sqlalchemy import select
+
+    try:
+        # Verify it looks like a JWT (3 parts separated by dots)
+        if token.count(".") != 2:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token format",
+            )
+
+        # Decode JWT token
+        secret_key = cast(str, settings.ACCESS_SECRET_KEY)
+        payload = jwt.decode(
+            token,
+            secret_key,
+            algorithms=[settings.ALGORITHM],
+            audience="fastapi-users:auth",
+        )
+
+        # Extract user ID
+        user_id_str: str | None = payload.get("sub")
+        if not user_id_str:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+            )
+
+        user_id = UUID(user_id_str)
+
+        # Get user from database
+        result = await db.execute(select(User).where(User.id == user_id))  # type: ignore[arg-type]
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account is inactive",
+            )
+
+        return user
+
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+
+# Type annotation for forward reference
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession

@@ -40,6 +40,7 @@ import {
   User,
   Database,
   AlertCircle,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsedMenuPopover } from "./collapsed-menu-popover";
@@ -113,6 +114,14 @@ const navItems: NavItem[] = [
         description: "Global configuration values",
         icon: <Sliders size={22} />,
         route: "/automation-builder/variables",
+        color: "#BD00FF",
+      },
+      {
+        id: "contexts",
+        label: "AI Contexts",
+        description: "Domain knowledge for AI tasks",
+        icon: <BookOpen size={22} />,
+        route: "/automation-builder/contexts",
         color: "#BD00FF",
       },
       {
@@ -450,6 +459,14 @@ const navItems: NavItem[] = [
         icon: <Monitor size={22} />,
         route: "/monitor",
         color: "#10B981",
+      },
+      {
+        id: "discoveries",
+        label: "Discoveries",
+        description: "Review pending discoveries from runners",
+        icon: <Sparkles size={22} />,
+        route: "/discoveries",
+        color: "#4ECDC4",
       },
     ],
   },

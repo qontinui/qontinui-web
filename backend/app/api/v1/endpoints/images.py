@@ -138,7 +138,7 @@ async def validate_file_size(file: UploadFile) -> int:
 
     if file_size > MAX_FILE_SIZE:
         raise validation_error(
-            f"File too large. Maximum size: {MAX_FILE_SIZE / (1024*1024):.1f}MB",
+            f"File too large. Maximum size: {MAX_FILE_SIZE / (1024 * 1024):.1f}MB",
             "file",
             ErrorCode.INVALID_FILE_SIZE,
         )

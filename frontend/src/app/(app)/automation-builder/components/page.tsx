@@ -335,8 +335,7 @@ export default function ComponentLibraryPage() {
   const [activeTab, setActiveTab] = useState<
     "library" | "built-in" | "stats" | "docs"
   >("library");
-  const [, setSelectedComponent] =
-    useState<SubflowComponent | null>(null);
+  const [, setSelectedComponent] = useState<SubflowComponent | null>(null);
 
   // Computed values
   const usageStats = useMemo(

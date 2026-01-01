@@ -1,22 +1,15 @@
 """
 Package Installation Service.
 
-Manages downloading and integrating community code packages into user projects.
+Orchestrates package installation by coordinating specialized services:
+- PackageDependencyResolver: Dependency resolution and version compatibility
+- PackageValidator: Security and compatibility validation
+- PackageDownloadService: File writing and virtual environment management
 
-Features:
-- Install packages from community library
-- Dependency resolution and management
-- Version updates
-- Security validation
-- Virtual environment management
+This service maintains backward compatibility while delegating to focused services.
 """
 
-import re
-import shutil
-import subprocess
-import sys
 from datetime import datetime
-from pathlib import Path
 
 import structlog
 from sqlalchemy import select
@@ -27,89 +20,63 @@ from app.models.code_package import (
     InstallationStatus,
     PackageInstallation,
     PackageVersion,
-    SecurityScanStatus,
 )
 from app.schemas.package import (
-    DependencyInfo,
     DependencyResolutionResult,
     InstallResult,
-    SafetyCheckResult,
     UninstallResult,
     UpdateInfo,
     UpdateResult,
 )
+from app.services.package_dependency_resolver import (
+    PackageDependencyResolver,
+    package_dependency_resolver,
+)
+from app.services.package_download_service import (
+    PackageDownloadService,
+    package_download_service,
+)
+from app.services.package_validator import PackageValidator, package_validator
 from app.services.project_directory import ProjectDirectoryManager
 
 logger = structlog.get_logger(__name__)
 
 
-# ============================================================================
-# Configuration
-# ============================================================================
-
-# Maximum package size (10MB per package)
-MAX_PACKAGE_SIZE_BYTES = 10 * 1024 * 1024
-
-# Minimum free disk space required (100MB)
-MIN_FREE_DISK_SPACE_BYTES = 100 * 1024 * 1024
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-
-def validate_package_name(package: str) -> bool:
-    """
-    Validate package name follows PyPI conventions.
-
-    Allows: alphanumeric, hyphens, underscores, dots, and version specifiers.
-    This prevents command injection attacks through malicious package names.
-
-    Args:
-        package: Package specification string (e.g., "requests>=2.0")
-
-    Returns:
-        True if package name is valid, False otherwise
-
-    Examples:
-        >>> validate_package_name("requests")
-        True
-        >>> validate_package_name("requests>=2.0.0")
-        True
-        >>> validate_package_name("Django[extra]>=3.0")
-        True
-        >>> validate_package_name("package; rm -rf /")
-        False
-    """
-    # PEP 508 compatible package name pattern
-    # Allows: package-name[extras]>=version,<other-version
-    pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?(\[([a-zA-Z0-9._-]+,?)+\])?([<>=!~]+[0-9a-zA-Z.*,<>=!~]+)?$"
-    return bool(re.match(pattern, package))
-
-
-# ============================================================================
-# Package Installer Service
-# ============================================================================
-
-
 class PackageInstaller:
-    """Service for installing and managing community packages in user projects."""
+    """
+    Orchestrator service for installing and managing community packages.
+
+    This is a facade that coordinates the specialized services:
+    - PackageDependencyResolver: Handles dependency resolution
+    - PackageValidator: Handles security and compatibility checks
+    - PackageDownloadService: Handles file operations and venv management
+    """
 
     def __init__(
         self,
         db_session: AsyncSession,
         project_dir_manager: ProjectDirectoryManager | None = None,
+        dependency_resolver: PackageDependencyResolver | None = None,
+        validator: PackageValidator | None = None,
+        download_service: PackageDownloadService | None = None,
     ):
         """
         Initialize package installer.
 
         Args:
             db_session: Database session for queries
-            project_dir_manager: Optional project directory manager (defaults to new instance)
+            project_dir_manager: Optional project directory manager
+            dependency_resolver: Optional dependency resolver (uses singleton if not provided)
+            validator: Optional package validator (uses singleton if not provided)
+            download_service: Optional download service (uses singleton if not provided)
         """
         self.db = db_session
         self.project_dir_manager = project_dir_manager or ProjectDirectoryManager()
+
+        # Inject services or use singletons
+        self.dependency_resolver = dependency_resolver or package_dependency_resolver
+        self.validator = validator or package_validator
+        self.download_service = download_service or package_download_service
 
     # ========================================================================
     # Installation
@@ -159,8 +126,10 @@ class PackageInstaller:
                     error="VERSION_NOT_FOUND",
                 )
 
-            # 2. Run safety checks
-            safety_result = await self._run_safety_checks(project_id, package, version)
+            # 2. Run safety checks (delegated to validator)
+            safety_result = await self.validator.run_safety_checks(
+                project_id, package, version
+            )
             if not safety_result.passed:
                 return InstallResult(
                     success=False,
@@ -183,13 +152,15 @@ class PackageInstaller:
                     error="ALREADY_INSTALLED",
                 )
 
-            # 4. Create package directory
-            install_path = await self._create_package_directory(
+            # 4. Create package directory (delegated to download service)
+            install_path = await self.download_service.create_package_directory(
                 project_id, package, version
             )
 
-            # 5. Write package code files
-            await self._write_package_files(install_path, version, package)
+            # 5. Write package code files (delegated to download service)
+            await self.download_service.write_package_files(
+                install_path, version, package
+            )
 
             # 6. Record installation in database
             await self._record_installation(
@@ -235,7 +206,7 @@ class PackageInstaller:
             )
 
     # ========================================================================
-    # Dependency Management
+    # Dependency Management (delegated to PackageDependencyResolver)
     # ========================================================================
 
     async def resolve_dependencies(
@@ -244,9 +215,7 @@ class PackageInstaller:
         """
         Resolve package dependencies.
 
-        Parses dependencies list (e.g., [{"name": "requests", "version": ">=2.0"}])
-        Checks which are already installed
-        Returns missing dependencies
+        Delegates to PackageDependencyResolver.
 
         Args:
             dependencies: List of dependency specifications
@@ -254,33 +223,7 @@ class PackageInstaller:
         Returns:
             DependencyResolutionResult with required and missing dependencies
         """
-        required_deps: list[DependencyInfo] = []
-        missing_deps: list[str] = []
-
-        for dep in dependencies:
-            name = dep.get("name", "")
-            version_spec = dep.get("version", "")
-
-            # Check if dependency is installed
-            is_installed, installed_version = self._check_dependency_installed(
-                name, version_spec
-            )
-
-            dep_info = DependencyInfo(
-                name=name,
-                version_spec=version_spec,
-                is_installed=is_installed,
-                installed_version=installed_version,
-            )
-            required_deps.append(dep_info)
-
-            if not is_installed:
-                missing_deps.append(f"{name}{version_spec}")
-
-        return DependencyResolutionResult(
-            required_dependencies=required_deps,
-            missing_dependencies=missing_deps,
-        )
+        return self.dependency_resolver.resolve_dependencies(dependencies)
 
     async def install_dependencies(
         self, project_id: int, dependencies: list[str]
@@ -288,70 +231,18 @@ class PackageInstaller:
         """
         Install missing dependencies for a package.
 
-        Creates virtual environment for project (if needed)
-        Runs pip install for dependencies
-        Stores in user_projects/{project_id}/.venv/
+        Delegates to PackageDownloadService.
 
         Args:
             project_id: Project ID
-            dependencies: List of pip package specs (e.g., ["requests>=2.0", "pillow"])
+            dependencies: List of pip package specs
 
         Returns:
             True if installation succeeded
         """
-        if not dependencies:
-            return True
-
-        try:
-            # Get or create virtual environment
-            venv_path = await self._ensure_venv(project_id)
-
-            # Install dependencies using pip
-            pip_path = venv_path / "bin" / "pip"
-            if sys.platform == "win32":
-                pip_path = venv_path / "Scripts" / "pip.exe"
-
-            for dep in dependencies:
-                # Validate package name to prevent command injection
-                if not validate_package_name(dep):
-                    logger.error(
-                        "invalid_package_name",
-                        project_id=project_id,
-                        package=dep,
-                        reason="Package name does not follow PyPI conventions",
-                    )
-                    continue  # Skip invalid packages
-
-                result = subprocess.run(
-                    [str(pip_path), "install", "--no-deps", dep],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,  # 5 minute timeout
-                )
-
-                if result.returncode != 0:
-                    logger.error(
-                        "dependency_installation_failed",
-                        project_id=project_id,
-                        dependency=dep,
-                        error=result.stderr,
-                    )
-                    return False
-
-            logger.info(
-                "dependencies_installed",
-                project_id=project_id,
-                count=len(dependencies),
-            )
-            return True
-
-        except Exception as e:
-            logger.error(
-                "dependency_installation_error",
-                project_id=project_id,
-                error=str(e),
-            )
-            return False
+        return await self.download_service.install_pip_dependencies(
+            project_id, dependencies
+        )
 
     # ========================================================================
     # Updates
@@ -393,10 +284,12 @@ class PackageInstaller:
             if not latest_version:
                 continue
 
-            # Compare versions (simple string comparison for now)
+            # Compare versions using dependency resolver
             latest_ver_str: str = latest_version.version  # type: ignore[assignment]
             current_ver_str: str = current_version.version  # type: ignore[assignment]
-            if self._is_newer_version(latest_ver_str, current_ver_str):
+            if self.dependency_resolver.is_newer_version(
+                latest_ver_str, current_ver_str
+            ):
                 package = await self._get_package(package_id)
                 if package:
                     pkg_id: int = package.id  # type: ignore[assignment]
@@ -566,18 +459,8 @@ class PackageInstaller:
                     error="PACKAGE_NOT_FOUND",
                 )
 
-            # Remove package directory
-            project_root = self.project_dir_manager.get_project_root(project_id)
-            package_dir = project_root / "packages" / package.slug
-
-            if package_dir.exists():
-                shutil.rmtree(package_dir)
-                logger.info(
-                    "package_directory_removed",
-                    project_id=project_id,
-                    package_id=package_id,
-                    path=str(package_dir),
-                )
+            # Remove package directory (delegated to download service)
+            await self.download_service.remove_package_directory(project_id, package)
 
             # Update installation status
             new_status: str = InstallationStatus.DISABLED.value
@@ -667,344 +550,9 @@ class PackageInstaller:
 
     async def _increment_download_count(
         self, package: CodePackage, version: PackageVersion
-    ):
+    ) -> None:
         """Increment download counts for package and version."""
         current_pkg_downloads: int = package.total_downloads  # type: ignore[assignment]
         package.total_downloads = current_pkg_downloads + 1  # type: ignore[assignment]
         current_ver_downloads: int = version.download_count  # type: ignore[assignment]
         version.download_count = current_ver_downloads + 1  # type: ignore[assignment]
-
-    # ========================================================================
-    # Helper Methods - File System
-    # ========================================================================
-
-    async def _create_package_directory(
-        self, project_id: int, package: CodePackage, version: PackageVersion
-    ) -> Path:
-        """
-        Create package directory structure.
-
-        Creates:
-        user_projects/{project_id}/packages/{package_slug}/
-        """
-        project_root = self.project_dir_manager.ensure_project_directory(project_id)
-        packages_dir = project_root / "packages"
-        packages_dir.mkdir(exist_ok=True)
-
-        package_dir = packages_dir / package.slug
-        if package_dir.exists():
-            # Clean existing installation
-            shutil.rmtree(package_dir)
-
-        package_dir.mkdir(parents=True)
-
-        return package_dir
-
-    async def _write_package_files(
-        self, install_path: Path, version: PackageVersion, package: CodePackage
-    ):
-        """
-        Write package code files to installation directory.
-
-        Creates:
-        - main code file (e.g., parser.py)
-        - __init__.py (to make importable)
-        - README.md (package metadata)
-        """
-        # Write main code file
-        func_name: str = version.function_name  # type: ignore[assignment]
-        code_file = install_path / f"{func_name}.py"
-        code_content: str = version.code_content  # type: ignore[assignment]
-        code_file.write_text(code_content)
-
-        # Create __init__.py to export main function
-        pkg_name: str = package.name  # type: ignore[assignment]
-        pkg_desc: str = package.description  # type: ignore[assignment]
-        ver_str: str = version.version  # type: ignore[assignment]
-        pkg_license: str | None = package.license  # type: ignore[assignment]
-
-        init_content = f'''"""
-{pkg_name}
-
-{pkg_desc}
-
-Version: {ver_str}
-Author: {package.author_id}
-License: {pkg_license or 'Not specified'}
-"""
-
-from .{func_name} import {func_name}
-
-__all__ = ["{func_name}"]
-__version__ = "{ver_str}"
-'''
-        init_file = install_path / "__init__.py"
-        init_file.write_text(init_content)
-
-        # Create README with package metadata
-        pkg_slug: str = package.slug  # type: ignore[assignment]
-        dependencies_list: list[dict[str, str]] = version.dependencies  # type: ignore[assignment]
-        changelog: str | None = version.changelog  # type: ignore[assignment]
-
-        readme_content = f"""# {pkg_name}
-
-{pkg_desc}
-
-## Version
-
-{ver_str}
-
-## Usage
-
-```python
-from packages.{pkg_slug} import {func_name}
-
-# Use the function in your workflow
-result = {func_name}(...)
-```
-
-## Dependencies
-
-{self._format_dependencies(dependencies_list)}
-
-## Changelog
-
-{changelog or 'No changelog available'}
-
-## License
-
-{pkg_license or 'Not specified'}
-
----
-
-*Installed from Qontinui Community Library*
-"""
-        readme_file = install_path / "README.md"
-        readme_file.write_text(readme_content)
-
-    def _format_dependencies(self, dependencies: list[dict[str, str]]) -> str:
-        """Format dependencies list for README."""
-        if not dependencies:
-            return "No dependencies"
-
-        lines = []
-        for dep in dependencies:
-            name = dep.get("name", "")
-            version = dep.get("version", "")
-            lines.append(f"- `{name}{version}`")
-
-        return "\n".join(lines)
-
-    # ========================================================================
-    # Helper Methods - Virtual Environment
-    # ========================================================================
-
-    async def _ensure_venv(self, project_id: int) -> Path:
-        """
-        Ensure virtual environment exists for project.
-
-        Creates .venv directory if it doesn't exist.
-
-        Args:
-            project_id: Project ID
-
-        Returns:
-            Path to virtual environment
-        """
-        project_root = self.project_dir_manager.get_project_root(project_id)
-        venv_path = project_root / ".venv"
-
-        if not venv_path.exists():
-            logger.info("creating_virtual_environment", project_id=project_id)
-            subprocess.run(
-                [sys.executable, "-m", "venv", str(venv_path)],
-                check=True,
-                timeout=60,
-            )
-
-        return venv_path
-
-    # ========================================================================
-    # Helper Methods - Dependencies
-    # ========================================================================
-
-    def _check_dependency_installed(
-        self, name: str, version_spec: str
-    ) -> tuple[bool, str | None]:
-        """
-        Check if a Python dependency is installed.
-
-        Args:
-            name: Package name
-            version_spec: Version specification (e.g., ">=2.0.0")
-
-        Returns:
-            (is_installed, installed_version)
-        """
-        try:
-            import importlib.metadata
-
-            installed_version = importlib.metadata.version(name)
-
-            # Simple version check (could be improved with packaging library)
-            if self._version_satisfies(installed_version, version_spec):
-                return True, installed_version
-            else:
-                return False, installed_version
-
-        except importlib.metadata.PackageNotFoundError:
-            return False, None
-
-    def _version_satisfies(self, installed: str, spec: str) -> bool:
-        """
-        Check if installed version satisfies spec.
-
-        Simple implementation - could use packaging.specifiers for production.
-
-        Args:
-            installed: Installed version (e.g., "2.1.0")
-            spec: Version spec (e.g., ">=2.0.0")
-
-        Returns:
-            True if satisfied
-        """
-        if not spec:
-            return True
-
-        # Extract operator and version
-        match = re.match(r"([><=!]+)(.+)", spec)
-        if not match:
-            return True  # No constraint
-
-        operator, required = match.groups()
-        required = required.strip()
-
-        # Simple version comparison (split by dots)
-        try:
-            installed_parts = [int(x) for x in installed.split(".")]
-            required_parts = [int(x) for x in required.split(".")]
-
-            # Pad to same length
-            max_len = max(len(installed_parts), len(required_parts))
-            installed_parts += [0] * (max_len - len(installed_parts))
-            required_parts += [0] * (max_len - len(required_parts))
-
-            if operator == ">=":
-                return installed_parts >= required_parts
-            elif operator == ">":
-                return installed_parts > required_parts
-            elif operator == "==":
-                return installed_parts == required_parts
-            elif operator == "<=":
-                return installed_parts <= required_parts
-            elif operator == "<":
-                return installed_parts < required_parts
-            else:
-                return True
-
-        except ValueError:
-            # If version parsing fails, assume satisfied
-            return True
-
-    def _is_newer_version(self, v1: str, v2: str) -> bool:
-        """
-        Check if v1 is newer than v2.
-
-        Args:
-            v1: Version 1 (e.g., "2.0.0")
-            v2: Version 2 (e.g., "1.5.0")
-
-        Returns:
-            True if v1 > v2
-        """
-        try:
-            v1_parts = [int(x) for x in v1.split(".")]
-            v2_parts = [int(x) for x in v2.split(".")]
-
-            # Pad to same length
-            max_len = max(len(v1_parts), len(v2_parts))
-            v1_parts += [0] * (max_len - len(v1_parts))
-            v2_parts += [0] * (max_len - len(v2_parts))
-
-            return v1_parts > v2_parts
-
-        except ValueError:
-            return False
-
-    # ========================================================================
-    # Helper Methods - Safety Checks
-    # ========================================================================
-
-    async def _run_safety_checks(
-        self, project_id: int, package: CodePackage, version: PackageVersion
-    ) -> SafetyCheckResult:
-        """
-        Run safety checks before installation.
-
-        Checks:
-        - Package passed security scan
-        - Sufficient disk space
-        - Python version compatibility
-
-        Args:
-            project_id: Project ID
-            package: Package to install
-            version: Version to install
-
-        Returns:
-            SafetyCheckResult
-        """
-        checks: dict[str, bool] = {}
-        errors: list[str] = []
-        warnings: list[str] = []
-
-        # Check security scan status
-        scan_status: str = version.security_scan_status  # type: ignore[assignment]
-        security_passed = scan_status == SecurityScanStatus.PASSED.value
-        checks["security_scan"] = security_passed
-        if not security_passed:
-            errors.append(
-                f"Package has not passed security scan (status: {scan_status})"
-            )
-
-        # Check disk space
-        project_root = self.project_dir_manager.get_project_root(project_id)
-        if project_root.exists():
-            stat = shutil.disk_usage(project_root)
-            has_space = stat.free >= MIN_FREE_DISK_SPACE_BYTES
-            checks["disk_space"] = has_space
-            if not has_space:
-                errors.append(
-                    f"Insufficient disk space (free: {stat.free / 1024 / 1024:.1f}MB, required: {MIN_FREE_DISK_SPACE_BYTES / 1024 / 1024:.1f}MB)"
-                )
-        else:
-            checks["disk_space"] = True
-
-        # Check Python version compatibility
-        if version.min_python_version:
-            current_python = f"{sys.version_info.major}.{sys.version_info.minor}"
-            python_compatible = self._version_satisfies(
-                current_python, f">={version.min_python_version}"
-            )
-            checks["python_version"] = python_compatible
-            if not python_compatible:
-                errors.append(
-                    f"Python version incompatible (current: {current_python}, required: >={version.min_python_version})"
-                )
-        else:
-            checks["python_version"] = True
-
-        # Check package size
-        code_size = len(version.code_content.encode("utf-8"))
-        size_ok = code_size <= MAX_PACKAGE_SIZE_BYTES
-        checks["package_size"] = size_ok
-        if not size_ok:
-            errors.append(
-                f"Package too large (size: {code_size / 1024 / 1024:.1f}MB, max: {MAX_PACKAGE_SIZE_BYTES / 1024 / 1024:.1f}MB)"
-            )
-
-        passed = all(checks.values())
-
-        return SafetyCheckResult(
-            passed=passed, checks=checks, errors=errors, warnings=warnings
-        )

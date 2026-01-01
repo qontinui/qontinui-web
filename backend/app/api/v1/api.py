@@ -2,14 +2,16 @@
 
 from fastapi import APIRouter
 
+from app.api.v1.endpoints import admin as admin_pkg
 from app.api.v1.endpoints import (
-    admin,
     admin_ws,
     ai_prompts,
     analytics,
     annotations,
     audit_logs,
-    auth_endpoints,
+)
+from app.api.v1.endpoints import auth as auth_pkg
+from app.api.v1.endpoints import (
     automation,
     automation_ws,
     background_removal,
@@ -21,6 +23,7 @@ from app.api.v1.endpoints import (
     collaboration_ws,
     conflicts,
     custom_functions,
+    discoveries,
     execution,
     export,
     extraction,
@@ -48,7 +51,9 @@ from app.api.v1.endpoints import (
     settings,
     snapshots,
     state_discovery,
-    testing,
+)
+from app.api.v1.endpoints import testing as testing_pkg
+from app.api.v1.endpoints import (
     training_datasets,
     users,
     variables,
@@ -62,7 +67,7 @@ api_router = APIRouter()
 
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(public.router, prefix="/public", tags=["public"])
-api_router.include_router(auth_endpoints.router, prefix="/auth", tags=["auth"])
+api_router.include_router(auth_pkg.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(
@@ -86,7 +91,7 @@ api_router.include_router(background_removal.router, tags=["background-removal"]
 api_router.include_router(analytics.router, tags=["analytics"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
 api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
-api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(admin_pkg.router, prefix="/admin", tags=["admin"])
 api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
 api_router.include_router(
     audit_logs.router, prefix="/admin/audit-logs", tags=["audit-logs"]
@@ -132,7 +137,7 @@ api_router.include_router(
 api_router.include_router(custom_functions.router, tags=["custom-functions"])
 api_router.include_router(ai_prompts.router, tags=["ai-prompts"])
 api_router.include_router(capture.router, prefix="/capture", tags=["capture-sessions"])
-api_router.include_router(testing.router, prefix="/testing", tags=["testing"])
+api_router.include_router(testing_pkg.router, prefix="/testing", tags=["testing"])
 api_router.include_router(
     visual_baselines.router, prefix="/testing", tags=["visual-regression"]
 )
@@ -157,3 +162,6 @@ api_router.include_router(
     historical.router, prefix="/testing/historical", tags=["historical-data"]
 )
 api_router.include_router(execution.router, prefix="/execution", tags=["execution"])
+api_router.include_router(
+    discoveries.router, prefix="/discoveries", tags=["discoveries"]
+)

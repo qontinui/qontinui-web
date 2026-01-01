@@ -20,19 +20,12 @@ from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
 from app.models.capture import (
-    ActionFrame,
     CaptureAction,
     CaptureDetectedElement,
     CaptureScreenshot,
     CaptureSession,
-    FrameIndex,
-    HistoricalResult,
-    InputEvent,
-    InputEventType,
     LearnedWorkflow,
     ScreenshotStateMatch,
-    StorageBackend,
-    VideoCaptureSession,
 )
 from app.models.code_package import (
     CodePackage,
@@ -55,6 +48,7 @@ from app.models.custom_function import CustomFunction
 from app.models.detected_issue import DetectedIssue
 from app.models.device_session import DeviceSession
 from app.models.discovered_state import DiscoveredState
+from app.models.discovery import Discovery
 from app.models.edit_command import EditCommand
 from app.models.embedding_generation_job import EmbeddingGenerationJob
 from app.models.execution_issue import (
@@ -144,6 +138,15 @@ from app.models.transition_execution import (
 from app.models.transition_reliability import TransitionReliability
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
+from app.models.video_capture import (
+    ActionFrame,
+    FrameIndex,
+    HistoricalResult,
+    InputEvent,
+    InputEventType,
+    StorageBackend,
+    VideoCaptureSession,
+)
 from app.models.visual_baseline import VisualBaseline
 from app.models.visual_comparison_result import (
     ReviewDecision,
@@ -208,6 +211,8 @@ __all__ = [
     "AnalyticsEvent",
     # Detected Issues
     "DetectedIssue",
+    # Discoveries
+    "Discovery",
     # State Discovery
     "DiscoveredState",
     "StateTransition",

@@ -11,19 +11,10 @@ Version History:
 from pydantic import BaseModel, Field
 
 # Import core models from qontinui-schemas
+# Top-level exports
 from qontinui_schemas import (
-    ConfigMetadata,
-    ConfigSettings,
     Connection,
-    ExecutionRecord,
-    ImageAsset,
-    IncomingTransition,
-    OutgoingTransition,
     Pattern,
-    Position,
-    QontinuiConfig,
-    Schedule,
-    SearchRegion,
     State,
     StateImage,
     StateLocation,
@@ -31,8 +22,28 @@ from qontinui_schemas import (
     StateString,
     Workflow,
     WorkflowMetadata,
-    WorkflowSettings,
 )
+
+# Config root models (not exported at top-level)
+from qontinui_schemas.config.models.config_root import (
+    ConfigMetadata,
+    ConfigSettings,
+    ExecutionRecord,
+    ImageAsset,
+    QontinuiConfig,
+    Schedule,
+)
+
+# State machine models (not exported at top-level)
+from qontinui_schemas.config.models.state_machine import (
+    IncomingTransition,
+    OutgoingTransition,
+    Position,
+    SearchRegion,
+)
+
+# Workflow models (not exported at top-level)
+from qontinui_schemas.config.models.workflow import WorkflowSettings
 
 # Re-export for convenience
 __all__ = [

@@ -32,6 +32,7 @@ Core permission utilities library providing:
 React hook for checking user permissions on a project.
 
 **Returns**:
+
 ```typescript
 {
   permissionLevel: PermissionLevel;
@@ -47,6 +48,7 @@ React hook for checking user permissions on a project.
 ```
 
 **Convenience Hooks**:
+
 - `useCanEditProject(project)` - Returns boolean
 - `useCanCommentProject(project)` - Returns boolean
 - `useCanAdminProject(project)` - Returns boolean
@@ -57,6 +59,7 @@ React hook for checking user permissions on a project.
 Updated existing component to support both new and legacy APIs:
 
 **New API** (recommended):
+
 ```tsx
 <PermissionGate project={project} requiredPermission="edit">
   <EditButton />
@@ -64,6 +67,7 @@ Updated existing component to support both new and legacy APIs:
 ```
 
 **Legacy API** (still supported):
+
 ```tsx
 <PermissionGate requiredPermission="edit" userRole="editor">
   <EditButton />
@@ -71,6 +75,7 @@ Updated existing component to support both new and legacy APIs:
 ```
 
 **Features**:
+
 - Backward compatible with existing usage
 - Supports custom fallback content
 - Optional error messages
@@ -81,11 +86,13 @@ Updated existing component to support both new and legacy APIs:
 Updated collaboration context to include permission utilities:
 
 **Added**:
+
 - `canView: boolean` - New permission check
 - `hasPermission(required: PermissionLevel) => boolean` - Dynamic permission checking
 - Uses new permission utilities from `@/lib/permissions`
 
 **Updated**:
+
 - Permission checks now use `hasPermission()` function instead of hardcoded logic
 - More maintainable and consistent with backend model
 
@@ -94,6 +101,7 @@ Updated collaboration context to include permission utilities:
 Updated Project schema to include permission information:
 
 **Added**:
+
 - `PermissionLevelSchema` - Zod enum for permission validation
 - `permission_level?: PermissionLevel` field to `ProjectSchema`
 
@@ -116,7 +124,7 @@ none < view < comment < edit < admin < owner
 ### 1. Using the Hook
 
 ```tsx
-import { useProjectPermissions } from '@/hooks/useProjectPermissions';
+import { useProjectPermissions } from "@/hooks/useProjectPermissions";
 
 function ProjectEditor({ project }) {
   const { canEdit, canComment, canAdmin, permissionLevel, isLoading } =
@@ -144,7 +152,7 @@ function ProjectEditor({ project }) {
 ### 2. Using PermissionGate Component
 
 ```tsx
-import { PermissionGate } from '@/components/collaboration/PermissionGate';
+import { PermissionGate } from "@/components/collaboration/PermissionGate";
 
 function ProjectActions({ project }) {
   return (
@@ -193,11 +201,7 @@ function ProjectActions({ project }) {
 ### 4. Using with Error Messages
 
 ```tsx
-<PermissionGate
-  project={project}
-  requiredPermission="admin"
-  showMessage={true}
->
+<PermissionGate project={project} requiredPermission="admin" showMessage={true}>
   <DangerZone />
 </PermissionGate>
 ```
@@ -205,8 +209,8 @@ function ProjectActions({ project }) {
 ### 5. Using Direct Permission Functions
 
 ```tsx
-import { canUserEdit, getPermissionLevel } from '@/lib/permissions';
-import { useAuth } from '@/contexts/auth-context';
+import { canUserEdit, getPermissionLevel } from "@/lib/permissions";
+import { useAuth } from "@/contexts/auth-context";
 
 function MyComponent({ project }) {
   const { user } = useAuth();
@@ -226,7 +230,7 @@ function MyComponent({ project }) {
 ### 6. Using Collaboration Context
 
 ```tsx
-import { useCollaboration } from '@/contexts/collaboration-context';
+import { useCollaboration } from "@/contexts/collaboration-context";
 
 function CollaborativeEditor() {
   const {
@@ -235,7 +239,7 @@ function CollaborativeEditor() {
     canEdit,
     canAdmin,
     hasPermission,
-    projectAccess
+    projectAccess,
   } = useCollaboration();
 
   return (
@@ -248,7 +252,7 @@ function CollaborativeEditor() {
       {canAdmin && <AdminPanel />}
 
       {/* Dynamic permission checking */}
-      {hasPermission('edit') && <SaveButton />}
+      {hasPermission("edit") && <SaveButton />}
     </div>
   );
 }
@@ -257,7 +261,7 @@ function CollaborativeEditor() {
 ### 7. Using Convenience Hooks
 
 ```tsx
-import { useCanEditProject } from '@/hooks/useProjectPermissions';
+import { useCanEditProject } from "@/hooks/useProjectPermissions";
 
 function QuickEditButton({ project }) {
   const canEdit = useCanEditProject(project);
@@ -309,7 +313,7 @@ function ProjectDashboard({ project }) {
 ### 9. Permission Dropdown
 
 ```tsx
-import { getPermissionLevelOptions } from '@/lib/permissions';
+import { getPermissionLevelOptions } from "@/lib/permissions";
 
 function PermissionSelector({ value, onChange }) {
   const options = getPermissionLevelOptions();
@@ -333,7 +337,7 @@ function PermissionSelector({ value, onChange }) {
 The `CollaborationProvider` now includes permission utilities:
 
 ```tsx
-import { CollaborationProvider } from '@/contexts/collaboration-context';
+import { CollaborationProvider } from "@/contexts/collaboration-context";
 
 function App() {
   return (
@@ -368,6 +372,7 @@ If not provided, the system falls back to checking if user is owner.
 The frontend permission model matches the backend:
 
 **Backend** (`backend/app/models/organization.py`):
+
 ```python
 class PermissionLevel(str, Enum):
     VIEW = "view"
@@ -377,8 +382,15 @@ class PermissionLevel(str, Enum):
 ```
 
 **Frontend** (`frontend/src/lib/permissions.ts`):
+
 ```typescript
-export type PermissionLevel = 'none' | 'view' | 'comment' | 'edit' | 'admin' | 'owner';
+export type PermissionLevel =
+  | "none"
+  | "view"
+  | "comment"
+  | "edit"
+  | "admin"
+  | "owner";
 ```
 
 Note: Frontend adds `'none'` and `'owner'` for UI convenience.
@@ -388,24 +400,24 @@ Note: Frontend adds `'none'` and `'owner'` for UI convenience.
 Example test cases:
 
 ```typescript
-import { hasPermission, canUserEdit } from '@/lib/permissions';
+import { hasPermission, canUserEdit } from "@/lib/permissions";
 
-describe('Permission Utilities', () => {
-  it('should check permission hierarchy', () => {
-    expect(hasPermission('view', 'edit')).toBe(true);
-    expect(hasPermission('edit', 'view')).toBe(false);
-    expect(hasPermission('edit', 'edit')).toBe(true);
+describe("Permission Utilities", () => {
+  it("should check permission hierarchy", () => {
+    expect(hasPermission("view", "edit")).toBe(true);
+    expect(hasPermission("edit", "view")).toBe(false);
+    expect(hasPermission("edit", "edit")).toBe(true);
   });
 
-  it('should check user edit permission', () => {
-    const project = { id: '1', owner_id: 'user-1', permission_level: 'edit' };
-    const user = { id: 'user-2' };
+  it("should check user edit permission", () => {
+    const project = { id: "1", owner_id: "user-1", permission_level: "edit" };
+    const user = { id: "user-2" };
     expect(canUserEdit(project, user)).toBe(true);
   });
 
-  it('should recognize project owner', () => {
-    const project = { id: '1', owner_id: 'user-1' };
-    const user = { id: 'user-1' };
+  it("should recognize project owner", () => {
+    const project = { id: "1", owner_id: "user-1" };
+    const user = { id: "user-1" };
     expect(canUserEdit(project, user)).toBe(true);
   });
 });
@@ -439,7 +451,7 @@ No changes required! The `PermissionGate` component maintains backward compatibi
 
 ```tsx
 // Instead of checking roles manually
-const isEditor = userRole === 'editor' || userRole === 'admin';
+const isEditor = userRole === "editor" || userRole === "admin";
 
 // Use the hook
 const { canEdit } = useProjectPermissions(project);

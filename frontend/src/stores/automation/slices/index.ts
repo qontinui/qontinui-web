@@ -10,3 +10,4 @@ export { createImageSlice } from "./image-slice";
 export { createScreenshotSlice } from "./screenshot-slice";
 export { createScheduleSlice } from "./schedule-slice";
 export { createSettingsSlice } from "./settings-slice";
+export { createContextSlice } from "./context-slice";

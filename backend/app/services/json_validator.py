@@ -9,9 +9,8 @@ import re
 from typing import Any
 
 from pydantic import ValidationError
-from qontinui_schemas import QontinuiConfig
 
-from app.schemas.export import ValidationResult
+from app.schemas.export import QontinuiConfig, ValidationResult
 
 
 class JSONConfigValidator:
@@ -100,9 +99,7 @@ class JSONConfigValidator:
         # Check version first
         version = config_data.get("version", "")
         if not self.SUPPORTED_VERSION_PATTERN.match(version):
-            errors.append(
-                f"Unsupported version: {version}. " f"Supported: 1.0.0 or 2.x.x"
-            )
+            errors.append(f"Unsupported version: {version}. Supported: 1.0.0 or 2.x.x")
             return ValidationResult(valid=False, errors=errors, warnings=warnings)
 
         # Determine format based on version

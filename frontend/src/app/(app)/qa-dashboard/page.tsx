@@ -32,9 +32,7 @@ export default function QADashboard() {
   const [selectedView, setSelectedView] = useState<
     "overview" | "live" | "trends" | "reliability"
   >(() => (testRunIdParam ? "live" : "overview"));
-  const [liveTestRunId] = useState<string | null>(
-    () => testRunIdParam || null
-  );
+  const [liveTestRunId] = useState<string | null>(() => testRunIdParam || null);
   const [liveWorkflowName] = useState<string | null>(
     () => workflowNameParam || null
   );

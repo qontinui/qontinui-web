@@ -102,6 +102,11 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    discoveries = relationship(
+        "Discovery",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
     execution_runs = relationship(
         "ExecutionRun",
         back_populates="project",

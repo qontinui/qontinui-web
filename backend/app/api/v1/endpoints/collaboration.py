@@ -13,21 +13,14 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
 from app.api.deps import get_async_db, get_current_active_user_async
-from app.models.collaboration import (
-    ActionType,
-    ActivityLog,
-    ProjectComment,
-    ProjectLock,
-    ResourceType,
-)
-from app.models.organization import ProjectAccessControl
+from app.models.collaboration import ActionType, ResourceType
 from app.models.project import Project
 from app.models.user import User
+from app.repositories.collaboration import collaboration_repository
 from app.schemas.collaboration import (
     ActivityLogResponse,
     CollaboratorResponse,
@@ -41,7 +34,12 @@ from app.schemas.collaboration import (
     ProjectShareRequest,
     ProjectShareUpdate,
 )
-from app.services.collaboration_service import collaboration_service
+from app.services.collaboration import (
+    activity_service,
+    comment_service,
+    locking_service,
+    sharing_service,
+)
 from app.services.notification_service import notification_service
 
 logger = structlog.get_logger(__name__)
@@ -67,7 +65,7 @@ async def verify_project_permission(
     db: AsyncSession, project_id: UUID, user: User, required_permission: str
 ) -> None:
     """Verify user has required project permission."""
-    has_access = await collaboration_service.check_user_has_access(
+    has_access = await sharing_service.check_user_has_access(
         db, user.id, project_id, required_permission
     )
 
@@ -115,40 +113,22 @@ async def share_project(
             detail="Cannot specify both user_id and organization_id",
         )
 
-    # Check for existing access
-    query = select(ProjectAccessControl).filter(
-        ProjectAccessControl.project_id == project_id
+    # Share the project
+    response = await sharing_service.share_project(
+        db,
+        project_id=project_id,
+        created_by=current_user.id,
+        permission_level=share_request.permission_level,
+        user_id=share_request.user_id,
+        organization_id=share_request.organization_id,
+        expires_at=share_request.expires_at,
     )
 
-    if share_request.user_id:
-        query = query.filter(ProjectAccessControl.user_id == share_request.user_id)
-    else:
-        query = query.filter(
-            ProjectAccessControl.organization_id == share_request.organization_id
-        )
-
-    result = await db.execute(query)
-    existing = result.scalar_one_or_none()
-
-    if existing:
+    if not response:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Access already granted",
         )
-
-    # Create access control entry
-    access = ProjectAccessControl(
-        project_id=project_id,
-        user_id=share_request.user_id,
-        organization_id=share_request.organization_id,
-        permission_level=share_request.permission_level,
-        created_by=current_user.id,
-        expires_at=share_request.expires_at,
-    )
-
-    db.add(access)
-    await db.commit()
-    await db.refresh(access)
 
     # Track activity
     target = (
@@ -156,7 +136,7 @@ async def share_project(
         if share_request.user_id
         else f"org:{share_request.organization_id}"
     )
-    await collaboration_service.track_activity(
+    await activity_service.track_activity(
         db,
         project_id,
         current_user.id,
@@ -167,25 +147,18 @@ async def share_project(
         metadata={"shared_with": target, "permission": share_request.permission_level},
     )
 
-    # Send notification email if sharing with user
+    # Send notifications if sharing with user
     if share_request.user_id:
-        result = await db.execute(
-            select(User).filter(User.id == share_request.user_id)  # type: ignore[arg-type]
-        )
-        shared_user = result.scalar_one_or_none()
+        shared_user = await collaboration_repository.get_user(db, share_request.user_id)
         if shared_user:
-            # Send legacy email
-            await collaboration_service.send_project_share_email(
+            await sharing_service.send_project_share_email(
                 to_email=cast(str, shared_user.email),
                 to_name=cast(str, shared_user.username),
                 project_name=cast(str, project.name),
                 shared_by_name=current_user.username,
                 permission_level=share_request.permission_level,
             )
-            # Send in-app notification
             try:
-                # Note: notification service expects int for project_id but we have UUID
-                # This is a type mismatch in the notification service signature
                 await notification_service.send_share_notification(
                     db=db,
                     shared_with_user_id=share_request.user_id,
@@ -198,12 +171,7 @@ async def share_project(
             except Exception as e:
                 logger.error("share_notification_failed", error=str(e))
 
-    logger.info("project_shared", project_id=project_id, access_id=access.id)
-
-    # Build response
-    response = CollaboratorResponse.model_validate(access)
-    response.is_expired = access.is_expired
-
+    logger.info("project_shared", project_id=project_id)
     return response
 
 
@@ -217,41 +185,10 @@ async def list_project_collaborators(
     limit: int = Query(100, ge=1, le=100),
 ) -> Any:
     """List project collaborators."""
-    # Verify access
     await get_project_or_404(db, project_id)
     await verify_project_permission(db, project_id, current_user, "view")
 
-    # Get all access entries with joined data
-    result = await db.execute(
-        select(ProjectAccessControl)
-        .filter(ProjectAccessControl.project_id == project_id)
-        .options(
-            joinedload(ProjectAccessControl.user),
-            joinedload(ProjectAccessControl.organization),
-        )
-        .offset(skip)
-        .limit(limit)
-        .order_by(ProjectAccessControl.created_at.desc())
-    )
-    accesses = result.unique().scalars().all()
-
-    # Build responses
-    responses = []
-    for access in accesses:
-        response = CollaboratorResponse.model_validate(access)
-        response.is_expired = access.is_expired
-
-        if access.user:
-            response.username = cast(str, access.user.username)
-            response.email = cast(str, access.user.email)
-            response.full_name = access.user.full_name
-            response.avatar_url = access.user.avatar_url
-        elif access.organization:
-            response.organization_name = access.organization.name
-
-        responses.append(response)
-
-    return responses
+    return await sharing_service.get_project_collaborators(db, project_id, skip, limit)
 
 
 @router.put(
@@ -266,40 +203,17 @@ async def update_collaborator_permissions(
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Update collaborator permissions."""
-    # Verify admin access
     await verify_project_permission(db, project_id, current_user, "admin")
 
-    # Get access entry
-    result = await db.execute(
-        select(ProjectAccessControl).filter(
-            and_(
-                ProjectAccessControl.id == collaborator_id,
-                ProjectAccessControl.project_id == project_id,
-            )
-        )
+    response = await sharing_service.update_collaborator(
+        db, collaborator_id, project_id, update.model_dump(exclude_unset=True)
     )
-    access = result.scalar_one_or_none()
 
-    if not access:
+    if not response:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Collaborator not found",
         )
-
-    # Update fields
-    update_data = update.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(access, field, value)
-
-    await db.commit()
-    await db.refresh(access)
-
-    logger.info(
-        "collaborator_updated", project_id=project_id, collaborator_id=collaborator_id
-    )
-
-    response = CollaboratorResponse.model_validate(access)
-    response.is_expired = access.is_expired
 
     return response
 
@@ -316,34 +230,15 @@ async def revoke_collaborator_access(
     current_user: User = Depends(get_current_active_user_async),
 ) -> None:
     """Revoke collaborator access."""
-    # Verify admin access
     await verify_project_permission(db, project_id, current_user, "admin")
 
-    # Get access entry
-    result = await db.execute(
-        select(ProjectAccessControl).filter(
-            and_(
-                ProjectAccessControl.id == collaborator_id,
-                ProjectAccessControl.project_id == project_id,
-            )
-        )
-    )
-    access = result.scalar_one_or_none()
+    success = await sharing_service.revoke_access(db, collaborator_id, project_id)
 
-    if not access:
+    if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Collaborator not found",
         )
-
-    await db.delete(access)
-    await db.commit()
-
-    logger.info(
-        "collaborator_access_revoked",
-        project_id=project_id,
-        collaborator_id=collaborator_id,
-    )
 
 
 # ============================================================================
@@ -372,11 +267,9 @@ async def acquire_lock(
         resource_id=lock_request.resource_id,
     )
 
-    # Verify edit access
     await verify_project_permission(db, project_id, current_user, "edit")
 
-    # Attempt to acquire lock
-    lock = await collaboration_service.acquire_project_lock(
+    lock_info = await locking_service.acquire_lock(
         db,
         current_user.id,
         project_id,
@@ -386,17 +279,15 @@ async def acquire_lock(
         lock_request.metadata,
     )
 
-    if not lock:
-        # Get current lock holder info
-        existing_lock = await collaboration_service.get_resource_lock(
+    if not lock_info:
+        existing_lock = await locking_service.get_resource_lock(
             db, project_id, lock_request.resource_type, lock_request.resource_id
         )
 
         if existing_lock:
-            result = await db.execute(
-                select(User).filter(User.id == existing_lock.user_id)  # type: ignore[arg-type]
+            lock_holder = await collaboration_repository.get_user(
+                db, existing_lock.user_id  # type: ignore
             )
-            lock_holder = result.scalar_one_or_none()
 
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -407,17 +298,32 @@ async def acquire_lock(
                 },
             )
 
-        # If no lock was acquired and no existing lock found, raise error
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to acquire lock",
         )
 
-    logger.info("lock_acquired", lock_id=lock.id, project_id=project_id)
+    # Track activity
+    await activity_service.track_activity(
+        db,
+        project_id,
+        current_user.id,
+        ActionType.LOCKED.value,
+        lock_request.resource_type,
+        lock_request.resource_id,
+    )
 
-    # Build response with user data
+    # Get the lock model for response
+    lock = await locking_service.get_resource_lock(
+        db, project_id, lock_request.resource_type, lock_request.resource_id
+    )
+
+    logger.info(
+        "lock_acquired", lock_id=lock.id if lock else None, project_id=project_id
+    )
+
     response = LockResponse.model_validate(lock)
-    response.is_expired = lock.is_expired()
+    response.is_expired = lock.is_expired() if lock else False
     response.username = current_user.username
     response.email = current_user.email
 
@@ -440,9 +346,7 @@ async def release_lock(
         user_id=current_user.id,
     )
 
-    success = await collaboration_service.release_project_lock(
-        db, lock_id, current_user.id
-    )
+    success = await locking_service.release_lock(db, lock_id, current_user.id)
 
     if not success:
         raise HTTPException(
@@ -463,32 +367,20 @@ async def extend_lock(
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Extend lock duration."""
-    # Get lock
-    result = await db.execute(
-        select(ProjectLock).filter(
-            and_(
-                ProjectLock.id == lock_id,
-                ProjectLock.project_id == project_id,
-                ProjectLock.user_id == current_user.id,
-            )
-        )
-    )
-    lock = result.scalar_one_or_none()
+    lock = await collaboration_repository.get_lock_by_user(db, lock_id, current_user.id)
 
-    if not lock:
+    if not lock or lock.project_id != project_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lock not found or you don't have permission",
         )
 
-    # Check if lock has expired - cannot extend expired locks
     if lock.is_expired():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot extend expired lock. Please acquire a new lock.",
         )
 
-    # Extend lock
     lock.extend_lock(extend_request.duration_minutes)
     await db.commit()
     await db.refresh(lock)
@@ -515,35 +407,20 @@ async def get_project_locks(
     resource_id: str | None = Query(None),
 ) -> Any:
     """Get all active locks for a project."""
-    # Verify access
     await verify_project_permission(db, project_id, current_user, "view")
 
-    # Build query
-    query = (
-        select(ProjectLock)
-        .filter(ProjectLock.project_id == project_id)
-        .options(joinedload(ProjectLock.user))
+    locks = await locking_service.get_project_locks(
+        db, project_id, resource_type, resource_id
     )
 
-    if resource_type:
-        query = query.filter(ProjectLock.resource_type == ResourceType(resource_type))
-
-    if resource_id:
-        query = query.filter(ProjectLock.resource_id == resource_id)
-
-    result = await db.execute(query)
-    locks = result.unique().scalars().all()
-
-    # Filter out expired and build responses
     responses = []
     for lock in locks:
-        if not lock.is_expired():
-            response = LockResponse.model_validate(lock)
-            response.is_expired = False
-            if lock.user:
-                response.username = cast(str, lock.user.username)
-                response.email = cast(str, lock.user.email)
-            responses.append(response)
+        response = LockResponse.model_validate(lock)
+        response.is_expired = False
+        if lock.user:
+            response.username = cast(str, lock.user.username)
+            response.email = cast(str, lock.user.email)
+        responses.append(response)
 
     return responses
 
@@ -570,27 +447,19 @@ async def create_comment(
         "create_comment_request", project_id=project_id, user_id=current_user.id
     )
 
-    # Verify comment permission (or view, depending on requirements)
     await verify_project_permission(db, project_id, current_user, "comment")
 
-    # Create comment
-    comment = ProjectComment(
-        project_id=project_id,
-        workflow_id=comment_in.workflow_id,
-        action_id=comment_in.action_id,
-        author_id=current_user.id,
-        content=comment_in.content,
-        position=comment_in.position.model_dump() if comment_in.position else None,
-        mentions=comment_in.mentions,
-        parent_comment_id=comment_in.parent_comment_id,
+    comment, response = await comment_service.create_comment(
+        db, project_id, current_user.id, comment_in
     )
 
-    db.add(comment)
-    await db.commit()
-    await db.refresh(comment)
+    # Add author info to response
+    response.author_username = current_user.username
+    response.author_email = current_user.email
+    response.author_avatar_url = current_user.avatar_url
 
     # Track activity
-    await collaboration_service.track_activity(
+    await activity_service.track_activity(
         db,
         project_id,
         current_user.id,
@@ -600,10 +469,10 @@ async def create_comment(
         metadata={"comment_id": str(comment.id)},
     )
 
-    # Get project details for notifications
+    # Get project for notifications
     project = await get_project_or_404(db, project_id)
 
-    # Send notifications for mentions
+    # Send mention notifications
     if comment_in.mentions:
         for mentioned_user_id in comment_in.mentions:
             try:
@@ -620,17 +489,13 @@ async def create_comment(
             except Exception as e:
                 logger.error("mention_notification_failed", error=str(e))
 
-    # Send reply notification if this is a reply
+    # Send reply or comment notification
     if comment_in.parent_comment_id:
-        try:
-            # Get parent comment to notify its author
-            result = await db.execute(
-                select(ProjectComment).filter(
-                    ProjectComment.id == comment_in.parent_comment_id
-                )
-            )
-            parent_comment = result.scalar_one_or_none()
-            if parent_comment and parent_comment.author_id != current_user.id:
+        parent_comment = await comment_service.get_parent_comment(
+            db, comment_in.parent_comment_id
+        )
+        if parent_comment and parent_comment.author_id != current_user.id:
+            try:
                 await notification_service.send_reply_notification(
                     db=db,
                     notify_user_id=cast(UUID, parent_comment.author_id),
@@ -642,13 +507,11 @@ async def create_comment(
                     parent_comment_id=cast(UUID, parent_comment.id),
                     reply_content=comment.content,
                 )
-        except Exception as e:
-            logger.error("reply_notification_failed", error=str(e))
+            except Exception as e:
+                logger.error("reply_notification_failed", error=str(e))
     else:
-        # Send comment notification to project owner and collaborators
-        try:
-            # Notify project owner if not the commenter
-            if project.owner_id != current_user.id:
+        if project.owner_id != current_user.id:
+            try:
                 await notification_service.send_comment_notification(
                     db=db,
                     notify_user_id=cast(UUID, project.owner_id),
@@ -659,18 +522,10 @@ async def create_comment(
                     comment_id=cast(UUID, comment.id),
                     comment_content=comment.content,
                 )
-        except Exception as e:
-            logger.error("comment_notification_failed", error=str(e))
+            except Exception as e:
+                logger.error("comment_notification_failed", error=str(e))
 
     logger.info("comment_created", comment_id=comment.id, project_id=project_id)
-
-    # Build response
-    response = CommentResponse.model_validate(comment)
-    response.author_username = current_user.username
-    response.author_email = current_user.email
-    response.author_avatar_url = current_user.avatar_url
-    response.reply_count = 0
-
     return response
 
 
@@ -688,57 +543,18 @@ async def list_comments(
     limit: int = Query(100, ge=1, le=100),
 ) -> Any:
     """List comments for a project."""
-    # Verify access
     await verify_project_permission(db, project_id, current_user, "view")
 
-    # Build query
-    query = (
-        select(ProjectComment)
-        .filter(ProjectComment.project_id == project_id)
-        .options(joinedload(ProjectComment.author))
+    return await comment_service.get_project_comments(
+        db,
+        project_id,
+        workflow_id=workflow_id,
+        action_id=action_id,
+        parent_comment_id=parent_comment_id,
+        resolved=resolved,
+        offset=skip,
+        limit=limit,
     )
-
-    if workflow_id:
-        query = query.filter(ProjectComment.workflow_id == workflow_id)
-
-    if action_id:
-        query = query.filter(ProjectComment.action_id == action_id)
-
-    if parent_comment_id:
-        query = query.filter(ProjectComment.parent_comment_id == parent_comment_id)
-    else:
-        # By default, only get top-level comments
-        query = query.filter(ProjectComment.parent_comment_id.is_(None))
-
-    if resolved is not None:
-        query = query.filter(ProjectComment.resolved == resolved)
-
-    result = await db.execute(
-        query.offset(skip).limit(limit).order_by(ProjectComment.created_at.desc())
-    )
-    comments = result.unique().scalars().all()
-
-    # Build responses with reply counts
-    responses = []
-    for comment in comments:
-        response = CommentResponse.model_validate(comment)
-
-        if comment.author:
-            response.author_username = cast(str, comment.author.username)
-            response.author_email = cast(str, comment.author.email)
-            response.author_avatar_url = comment.author.avatar_url
-
-        # Get reply count
-        count_result = await db.execute(
-            select(ProjectComment).filter(
-                ProjectComment.parent_comment_id == comment.id
-            )
-        )
-        response.reply_count = len(count_result.scalars().all())
-
-        responses.append(response)
-
-    return responses
 
 
 @router.put("/{project_id}/comments/{comment_id}", response_model=CommentResponse)
@@ -751,16 +567,7 @@ async def update_comment(
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Update a comment (author only)."""
-    # Get comment
-    result = await db.execute(
-        select(ProjectComment).filter(
-            and_(
-                ProjectComment.id == comment_id,
-                ProjectComment.project_id == project_id,
-            )
-        )
-    )
-    comment = result.scalar_one_or_none()
+    comment = await comment_service.get_comment(db, comment_id, project_id)
 
     if not comment:
         raise HTTPException(
@@ -768,36 +575,20 @@ async def update_comment(
             detail="Comment not found",
         )
 
-    # Verify author
     if comment.author_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only edit your own comments",
         )
 
-    # Update fields
-    update_data = comment_update.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        if field == "position" and value:
-            setattr(
-                comment,
-                field,
-                value.model_dump() if hasattr(value, "model_dump") else value,
-            )
-        else:
-            setattr(comment, field, value)
-
-    await db.commit()
-    await db.refresh(comment)
-
-    logger.info("comment_updated", comment_id=comment_id)
-
-    response = CommentResponse.model_validate(comment)
-    response.author_username = current_user.username
-    response.author_email = current_user.email
-    response.author_avatar_url = current_user.avatar_url
-
-    return response
+    return await comment_service.update_comment(
+        db,
+        comment,
+        comment_update,
+        author_username=current_user.username,
+        author_email=current_user.email,
+        author_avatar_url=current_user.avatar_url,
+    )
 
 
 @router.delete(
@@ -811,16 +602,7 @@ async def delete_comment(
     current_user: User = Depends(get_current_active_user_async),
 ) -> None:
     """Delete a comment (author or admin only)."""
-    # Get comment
-    result = await db.execute(
-        select(ProjectComment).filter(
-            and_(
-                ProjectComment.id == comment_id,
-                ProjectComment.project_id == project_id,
-            )
-        )
-    )
-    comment = result.scalar_one_or_none()
+    comment = await comment_service.get_comment(db, comment_id, project_id)
 
     if not comment:
         raise HTTPException(
@@ -828,9 +610,8 @@ async def delete_comment(
             detail="Comment not found",
         )
 
-    # Verify author or admin
     is_author = comment.author_id == current_user.id
-    has_admin = await collaboration_service.check_user_has_access(
+    has_admin = await sharing_service.check_user_has_access(
         db, current_user.id, project_id, "admin"
     )
 
@@ -840,10 +621,7 @@ async def delete_comment(
             detail="You can only delete your own comments",
         )
 
-    await db.delete(comment)
-    await db.commit()
-
-    logger.info("comment_deleted", comment_id=comment_id)
+    await comment_service.delete_comment(db, comment)
 
 
 @router.post(
@@ -858,21 +636,9 @@ async def resolve_comment(
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Resolve or unresolve a comment."""
-    # Verify edit access
     await verify_project_permission(db, project_id, current_user, "edit")
 
-    # Get comment
-    result = await db.execute(
-        select(ProjectComment)
-        .filter(
-            and_(
-                ProjectComment.id == comment_id,
-                ProjectComment.project_id == project_id,
-            )
-        )
-        .options(joinedload(ProjectComment.author))
-    )
-    comment = result.unique().scalar_one_or_none()
+    comment = await comment_service.get_comment_with_author(db, comment_id, project_id)
 
     if not comment:
         raise HTTPException(
@@ -880,27 +646,9 @@ async def resolve_comment(
             detail="Comment not found",
         )
 
-    # Update resolved status
-    if resolve_request.resolved:
-        comment.resolve(current_user.id)
-    else:
-        comment.unresolve()
-
-    await db.commit()
-    await db.refresh(comment)
-
-    logger.info(
-        "comment_resolved" if resolve_request.resolved else "comment_unresolved",
-        comment_id=comment_id,
+    return await comment_service.resolve_comment(
+        db, comment, resolve_request.resolved, current_user.id
     )
-
-    response = CommentResponse.model_validate(comment)
-    if comment.author:
-        response.author_username = cast(str, comment.author.username)
-        response.author_email = cast(str, comment.author.email)
-        response.author_avatar_url = comment.author.avatar_url
-
-    return response
 
 
 # ============================================================================
@@ -921,40 +669,14 @@ async def get_project_activity(
     limit: int = Query(50, ge=1, le=100),
 ) -> Any:
     """Get project activity feed."""
-    # Verify access
     await verify_project_permission(db, project_id, current_user, "view")
 
-    # Build query
-    query = (
-        select(ActivityLog)
-        .filter(ActivityLog.project_id == project_id)
-        .options(joinedload(ActivityLog.user))
+    return await activity_service.get_project_activities(
+        db,
+        project_id,
+        action_type=action_type,
+        resource_type=resource_type,
+        user_id=user_id,
+        offset=skip,
+        limit=limit,
     )
-
-    if action_type:
-        query = query.filter(ActivityLog.action_type == ActionType(action_type))
-
-    if resource_type:
-        query = query.filter(ActivityLog.resource_type == ResourceType(resource_type))
-
-    if user_id:
-        query = query.filter(ActivityLog.user_id == user_id)
-
-    result = await db.execute(
-        query.offset(skip).limit(limit).order_by(ActivityLog.created_at.desc())
-    )
-    activities = result.unique().scalars().all()
-
-    # Build responses
-    responses = []
-    for activity in activities:
-        response = ActivityLogResponse.model_validate(activity)
-
-        if activity.user:
-            response.username = cast(str, activity.user.username)
-            response.email = cast(str, activity.user.email)
-            response.avatar_url = activity.user.avatar_url
-
-        responses.append(response)
-
-    return responses

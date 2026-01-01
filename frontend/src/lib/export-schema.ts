@@ -64,10 +64,14 @@
 
 import type { WorkflowExpectations, ActionExpectations } from "./expectations";
 
-// Import Category from qontinui-schemas (single source of truth)
-import type { Category } from "@qontinui/schemas/config";
+// Import Category and Context types from qontinui-schemas (single source of truth)
+import type {
+  Category,
+  Context,
+  ContextAutoInclude,
+} from "@qontinui/schemas/config";
 // Re-export for backward compatibility with existing imports
-export type { Category };
+export type { Category, Context, ContextAutoInclude };
 
 export interface QontinuiConfig {
   version: string;
@@ -77,6 +81,7 @@ export interface QontinuiConfig {
   states: State[];
   transitions: Transition[];
   categories: Category[]; // List of workflow categories with automation settings
+  contexts?: Context[]; // AI context snippets for runner
   settings?: ConfigSettings;
   schedules?: Schedule[]; // Automated workflow schedules
   executionRecords?: ExecutionRecord[]; // Schedule execution history
@@ -923,6 +928,31 @@ export const configJsonSchema = {
         properties: {
           name: { type: "string", minLength: 1 },
           automationEnabled: { type: "boolean" },
+        },
+      },
+    },
+    contexts: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "name", "content", "createdAt", "modifiedAt"],
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          content: { type: "string" },
+          category: { type: "string" },
+          tags: { type: "array", items: { type: "string" } },
+          autoInclude: {
+            type: "object",
+            properties: {
+              taskMentions: { type: "array", items: { type: "string" } },
+              actionTypes: { type: "array", items: { type: "string" } },
+              errorPatterns: { type: "array", items: { type: "string" } },
+              filePatterns: { type: "array", items: { type: "string" } },
+            },
+          },
+          createdAt: { type: "string" },
+          modifiedAt: { type: "string" },
         },
       },
     },

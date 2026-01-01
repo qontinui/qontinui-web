@@ -82,7 +82,7 @@ async def validate_video_file_size(file: UploadFile) -> int:
     if file_size > MAX_VIDEO_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Video too large. Maximum size: {MAX_VIDEO_FILE_SIZE / (1024*1024):.1f}MB",
+            detail=f"Video too large. Maximum size: {MAX_VIDEO_FILE_SIZE / (1024 * 1024):.1f}MB",
         )
 
     # Reset file pointer for later use

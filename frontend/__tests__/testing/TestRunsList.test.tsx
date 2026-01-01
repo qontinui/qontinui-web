@@ -5,10 +5,10 @@
  * for the test runs list display.
  */
 
-import { render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Mock the TestRunsList component (create actual component based on your structure)
 const TestRunsList = ({ projectId }: { projectId: number }) => {
@@ -58,125 +58,125 @@ const createWrapper = () => {
   });
 
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      {children}
-    </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  Wrapper.displayName = 'QueryClientWrapper';
+  Wrapper.displayName = "QueryClientWrapper";
   return Wrapper;
 };
 
-describe('TestRunsList', () => {
+describe("TestRunsList", () => {
   const mockProjectId = 123;
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('Rendering', () => {
-    it('should render test runs list with header', () => {
+  describe("Rendering", () => {
+    it("should render test runs list with header", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
-      expect(screen.getByText('Test Runs')).toBeInTheDocument();
-      expect(screen.getByTestId('test-runs-list')).toBeInTheDocument();
+      expect(screen.getByText("Test Runs")).toBeInTheDocument();
+      expect(screen.getByTestId("test-runs-list")).toBeInTheDocument();
     });
 
-    it('should render search input', () => {
+    it("should render search input", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
-      const searchInput = screen.getByTestId('search-input');
+      const searchInput = screen.getByTestId("search-input");
       expect(searchInput).toBeInTheDocument();
-      expect(searchInput).toHaveAttribute('placeholder', 'Search test runs...');
+      expect(searchInput).toHaveAttribute("placeholder", "Search test runs...");
     });
 
-    it('should render status filter dropdown', () => {
+    it("should render status filter dropdown", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
-      const statusFilter = screen.getByTestId('status-filter');
+      const statusFilter = screen.getByTestId("status-filter");
       expect(statusFilter).toBeInTheDocument();
-      expect(within(statusFilter).getByText('All Statuses')).toBeInTheDocument();
-      expect(within(statusFilter).getByText('Running')).toBeInTheDocument();
-      expect(within(statusFilter).getByText('Completed')).toBeInTheDocument();
-      expect(within(statusFilter).getByText('Failed')).toBeInTheDocument();
+      expect(
+        within(statusFilter).getByText("All Statuses")
+      ).toBeInTheDocument();
+      expect(within(statusFilter).getByText("Running")).toBeInTheDocument();
+      expect(within(statusFilter).getByText("Completed")).toBeInTheDocument();
+      expect(within(statusFilter).getByText("Failed")).toBeInTheDocument();
     });
 
-    it('should render test runs table', () => {
+    it("should render test runs table", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
-      expect(screen.getByRole('table')).toBeInTheDocument();
-      expect(screen.getByText('Run Name')).toBeInTheDocument();
-      expect(screen.getByText('Status')).toBeInTheDocument();
-      expect(screen.getByText('Started')).toBeInTheDocument();
-      expect(screen.getByText('Coverage')).toBeInTheDocument();
+      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByText("Run Name")).toBeInTheDocument();
+      expect(screen.getByText("Status")).toBeInTheDocument();
+      expect(screen.getByText("Started")).toBeInTheDocument();
+      expect(screen.getByText("Coverage")).toBeInTheDocument();
     });
 
-    it('should render test run rows', () => {
+    it("should render test run rows", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
-      const tbody = screen.getByTestId('runs-tbody');
-      expect(within(tbody).getByTestId('test-run-row')).toBeInTheDocument();
+      const tbody = screen.getByTestId("runs-tbody");
+      expect(within(tbody).getByTestId("test-run-row")).toBeInTheDocument();
     });
   });
 
-  describe('Filtering', () => {
-    it('should filter by status when dropdown changes', async () => {
+  describe("Filtering", () => {
+    it("should filter by status when dropdown changes", async () => {
       const user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
-      const statusFilter = screen.getByTestId('status-filter');
-      await user.selectOptions(statusFilter, 'completed');
+      const statusFilter = screen.getByTestId("status-filter");
+      await user.selectOptions(statusFilter, "completed");
 
-      expect(statusFilter).toHaveValue('completed');
+      expect(statusFilter).toHaveValue("completed");
     });
 
-    it('should search by run name', async () => {
+    it("should search by run name", async () => {
       const user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
-      const searchInput = screen.getByTestId('search-input');
-      await user.type(searchInput, 'nightly');
+      const searchInput = screen.getByTestId("search-input");
+      await user.type(searchInput, "nightly");
 
-      expect(searchInput).toHaveValue('nightly');
+      expect(searchInput).toHaveValue("nightly");
     });
 
-    it('should combine multiple filters', async () => {
+    it("should combine multiple filters", async () => {
       const user = userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
-      const searchInput = screen.getByTestId('search-input');
-      const statusFilter = screen.getByTestId('status-filter');
+      const searchInput = screen.getByTestId("search-input");
+      const statusFilter = screen.getByTestId("status-filter");
 
-      await user.type(searchInput, 'regression');
-      await user.selectOptions(statusFilter, 'completed');
+      await user.type(searchInput, "regression");
+      await user.selectOptions(statusFilter, "completed");
 
-      expect(searchInput).toHaveValue('regression');
-      expect(statusFilter).toHaveValue('completed');
+      expect(searchInput).toHaveValue("regression");
+      expect(statusFilter).toHaveValue("completed");
     });
   });
 
-  describe('Interactions', () => {
-    it('should navigate to test run details when row is clicked', async () => {
+  describe("Interactions", () => {
+    it("should navigate to test run details when row is clicked", async () => {
       const user = userEvent.setup();
       const mockNavigate = vi.fn();
 
       // Mock useRouter or useNavigate depending on your router
-      vi.mock('next/navigation', () => ({
+      vi.mock("next/navigation", () => ({
         useRouter: () => ({
           push: mockNavigate,
         }),
@@ -186,14 +186,14 @@ describe('TestRunsList', () => {
         wrapper: createWrapper(),
       });
 
-      const row = screen.getByTestId('test-run-row');
+      const row = screen.getByTestId("test-run-row");
       await user.click(row);
 
       // Verify navigation was called (adjust based on your implementation)
       // expect(mockNavigate).toHaveBeenCalledWith('/testing/runs/some-run-id');
     });
 
-    it('should show loading state while fetching data', () => {
+    it("should show loading state while fetching data", () => {
       // Mock loading state
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
@@ -203,7 +203,7 @@ describe('TestRunsList', () => {
       // expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
     });
 
-    it('should show empty state when no runs exist', () => {
+    it("should show empty state when no runs exist", () => {
       // Mock empty data
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
@@ -213,7 +213,7 @@ describe('TestRunsList', () => {
       // expect(screen.getByText('No test runs found')).toBeInTheDocument();
     });
 
-    it('should show error state on API failure', () => {
+    it("should show error state on API failure", () => {
       // Mock error state
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
@@ -224,8 +224,8 @@ describe('TestRunsList', () => {
     });
   });
 
-  describe('Pagination', () => {
-    it('should render pagination controls', () => {
+  describe("Pagination", () => {
+    it("should render pagination controls", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -235,7 +235,7 @@ describe('TestRunsList', () => {
       // expect(screen.getByText('Next')).toBeInTheDocument();
     });
 
-    it('should navigate to next page', async () => {
+    it("should navigate to next page", async () => {
       userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
@@ -247,7 +247,7 @@ describe('TestRunsList', () => {
       // expect(/* API call with next page */).toHaveBeenCalled();
     });
 
-    it('should show current page number', () => {
+    it("should show current page number", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -257,8 +257,8 @@ describe('TestRunsList', () => {
     });
   });
 
-  describe('Data Display', () => {
-    it('should format dates correctly', () => {
+  describe("Data Display", () => {
+    it("should format dates correctly", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -267,27 +267,27 @@ describe('TestRunsList', () => {
       expect(screen.getByText(/2025-11-23/)).toBeInTheDocument();
     });
 
-    it('should display coverage percentage', () => {
+    it("should display coverage percentage", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
-      expect(screen.getByText('85%')).toBeInTheDocument();
+      expect(screen.getByText("85%")).toBeInTheDocument();
     });
 
-    it('should display status badge with correct color', () => {
+    it("should display status badge with correct color", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
 
       // In actual implementation, check status badge styling
-      const statusCell = screen.getByText('completed');
+      const statusCell = screen.getByText("completed");
       expect(statusCell).toBeInTheDocument();
     });
   });
 
-  describe('Sorting', () => {
-    it('should sort by run name', async () => {
+  describe("Sorting", () => {
+    it("should sort by run name", async () => {
       userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
@@ -299,7 +299,7 @@ describe('TestRunsList', () => {
       // Verify sort order changed
     });
 
-    it('should sort by date', async () => {
+    it("should sort by date", async () => {
       userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
@@ -311,7 +311,7 @@ describe('TestRunsList', () => {
       // Verify sort order changed
     });
 
-    it('should toggle sort direction', async () => {
+    it("should toggle sort direction", async () => {
       userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
@@ -324,8 +324,8 @@ describe('TestRunsList', () => {
     });
   });
 
-  describe('Export', () => {
-    it('should show export button', () => {
+  describe("Export", () => {
+    it("should show export button", () => {
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),
       });
@@ -334,7 +334,7 @@ describe('TestRunsList', () => {
       // expect(screen.getByText('Export')).toBeInTheDocument();
     });
 
-    it('should export selected runs to CSV', async () => {
+    it("should export selected runs to CSV", async () => {
       userEvent.setup();
       render(<TestRunsList projectId={mockProjectId} />, {
         wrapper: createWrapper(),

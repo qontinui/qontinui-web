@@ -140,6 +140,12 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    discoveries = relationship(
+        "Discovery",
+        back_populates="user",
+        foreign_keys="Discovery.user_id",
+        cascade="all, delete-orphan",
+    )
     execution_runs = relationship(
         "ExecutionRun",
         back_populates="created_by",

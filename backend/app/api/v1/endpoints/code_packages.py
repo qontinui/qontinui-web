@@ -8,6 +8,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
@@ -17,30 +18,73 @@ from app.models.project import Project
 from app.models.user import User
 from app.schemas.code_package import (
     CategoryRead,
-    InstalledPackageRead,
     InstallRequest,
     InstallResponse,
     PackageCreate,
     PackageDetailRead,
     PackageListResponse,
     PackageRead,
-    PackageSearchResult,
     PackageUpdate,
     PopularPackageResponse,
     ProjectPackagesResponse,
     RatingCreate,
     RatingRead,
-    RatingWithUser,
     TrendingPackageResponse,
     UninstallRequest,
     VersionCreate,
     VersionRead,
 )
-from app.services.code_security import CodeSecurityScanner, SecurityStatus
+from app.services.package_installation_service import package_installation_service
+from app.services.package_publishing_service import (
+    PackageNotFoundError,
+    PackageOwnershipError,
+    SecurityScanFailedError,
+    package_publishing_service,
+)
+from app.services.package_rating_service import package_rating_service
+from app.services.package_response_builder import package_response_builder
+from app.services.package_search_service import package_search_service
 
 logger = structlog.get_logger(__name__)
-
 router = APIRouter()
+
+
+# ===== Helper Functions =====
+
+
+async def verify_project_access(
+    db: AsyncSession,
+    project_id: UUID,
+    user_id: UUID,
+) -> Project:
+    """Verify user has access to the project."""
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    if project.owner_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this project",
+        )
+
+    return project
+
+
+async def get_package_or_404(db: AsyncSession, package_id: int):
+    """Get package by ID or raise 404."""
+    package = await crud.get_package_by_id(db, package_id)
+    if not package:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Package not found",
+        )
+    return package
 
 
 # ===== Category Endpoints =====
@@ -50,14 +94,8 @@ router = APIRouter()
 async def list_categories(
     db: AsyncSession = Depends(get_async_db),
 ) -> list[PackageCategory]:
-    """
-    List all package categories.
-
-    Returns:
-        List of package categories
-    """
-    categories = await crud.get_categories(db)
-    return categories
+    """List all package categories."""
+    return await crud.get_categories(db)
 
 
 # ===== Package Publishing Endpoints =====
@@ -71,24 +109,11 @@ async def create_package(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Create a new code package.
-
-    Args:
-        package_data: Package creation data
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        Created package
-
-    Raises:
-        HTTPException: If package name already exists
-    """
+    """Create a new code package."""
     try:
-        package = await crud.create_package(db, current_user.id, package_data)
-        logger.info("package_created", package_id=package.id, user_id=current_user.id)
-        return package
+        return await package_publishing_service.create_package(
+            db, current_user.id, package_data
+        )
     except Exception as e:
         logger.error("package_creation_failed", error=str(e), user_id=current_user.id)
         raise HTTPException(
@@ -108,107 +133,34 @@ async def publish_version(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Publish a new version of a package.
-
-    This endpoint:
-    1. Validates ownership
-    2. Creates version record
-    3. Runs security scan on code
-    4. Rejects if security scan fails
-
-    Args:
-        package_id: Package ID
-        version_data: Version creation data
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        Created version with security scan results
-
-    Raises:
-        HTTPException: If package not found, not authorized, version exists, or security scan fails
-    """
-    # Check package exists and user is owner
-    package = await crud.get_package_by_id(db, package_id)
-    if not package:
+    """Publish a new version of a package with security scanning."""
+    try:
+        return await package_publishing_service.publish_version(
+            db, package_id, version_data, current_user.id
+        )
+    except PackageNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Package not found",
         )
-
-    if package.author_id != current_user.id:
+    except PackageOwnershipError:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only package owner can publish versions",
         )
-
-    # Create version (with PENDING security status)
-    try:
-        version = await crud.publish_version(db, package_id, version_data)
+    except SecurityScanFailedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": str(e),
+                "scan_result": e.scan_result,
+            },
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-
-    # Run security scan
-    scanner = CodeSecurityScanner()
-    scan_result = scanner.scan_code(
-        version_data.code_content, verified=bool(package.is_verified)
-    )
-
-    # Update version with scan results
-    scan_status_map = {
-        SecurityStatus.PASSED: SecurityScanStatus.PASSED.value,
-        SecurityStatus.WARNING: SecurityScanStatus.PASSED.value,  # Allow with warnings
-        SecurityStatus.FAILED: SecurityScanStatus.FAILED.value,
-    }
-
-    version = await crud.update_version_security_scan(
-        db,
-        version,
-        scan_status_map[scan_result.status],
-        scan_result.model_dump(),
-    )
-
-    # Reject if security scan failed
-    if scan_result.status == SecurityStatus.FAILED:
-        logger.warning(
-            "version_publish_rejected",
-            package_id=package_id,
-            version_id=version.id,
-            user_id=current_user.id,
-            risk_score=scan_result.risk_score,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "message": "Security scan failed - version cannot be published",
-                "scan_result": scan_result.model_dump(),
-            },
-        )
-
-    # Log warning if has warnings
-    if scan_result.status == SecurityStatus.WARNING:
-        logger.info(
-            "version_published_with_warnings",
-            package_id=package_id,
-            version_id=version.id,
-            user_id=current_user.id,
-            warnings_count=len(
-                [i for i in scan_result.issues if i.severity.value == "medium"]
-            ),
-        )
-
-    logger.info(
-        "version_published",
-        package_id=package_id,
-        version_id=version.id,
-        version=version.version,
-        user_id=current_user.id,
-    )
-    return version
 
 
 @router.put("/packages/{package_id}", response_model=PackageRead)
@@ -218,37 +170,21 @@ async def update_package(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Update package metadata.
-
-    Args:
-        package_id: Package ID
-        update_data: Update data
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        Updated package
-
-    Raises:
-        HTTPException: If package not found or not authorized
-    """
-    package = await crud.get_package_by_id(db, package_id)
-    if not package:
+    """Update package metadata."""
+    try:
+        return await package_publishing_service.update_package(
+            db, package_id, update_data, current_user.id
+        )
+    except PackageNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Package not found",
         )
-
-    if package.author_id != current_user.id:
+    except PackageOwnershipError:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only package owner can update package",
         )
-
-    package = await crud.update_package(db, package, update_data)
-    logger.info("package_updated", package_id=package_id, user_id=current_user.id)
-    return package
 
 
 @router.delete("/packages/{package_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -257,33 +193,19 @@ async def delete_package(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Delete a package (owner only).
-
-    Args:
-        package_id: Package ID
-        current_user: Authenticated user
-        db: Database session
-
-    Raises:
-        HTTPException: If package not found or not authorized
-    """
-    package = await crud.get_package_by_id(db, package_id)
-    if not package:
+    """Delete a package (owner only)."""
+    try:
+        await package_publishing_service.delete_package(db, package_id, current_user.id)
+    except PackageNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Package not found",
         )
-
-    if package.author_id != current_user.id:
+    except PackageOwnershipError:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only package owner can delete package",
         )
-
-    await crud.delete_package(db, package)
-    logger.info("package_deleted", package_id=package_id, user_id=current_user.id)
-    return None
 
 
 # ===== Discovery Endpoints =====
@@ -300,26 +222,11 @@ async def search_packages(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Search and list packages with filters and pagination.
-
-    Args:
-        query: Text search (name, description)
-        category: Category ID filter
-        tags: Tag filters
-        verified_only: Only return verified packages
-        min_rating: Minimum average rating
-        limit: Results per page
-        offset: Pagination offset
-        db: Database session
-
-    Returns:
-        Paginated list of packages
-    """
-    packages, total = await crud.search_packages(
+    """Search and list packages with filters and pagination."""
+    packages, total = await package_search_service.search(
         db,
         query=query,
-        category=category,
+        category_id=category,
         tags=tags,
         verified_only=verified_only,
         min_rating=min_rating,
@@ -327,29 +234,7 @@ async def search_packages(
         offset=offset,
     )
 
-    # Get latest version for each package
-    results = []
-    for package in packages:
-        latest_version = await crud.get_latest_version(db, int(package.id))
-
-        # Use model_validate to handle SQLAlchemy Column types
-        result_data: dict[str, object] = {
-            "id": package.id,
-            "name": package.name,
-            "slug": package.slug,
-            "description": package.description,
-            "author_id": package.author_id,
-            "category_id": package.category_id,
-            "category_name": package.category.name if package.category else None,
-            "license": package.license,
-            "tags": package.tags or [],
-            "is_verified": package.is_verified,
-            "total_downloads": package.total_downloads,
-            "avg_rating": float(package.avg_rating) if package.avg_rating else None,
-            "latest_version": latest_version.version if latest_version else None,
-            "created_at": package.created_at,
-        }
-        results.append(PackageSearchResult.model_validate(result_data))
+    results = await package_response_builder.build_search_results(db, packages)
 
     return PackageListResponse(
         packages=results,
@@ -365,49 +250,9 @@ async def get_package_details(
     package_id: int,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get detailed package information.
-
-    Args:
-        package_id: Package ID
-        db: Database session
-
-    Returns:
-        Package details with version info
-
-    Raises:
-        HTTPException: If package not found
-    """
-    details = await crud.get_package_details(db, package_id)
-    if not details:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Package not found",
-        )
-
-    package = details["package"]
-    latest_version = details["latest_version"]
-
-    return PackageDetailRead(
-        id=package.id,
-        name=package.name,
-        slug=package.slug,
-        description=package.description,
-        long_description=package.long_description,
-        author_id=package.author_id,
-        category_id=package.category_id,
-        license=package.license,
-        tags=package.tags or [],
-        is_verified=package.is_verified,
-        total_downloads=package.total_downloads,
-        avg_rating=float(package.avg_rating) if package.avg_rating else None,
-        created_at=package.created_at,
-        updated_at=package.updated_at,
-        category=package.category,
-        latest_version=latest_version,
-        total_versions=details["total_versions"],
-        total_ratings=details["total_ratings"],
-    )
+    """Get detailed package information."""
+    package = await get_package_or_404(db, package_id)
+    return await package_response_builder.build_detail_response(db, package)
 
 
 @router.get("/packages/{package_id}/versions", response_model=list[VersionRead])
@@ -415,28 +260,9 @@ async def list_package_versions(
     package_id: int,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    List all versions of a package.
-
-    Args:
-        package_id: Package ID
-        db: Database session
-
-    Returns:
-        List of versions (newest first)
-
-    Raises:
-        HTTPException: If package not found
-    """
-    package = await crud.get_package_by_id(db, package_id)
-    if not package:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Package not found",
-        )
-
-    versions = await crud.get_package_versions(db, package_id)
-    return versions
+    """List all versions of a package."""
+    await get_package_or_404(db, package_id)
+    return await crud.get_package_versions(db, package_id)
 
 
 @router.get("/packages/popular", response_model=PopularPackageResponse)
@@ -444,41 +270,9 @@ async def get_popular_packages(
     limit: int = Query(20, ge=1, le=100, description="Number of packages"),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get most popular packages by download count.
-
-    Args:
-        limit: Number of packages to return
-        db: Database session
-
-    Returns:
-        List of popular packages
-    """
-    packages = await crud.get_popular_packages(db, limit=limit)
-
-    results = []
-    for package in packages:
-        latest_version = await crud.get_latest_version(db, int(package.id))
-
-        # Use model_validate to handle SQLAlchemy Column types
-        result_data: dict[str, object] = {
-            "id": package.id,
-            "name": package.name,
-            "slug": package.slug,
-            "description": package.description,
-            "author_id": package.author_id,
-            "category_id": package.category_id,
-            "category_name": package.category.name if package.category else None,
-            "license": package.license,
-            "tags": package.tags or [],
-            "is_verified": package.is_verified,
-            "total_downloads": package.total_downloads,
-            "avg_rating": float(package.avg_rating) if package.avg_rating else None,
-            "latest_version": latest_version.version if latest_version else None,
-            "created_at": package.created_at,
-        }
-        results.append(PackageSearchResult.model_validate(result_data))
-
+    """Get most popular packages by download count."""
+    packages = await package_search_service.get_popular(db, limit=limit)
+    results = await package_response_builder.build_search_results(db, packages)
     return PopularPackageResponse(packages=results, period="all")
 
 
@@ -488,42 +282,9 @@ async def get_trending_packages(
     limit: int = Query(20, ge=1, le=100, description="Number of packages"),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get trending packages (recent + high ratings).
-
-    Args:
-        days: Number of days to consider
-        limit: Number of packages to return
-        db: Database session
-
-    Returns:
-        List of trending packages
-    """
-    packages = await crud.get_trending_packages(db, days=days, limit=limit)
-
-    results = []
-    for package in packages:
-        latest_version = await crud.get_latest_version(db, int(package.id))
-
-        # Use model_validate to handle SQLAlchemy Column types
-        result_data: dict[str, object] = {
-            "id": package.id,
-            "name": package.name,
-            "slug": package.slug,
-            "description": package.description,
-            "author_id": package.author_id,
-            "category_id": package.category_id,
-            "category_name": package.category.name if package.category else None,
-            "license": package.license,
-            "tags": package.tags or [],
-            "is_verified": package.is_verified,
-            "total_downloads": package.total_downloads,
-            "avg_rating": float(package.avg_rating) if package.avg_rating else None,
-            "latest_version": latest_version.version if latest_version else None,
-            "created_at": package.created_at,
-        }
-        results.append(PackageSearchResult.model_validate(result_data))
-
+    """Get trending packages (recent + high ratings)."""
+    packages = await package_search_service.get_trending(db, days=days, limit=limit)
+    results = await package_response_builder.build_search_results(db, packages)
     period = "week" if days <= 7 else ("month" if days <= 30 else "all")
     return TrendingPackageResponse(packages=results, period=period)
 
@@ -538,28 +299,9 @@ async def install_package(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Install a package to a project.
-
-    Args:
-        package_id: Package ID (from URL)
-        request: Installation request with project_id and optional version_id
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        Installation details
-
-    Raises:
-        HTTPException: If package/project not found, version has security issues
-    """
+    """Install a package to a project."""
     # Validate package exists
-    package = await crud.get_package_by_id(db, package_id)
-    if not package:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Package not found",
-        )
+    package = await get_package_or_404(db, package_id)
 
     # Determine version to install
     if request.version_id:
@@ -570,7 +312,6 @@ async def install_package(
                 detail="Version not found",
             )
     else:
-        # Install latest version
         version = await crud.get_latest_version(db, package_id)
         if not version:
             raise HTTPException(
@@ -585,54 +326,39 @@ async def install_package(
             detail="Cannot install package version with failed security scan",
         )
 
-    # Validate project exists and user has access
-    from sqlalchemy import select
-
-    project_result = await db.execute(
-        select(Project).where(Project.id == request.package_id)
-    )
-    project = project_result.scalar_one_or_none()
-
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found",
-        )
-
-    # Check project ownership/access
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this project",
-        )
+    # Validate project access (request.package_id is actually project_id - schema issue)
+    project_id = request.package_id  # type: ignore[assignment]
+    await verify_project_access(db, project_id, current_user.id)  # type: ignore[arg-type]
 
     # Install package
-    # Note: request.package_id is actually project_id (schema naming issue)
-    project_id_value = request.package_id
-    installation = await crud.install_package(
-        db, project_id_value, package_id, version.id, current_user.id  # type: ignore[arg-type]
+    installation = await package_installation_service.install(
+        db,
+        project_id,  # type: ignore[arg-type]
+        package_id,
+        version.id,  # type: ignore[arg-type]
+        current_user.id,
     )
 
     logger.info(
         "package_installed",
         package_id=package_id,
         version_id=version.id,
-        project_id=project_id_value,
+        project_id=project_id,
         user_id=current_user.id,
     )
 
-    # Use model_validate to handle SQLAlchemy Column types
-    response_data = {
-        "id": installation.id,
-        "package_id": package_id,
-        "version_id": version.id,
-        "project_id": project_id_value,
-        "status": installation.status,
-        "installed_at": installation.installed_at,
-        "package_name": package.name,
-        "package_version": version.version,
-    }
-    return InstallResponse.model_validate(response_data)
+    return InstallResponse.model_validate(
+        {
+            "id": installation.id,
+            "package_id": package_id,
+            "version_id": version.id,
+            "project_id": project_id,
+            "status": installation.status,
+            "installed_at": installation.installed_at,
+            "package_name": package.name,
+            "package_version": version.version,
+        }
+    )
 
 
 @router.post("/packages/{package_id}/uninstall", status_code=status.HTTP_204_NO_CONTENT)
@@ -642,43 +368,12 @@ async def uninstall_package(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Uninstall a package from a project.
+    """Uninstall a package from a project."""
+    # request.package_id is actually project_id (schema naming issue)
+    project_id = request.package_id  # type: ignore[assignment]
+    await verify_project_access(db, project_id, current_user.id)  # type: ignore[arg-type]
 
-    Args:
-        package_id: Package ID (from URL, should match request)
-        request: Uninstall request with project_id
-        current_user: Authenticated user
-        db: Database session
-
-    Raises:
-        HTTPException: If not found or not authorized
-    """
-    # Note: request.package_id is actually project_id (reusing InstallRequest schema)
-    # This is a design issue but keeping for now
-    project_id = request.package_id
-
-    # Validate project access
-    from sqlalchemy import select
-
-    project_result = await db.execute(select(Project).where(Project.id == project_id))
-    project = project_result.scalar_one_or_none()
-
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found",
-        )
-
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this project",
-        )
-
-    # Uninstall package (note: project_id is int, not UUID in this context)
-    success = await crud.uninstall_package(db, project_id, package_id)  # type: ignore[arg-type]
-
+    success = await package_installation_service.uninstall(db, project_id, package_id)  # type: ignore[arg-type]
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -691,7 +386,6 @@ async def uninstall_package(
         project_id=project_id,
         user_id=current_user.id,
     )
-    return None
 
 
 @router.get("/projects/{project_id}/packages", response_model=ProjectPackagesResponse)
@@ -700,56 +394,13 @@ async def list_project_packages(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    List all packages installed in a project.
+    """List all packages installed in a project."""
+    await verify_project_access(db, project_id, current_user.id)
 
-    Args:
-        project_id: Project ID
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of installed packages
-
-    Raises:
-        HTTPException: If project not found or not authorized
-    """
-    # Validate project access
-    from sqlalchemy import select
-
-    project_result = await db.execute(select(Project).where(Project.id == project_id))
-    project = project_result.scalar_one_or_none()
-
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found",
-        )
-
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this project",
-        )
-
-    installations = await crud.get_project_packages(db, project_id)
-
-    results = []
-    for installation in installations:
-        # Use model_validate to handle SQLAlchemy Column types
-        installation_data = {
-            "id": installation.id,
-            "package_id": installation.package_id,
-            "version_id": installation.version_id,
-            "package_name": installation.package.name,
-            "package_slug": installation.package.slug,
-            "package_description": installation.package.description,
-            "version": installation.version.version,
-            "status": installation.status,
-            "installed_at": installation.installed_at,
-            "updated_at": installation.updated_at,
-        }
-        results.append(InstalledPackageRead.model_validate(installation_data))
+    installations = await package_installation_service.get_project_packages(
+        db, project_id
+    )
+    results = package_response_builder.build_installed_packages(installations)
 
     return ProjectPackagesResponse(packages=results, total=len(results))
 
@@ -764,30 +415,10 @@ async def rate_package(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Submit or update a rating for a package.
+    """Submit or update a rating for a package."""
+    await get_package_or_404(db, package_id)
 
-    Args:
-        package_id: Package ID
-        rating_data: Rating data (1-5 stars + optional review)
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        Rating record
-
-    Raises:
-        HTTPException: If package not found
-    """
-    # Validate package exists
-    package = await crud.get_package_by_id(db, package_id)
-    if not package:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Package not found",
-        )
-
-    rating = await crud.rate_package(
+    rating = await package_rating_service.rate(
         db,
         current_user.id,
         package_id,
@@ -805,100 +436,31 @@ async def rate_package(
     return rating
 
 
-@router.get("/packages/{package_id}/ratings", response_model=list[RatingWithUser])
+@router.get("/packages/{package_id}/ratings")
 async def get_package_ratings(
     package_id: int,
     limit: int = Query(50, ge=1, le=100, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get ratings for a package.
+    """Get ratings for a package."""
+    await get_package_or_404(db, package_id)
 
-    Args:
-        package_id: Package ID
-        limit: Results per page
-        offset: Pagination offset
-        db: Database session
-
-    Returns:
-        List of ratings with user information
-
-    Raises:
-        HTTPException: If package not found
-    """
-    # Validate package exists
-    package = await crud.get_package_by_id(db, package_id)
-    if not package:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Package not found",
-        )
-
-    ratings, _ = await crud.get_package_ratings(
+    ratings, _ = await package_rating_service.get_package_ratings(
         db, package_id, limit=limit, offset=offset
     )
 
-    results = []
-    for rating in ratings:
-        # Use model_validate to handle SQLAlchemy Column types
-        rating_data = {
-            "id": rating.id,
-            "package_id": rating.package_id,
-            "user_id": rating.user_id,
-            "rating": rating.rating,
-            "review_text": rating.review_text,
-            "created_at": rating.created_at,
-            "updated_at": rating.updated_at,
-            "user_email": rating.user.email,
-            "user_username": rating.user.username,
-        }
-        results.append(RatingWithUser.model_validate(rating_data))
-
-    return results
+    return package_response_builder.build_ratings_with_users(ratings)
 
 
 # ===== User Package Management =====
 
 
-@router.get("/users/me/packages", response_model=list[PackageSearchResult])
+@router.get("/users/me/packages")
 async def get_my_packages(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Get all packages published by the current user.
-
-    Args:
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        List of user's packages
-    """
+    """Get all packages published by the current user."""
     packages = await crud.get_user_packages(db, current_user.id)
-
-    results = []
-    for package in packages:
-        latest_version = await crud.get_latest_version(db, package.id)  # type: ignore[arg-type]
-
-        # Use model_validate to handle SQLAlchemy Column types
-        result_data: dict[str, object] = {
-            "id": package.id,
-            "name": package.name,
-            "slug": package.slug,
-            "description": package.description,
-            "author_id": package.author_id,
-            "category_id": package.category_id,
-            "category_name": package.category.name if package.category else None,
-            "license": package.license,
-            "tags": package.tags or [],
-            "is_verified": package.is_verified,
-            "total_downloads": package.total_downloads,
-            "avg_rating": float(package.avg_rating) if package.avg_rating else None,
-            "latest_version": latest_version.version if latest_version else None,
-            "created_at": package.created_at,
-        }
-        results.append(PackageSearchResult.model_validate(result_data))
-
-    return results
+    return await package_response_builder.build_search_results(db, packages)

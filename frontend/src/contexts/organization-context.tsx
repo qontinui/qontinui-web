@@ -97,25 +97,28 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   /**
    * Switch to a different organization
    */
-  const switchOrganization = useCallback(async (orgId: string) => {
-    try {
-      const org = organizations.find((o) => o.id === orgId);
-      if (org) {
-        setCurrentOrganization(org);
-        localStorage.setItem(STORAGE_KEY, orgId);
-      } else {
-        // Fetch the organization if not in the list
-        const fetchedOrg = await organizationService.getOrganization(orgId);
-        setCurrentOrganization(fetchedOrg);
-        localStorage.setItem(STORAGE_KEY, orgId);
-        // Refresh the list to include the new organization
-        await loadOrganizations();
+  const switchOrganization = useCallback(
+    async (orgId: string) => {
+      try {
+        const org = organizations.find((o) => o.id === orgId);
+        if (org) {
+          setCurrentOrganization(org);
+          localStorage.setItem(STORAGE_KEY, orgId);
+        } else {
+          // Fetch the organization if not in the list
+          const fetchedOrg = await organizationService.getOrganization(orgId);
+          setCurrentOrganization(fetchedOrg);
+          localStorage.setItem(STORAGE_KEY, orgId);
+          // Refresh the list to include the new organization
+          await loadOrganizations();
+        }
+      } catch (error) {
+        console.error("[Organization] Failed to switch organization:", error);
+        throw error;
       }
-    } catch (error) {
-      console.error("[Organization] Failed to switch organization:", error);
-      throw error;
-    }
-  }, [organizations, loadOrganizations]);
+    },
+    [organizations, loadOrganizations]
+  );
 
   /**
    * Refresh the organization list
@@ -127,28 +130,28 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   /**
    * Create a new organization
    */
-  const createOrganization = useCallback(async (
-    name: string,
-    description?: string
-  ): Promise<Organization> => {
-    try {
-      const newOrg = await organizationService.createOrganization(
-        name,
-        description
-      );
+  const createOrganization = useCallback(
+    async (name: string, description?: string): Promise<Organization> => {
+      try {
+        const newOrg = await organizationService.createOrganization(
+          name,
+          description
+        );
 
-      // Refresh organizations list
-      await loadOrganizations();
+        // Refresh organizations list
+        await loadOrganizations();
 
-      // Switch to the newly created organization
-      await switchOrganization(newOrg.id);
+        // Switch to the newly created organization
+        await switchOrganization(newOrg.id);
 
-      return newOrg;
-    } catch (error) {
-      console.error("[Organization] Failed to create organization:", error);
-      throw error;
-    }
-  }, [loadOrganizations, switchOrganization]);
+        return newOrg;
+      } catch (error) {
+        console.error("[Organization] Failed to create organization:", error);
+        throw error;
+      }
+    },
+    [loadOrganizations, switchOrganization]
+  );
 
   // ============================================================================
   // Context Value

@@ -6,286 +6,67 @@ Provides sandboxed execution of user code with:
 - Resource limits (timeout, memory)
 - Safe builtins (no eval, exec, __import__)
 - Input/output validation
+
+Refactored for SRP compliance - uses extracted modules:
+- app.schemas.code_execution - Request/response models
+- app.core.security.code_policy - Security rules
+- app.utils.code_validator - AST validation
+- app.utils.timeout - Timeout handling
 """
 
-import ast
-import re
-import signal
+import io
 import sys
 import traceback
-from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
-
+from app.core.security.code_policy import CodeSecurityPolicy
+from app.schemas.code_execution import (
+    CodeExecutionRequest,
+    CodeExecutionResult,
+    ExecutionContext,
+)
 from app.services.automation_context import AutomationContext
+from app.utils.code_validator import CodeValidationError, CodeValidator
+from app.utils.timeout import ExecutionTimeoutError, time_limit
 
-# ============================================================================
-# Models
-# ============================================================================
+# Re-export models for backward compatibility
+__all__ = [
+    "CodeExecutionService",
+    "CodeExecutionRequest",
+    "CodeExecutionResult",
+    "ExecutionContext",
+    # Legacy exports (deprecated, use imports from proper modules)
+    "CodeValidator",
+    "TimeoutError",
+]
 
-
-class ExecutionContext(BaseModel):
-    """Context available during code execution."""
-
-    # Previous action result (from workflow)
-    action_result: dict[str, Any] | None = None
-
-    # Workflow variables
-    variables: dict[str, Any] = Field(default_factory=dict)
-
-    # Workflow state
-    workflow_state: dict[str, Any] = Field(default_factory=dict)
-
-    # Active states (from state machine)
-    active_states: set[str] = Field(default_factory=set)
-
-    # Execution metadata
-    workflow_id: str | None = None
-    run_id: str | None = None
-
-
-class CodeExecutionRequest(BaseModel):
-    """Request to execute Python code."""
-
-    code: str = Field(..., description="Python code to execute")
-
-    context: ExecutionContext = Field(
-        default_factory=ExecutionContext, description="Execution context"
-    )
-
-    inputs: dict[str, Any] = Field(
-        default_factory=dict, description="Additional input variables"
-    )
-
-    timeout: int = Field(
-        default=30, ge=1, le=60, description="Execution timeout in seconds"
-    )
-
-    allowed_imports: list[str] = Field(
-        default_factory=lambda: [
-            "re",
-            "json",
-            "math",
-            "datetime",
-            "collections",
-            "itertools",
-            "functools",
-            "typing",
-        ],
-        description="Whitelist of allowed imports",
-    )
-
-    project_root: str | None = Field(
-        default=None,
-        description="Project root directory for import resolution (file-based execution)",
-    )
-
-    debug: bool = Field(default=False, description="Enable debug logging")
-
-
-class CodeExecutionResult(BaseModel):
-    """Result of code execution."""
-
-    success: bool
-    result: Any = None
-    error: str | None = None
-    error_type: str | None = None
-    traceback: str | None = None
-    execution_time_ms: float
-    stdout: str = ""
-    stderr: str = ""
-
-
-# ============================================================================
-# Security: Blocked builtins and imports
-# ============================================================================
-
-BLOCKED_BUILTINS = {
-    "eval",
-    "exec",
-    "compile",
-    "__import__",
-    "open",
-    "input",
-    "help",
-    "breakpoint",
-    "exit",
-    "quit",
-}
-
-BLOCKED_IMPORTS = {
-    "os",
-    "sys",
-    "subprocess",
-    "socket",
-    "urllib",
-    "requests",
-    "httpx",
-    "pathlib",
-    "shutil",
-    "glob",
-    "tempfile",
-    "pickle",
-    "marshal",
-    "ctypes",
-    "importlib",
-}
-
-
-# ============================================================================
-# Code Validation
-# ============================================================================
-
-
-class CodeValidator:
-    """Validates Python code for security concerns before execution."""
-
-    @staticmethod
-    def validate_imports(
-        code: str, allowed_imports: list[str], allow_project_imports: bool = False
-    ) -> None:
-        """
-        Validate that code only imports allowed modules.
-
-        Args:
-            code: Python code to validate
-            allowed_imports: Whitelist of allowed module names
-            allow_project_imports: If True, allow imports from any non-blocked module (for project files)
-
-        Raises:
-            ValueError: If code imports blocked or non-whitelisted modules
-        """
-        try:
-            tree = ast.parse(code)
-        except SyntaxError as e:
-            raise ValueError(f"Syntax error in code: {e}")
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    module_name = alias.name.split(".")[0]
-                    if module_name in BLOCKED_IMPORTS:
-                        raise ValueError(
-                            f"Import of blocked module '{module_name}' is not allowed"
-                        )
-                    # Skip whitelist check if project imports are allowed
-                    if not allow_project_imports and module_name not in allowed_imports:
-                        raise ValueError(
-                            f"Import of '{module_name}' is not whitelisted. "
-                            f"Allowed imports: {', '.join(allowed_imports)}"
-                        )
-
-            elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    module_name = node.module.split(".")[0]
-                    if module_name in BLOCKED_IMPORTS:
-                        raise ValueError(
-                            f"Import from blocked module '{module_name}' is not allowed"
-                        )
-                    # Skip whitelist check if project imports are allowed
-                    if not allow_project_imports and module_name not in allowed_imports:
-                        raise ValueError(
-                            f"Import from '{module_name}' is not whitelisted. "
-                            f"Allowed imports: {', '.join(allowed_imports)}"
-                        )
-
-    @staticmethod
-    def validate_dangerous_patterns(code: str) -> None:
-        """
-        Check for dangerous patterns in code.
-
-        Args:
-            code: Python code to validate
-
-        Raises:
-            ValueError: If dangerous patterns are found
-        """
-        dangerous_patterns = [
-            (r"__\w+__", "Dunder methods are not allowed"),
-            (r"\beval\b", "eval() is not allowed"),
-            (r"\bexec\b", "exec() is not allowed"),
-            (r"\bcompile\b", "compile() is not allowed"),
-            (r"\b__import__\b", "__import__() is not allowed"),
-            (r"\bopen\b", "open() is not allowed"),
-        ]
-
-        for pattern, message in dangerous_patterns:
-            if re.search(pattern, code):
-                raise ValueError(message)
-
-
-# ============================================================================
-# Timeout Handler
-# ============================================================================
-
-
-class TimeoutError(Exception):
-    """Raised when code execution exceeds timeout."""
-
-    pass
-
-
-@contextmanager
-def time_limit(seconds: int):
-    """
-    Context manager to enforce execution timeout.
-
-    Args:
-        seconds: Maximum execution time
-
-    Raises:
-        TimeoutError: If execution exceeds timeout
-    """
-
-    def signal_handler(signum, frame):
-        raise TimeoutError(f"Code execution exceeded {seconds} second timeout")
-
-    # Note: signal.alarm only works on Unix-like systems
-    # For Windows, we would need a threading-based solution
-    if sys.platform != "win32":
-        signal.signal(signal.SIGALRM, signal_handler)
-        signal.alarm(seconds)
-        try:
-            yield
-        finally:
-            signal.alarm(0)
-    else:
-        # Fallback for Windows: use threading-based timeout
-        import threading
-
-        # Create a flag to indicate timeout
-        timed_out = threading.Event()
-
-        def check_timeout():
-            if not timed_out.wait(seconds):
-                # Signal that we've timed out (though Python can't actually
-                # interrupt the thread, this at least lets us track it)
-                pass
-
-        # Start timeout watcher
-        timer = threading.Timer(seconds, lambda: timed_out.set())
-        timer.start()
-
-        try:
-            yield
-            if timed_out.is_set():
-                raise TimeoutError(f"Execution timed out after {seconds} seconds")
-        finally:
-            timer.cancel()
-
-
-# ============================================================================
-# Code Execution Service
-# ============================================================================
+# Legacy alias for backward compatibility
+TimeoutError = ExecutionTimeoutError
 
 
 class CodeExecutionService:
-    """Service for executing user Python code in a sandboxed environment."""
+    """
+    Service for executing user Python code in a sandboxed environment.
 
-    @staticmethod
+    Uses:
+    - CodeSecurityPolicy for security rules
+    - CodeValidator for AST validation
+    - time_limit for timeout enforcement
+    """
+
+    def __init__(self, policy: CodeSecurityPolicy | None = None):
+        """
+        Initialize service with security policy.
+
+        Args:
+            policy: Security policy to use. Defaults to standard policy.
+        """
+        self.policy = policy or CodeSecurityPolicy()
+        self.validator = CodeValidator(self.policy)
+
     def create_safe_globals(
+        self,
         context: ExecutionContext,
         inputs: dict[str, Any],
         allowed_imports: list[str],
@@ -303,21 +84,8 @@ class CodeExecutionService:
         Returns:
             Dict of safe globals for exec()
         """
-        # Start with minimal builtins
-        # __builtins__ can be a dict or a module, so we need to handle both
-        import builtins
-
-        builtins_dict = builtins.__dict__
-
-        safe_builtins = {
-            k: v
-            for k, v in builtins_dict.items()
-            if k not in BLOCKED_BUILTINS and not k.startswith("_")
-        }
-
-        # Allow __import__ for file-based execution
-        if allow_imports:
-            safe_builtins["__import__"] = builtins_dict["__import__"]
+        # Get safe builtins from policy
+        safe_builtins = self.policy.get_safe_builtins(include_import=allow_imports)
 
         # Add allowed imports
         allowed_modules: dict[str, Any] = {}
@@ -335,7 +103,6 @@ class CodeExecutionService:
                 pass  # Skip if module not available
 
         # Create AutomationContext for custom functions
-        # Build action history from action_result if available
         action_history = []
         if context.action_result:
             action_history = [context.action_result]
@@ -372,10 +139,9 @@ class CodeExecutionService:
 
         return safe_globals
 
-    @staticmethod
-    def execute_code(request: CodeExecutionRequest) -> CodeExecutionResult:
+    def _execute_code_impl(self, request: CodeExecutionRequest) -> CodeExecutionResult:
         """
-        Execute Python code in a sandboxed environment.
+        Execute Python code in a sandboxed environment (internal implementation).
 
         Args:
             request: Code execution request with code and context
@@ -390,15 +156,15 @@ class CodeExecutionService:
         project_root = None
 
         try:
-            # Validate code
-            # Allow project imports if project_root is set (file-based execution)
+            # Validate code using extracted validator
             allow_project_imports = request.project_root is not None
-            CodeValidator.validate_imports(
-                request.code, request.allowed_imports, allow_project_imports
+            self.validator.validate(
+                request.code,
+                allowed_imports=request.allowed_imports,
+                allow_project_imports=allow_project_imports,
             )
-            CodeValidator.validate_dangerous_patterns(request.code)
 
-            # Add project root to sys.path for import resolution (file-based execution)
+            # Add project root to sys.path for import resolution
             if request.project_root:
                 project_root = request.project_root
                 if project_root not in sys.path:
@@ -406,7 +172,7 @@ class CodeExecutionService:
                     added_to_path = True
 
             # Create safe execution environment
-            safe_globals = CodeExecutionService.create_safe_globals(
+            safe_globals = self.create_safe_globals(
                 request.context,
                 request.inputs,
                 request.allowed_imports,
@@ -415,8 +181,6 @@ class CodeExecutionService:
             safe_locals: dict[str, Any] = {}
 
             # Capture stdout/stderr
-            import io
-
             stdout_capture = io.StringIO()
             stderr_capture = io.StringIO()
             old_stdout = sys.stdout
@@ -439,18 +203,16 @@ class CodeExecutionService:
                     # Get result (last expression or explicit return)
                     result = safe_locals.get("result", None)
 
-                    # If no 'result' variable, check for last expression
+                    # If no 'result' variable, try to evaluate as expression
                     if result is None:
-                        # Try to evaluate as expression
                         try:
                             result = eval(request.code, safe_globals, safe_locals)
                         except Exception:
                             # If not an expression, result is None
                             pass
 
-            except TimeoutError as e:
+            except ExecutionTimeoutError as e:
                 execution_time = (datetime.now() - start_time).total_seconds() * 1000
-                # Capture any output before timeout
                 stdout_output = stdout_capture.getvalue()
                 stderr_output = stderr_capture.getvalue()
                 return CodeExecutionResult(
@@ -478,8 +240,18 @@ class CodeExecutionService:
                 stderr=stderr_output,
             )
 
+        except CodeValidationError as e:
+            # Validation error from CodeValidator
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            return CodeExecutionResult(
+                success=False,
+                error=str(e),
+                error_type="ValidationError",
+                execution_time_ms=execution_time,
+            )
+
         except ValueError as e:
-            # Validation error
+            # Legacy validation error handling
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             return CodeExecutionResult(
                 success=False,
@@ -503,3 +275,24 @@ class CodeExecutionService:
             # Clean up sys.path
             if added_to_path and project_root and project_root in sys.path:
                 sys.path.remove(project_root)
+
+    @staticmethod
+    def execute_code(request: CodeExecutionRequest) -> CodeExecutionResult:
+        """
+        Execute Python code in a sandboxed environment.
+
+        This is a static method for backward compatibility.
+        Creates a new service instance for each execution.
+
+        Args:
+            request: Code execution request with code and context
+
+        Returns:
+            CodeExecutionResult with result or error
+        """
+        service = CodeExecutionService()
+        return service._execute_code_impl(request)
+
+
+# Singleton instance for dependency injection
+code_execution_service = CodeExecutionService()

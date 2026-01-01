@@ -192,7 +192,15 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
       }
     };
     img.src = screenshot.imageData;
-  }, [screenshot, matches, scale, hoveredMatch, showScores, showLabels, highlightBest]);
+  }, [
+    screenshot,
+    matches,
+    scale,
+    hoveredMatch,
+    showScores,
+    showLabels,
+    highlightBest,
+  ]);
 
   useEffect(() => {
     drawVisualization();

@@ -7,12 +7,14 @@ The architecture page now supports multi-level navigation, allowing users to dri
 ## Features
 
 ### 1. Breadcrumb Navigation
+
 - Located at the top of the page
 - Shows the current navigation path
 - Clickable breadcrumbs allow quick navigation back to parent levels
 - Automatically updates based on current level
 
 ### 2. Drill-Down Functionality
+
 - Components with sub-architectures show a drill-down indicator (⤵)
 - **Double-click** on any component with the indicator to navigate into its architecture
 - Currently implemented for:
@@ -20,11 +22,13 @@ The architecture page now supports multi-level navigation, allowing users to dri
   - Other components marked for future expansion
 
 ### 3. Component Interactions
+
 - **Single click**: View detailed component information in the side panel
 - **Double-click**: Navigate into component's architecture (if available)
 - **Hover**: See quick tooltips with hints about available interactions
 
 ### 4. Visual Indicators
+
 - Components with drill-down capability show a ⤵ icon in the top-right corner
 - Hover tooltips indicate "Double-click to drill down" for interactive components
 - Breadcrumbs highlight the current level
@@ -32,7 +36,9 @@ The architecture page now supports multi-level navigation, allowing users to dri
 ## Architecture Levels
 
 ### Root Level
+
 Shows the complete Qontinui ecosystem:
+
 - MultiState (library)
 - Qontinui (library)
 - Qontinui Runner (application)
@@ -40,7 +46,9 @@ Shows the complete Qontinui ecosystem:
 - Qontinui API (service)
 
 ### Qontinui Web Level
+
 Shows the internal architecture of Qontinui Web:
+
 - Next.js Frontend (frontend framework)
 - State Builder (component)
 - Element Annotator (component)
@@ -50,6 +58,7 @@ Shows the internal architecture of Qontinui Web:
 ## Implementation Details
 
 ### Files Modified
+
 1. `frontend/src/app/(app)/admin/architecture/page.tsx`
    - Added `ArchitectureLevel` type
    - Added `currentLevel` state management
@@ -64,7 +73,9 @@ Shows the internal architecture of Qontinui Web:
    - Enhanced tooltips with drill-down hints
 
 ### Component Types
+
 The diagram now supports additional component types:
+
 - `frontend` - Frontend applications/frameworks
 - `backend` - Backend services
 - `component` - UI/feature components
@@ -75,6 +86,7 @@ The diagram now supports additional component types:
 ## Future Enhancements
 
 ### Planned Sub-Architectures
+
 1. **Qontinui API**
    - API Routes
    - Database Models

@@ -7,20 +7,20 @@
 import {
   hasPermission,
   canUserEdit,
-  getPermissionLevel
-} from '@/lib/permissions';
+  getPermissionLevel,
+} from "@/lib/permissions";
 
 // Permission hook
-import { useProjectPermissions } from '@/hooks/useProjectPermissions';
+import { useProjectPermissions } from "@/hooks/useProjectPermissions";
 
 // Permission gate component
-import { PermissionGate } from '@/components/collaboration/PermissionGate';
+import { PermissionGate } from "@/components/collaboration/PermissionGate";
 
 // Collaboration context
-import { useCollaboration } from '@/contexts/collaboration-context';
+import { useCollaboration } from "@/contexts/collaboration-context";
 
 // Auth context
-import { useAuth } from '@/contexts/auth-context';
+import { useAuth } from "@/contexts/auth-context";
 ```
 
 ## Permission Levels (Hierarchy)
@@ -86,15 +86,17 @@ function Component({ project }) {
 ### Permission Selector Dropdown
 
 ```tsx
-import { getPermissionLevelOptions } from '@/lib/permissions';
+import { getPermissionLevelOptions } from "@/lib/permissions";
 
 function PermissionDropdown({ value, onChange }) {
   const options = getPermissionLevelOptions();
 
   return (
-    <select value={value} onChange={e => onChange(e.target.value)}>
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
       {options.map(({ value, label, description }) => (
-        <option key={value} value={value}>{label}</option>
+        <option key={value} value={value}>
+          {label}
+        </option>
       ))}
     </select>
   );
@@ -104,7 +106,10 @@ function PermissionDropdown({ value, onChange }) {
 ### Display Permission Level
 
 ```tsx
-import { getPermissionLabel, getPermissionDescription } from '@/lib/permissions';
+import {
+  getPermissionLabel,
+  getPermissionDescription,
+} from "@/lib/permissions";
 
 function PermissionBadge({ level }) {
   return (
@@ -122,11 +127,11 @@ function Component({ project }) {
   const { hasPermission } = useProjectPermissions(project);
 
   // Check any permission level at runtime
-  if (hasPermission('admin')) {
+  if (hasPermission("admin")) {
     return <AdminFeature />;
   }
 
-  if (hasPermission('edit')) {
+  if (hasPermission("edit")) {
     return <EditFeature />;
   }
 
@@ -166,15 +171,15 @@ parsePermissionLevel(level): PermissionLevel
 
 ```typescript
 const {
-  permissionLevel,     // Current permission level
-  canView,            // Can view project
-  canComment,         // Can comment on project
-  canEdit,            // Can edit project
-  canAdmin,           // Has admin permissions
-  isOwner,            // Is project owner
-  hasPermission,      // Function to check specific level
-  currentUser,        // Current user
-  isLoading,          // Loading state
+  permissionLevel, // Current permission level
+  canView, // Can view project
+  canComment, // Can comment on project
+  canEdit, // Can edit project
+  canAdmin, // Has admin permissions
+  isOwner, // Is project owner
+  hasPermission, // Function to check specific level
+  currentUser, // Current user
+  isLoading, // Loading state
 } = useProjectPermissions(project);
 ```
 
@@ -191,12 +196,12 @@ const isOwner = useIsProjectOwner(project);
 
 ```typescript
 const {
-  projectAccess,      // PermissionLevel | null
-  canView,           // boolean
-  canComment,        // boolean
-  canEdit,           // boolean
-  canAdmin,          // boolean
-  hasPermission,     // (level) => boolean
+  projectAccess, // PermissionLevel | null
+  canView, // boolean
+  canComment, // boolean
+  canEdit, // boolean
+  canAdmin, // boolean
+  hasPermission, // (level) => boolean
   // ... other collaboration features
 } = useCollaboration();
 ```
@@ -228,7 +233,7 @@ interface PermissionGateProps {
 
 ```typescript
 // Permission level
-type PermissionLevel = 'none' | 'view' | 'comment' | 'edit' | 'admin' | 'owner';
+type PermissionLevel = "none" | "view" | "comment" | "edit" | "admin" | "owner";
 
 // Project with permissions
 interface ProjectWithPermissions {
@@ -314,7 +319,7 @@ const { canEdit } = useProjectPermissions(project);
 
 const handleSubmit = async () => {
   if (!canEdit) {
-    toast.error('You do not have permission to edit');
+    toast.error("You do not have permission to edit");
     return;
   }
 
@@ -327,13 +332,14 @@ const handleSubmit = async () => {
 ```tsx
 const { permissionLevel } = useProjectPermissions(project);
 
-const features = {
-  view: ['read'],
-  comment: ['read', 'comment'],
-  edit: ['read', 'comment', 'edit'],
-  admin: ['read', 'comment', 'edit', 'manage'],
-  owner: ['read', 'comment', 'edit', 'manage', 'delete'],
-}[permissionLevel] || [];
+const features =
+  {
+    view: ["read"],
+    comment: ["read", "comment"],
+    edit: ["read", "comment", "edit"],
+    admin: ["read", "comment", "edit", "manage"],
+    owner: ["read", "comment", "edit", "manage", "delete"],
+  }[permissionLevel] || [];
 ```
 
 ## Best Practices
