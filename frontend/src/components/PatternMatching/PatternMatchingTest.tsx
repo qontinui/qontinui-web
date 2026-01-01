@@ -59,7 +59,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   const {
     isHydrating,
     selectedScreenshot,
-    screenshotDimensions,
+    screenshotDimensions: _screenshotDimensions,
     templateImage,
     templateSource,
     selectedStateImage,
@@ -106,25 +106,6 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   useEffect(() => {
     checkAPIConnection();
   }, []);
-
-  useEffect(() => {
-    drawVisualization();
-  }, [
-    drawVisualization,
-    selectedScreenshot,
-    matches,
-    selectedMatch,
-    showMatches,
-    showScores,
-    showHeatmap,
-    highlightBest,
-    zoom,
-    panOffset,
-  ]);
-
-  useEffect(() => {
-    drawTemplate();
-  }, [drawTemplate, templateImage]);
 
   const checkAPIConnection = async () => {
     try {
@@ -195,17 +176,8 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
     // Draw screenshot
     const img = new Image();
     img.onload = () => {
-      // Update dimensions when image loads - use functional update to avoid stale closure
-      setScreenshotDimensions((prevDimensions) => {
-        if (
-          !prevDimensions ||
-          prevDimensions.width !== img.width ||
-          prevDimensions.height !== img.height
-        ) {
-          return { width: img.width, height: img.height };
-        }
-        return prevDimensions;
-      });
+      // Update dimensions when image loads
+      setScreenshotDimensions({ width: img.width, height: img.height });
 
       // Calculate max dimensions to fit in viewport (leaving room for panels)
       const maxWidth = window.innerWidth - 400 - 100; // Subtract left panel width + padding
@@ -421,6 +393,27 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
     };
     img.src = templateImage;
   }, [templateImage]);
+
+  // Effect for drawing visualization when dependencies change
+  useEffect(() => {
+    drawVisualization();
+  }, [
+    drawVisualization,
+    selectedScreenshot,
+    matches,
+    selectedMatch,
+    showMatches,
+    showScores,
+    showHeatmap,
+    highlightBest,
+    zoom,
+    panOffset,
+  ]);
+
+  // Effect for drawing template when template changes
+  useEffect(() => {
+    drawTemplate();
+  }, [drawTemplate, templateImage]);
 
   const performPatternMatching = async () => {
     if (!selectedScreenshot || !templateImage || !apiConnected) return;

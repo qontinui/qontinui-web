@@ -98,22 +98,6 @@ export function ImageCanvas({
   const [tempBox, setTempBox] = useState<BoundingBox | null>(null);
   const [cursor, setCursor] = useState("crosshair");
 
-  // Load image
-  useEffect(() => {
-    const img = new Image();
-    img.onload = () => {
-      imageRef.current = img;
-      redraw();
-    };
-    img.src = imageUrl;
-    // eslint-disable-next-line react-hooks/exhaustive-deps - we only want to reload when imageUrl changes
-  }, [imageUrl]);
-
-  // Redraw on changes
-  useEffect(() => {
-    redraw();
-  }, [redraw]);
-
   // Screen to image coordinates
   const screenToImage = useCallback(
     (screenX: number, screenY: number) => {
@@ -282,6 +266,22 @@ export function ImageCanvas({
       }
     });
   }, [boxes, selectedBoxId, zoom, pan, tempBox, imageToScreen, readonly]);
+
+  // Load image
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      imageRef.current = img;
+      redraw();
+    };
+    img.src = imageUrl;
+    // eslint-disable-next-line react-hooks/exhaustive-deps - we only want to reload when imageUrl changes
+  }, [imageUrl]);
+
+  // Redraw on changes
+  useEffect(() => {
+    redraw();
+  }, [redraw]);
 
   // Handle mouse down
   const handleMouseDown = useCallback(
