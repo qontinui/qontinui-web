@@ -40,7 +40,7 @@ export function SnapshotDetailDialog({
     if (open && snapshotId) {
       fetchDetail(snapshotId);
     }
-  }, [open, snapshotId]);
+  }, [open, snapshotId, fetchDetail]);
 
   const getRecencyBadge = (recency: string) => {
     switch (recency) {

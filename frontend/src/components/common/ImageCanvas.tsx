@@ -106,12 +106,13 @@ export function ImageCanvas({
       redraw();
     };
     img.src = imageUrl;
+    // eslint-disable-next-line react-hooks/exhaustive-deps - we only want to reload when imageUrl changes
   }, [imageUrl]);
 
   // Redraw on changes
   useEffect(() => {
     redraw();
-  }, [boxes, selectedBoxId, zoom, pan, tempBox]);
+  }, [redraw]);
 
   // Screen to image coordinates
   const screenToImage = useCallback(

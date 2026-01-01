@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { StateImage } from "../../types/stateDiscovery";
 import { toast } from "sonner";
 
@@ -31,20 +31,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
     type?: string;
   } | null>(null);
 
-  useEffect(() => {
-    if (canvasRef.current && stateImage) {
-      drawVisualization();
-    }
-  }, [stateImage, maskData, showMask, maskOpacity]);
-
-  useEffect(() => {
-    // Fetch mask if StateImage has one but we don&apos;t have the data
-    if (stateImage.hasMask && !maskData && !isLoading) {
-      fetchMask();
-    }
-  }, [stateImage.hasMask, stateImage.id]);
-
-  const drawVisualization = () => {
+  const drawVisualization = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -87,9 +74,9 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
     ctx.strokeStyle = stateImage.hasMask ? "#4CAF50" : "#999";
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
-  };
+  }, [stateImage, maskData, showMask, maskOpacity]);
 
-  const fetchMask = async () => {
+  const fetchMask = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await fetch(
@@ -110,7 +97,20 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [stateImage.id]);
+
+  useEffect(() => {
+    if (canvasRef.current && stateImage) {
+      drawVisualization();
+    }
+  }, [stateImage, drawVisualization]);
+
+  useEffect(() => {
+    // Fetch mask if StateImage has one but we don't have the data
+    if (stateImage.hasMask && !maskData && !isLoading) {
+      fetchMask();
+    }
+  }, [stateImage.hasMask, maskData, isLoading, fetchMask]);
 
   const generateMask = async () => {
     if (!stateImage.pixelHash) {
