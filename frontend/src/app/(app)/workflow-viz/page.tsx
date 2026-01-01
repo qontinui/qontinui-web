@@ -380,6 +380,7 @@ export default function WorkflowVisualizationPage() {
       setCurrentActionIndex(0);
       setIsPlaying(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWorkflowId, states]);
 
   // Playback control
@@ -391,7 +392,8 @@ export default function WorkflowVisualizationPage() {
     }, playbackSpeed);
 
     return () => clearTimeout(timer);
-  }, [isPlaying, currentActionIndex, playbackSpeed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps - handleStepForward changes frequently, we only want to trigger on these specific deps
+  }, [isPlaying, currentActionIndex, playbackSpeed, selectedWorkflow]);
 
   // Step forward through workflow
   const handleStepForward = () => {

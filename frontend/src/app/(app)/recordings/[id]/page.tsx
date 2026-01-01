@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,11 +28,7 @@ export default function RecordingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
 
-  useEffect(() => {
-    loadRecording();
-  }, [recordingId]);
-
-  const loadRecording = async () => {
+  const loadRecording = useCallback(async () => {
     try {
       setLoading(true);
       const data = await recordingService.getRecording(recordingId);
@@ -50,7 +46,11 @@ export default function RecordingDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [recordingId]);
+
+  useEffect(() => {
+    loadRecording();
+  }, [loadRecording]);
 
   const handleStartProcessing = async () => {
     if (!recording) return;
