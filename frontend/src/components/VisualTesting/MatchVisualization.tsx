@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Screenshot } from "../../types/Screenshot";
 import { Search, Target } from "lucide-react";
 
@@ -32,20 +32,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
   const [scale, setScale] = useState(1);
   const [hoveredMatch, setHoveredMatch] = useState<MatchRegion | null>(null);
 
-  useEffect(() => {
-    drawVisualization();
-  }, [screenshot, matches, scale, hoveredMatch]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      calculateScale();
-    };
-    window.addEventListener("resize", handleResize);
-    calculateScale();
-    return () => window.removeEventListener("resize", handleResize);
-  }, [screenshot]);
-
-  const calculateScale = () => {
+  const calculateScale = useCallback(() => {
     if (!containerRef.current) return;
 
     const containerWidth = containerRef.current.clientWidth - 40;
@@ -55,9 +42,9 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
     const newScale = Math.min(scaleX, scaleY, 1);
 
     setScale(newScale);
-  };
+  }, [screenshot.width, screenshot.height]);
 
-  const drawVisualization = () => {
+  const drawVisualization = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -205,7 +192,20 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
       }
     };
     img.src = screenshot.imageData;
-  };
+  }, [screenshot, matches, scale, hoveredMatch, showScores, showLabels, highlightBest]);
+
+  useEffect(() => {
+    drawVisualization();
+  }, [drawVisualization]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      calculateScale();
+    };
+    window.addEventListener("resize", handleResize);
+    calculateScale();
+    return () => window.removeEventListener("resize", handleResize);
+  }, [calculateScale]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;

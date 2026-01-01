@@ -110,6 +110,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   useEffect(() => {
     drawVisualization();
   }, [
+    drawVisualization,
     selectedScreenshot,
     matches,
     selectedMatch,
@@ -123,7 +124,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
 
   useEffect(() => {
     drawTemplate();
-  }, [templateImage]);
+  }, [drawTemplate, templateImage]);
 
   const checkAPIConnection = async () => {
     try {
@@ -194,14 +195,17 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
     // Draw screenshot
     const img = new Image();
     img.onload = () => {
-      // Update dimensions when image loads
-      if (
-        !screenshotDimensions ||
-        screenshotDimensions.width !== img.width ||
-        screenshotDimensions.height !== img.height
-      ) {
-        setScreenshotDimensions({ width: img.width, height: img.height });
-      }
+      // Update dimensions when image loads - use functional update to avoid stale closure
+      setScreenshotDimensions((prevDimensions) => {
+        if (
+          !prevDimensions ||
+          prevDimensions.width !== img.width ||
+          prevDimensions.height !== img.height
+        ) {
+          return { width: img.width, height: img.height };
+        }
+        return prevDimensions;
+      });
 
       // Calculate max dimensions to fit in viewport (leaving room for panels)
       const maxWidth = window.innerWidth - 400 - 100; // Subtract left panel width + padding
@@ -392,6 +396,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
     searchRegion,
     zoom,
     panOffset,
+    setScreenshotDimensions,
   ]);
 
   const drawTemplate = useCallback(() => {
@@ -610,7 +615,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
         setPanOffset({ x: 0, y: 0 });
       }
     },
-    [zoom]
+    [zoom, setZoom, setPanOffset]
   );
 
   // Attach native wheel event listener to support preventDefault

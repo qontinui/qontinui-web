@@ -55,11 +55,6 @@ export function WorkflowExplanation({
 
   const mcpClient = getMCPClient();
 
-  // Load explanation on mount
-  useEffect(() => {
-    loadExplanation();
-  }, [workflow]);
-
   const loadExplanation = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -76,6 +71,11 @@ export function WorkflowExplanation({
       setLoading(false);
     }
   }, [workflow, mcpClient]);
+
+  // Load explanation on mount
+  useEffect(() => {
+    loadExplanation();
+  }, [loadExplanation]);
 
   const handleCopy = useCallback(() => {
     if (!explanation) return;

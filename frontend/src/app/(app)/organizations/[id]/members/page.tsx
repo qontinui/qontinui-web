@@ -119,7 +119,7 @@ export default function MembersPage() {
     };
 
     loadData();
-  }, [orgId, user]);
+  }, [orgId, user, switchOrg, getMembers]);
 
   const handleInvite = async () => {
     if (!inviteEmail || !orgId) return;

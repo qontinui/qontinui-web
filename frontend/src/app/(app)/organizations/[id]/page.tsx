@@ -38,7 +38,7 @@ export default function OrganizationDetailsPage() {
   const [statistics, setStatistics] = useState<OrganizationStatistics | null>(
     null
   );
-  const [, _setActivities] = useState<ActivityType[]>([]);
+  const [_activities, _setActivities] = useState<ActivityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -81,7 +81,7 @@ export default function OrganizationDetailsPage() {
     };
 
     loadData();
-  }, [orgId, user]);
+  }, [orgId, user, switchOrg, getMembers]);
 
   const getUserRole = (org: Organization | null, userId: string): string => {
     if (!org) return "Member";

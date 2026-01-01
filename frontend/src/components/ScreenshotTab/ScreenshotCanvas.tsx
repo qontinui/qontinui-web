@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   Screenshot,
   ScreenshotRegion,
@@ -63,91 +63,15 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
     variants: screenshotVariants,
   });
 
-  useEffect(() => {
-    drawCanvas();
-  }, [
-    screenshot,
-    scale,
-    manualZoom,
-    offset,
-    currentRect,
-    hoveredRegion,
-    hoveredLocation,
-    currentSrc,
-  ]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      calculateScale();
-    };
-    window.addEventListener("resize", handleResize);
-
-    // Use requestAnimationFrame to ensure container is measured after layout
-    requestAnimationFrame(() => {
-      calculateScale();
-    });
-
-    return () => window.removeEventListener("resize", handleResize);
-  }, [screenshot, zoomMode]);
-
-  // Reset offset when changing zoom
-  useEffect(() => {
-    setOffset({ x: 0, y: 0 });
-  }, [manualZoom]);
-
-  const calculateScale = () => {
-    if (!containerRef.current) {
-      // Retry after a short delay if container not ready
-      setTimeout(() => calculateScale(), 100);
-      return;
-    }
-
-    if (zoomMode === "original") {
-      setScale(1);
-      return;
-    }
-
-    const containerWidth = containerRef.current.clientWidth - 40; // padding
-    const containerHeight = containerRef.current.clientHeight - 40;
-
-    if (containerWidth <= 0 || containerHeight <= 0) {
-      // Container not sized yet, retry
-      setTimeout(() => calculateScale(), 100);
-      return;
-    }
-
-    const scaleX = containerWidth / screenshot.width;
-    const scaleY = containerHeight / screenshot.height;
-    const newScale = Math.min(scaleX, scaleY, 1);
-
-    setScale(newScale);
-  };
-
-  const handleZoomIn = () => {
-    setManualZoom((prev) => Math.min(prev * 1.2, 5));
-  };
-
-  const handleZoomOut = () => {
-    setManualZoom((prev) => Math.max(prev / 1.2, 0.1));
-  };
-
-  const handleResetZoom = () => {
-    setManualZoom(1);
-    setOffset({ x: 0, y: 0 });
-  };
-
-  const getEffectiveScale = () => {
-    return scale * manualZoom;
-  };
-
-  const drawCanvas = () => {
+  // Memoize the drawCanvas function to include in useEffect deps
+  const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const effectiveScale = getEffectiveScale();
+    const effectiveScale = scale * manualZoom;
 
     // Set canvas size
     canvas.width = screenshot.width * effectiveScale;
@@ -291,6 +215,85 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
       }
     };
     img.src = currentSrc;
+  }, [
+    screenshot,
+    scale,
+    manualZoom,
+    currentRect,
+    hoveredRegion,
+    hoveredLocation,
+    currentSrc,
+    isLoading,
+    isDrawing,
+    startPoint,
+  ]);
+
+  useEffect(() => {
+    drawCanvas();
+  }, [drawCanvas]);
+
+  const calculateScale = useCallback(() => {
+    if (!containerRef.current) {
+      // Retry after a short delay if container not ready
+      setTimeout(() => calculateScale(), 100);
+      return;
+    }
+
+    if (zoomMode === "original") {
+      setScale(1);
+      return;
+    }
+
+    const containerWidth = containerRef.current.clientWidth - 40; // padding
+    const containerHeight = containerRef.current.clientHeight - 40;
+
+    if (containerWidth <= 0 || containerHeight <= 0) {
+      // Container not sized yet, retry
+      setTimeout(() => calculateScale(), 100);
+      return;
+    }
+
+    const scaleX = containerWidth / screenshot.width;
+    const scaleY = containerHeight / screenshot.height;
+    const newScale = Math.min(scaleX, scaleY, 1);
+
+    setScale(newScale);
+  }, [zoomMode, screenshot.width, screenshot.height]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      calculateScale();
+    };
+    window.addEventListener("resize", handleResize);
+
+    // Use requestAnimationFrame to ensure container is measured after layout
+    requestAnimationFrame(() => {
+      calculateScale();
+    });
+
+    return () => window.removeEventListener("resize", handleResize);
+  }, [calculateScale]);
+
+  // Reset offset when changing zoom
+  useEffect(() => {
+    setOffset({ x: 0, y: 0 });
+  }, [manualZoom]);
+
+  const handleZoomIn = () => {
+    setManualZoom((prev) => Math.min(prev * 1.2, 5));
+  };
+
+  const handleZoomOut = () => {
+    setManualZoom((prev) => Math.max(prev / 1.2, 0.1));
+  };
+
+  const handleResetZoom = () => {
+    setManualZoom(1);
+    setOffset({ x: 0, y: 0 });
+  };
+
+  const getEffectiveScale = () => {
+    return scale * manualZoom;
   };
 
   const getCanvasCoordinates = (

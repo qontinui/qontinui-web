@@ -1337,7 +1337,7 @@ function BulkOptimizationTools() {
     },
   ];
 
-  const handleToolAction = useCallback((_toolId: string) => {
+  const handleToolAction = useCallback(() => {
     setIsProcessing(true);
     // Simulate processing
     setTimeout(() => {

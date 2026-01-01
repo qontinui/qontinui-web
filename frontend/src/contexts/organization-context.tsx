@@ -5,6 +5,7 @@ import React, {
   useContext,
   useState,
   useEffect,
+  useCallback,
   ReactNode,
 } from "react";
 import type { Organization } from "@/types/collaboration";
@@ -55,16 +56,9 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   const [loading, setLoading] = useState(true);
 
   /**
-   * Load organizations on mount
-   */
-  useEffect(() => {
-    loadOrganizations();
-  }, []);
-
-  /**
    * Load all organizations and restore the current one from localStorage
    */
-  const loadOrganizations = async () => {
+  const loadOrganizations = useCallback(async () => {
     try {
       setLoading(true);
       const orgs = await organizationService.getOrganizations();
@@ -91,12 +85,19 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentOrganization]);
+
+  /**
+   * Load organizations on mount
+   */
+  useEffect(() => {
+    loadOrganizations();
+  }, [loadOrganizations]);
 
   /**
    * Switch to a different organization
    */
-  const switchOrganization = async (orgId: string) => {
+  const switchOrganization = useCallback(async (orgId: string) => {
     try {
       const org = organizations.find((o) => o.id === orgId);
       if (org) {
@@ -114,19 +115,19 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       console.error("[Organization] Failed to switch organization:", error);
       throw error;
     }
-  };
+  }, [organizations, loadOrganizations]);
 
   /**
    * Refresh the organization list
    */
-  const refreshOrganizations = async () => {
+  const refreshOrganizations = useCallback(async () => {
     await loadOrganizations();
-  };
+  }, [loadOrganizations]);
 
   /**
    * Create a new organization
    */
-  const createOrganization = async (
+  const createOrganization = useCallback(async (
     name: string,
     description?: string
   ): Promise<Organization> => {
@@ -147,7 +148,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       console.error("[Organization] Failed to create organization:", error);
       throw error;
     }
-  };
+  }, [loadOrganizations, switchOrganization]);
 
   // ============================================================================
   // Context Value

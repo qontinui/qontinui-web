@@ -45,11 +45,7 @@ export default function CaptureViewerPage() {
   const [capturedFrame, setCapturedFrame] = useState<string | null>(null);
   const [capturingFrame, setCapturingFrame] = useState(false);
 
-  useEffect(() => {
-    loadCaptureSession();
-  }, [sessionId]);
-
-  const loadCaptureSession = async () => {
+  const loadCaptureSession = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -66,7 +62,11 @@ export default function CaptureViewerPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sessionId]);
+
+  useEffect(() => {
+    loadCaptureSession();
+  }, [loadCaptureSession]);
 
   const handleTimestampChange = useCallback((timestamp: number) => {
     setCurrentTimestamp(timestamp);

@@ -106,7 +106,7 @@ export default function WorkflowVisualizationPage() {
   >([]);
   const [states, setStates] = useState<State[]>([]);
   const [images, setImages] = useState<ImageAsset[]>([]);
-  const [_transitions, setTransitions] = useState<Transition[]>([]);
+  const [, setTransitions] = useState<Transition[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
     null
   );
@@ -439,7 +439,7 @@ export default function WorkflowVisualizationPage() {
   };
 
   // Update active states based on action execution
-  const updateActiveStates = (actionIndex: number, _success: boolean) => {
+  const updateActiveStates = (actionIndex: number, _success?: boolean) => {
     if (!selectedWorkflow) return;
 
     const action = selectedWorkflow.actions[actionIndex];

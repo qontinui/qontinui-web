@@ -249,7 +249,7 @@ export default function DatasetViewerPage() {
         )
       );
       toast.success("Annotation approved");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to approve annotation");
     }
   };
@@ -265,7 +265,7 @@ export default function DatasetViewerPage() {
         )
       );
       toast.success("Annotation rejected");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to reject annotation");
     }
   };
@@ -281,7 +281,7 @@ export default function DatasetViewerPage() {
         )
       );
       toast.success("Annotation flagged for review");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to flag annotation");
     }
   };
@@ -328,7 +328,7 @@ export default function DatasetViewerPage() {
       );
       toast.success(`Approved ${result.updated_count} annotation(s)`);
       setSelectedAnnotationIds(new Set());
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to approve annotations");
     } finally {
       setBulkProcessing(false);
@@ -352,7 +352,7 @@ export default function DatasetViewerPage() {
       );
       toast.success(`Rejected ${result.updated_count} annotation(s)`);
       setSelectedAnnotationIds(new Set());
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to reject annotations");
     } finally {
       setBulkProcessing(false);
@@ -376,7 +376,7 @@ export default function DatasetViewerPage() {
       );
       toast.success(`Flagged ${result.updated_count} annotation(s)`);
       setSelectedAnnotationIds(new Set());
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to flag annotations");
     } finally {
       setBulkProcessing(false);

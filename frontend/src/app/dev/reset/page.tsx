@@ -78,7 +78,7 @@ export default function DevResetPage() {
         console.log(
           "[DevReset] Logout endpoint called (HttpOnly cookies cleared)"
         );
-      } catch (e) {
+      } catch (_e) {
         console.log(
           "[DevReset] Logout endpoint failed (may already be logged out)"
         );

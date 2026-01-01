@@ -5,44 +5,8 @@
  * for the deficiency list display.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
-// Mock deficiency data
-const mockDeficiencies = [
-  {
-    id: 'def-001',
-    title: 'Login button not responding',
-    severity: 'high',
-    status: 'new',
-    deficiency_type: 'functional_bug',
-    created_at: '2025-11-23T10:00:00Z',
-  },
-  {
-    id: 'def-002',
-    title: 'Visual alignment issue',
-    severity: 'low',
-    status: 'resolved',
-    deficiency_type: 'ui_issue',
-    created_at: '2025-11-23T11:00:00Z',
-  },
-];
-
-const createWrapper = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      {children}
-    </QueryClientProvider>
-  );
-  Wrapper.displayName = 'QueryClientWrapper';
-  return Wrapper;
-};
 
 describe('DeficiencyList', () => {
   beforeEach(() => {
@@ -114,7 +78,7 @@ describe('DeficiencyList', () => {
 
   describe('Status Updates', () => {
     it('should update deficiency status', async () => {
-      const _user = userEvent.setup();
+      userEvent.setup();
       // Select deficiency, change status dropdown, verify API call
       expect(true).toBe(true);
     });
@@ -134,7 +98,7 @@ describe('DeficiencyList', () => {
 
   describe('Assignment', () => {
     it('should assign deficiency to user', async () => {
-      const _user = userEvent.setup();
+      userEvent.setup();
       // Click assign button, select user, verify API call
       expect(true).toBe(true);
     });
@@ -154,7 +118,7 @@ describe('DeficiencyList', () => {
 
   describe('Detail View', () => {
     it('should open deficiency details on click', async () => {
-      const _user = userEvent.setup();
+      userEvent.setup();
       expect(true).toBe(true);
     });
 
@@ -178,7 +142,7 @@ describe('DeficiencyList', () => {
 
   describe('Bulk Operations', () => {
     it('should select multiple deficiencies', async () => {
-      const _user = userEvent.setup();
+      userEvent.setup();
       expect(true).toBe(true);
     });
 
@@ -215,7 +179,7 @@ describe('DeficiencyList', () => {
     });
 
     it('should add comment to deficiency', async () => {
-      const _user = userEvent.setup();
+      userEvent.setup();
       expect(true).toBe(true);
     });
 

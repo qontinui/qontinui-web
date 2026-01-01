@@ -1533,7 +1533,6 @@ function WorkflowTestDetails({
 }
 
 function TestResults({
-  testCase: _testCase,
   results,
 }: {
   testCase?: TestCase;
@@ -1675,7 +1674,6 @@ function TestResults({
 }
 
 function SuiteResults({
-  suite: _suite,
   testCases,
   testResults,
 }: {

@@ -213,10 +213,12 @@ function DependenciesPageInner() {
   }, [workflows]);
 
   // Get statistics
+  // Note: graph is intentionally excluded from deps - we compute stats from workflows directly
   const stats = useMemo<DependencyStats | null>(() => {
     if (workflows.length === 0) return null;
     return workflowDependencyAnalyzer.getDependencyStats(workflows);
-  }, [workflows, graph]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflows]);
 
   // Get visualization data
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
