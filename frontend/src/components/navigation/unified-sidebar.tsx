@@ -1080,7 +1080,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side={isCollapsed ? "right" : "top"}>
-                  <p>Export Project</p>
+                  <p>Export & Load to Runner</p>
                 </TooltipContent>
               </Tooltip>
 

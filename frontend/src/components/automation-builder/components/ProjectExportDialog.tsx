@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   Brain,
   Wrench,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAutomation } from "@/contexts/automation-context";
@@ -37,6 +38,7 @@ import {
   ragSetupService,
   type RAGSetupProgress,
 } from "@/services/rag-setup-service";
+import { runnerClient } from "@/lib/runner-client";
 import { validateProject } from "@/lib/project-validator";
 import { type MonitorValidationError } from "@/lib/monitor-validation";
 import {
@@ -97,6 +99,10 @@ export function ProjectExportDialog({
   const [ragError, setRagError] = useState<string | null>(null);
   const ragPollingRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Config loading state (into executor)
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [configLoadError, setConfigLoadError] = useState<string | null>(null);
+
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {
@@ -107,6 +113,8 @@ export function ProjectExportDialog({
       setRagStatus("idle");
       setRagProgress(null);
       setRagError(null);
+      setConfigLoaded(false);
+      setConfigLoadError(null);
     }
   }, [open, projectName]);
 
@@ -212,7 +220,37 @@ export function ProjectExportDialog({
         );
 
         if (result.success) {
-          // Start polling for progress
+          // Load the config into the executor using the storage path
+          if (result.storagePath) {
+            try {
+              const loadResult = await runnerClient.loadConfig(
+                result.storagePath
+              );
+              if (loadResult.success) {
+                setConfigLoaded(true);
+                toast.success("Config loaded into runner", {
+                  description: "Ready for automation execution",
+                });
+              } else {
+                setConfigLoadError(loadResult.error || "Failed to load config");
+                toast.warning("Config saved but not loaded", {
+                  description:
+                    loadResult.error || "Could not load into executor",
+                });
+              }
+            } catch (loadError) {
+              const errorMsg =
+                loadError instanceof Error
+                  ? loadError.message
+                  : "Unknown error";
+              setConfigLoadError(errorMsg);
+              toast.warning("Config saved but not loaded", {
+                description: errorMsg,
+              });
+            }
+          }
+
+          // Start polling for RAG progress
           startRagProgressPolling(ragProjectId);
         } else {
           setRagStatus("failed");
@@ -389,107 +427,112 @@ export function ProjectExportDialog({
     }
   }, [workflows, transitions, updateWorkflow, updateTransition, projectName]);
 
-  const handleExport = useCallback(async () => {
-    // First, run consolidated validation (same as Verify button)
-    const validationResult = validateProject({
-      workflows,
-      states,
-      transitions,
-      images,
-    });
-
-    // Check for monitor validation errors specifically (need separate dialog for fixing)
-    if (validationResult.monitorErrors.length > 0) {
-      setMonitorValidationErrors(validationResult.monitorErrors);
-      setShowMonitorDialog(true);
-      toast.error("Monitor validation failed", {
-        description: `${validationResult.monitorErrors.length} element(s) need monitor assignments`,
-      });
-      return;
-    }
-
-    // Check for other errors (excluding monitor errors)
-    const nonMonitorErrors = validationResult.issues.filter(
-      (i) => i.severity === "error" && i.category !== "monitor"
-    );
-
-    if (nonMonitorErrors.length > 0) {
-      setValidationErrors(nonMonitorErrors.map((e) => e.message));
-      toast.error("Validation failed", {
-        description: `${nonMonitorErrors.length} error(s) must be fixed before export`,
-      });
-      return;
-    }
-
-    setIsExporting(true);
-    setValidationErrors([]);
-    setRagStatus("idle");
-    setRagProgress(null);
-    setRagError(null);
-
-    try {
-      const exporter = new ConfigExporter();
-
-      // Export full configuration
-      const config = await exporter.exportConfiguration(
-        images,
+  const handleExport = useCallback(
+    async (loadToRunner: boolean = true) => {
+      // First, run consolidated validation (same as Verify button)
+      const validationResult = validateProject({
         workflows,
         states,
         transitions,
-        categories,
-        {
-          name: exportName || projectName,
-          description: description || undefined,
-          created: new Date().toISOString(),
-          projectId: projectId || undefined, // Include project ID for test run reporting
-        },
-        settings,
-        screenshots as unknown as Screenshot[] // Type cast needed: context uses different Screenshot type than ConfigExporter
-      );
+        images,
+      });
 
-      // Show warnings if any (don't block export)
-      const warnings = validationResult.issues.filter(
-        (i) => i.severity === "warning"
-      );
-      if (warnings.length > 0) {
-        setValidationErrors(warnings.map((w) => w.message));
-        toast.warning("Export completed with warnings", {
-          description: `${warnings.length} warning(s) found`,
+      // Check for monitor validation errors specifically (need separate dialog for fixing)
+      if (validationResult.monitorErrors.length > 0) {
+        setMonitorValidationErrors(validationResult.monitorErrors);
+        setShowMonitorDialog(true);
+        toast.error("Monitor validation failed", {
+          description: `${validationResult.monitorErrors.length} element(s) need monitor assignments`,
         });
+        return;
       }
 
-      // Download the configuration
-      const filename = `${(exportName || projectName).replace(/[^a-zA-Z0-9-_]/g, "_")}_config.json`;
-      exporter.downloadConfiguration(config, filename);
+      // Check for other errors (excluding monitor errors)
+      const nonMonitorErrors = validationResult.issues.filter(
+        (i) => i.severity === "error" && i.category !== "monitor"
+      );
 
-      toast.success("Project exported successfully", {
-        description: `Saved as ${filename}`,
-      });
+      if (nonMonitorErrors.length > 0) {
+        setValidationErrors(nonMonitorErrors.map((e) => e.message));
+        toast.error("Validation failed", {
+          description: `${nonMonitorErrors.length} error(s) must be fixed before export`,
+        });
+        return;
+      }
 
-      // Trigger RAG processing in background (don't await - let it run while dialog stays open)
-      triggerRagProcessing(config);
-    } catch (error) {
-      console.error("Export failed:", error);
-      toast.error("Export failed", {
-        description: error instanceof Error ? error.message : "Unknown error",
-      });
-    } finally {
-      setIsExporting(false);
-    }
-  }, [
-    exportName,
-    description,
-    projectName,
-    projectId,
-    images,
-    workflows,
-    states,
-    transitions,
-    categories,
-    settings,
-    screenshots,
-    triggerRagProcessing,
-  ]);
+      setIsExporting(true);
+      setValidationErrors([]);
+      setRagStatus("idle");
+      setRagProgress(null);
+      setRagError(null);
+
+      try {
+        const exporter = new ConfigExporter();
+
+        // Export full configuration
+        const config = await exporter.exportConfiguration(
+          images,
+          workflows,
+          states,
+          transitions,
+          categories,
+          {
+            name: exportName || projectName,
+            description: description || undefined,
+            created: new Date().toISOString(),
+            projectId: projectId || undefined, // Include project ID for test run reporting
+          },
+          settings,
+          screenshots as unknown as Screenshot[] // Type cast needed: context uses different Screenshot type than ConfigExporter
+        );
+
+        // Show warnings if any (don't block export)
+        const warnings = validationResult.issues.filter(
+          (i) => i.severity === "warning"
+        );
+        if (warnings.length > 0) {
+          setValidationErrors(warnings.map((w) => w.message));
+          toast.warning("Export completed with warnings", {
+            description: `${warnings.length} warning(s) found`,
+          });
+        }
+
+        // Download the configuration
+        const filename = `${(exportName || projectName).replace(/[^a-zA-Z0-9-_]/g, "_")}_config.json`;
+        exporter.downloadConfiguration(config, filename);
+
+        toast.success("Project exported successfully", {
+          description: `Saved as ${filename}`,
+        });
+
+        // Trigger RAG processing and load to runner (only if loadToRunner is true)
+        if (loadToRunner) {
+          triggerRagProcessing(config);
+        }
+      } catch (error) {
+        console.error("Export failed:", error);
+        toast.error("Export failed", {
+          description: error instanceof Error ? error.message : "Unknown error",
+        });
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [
+      exportName,
+      description,
+      projectName,
+      projectId,
+      images,
+      workflows,
+      states,
+      transitions,
+      categories,
+      settings,
+      screenshots,
+      triggerRagProcessing,
+    ]
+  );
 
   return (
     <>
@@ -497,12 +540,12 @@ export function ProjectExportDialog({
         <DialogContent className="sm:max-w-[500px] bg-gray-950 border-gray-800">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Download className="w-5 h-5 text-[#00D9FF]" />
-              Export Project
+              <Upload className="w-5 h-5 text-[#00D9FF]" />
+              Export & Load to Runner
             </DialogTitle>
             <DialogDescription>
-              Export the entire project configuration as a JSON file for use
-              with qontinui-runner.
+              Export the project configuration and load it into the
+              qontinui-runner for automation execution.
             </DialogDescription>
           </DialogHeader>
 
@@ -763,9 +806,49 @@ export function ProjectExportDialog({
                 )}
               </div>
             )}
+
+            {/* Config Loading Status */}
+            {(configLoaded || configLoadError) && (
+              <div
+                className={`rounded-lg p-4 space-y-3 border ${
+                  configLoaded
+                    ? "bg-green-950/30 border-green-700"
+                    : "bg-yellow-950/30 border-yellow-700"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {configLoaded ? (
+                    <>
+                      <Upload className="w-4 h-4 text-green-400" />
+                      <span className="font-medium text-green-400 text-sm">
+                        Config Loaded to Runner
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-4 h-4 text-yellow-400" />
+                      <span className="font-medium text-yellow-400 text-sm">
+                        Config Not Loaded
+                      </span>
+                    </>
+                  )}
+                </div>
+                {configLoaded ? (
+                  <p className="text-sm text-green-400/90">
+                    Configuration is loaded into the runner and ready for
+                    automation execution.
+                  </p>
+                ) : (
+                  <p className="text-sm text-yellow-400/90">
+                    {configLoadError ||
+                      "Config was exported but could not be loaded into the runner."}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
@@ -779,23 +862,43 @@ export function ProjectExportDialog({
                 : "Cancel"}
             </Button>
             {ragStatus === "idle" && (
-              <Button
-                onClick={handleExport}
-                disabled={isExporting || !exportName.trim()}
-                className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
-              >
-                {isExporting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Exporting...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4 mr-2" />
-                    Export Project
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => handleExport(false)}
+                  disabled={isExporting || !exportName.trim()}
+                  className="border-gray-600 hover:bg-gray-800"
+                >
+                  {isExporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 mr-2" />
+                      Export Only
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={() => handleExport(true)}
+                  disabled={isExporting || !exportName.trim()}
+                  className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                >
+                  {isExporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Export & Load
+                    </>
+                  )}
+                </Button>
+              </div>
             )}
           </DialogFooter>
         </DialogContent>

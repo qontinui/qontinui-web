@@ -627,13 +627,15 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
         // Validate target completeness based on target type
         const target = config.target as Record<string, unknown> | string;
 
-        // Handle both string target (e.g., "StateImage") and object target
+        // Handle both string target and object target
         if (typeof target === "string") {
-          // String targets like "StateImage" require additional fields in config
+          // String targets require additional fields in config
+          // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
+          // We still accept "StateImage" for backward compatibility with old configs
           if (
-            target === "StateImage" ||
+            target === "StateImage" || // @deprecated - legacy uppercase format
             target === "image" ||
-            target === "stateImage"
+            target === "stateImage" // preferred format
           ) {
             const hasImageRef =
               config.stateImageId ||
@@ -657,11 +659,12 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
           }
         } else if (typeof target === "object" && target !== null) {
           // Object target with type field
+          // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
           const targetType = target.type as string | undefined;
           if (
-            targetType === "StateImage" ||
+            targetType === "StateImage" || // @deprecated - legacy uppercase format
             targetType === "image" ||
-            targetType === "stateImage"
+            targetType === "stateImage" // preferred format
           ) {
             const hasImageRef =
               target.stateImageId ||
@@ -718,8 +721,14 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
 
     // DRAG action validation - requires source and destination
     if (action.type === "DRAG") {
-      const source = config.source as Record<string, unknown> | string | undefined;
-      const destination = config.destination as Record<string, unknown> | string | undefined;
+      const source = config.source as
+        | Record<string, unknown>
+        | string
+        | undefined;
+      const destination = config.destination as
+        | Record<string, unknown>
+        | string
+        | undefined;
 
       // Check if source is missing or incomplete
       if (!source) {
@@ -732,8 +741,13 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
           details: { actionId: action.id, actionType: action.type },
         });
       } else if (typeof source === "string") {
-        // String source like "StateImage" requires additional fields
-        if (source === "StateImage" || source === "image" || source === "stateImage") {
+        // String source requires additional fields
+        // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
+        if (
+          source === "StateImage" ||
+          source === "image" ||
+          source === "stateImage"
+        ) {
           const hasSourceImageRef =
             config.sourceStateImageId ||
             config.sourceImageId ||
@@ -746,17 +760,27 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
               type: "invalid_config",
               severity: "error",
               message: `DRAG action "${action.name || action.id}" has source "${source}" but no image selected`,
-              details: { actionId: action.id, actionType: action.type, sourceType: source },
+              details: {
+                actionId: action.id,
+                actionType: action.type,
+                sourceType: source,
+              },
             });
           }
         }
       } else if (typeof source === "object" && source !== null) {
+        // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
         const sourceType = source.type as string | undefined;
-        if (sourceType === "StateImage" || sourceType === "image" || sourceType === "stateImage") {
+        if (
+          sourceType === "StateImage" ||
+          sourceType === "image" ||
+          sourceType === "stateImage"
+        ) {
           const hasSourceImageRef =
             source.stateImageId ||
             source.imageId ||
-            (Array.isArray(source.imageIds) && (source.imageIds as unknown[]).length > 0);
+            (Array.isArray(source.imageIds) &&
+              (source.imageIds as unknown[]).length > 0);
           if (!hasSourceImageRef) {
             errors.push({
               id: `incomplete-drag-source-${action.id}`,
@@ -764,7 +788,11 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
               type: "invalid_config",
               severity: "error",
               message: `DRAG action "${action.name || action.id}" has source type "${sourceType}" but no image selected`,
-              details: { actionId: action.id, actionType: action.type, sourceType },
+              details: {
+                actionId: action.id,
+                actionType: action.type,
+                sourceType,
+              },
             });
           }
         }
@@ -781,8 +809,13 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
           details: { actionId: action.id, actionType: action.type },
         });
       } else if (typeof destination === "string") {
-        // String destination like "StateImage" requires additional fields
-        if (destination === "StateImage" || destination === "image" || destination === "stateImage") {
+        // String destination requires additional fields
+        // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
+        if (
+          destination === "StateImage" ||
+          destination === "image" ||
+          destination === "stateImage"
+        ) {
           const hasDestImageRef =
             config.destStateImageId ||
             config.destImageId ||
@@ -795,17 +828,27 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
               type: "invalid_config",
               severity: "error",
               message: `DRAG action "${action.name || action.id}" has destination "${destination}" but no image selected`,
-              details: { actionId: action.id, actionType: action.type, destType: destination },
+              details: {
+                actionId: action.id,
+                actionType: action.type,
+                destType: destination,
+              },
             });
           }
         }
       } else if (typeof destination === "object" && destination !== null) {
+        // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
         const destType = destination.type as string | undefined;
-        if (destType === "StateImage" || destType === "image" || destType === "stateImage") {
+        if (
+          destType === "StateImage" ||
+          destType === "image" ||
+          destType === "stateImage"
+        ) {
           const hasDestImageRef =
             destination.stateImageId ||
             destination.imageId ||
-            (Array.isArray(destination.imageIds) && (destination.imageIds as unknown[]).length > 0);
+            (Array.isArray(destination.imageIds) &&
+              (destination.imageIds as unknown[]).length > 0);
           if (!hasDestImageRef) {
             errors.push({
               id: `incomplete-drag-destination-${action.id}`,
@@ -813,7 +856,11 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
               type: "invalid_config",
               severity: "error",
               message: `DRAG action "${action.name || action.id}" has destination type "${destType}" but no image selected`,
-              details: { actionId: action.id, actionType: action.type, destType },
+              details: {
+                actionId: action.id,
+                actionType: action.type,
+                destType,
+              },
             });
           }
         }

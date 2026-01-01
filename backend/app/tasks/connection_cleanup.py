@@ -7,9 +7,9 @@ and marks them as disconnected.
 """
 
 import asyncio
+from datetime import datetime
 
 import structlog
-from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 
 from app.config.redis_config import get_redis
@@ -76,7 +76,8 @@ async def cleanup_stale_connections() -> dict[str, int]:
                 )
 
                 # Mark stale connections as disconnected
-                now = utc_now()
+                # Use datetime.utcnow() (naive) to match the model's DateTime column
+                now = datetime.utcnow()
                 cleaned_connections = []
 
                 for conn in stale_connections:

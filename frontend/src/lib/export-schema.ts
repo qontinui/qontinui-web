@@ -1,9 +1,14 @@
 /**
  * Qontinui Automation Configuration Schema
- * Version 2.11.0
+ * Version 2.12.0
  *
  * This defines the structure for exported automation configurations
  * that can be consumed by the Qontinui runner.
+ *
+ * CHANGELOG v2.12.0:
+ * - Normalized target type from "StateImage" to "stateImage" (lowercase 'i')
+ * - Target types now sourced from @qontinui/schemas/targets (single source of truth)
+ * - Fixes case sensitivity bug where Python expected lowercase but UI produced uppercase
  *
  * CHANGELOG v2.11.0:
  * - Changed categories from string[] to Category[] with automationEnabled flag

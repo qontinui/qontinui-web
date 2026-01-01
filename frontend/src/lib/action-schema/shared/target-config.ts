@@ -1,156 +1,185 @@
 /**
- * Target configuration - used by actions that need to locate something on screen
+ * Target configuration - used by actions that need to locate something on screen.
+ *
+ * This file imports types from @qontinui/schemas/targets (the single source of truth)
+ * and extends them with frontend-specific compatibility features.
+ *
+ * IMPORTANT: Target types use camelCase for the type discriminator:
+ * - "stateImage" (lowercase 'i') - CORRECT
+ * - "StateImage" (uppercase 'I') - LEGACY, deprecated
  */
 
-import { Region, Coordinates } from "./common-types";
-import { SearchOptions } from "./search-options";
+// Import generated types from qontinui-schemas
+import type {
+  TargetType as GeneratedTargetType,
+  ImageTarget as GeneratedImageTarget,
+  RegionTarget as GeneratedRegionTarget,
+  TextTarget as GeneratedTextTarget,
+  CoordinatesTarget as GeneratedCoordinatesTarget,
+  StateStringTarget as GeneratedStateStringTarget,
+  StateRegionTarget,
+  StateLocationTarget,
+  StateImageTarget as GeneratedStateImageTarget,
+  CurrentPositionTarget as GeneratedCurrentPositionTarget,
+  LastFindResultTarget as GeneratedLastFindResultTarget,
+  ResultIndexTarget as GeneratedResultIndexTarget,
+  AllResultsTarget as GeneratedAllResultsTarget,
+  ResultByImageTarget as GeneratedResultByImageTarget,
+  SearchOptions as GeneratedSearchOptions,
+  TextSearchOptions,
+  PollingConfig,
+  PatternOptions,
+  MatchAdjustment,
+} from "@qontinui/schemas/targets";
+
+// Import SearchStrategy enum (not type-only since it's used as a value)
+import { SearchStrategy } from "@qontinui/schemas/targets";
+
+// Re-export the SearchStrategy enum (as value, not just type)
+export { SearchStrategy };
+
+// Re-export types that don't need modification
+export type {
+  StateRegionTarget,
+  StateLocationTarget,
+  TextSearchOptions,
+  PollingConfig,
+  PatternOptions,
+  MatchAdjustment,
+};
 
 /**
- * Valid target types that match qontinui-schemas TargetConfig.
- * Note: "stateImage" is deprecated - use "image" with imageIds instead.
+ * String literal version of SearchStrategy for backward compatibility.
+ * Frontend code uses string literals like "FIRST" but the generated enum is SearchStrategy.FIRST.
  */
-export type TargetType =
-  | "image"
-  | "stateImage" // @deprecated - use "image" with imageIds instead
-  | "region"
-  | "text"
-  | "coordinates"
-  | "stateString"
-  | "currentPosition"
-  | "lastFindResult"
-  | "resultIndex"
-  | "allResults"
-  | "resultByImage";
+export type SearchStrategyValue = "FIRST" | "ALL" | "BEST" | "EACH";
 
-export interface ImageTarget {
+// Re-export Region and Coordinates from common-types for backward compatibility
+export type { Region, Coordinates } from "./common-types";
+
+/**
+ * Extended SearchOptions with backward compatibility for 'strategy' alias
+ * and string literal values.
+ * IMPORTANT: Define this BEFORE target types that reference it.
+ */
+export interface SearchOptions extends Omit<
+  GeneratedSearchOptions,
+  "searchStrategy"
+> {
+  /** Search strategy (alias for searchStrategy) - accepts both enum and string */
+  strategy?: SearchStrategy | SearchStrategyValue | null;
+  /** Search strategy (canonical name) - accepts both enum and string */
+  searchStrategy?: SearchStrategy | SearchStrategyValue | null;
+}
+
+/**
+ * Extended ImageTarget with backward compatibility for single imageId.
+ * The generated type only has imageIds (array), but frontend code uses
+ * both imageId (legacy) and imageIds (preferred).
+ */
+export interface ImageTarget extends Omit<
+  GeneratedImageTarget,
+  "imageIds" | "searchOptions"
+> {
   type: "image";
   /** Single image ID (legacy format) */
   imageId?: string;
   /** Multiple image IDs (preferred format for multi-select) */
   imageIds?: string[];
-  searchOptions?: SearchOptions;
+  /** Search options with extended compatibility */
+  searchOptions?: SearchOptions | null;
 }
 
 /**
- * StateImageTarget - Find any image from a state definition
- * When selected, all images from the state are used for matching
- *
- * @deprecated This target type does not exist in qontinui-schemas.
- * Use ImageTarget with imageIds instead. This type is kept for backward
- * compatibility when reading legacy configs - it should be converted to
- * ImageTarget before saving.
+ * Extended RegionTarget with required type.
  */
-export interface StateImageTarget {
-  type: "stateImage";
-  stateId: string;
-  /** Image IDs from the state - populated when state is selected */
-  imageIds: string[];
-  searchOptions?: SearchOptions;
-}
-
-export interface RegionTarget {
+export interface RegionTarget extends GeneratedRegionTarget {
   type: "region";
-  region: Region;
 }
 
-export interface TextTarget {
+/**
+ * Extended TextTarget with required type and our SearchOptions.
+ */
+export interface TextTarget extends Omit<GeneratedTextTarget, "searchOptions"> {
   type: "text";
-  text: string;
-  searchOptions?: SearchOptions;
-  textOptions?: TextSearchOptions;
+  searchOptions?: SearchOptions | null;
 }
 
-export interface CoordinatesTarget {
+/**
+ * Extended CoordinatesTarget with required type.
+ */
+export interface CoordinatesTarget extends GeneratedCoordinatesTarget {
   type: "coordinates";
-  coordinates: Coordinates;
 }
 
-export interface StateStringTarget {
+/**
+ * Extended StateStringTarget with required type.
+ */
+export interface StateStringTarget extends GeneratedStateStringTarget {
   type: "stateString";
-  stateId: string;
-  stringIds: string[];
-  useAll?: boolean;
 }
 
-export interface CurrentPositionTarget {
+/**
+ * Extended StateImageTarget with required type.
+ */
+export interface StateImageTarget extends GeneratedStateImageTarget {
+  type: "stateImage";
+}
+
+/**
+ * Extended CurrentPositionTarget with required type.
+ */
+export interface CurrentPositionTarget extends GeneratedCurrentPositionTarget {
   type: "currentPosition";
 }
 
 /**
- * LastFindResultTarget - Use the location from the most recent FIND action.
- * This target type allows actions to reference the result of a previous FIND
- * action without knowing the exact coordinates at configuration time.
+ * Extended LastFindResultTarget with required type.
  */
-export interface LastFindResultTarget {
+export interface LastFindResultTarget extends GeneratedLastFindResultTarget {
   type: "lastFindResult";
 }
 
 /**
- * ResultIndexTarget - Reference a specific match by index from last FIND result
- * Used after a FIND action that returned multiple matches
+ * Extended ResultIndexTarget with required type.
  */
-export interface ResultIndexTarget {
+export interface ResultIndexTarget extends GeneratedResultIndexTarget {
   type: "resultIndex";
-  index: number;
 }
 
 /**
- * AllResultsTarget - Reference all matches from last FIND result
- * Primarily for multi-location actions; single-location actions use first match with warning
+ * Extended AllResultsTarget with required type.
  */
-export interface AllResultsTarget {
+export interface AllResultsTarget extends GeneratedAllResultsTarget {
   type: "allResults";
 }
 
 /**
- * ResultByImageTarget - Reference match from specific image in multi-image FIND result
- * Used after a FIND action with multiple images (EACH strategy)
+ * Extended ResultByImageTarget with required type.
  */
-export interface ResultByImageTarget {
+export interface ResultByImageTarget extends GeneratedResultByImageTarget {
   type: "resultByImage";
-  imageId: string;
 }
 
 /**
- * Union of all valid target configurations.
- * Matches qontinui-schemas TargetConfig (excluding deprecated StateImageTarget).
+ * Valid target types - same as generated.
+ */
+export type TargetType = GeneratedTargetType;
+
+/**
+ * Union of all valid target configurations (with frontend extensions).
  */
 export type TargetConfig =
   | ImageTarget
-  | StateImageTarget // @deprecated - kept for backward compatibility reading only
   | RegionTarget
   | TextTarget
   | CoordinatesTarget
   | StateStringTarget
+  | StateRegionTarget
+  | StateLocationTarget
+  | StateImageTarget
   | CurrentPositionTarget
   | LastFindResultTarget
   | ResultIndexTarget
   | AllResultsTarget
   | ResultByImageTarget;
-
-/**
- * Text search options for OCR-based finding
- */
-export interface TextSearchOptions {
-  ocrEngine?: "TESSERACT" | "EASYOCR" | "PADDLEOCR" | "NATIVE";
-  language?: string;
-  whitelistChars?: string;
-  blacklistChars?: string;
-  matchType?:
-    | "EXACT"
-    | "CONTAINS"
-    | "STARTS_WITH"
-    | "ENDS_WITH"
-    | "REGEX"
-    | "FUZZY";
-  caseSensitive?: boolean;
-  ignoreWhitespace?: boolean;
-  normalizeUnicode?: boolean;
-  fuzzyThreshold?: number;
-  editDistance?: number;
-  preprocessing?: string[];
-  scaleFactor?: number;
-  psmMode?: number;
-  oemMode?: number;
-  confidenceThreshold?: number;
-}

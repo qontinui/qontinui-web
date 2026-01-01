@@ -340,8 +340,14 @@ export function validateProject(
         }
       } else if (action.type === "DRAG") {
         // DRAG actions need source and destination validation
-        const source = config.source as Record<string, unknown> | string | undefined;
-        const destination = config.destination as Record<string, unknown> | string | undefined;
+        const source = config.source as
+          | Record<string, unknown>
+          | string
+          | undefined;
+        const destination = config.destination as
+          | Record<string, unknown>
+          | string
+          | undefined;
 
         // Validate source
         if (!source) {
@@ -356,7 +362,12 @@ export function validateProject(
           issues.push(issue);
           workflowIssues.push(issue);
         } else if (typeof source === "string") {
-          if (source === "StateImage" || source === "image" || source === "stateImage") {
+          // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
+          if (
+            source === "StateImage" ||
+            source === "image" ||
+            source === "stateImage"
+          ) {
             const hasSourceImageRef =
               config.sourceStateImageId ||
               config.sourceImageId ||
@@ -377,11 +388,17 @@ export function validateProject(
           }
         } else if (typeof source === "object" && source !== null) {
           const sourceType = source.type as string | undefined;
-          if (sourceType === "StateImage" || sourceType === "image" || sourceType === "stateImage") {
+          // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
+          if (
+            sourceType === "StateImage" ||
+            sourceType === "image" ||
+            sourceType === "stateImage"
+          ) {
             const hasSourceImageRef =
               source.stateImageId ||
               source.imageId ||
-              (Array.isArray(source.imageIds) && (source.imageIds as unknown[]).length > 0);
+              (Array.isArray(source.imageIds) &&
+                (source.imageIds as unknown[]).length > 0);
             if (!hasSourceImageRef) {
               const issue: ValidationIssue = {
                 severity: "error",
@@ -410,7 +427,12 @@ export function validateProject(
           issues.push(issue);
           workflowIssues.push(issue);
         } else if (typeof destination === "string") {
-          if (destination === "StateImage" || destination === "image" || destination === "stateImage") {
+          // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
+          if (
+            destination === "StateImage" ||
+            destination === "image" ||
+            destination === "stateImage"
+          ) {
             const hasDestImageRef =
               config.destStateImageId ||
               config.destImageId ||
@@ -431,11 +453,17 @@ export function validateProject(
           }
         } else if (typeof destination === "object" && destination !== null) {
           const destType = destination.type as string | undefined;
-          if (destType === "StateImage" || destType === "image" || destType === "stateImage") {
+          // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
+          if (
+            destType === "StateImage" ||
+            destType === "image" ||
+            destType === "stateImage"
+          ) {
             const hasDestImageRef =
               destination.stateImageId ||
               destination.imageId ||
-              (Array.isArray(destination.imageIds) && (destination.imageIds as unknown[]).length > 0);
+              (Array.isArray(destination.imageIds) &&
+                (destination.imageIds as unknown[]).length > 0);
             if (!hasDestImageRef) {
               const issue: ValidationIssue = {
                 severity: "error",

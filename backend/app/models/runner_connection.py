@@ -8,6 +8,7 @@ providing an audit trail and connection history.
 from datetime import datetime
 from uuid import UUID
 
+from qontinui_schemas.common import utc_now
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -34,17 +35,19 @@ class RunnerConnection(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    # Connection timestamps
+    # Connection timestamps (always timezone-aware UTC)
     connected_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=utc_now,
         nullable=False,
         index=True,
         comment="When the WebSocket connection was established",
     )
 
     disconnected_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True, comment="When the WebSocket connection was closed"
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When the WebSocket connection was closed",
     )
 
     duration_seconds: Mapped[int | None] = mapped_column(
@@ -97,6 +100,7 @@ class RunnerConnection(Base):
             self.duration_seconds = int(delta.total_seconds())
 
     def __repr__(self) -> str:
+        """Return string representation of the runner connection."""
         status = "active" if self.disconnected_at is None else "closed"
         return (
             f"<RunnerConnection(id={self.id}, user_id={self.user_id}, status={status})>"

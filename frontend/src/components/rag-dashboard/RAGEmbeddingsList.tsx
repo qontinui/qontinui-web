@@ -106,89 +106,89 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
             <div className="max-h-[500px] overflow-y-auto">
               <Table>
                 <TableHeader className="sticky top-0 bg-gray-900/95 z-10">
-                <TableRow className="border-gray-800">
-                  <TableHead className="text-gray-400 w-[300px]">
-                    Pattern
-                  </TableHead>
-                  <TableHead className="text-gray-400">State</TableHead>
-                  <TableHead className="text-gray-400">Size</TableHead>
-                  <TableHead className="text-gray-400">Updated</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.items.map((embedding: EmbeddingItem) => (
-                  <TableRow key={embedding.id} className="border-gray-800">
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-gray-800 rounded flex items-center justify-center overflow-hidden flex-shrink-0">
-                          {embedding.image_url ? (
-                            <img
-                              src={embedding.image_url}
-                              alt={
-                                embedding.pattern_name || embedding.pattern_id
-                              }
-                              className="w-full h-full object-contain"
-                              onError={(e) => {
-                                // On error, show placeholder icon
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = "none";
-                                target.nextElementSibling?.classList.remove(
-                                  "hidden"
-                                );
-                              }}
+                  <TableRow className="border-gray-800">
+                    <TableHead className="text-gray-400 w-[300px]">
+                      Pattern
+                    </TableHead>
+                    <TableHead className="text-gray-400">State</TableHead>
+                    <TableHead className="text-gray-400">Size</TableHead>
+                    <TableHead className="text-gray-400">Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.items.map((embedding: EmbeddingItem) => (
+                    <TableRow key={embedding.id} className="border-gray-800">
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 bg-gray-800 rounded flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {embedding.image_url ? (
+                              <img
+                                src={embedding.image_url}
+                                alt={
+                                  embedding.pattern_name || embedding.pattern_id
+                                }
+                                className="w-full h-full object-contain"
+                                onError={(e) => {
+                                  // On error, show placeholder icon
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = "none";
+                                  target.nextElementSibling?.classList.remove(
+                                    "hidden"
+                                  );
+                                }}
+                              />
+                            ) : null}
+                            <ImageIcon
+                              className={`w-5 h-5 text-gray-500 ${embedding.image_url ? "hidden" : ""}`}
                             />
-                          ) : null}
-                          <ImageIcon
-                            className={`w-5 h-5 text-gray-500 ${embedding.image_url ? "hidden" : ""}`}
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-white truncate">
-                              {embedding.pattern_name || embedding.pattern_id}
-                            </p>
-                            {embedding.has_text_embedding && (
-                              <span title="Text embedding available">
-                                <FileText className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                              </span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-white truncate">
+                                {embedding.pattern_name || embedding.pattern_id}
+                              </p>
+                              {embedding.has_text_embedding && (
+                                <span title="Text embedding available">
+                                  <FileText className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                                </span>
+                              )}
+                            </div>
+                            {embedding.text_description ? (
+                              <p
+                                className="text-xs text-gray-400 truncate"
+                                title={embedding.text_description}
+                              >
+                                {embedding.text_description}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-gray-500">
+                                {embedding.image_width}x{embedding.image_height}
+                              </p>
                             )}
                           </div>
-                          {embedding.text_description ? (
-                            <p
-                              className="text-xs text-gray-400 truncate"
-                              title={embedding.text_description}
-                            >
-                              {embedding.text_description}
-                            </p>
-                          ) : (
-                            <p className="text-xs text-gray-500">
-                              {embedding.image_width}x{embedding.image_height}
-                            </p>
-                          )}
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className="border-[#BD00FF]/50 text-[#BD00FF]"
-                      >
-                        {embedding.state_name}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-gray-400 text-sm">
-                        {embedding.image_width}x{embedding.image_height}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-gray-400 text-sm">
-                        {new Date(embedding.updated_at).toLocaleDateString()}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className="border-[#BD00FF]/50 text-[#BD00FF]"
+                        >
+                          {embedding.state_name}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-gray-400 text-sm">
+                          {embedding.image_width}x{embedding.image_height}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-gray-400 text-sm">
+                          {new Date(embedding.updated_at).toLocaleDateString()}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
               </Table>
             </div>
 

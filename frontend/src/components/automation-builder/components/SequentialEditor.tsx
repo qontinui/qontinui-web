@@ -673,11 +673,16 @@ function getActionSummary(
       };
 
       // Handle object target format: { type: "StateImage" | "image", imageId?: string, imageIds?: string[] }
+      // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
       if (clickConfig.target && typeof clickConfig.target === "object") {
         const targetObj = clickConfig.target;
         const targetType = targetObj.type;
 
-        if (targetType === "StateImage" || targetType === "image") {
+        if (
+          targetType === "StateImage" ||
+          targetType === "stateImage" ||
+          targetType === "image"
+        ) {
           // Single imageId
           if (targetObj.imageId) {
             const name = getImageName(targetObj.imageId);
@@ -716,7 +721,11 @@ function getActionSummary(
       }
 
       // Handle legacy string target format: "StateImage"
-      if (clickConfig.target === "StateImage") {
+      // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
+      if (
+        clickConfig.target === "StateImage" ||
+        clickConfig.target === "stateImage"
+      ) {
         // Check imageIds first (new flow without requiring stateId)
         if (clickConfig.imageIds && clickConfig.imageIds.length > 0) {
           // Get image names from all states

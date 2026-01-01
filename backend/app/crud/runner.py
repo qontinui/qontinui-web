@@ -4,9 +4,9 @@ CRUD operations for runner connections.
 This module provides database operations for tracking runner connection history.
 """
 
-from datetime import datetime
 from uuid import UUID
 
+from qontinui_schemas.common import utc_now
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,7 +104,7 @@ async def close_connection_record(
     if not connection:
         return None
 
-    connection.disconnected_at = datetime.utcnow()
+    connection.disconnected_at = utc_now()
     connection.calculate_duration()
 
     await db.commit()
@@ -241,7 +241,7 @@ async def close_orphaned_connections(
 
     closed_ids: list[int] = []
     for conn in orphaned:
-        conn.disconnected_at = datetime.utcnow()
+        conn.disconnected_at = utc_now()
         conn.calculate_duration()
         closed_ids.append(conn.id)
 

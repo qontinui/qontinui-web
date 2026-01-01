@@ -85,9 +85,11 @@ export default function ExecutionHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { projectId } = useProject();
+  const { projectId: storeProjectId } = useProject();
 
-  // URL params
+  // URL params - use URL project param with fallback to store
+  const urlProjectId = searchParams.get("project");
+  const projectId = urlProjectId || storeProjectId;
   const runIdParam = searchParams.get("runId");
   const workflowParam = searchParams.get("workflow");
 
@@ -224,22 +226,23 @@ export default function ExecutionHistoryPage() {
                             <SelectValue placeholder="Select a workflow..." />
                           </SelectTrigger>
                           <SelectContent className="bg-[#1A1A1B] border-gray-700">
-                            {workflows.map((workflow) => (
+                            {workflows.map((workflow, index) => (
                               <SelectItem
                                 key={
-                                  workflow.workflow_id || workflow.workflow_name
+                                  workflow.workflow_id ||
+                                  `${workflow.workflow_name}-${index}`
                                 }
                                 value={workflow.workflow_name}
                                 textValue={workflow.workflow_name}
                                 className="text-white hover:bg-gray-800"
                               >
-                                <div className="flex items-center justify-between gap-4 w-full">
-                                  <span>{workflow.workflow_name}</span>
-                                  <span className="text-xs text-gray-500">
-                                    {workflow.run_count} run
-                                    {workflow.run_count !== 1 ? "s" : ""}
-                                  </span>
-                                </div>
+                                <span className="flex-1">
+                                  {workflow.workflow_name}
+                                </span>
+                                <span className="text-xs text-gray-500 ml-2">
+                                  {workflow.run_count} run
+                                  {workflow.run_count !== 1 ? "s" : ""}
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>

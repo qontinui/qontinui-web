@@ -184,11 +184,13 @@ export class RAGSetupService {
    * Start RAG setup for a project
    * Sends the QontinuiConfig directly to the runner for embedding generation.
    * The runner accepts the full config format and extracts what it needs.
+   * Returns the storage_path where the config was saved, which can be used
+   * to load the config into the executor via /load-config endpoint.
    */
   async startRAGSetup(
     projectId: string,
     config: QontinuiConfig
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; storagePath?: string }> {
     // Count patterns for logging
     const patternCount = (config.states || []).reduce(
       (total, state) =>
@@ -250,9 +252,12 @@ export class RAGSetupService {
 
     // Handle wrapped response format
     if (data.success !== undefined) {
+      // Extract storage_path from the response data
+      const storagePath = data.data?.storage_path || data.storage_path;
       return {
         success: data.success,
         message: data.message || data.data?.message || "RAG setup started",
+        storagePath,
       };
     }
 

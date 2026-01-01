@@ -673,11 +673,16 @@ function getActionSummary(
       };
 
       // Handle object target format: { type: "StateImage" | "image", imageId?: string, imageIds?: string[] }
+      // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
       if (clickTarget && typeof clickTarget === "object") {
         const targetObj = clickTarget;
         const targetType = targetObj.type;
 
-        if (targetType === "StateImage" || targetType === "image") {
+        if (
+          targetType === "StateImage" ||
+          targetType === "stateImage" ||
+          targetType === "image"
+        ) {
           // Single imageId
           if (targetObj.imageId) {
             const name = getImageName(targetObj.imageId);
@@ -716,7 +721,8 @@ function getActionSummary(
       }
 
       // Handle legacy string target format: "StateImage"
-      if (clickTarget === "StateImage") {
+      // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
+      if (clickTarget === "StateImage" || clickTarget === "stateImage") {
         const clickImageIds = config.imageIds as string[] | undefined;
         if (
           clickImageIds &&

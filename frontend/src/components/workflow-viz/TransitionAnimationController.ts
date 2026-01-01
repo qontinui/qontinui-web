@@ -799,7 +799,7 @@ export class TransitionAnimationController {
           stateImageId: targetConfig.stateImageId as string | undefined,
         };
 
-      case "StateImage":
+      case "StateImage": // @deprecated - use "stateImage" (lowercase) instead
       case "image":
         if (targetConfig.imageId) {
           return { imageId: targetConfig.imageId as string };
@@ -904,9 +904,12 @@ export class TransitionAnimationController {
     }
 
     // Handle string target types (ClickActionConfig format)
+    // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
     if (typeof target === "string") {
       switch (target) {
-        case "StateImage": {
+        case "StateImage": // @deprecated - legacy uppercase format
+        case "stateImage": {
+          // preferred format
           const stateImageId = config.stateImageId as string | undefined;
           const imageId = config.imageId as string | undefined;
           const imageIds = config.imageIds as string[] | undefined;

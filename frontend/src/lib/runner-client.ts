@@ -100,11 +100,64 @@ export interface ExtractionStatusResponse {
   error?: string;
 }
 
+/**
+ * Response from POST /load-config endpoint
+ */
+export interface LoadConfigResponse {
+  success: boolean;
+  data?: string;
+  error?: string;
+}
+
 class RunnerClient {
   private baseUrl: string;
 
   constructor(baseUrl: string = RUNNER_BASE_URL) {
     this.baseUrl = baseUrl;
+  }
+
+  /**
+   * Load a configuration file into the runner
+   * This sends the config path to the Python executor for automation
+   */
+  async loadConfig(configPath: string): Promise<LoadConfigResponse> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    try {
+      const response = await fetch(`${this.baseUrl}/load-config`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ config_path: configPath }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `Failed to load config: ${response.status} - ${errorText}`,
+        };
+      }
+
+      const data = await response.json();
+      return {
+        success: data.success ?? true,
+        data: data.data,
+        error: data.error,
+      };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to load config",
+      };
+    }
   }
 
   /**

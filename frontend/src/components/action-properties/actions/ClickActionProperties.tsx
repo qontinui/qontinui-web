@@ -40,9 +40,11 @@ function getTargetType(config: Record<string, unknown>): string {
   }
 
   // Legacy string format: "StateImage", "Last Find Result", etc.
+  // Note: "StateImage" is @deprecated - use "stateImage" (lowercase) instead
   if (typeof target === "string") {
     switch (target) {
-      case "StateImage":
+      case "StateImage": // @deprecated - legacy uppercase format
+      case "stateImage": // preferred format
         return "image";
       case "Last Find Result":
         return "lastFindResult";
