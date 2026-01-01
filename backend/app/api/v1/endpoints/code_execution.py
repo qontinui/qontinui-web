@@ -166,20 +166,21 @@ async def validate_code(
     }
     ```
     """
-    from app.services.code_execution_service import CodeValidator
+    from app.utils.code_validator import CodeValidationError, CodeValidator
 
     errors: list[dict[str, str | int]] = []
 
     try:
         # Validate imports
-        CodeValidator.validate_imports(request.code, request.allowed_imports)
-    except ValueError as e:
+        validator = CodeValidator()
+        validator.validate_imports(request.code, request.allowed_imports)
+    except CodeValidationError as e:
         errors.append({"type": "import_error", "message": str(e)})
 
     try:
         # Validate dangerous patterns
-        CodeValidator.validate_dangerous_patterns(request.code)
-    except ValueError as e:
+        validator.validate_dangerous_patterns(request.code)
+    except CodeValidationError as e:
         errors.append({"type": "security_error", "message": str(e)})
 
     # Check for syntax errors
@@ -214,7 +215,7 @@ async def get_allowed_imports(
     }
     ```
     """
-    from app.services.code_execution_service import BLOCKED_IMPORTS
+    from app.core.security.code_policy import BLOCKED_IMPORTS
 
     default_allowed = [
         "re",

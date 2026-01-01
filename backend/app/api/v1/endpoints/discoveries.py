@@ -170,7 +170,7 @@ async def create_discovery_from_runner(
     # Create discovery with project owner as user
     discovery = await discovery_crud.create_discovery_from_runner(
         db=db,
-        user_id=project.owner_id,
+        user_id=project.owner_id,  # type: ignore[arg-type]
         runner_data=discovery_data,
     )
 

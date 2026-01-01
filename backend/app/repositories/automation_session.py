@@ -658,14 +658,15 @@ class AutomationSessionRepository(
 
         # Apply ordering
         if order_by == "sequence_number":
-            order_field = AutomationLog.sequence_number
+            if order_desc:
+                query = query.order_by(AutomationLog.sequence_number.desc())
+            else:
+                query = query.order_by(AutomationLog.sequence_number.asc())
         else:
-            order_field = AutomationLog.timestamp
-
-        if order_desc:
-            query = query.order_by(order_field.desc())
-        else:
-            query = query.order_by(order_field.asc())
+            if order_desc:
+                query = query.order_by(AutomationLog.timestamp.desc())
+            else:
+                query = query.order_by(AutomationLog.timestamp.asc())
 
         # Apply pagination
         query = query.offset(skip).limit(limit)
