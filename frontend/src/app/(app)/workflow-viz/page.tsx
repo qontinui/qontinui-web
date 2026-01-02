@@ -392,7 +392,7 @@ export default function WorkflowVisualizationPage() {
     }, playbackSpeed);
 
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps - handleStepForward changes frequently, we only want to trigger on these specific deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, currentActionIndex, playbackSpeed, selectedWorkflow]);
 
   // Step forward through workflow
