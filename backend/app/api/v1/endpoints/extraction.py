@@ -374,6 +374,13 @@ async def import_to_state_structure(
 
     # Collect and import states
     states_to_import = _collect_states_to_import(session, data.state_ids)
+    logger.info(
+        "import_states_request",
+        extraction_id=extraction_id,
+        requested_state_ids=data.state_ids,
+        states_to_import_count=len(states_to_import),
+        annotation_count=len(session.annotations) if session.annotations else 0,
+    )
     if not states_to_import:
         logger.info(
             "no_states_to_import", extraction_id=extraction_id, state_ids=data.state_ids
@@ -396,17 +403,38 @@ async def import_to_state_structure(
     existing_state_ids = {
         state.get("id") for state in states_list if isinstance(state, dict)
     }
+
+    logger.info(
+        "import_states_before",
+        extraction_id=extraction_id,
+        existing_states_count=len(states_list),
+        existing_state_ids=list(existing_state_ids)[:10],  # First 10 IDs for debugging
+    )
+
     imported_count = 0
+    skipped_ids = []
 
     for annotation, state_data in states_to_import:
         state_id = state_data.get("id")
-        if not state_id or state_id in existing_state_ids:
+        if not state_id:
+            skipped_ids.append(("no_id", state_data.get("name")))
+            continue
+        if state_id in existing_state_ids:
+            skipped_ids.append(("duplicate", state_id))
             continue
         config["states"].append(
             _create_state_config(state_data, annotation, extraction_id)
         )
         existing_state_ids.add(state_id)
         imported_count += 1
+
+    logger.info(
+        "import_states_after",
+        extraction_id=extraction_id,
+        imported_count=imported_count,
+        skipped=skipped_ids,
+        total_states_now=len(config["states"]),
+    )
 
     # Update project configuration
     from app.crud.project import update_project
@@ -418,6 +446,7 @@ async def import_to_state_structure(
         extraction_id=extraction_id,
         imported_count=imported_count,
         workflow_id=data.target_workflow_id,
+        final_states_count=len(config["states"]),
     )
     return ImportResult(
         imported_states=imported_count,

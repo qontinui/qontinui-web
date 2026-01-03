@@ -32,6 +32,7 @@ export interface Action {
     | "TYPE"
     // Find actions
     | "FIND"
+    | "FIND_STATE"
     | "RAG_FIND"
     | "VANISH"
     | "GO_TO_STATE"

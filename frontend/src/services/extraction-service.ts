@@ -105,6 +105,11 @@ export class ExtractionService {
     extractionId: string,
     data: StateImportRequest
   ): Promise<ImportResult> {
+    console.log("[ExtractionService] importStates called:", {
+      extractionId,
+      data,
+    });
+
     const url = `${this.apiUrl}/api/v1/extractions/${extractionId}/import-states`;
     const response = await this.httpClient.fetch(url, {
       method: "POST",
@@ -113,10 +118,13 @@ export class ExtractionService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.error("[ExtractionService] importStates failed:", errorData);
       throw new Error(`Failed to import states: ${JSON.stringify(errorData)}`);
     }
 
-    return response.json();
+    const result = await response.json();
+    console.log("[ExtractionService] importStates result:", result);
+    return result;
   }
 
   async createExtraction(

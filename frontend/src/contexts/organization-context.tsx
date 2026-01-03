@@ -6,6 +6,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from "react";
 import type { Organization } from "@/types/collaboration";
@@ -54,6 +55,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     useState<Organization | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
+  const initialLoadDone = useRef(false);
 
   /**
    * Load all organizations and restore the current one from localStorage
@@ -64,28 +66,33 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       const orgs = await organizationService.getOrganizations();
       setOrganizations(orgs);
 
-      // Try to restore current organization from localStorage
-      const storedOrgId = localStorage.getItem(STORAGE_KEY);
-      if (storedOrgId && orgs.length > 0) {
-        const storedOrg = orgs.find((org) => org.id === storedOrgId);
-        if (storedOrg) {
-          setCurrentOrganization(storedOrg);
+      // Only set current organization on initial load
+      if (!initialLoadDone.current && orgs.length > 0) {
+        initialLoadDone.current = true;
+
+        // Try to restore current organization from localStorage
+        const storedOrgId = localStorage.getItem(STORAGE_KEY);
+        if (storedOrgId) {
+          const storedOrg = orgs.find((org) => org.id === storedOrgId);
+          if (storedOrg) {
+            setCurrentOrganization(storedOrg);
+          } else {
+            // Stored org not found, select first org
+            setCurrentOrganization(orgs[0] ?? null);
+            localStorage.setItem(STORAGE_KEY, orgs[0]!.id);
+          }
         } else {
-          // Stored org not found, select first org
+          // No stored org, select first one
           setCurrentOrganization(orgs[0] ?? null);
           localStorage.setItem(STORAGE_KEY, orgs[0]!.id);
         }
-      } else if (orgs.length > 0 && !currentOrganization) {
-        // No stored org, select first one
-        setCurrentOrganization(orgs[0] ?? null);
-        localStorage.setItem(STORAGE_KEY, orgs[0]!.id);
       }
     } catch (error) {
       console.error("[Organization] Failed to load organizations:", error);
     } finally {
       setLoading(false);
     }
-  }, [currentOrganization]);
+  }, []);
 
   /**
    * Load organizations on mount

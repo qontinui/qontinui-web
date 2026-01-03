@@ -14,6 +14,24 @@ export interface FindActionConfig {
 }
 
 /**
+ * FIND_STATE - Check which states are currently active on screen
+ *
+ * Performs a FIND ALL operation on the images of the selected states.
+ * Returns which states have at least one image currently visible on screen.
+ * This is useful for detecting the current application state before taking action.
+ */
+export interface FindStateActionConfig {
+  /** Array of state IDs to check for visibility */
+  stateIds: string[];
+
+  /** Search options for image matching */
+  searchOptions?: SearchOptions;
+
+  /** Variable name to store the array of active state IDs */
+  outputVariable?: string;
+}
+
+/**
  * VANISH - Wait for a target to disappear
  */
 export interface VanishActionConfig {

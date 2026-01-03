@@ -47,6 +47,7 @@ interface Action {
     | "LOOP"
     // Other actions
     | "FIND"
+    | "FIND_STATE"
     | "VANISH"
     | "RAG_FIND"
     | "GO_TO_STATE"
@@ -64,12 +65,7 @@ interface ActionEditorProps {
 const ACTION_GROUPS = {
   Find: [
     { type: "FIND", label: "Find Element", color: "bg-blue-500" },
-    {
-      type: "FIND",
-      label: "Find State",
-      color: "bg-cyan-500",
-      preset: "stateImage",
-    },
+    { type: "FIND_STATE", label: "Find State", color: "bg-cyan-500" },
     { type: "RAG_FIND", label: "RAG Find", color: "bg-violet-500" },
   ],
   Mouse: [
@@ -314,6 +310,12 @@ function getDefaultConfig(type: Action["type"]): Record<string, unknown> {
           imageId: null,
         },
         // similarity, strategy, pause_before_begin, pause_after_end are optional overrides
+      };
+    case "FIND_STATE":
+      return {
+        stateIds: [],
+        outputVariable: "",
+        // searchOptions are optional overrides
       };
     case "CLICK":
       return {
@@ -621,6 +623,21 @@ function getActionSummary(
         return "Image not found";
       }
       return "No image selected";
+    }
+    case "FIND_STATE": {
+      const stateIds = config.stateIds as string[] | undefined;
+      if (stateIds && stateIds.length > 0) {
+        const stateNames = stateIds.map((stateId: string) => {
+          const state = states.find((s) => s.id === stateId);
+          return state ? state.name : stateId;
+        });
+        if (stateNames.length === 1) {
+          return `Check state: ${stateNames[0]}`;
+        } else {
+          return `Check ${stateNames.length} states`;
+        }
+      }
+      return "No states selected";
     }
     case "RAG_FIND": {
       const ragTarget = config.target as { stateImageId?: string } | undefined;

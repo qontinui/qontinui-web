@@ -205,7 +205,8 @@ class SyncCoordinatorImpl {
         ((config.workflows as unknown[])?.length ?? 0) > 0 ||
         ((config.states as unknown[])?.length ?? 0) > 0 ||
         ((config.transitions as unknown[])?.length ?? 0) > 0 ||
-        ((config.images as unknown[])?.length ?? 0) > 0;
+        ((config.images as unknown[])?.length ?? 0) > 0 ||
+        ((config.contexts as unknown[])?.length ?? 0) > 0;
 
       if (!hasData) {
         projectLogger.debug(
@@ -254,8 +255,10 @@ class SyncCoordinatorImpl {
 
     if (!this.config.enabled) return;
 
+    // Auto-save runs on interval - the saveToBackend() method
+    // handles checks for empty config, loading state, etc.
     this.autoSaveInterval = setInterval(() => {
-      if (this.config.projectId && this.status.hasPendingBackendChanges) {
+      if (this.config.projectId) {
         this.saveToBackend();
       }
     }, this.config.backendSaveInterval);
@@ -289,7 +292,8 @@ class SyncCoordinatorImpl {
       ((config.workflows as unknown[])?.length ?? 0) > 0 ||
       ((config.states as unknown[])?.length ?? 0) > 0 ||
       ((config.transitions as unknown[])?.length ?? 0) > 0 ||
-      ((config.images as unknown[])?.length ?? 0) > 0;
+      ((config.images as unknown[])?.length ?? 0) > 0 ||
+      ((config.contexts as unknown[])?.length ?? 0) > 0;
 
     if (!hasData) return;
 

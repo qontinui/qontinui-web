@@ -32,6 +32,7 @@ export type NodeComponent = ComponentType<
 export const NODE_TYPES: Record<ActionType, NodeComponent> = {
   // Find Actions
   FIND: GuiActionNodes.FIND,
+  FIND_STATE: GuiActionNodes.FIND, // Reuse FIND node for FIND_STATE
   VANISH: GuiActionNodes.VANISH,
   RAG_FIND: GuiActionNodes.FIND, // Reuse FIND node for RAG_FIND
 
@@ -132,7 +133,7 @@ export function getRegisteredNodeTypes(): ActionType[] {
  * Node type groups for UI organization
  */
 export const NODE_TYPE_GROUPS = {
-  find: ["FIND", "VANISH"] as ActionType[],
+  find: ["FIND", "FIND_STATE", "VANISH"] as ActionType[],
   mouse: [
     "CLICK",
     "DOUBLE_CLICK",

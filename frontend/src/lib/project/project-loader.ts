@@ -162,7 +162,11 @@ class ProjectLoaderService {
       });
 
       // Save current project if needed
+      // When force=true, skip saving because we want backend data to take precedence
+      // (e.g., after importing states from Web Extraction, the backend has the imported states
+      // and we don't want to overwrite them with the old Zustand store data)
       if (
+        !force &&
         this.config.saveBeforeLoad &&
         projectIdsDiffer(currentProjectId, normalizedId)
       ) {
@@ -171,21 +175,32 @@ class ProjectLoaderService {
         this.stateMachine.send({ type: "SKIP_SAVE" });
       }
 
-      // CRITICAL: Flush any pending debounced saves before fetching from backend.
-      // This ensures local changes are persisted to backend before we fetch,
-      // preventing data loss when local changes haven't been synced yet.
-      projectLogger.projectLoader("Flushing pending saves before fetch", {
-        projectId: normalizedId,
-      });
-      await debounceManager.flushAll();
-      await syncCoordinator.saveNow();
+      // Flush pending debounced saves before fetching from backend.
+      // IMPORTANT: Skip this when force=true - we want backend data to take precedence
+      // (e.g., after importing states, backend has the imported states and we don't
+      // want to overwrite them with the old local data)
+      if (!force) {
+        projectLogger.projectLoader("Flushing pending saves before fetch", {
+          projectId: normalizedId,
+        });
+        await debounceManager.flushAll();
+        await syncCoordinator.saveNow();
+      } else {
+        projectLogger.projectLoader(
+          "Skipping flush/save before fetch (force=true, backend data takes precedence)",
+          { projectId: normalizedId }
+        );
+        // Cancel any pending debounced saves to prevent race conditions
+        debounceManager.cancelAll();
+      }
 
       // Fetch from backend
       const projectData = await this.fetchProject(normalizedId);
       this.stateMachine.send({ type: "FETCHED", projectData });
 
       // Hydrate store
-      await this.hydrateStore(projectData);
+      // When force=true (e.g., after importing states), prefer backend data over IndexedDB
+      await this.hydrateStore(projectData, { preferBackend: force });
       this.stateMachine.send({ type: "HYDRATED" });
 
       // Mark as loaded
@@ -296,17 +311,25 @@ class ProjectLoaderService {
   /**
    * Hydrate the Zustand store with project data
    *
-   * IMPORTANT: This function prefers IndexedDB data when it exists.
+   * IMPORTANT: This function prefers IndexedDB data when it exists, UNLESS
+   * preferBackend is true (e.g., after importing states from Web Extraction).
    * This prevents data loss when local changes haven't been synced to backend yet.
    * The flow is:
-   * 1. Check if IndexedDB has data for this project
-   * 2. If yes, use IndexedDB data (it has the latest local changes)
-   * 3. If no, use backend data (first time loading this project in this browser)
+   * 1. If preferBackend is true, use backend data and update IndexedDB
+   * 2. Otherwise, check if IndexedDB has data for this project
+   * 3. If yes, use IndexedDB data (it has the latest local changes)
+   * 4. If no, use backend data (first time loading this project in this browser)
    */
-  private async hydrateStore(projectData: ProjectData): Promise<void> {
+  private async hydrateStore(
+    projectData: ProjectData,
+    options: { preferBackend?: boolean } = {}
+  ): Promise<void> {
+    const { preferBackend = false } = options;
+
     projectLogger.projectLoader("Hydrating store", {
       projectId: projectData.id,
       projectName: projectData.name,
+      preferBackend,
     });
 
     const store = useAutomationStore.getState();
@@ -317,6 +340,46 @@ class ProjectLoaderService {
     syncCoordinator.setLoadingFromBackend(true);
 
     try {
+      // If preferBackend is true, skip IndexedDB check and use backend data directly
+      // This is used after operations like importing states where backend has newer data
+      if (preferBackend) {
+        projectLogger.projectLoader("Using backend data (preferBackend=true)", {
+          projectId: projectData.id,
+          backendStates: (backendConfig.states as unknown[])?.length ?? 0,
+          backendWorkflows: (backendConfig.workflows as unknown[])?.length ?? 0,
+        });
+
+        // Clear existing IndexedDB data for this project to avoid stale data
+        await Promise.all([
+          stateRepository.deleteByProject(projectData.name),
+          workflowRepository.deleteByProject(projectData.name),
+          transitionRepository.deleteByProject(projectData.name),
+          imageRepository.deleteByProject(projectData.name),
+        ]);
+
+        await store.loadConfiguration({
+          name: projectData.name,
+          workflows: backendConfig.workflows,
+          states: backendConfig.states,
+          transitions: backendConfig.transitions,
+          images: backendConfig.images,
+          categories: backendConfig.categories,
+          settings: backendConfig.settings,
+        });
+
+        // Save backend data to IndexedDB for future local persistence
+        await this.saveToIndexedDB(projectData.name, backendConfig);
+
+        // Update project metadata
+        store.setProjectName(projectData.name);
+        store.setProjectId(String(projectData.id));
+
+        projectLogger.projectLoader("Store hydrated from backend", {
+          projectId: projectData.id,
+        });
+        return;
+      }
+
       // Check if IndexedDB has data for this project
       // If it does, prefer it over backend data to preserve local changes
       const [localStates, localWorkflows, localTransitions, localImages] =
@@ -427,6 +490,52 @@ class ProjectLoaderService {
         syncCoordinator.setLoadingFromBackend(false);
       }, 100);
     }
+  }
+
+  /**
+   * Save configuration data to IndexedDB
+   */
+  private async saveToIndexedDB(
+    projectName: string,
+    config: ProjectData["configuration"]
+  ): Promise<void> {
+    const states = (config?.states as unknown[]) ?? [];
+    const workflows = (config?.workflows as unknown[]) ?? [];
+    const transitions = (config?.transitions as unknown[]) ?? [];
+    const images = (config?.images as unknown[]) ?? [];
+
+    for (const state of states) {
+      await stateRepository.save({
+        ...(state as Record<string, unknown>),
+        projectName,
+      } as Parameters<typeof stateRepository.save>[0]);
+    }
+    for (const workflow of workflows) {
+      await workflowRepository.save({
+        ...(workflow as Record<string, unknown>),
+        projectName,
+      } as Parameters<typeof workflowRepository.save>[0]);
+    }
+    for (const transition of transitions) {
+      await transitionRepository.save({
+        ...(transition as Record<string, unknown>),
+        projectName,
+      } as Parameters<typeof transitionRepository.save>[0]);
+    }
+    for (const image of images) {
+      await imageRepository.save({
+        ...(image as Record<string, unknown>),
+        projectName,
+      } as Parameters<typeof imageRepository.save>[0]);
+    }
+
+    projectLogger.projectLoader("Data saved to IndexedDB", {
+      projectName,
+      statesSaved: states.length,
+      workflowsSaved: workflows.length,
+      transitionsSaved: transitions.length,
+      imagesSaved: images.length,
+    });
   }
 
   /**

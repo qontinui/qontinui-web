@@ -48,6 +48,11 @@ export function ExportPanel({
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
   const handleImport = async () => {
+    console.log("[ExportPanel] handleImport called with selectedStateIds:", {
+      size: selectedStateIds.size,
+      ids: Array.from(selectedStateIds),
+    });
+
     if (selectedStateIds.size === 0) {
       toast.error("No states selected for import");
       return;
@@ -57,7 +62,10 @@ export function ExportPanel({
       setIsImporting(true);
       setImportResult(null);
 
-      const result = await onImport(Array.from(selectedStateIds));
+      const stateIdsArray = Array.from(selectedStateIds);
+      console.log("[ExportPanel] Calling onImport with:", stateIdsArray);
+      const result = await onImport(stateIdsArray);
+      console.log("[ExportPanel] Import returned:", result);
 
       setImportResult(result);
 

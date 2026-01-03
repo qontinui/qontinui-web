@@ -51,7 +51,7 @@ type MainTab = "configuration" | "results";
 type ResultsSubTab = "progress" | "states" | "import";
 
 export default function WebExtractionTab() {
-  const { projectId } = useProjectLoader();
+  const { projectId, reloadProject } = useProjectLoader();
   const { data: extractions } = useExtractions(projectId || "", !!projectId);
   const createExtraction = useCreateExtraction();
   const deleteExtraction = useDeleteExtraction();
@@ -214,7 +214,30 @@ export default function WebExtractionTab() {
       target_workflow_id: undefined,
     };
 
-    return await extractionService.importStates(activeExtractionId, request);
+    console.log("[WebExtractionTab] Importing states:", {
+      extractionId: activeExtractionId,
+      stateIds,
+      request,
+    });
+
+    const result = await extractionService.importStates(
+      activeExtractionId,
+      request
+    );
+
+    console.log("[WebExtractionTab] Import result:", result);
+
+    // Reload the project to sync the newly imported states into the Zustand store
+    // This ensures the State Machine view shows the imported states
+    if (result.imported_states > 0) {
+      console.log("[WebExtractionTab] Reloading project after import...");
+      await reloadProject();
+      console.log("[WebExtractionTab] Project reloaded");
+    } else {
+      console.log("[WebExtractionTab] No states imported, skipping reload");
+    }
+
+    return result;
   };
 
   const handleSelectPreviousExtraction = (extractionId: string) => {

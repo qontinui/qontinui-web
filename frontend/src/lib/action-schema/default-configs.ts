@@ -25,6 +25,12 @@ export function getDefaultConfig<T extends ActionType>(
         },
       } as ActionConfigMap[T];
 
+    case "FIND_STATE":
+      return {
+        stateIds: [],
+        outputVariable: "",
+      } as unknown as ActionConfigMap[T];
+
     case "VANISH":
       return {
         target: {

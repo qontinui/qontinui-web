@@ -44,6 +44,7 @@ import {
   FileCode,
   Terminal,
   FileTerminal,
+  Layers,
   LucideIcon,
 } from "lucide-react";
 import { ActionType } from "@/lib/action-schema/action-types";
@@ -62,6 +63,7 @@ export interface NodeIconProps {
 const ACTION_ICONS: Record<ActionType, LucideIcon> = {
   // Find Actions
   FIND: Search,
+  FIND_STATE: Layers,
   VANISH: EyeOff,
   RAG_FIND: Sparkles,
 

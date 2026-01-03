@@ -29,9 +29,11 @@ import {
   Square,
   Image as ImageIcon,
   AlertCircle,
+  Eye,
 } from "lucide-react";
 import { runnerClient } from "@/lib/runner-client";
 import type { ExtractionAnnotation } from "@/services/extraction-service";
+import { StateImageModal } from "./StateImageModal";
 
 interface StateAnnotation {
   id: string;
@@ -201,14 +203,48 @@ function ScreenshotPreview({
   );
 }
 
+// Extended state annotation with annotation context
+interface StateWithContext extends StateAnnotation {
+  source_url: string;
+  viewport: string;
+  screenshot_id: string;
+  viewport_width: number;
+  viewport_height: number;
+}
+
+// Element annotation type for the modal
+interface ElementAnnotation {
+  id: string;
+  name?: string | null;
+  element_type: string;
+  bbox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  text?: string | null;
+  selector?: string | null;
+  confidence?: number;
+}
+
 export function StateList({
   annotations,
   selectedStateIds,
   onSelectionChange,
   extractionId,
 }: StateListProps) {
-  // Collect all states from all annotations
-  const allStates = useMemo(
+  // State for viewing a specific state's image
+  const [viewingState, setViewingState] = useState<StateWithContext | null>(
+    null
+  );
+  // Elements from the current annotation being viewed
+  const [viewingElements, setViewingElements] = useState<ElementAnnotation[]>(
+    []
+  );
+
+  // Collect all states from all annotations with context
+  const allStates = useMemo<StateWithContext[]>(
     () =>
       annotations.flatMap((annotation) =>
         (annotation.states as StateAnnotation[]).map((state) => ({
@@ -216,6 +252,8 @@ export function StateList({
           source_url: annotation.source_url,
           viewport: `${annotation.viewport_width}x${annotation.viewport_height}`,
           screenshot_id: annotation.screenshot_id,
+          viewport_width: annotation.viewport_width,
+          viewport_height: annotation.viewport_height,
         }))
       ),
     [annotations]
@@ -238,6 +276,31 @@ export function StateList({
 
   const handleDeselectAll = () => {
     onSelectionChange(new Set());
+  };
+
+  // Handle viewing a state's image
+  const handleViewState = (
+    state: StateAnnotation,
+    annotation: ExtractionAnnotation
+  ) => {
+    const stateWithContext: StateWithContext = {
+      ...state,
+      source_url: annotation.source_url,
+      viewport: `${annotation.viewport_width}x${annotation.viewport_height}`,
+      screenshot_id: annotation.screenshot_id,
+      viewport_width: annotation.viewport_width,
+      viewport_height: annotation.viewport_height,
+    };
+    setViewingState(stateWithContext);
+    // Store elements from this annotation for the modal
+    const elements = (annotation.elements as ElementAnnotation[]) || [];
+    setViewingElements(elements);
+  };
+
+  // Handle closing the modal
+  const handleCloseModal = () => {
+    setViewingState(null);
+    setViewingElements([]);
   };
 
   if (allStates.length === 0) {
@@ -372,19 +435,20 @@ export function StateList({
                     {annotationStates.map((state) => (
                       <div
                         key={state.id}
-                        className={`flex items-center gap-3 p-2 rounded-md transition-colors cursor-pointer ${
+                        className={`flex items-center gap-3 p-2 rounded-md transition-colors ${
                           selectedStateIds.has(state.id)
                             ? "bg-[#00D9FF]/10 border border-[#00D9FF]"
                             : "hover:bg-muted"
                         }`}
-                        onClick={() => handleToggleState(state.id)}
                       >
                         <Checkbox
                           checked={selectedStateIds.has(state.id)}
                           onCheckedChange={() => handleToggleState(state.id)}
-                          onClick={(e) => e.stopPropagation()}
                         />
-                        <div className="flex-1 min-w-0">
+                        <div
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={() => handleToggleState(state.id)}
+                        >
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-sm">
                               {state.name}
@@ -404,6 +468,19 @@ export function StateList({
                             </span>
                           </div>
                         </div>
+                        {/* View state image button */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewState(state, annotation);
+                          }}
+                          title="View state image"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -423,6 +500,20 @@ export function StateList({
           </>
         )}
       </CardContent>
+
+      {/* State Image Modal */}
+      {viewingState && extractionId && (
+        <StateImageModal
+          isOpen={!!viewingState}
+          onClose={handleCloseModal}
+          state={viewingState}
+          elements={viewingElements}
+          extractionId={extractionId}
+          screenshotId={viewingState.screenshot_id}
+          viewportWidth={viewingState.viewport_width}
+          viewportHeight={viewingState.viewport_height}
+        />
+      )}
     </Card>
   );
 }

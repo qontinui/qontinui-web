@@ -14,6 +14,7 @@ import type {
 // Import all action configs
 import {
   FindActionConfig,
+  FindStateActionConfig,
   VanishActionConfig,
   RagFindActionConfig,
 } from "./configs/find-actions";
@@ -77,7 +78,7 @@ import { AIPromptActionConfig } from "./configs/ai-actions";
 // Action Types
 // ============================================================================
 
-export type FindActionType = "FIND" | "VANISH" | "RAG_FIND";
+export type FindActionType = "FIND" | "FIND_STATE" | "VANISH" | "RAG_FIND";
 
 export type MouseActionType =
   | "CLICK"
@@ -138,6 +139,7 @@ export type ActionType =
 export interface ActionConfigMap {
   // Find actions
   FIND: FindActionConfig;
+  FIND_STATE: FindStateActionConfig;
   VANISH: VanishActionConfig;
   RAG_FIND: RagFindActionConfig;
 

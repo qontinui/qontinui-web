@@ -84,6 +84,8 @@ export interface ExtractedElement {
 export interface ElementAnnotation {
   /** Unique identifier */
   id: string;
+  /** Human-readable name for the element (OCR-based or derived) */
+  name?: string | null;
   /** Type of element */
   element_type: string;
   /** Bounding box */

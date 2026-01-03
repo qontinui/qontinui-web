@@ -41,6 +41,7 @@ import {
   FileCode,
   Terminal,
   FileTerminal,
+  Layers,
 } from "lucide-react";
 
 // ============================================================================
@@ -152,6 +153,23 @@ export const NODE_METADATA: Record<ActionType, NodeMetadata> = {
     icon: Search,
     keywords: ["find", "search", "locate", "image", "match", "detect"],
     tags: ["vision", "detection"],
+  },
+  FIND_STATE: {
+    type: "FIND_STATE",
+    displayName: "Find State",
+    description: "Check which states are currently active on screen",
+    category: "find",
+    icon: Layers,
+    keywords: [
+      "find",
+      "state",
+      "active",
+      "detect",
+      "check",
+      "visible",
+      "screen",
+    ],
+    tags: ["vision", "state", "detection"],
   },
   VANISH: {
     type: "VANISH",

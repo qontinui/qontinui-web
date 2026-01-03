@@ -251,6 +251,7 @@ export enum ActionCategory {
 export const ACTION_TYPE_TO_CATEGORY: Record<ActionType, ActionCategory> = {
   // Find actions
   FIND: ActionCategory.FIND,
+  FIND_STATE: ActionCategory.FIND,
   VANISH: ActionCategory.FIND,
   RAG_FIND: ActionCategory.FIND,
 

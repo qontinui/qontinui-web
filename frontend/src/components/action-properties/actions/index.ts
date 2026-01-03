@@ -6,6 +6,7 @@ import { actionConfigRegistry } from "../ActionConfigRegistry";
 
 // Import all action property components
 export { FindActionProperties } from "./FindActionProperties";
+export { FindStateActionProperties } from "./FindStateActionProperties";
 export { RagFindActionProperties } from "./RagFindActionProperties";
 export { ClickActionProperties } from "./ClickActionProperties";
 export {
@@ -42,6 +43,7 @@ export { AIPromptActionProperties } from "./ai-prompts/AIPromptActionProperties"
 
 // Register components with the registry
 import { FindActionProperties } from "./FindActionProperties";
+import { FindStateActionProperties } from "./FindStateActionProperties";
 import { RagFindActionProperties } from "./RagFindActionProperties";
 import { ClickActionProperties } from "./ClickActionProperties";
 import {
@@ -78,6 +80,11 @@ import { AIPromptActionProperties } from "./ai-prompts/AIPromptActionProperties"
 
 // Register all action types with their components
 actionConfigRegistry.register("FIND", FindActionProperties, "FIND");
+actionConfigRegistry.register(
+  "FIND_STATE",
+  FindStateActionProperties,
+  "FIND_STATE"
+);
 actionConfigRegistry.register("RAG_FIND", RagFindActionProperties, "RAG_FIND");
 actionConfigRegistry.register("CLICK", ClickActionProperties, "CLICK");
 actionConfigRegistry.register("MOUSE_MOVE", MouseMoveProperties, "MOUSE_MOVE");
