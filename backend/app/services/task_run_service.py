@@ -278,7 +278,7 @@ class TaskRunFindingsListResponse(BaseModel):
 def _get_enum_value(val: Any) -> str:
     """Get string value from enum or string."""
     if hasattr(val, "value"):
-        return val.value
+        return str(val.value)
     return str(val)
 
 

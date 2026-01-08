@@ -340,21 +340,26 @@ async def list_test_results(
     if status:
         conditions.append(TestResult.status == status)
 
-    query_filter = and_(*conditions) if conditions else True
-
-    count_result = await db.execute(
-        select(func.count(TestResult.id)).where(query_filter)
-    )
-    total = count_result.scalar_one()
-
-    result = await db.execute(
+    # Build base queries
+    count_query = select(func.count(TestResult.id))
+    result_query = (
         select(TestResult)
-        .where(query_filter)
         .options(selectinload(TestResult.test))
         .order_by(desc(TestResult.created_at))
         .offset(skip)
         .limit(limit)
     )
+
+    # Apply conditions if any
+    if conditions:
+        query_filter = and_(*conditions)
+        count_query = count_query.where(query_filter)
+        result_query = result_query.where(query_filter)
+
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one()
+
+    result = await db.execute(result_query)
     results = list(result.scalars().all())
 
     return results, total

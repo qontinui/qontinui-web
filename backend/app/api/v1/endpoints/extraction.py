@@ -510,7 +510,9 @@ async def import_to_state_structure(
         # Get configuration as dict
         # IMPORTANT: We must make a DEEP COPY, otherwise SQLAlchemy won't detect changes
         config: dict[str, Any] = (
-            copy.deepcopy(project.configuration) if project.configuration else {}
+            copy.deepcopy(cast(dict[str, Any], project.configuration))
+            if project.configuration
+            else {}
         )
         config.setdefault("states", [])
         config.setdefault("transitions", [])
@@ -549,13 +551,13 @@ async def import_to_state_structure(
 
     finally:
         # Release sync lock
-        lock.released_at = datetime.utcnow()
+        lock.released_at = datetime.utcnow()  # type: ignore[assignment]
         await db.commit()
         await db.refresh(lock)
 
         # Refresh project to get new version
         await db.refresh(project)
-        new_version = project.version
+        new_version: int = cast(int, project.version)
 
         logger.info(
             "sync_lock_released_after_import",

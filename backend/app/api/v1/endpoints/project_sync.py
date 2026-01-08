@@ -6,6 +6,7 @@ Broadcasts lock acquisition/release events and version updates.
 """
 
 from datetime import datetime, timedelta
+from typing import cast
 from uuid import UUID
 
 import structlog
@@ -27,6 +28,7 @@ from app.api.deps import (
     get_current_user_from_ws,
 )
 from app.crud.project import get_project
+from app.models.organization import PermissionLevel
 from app.models.sync_lock import SyncLock
 from app.models.user import User
 from app.schemas.sync_lock import (
@@ -145,7 +147,7 @@ async def websocket_sync_endpoint(
             return
 
         has_access = await permission_service.can_user_access_project(
-            db, user.id, project_uuid, "view"
+            db, user.id, project_uuid, PermissionLevel.VIEW
         )
         if not has_access:
             await websocket.send_json(
@@ -277,7 +279,7 @@ async def acquire_sync_lock(
         )
 
     has_access = await permission_service.can_user_access_project(
-        db, current_user.id, project_id, "edit"
+        db, current_user.id, project_id, PermissionLevel.EDIT
     )
     if not has_access:
         raise HTTPException(
@@ -338,11 +340,11 @@ async def acquire_sync_lock(
 
     return SyncLockResponse(
         lock_id=str(lock.id),
-        operation=lock.operation,
+        operation=cast(str, lock.operation),
         user_id=str(lock.user_id),
         project_id=str(lock.project_id),
-        acquired_at=lock.acquired_at,
-        expires_at=lock.expires_at,
+        acquired_at=cast(datetime, lock.acquired_at),
+        expires_at=cast(datetime, lock.expires_at),
         new_version=None,
     )
 
@@ -389,16 +391,16 @@ async def release_sync_lock(
         )
 
     # Mark lock as released
-    lock.released_at = datetime.utcnow()
+    lock.released_at = datetime.utcnow()  # type: ignore[assignment]
     if not release_request.success:
-        lock.error_message = release_request.error_message
+        lock.error_message = release_request.error_message  # type: ignore[assignment]
 
     await db.commit()
     await db.refresh(lock)
 
     # Get current project version
     project = await get_project(db, project_id)
-    new_version = project.version if project else 0
+    new_version: int = cast(int, project.version) if project else 0
 
     logger.info(
         "sync_lock_released",
@@ -418,11 +420,11 @@ async def release_sync_lock(
 
     return SyncLockResponse(
         lock_id=str(lock.id),
-        operation=lock.operation,
+        operation=cast(str, lock.operation),
         user_id=str(lock.user_id),
         project_id=str(lock.project_id),
-        acquired_at=lock.acquired_at,
-        expires_at=lock.expires_at,
+        acquired_at=cast(datetime, lock.acquired_at),
+        expires_at=cast(datetime, lock.expires_at),
         new_version=new_version,
     )
 
@@ -446,7 +448,7 @@ async def get_active_lock(
         )
 
     has_access = await permission_service.can_user_access_project(
-        db, current_user.id, project_id, "view"
+        db, current_user.id, project_id, PermissionLevel.VIEW
     )
     if not has_access:
         raise HTTPException(
@@ -469,13 +471,13 @@ async def get_active_lock(
     # Get user email for display
     from app.crud.user import get_user
 
-    lock_user = await get_user(db, lock.user_id)
+    lock_user = await get_user(db, cast(UUID, lock.user_id))
 
     return ActiveLockInfo(
         lock_id=str(lock.id),
-        operation=lock.operation,
+        operation=cast(str, lock.operation),
         user_id=str(lock.user_id),
         user_email=lock_user.email if lock_user else None,
-        acquired_at=lock.acquired_at,
-        expires_at=lock.expires_at,
+        acquired_at=cast(datetime, lock.acquired_at),
+        expires_at=cast(datetime, lock.expires_at),
     )
