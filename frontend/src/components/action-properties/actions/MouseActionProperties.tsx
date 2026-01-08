@@ -106,12 +106,12 @@ export function MouseMoveProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Target</Label>
+        <Label className="text-xs text-text-muted">Target</Label>
         <Select value={targetType} onValueChange={handleTargetTypeChange}>
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="lastFindResult">Last Find Result</SelectItem>
             <SelectItem value="coordinates">Coordinates</SelectItem>
           </SelectContent>
@@ -121,7 +121,7 @@ export function MouseMoveProperties({
       {targetType === "coordinates" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">X Coordinate</Label>
+            <Label className="text-xs text-text-muted">X Coordinate</Label>
             <Input
               type="number"
               value={coords.x}
@@ -131,11 +131,11 @@ export function MouseMoveProperties({
                   Number.parseInt(e.target.value) || 0
                 )
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Y Coordinate</Label>
+            <Label className="text-xs text-text-muted">Y Coordinate</Label>
             <Input
               type="number"
               value={coords.y}
@@ -145,14 +145,16 @@ export function MouseMoveProperties({
                   Number.parseInt(e.target.value) || 0
                 )
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
         </>
       )}
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Movement Duration (ms)</Label>
+        <Label className="text-xs text-text-muted">
+          Movement Duration (ms)
+        </Label>
         <Input
           type="number"
           min="0"
@@ -160,9 +162,9 @@ export function MouseMoveProperties({
           onChange={(e) =>
             updateConfig("duration", Number.parseInt(e.target.value))
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           0 = instant movement, &gt;0 = smooth animation
         </p>
       </div>
@@ -218,15 +220,15 @@ export function MouseButtonProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Button</Label>
+        <Label className="text-xs text-text-muted">Button</Label>
         <Select
           value={(action.config.button as string) || "left"}
           onValueChange={(value) => updateConfig("button", value)}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="left">Left</SelectItem>
             <SelectItem value="right">Right</SelectItem>
             <SelectItem value="middle">Middle</SelectItem>
@@ -235,12 +237,12 @@ export function MouseButtonProperties({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Target (Optional)</Label>
+        <Label className="text-xs text-text-muted">Target (Optional)</Label>
         <Select value={targetType} onValueChange={handleTargetTypeChange}>
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="currentPosition">Current Position</SelectItem>
             <SelectItem value="lastFindResult">Last Find Result</SelectItem>
             <SelectItem value="coordinates">Coordinates</SelectItem>
@@ -251,7 +253,7 @@ export function MouseButtonProperties({
       {targetType === "coordinates" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">X Coordinate</Label>
+            <Label className="text-xs text-text-muted">X Coordinate</Label>
             <Input
               type="number"
               value={coords.x}
@@ -261,11 +263,11 @@ export function MouseButtonProperties({
                   Number.parseInt(e.target.value) || 0
                 )
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Y Coordinate</Label>
+            <Label className="text-xs text-text-muted">Y Coordinate</Label>
             <Input
               type="number"
               value={coords.y}
@@ -275,7 +277,7 @@ export function MouseButtonProperties({
                   Number.parseInt(e.target.value) || 0
                 )
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
         </>
@@ -328,12 +330,12 @@ export function SimpleClickProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Target</Label>
+        <Label className="text-xs text-text-muted">Target</Label>
         <Select value={targetType} onValueChange={handleTargetTypeChange}>
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="lastFindResult">Last Find Result</SelectItem>
             <SelectItem value="coordinates">Coordinates</SelectItem>
           </SelectContent>
@@ -343,7 +345,7 @@ export function SimpleClickProperties({
       {targetType === "coordinates" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">X Coordinate</Label>
+            <Label className="text-xs text-text-muted">X Coordinate</Label>
             <Input
               type="number"
               value={coords.x}
@@ -353,11 +355,11 @@ export function SimpleClickProperties({
                   Number.parseInt(e.target.value) || 0
                 )
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Y Coordinate</Label>
+            <Label className="text-xs text-text-muted">Y Coordinate</Label>
             <Input
               type="number"
               value={coords.y}
@@ -367,7 +369,7 @@ export function SimpleClickProperties({
                   Number.parseInt(e.target.value) || 0
                 )
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
         </>

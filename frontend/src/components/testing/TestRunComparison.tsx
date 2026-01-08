@@ -28,9 +28,9 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
 
   if (isLoading) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">Loading comparison...</div>
+          <div className="text-text-muted">Loading comparison...</div>
         </CardContent>
       </Card>
     );
@@ -38,7 +38,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
 
   if (error || !comparison) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
           <div className="text-red-400">Error loading comparison</div>
         </CardContent>
@@ -51,7 +51,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
   const getCoverageColor = (change: number) => {
     if (change > 0) return "text-green-500";
     if (change < 0) return "text-red-500";
-    return "text-gray-400";
+    return "text-text-muted";
   };
 
   const formatDuration = (seconds: number) => {
@@ -63,7 +63,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
   return (
     <div className="space-y-6">
       {/* Summary Comparison Card */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle className="text-xl">Test Run Summary</CardTitle>
         </CardHeader>
@@ -72,22 +72,22 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
             {/* Run 1 */}
             <div className="space-y-4">
               <div>
-                <div className="text-sm text-gray-400 mb-1">Baseline Run</div>
+                <div className="text-sm text-text-muted mb-1">Baseline Run</div>
                 <div className="font-medium text-lg">{run1.workflow_name}</div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-text-muted">
                   {format(new Date(run1.start_time), "MMM dd, yyyy HH:mm")}
                 </div>
               </div>
 
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-400">Coverage</span>
+                  <span className="text-sm text-text-muted">Coverage</span>
                   <span className="font-medium">
                     {run1.coverage_percentage.toFixed(1)}%
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-400">Pass Rate</span>
+                  <span className="text-sm text-text-muted">Pass Rate</span>
                   <span className="font-medium text-green-500">
                     {run1.total_transitions > 0
                       ? (
@@ -100,13 +100,13 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-400">Deficiencies</span>
+                  <span className="text-sm text-text-muted">Deficiencies</span>
                   <span className="font-medium text-red-400">
                     {run1.deficiencies_found}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-400">Duration</span>
+                  <span className="text-sm text-text-muted">Duration</span>
                   <span className="font-medium">
                     {formatDuration(run1.duration_seconds || 0)}
                   </span>
@@ -116,22 +116,24 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
 
             {/* Comparison Arrow */}
             <div className="flex items-center justify-center">
-              <ArrowRight className="w-8 h-8 text-[#00D9FF]" />
+              <ArrowRight className="w-8 h-8 text-brand-primary" />
             </div>
 
             {/* Run 2 */}
             <div className="space-y-4">
               <div>
-                <div className="text-sm text-gray-400 mb-1">Comparison Run</div>
+                <div className="text-sm text-text-muted mb-1">
+                  Comparison Run
+                </div>
                 <div className="font-medium text-lg">{run2.workflow_name}</div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-text-muted">
                   {format(new Date(run2.start_time), "MMM dd, yyyy HH:mm")}
                 </div>
               </div>
 
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-400">Coverage</span>
+                  <span className="text-sm text-text-muted">Coverage</span>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">
                       {run2.coverage_percentage.toFixed(1)}%
@@ -145,7 +147,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
                   </div>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-400">Pass Rate</span>
+                  <span className="text-sm text-text-muted">Pass Rate</span>
                   <span className="font-medium text-green-500">
                     {run2.total_transitions > 0
                       ? (
@@ -158,7 +160,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-400">Deficiencies</span>
+                  <span className="text-sm text-text-muted">Deficiencies</span>
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-red-400">
                       {run2.deficiencies_found}
@@ -174,7 +176,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
                   </div>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-400">Duration</span>
+                  <span className="text-sm text-text-muted">Duration</span>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">
                       {formatDuration(run2.duration_seconds || 0)}
@@ -197,21 +199,21 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
       </Card>
 
       {/* Coverage Differences */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle className="text-xl">Coverage Changes</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-4 rounded-lg bg-[#0A0A0B]/50 border border-gray-800/30">
+            <div className="p-4 rounded-lg bg-surface-canvas/50 border border-border-subtle/30">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-400">Coverage %</span>
+                <span className="text-sm text-text-muted">Coverage %</span>
                 {comp.coverage_diff.percentage_change > 0 ? (
                   <TrendingUp className="w-4 h-4 text-green-500" />
                 ) : comp.coverage_diff.percentage_change < 0 ? (
                   <TrendingDown className="w-4 h-4 text-red-500" />
                 ) : (
-                  <Clock className="w-4 h-4 text-gray-500" />
+                  <Clock className="w-4 h-4 text-text-muted" />
                 )}
               </div>
               <div
@@ -222,15 +224,15 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
               </div>
             </div>
 
-            <div className="p-4 rounded-lg bg-[#0A0A0B]/50 border border-gray-800/30">
+            <div className="p-4 rounded-lg bg-surface-canvas/50 border border-border-subtle/30">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-400">States</span>
+                <span className="text-sm text-text-muted">States</span>
                 {comp.coverage_diff.states_gained > 0 ? (
                   <TrendingUp className="w-4 h-4 text-green-500" />
                 ) : comp.coverage_diff.states_gained < 0 ? (
                   <TrendingDown className="w-4 h-4 text-red-500" />
                 ) : (
-                  <Clock className="w-4 h-4 text-gray-500" />
+                  <Clock className="w-4 h-4 text-text-muted" />
                 )}
               </div>
               <div
@@ -241,15 +243,15 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
               </div>
             </div>
 
-            <div className="p-4 rounded-lg bg-[#0A0A0B]/50 border border-gray-800/30">
+            <div className="p-4 rounded-lg bg-surface-canvas/50 border border-border-subtle/30">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-400">Transitions</span>
+                <span className="text-sm text-text-muted">Transitions</span>
                 {comp.coverage_diff.transitions_gained > 0 ? (
                   <TrendingUp className="w-4 h-4 text-green-500" />
                 ) : comp.coverage_diff.transitions_gained < 0 ? (
                   <TrendingDown className="w-4 h-4 text-red-500" />
                 ) : (
-                  <Clock className="w-4 h-4 text-gray-500" />
+                  <Clock className="w-4 h-4 text-text-muted" />
                 )}
               </div>
               <div
@@ -265,7 +267,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
 
       {/* Regressions */}
       {comp.regressions.length > 0 && (
-        <Card className="bg-[#1A1A1B]/50 border-red-500/30">
+        <Card className="bg-surface-raised/50 border-red-500/30">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-xl flex items-center gap-2">
@@ -282,12 +284,12 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
               {comp.regressions.map((transition, idx) => (
                 <div
                   key={idx}
-                  className="p-4 rounded-lg bg-[#0A0A0B]/50 border border-red-500/20"
+                  className="p-4 rounded-lg bg-surface-canvas/50 border border-red-500/20"
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <XCircle className="w-4 h-4 text-red-500" />
                     <span className="font-medium">{transition.from_state}</span>
-                    <span className="text-gray-500">→</span>
+                    <span className="text-text-muted">→</span>
                     <span className="font-medium">{transition.to_state}</span>
                   </div>
                   {transition.run2_error && (
@@ -304,7 +306,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
 
       {/* Fixed Issues */}
       {comp.fixed.length > 0 && (
-        <Card className="bg-[#1A1A1B]/50 border-green-500/30">
+        <Card className="bg-surface-raised/50 border-green-500/30">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-xl flex items-center gap-2">
@@ -321,12 +323,12 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
               {comp.fixed.map((transition, idx) => (
                 <div
                   key={idx}
-                  className="p-4 rounded-lg bg-[#0A0A0B]/50 border border-green-500/20"
+                  className="p-4 rounded-lg bg-surface-canvas/50 border border-green-500/20"
                 >
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-green-500" />
                     <span className="font-medium">{transition.from_state}</span>
-                    <span className="text-gray-500">→</span>
+                    <span className="text-text-muted">→</span>
                     <span className="font-medium">{transition.to_state}</span>
                   </div>
                 </div>
@@ -338,7 +340,7 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
 
       {/* New Failures */}
       {comp.new_failures.length > 0 && (
-        <Card className="bg-[#1A1A1B]/50 border-yellow-500/30">
+        <Card className="bg-surface-raised/50 border-yellow-500/30">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-xl flex items-center gap-2">
@@ -355,12 +357,12 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
               {comp.new_failures.map((transition, idx) => (
                 <div
                   key={idx}
-                  className="p-4 rounded-lg bg-[#0A0A0B]/50 border border-yellow-500/20"
+                  className="p-4 rounded-lg bg-surface-canvas/50 border border-yellow-500/20"
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <XCircle className="w-4 h-4 text-yellow-500" />
                     <span className="font-medium">{transition.from_state}</span>
-                    <span className="text-gray-500">→</span>
+                    <span className="text-text-muted">→</span>
                     <span className="font-medium">{transition.to_state}</span>
                     <Badge variant="outline" className="text-xs">
                       New in run 2
@@ -379,16 +381,16 @@ export function TestRunComparison({ run1Id, run2Id }: TestRunComparisonProps) {
       )}
 
       {/* Unchanged Stats */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle className="text-xl">Unchanged Transitions</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-6">
-            <div className="text-4xl font-bold text-gray-400 mb-2">
+            <div className="text-4xl font-bold text-text-muted mb-2">
               {comp.unchanged_count}
             </div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-text-muted">
               Transitions with consistent results across both runs
             </div>
           </div>

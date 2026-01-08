@@ -14,15 +14,27 @@ const DEFAULT_CATEGORIES: Category[] = [
   { name: "Outgoing Transitions", automationEnabled: false },
 ];
 
+// Helper to get initial project ID from localStorage (browser only)
+function getInitialProjectId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("qontinui-selected-project-id");
+}
+
+// Helper to get initial project name from localStorage (browser only)
+function getInitialProjectName(): string {
+  if (typeof window === "undefined") return "Untitled Project";
+  return localStorage.getItem("qontinui-project-name") || "Untitled Project";
+}
+
 export const createProjectSlice: StateCreator<
   AutomationStore,
   [["zustand/immer", never]],
   [],
   ProjectSlice
 > = (set, get) => ({
-  // Initial state
-  projectName: "Untitled Project",
-  projectId: null,
+  // Initial state - restore from localStorage if available
+  projectName: getInitialProjectName(),
+  projectId: getInitialProjectId(),
   lastSaved: null,
   isLoadingFromBackend: false,
   categories: [...DEFAULT_CATEGORIES],

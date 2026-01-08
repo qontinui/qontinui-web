@@ -466,9 +466,9 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-100 min-h-0 relative">
+    <div className="flex-1 flex flex-col bg-surface-raised min-h-0 relative">
       {/* Top Bar with Mode Indicator and Zoom Controls */}
-      <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-border-subtle flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="bg-blue-600 text-white px-3 py-1 rounded text-sm">
             {selectionMode === "view" &&
@@ -483,7 +483,7 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
         <div className="flex items-center gap-2">
           {/* Image quality indicator */}
           {screenshotVariants && (
-            <div className="bg-gray-700 text-white px-3 py-1 rounded text-sm">
+            <div className="bg-surface-raised text-white px-3 py-1 rounded text-sm">
               {effectiveZoom > 4
                 ? "Original"
                 : effectiveZoom > 2
@@ -493,31 +493,31 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
             </div>
           )}
 
-          <div className="bg-gray-800 text-white px-3 py-1 rounded text-sm">
+          <div className="bg-surface-raised text-white px-3 py-1 rounded text-sm">
             {Math.round(getEffectiveScale() * 100)}% | {screenshot.width} x{" "}
             {screenshot.height}px
           </div>
-          <div className="flex gap-1 bg-white rounded-lg shadow border border-gray-300 p-1">
+          <div className="flex gap-1 bg-white rounded-lg shadow border border-border-default p-1">
             <button
               onClick={handleZoomIn}
-              className="p-2 hover:bg-gray-100 rounded transition-colors"
+              className="p-2 hover:bg-surface-raised rounded transition-colors"
               title="Zoom In"
             >
-              <ZoomIn className="w-4 h-4 text-gray-700" />
+              <ZoomIn className="w-4 h-4 text-text-secondary" />
             </button>
             <button
               onClick={handleZoomOut}
-              className="p-2 hover:bg-gray-100 rounded transition-colors"
+              className="p-2 hover:bg-surface-raised rounded transition-colors"
               title="Zoom Out"
             >
-              <ZoomOut className="w-4 h-4 text-gray-700" />
+              <ZoomOut className="w-4 h-4 text-text-secondary" />
             </button>
             <button
               onClick={handleResetZoom}
-              className="p-2 hover:bg-gray-100 rounded transition-colors"
+              className="p-2 hover:bg-surface-raised rounded transition-colors"
               title="Reset Zoom"
             >
-              <Maximize2 className="w-4 h-4 text-gray-700" />
+              <Maximize2 className="w-4 h-4 text-text-secondary" />
             </button>
           </div>
         </div>
@@ -539,7 +539,7 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
                 setIsDragging(false);
               }}
               onContextMenu={(e) => e.preventDefault()}
-              className="border border-gray-300 shadow-lg bg-white"
+              className="border border-border-default shadow-lg bg-white"
               style={{
                 cursor: getCursor(),
                 transform: `translate(${offset.x}px, ${offset.y}px)`,

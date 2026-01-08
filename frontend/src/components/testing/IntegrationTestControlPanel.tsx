@@ -116,7 +116,9 @@ function InitialStatesSelector({
 
   if (states.length === 0) {
     return (
-      <div className="text-sm text-gray-500">No states defined in project</div>
+      <div className="text-sm text-text-muted">
+        No states defined in project
+      </div>
     );
   }
 
@@ -125,8 +127,8 @@ function InitialStatesSelector({
       {/* Source indicator */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <CircleDot className="w-4 h-4 text-gray-500" />
-          <span className="text-sm text-gray-400">Source:</span>
+          <CircleDot className="w-4 h-4 text-text-muted" />
+          <span className="text-sm text-text-muted">Source:</span>
           <span
             className={`text-xs px-2 py-0.5 rounded-full ${
               hasOverride
@@ -142,7 +144,7 @@ function InitialStatesSelector({
           <button
             onClick={handleClearOverride}
             disabled={disabled}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+            className="flex items-center gap-1 text-xs text-text-muted hover:text-white transition-colors disabled:opacity-50"
           >
             <RotateCcw className="w-3 h-3" />
             Reset
@@ -174,14 +176,14 @@ function InitialStatesSelector({
               className={`w-full flex items-center gap-2 p-2 rounded-lg border text-left transition-all ${
                 isSelected
                   ? "bg-[#FF6B6B]/10 border-[#FF6B6B]/50 text-white"
-                  : "bg-gray-800/50 border-gray-700/50 hover:border-[#FF6B6B]/30 hover:bg-gray-800 text-gray-400"
+                  : "bg-surface-raised/50 border-border-default/50 hover:border-[#FF6B6B]/30 hover:bg-surface-raised text-text-muted"
               } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
             >
               <div
                 className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
                   isSelected
                     ? "bg-[#FF6B6B] border-[#FF6B6B]"
-                    : "border-gray-600 bg-transparent"
+                    : "border-border-default bg-transparent"
                 }`}
               >
                 {isSelected && <Check className="w-3 h-3 text-white" />}
@@ -199,7 +201,7 @@ function InitialStatesSelector({
       </div>
 
       {/* Summary */}
-      <div className="text-xs text-gray-500">
+      <div className="text-xs text-text-muted">
         {effectiveStateIds.length === 0 ? (
           <span>No initial states selected</span>
         ) : (
@@ -258,7 +260,7 @@ export function IntegrationTestControlPanel({
     !isLoading;
 
   return (
-    <Card className="bg-[#1A1A1B]/80 border-gray-800/50 backdrop-blur-sm">
+    <Card className="bg-[#1A1A1B]/80 border-border-subtle/50 backdrop-blur-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-lg font-medium text-white flex items-center gap-2">
           <FlaskConical className="w-5 h-5 text-[#FF6B6B]" />
@@ -268,15 +270,15 @@ export function IntegrationTestControlPanel({
       <CardContent className="space-y-4">
         {/* Workflow Selector */}
         <div className="space-y-2">
-          <label className="text-sm text-gray-400">Workflow</label>
+          <label className="text-sm text-text-muted">Workflow</label>
           <div className="relative">
             <button
               onClick={() => setShowWorkflowDropdown(!showWorkflowDropdown)}
               disabled={isLoading || runnableWorkflows.length === 0}
-              className="w-full bg-gray-800/50 border border-gray-700/50 rounded-lg px-4 py-2.5 text-left flex items-center justify-between gap-2 hover:border-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-surface-raised/50 border border-border-default/50 rounded-lg px-4 py-2.5 text-left flex items-center justify-between gap-2 hover:border-border-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span
-                className={`truncate ${selectedWorkflow ? "text-white" : "text-gray-500"}`}
+                className={`truncate ${selectedWorkflow ? "text-white" : "text-text-muted"}`}
               >
                 {isLoading
                   ? "Loading workflows..."
@@ -287,12 +289,12 @@ export function IntegrationTestControlPanel({
                       : "Select a workflow"}
               </span>
               <ChevronDown
-                className={`w-4 h-4 flex-shrink-0 text-gray-400 transition-transform ${showWorkflowDropdown ? "rotate-180" : ""}`}
+                className={`w-4 h-4 flex-shrink-0 text-text-muted transition-transform ${showWorkflowDropdown ? "rotate-180" : ""}`}
               />
             </button>
 
             {showWorkflowDropdown && runnableWorkflows.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-[#1A1A1B] border border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              <div className="absolute z-10 w-full mt-1 bg-[#1A1A1B] border border-border-default rounded-lg shadow-lg max-h-60 overflow-y-auto">
                 {runnableWorkflows.map((workflow) => (
                   <button
                     key={workflow.id}
@@ -302,15 +304,15 @@ export function IntegrationTestControlPanel({
                       // Clear override when workflow changes
                       onInitialStatesChange(null);
                     }}
-                    className={`w-full px-4 py-2.5 text-left hover:bg-gray-800 transition-colors ${
+                    className={`w-full px-4 py-2.5 text-left hover:bg-surface-raised transition-colors ${
                       workflow.id === selectedWorkflowId
                         ? "bg-[#FF6B6B]/10 text-[#FF6B6B]"
-                        : "text-gray-300"
+                        : "text-text-secondary"
                     }`}
                   >
                     <div className="font-medium">{workflow.name}</div>
                     {workflow.description && (
-                      <div className="text-xs text-gray-500 mt-0.5 truncate">
+                      <div className="text-xs text-text-muted mt-0.5 truncate">
                         {workflow.description}
                       </div>
                     )}
@@ -321,7 +323,7 @@ export function IntegrationTestControlPanel({
           </div>
 
           {runnableWorkflows.length === 0 && !isLoading && (
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               No &quot;Main&quot; category workflows found. Create a workflow
               with category &quot;Main&quot; to run integration tests.
             </p>
@@ -330,13 +332,13 @@ export function IntegrationTestControlPanel({
 
         {/* Initial States Section */}
         {selectedWorkflow && states.length > 0 && (
-          <div className="border border-gray-700/50 rounded-lg overflow-hidden">
+          <div className="border border-border-default/50 rounded-lg overflow-hidden">
             <button
               onClick={() => setInitialStatesExpanded(!initialStatesExpanded)}
-              className="w-full flex items-center justify-between p-3 bg-gray-800/30 hover:bg-gray-800/50 transition-colors"
+              className="w-full flex items-center justify-between p-3 bg-surface-raised/30 hover:bg-surface-raised/50 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <CircleDot className="w-4 h-4 text-gray-400" />
+                <CircleDot className="w-4 h-4 text-text-muted" />
                 <span className="text-sm font-medium text-white">
                   Initial States
                 </span>
@@ -344,7 +346,7 @@ export function IntegrationTestControlPanel({
                   0 && (
                   <Badge
                     variant="secondary"
-                    className="bg-gray-700/50 text-gray-300"
+                    className="bg-surface-raised/50 text-text-secondary"
                   >
                     {initialStatesOverride !== null
                       ? `${initialStatesOverride.length} (override)`
@@ -353,13 +355,13 @@ export function IntegrationTestControlPanel({
                 )}
               </div>
               <ChevronDown
-                className={`w-4 h-4 text-gray-400 transition-transform ${
+                className={`w-4 h-4 text-text-muted transition-transform ${
                   initialStatesExpanded ? "rotate-180" : ""
                 }`}
               />
             </button>
             {initialStatesExpanded && (
-              <div className="p-3 border-t border-gray-700/50">
+              <div className="p-3 border-t border-border-default/50">
                 <InitialStatesSelector
                   states={states}
                   resolvedStateIds={resolvedInitialStates}
@@ -401,7 +403,7 @@ export function IntegrationTestControlPanel({
         </Button>
 
         {/* Status Info */}
-        <div className="text-xs text-gray-500 text-center">
+        <div className="text-xs text-text-muted text-center">
           {apiHealthy === null
             ? "Checking API connection..."
             : apiHealthy === false

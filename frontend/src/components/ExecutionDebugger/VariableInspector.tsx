@@ -33,9 +33,9 @@ const VariableNode: React.FC<VariableNodeProps> = ({
   const isArray = Array.isArray(value);
 
   const renderValue = () => {
-    if (value === null) return <span className="text-gray-500">null</span>;
+    if (value === null) return <span className="text-text-muted">null</span>;
     if (value === undefined)
-      return <span className="text-gray-500">undefined</span>;
+      return <span className="text-text-muted">undefined</span>;
 
     switch (type) {
       case "string":
@@ -49,14 +49,14 @@ const VariableNode: React.FC<VariableNodeProps> = ({
       case "object":
         if (isArray) {
           return (
-            <span className="text-gray-600">
+            <span className="text-text-muted">
               [{(value as unknown[]).length} items]
             </span>
           );
         }
-        return <span className="text-gray-600">{"{...}"}</span>;
+        return <span className="text-text-muted">{"{...}"}</span>;
       default:
-        return <span className="text-gray-700">{String(value)}</span>;
+        return <span className="text-text-secondary">{String(value)}</span>;
     }
   };
 
@@ -79,28 +79,28 @@ const VariableNode: React.FC<VariableNodeProps> = ({
   return (
     <div className={`${depth > 0 ? "ml-4" : ""}`}>
       <div
-        className={`flex items-center gap-2 py-1 px-2 rounded group hover:bg-gray-50 ${
+        className={`flex items-center gap-2 py-1 px-2 rounded group hover:bg-surface-raised/80 ${
           isNew ? "bg-green-50" : isChanged ? "bg-yellow-50" : ""
         }`}
       >
         {isExpandable && (
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-0.5 hover:bg-gray-200 rounded"
+            className="p-0.5 hover:bg-surface-raised/80 rounded"
           >
             {isExpanded ? (
-              <ChevronDown className="w-3 h-3 text-gray-600" />
+              <ChevronDown className="w-3 h-3 text-text-muted" />
             ) : (
-              <ChevronRight className="w-3 h-3 text-gray-600" />
+              <ChevronRight className="w-3 h-3 text-text-muted" />
             )}
           </button>
         )}
         {!isExpandable && <div className="w-4" />}
 
-        <span className="text-sm font-mono text-gray-700 font-medium">
+        <span className="text-sm font-mono text-text-secondary font-medium">
           {name}
         </span>
-        <span className="text-xs text-gray-400">{type}</span>
+        <span className="text-xs text-text-muted">{type}</span>
         {isNew && (
           <span title="New variable">
             <Sparkles className="w-3 h-3 text-green-500" />
@@ -117,7 +117,7 @@ const VariableNode: React.FC<VariableNodeProps> = ({
       </div>
 
       {isExpanded && isExpandable && (
-        <div className="border-l-2 border-gray-200 ml-2">
+        <div className="border-l-2 border-border-subtle ml-2">
           {getChildEntries().map((entry) => (
             <VariableNode
               key={entry.key}
@@ -176,12 +176,12 @@ export const VariableInspector: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="p-3 border-b bg-gray-50">
+      <div className="p-3 border-b bg-surface-raised">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <Variable className="w-4 h-4 text-blue-600" />
             <h3 className="font-semibold text-sm">Variables</h3>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-text-muted">
               ({Object.keys(context.variables).length})
             </span>
           </div>
@@ -190,7 +190,7 @@ export const VariableInspector: React.FC = () => {
             className={`px-2 py-1 text-xs rounded flex items-center gap-1 transition-colors ${
               showHistory
                 ? "bg-blue-600 text-white"
-                : "bg-white border text-gray-600 hover:bg-gray-50"
+                : "bg-white border text-text-muted hover:bg-surface-raised/80"
             }`}
           >
             <History className="w-3 h-3" />
@@ -200,7 +200,7 @@ export const VariableInspector: React.FC = () => {
 
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             type="text"
             placeholder="Search variables..."
@@ -217,7 +217,7 @@ export const VariableInspector: React.FC = () => {
           // Current Variables View
           <div className="space-y-1">
             {filteredVariables.length === 0 ? (
-              <div className="text-center text-gray-500 text-sm py-8">
+              <div className="text-center text-text-muted text-sm py-8">
                 {searchQuery
                   ? "No variables match your search"
                   : "No variables yet"}
@@ -239,7 +239,7 @@ export const VariableInspector: React.FC = () => {
           // Variable History View
           <div className="space-y-4">
             {Object.keys(context.variables).length === 0 ? (
-              <div className="text-center text-gray-500 text-sm py-8">
+              <div className="text-center text-text-muted text-sm py-8">
                 No variable history yet
               </div>
             ) : (
@@ -249,7 +249,7 @@ export const VariableInspector: React.FC = () => {
                     <span className="font-mono font-medium text-sm">
                       {varName}
                     </span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-text-muted">
                       ({history.length} change{history.length !== 1 ? "s" : ""})
                     </span>
                   </div>
@@ -259,10 +259,10 @@ export const VariableInspector: React.FC = () => {
                         key={`${entry.timestamp}-${index}`}
                         className="flex items-start gap-2 text-xs"
                       >
-                        <span className="text-gray-500 font-mono">
+                        <span className="text-text-muted font-mono">
                           Action {entry.actionIndex}:
                         </span>
-                        <span className="font-mono text-gray-700">
+                        <span className="font-mono text-text-secondary">
                           {typeof entry.value === "object"
                             ? JSON.stringify(entry.value)
                             : String(entry.value)}
@@ -279,17 +279,17 @@ export const VariableInspector: React.FC = () => {
 
       {/* Loop Iterations Section */}
       {Object.keys(context.loopIterations).length > 0 && (
-        <div className="border-t p-3 bg-gray-50">
+        <div className="border-t p-3 bg-surface-raised">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold text-gray-600">
+            <span className="text-xs font-semibold text-text-muted">
               Loop Iterations
             </span>
           </div>
           <div className="space-y-1">
             {Object.entries(context.loopIterations).map(([loopId, count]) => (
               <div key={loopId} className="flex justify-between text-xs">
-                <span className="font-mono text-gray-600">{loopId}</span>
-                <span className="font-medium text-gray-700">{count}</span>
+                <span className="font-mono text-text-muted">{loopId}</span>
+                <span className="font-medium text-text-secondary">{count}</span>
               </div>
             ))}
           </div>

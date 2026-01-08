@@ -34,9 +34,9 @@ const STATUS_CONFIG: Record<
   }
 > = {
   pending: {
-    color: "text-gray-500",
-    bgColor: "bg-gray-50",
-    borderColor: "border-gray-200",
+    color: "text-text-muted",
+    bgColor: "bg-surface-canvas",
+    borderColor: "border-border-subtle",
     icon: CircleDot,
   },
   executing: {
@@ -195,7 +195,7 @@ const ActionItem: React.FC<ActionItemProps> = ({
           if (!displayText) return null;
 
           return (
-            <div className="text-xs text-gray-600 truncate">
+            <div className="text-xs text-text-muted truncate">
               {action.type === "TYPE" && typeText ? (
                 <SpecialKeyDisplay text={typeText} />
               ) : (
@@ -214,7 +214,7 @@ const ActionItem: React.FC<ActionItemProps> = ({
           }`}
         />
         {duration !== undefined && (
-          <div className="flex items-center gap-1 text-xs text-gray-500">
+          <div className="flex items-center gap-1 text-xs text-text-muted">
             <Clock className="w-3 h-3" />
             <span>{duration}ms</span>
           </div>
@@ -266,14 +266,14 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
       <div className="p-3">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold text-sm">Action Timeline</h3>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-text-muted">
             {currentActionIndex >= 0 ? currentActionIndex + 1 : 0} /{" "}
             {actions.length}
           </span>
         </div>
 
         {actions.length === 0 ? (
-          <div className="text-center text-gray-500 text-sm py-8">
+          <div className="text-center text-text-muted text-sm py-8">
             No actions to display
           </div>
         ) : (
@@ -300,20 +300,20 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
       </div>
 
       {/* Legend */}
-      <div className="border-t p-3 bg-gray-50">
-        <div className="text-xs font-semibold text-gray-600 mb-2">Legend</div>
+      <div className="border-t p-3 bg-surface-canvas">
+        <div className="text-xs font-semibold text-text-muted mb-2">Legend</div>
         <div className="grid grid-cols-2 gap-2 text-xs">
           {Object.entries(STATUS_CONFIG).map(([status, config]) => {
             const Icon = config.icon;
             return (
               <div key={status} className="flex items-center gap-2">
                 <Icon className={`w-4 h-4 ${config.color}`} />
-                <span className="text-gray-700 capitalize">{status}</span>
+                <span className="text-text-secondary capitalize">{status}</span>
               </div>
             );
           })}
         </div>
-        <div className="mt-2 pt-2 border-t text-xs text-gray-600">
+        <div className="mt-2 pt-2 border-t text-xs text-text-muted">
           Right-click action to toggle breakpoint
         </div>
       </div>

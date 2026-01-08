@@ -39,14 +39,14 @@ export function GetVariableActionProperties({
         onChange={(name) => updateConfig("outputVariable", name || undefined)}
         placeholder="outputVariable"
       />
-      <p className="text-xs text-gray-500 -mt-1">
+      <p className="text-xs text-text-muted -mt-1">
         If specified, the value will be stored in this variable. Leave empty to
         use the same variable name.
       </p>
 
       {/* Default Value (Optional) */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           Default Value (Optional)
         </Label>
         <Input
@@ -57,9 +57,9 @@ export function GetVariableActionProperties({
             updateConfig("defaultValue", value || undefined);
           }}
           placeholder="default value"
-          className="bg-transparent border-gray-700 font-mono text-sm"
+          className="bg-transparent border-border-default font-mono text-sm"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Value to use if the variable doesn&apos;t exist. Numbers and booleans
           will be automatically converted.
         </p>

@@ -152,7 +152,7 @@ export function VariableTable({
       case "array":
         return "bg-pink-500/20 text-pink-400 border-pink-500/30";
       default:
-        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+        return "bg-surface-raised/20 text-text-muted border-border-default";
     }
   };
 
@@ -172,9 +172,9 @@ export function VariableTable({
   if (!isLoading && variables.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="rounded-full bg-gray-100 dark:bg-gray-800 p-6 mb-4">
+        <div className="rounded-full bg-surface-raised dark:bg-surface-raised p-6 mb-4">
           <svg
-            className="h-12 w-12 text-gray-400"
+            className="h-12 w-12 text-text-muted"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -203,7 +203,7 @@ export function VariableTable({
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-16 bg-gray-100 dark:bg-gray-800 animate-pulse rounded"
+            className="h-16 bg-surface-raised dark:bg-surface-raised animate-pulse rounded"
           />
         ))}
       </div>
@@ -226,7 +226,7 @@ export function VariableTable({
                 onCheckedChange={handleSelectAll}
                 aria-label="Select all"
                 className={cn(
-                  someSelected && "data-[state=checked]:bg-gray-500"
+                  someSelected && "data-[state=checked]:bg-text-muted"
                 )}
               />
             </TableHead>
@@ -352,7 +352,7 @@ export function VariableTable({
                           <div className="text-xs font-semibold text-muted-foreground mb-1">
                             Full Value
                           </div>
-                          <pre className="text-xs bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto">
+                          <pre className="text-xs bg-surface-canvas text-text-secondary p-3 rounded overflow-x-auto">
                             {JSON.stringify(variable.value, null, 2)}
                           </pre>
                         </div>

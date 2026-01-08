@@ -169,7 +169,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-surface-canvas">
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
@@ -177,7 +177,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
             <TestTube2 className="w-6 h-6 text-blue-600" />
             <div>
               <h2 className="text-xl font-semibold">Integration Tests</h2>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-text-muted">
                 {testScenarios.length} test scenarios, {allSnapshots.length}{" "}
                 total snapshots
               </p>
@@ -196,7 +196,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
       {/* Filters */}
       <div className="bg-white border-b px-6 py-3">
         <div className="flex items-center gap-4">
-          <Filter className="w-4 h-4 text-gray-500" />
+          <Filter className="w-4 h-4 text-text-muted" />
 
           <select
             value={filterState}
@@ -251,17 +251,17 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
                     selectedScenario?.id === scenario.id
                       ? "bg-blue-50 border-blue-300"
-                      : "hover:bg-gray-50 border-gray-200"
+                      : "hover:bg-surface-raised/80 border-border-subtle"
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <h4 className="font-medium text-sm">{scenario.name}</h4>
-                      <p className="text-xs text-gray-600 mt-1">
+                      <p className="text-xs text-text-muted mt-1">
                         {scenario.description}
                       </p>
                       <div className="flex items-center gap-2 mt-2">
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">
+                        <span className="text-xs px-2 py-0.5 bg-surface-raised rounded">
                           {scenario.snapshots.length} actions
                         </span>
                         <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
@@ -269,14 +269,14 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
                         </span>
                       </div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-gray-400 mt-1" />
+                    <ChevronRight className="w-4 h-4 text-text-muted mt-1" />
                   </div>
                 </button>
               ))}
             </div>
 
             {testScenarios.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-text-muted">
                 <TestTube2 className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p className="text-sm">No test scenarios found</p>
                 <p className="text-xs mt-1">
@@ -299,7 +299,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => exportScenario(selectedScenario)}
-                      className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2 text-sm"
+                      className="px-3 py-1 bg-surface-raised text-text-secondary rounded-lg hover:bg-surface-raised/80 flex items-center gap-2 text-sm"
                     >
                       <Download className="w-4 h-4" />
                       Export
@@ -311,7 +311,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
                   </div>
                 </div>
 
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-text-muted">
                   {selectedScenario.description}
                 </p>
 
@@ -347,7 +347,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
                         {index + 1}
                       </div>
                       {index < selectedScenario.snapshots.length - 1 && (
-                        <div className="w-0.5 h-12 bg-gray-300 mt-1" />
+                        <div className="w-0.5 h-12 bg-border-default mt-1" />
                       )}
                     </div>
 
@@ -367,7 +367,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
                             )}
                           </div>
 
-                          <div className="text-xs text-gray-600 space-y-1">
+                          <div className="text-xs text-text-muted space-y-1">
                             <div>State: {snapshot.stateName}</div>
                             {snapshot.matches.length > 0 && (
                               <div>Matches: {snapshot.matches.length}</div>
@@ -397,7 +397,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-500">
+            <div className="flex items-center justify-center h-full text-text-muted">
               <div className="text-center">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p className="text-sm">

@@ -229,7 +229,7 @@ export const IntegrationTestPlayback: React.FC<
       <div className="w-full h-full flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
-          <p className="mt-4 text-gray-600">Loading playback frames...</p>
+          <p className="mt-4 text-text-muted">Loading playback frames...</p>
         </div>
       </div>
     );
@@ -254,7 +254,7 @@ export const IntegrationTestPlayback: React.FC<
   if (frames.length === 0) {
     return (
       <div className="w-full h-full flex items-center justify-center">
-        <div className="text-center text-gray-600">
+        <div className="text-center text-text-muted">
           <p>No frames available for playback</p>
           <Button onClick={onClose} className="mt-4">
             Close
@@ -276,13 +276,13 @@ export const IntegrationTestPlayback: React.FC<
       <div
         className={`
         flex items-center justify-between px-4 py-2
-        ${isFullscreen ? "bg-gray-900 text-white" : "bg-white border-b"}
+        ${isFullscreen ? "bg-surface-canvas text-white" : "bg-white border-b"}
       `}
       >
         <div className="flex items-center gap-4">
           <h3 className="font-semibold">{workflowName}</h3>
           <span
-            className={`text-sm ${isFullscreen ? "text-gray-400" : "text-gray-600"}`}
+            className={`text-sm ${isFullscreen ? "text-text-muted" : "text-text-muted"}`}
           >
             Step {currentIndex + 1} of {frames.length}
           </span>
@@ -292,7 +292,7 @@ export const IntegrationTestPlayback: React.FC<
             variant="ghost"
             size="sm"
             onClick={toggleFullscreen}
-            className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
+            className={isFullscreen ? "text-white hover:bg-surface-raised" : ""}
           >
             {isFullscreen ? (
               <Minimize2 className="w-4 h-4" />
@@ -304,7 +304,7 @@ export const IntegrationTestPlayback: React.FC<
             variant="ghost"
             size="sm"
             onClick={onClose}
-            className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
+            className={isFullscreen ? "text-white hover:bg-surface-raised" : ""}
           >
             Close
           </Button>
@@ -312,7 +312,7 @@ export const IntegrationTestPlayback: React.FC<
       </div>
 
       {/* Frame Display */}
-      <div className="flex-1 relative overflow-hidden bg-gray-900">
+      <div className="flex-1 relative overflow-hidden bg-surface-canvas">
         {currentFrame?.frame_base64 ? (
           <div className="relative w-full h-full flex items-center justify-center">
             {/* Screenshot */}
@@ -349,13 +349,13 @@ export const IntegrationTestPlayback: React.FC<
                     {currentFrame.action_type}
                   </span>
                   {currentFrame.pattern_name && (
-                    <span className="text-gray-400">
+                    <span className="text-text-muted">
                       - {currentFrame.pattern_name}
                     </span>
                   )}
                 </div>
                 {currentFrame.timestamp_ms !== null && (
-                  <span className="text-gray-400 text-sm">
+                  <span className="text-text-muted text-sm">
                     {(currentFrame.timestamp_ms / 1000).toFixed(2)}s
                   </span>
                 )}
@@ -363,7 +363,7 @@ export const IntegrationTestPlayback: React.FC<
             </div>
           </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-400">
+          <div className="w-full h-full flex items-center justify-center text-text-muted">
             <div className="text-center">
               <p>No frame available for this step</p>
               <p className="text-sm mt-2">
@@ -377,7 +377,7 @@ export const IntegrationTestPlayback: React.FC<
 
       {/* Progress bar */}
       <div
-        className={`px-4 py-2 ${isFullscreen ? "bg-gray-900" : "bg-gray-100"}`}
+        className={`px-4 py-2 ${isFullscreen ? "bg-surface-canvas" : "bg-surface-raised"}`}
       >
         <Slider
           value={[currentIndex]}
@@ -398,7 +398,7 @@ export const IntegrationTestPlayback: React.FC<
       <div
         className={`
         flex items-center justify-center gap-4 px-4 py-3
-        ${isFullscreen ? "bg-gray-900" : "bg-white border-t"}
+        ${isFullscreen ? "bg-surface-canvas" : "bg-white border-t"}
       `}
       >
         {/* Skip to start */}
@@ -407,7 +407,7 @@ export const IntegrationTestPlayback: React.FC<
           size="sm"
           onClick={goToStart}
           disabled={currentIndex === 0}
-          className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
+          className={isFullscreen ? "text-white hover:bg-surface-raised" : ""}
         >
           <SkipBack className="w-4 h-4" />
         </Button>
@@ -418,7 +418,7 @@ export const IntegrationTestPlayback: React.FC<
           size="sm"
           onClick={goToPrevious}
           disabled={currentIndex === 0}
-          className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
+          className={isFullscreen ? "text-white hover:bg-surface-raised" : ""}
         >
           <ChevronLeft className="w-5 h-5" />
         </Button>
@@ -443,7 +443,7 @@ export const IntegrationTestPlayback: React.FC<
           size="sm"
           onClick={goToNext}
           disabled={currentIndex === frames.length - 1}
-          className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
+          className={isFullscreen ? "text-white hover:bg-surface-raised" : ""}
         >
           <ChevronRight className="w-5 h-5" />
         </Button>
@@ -454,7 +454,7 @@ export const IntegrationTestPlayback: React.FC<
           size="sm"
           onClick={goToEnd}
           disabled={currentIndex === frames.length - 1}
-          className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
+          className={isFullscreen ? "text-white hover:bg-surface-raised" : ""}
         >
           <SkipForward className="w-4 h-4" />
         </Button>
@@ -464,7 +464,7 @@ export const IntegrationTestPlayback: React.FC<
           variant="ghost"
           size="sm"
           onClick={cycleSpeed}
-          className={`ml-4 gap-1 ${isFullscreen ? "text-white hover:bg-gray-800" : ""}`}
+          className={`ml-4 gap-1 ${isFullscreen ? "text-white hover:bg-surface-raised" : ""}`}
         >
           <FastForward className="w-4 h-4" />
           <span className="text-xs">{playbackSpeed}x</span>

@@ -51,7 +51,7 @@ export function TestRunCard({
       case "failed":
         return <XCircle className="w-5 h-5 text-red-500" />;
       case "pending":
-        return <Clock className="w-5 h-5 text-gray-500" />;
+        return <Clock className="w-5 h-5 text-text-muted" />;
     }
   };
 
@@ -77,7 +77,7 @@ export function TestRunCard({
         );
       case "pending":
         return (
-          <Badge className="bg-gray-500/20 text-gray-500 border-gray-500/30">
+          <Badge className="bg-gray-500/20 text-text-muted border-gray-500/30">
             Pending
           </Badge>
         );
@@ -98,7 +98,7 @@ export function TestRunCard({
 
   return (
     <Card
-      className="bg-[#1A1A1B]/50 border-gray-800/50 hover:border-[#00D9FF]/50 transition-all cursor-pointer group"
+      className="bg-surface-raised/50 border-border-subtle/50 hover:border-brand-primary/50 transition-all cursor-pointer group"
       onClick={onClick}
     >
       <CardContent className="p-6">
@@ -107,15 +107,15 @@ export function TestRunCard({
           <div className="flex items-start gap-3 flex-1 min-w-0">
             <div className="flex-shrink-0 mt-1">{getStatusIcon()}</div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-medium text-white truncate group-hover:text-[#00D9FF] transition-colors">
+              <h3 className="text-lg font-medium text-white truncate group-hover:text-brand-primary transition-colors">
                 {workflowName}
               </h3>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-text-muted">
                   {format(startTime, "MMM dd, yyyy HH:mm")}
                 </span>
-                <span className="text-gray-600">•</span>
-                <span className="text-xs text-gray-500 font-mono">
+                <span className="text-text-muted">•</span>
+                <span className="text-xs text-text-muted font-mono">
                   {runId.substring(0, 8)}
                 </span>
               </div>
@@ -128,7 +128,7 @@ export function TestRunCard({
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           {/* Duration */}
           <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <div className="flex items-center gap-1.5 text-xs text-text-muted">
               <Clock className="w-3.5 h-3.5" />
               <span>Duration</span>
             </div>
@@ -139,40 +139,40 @@ export function TestRunCard({
 
           {/* Coverage */}
           <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <div className="flex items-center gap-1.5 text-xs text-text-muted">
               <TrendingUp className="w-3.5 h-3.5" />
               <span>Coverage</span>
             </div>
-            <div className="text-lg font-bold text-[#00D9FF]">
+            <div className="text-lg font-bold text-brand-primary">
               {coveragePercentage.toFixed(1)}%
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-text-muted">
               {statesCovered} / {totalStates} states
             </div>
           </div>
 
           {/* Success Rate */}
           <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <div className="flex items-center gap-1.5 text-xs text-text-muted">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Success</span>
             </div>
             <div className="text-lg font-bold text-green-500">
               {successRate}%
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-text-muted">
               {successfulTransitions} / {totalTransitions}
             </div>
           </div>
 
           {/* Deficiencies */}
           <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <div className="flex items-center gap-1.5 text-xs text-text-muted">
               <AlertTriangle className="w-3.5 h-3.5" />
               <span>Issues</span>
             </div>
             <div
-              className={`text-lg font-bold ${deficienciesFound > 0 ? "text-red-400" : "text-gray-500"}`}
+              className={`text-lg font-bold ${deficienciesFound > 0 ? "text-red-400" : "text-text-muted"}`}
             >
               {deficienciesFound}
             </div>
@@ -183,7 +183,7 @@ export function TestRunCard({
         {status === "running" && totalTransitions > 0 && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">Progress</span>
+              <span className="text-text-muted">Progress</span>
               <span className="text-white font-medium">
                 {successfulTransitions +
                   (totalTransitions - successfulTransitions)}{" "}
@@ -196,7 +196,7 @@ export function TestRunCard({
                   ? (successfulTransitions / totalTransitions) * 100
                   : 0
               }
-              className="h-1.5 bg-gray-800"
+              className="h-1.5 bg-surface-raised"
             />
           </div>
         )}
@@ -205,14 +205,14 @@ export function TestRunCard({
         {status !== "running" && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">State Coverage</span>
+              <span className="text-text-muted">State Coverage</span>
               <span className="text-white font-medium">
                 {statesCovered} / {totalStates}
               </span>
             </div>
-            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+            <div className="h-1.5 bg-surface-raised rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] rounded-full transition-all"
+                className="h-full bg-gradient-to-r from-brand-primary to-brand-secondary rounded-full transition-all"
                 style={{ width: `${coveragePercentage}%` }}
               />
             </div>

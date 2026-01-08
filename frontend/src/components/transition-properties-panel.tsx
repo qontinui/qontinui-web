@@ -181,10 +181,10 @@ export function TransitionPropertiesPanel({
   });
 
   return (
-    <Card className="border-gray-700 bg-[#27272A] h-full flex flex-col">
+    <Card className="border-border-default bg-surface-raised h-full flex flex-col">
       <CardHeader className="pb-3 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium text-[#BD00FF]">
+          <CardTitle className="text-sm font-medium text-brand-secondary">
             Transition Properties
           </CardTitle>
           <Button
@@ -200,12 +200,12 @@ export function TransitionPropertiesPanel({
       </CardHeader>
       <CardContent className="flex-1 space-y-4 overflow-y-auto p-6">
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Type</Label>
-          <div className="p-2 bg-gray-800 rounded text-sm">
+          <Label className="text-xs text-text-muted">Type</Label>
+          <div className="p-2 bg-surface-overlay rounded text-sm">
             {transition.type === "OutgoingTransition" ? (
-              <span className="text-[#BD00FF]">OutgoingTransition</span>
+              <span className="text-brand-secondary">OutgoingTransition</span>
             ) : (
-              <span className="text-[#00FF88]">IncomingTransition</span>
+              <span className="text-brand-success">IncomingTransition</span>
             )}
           </div>
         </div>
@@ -213,8 +213,8 @@ export function TransitionPropertiesPanel({
         {transition.type === "OutgoingTransition" ? (
           <>
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">From State</Label>
-              <div className="p-2 bg-gray-800 rounded text-sm">
+              <Label className="text-xs text-text-muted">From State</Label>
+              <div className="p-2 bg-surface-overlay rounded text-sm">
                 {states.find((s) => s.id === transition.fromState)?.name ||
                   "Unknown State"}
               </div>
@@ -222,7 +222,7 @@ export function TransitionPropertiesPanel({
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-gray-400">
+                <Label className="text-xs text-text-muted">
                   States to Activate
                 </Label>
                 <Dialog
@@ -233,7 +233,7 @@ export function TransitionPropertiesPanel({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-gray-400 hover:text-gray-300"
+                      className="h-6 text-text-muted hover:text-text-secondary"
                       onClick={() => {
                         setSelectedStateType("activate");
                         setStateDialogOpen(true);
@@ -242,18 +242,18 @@ export function TransitionPropertiesPanel({
                       <Plus className="w-3 h-3" />
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="bg-[#27272A] border-gray-700">
+                  <DialogContent className="bg-surface-raised border-border-default">
                     <DialogHeader>
-                      <DialogTitle className="text-[#00D9FF]">
+                      <DialogTitle className="text-brand-primary">
                         Add State to Activate
                       </DialogTitle>
-                      <DialogDescription className="text-gray-400 text-sm">
+                      <DialogDescription className="text-text-muted text-sm">
                         Select a state to activate when this transition occurs
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {availableStates.length === 0 ? (
-                        <p className="text-sm text-gray-400 text-center py-4">
+                        <p className="text-sm text-text-muted text-center py-4">
                           No available states
                         </p>
                       ) : (
@@ -261,7 +261,7 @@ export function TransitionPropertiesPanel({
                           <Button
                             key={state.id}
                             variant="outline"
-                            className="w-full justify-start bg-transparent border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                            className="w-full justify-start bg-transparent border-border-default hover:border-brand-primary hover:text-brand-primary"
                             onClick={() => handleAddState(state.id, "activate")}
                           >
                             {state.name}
@@ -274,7 +274,7 @@ export function TransitionPropertiesPanel({
               </div>
               {!Array.isArray(transition.activateStates) ||
               transition.activateStates.length === 0 ? (
-                <div className="p-2 bg-gray-800 rounded text-sm text-gray-500 text-center">
+                <div className="p-2 bg-surface-overlay rounded text-sm text-text-muted text-center">
                   No states to activate
                 </div>
               ) : (
@@ -282,7 +282,7 @@ export function TransitionPropertiesPanel({
                   {transition.activateStates.map((stateId) => (
                     <div
                       key={stateId}
-                      className="flex items-center justify-between p-2 bg-gray-800 rounded"
+                      className="flex items-center justify-between p-2 bg-surface-overlay rounded"
                     >
                       <span className="text-sm">
                         {states.find((s) => s.id === stateId)?.name ||
@@ -312,14 +312,17 @@ export function TransitionPropertiesPanel({
                   } as Partial<OutgoingTransition>)
                 }
               />
-              <Label htmlFor="stays_visible" className="text-xs text-gray-400">
+              <Label
+                htmlFor="stays_visible"
+                className="text-xs text-text-muted"
+              >
                 Origin state stays visible
               </Label>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-gray-400">
+                <Label className="text-xs text-text-muted">
                   States to Deactivate
                 </Label>
                 <Dialog
@@ -330,7 +333,7 @@ export function TransitionPropertiesPanel({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-gray-400 hover:text-gray-300"
+                      className="h-6 text-text-muted hover:text-text-secondary"
                       onClick={() => {
                         setSelectedStateType("deactivate");
                         setStateDialogOpen(true);
@@ -339,18 +342,18 @@ export function TransitionPropertiesPanel({
                       <Plus className="w-3 h-3" />
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="bg-[#27272A] border-gray-700">
+                  <DialogContent className="bg-surface-raised border-border-default">
                     <DialogHeader>
-                      <DialogTitle className="text-[#00D9FF]">
+                      <DialogTitle className="text-brand-primary">
                         Add State to Deactivate
                       </DialogTitle>
-                      <DialogDescription className="text-gray-400 text-sm">
+                      <DialogDescription className="text-text-muted text-sm">
                         Select a state to deactivate when this transition occurs
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {availableStates.length === 0 ? (
-                        <p className="text-sm text-gray-400 text-center py-4">
+                        <p className="text-sm text-text-muted text-center py-4">
                           No available states
                         </p>
                       ) : (
@@ -358,7 +361,7 @@ export function TransitionPropertiesPanel({
                           <Button
                             key={state.id}
                             variant="outline"
-                            className="w-full justify-start bg-transparent border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                            className="w-full justify-start bg-transparent border-border-default hover:border-brand-primary hover:text-brand-primary"
                             onClick={() =>
                               handleAddState(state.id, "deactivate")
                             }
@@ -373,7 +376,7 @@ export function TransitionPropertiesPanel({
               </div>
               {!Array.isArray(transition.deactivateStates) ||
               transition.deactivateStates.length === 0 ? (
-                <div className="p-2 bg-gray-800 rounded text-sm text-gray-500 text-center">
+                <div className="p-2 bg-surface-overlay rounded text-sm text-text-muted text-center">
                   No states to deactivate
                 </div>
               ) : (
@@ -381,7 +384,7 @@ export function TransitionPropertiesPanel({
                   {transition.deactivateStates.map((stateId) => (
                     <div
                       key={stateId}
-                      className="flex items-center justify-between p-2 bg-gray-800 rounded"
+                      className="flex items-center justify-between p-2 bg-surface-overlay rounded"
                     >
                       <span className="text-sm">
                         {states.find((s) => s.id === stateId)?.name ||
@@ -403,10 +406,10 @@ export function TransitionPropertiesPanel({
           </>
         ) : (
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">
+            <Label className="text-xs text-text-muted">
               State (executes when entering)
             </Label>
-            <div className="p-2 bg-gray-800 rounded text-sm">
+            <div className="p-2 bg-surface-overlay rounded text-sm">
               {states.find((s) => s.id === transition.toState)?.name ||
                 "Unknown State"}
             </div>
@@ -415,7 +418,7 @@ export function TransitionPropertiesPanel({
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">
+            <Label className="text-xs text-text-muted">
               Workflows to Execute
             </Label>
             <Dialog
@@ -426,35 +429,35 @@ export function TransitionPropertiesPanel({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 text-gray-400 hover:text-gray-300"
+                  className="h-6 text-text-muted hover:text-text-secondary"
                   onClick={() => setWorkflowDialogOpen(true)}
                 >
                   <Plus className="w-3 h-3" />
                 </Button>
               </DialogTrigger>
-              <DialogContent className="bg-[#27272A] border-gray-700 max-w-2xl">
+              <DialogContent className="bg-surface-raised border-border-default max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle className="text-[#00D9FF]">
+                  <DialogTitle className="text-brand-primary">
                     Add Workflow to Execute
                   </DialogTitle>
-                  <DialogDescription className="text-gray-400 text-sm">
+                  <DialogDescription className="text-text-muted text-sm">
                     Select workflows to execute when this transition occurs
                   </DialogDescription>
                 </DialogHeader>
 
                 {/* Category Filter */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-gray-400">
+                  <Label className="text-xs text-text-muted">
                     Filter by Category
                   </Label>
                   <Select
                     value={workflowCategoryFilter}
                     onValueChange={setWorkflowCategoryFilter}
                   >
-                    <SelectTrigger className="bg-transparent border-gray-700">
+                    <SelectTrigger className="bg-transparent border-border-default">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#27272A] border-gray-700">
+                    <SelectContent className="bg-surface-raised border-border-default">
                       <SelectItem value="All">All Categories</SelectItem>
                       {workflowCategories.map((category) => (
                         <SelectItem key={category} value={category}>
@@ -468,7 +471,7 @@ export function TransitionPropertiesPanel({
                 {/* Workflow List */}
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {availableWorkflows.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-4">
+                    <p className="text-sm text-text-muted text-center py-4">
                       {workflowCategoryFilter === "Transitions"
                         ? "No workflows in Transitions category. Try 'All Categories' to see all workflows."
                         : "No available workflows"}
@@ -478,7 +481,7 @@ export function TransitionPropertiesPanel({
                       <Button
                         key={workflow.id}
                         variant="outline"
-                        className="w-full justify-start bg-transparent border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                        className="w-full justify-start bg-transparent border-border-default hover:border-brand-primary hover:text-brand-primary"
                         onClick={() => handleAddWorkflow(workflow.id)}
                       >
                         <div className="flex flex-col items-start gap-1 w-full">
@@ -489,7 +492,7 @@ export function TransitionPropertiesPanel({
                             </Badge>
                           </div>
                           {workflow.description && (
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-text-muted">
                               {workflow.description}
                             </span>
                           )}
@@ -504,7 +507,7 @@ export function TransitionPropertiesPanel({
 
           {/* Selected Workflows List */}
           {!transition.workflows || transition.workflows.length === 0 ? (
-            <div className="p-2 bg-gray-800 rounded text-sm text-gray-500 text-center">
+            <div className="p-2 bg-surface-overlay rounded text-sm text-text-muted text-center">
               No workflows selected
             </div>
           ) : (
@@ -514,13 +517,13 @@ export function TransitionPropertiesPanel({
                 return (
                   <div
                     key={workflowId}
-                    className="flex items-center justify-between p-2 bg-gray-800 rounded"
+                    className="flex items-center justify-between p-2 bg-surface-overlay rounded"
                   >
                     <div className="flex flex-col gap-1 flex-1">
                       <div className="flex items-center gap-2">
                         <Badge
                           variant="outline"
-                          className="text-xs bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/50"
+                          className="text-xs bg-brand-primary/20 text-brand-primary border-brand-primary/50"
                         >
                           {index + 1}
                         </Badge>
@@ -534,7 +537,7 @@ export function TransitionPropertiesPanel({
                         )}
                       </div>
                       {workflow?.description && (
-                        <span className="text-xs text-gray-400 ml-6">
+                        <span className="text-xs text-text-muted ml-6">
                           {workflow.description}
                         </span>
                       )}
@@ -545,7 +548,7 @@ export function TransitionPropertiesPanel({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-gray-400 hover:text-gray-200"
+                        className="h-6 w-6 p-0 text-text-muted hover:text-text-primary"
                         disabled={index === 0}
                         onClick={() => handleMoveWorkflowUp(index)}
                       >
@@ -554,7 +557,7 @@ export function TransitionPropertiesPanel({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-gray-400 hover:text-gray-200"
+                        className="h-6 w-6 p-0 text-text-muted hover:text-text-primary"
                         disabled={index === transition.workflows.length - 1}
                         onClick={() => handleMoveWorkflowDown(index)}
                       >

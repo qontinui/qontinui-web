@@ -295,10 +295,10 @@ export function BatchMonitorSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] bg-gray-950 border-gray-800">
+      <DialogContent className="sm:max-w-[700px] bg-surface-canvas border-border-subtle">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Monitor className="w-5 h-5 text-[#00D9FF]" />
+            <Monitor className="w-5 h-5 text-brand-primary" />
             Batch Monitor Settings
           </DialogTitle>
           <DialogDescription>
@@ -309,8 +309,8 @@ export function BatchMonitorSettingsDialog({
 
         <div className="space-y-4 py-4">
           {/* Current Status */}
-          <div className="bg-gray-900 rounded-lg p-4 space-y-2">
-            <h4 className="text-sm font-medium text-gray-300">
+          <div className="bg-surface-canvas rounded-lg p-4 space-y-2">
+            <h4 className="text-sm font-medium text-text-secondary">
               Current Monitor Distribution
             </h4>
             <div className="flex flex-wrap gap-2">
@@ -321,7 +321,7 @@ export function BatchMonitorSettingsDialog({
                     <Badge
                       key={monitor}
                       variant="secondary"
-                      className="bg-gray-800"
+                      className="bg-surface-raised"
                     >
                       {monitor === "0"
                         ? "Primary"
@@ -334,7 +334,7 @@ export function BatchMonitorSettingsDialog({
                     </Badge>
                   ))
               ) : (
-                <span className="text-sm text-gray-500">
+                <span className="text-sm text-text-muted">
                   No monitor settings configured yet
                 </span>
               )}
@@ -342,7 +342,7 @@ export function BatchMonitorSettingsDialog({
           </div>
 
           {/* Batch Operations Section */}
-          <div className="bg-gray-900/50 rounded-lg p-4 space-y-4">
+          <div className="bg-surface-canvas/50 rounded-lg p-4 space-y-4">
             {/* Selection Controls */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -379,7 +379,7 @@ export function BatchMonitorSettingsDialog({
                   variant="ghost"
                   size="sm"
                   onClick={handleResetAll}
-                  className="h-7 text-xs text-gray-400 hover:text-white"
+                  className="h-7 text-xs text-text-muted hover:text-white"
                 >
                   <RotateCcw className="w-3 h-3 mr-1" />
                   Reset
@@ -437,18 +437,18 @@ export function BatchMonitorSettingsDialog({
                 </Select>
               </div>
 
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-text-muted">
                 {selectedStates.size === 0
                   ? "Select states below first"
                   : `to ${selectedStates.size} selected state(s)`}
               </span>
             </div>
 
-            <Separator className="bg-gray-700" />
+            <Separator className="bg-border-default" />
 
             {/* Quick Set All States */}
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">
+              <Label className="text-xs text-text-muted">
                 Set All States To:
               </Label>
               <div className="flex items-center gap-2">
@@ -467,7 +467,7 @@ export function BatchMonitorSettingsDialog({
                   variant="outline"
                   size="sm"
                   onClick={handleApplyToAll}
-                  className="border-[#00D9FF] text-[#00D9FF] hover:bg-[#00D9FF]/10"
+                  className="border-brand-primary text-brand-primary hover:bg-brand-primary/10"
                 >
                   <Copy className="w-3 h-3 mr-1" />
                   Apply to All
@@ -476,7 +476,7 @@ export function BatchMonitorSettingsDialog({
             </div>
           </div>
 
-          <Separator className="bg-gray-800" />
+          <Separator className="bg-border-subtle" />
 
           {/* Per-State Monitor Selection */}
           <div className="space-y-2">
@@ -505,14 +505,14 @@ export function BatchMonitorSettingsDialog({
             </div>
 
             {states.length === 0 ? (
-              <div className="flex items-center gap-2 p-4 bg-yellow-950/30 border border-yellow-800 rounded-lg">
+              <div className="flex items-center gap-2 p-4 bg-status-warning/10 border border-status-warning/50 rounded-lg">
                 <AlertCircle className="w-4 h-4 text-yellow-500" />
                 <span className="text-sm text-yellow-400">
                   No states available. Create states first.
                 </span>
               </div>
             ) : (
-              <ScrollArea className="h-[300px] border border-gray-800 rounded-lg">
+              <ScrollArea className="h-[300px] border border-border-subtle rounded-lg">
                 <div className="p-2 space-y-2">
                   {states.map((state) => {
                     const monitors = stateMonitors[state.id] || [0];
@@ -528,7 +528,7 @@ export function BatchMonitorSettingsDialog({
                             ? "bg-purple-950/20 border border-purple-800/50"
                             : isModified
                               ? "bg-blue-950/20 border border-blue-800/50"
-                              : "bg-gray-900/50 border border-gray-800"
+                              : "bg-surface-canvas/50 border border-border-subtle"
                         }`}
                       >
                         <div className="flex items-start gap-3">
@@ -539,14 +539,14 @@ export function BatchMonitorSettingsDialog({
                               onCheckedChange={() =>
                                 handleToggleState(state.id)
                               }
-                              className="border-gray-600 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
+                              className="border-border-default data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
                             />
                           </div>
 
                           {/* State Info */}
                           <div className="flex-shrink-0 min-w-[120px]">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium text-gray-200 truncate">
+                              <span className="text-sm font-medium text-text-secondary truncate">
                                 {state.name}
                               </span>
                               {state.initial && (
@@ -566,7 +566,7 @@ export function BatchMonitorSettingsDialog({
                                 </Badge>
                               )}
                             </div>
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-text-muted">
                               {imageCount} screen image(s)
                             </span>
                           </div>
@@ -609,14 +609,14 @@ export function BatchMonitorSettingsDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="border-gray-700"
+            className="border-border-default"
           >
             Cancel
           </Button>
           <Button
             onClick={handleApply}
             disabled={modifiedStates.size === 0}
-            className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+            className="bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             Apply {modifiedStates.size} Change(s)
           </Button>

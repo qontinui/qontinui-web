@@ -93,7 +93,7 @@ export function VariableSelector({
   return (
     <div className={cn("space-y-2", className)}>
       {label && (
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           {label}
           {required && <span className="text-red-400 ml-1">*</span>}
         </Label>
@@ -113,7 +113,7 @@ export function VariableSelector({
           onBlur={handleBlur}
           placeholder={placeholder}
           className={cn(
-            "bg-transparent border-gray-700 font-mono text-sm",
+            "bg-transparent border-border-default font-mono text-sm",
             isInvalid &&
               "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/50"
           )}
@@ -129,13 +129,13 @@ export function VariableSelector({
 
         {/* Autocomplete suggestions */}
         {showSuggestions && filteredSuggestions.length > 0 && (
-          <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-700 rounded-md shadow-lg max-h-40 overflow-auto">
+          <div className="absolute z-50 w-full mt-1 bg-surface-raised border border-border-default rounded-md shadow-lg max-h-40 overflow-auto">
             {filteredSuggestions.map((suggestion, index) => (
               <button
                 key={index}
                 type="button"
                 onClick={() => handleSuggestionClick(suggestion)}
-                className="w-full text-left px-3 py-2 text-sm font-mono hover:bg-gray-700 focus:bg-gray-700 focus:outline-none text-gray-300 first:rounded-t-md last:rounded-b-md"
+                className="w-full text-left px-3 py-2 text-sm font-mono hover:bg-surface-raised focus:bg-surface-raised focus:outline-none text-text-default first:rounded-t-md last:rounded-b-md"
               >
                 {suggestion}
               </button>

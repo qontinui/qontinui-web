@@ -51,9 +51,9 @@ export function TransitionTimeline({
       case "running":
         return <PlayCircle className="w-5 h-5 text-blue-500 animate-pulse" />;
       case "pending":
-        return <Clock className="w-5 h-5 text-gray-500" />;
+        return <Clock className="w-5 h-5 text-text-muted" />;
       default:
-        return <Clock className="w-5 h-5 text-gray-500" />;
+        return <Clock className="w-5 h-5 text-text-muted" />;
     }
   };
 
@@ -66,9 +66,9 @@ export function TransitionTimeline({
       case "running":
         return "bg-blue-500/20 border-blue-500/30";
       case "pending":
-        return "bg-gray-500/20 border-gray-500/30";
+        return "bg-surface-raised/20 border-border-default/30";
       default:
-        return "bg-gray-500/20 border-gray-500/30";
+        return "bg-surface-raised/20 border-border-default/30";
     }
   };
 
@@ -80,10 +80,10 @@ export function TransitionTimeline({
 
   if (transitions.length === 0) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
-          <Clock className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-          <div className="text-gray-400">
+          <Clock className="w-12 h-12 text-text-muted mx-auto mb-4" />
+          <div className="text-text-muted">
             Waiting for test execution to start...
           </div>
         </CardContent>
@@ -101,8 +101,8 @@ export function TransitionTimeline({
         return (
           <Card
             key={transition.id}
-            className={`bg-[#1A1A1B]/50 border-gray-800/50 transition-all ${
-              isCurrent ? "ring-2 ring-[#00D9FF]/50" : ""
+            className={`bg-surface-raised/50 border-border-subtle/50 transition-all ${
+              isCurrent ? "ring-2 ring-brand-primary/50" : ""
             } ${autoScroll && isCurrent ? "scroll-mt-4" : ""}`}
             ref={
               autoScroll && isCurrent
@@ -120,7 +120,7 @@ export function TransitionTimeline({
                     {getStatusIcon(transition.status)}
                   </div>
                   {index < transitions.length - 1 && (
-                    <div className="w-px h-full min-h-[20px] bg-gray-700 mt-2" />
+                    <div className="w-px h-full min-h-[20px] bg-border-default mt-2" />
                   )}
                 </div>
 
@@ -135,7 +135,7 @@ export function TransitionTimeline({
                           {transition.status}
                         </Badge>
                         {isCurrent && (
-                          <Badge className="bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30 text-xs">
+                          <Badge className="bg-brand-primary/20 text-brand-primary border-brand-primary/30 text-xs">
                             Current
                           </Badge>
                         )}
@@ -145,10 +145,10 @@ export function TransitionTimeline({
                         {transition.from_state} → {transition.to_state}
                       </div>
 
-                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
+                      <div className="flex items-center gap-3 mt-1 text-xs text-text-muted">
                         <span className="flex items-center gap-1">
                           <span className="font-medium">Action:</span>
-                          <span className="text-[#00D9FF]">
+                          <span className="text-brand-primary">
                             {transition.action_type}
                           </span>
                         </span>
@@ -178,7 +178,7 @@ export function TransitionTimeline({
                         size="sm"
                         variant="ghost"
                         onClick={() => toggleExpanded(transition.id)}
-                        className="flex-shrink-0 h-8 w-8 p-0 hover:bg-gray-800/50"
+                        className="flex-shrink-0 h-8 w-8 p-0 hover:bg-surface-raised/50"
                       >
                         {isExpanded ? (
                           <ChevronDown className="w-4 h-4" />
@@ -195,10 +195,10 @@ export function TransitionTimeline({
                       {/* Screenshot */}
                       {hasScreenshot && (
                         <div className="space-y-2">
-                          <div className="text-xs text-gray-400 font-medium">
+                          <div className="text-xs text-text-muted font-medium">
                             Screenshot:
                           </div>
-                          <div className="rounded border border-gray-700 overflow-hidden bg-black/30">
+                          <div className="rounded border border-border-default overflow-hidden bg-black/30">
                             <img
                               src={transition.screenshot_url!}
                               alt={`Transition ${transition.from_state} to ${transition.to_state}`}
@@ -212,33 +212,35 @@ export function TransitionTimeline({
                       {/* Details */}
                       <div className="grid grid-cols-2 gap-3 text-xs">
                         <div>
-                          <div className="text-gray-400 mb-1">From State</div>
-                          <div className="text-white font-mono bg-gray-800/50 px-2 py-1 rounded">
+                          <div className="text-text-muted mb-1">From State</div>
+                          <div className="text-white font-mono bg-surface-raised/50 px-2 py-1 rounded">
                             {transition.from_state}
                           </div>
                         </div>
                         <div>
-                          <div className="text-gray-400 mb-1">To State</div>
-                          <div className="text-white font-mono bg-gray-800/50 px-2 py-1 rounded">
+                          <div className="text-text-muted mb-1">To State</div>
+                          <div className="text-white font-mono bg-surface-raised/50 px-2 py-1 rounded">
                             {transition.to_state}
                           </div>
                         </div>
                         <div>
-                          <div className="text-gray-400 mb-1">Action Type</div>
-                          <div className="text-white font-mono bg-gray-800/50 px-2 py-1 rounded">
+                          <div className="text-text-muted mb-1">
+                            Action Type
+                          </div>
+                          <div className="text-white font-mono bg-surface-raised/50 px-2 py-1 rounded">
                             {transition.action_type}
                           </div>
                         </div>
                         <div>
-                          <div className="text-gray-400 mb-1">Duration</div>
-                          <div className="text-white font-mono bg-gray-800/50 px-2 py-1 rounded">
+                          <div className="text-text-muted mb-1">Duration</div>
+                          <div className="text-white font-mono bg-surface-raised/50 px-2 py-1 rounded">
                             {formatDuration(transition.duration_ms)}
                           </div>
                         </div>
                       </div>
 
                       {/* Timestamp */}
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-text-muted">
                         Executed at:{" "}
                         {new Date(transition.executed_at).toLocaleString()}
                       </div>

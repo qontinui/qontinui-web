@@ -53,11 +53,11 @@ function PatternOptimizationContent() {
   };
 
   return (
-    <div className="h-full flex bg-[#0A0A0B]">
+    <div className="h-full flex bg-surface-canvas">
       {/* Left Panel - Screenshot Manager */}
       <div
         className={cn(
-          "border-r border-gray-800 bg-[#27272A]/50 transition-all duration-300",
+          "border-r border-border-subtle bg-surface-raised/50 transition-all duration-300",
           leftPanelCollapsed ? "w-12" : "w-80"
         )}
       >
@@ -74,7 +74,7 @@ function PatternOptimizationContent() {
           </div>
         ) : (
           <div className="h-full flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-gray-800">
+            <div className="flex items-center justify-between p-4 border-b border-border-subtle">
               <h2 className="text-sm font-medium">Pattern Optimization</h2>
               <div className="flex items-center gap-1">
                 <Button
@@ -105,7 +105,7 @@ function PatternOptimizationContent() {
 
       {/* Center Panel - Region Editor */}
       <div className="flex-1 flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-gray-800">
+        <div className="flex items-center justify-between p-4 border-b border-border-subtle">
           <h3 className="text-sm font-medium">
             {selectedScreenshot
               ? `Region Editor - ${selectedScreenshot.name}`
@@ -113,7 +113,7 @@ function PatternOptimizationContent() {
           </h3>
           <div className="flex items-center gap-2">
             <select
-              className="h-7 px-2 text-xs bg-transparent border border-gray-700 rounded"
+              className="h-7 px-2 text-xs bg-transparent border border-border-default rounded"
               value={selectedScreenshot?.id || ""}
               onChange={(e) => {
                 const screenshot = session?.screenshots.find(
@@ -139,7 +139,7 @@ function PatternOptimizationContent() {
       {/* Right Panel - Analysis */}
       <div
         className={cn(
-          "border-l border-gray-800 bg-[#27272A]/50 transition-all duration-300",
+          "border-l border-border-subtle bg-surface-raised/50 transition-all duration-300",
           rightPanelCollapsed ? "w-12" : "w-96"
         )}
       >
@@ -156,7 +156,7 @@ function PatternOptimizationContent() {
           </div>
         ) : (
           <div className="h-full flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-gray-800">
+            <div className="flex items-center justify-between p-4 border-b border-border-subtle">
               <h3 className="text-sm font-medium">Analysis</h3>
               <Button
                 size="sm"

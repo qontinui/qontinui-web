@@ -157,7 +157,7 @@ export function ScreenshotManager() {
       {screenshots.length === 0 && (
         <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded text-xs">
           <p className="font-medium text-blue-400 mb-1">Quick Start:</p>
-          <ol className="space-y-1 text-gray-300">
+          <ol className="space-y-1 text-text-secondary">
             <li>1. Upload screenshots using the button below</li>
             <li>
               2. Label them as <span className="text-green-400">positive</span>{" "}
@@ -182,21 +182,21 @@ export function ScreenshotManager() {
               title="Positive examples - what the pattern should match"
             >
               <CheckCircle className="w-3 h-3 text-green-500" />
-              <span className="text-gray-400">{positiveCount}</span>
+              <span className="text-text-muted">{positiveCount}</span>
             </span>
             <span
               className="flex items-center gap-1"
               title="Negative examples - what the pattern should NOT match"
             >
               <XCircle className="w-3 h-3 text-red-500" />
-              <span className="text-gray-400">{negativeCount}</span>
+              <span className="text-text-muted">{negativeCount}</span>
             </span>
             <span
               className="flex items-center gap-1"
               title="Unlabeled - not yet categorized"
             >
-              <Circle className="w-3 h-3 text-gray-500" />
-              <span className="text-gray-400">{unlabeledCount}</span>
+              <Circle className="w-3 h-3 text-text-muted" />
+              <span className="text-text-muted">{unlabeledCount}</span>
             </span>
           </div>
         </div>
@@ -205,7 +205,7 @@ export function ScreenshotManager() {
           <Button
             size="sm"
             variant="outline"
-            className="border-gray-700 hover:border-[#00D9FF]"
+            className="border-border-default hover:border-brand-primary"
             disabled={uploading}
             asChild
           >
@@ -227,11 +227,11 @@ export function ScreenshotManager() {
 
       {/* Action bar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-2 p-2 bg-[#00D9FF]/10 border border-[#00D9FF]/30 rounded">
-          <span className="text-xs font-medium text-[#00D9FF]">
+        <div className="flex items-center gap-2 p-2 bg-brand-primary/10 border border-brand-primary/30 rounded">
+          <span className="text-xs font-medium text-brand-primary">
             {selectedIds.size} selected
           </span>
-          <span className="text-xs text-gray-400 border-l border-gray-700 pl-2">
+          <span className="text-xs text-text-muted border-l border-border-default pl-2">
             Apply to all:
           </span>
           <Button
@@ -258,10 +258,10 @@ export function ScreenshotManager() {
             size="sm"
             variant="ghost"
             onClick={() => labelSelected("unlabeled")}
-            className="h-6 px-2 text-xs hover:bg-gray-500/20"
+            className="h-6 px-2 text-xs hover:bg-surface-raised/20"
             title="Remove labels from selected screenshots"
           >
-            <Circle className="w-3 h-3 mr-1 text-gray-500" />
+            <Circle className="w-3 h-3 mr-1 text-text-muted" />
             Clear Label
           </Button>
           <div className="ml-auto" />
@@ -282,14 +282,14 @@ export function ScreenshotManager() {
       <ScrollArea className="flex-1">
         {screenshots.length === 0 ? (
           <Card
-            className="border-2 border-dashed border-gray-700 bg-[#27272A]/50 hover:border-gray-600 transition-colors"
+            className="border-2 border-dashed border-border-default bg-surface-raised/50 hover:border-border-subtle transition-colors"
             onDrop={handleDrop}
             onDragOver={handleDragOver}
           >
             <CardContent className="p-8">
               <div className="text-center">
-                <ImageIcon className="w-12 h-12 mx-auto mb-2 text-gray-500" />
-                <p className="text-sm text-gray-400">
+                <ImageIcon className="w-12 h-12 mx-auto mb-2 text-text-muted" />
+                <p className="text-sm text-text-muted">
                   Drop screenshots here or click upload
                 </p>
               </div>
@@ -298,9 +298,9 @@ export function ScreenshotManager() {
         ) : (
           <div className="grid grid-cols-2 gap-2">
             <div className="col-span-2 mb-2">
-              <div className="flex items-center gap-2 p-2 bg-[#27272A]/30 rounded border border-gray-700">
+              <div className="flex items-center gap-2 p-2 bg-surface-raised/30 rounded border border-border-default">
                 <div className="flex-1">
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-text-muted">
                     <span className="font-medium">Bulk Actions:</span> Select
                     screenshots to label or remove multiple at once
                   </p>
@@ -334,12 +334,12 @@ export function ScreenshotManager() {
                 className={cn(
                   "relative group cursor-pointer rounded overflow-hidden border-2 transition-all",
                   selectedIds.has(screenshot.id)
-                    ? "border-[#00D9FF] ring-1 ring-[#00D9FF]/50"
-                    : "border-gray-700 hover:border-gray-600"
+                    ? "border-brand-primary ring-1 ring-brand-primary/50"
+                    : "border-border-default hover:border-border-subtle"
                 )}
                 onClick={() => toggleSelection(screenshot.id)}
               >
-                <div className="aspect-video bg-gray-900 relative">
+                <div className="aspect-video bg-surface-canvas relative">
                   <ScreenshotImage
                     screenshotId={screenshot.id}
                     fallbackUrl={screenshot.url}
@@ -373,7 +373,9 @@ export function ScreenshotManager() {
                   {/* Region indicator */}
                   {screenshot.region && (
                     <div className="absolute bottom-1 right-1 bg-black/50 rounded px-1">
-                      <span className="text-xs text-[#00FF88]">Region set</span>
+                      <span className="text-xs text-brand-success">
+                        Region set
+                      </span>
                     </div>
                   )}
                 </div>

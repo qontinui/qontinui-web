@@ -90,11 +90,12 @@ export default function OrganizationDetailsPage() {
   };
 
   const getRoleBadgeColor = (org: Organization | null, userId: string) => {
-    if (!org) return "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30";
+    if (!org)
+      return "bg-brand-primary/20 text-brand-primary border-brand-primary/30";
     if (org.owner_id === userId) {
-      return "bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30";
+      return "bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30";
     }
-    return "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30";
+    return "bg-brand-primary/20 text-brand-primary border-brand-primary/30";
   };
 
   const getRelativeTime = (dateString: string) => {
@@ -115,7 +116,7 @@ export default function OrganizationDetailsPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#00D9FF]" />
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
@@ -124,11 +125,11 @@ export default function OrganizationDetailsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         <div className="p-6 max-w-7xl mx-auto">
           <div className="text-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#00D9FF]" />
-            <p className="text-gray-400">Loading organization...</p>
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
+            <p className="text-text-muted">Loading organization...</p>
           </div>
         </div>
       </div>
@@ -137,15 +138,15 @@ export default function OrganizationDetailsPage() {
 
   if (error || !organization) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         <div className="p-6 max-w-7xl mx-auto">
-          <Card className="bg-[#1A1A1B]/50 border-red-500/50 backdrop-blur-sm">
+          <Card className="bg-surface-raised/50 border-red-500/50 backdrop-blur-sm">
             <CardContent className="p-8 text-center">
               <p className="text-red-400 mb-4">Failed to load organization</p>
               <Button
                 onClick={() => router.push("/organizations")}
                 variant="outline"
-                className="border-gray-700 hover:border-[#00D9FF]"
+                className="border-border-default hover:border-brand-primary"
               >
                 Back to Organizations
               </Button>
@@ -157,14 +158,14 @@ export default function OrganizationDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <div className="p-6 max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <Button
             variant="ghost"
             onClick={() => router.push("/organizations")}
-            className="mb-4 text-gray-400 hover:text-white"
+            className="mb-4 text-text-muted hover:text-white"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Organizations
@@ -179,9 +180,11 @@ export default function OrganizationDetailsPage() {
                 </Badge>
               </div>
               {organization.description && (
-                <p className="text-gray-400 mb-2">{organization.description}</p>
+                <p className="text-text-muted mb-2">
+                  {organization.description}
+                </p>
               )}
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-text-muted">
                 Created {getRelativeTime(organization.created_at)} • Updated{" "}
                 {getRelativeTime(organization.updated_at)}
               </p>
@@ -190,7 +193,7 @@ export default function OrganizationDetailsPage() {
             <div className="flex gap-2">
               <Button
                 onClick={() => router.push(`/organizations/${orgId}/members`)}
-                className="bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30"
+                className="bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30"
               >
                 <UserPlus className="w-4 h-4 mr-2" />
                 Manage Members
@@ -201,7 +204,7 @@ export default function OrganizationDetailsPage() {
                     router.push(`/organizations/${orgId}/settings`)
                   }
                   variant="outline"
-                  className="border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF]"
+                  className="border-border-default hover:border-brand-secondary hover:text-brand-secondary"
                 >
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
@@ -213,15 +216,15 @@ export default function OrganizationDetailsPage() {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-[#00D9FF]/20 rounded-lg flex items-center justify-center">
-                  <Users className="w-6 h-6 text-[#00D9FF]" />
+                <div className="w-12 h-12 bg-brand-primary/20 rounded-lg flex items-center justify-center">
+                  <Users className="w-6 h-6 text-brand-primary" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-400">Members</p>
-                  <p className="text-2xl font-bold text-[#00D9FF]">
+                  <p className="text-sm text-text-muted">Members</p>
+                  <p className="text-2xl font-bold text-brand-primary">
                     {statistics?.member_count ?? organization.member_count}
                   </p>
                 </div>
@@ -229,15 +232,15 @@ export default function OrganizationDetailsPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-[#BD00FF]/20 rounded-lg flex items-center justify-center">
-                  <FolderOpen className="w-6 h-6 text-[#BD00FF]" />
+                <div className="w-12 h-12 bg-brand-secondary/20 rounded-lg flex items-center justify-center">
+                  <FolderOpen className="w-6 h-6 text-brand-secondary" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-400">Projects</p>
-                  <p className="text-2xl font-bold text-[#BD00FF]">
+                  <p className="text-sm text-text-muted">Projects</p>
+                  <p className="text-2xl font-bold text-brand-secondary">
                     {statistics?.project_count ?? organization.project_count}
                   </p>
                 </div>
@@ -245,15 +248,15 @@ export default function OrganizationDetailsPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-[#00FF88]/20 rounded-lg flex items-center justify-center">
-                  <Activity className="w-6 h-6 text-[#00FF88]" />
+                <div className="w-12 h-12 bg-brand-success/20 rounded-lg flex items-center justify-center">
+                  <Activity className="w-6 h-6 text-brand-success" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-400">Active Today</p>
-                  <p className="text-2xl font-bold text-[#00FF88]">
+                  <p className="text-sm text-text-muted">Active Today</p>
+                  <p className="text-2xl font-bold text-brand-success">
                     {statistics?.active_users_today ?? 0}
                   </p>
                 </div>
@@ -261,15 +264,15 @@ export default function OrganizationDetailsPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gray-500/20 rounded-lg flex items-center justify-center">
-                  <Building2 className="w-6 h-6 text-gray-400" />
+                <div className="w-12 h-12 bg-text-muted/20 rounded-lg flex items-center justify-center">
+                  <Building2 className="w-6 h-6 text-text-muted" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-400">Workflows</p>
-                  <p className="text-2xl font-bold text-gray-300">
+                  <p className="text-sm text-text-muted">Workflows</p>
+                  <p className="text-2xl font-bold text-text-secondary">
                     {statistics?.total_workflows ?? 0}
                   </p>
                 </div>
@@ -280,7 +283,7 @@ export default function OrganizationDetailsPage() {
 
         {/* Content Tabs */}
         <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList className="bg-[#1A1A1B]/50 border border-gray-800/50">
+          <TabsList className="bg-surface-raised/50 border border-border-subtle/50">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="members">Members</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
@@ -290,26 +293,28 @@ export default function OrganizationDetailsPage() {
           <TabsContent value="overview" className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Organization Info */}
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle>Organization Details</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <p className="text-sm text-gray-400 mb-1">Name</p>
+                    <p className="text-sm text-text-muted mb-1">Name</p>
                     <p className="text-lg font-medium">{organization.name}</p>
                   </div>
                   {organization.description && (
                     <div>
-                      <p className="text-sm text-gray-400 mb-1">Description</p>
-                      <p className="text-gray-300">
+                      <p className="text-sm text-text-muted mb-1">
+                        Description
+                      </p>
+                      <p className="text-text-secondary">
                         {organization.description}
                       </p>
                     </div>
                   )}
                   <div>
-                    <p className="text-sm text-gray-400 mb-1">Created</p>
-                    <p className="text-gray-300">
+                    <p className="text-sm text-text-muted mb-1">Created</p>
+                    <p className="text-text-secondary">
                       {new Date(organization.created_at).toLocaleDateString(
                         "en-US",
                         {
@@ -321,8 +326,8 @@ export default function OrganizationDetailsPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-400 mb-1">Last Updated</p>
-                    <p className="text-gray-300">
+                    <p className="text-sm text-text-muted mb-1">Last Updated</p>
+                    <p className="text-text-secondary">
                       {new Date(organization.updated_at).toLocaleDateString(
                         "en-US",
                         {
@@ -337,7 +342,7 @@ export default function OrganizationDetailsPage() {
               </Card>
 
               {/* Quick Actions */}
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle>Quick Actions</CardTitle>
                 </CardHeader>
@@ -346,7 +351,7 @@ export default function OrganizationDetailsPage() {
                     onClick={() =>
                       router.push(`/organizations/${orgId}/members`)
                     }
-                    className="w-full justify-start bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30"
+                    className="w-full justify-start bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30"
                   >
                     <Users className="w-4 h-4 mr-2" />
                     View All Members
@@ -357,7 +362,7 @@ export default function OrganizationDetailsPage() {
                         onClick={() =>
                           router.push(`/organizations/${orgId}/settings`)
                         }
-                        className="w-full justify-start bg-[#BD00FF]/10 hover:bg-[#BD00FF]/20 text-[#BD00FF] border border-[#BD00FF]/30"
+                        className="w-full justify-start bg-brand-secondary/10 hover:bg-brand-secondary/20 text-brand-secondary border border-brand-secondary/30"
                       >
                         <Settings className="w-4 h-4 mr-2" />
                         Organization Settings
@@ -371,7 +376,7 @@ export default function OrganizationDetailsPage() {
 
           {/* Members Tab */}
           <TabsContent value="members">
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+            <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Team Members ({members.length})</CardTitle>
@@ -380,7 +385,7 @@ export default function OrganizationDetailsPage() {
                       router.push(`/organizations/${orgId}/members`)
                     }
                     size="sm"
-                    className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                    className="bg-brand-primary hover:bg-brand-primary/80 text-black"
                   >
                     <UserPlus className="w-4 h-4 mr-2" />
                     Invite Members
@@ -389,7 +394,7 @@ export default function OrganizationDetailsPage() {
               </CardHeader>
               <CardContent>
                 {members.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">
+                  <div className="text-center py-8 text-text-muted">
                     <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p>No members found</p>
                   </div>
@@ -398,10 +403,10 @@ export default function OrganizationDetailsPage() {
                     {members.slice(0, 5).map((member) => (
                       <div
                         key={member.id}
-                        className="flex items-center justify-between p-3 rounded-lg bg-[#0A0A0B]/50 hover:bg-[#0A0A0B]/80 transition-colors"
+                        className="flex items-center justify-between p-3 rounded-lg bg-surface-canvas/50 hover:bg-surface-canvas/80 transition-colors"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-[#00D9FF] to-[#BD00FF] rounded-full flex items-center justify-center text-sm font-bold">
+                          <div className="w-10 h-10 bg-gradient-to-br from-brand-primary to-brand-secondary rounded-full flex items-center justify-center text-sm font-bold">
                             {(member.name || member.email)
                               .charAt(0)
                               .toUpperCase()}
@@ -410,17 +415,17 @@ export default function OrganizationDetailsPage() {
                             <p className="font-medium">
                               {member.name || "Unknown"}
                             </p>
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-text-muted">
                               {member.email}
                             </p>
                           </div>
                         </div>
                         <Badge
                           className={`
-                          ${member.role === "owner" ? "bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30" : ""}
-                          ${member.role === "admin" ? "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30" : ""}
-                          ${member.role === "member" ? "bg-gray-500/20 text-gray-400 border-gray-500/30" : ""}
-                          ${member.role === "viewer" ? "bg-gray-600/20 text-gray-500 border-gray-600/30" : ""}
+                          ${member.role === "owner" ? "bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30" : ""}
+                          ${member.role === "admin" ? "bg-brand-primary/20 text-brand-primary border-brand-primary/30" : ""}
+                          ${member.role === "member" ? "bg-text-muted/20 text-text-muted border-text-muted/30" : ""}
+                          ${member.role === "viewer" ? "bg-text-muted/20 text-text-muted border-text-muted/30" : ""}
                         `}
                         >
                           {member.role}
@@ -433,7 +438,7 @@ export default function OrganizationDetailsPage() {
                         onClick={() =>
                           router.push(`/organizations/${orgId}/members`)
                         }
-                        className="w-full text-[#00D9FF] hover:text-[#00D9FF]/80"
+                        className="w-full text-brand-primary hover:text-brand-primary/80"
                       >
                         View all {members.length} members
                       </Button>
@@ -446,12 +451,12 @@ export default function OrganizationDetailsPage() {
 
           {/* Activity Tab */}
           <TabsContent value="activity">
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+            <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle>Recent Activity</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8 text-gray-400">
+                <div className="text-center py-8 text-text-muted">
                   <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <p>No recent activity</p>
                 </div>

@@ -80,7 +80,7 @@ export function CustomEdge({
     transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
     fontSize: 11,
     fontWeight: 500,
-    background: "#27272A",
+    background: "var(--color-surface-raised, #27272A)",
     padding: "3px 8px",
     borderRadius: 4,
     border: `1px solid ${connectionColor}`,
@@ -129,9 +129,7 @@ export function CustomEdge({
             onMouseLeave={() => setIsHovered(false)}
             className="nodrag nopan flex items-center gap-1"
           >
-            {hasCondition && (
-              <Zap className="w-3 h-3" style={{ color: "#00D9FF" }} />
-            )}
+            {hasCondition && <Zap className="w-3 h-3 text-brand-primary" />}
             <span>{displayLabel}</span>
             {weight !== undefined && weight !== 100 && (
               <span className="text-xs opacity-60 ml-1" style={{ fontSize: 9 }}>
@@ -152,7 +150,7 @@ export function CustomEdge({
             onMouseLeave={() => setIsHovered(false)}
             className="nodrag nopan flex items-center gap-1"
           >
-            <Zap className="w-3 h-3" style={{ color: "#00D9FF" }} />
+            <Zap className="w-3 h-3 text-brand-primary" />
             <span className="text-xs">{data.connection?.condition?.type}</span>
           </div>
         )}
@@ -225,7 +223,7 @@ export function SimpleCustomEdge({
     transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
     fontSize: 11,
     fontWeight: 500,
-    background: "#27272A",
+    background: "var(--color-surface-raised, #27272A)",
     padding: "3px 8px",
     borderRadius: 4,
     border: `1px solid ${connectionColor}`,
@@ -294,7 +292,7 @@ export function StraightCustomEdge({
     transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
     fontSize: 11,
     fontWeight: 500,
-    background: "#27272A",
+    background: "var(--color-surface-raised, #27272A)",
     padding: "3px 8px",
     borderRadius: 4,
     border: `1px solid ${connectionColor}`,

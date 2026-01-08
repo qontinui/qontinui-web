@@ -858,37 +858,37 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#0A0A0B]">
+    <div className="flex flex-col h-full w-full bg-surface-canvas">
       {/* Mode Toolbar */}
-      <div className="bg-[#27272A] border-b border-gray-800 p-3 flex items-center justify-between flex-shrink-0">
+      <div className="bg-surface-raised border-b border-border-subtle p-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-400">Annotate Screenshots</span>
+          <span className="text-sm text-text-muted">Annotate Screenshots</span>
           <Badge
             variant="outline"
-            className="text-xs border-gray-700 text-gray-400"
+            className="text-xs border-border-default text-text-muted"
           >
             {screenshots.length} screenshot{screenshots.length !== 1 ? "s" : ""}
           </Badge>
           {saveStatus === "saving" && (
-            <div className="flex items-center gap-1 text-xs text-gray-400">
+            <div className="flex items-center gap-1 text-xs text-text-muted">
               <Loader2 className="w-3 h-3 animate-spin" />
               <span>Saving...</span>
             </div>
           )}
           {saveStatus === "saved" && (
-            <div className="flex items-center gap-1 text-xs text-[#00FF88]">
+            <div className="flex items-center gap-1 text-xs text-brand-success">
               <Check className="w-3 h-3" />
               <span>Saved</span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-1 bg-[#0A0A0B] rounded p-1">
+        <div className="flex items-center gap-1 bg-surface-canvas rounded p-1">
           <button
             className={`px-3 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
               selectionMode === "view"
-                ? "bg-[#00D9FF] text-black"
-                : "text-gray-400 hover:text-white hover:bg-[#27272A]"
+                ? "bg-brand-primary text-black"
+                : "text-text-muted hover:text-white hover:bg-surface-raised"
             }`}
             onClick={() => setSelectionMode("view")}
             title="View mode - Select existing annotations"
@@ -899,8 +899,8 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           <button
             className={`px-3 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
               selectionMode === "region" || showRegionPanel
-                ? "bg-[#10b981] text-white"
-                : "text-gray-400 hover:text-white hover:bg-[#27272A]"
+                ? "bg-emerald-500 text-white"
+                : "text-text-muted hover:text-white hover:bg-surface-raised"
             }`}
             onClick={() => {
               setSelectionMode("region");
@@ -915,8 +915,8 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           <button
             className={`px-3 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
               selectionMode === "location" || showLocationPanel
-                ? "bg-[#BD00FF] text-white"
-                : "text-gray-400 hover:text-white hover:bg-[#27272A]"
+                ? "bg-brand-secondary text-white"
+                : "text-text-muted hover:text-white hover:bg-surface-raised"
             }`}
             onClick={() => {
               setSelectionMode("location");
@@ -934,23 +934,25 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       {/* Main Content */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Screenshot List */}
-        <div className="w-64 border-r border-gray-800 bg-[#27272A]/50 flex flex-col flex-shrink-0">
+        <div className="w-64 border-r border-border-subtle bg-surface-raised/50 flex flex-col flex-shrink-0">
           {/* Screenshot Actions */}
-          <div className="p-3 border-b border-gray-800">
+          <div className="p-3 border-b border-border-subtle">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-300">Screenshots</h3>
+              <h3 className="text-sm font-medium text-text-secondary">
+                Screenshots
+              </h3>
             </div>
             <div className="space-y-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full px-3 py-2 bg-[#00D9FF] text-black rounded-md hover:bg-[#00D9FF]/90 text-sm flex items-center justify-center gap-2 font-medium"
+                className="w-full px-3 py-2 bg-brand-primary text-black rounded-md hover:bg-brand-primary/90 text-sm flex items-center justify-center gap-2 font-medium"
               >
                 <Upload className="w-4 h-4" />
                 Upload Image
               </button>
               <button
                 onClick={() => screenshotSelectorTriggerRef.current?.click()}
-                className="w-full px-3 py-2 bg-[#00FF88] text-black rounded-md hover:bg-[#00FF88]/90 text-sm flex items-center justify-center gap-2 font-medium"
+                className="w-full px-3 py-2 bg-brand-success text-black rounded-md hover:bg-brand-success/90 text-sm flex items-center justify-center gap-2 font-medium"
               >
                 <FolderOpen className="w-4 h-4" />
                 From Project
@@ -961,7 +963,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                 <button
                   onClick={handleOpenMonitorMenu}
                   disabled={isCapturing}
-                  className="w-full px-3 py-2 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 text-sm flex items-center justify-center gap-2 font-medium disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-brand-secondary text-white rounded-md hover:bg-brand-secondary/90 text-sm flex items-center justify-center gap-2 font-medium disabled:opacity-50"
                 >
                   {isCapturing ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -972,13 +974,13 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                 </button>
 
                 {showMonitorMenu && (
-                  <div className="absolute left-0 right-0 mt-2 bg-[#27272A] rounded-md shadow-lg z-10 border border-gray-700">
+                  <div className="absolute left-0 right-0 mt-2 bg-surface-raised rounded-md shadow-lg z-10 border border-border-default">
                     <div className="py-1">
-                      <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-700">
+                      <div className="px-3 py-2 text-xs text-text-muted border-b border-border-default">
                         Select monitor
                       </div>
                       {availableMonitors.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-gray-400 flex items-center gap-2">
+                        <div className="px-3 py-2 text-sm text-text-muted flex items-center gap-2">
                           <Loader2 className="w-4 h-4 animate-spin" />
                           Loading...
                         </div>
@@ -990,28 +992,28 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                               onClick={() =>
                                 handleCaptureFromScreen(monitor.index)
                               }
-                              className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                              className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-surface-overlay flex items-center gap-2"
                             >
                               <Monitor className="w-4 h-4" />
                               <span className="flex-1">
                                 Monitor {monitor.index + 1}
                                 {monitor.is_primary && (
-                                  <span className="text-xs text-[#00FF88] ml-1">
+                                  <span className="text-xs text-brand-success ml-1">
                                     (Primary)
                                   </span>
                                 )}
                               </span>
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-text-muted">
                                 {monitor.width}×{monitor.height}
                               </span>
                             </button>
                           ))}
                           {availableMonitors.length > 1 && (
                             <>
-                              <div className="border-t border-gray-700 my-1"></div>
+                              <div className="border-t border-border-default my-1"></div>
                               <button
                                 onClick={() => handleCaptureFromScreen(null)}
-                                className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                                className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-surface-overlay flex items-center gap-2"
                               >
                                 <Monitor className="w-4 h-4" />
                                 All Monitors
@@ -1064,7 +1066,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                 )}
 
               {screenshots.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-text-muted">
                   <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
                   <p className="text-sm">No screenshots</p>
                   <p className="text-xs mt-1">Upload or select from project</p>
@@ -1076,31 +1078,31 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                       key={screenshot.id}
                       className={`group relative p-3 rounded-md cursor-pointer transition-all ${
                         selectedScreenshot?.id === screenshot.id
-                          ? "bg-[#27272A] border-2 border-[#00D9FF] ring-2 ring-[#00D9FF]/50"
-                          : "bg-[#27272A] border-2 border-gray-700 hover:border-gray-600"
+                          ? "bg-surface-raised border-2 border-brand-primary ring-2 ring-brand-primary/50"
+                          : "bg-surface-raised border-2 border-border-default hover:border-border-subtle"
                       }`}
                       onClick={() => setSelectedScreenshot(screenshot)}
                     >
-                      <div className="aspect-video relative overflow-hidden rounded bg-gray-800 mb-2">
+                      <div className="aspect-video relative overflow-hidden rounded bg-surface-overlay mb-2">
                         <img
                           src={screenshot.imageData}
                           alt={screenshot.name}
                           className="w-full h-full object-cover"
                         />
                       </div>
-                      <p className="text-sm font-medium truncate text-gray-200 mb-2">
+                      <p className="text-sm font-medium truncate text-text-secondary mb-2">
                         {screenshot.name}
                       </p>
 
                       <div className="flex items-center gap-2 text-xs">
                         {screenshot.regions.length > 0 && (
-                          <div className="flex items-center gap-1 text-[#10b981]">
+                          <div className="flex items-center gap-1 text-emerald-500">
                             <Square className="w-3 h-3" />
                             <span>{screenshot.regions.length}</span>
                           </div>
                         )}
                         {screenshot.locations.length > 0 && (
-                          <div className="flex items-center gap-1 text-[#ef4444]">
+                          <div className="flex items-center gap-1 text-red-500">
                             <MousePointer className="w-3 h-3" />
                             <span>{screenshot.locations.length}</span>
                           </div>
@@ -1115,7 +1117,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                               <Badge
                                 key={stateId}
                                 variant="outline"
-                                className="text-xs border-[#00D9FF] text-[#00D9FF]"
+                                className="text-xs border-brand-primary text-brand-primary"
                               >
                                 {state.name}
                               </Badge>
@@ -1151,13 +1153,13 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
               />
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-400 bg-[#18181B]">
+            <div className="flex-1 flex items-center justify-center text-text-muted bg-surface-inset">
               <div className="text-center">
                 <ImageIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p className="text-lg font-medium">
                   Select a screenshot to annotate
                 </p>
-                <p className="text-sm mt-2 text-gray-500">
+                <p className="text-sm mt-2 text-text-muted">
                   Upload, capture, or select from project screenshots
                 </p>
               </div>
@@ -1167,17 +1169,17 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
 
         {/* Properties Panel */}
         {showRegionPanel && openRegions.length > 0 ? (
-          <div className="w-[384px] border-l border-gray-800 bg-[#27272A]/50 overflow-hidden flex-shrink-0 flex flex-col">
+          <div className="w-[384px] border-l border-border-subtle bg-surface-raised/50 overflow-hidden flex-shrink-0 flex flex-col">
             {/* Tabs */}
-            <div className="bg-[#27272A] border-b border-gray-700 overflow-x-auto">
+            <div className="bg-surface-raised border-b border-border-default overflow-x-auto">
               <div className="flex">
                 {openRegions.map((region) => (
                   <div
                     key={region.id}
                     className={`flex items-center gap-2 px-4 py-2 cursor-pointer border-b-2 transition-colors ${
                       activeRegionTab === region.id
-                        ? "bg-[#27272A]/50 border-[#00D9FF] text-black"
-                        : "bg-[#27272A] border-transparent text-gray-400 hover:bg-gray-200"
+                        ? "bg-surface-raised/50 border-brand-primary text-text-primary"
+                        : "bg-surface-raised border-transparent text-text-muted hover:bg-surface-overlay"
                     }`}
                     onClick={() => {
                       setActiveRegionTab(region.id);
@@ -1188,7 +1190,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                       {region.name}
                     </span>
                     <button
-                      className="h-4 w-4 p-0 hover:bg-gray-300 rounded flex items-center justify-center"
+                      className="h-4 w-4 p-0 hover:bg-surface-overlay rounded flex items-center justify-center"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleRegionDelete(region.id);
@@ -1217,17 +1219,17 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
             </ScrollArea>
           </div>
         ) : showLocationPanel && openLocations.length > 0 ? (
-          <div className="w-[384px] border-l border-gray-800 bg-[#27272A]/50 overflow-hidden flex-shrink-0 flex flex-col">
+          <div className="w-[384px] border-l border-border-subtle bg-surface-raised/50 overflow-hidden flex-shrink-0 flex flex-col">
             {/* Tabs */}
-            <div className="bg-[#27272A] border-b border-gray-700 overflow-x-auto">
+            <div className="bg-surface-raised border-b border-border-default overflow-x-auto">
               <div className="flex">
                 {openLocations.map((location) => (
                   <div
                     key={location.id}
                     className={`flex items-center gap-2 px-4 py-2 cursor-pointer border-b-2 transition-colors ${
                       activeLocationTab === location.id
-                        ? "bg-[#27272A]/50 border-[#00D9FF] text-black"
-                        : "bg-[#27272A] border-transparent text-gray-400 hover:bg-gray-200"
+                        ? "bg-surface-raised/50 border-brand-primary text-text-primary"
+                        : "bg-surface-raised border-transparent text-text-muted hover:bg-surface-overlay"
                     }`}
                     onClick={() => {
                       setActiveLocationTab(location.id);
@@ -1238,7 +1240,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                       {location.name}
                     </span>
                     <button
-                      className="h-4 w-4 p-0 hover:bg-gray-300 rounded flex items-center justify-center"
+                      className="h-4 w-4 p-0 hover:bg-surface-overlay rounded flex items-center justify-center"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleLocationDelete(location.id);

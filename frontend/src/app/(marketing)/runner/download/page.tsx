@@ -135,19 +135,19 @@ export default function DownloadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+    <div className="min-h-screen bg-gradient-to-b from-muted to-background">
       {/* Header */}
       <section className="container mx-auto px-4 py-12">
         <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             Download Qontinui Runner
           </h1>
-          <p className="text-lg text-slate-600 mb-2">
+          <p className="text-lg text-muted-foreground mb-2">
             Latest version:{" "}
             <span className="font-semibold">{LATEST_RELEASE.version}</span>{" "}
             (Beta)
           </p>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             Released {LATEST_RELEASE.date}
           </p>
         </div>
@@ -157,14 +157,14 @@ export default function DownloadPage() {
       {platform !== "unknown" && (
         <section className="container mx-auto px-4 pb-8">
           <div className="max-w-4xl mx-auto">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+            <div className="bg-primary/10 border border-primary/30 rounded-lg p-6">
               <div className="flex items-center gap-3 mb-4">
                 {getPlatformIcon(platform)}
-                <h2 className="text-xl font-semibold text-slate-900">
+                <h2 className="text-xl font-semibold text-foreground">
                   Detected Platform: {getPlatformName(platform)}
                 </h2>
               </div>
-              <p className="text-slate-700 mb-4">
+              <p className="text-muted-foreground mb-4">
                 We&apos;ve detected you&apos;re using{" "}
                 {getPlatformName(platform)}. Download the recommended version
                 below.
@@ -181,7 +181,7 @@ export default function DownloadPage() {
                       "Qontinui.Runner_0.1.0_x64_en-US.msi"
                     )
                   }
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-primary hover:bg-primary/90"
                 >
                   {downloading === "Qontinui.Runner_0.1.0_x64_en-US.msi" ? (
                     <>
@@ -198,14 +198,14 @@ export default function DownloadPage() {
               )}
               {platform === "macos" && (
                 <div className="text-center">
-                  <p className="text-slate-700 mb-3 font-medium">
+                  <p className="text-muted-foreground mb-3 font-medium">
                     macOS builds coming soon!
                   </p>
                   <a
                     href="https://github.com/qontinui/qontinui-runner#macos"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                    className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
                   >
                     <Github className="w-4 h-4" />
                     Build from source
@@ -214,14 +214,14 @@ export default function DownloadPage() {
               )}
               {platform === "linux" && (
                 <div className="text-center">
-                  <p className="text-slate-700 mb-3 font-medium">
+                  <p className="text-muted-foreground mb-3 font-medium">
                     Linux builds coming soon!
                   </p>
                   <a
                     href="https://github.com/qontinui/qontinui-runner#linux"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                    className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
                   >
                     <Github className="w-4 h-4" />
                     Build from source
@@ -236,15 +236,15 @@ export default function DownloadPage() {
       {/* Installation Warning (for unsigned builds) */}
       <section className="container mx-auto px-4 pb-8">
         <div className="max-w-4xl mx-auto">
-          <Alert className="border-amber-300 bg-amber-50">
-            <AlertCircle className="h-4 w-4 text-amber-600" />
-            <AlertDescription className="text-slate-700">
+          <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-500/30">
+            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+            <AlertDescription className="text-muted-foreground">
               <strong>First time installation:</strong> You may see security
               warnings because the app is not yet code-signed. We&apos;re
               working on this!{" "}
               <Link
                 href="/docs/runner/installation"
-                className="underline text-blue-600 hover:text-blue-800"
+                className="underline text-primary hover:text-primary/80"
               >
                 See installation guide →
               </Link>
@@ -297,9 +297,9 @@ export default function DownloadPage() {
           />
 
           {/* macOS */}
-          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden opacity-60">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-              <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+          <div className="bg-card rounded-lg border border-border overflow-hidden opacity-60">
+            <div className="bg-muted px-6 py-4 border-b border-border">
+              <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
                 <span className="text-3xl">🍎</span>
                 macOS
                 <span className="text-sm font-normal bg-amber-500 text-white px-2 py-1 rounded">
@@ -308,7 +308,7 @@ export default function DownloadPage() {
               </h2>
             </div>
             <div className="p-6">
-              <p className="text-slate-600 mb-4">
+              <p className="text-muted-foreground mb-4">
                 Pre-built macOS binaries are not yet available. For now, please
                 build from source.
               </p>
@@ -316,7 +316,7 @@ export default function DownloadPage() {
                 href="https://github.com/qontinui/qontinui-runner#macos"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
               >
                 <Github className="w-4 h-4" />
                 Build Instructions
@@ -325,9 +325,9 @@ export default function DownloadPage() {
           </div>
 
           {/* Linux */}
-          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden opacity-60">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-              <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+          <div className="bg-card rounded-lg border border-border overflow-hidden opacity-60">
+            <div className="bg-muted px-6 py-4 border-b border-border">
+              <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
                 <span className="text-3xl">🐧</span>
                 Linux
                 <span className="text-sm font-normal bg-amber-500 text-white px-2 py-1 rounded">
@@ -336,7 +336,7 @@ export default function DownloadPage() {
               </h2>
             </div>
             <div className="p-6">
-              <p className="text-slate-600 mb-4">
+              <p className="text-muted-foreground mb-4">
                 Pre-built Linux binaries are not yet available. For now, please
                 build from source.
               </p>
@@ -344,7 +344,7 @@ export default function DownloadPage() {
                 href="https://github.com/qontinui/qontinui-runner#linux"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
               >
                 <Github className="w-4 h-4" />
                 Build Instructions
@@ -357,14 +357,14 @@ export default function DownloadPage() {
       {/* GitHub Releases */}
       <section className="container mx-auto px-4 pb-16">
         <div className="max-w-4xl mx-auto">
-          <div className="bg-white rounded-lg border border-slate-200 p-6">
+          <div className="bg-card rounded-lg border border-border p-6">
             <div className="flex items-center gap-3 mb-4">
-              <Github className="w-6 h-6 text-slate-700" />
-              <h2 className="text-xl font-semibold text-slate-900">
+              <Github className="w-6 h-6 text-muted-foreground" />
+              <h2 className="text-xl font-semibold text-foreground">
                 GitHub Releases
               </h2>
             </div>
-            <p className="text-slate-600 mb-4">
+            <p className="text-muted-foreground mb-4">
               All releases are available on GitHub with checksums and release
               notes.
             </p>
@@ -372,7 +372,7 @@ export default function DownloadPage() {
               href={LATEST_RELEASE.github_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+              className="inline-flex items-center gap-2 bg-foreground hover:bg-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
             >
               <Github className="w-4 h-4" />
               View on GitHub
@@ -384,7 +384,7 @@ export default function DownloadPage() {
       {/* Installation Instructions */}
       <section className="container mx-auto px-4 py-16">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold mb-8 text-slate-900">
+          <h2 className="text-2xl font-bold mb-8 text-foreground">
             Installation Instructions
           </h2>
 
@@ -394,18 +394,18 @@ export default function DownloadPage() {
               steps={[
                 "Download the .msi installer",
                 "Run the installer",
-                "⚠️ Windows SmartScreen warning will appear (app not yet signed)",
+                "Windows SmartScreen warning will appear (app not yet signed)",
                 "Click 'More info' → 'Run anyway'",
                 "Follow the installation wizard",
                 "Launch Qontinui Runner from the Start Menu",
               ]}
             />
 
-            <div className="bg-slate-50 p-6 rounded-lg border border-slate-200">
-              <h3 className="text-lg font-semibold mb-4 text-slate-900">
+            <div className="bg-muted p-6 rounded-lg border border-border">
+              <h3 className="text-lg font-semibold mb-4 text-foreground">
                 macOS & Linux
               </h3>
-              <p className="text-slate-700 mb-3">
+              <p className="text-muted-foreground mb-3">
                 Pre-built binaries for macOS and Linux are coming soon. For now,
                 please build from source:
               </p>
@@ -413,7 +413,7 @@ export default function DownloadPage() {
                 href="https://github.com/qontinui/qontinui-runner#installation"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold underline"
+                className="inline-flex items-center gap-2 text-primary hover:text-primary/80 font-semibold underline"
               >
                 <Github className="w-4 h-4" />
                 View build instructions on GitHub →
@@ -424,7 +424,7 @@ export default function DownloadPage() {
           <div className="mt-8 text-center">
             <Link
               href="/docs/runner/installation"
-              className="text-blue-600 hover:text-blue-800 font-semibold underline"
+              className="text-primary hover:text-primary/80 font-semibold underline"
             >
               → Detailed Installation Guide with Screenshots
             </Link>
@@ -433,10 +433,10 @@ export default function DownloadPage() {
       </section>
 
       {/* System Requirements */}
-      <section className="bg-slate-50 py-16">
+      <section className="bg-muted py-16">
         <div className="container mx-auto px-4">
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold mb-8 text-slate-900">
+            <h2 className="text-2xl font-bold mb-8 text-foreground">
               System Requirements
             </h2>
             <div className="grid md:grid-cols-3 gap-6">
@@ -476,20 +476,22 @@ export default function DownloadPage() {
       {/* Support */}
       <section className="container mx-auto px-4 py-16">
         <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-2xl font-bold mb-4 text-slate-900">Need Help?</h2>
-          <p className="text-slate-600 mb-6">
+          <h2 className="text-2xl font-bold mb-4 text-foreground">
+            Need Help?
+          </h2>
+          <p className="text-muted-foreground mb-6">
             Check out our documentation or report issues on GitHub
           </p>
           <div className="flex gap-4 justify-center flex-wrap">
             <Link
               href="/docs/runner"
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2 rounded-lg font-semibold transition-colors"
             >
               Documentation
             </Link>
             <a
               href="https://github.com/qontinui/qontinui-runner/issues"
-              className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-6 py-2 rounded-lg font-semibold transition-colors"
+              className="bg-muted hover:bg-muted/80 text-foreground px-6 py-2 rounded-lg font-semibold transition-colors"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -497,7 +499,7 @@ export default function DownloadPage() {
             </a>
             <Link
               href="/docs/getting-started"
-              className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-6 py-2 rounded-lg font-semibold transition-colors"
+              className="bg-muted hover:bg-muted/80 text-foreground px-6 py-2 rounded-lg font-semibold transition-colors"
             >
               Getting Started
             </Link>
@@ -532,16 +534,16 @@ function DownloadSection({
 
   return (
     <div
-      className={`bg-white rounded-lg border ${isCurrentPlatform ? "border-blue-400 shadow-lg" : "border-slate-200"} overflow-hidden`}
+      className={`bg-card rounded-lg border ${isCurrentPlatform ? "border-primary shadow-lg" : "border-border"} overflow-hidden`}
     >
       <div
-        className={`${isCurrentPlatform ? "bg-blue-50" : "bg-slate-50"} px-6 py-4 border-b border-slate-200`}
+        className={`${isCurrentPlatform ? "bg-primary/10" : "bg-muted"} px-6 py-4 border-b border-border`}
       >
-        <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+        <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
           <span className="text-3xl">{icon}</span>
           {platform}
           {isCurrentPlatform && (
-            <span className="text-sm font-normal bg-blue-600 text-white px-2 py-1 rounded">
+            <span className="text-sm font-normal bg-primary text-primary-foreground px-2 py-1 rounded">
               Your Platform
             </span>
           )}
@@ -551,31 +553,31 @@ function DownloadSection({
         {downloads.map((download, idx) => (
           <div
             key={idx}
-            className="flex items-start justify-between gap-4 p-4 rounded-lg border border-slate-200 hover:border-blue-300 transition-colors"
+            className="flex items-start justify-between gap-4 p-4 rounded-lg border border-border hover:border-primary/50 transition-colors"
           >
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-slate-900">
+                <h3 className="font-semibold text-foreground">
                   {download.name}
                 </h3>
                 {download.signed && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-brand-success/20 text-brand-success text-xs rounded-full">
                     <CheckCircle2 className="w-3 h-3" />
                     Signed
                   </span>
                 )}
               </div>
-              <p className="text-sm text-slate-600 mb-2">
+              <p className="text-sm text-muted-foreground mb-2">
                 {download.description}
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 {download.type} • {download.size}
               </p>
             </div>
             <Button
               disabled={download.downloading}
               onClick={download.onDownload}
-              className="flex-shrink-0 bg-blue-600 hover:bg-blue-700"
+              className="flex-shrink-0 bg-primary hover:bg-primary/90"
             >
               {download.downloading ? (
                 <>
@@ -604,12 +606,12 @@ function InstallInstructions({
   steps: string[];
 }) {
   return (
-    <div className="bg-white p-6 rounded-lg border border-slate-200">
-      <h3 className="text-lg font-semibold mb-4 text-slate-900">{platform}</h3>
+    <div className="bg-card p-6 rounded-lg border border-border">
+      <h3 className="text-lg font-semibold mb-4 text-foreground">{platform}</h3>
       <ol className="space-y-2">
         {steps.map((step, idx) => (
-          <li key={idx} className="flex gap-3 text-slate-700">
-            <span className="font-semibold text-blue-600 flex-shrink-0">
+          <li key={idx} className="flex gap-3 text-muted-foreground">
+            <span className="font-semibold text-primary flex-shrink-0">
               {idx + 1}.
             </span>
             <span>{step}</span>
@@ -628,12 +630,12 @@ function RequirementCard({
   requirements: string[];
 }) {
   return (
-    <div className="bg-white p-6 rounded-lg border border-slate-200">
-      <h3 className="font-semibold mb-4 text-slate-900">{platform}</h3>
+    <div className="bg-card p-6 rounded-lg border border-border">
+      <h3 className="font-semibold mb-4 text-foreground">{platform}</h3>
       <ul className="space-y-2">
         {requirements.map((req, idx) => (
-          <li key={idx} className="flex gap-2 text-sm text-slate-700">
-            <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+          <li key={idx} className="flex gap-2 text-sm text-muted-foreground">
+            <CheckCircle2 className="w-4 h-4 text-brand-success flex-shrink-0 mt-0.5" />
             <span>{req}</span>
           </li>
         ))}

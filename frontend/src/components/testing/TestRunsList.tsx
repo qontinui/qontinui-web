@@ -90,7 +90,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
       case "running":
         return <PlayCircle className="w-4 h-4 text-blue-500 animate-pulse" />;
       default:
-        return <Clock className="w-4 h-4 text-gray-500" />;
+        return <Clock className="w-4 h-4 text-text-muted" />;
     }
   };
 
@@ -116,7 +116,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
         );
       default:
         return (
-          <Badge className="bg-gray-500/20 text-gray-500 border-gray-500/30">
+          <Badge className="bg-text-muted/20 text-text-muted border-text-muted/30">
             Unknown
           </Badge>
         );
@@ -131,9 +131,9 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
 
   if (isLoading) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">Loading test runs...</div>
+          <div className="text-text-muted">Loading test runs...</div>
         </CardContent>
       </Card>
     );
@@ -141,7 +141,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
 
   if (error) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
           <div className="text-red-400">
             Error loading test runs: {error.message}
@@ -156,7 +156,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
   const currentPage = data?.page || 1;
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl">Test Runs</CardTitle>
@@ -165,7 +165,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
               value={statusFilter}
               onValueChange={handleStatusFilterChange}
             >
-              <SelectTrigger className="w-[150px] bg-[#0A0A0B]/50 border-gray-700">
+              <SelectTrigger className="w-[150px] bg-surface-canvas/50 border-border-default">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -180,7 +180,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
       </CardHeader>
       <CardContent>
         {runs.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
+          <div className="text-center py-12 text-text-muted">
             No test runs found. Run your first test to see results here.
           </div>
         ) : (
@@ -188,7 +188,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="border-gray-800/50">
+                  <TableRow className="border-border-subtle/50">
                     <TableHead>Status</TableHead>
                     <TableHead>Workflow</TableHead>
                     <TableHead>Started</TableHead>
@@ -203,7 +203,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                   {runs.map((run) => (
                     <TableRow
                       key={run.id}
-                      className="border-gray-800/50 hover:bg-gray-800/30 cursor-pointer"
+                      className="border-border-subtle/50 hover:bg-surface-raised/30 cursor-pointer"
                       onClick={() => router.push(`/testing/runs/${run.id}`)}
                     >
                       <TableCell>
@@ -216,7 +216,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                         <div className="font-medium">{run.workflow_name}</div>
                       </TableCell>
                       <TableCell>
-                        <div className="text-sm text-gray-400">
+                        <div className="text-sm text-text-muted">
                           {format(
                             new Date(run.start_time),
                             "MMM dd, yyyy HH:mm"
@@ -236,7 +236,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                         >
                           {run.coverage_percentage.toFixed(1)}%
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-text-muted">
                           {run.states_covered}/{run.total_states} states
                         </div>
                       </TableCell>
@@ -251,7 +251,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                             : 0}
                           %
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-text-muted">
                           {run.successful_transitions}/{run.total_transitions}{" "}
                           transitions
                         </div>
@@ -266,7 +266,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                           className={
                             run.deficiencies_found > 0
                               ? "bg-red-500/20 text-red-400 border-red-500/30"
-                              : "bg-gray-500/20 text-gray-400 border-gray-500/30"
+                              : "bg-text-muted/20 text-text-muted border-text-muted/30"
                           }
                         >
                           {run.deficiencies_found}
@@ -280,7 +280,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                             e.stopPropagation();
                             handleExport(run.id, "json");
                           }}
-                          className="hover:text-[#00D9FF]"
+                          className="hover:text-brand-primary"
                         >
                           <Download className="w-4 h-4" />
                         </Button>
@@ -294,7 +294,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
             {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-6">
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-text-muted">
                   Page {currentPage} of {totalPages}
                 </div>
                 <div className="flex items-center gap-2">
@@ -303,7 +303,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                     variant="outline"
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage === 1}
-                    className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                    className="border-border-default hover:border-brand-primary hover:text-brand-primary"
                   >
                     <ChevronLeft className="w-4 h-4" />
                     Previous
@@ -313,7 +313,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                     variant="outline"
                     onClick={() => handlePageChange(currentPage + 1)}
                     disabled={currentPage === totalPages}
-                    className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                    className="border-border-default hover:border-brand-primary hover:text-brand-primary"
                   >
                     Next
                     <ChevronRight className="w-4 h-4" />

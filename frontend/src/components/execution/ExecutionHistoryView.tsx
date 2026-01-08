@@ -97,18 +97,18 @@ export function ExecutionHistoryView({
 
   if (error) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle">
         <CardContent className="py-12">
           <div className="text-center">
             <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-red-500" />
             <h3 className="text-lg font-medium text-white mb-2">
               Failed to Load Execution
             </h3>
-            <p className="text-sm text-gray-400 mb-4">{error.message}</p>
+            <p className="text-sm text-text-muted mb-4">{error.message}</p>
             <Button
               variant="outline"
               onClick={refresh}
-              className="border-gray-700"
+              className="border-border-default"
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               Try Again
@@ -123,34 +123,34 @@ export function ExecutionHistoryView({
     return (
       <div className="space-y-6">
         {/* Header skeleton */}
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Skeleton className="h-7 w-48 bg-gray-800" />
-                <Skeleton className="h-6 w-20 bg-gray-800" />
+                <Skeleton className="h-7 w-48 bg-surface-raised" />
+                <Skeleton className="h-6 w-20 bg-surface-raised" />
               </div>
-              <Skeleton className="h-9 w-24 bg-gray-800" />
+              <Skeleton className="h-9 w-24 bg-surface-raised" />
             </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-4 gap-4">
               {[...Array(4)].map((_, i) => (
-                <Skeleton key={i} className="h-20 bg-gray-800" />
+                <Skeleton key={i} className="h-20 bg-surface-raised" />
               ))}
             </div>
           </CardContent>
         </Card>
 
         {/* Steps skeleton */}
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle">
           <CardHeader>
-            <Skeleton className="h-6 w-32 bg-gray-800" />
+            <Skeleton className="h-6 w-32 bg-surface-raised" />
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-16 bg-gray-800" />
+                <Skeleton key={i} className="h-16 bg-surface-raised" />
               ))}
             </div>
           </CardContent>
@@ -169,15 +169,15 @@ export function ExecutionHistoryView({
               variant="ghost"
               size="sm"
               onClick={onBack}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
               Back
             </Button>
           )}
           <div className="flex items-center gap-2">
-            <History className="w-5 h-5 text-gray-400" />
-            <span className="text-sm text-gray-400">Run ID:</span>
+            <History className="w-5 h-5 text-text-muted" />
+            <span className="text-sm text-text-muted">Run ID:</span>
             <Badge variant="outline" className="font-mono text-xs">
               {runId.slice(0, 8)}...
             </Badge>
@@ -188,7 +188,7 @@ export function ExecutionHistoryView({
           size="sm"
           onClick={refresh}
           disabled={isLoading}
-          className="border-gray-700"
+          className="border-border-default"
         >
           <RefreshCw
             className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
@@ -217,14 +217,14 @@ export function ExecutionHistoryView({
           }
         />
       ) : (
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle">
           <CardContent className="py-12">
             <div className="text-center">
-              <History className="w-12 h-12 mx-auto mb-4 text-gray-600" />
-              <h3 className="text-lg font-medium text-gray-400 mb-2">
+              <History className="w-12 h-12 mx-auto mb-4 text-text-muted" />
+              <h3 className="text-lg font-medium text-text-muted mb-2">
                 No Execution Data
               </h3>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-text-muted">
                 No tree events found for this execution run.
               </p>
             </div>

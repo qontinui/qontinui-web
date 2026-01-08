@@ -227,7 +227,7 @@ export function DirectPatternRegionSelector({
           </Button>
         </div>
         {currentRegion && (
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-text-muted">
             {Math.round(currentRegion.width)} ×{" "}
             {Math.round(currentRegion.height)}px
           </div>
@@ -237,7 +237,7 @@ export function DirectPatternRegionSelector({
       {/* Image with overlay */}
       <div
         ref={containerRef}
-        className="relative bg-gray-100 border-2 border-gray-300 overflow-hidden cursor-crosshair"
+        className="relative bg-surface-raised border-2 border-border-default overflow-hidden cursor-crosshair"
         style={{ height: "500px", userSelect: "none" }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -273,14 +273,14 @@ export function DirectPatternRegionSelector({
           renderRegion(tempRegion, "#60A5FA", "Drawing")}
 
         {!imageUrl && (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+          <div className="absolute inset-0 flex items-center justify-center text-text-muted">
             <p>No screenshot selected</p>
           </div>
         )}
       </div>
 
       {/* Instructions */}
-      <div className="text-xs text-gray-600 bg-blue-50 p-2 rounded">
+      <div className="text-xs text-text-muted bg-blue-50 p-2 rounded">
         <strong>Instructions:</strong> Click and drag to select a region.
         Previously extracted regions are shown in gray. The current selection is
         shown in blue.

@@ -80,7 +80,7 @@ export function EditorToolbar({
   return (
     <div
       className={cn(
-        "flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-950",
+        "flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-surface-canvas",
         className
       )}
     >
@@ -100,7 +100,7 @@ export function EditorToolbar({
             }}
             className={cn(
               "border transition-colors",
-              !item && "bg-gray-800 border-gray-700 text-gray-400"
+              !item && "bg-surface-raised border-border-default text-text-muted"
             )}
           >
             <Save className="w-4 h-4 mr-2" />
@@ -117,7 +117,7 @@ export function EditorToolbar({
                 disabled={!canUndo}
                 size="sm"
                 variant="ghost"
-                className="text-gray-400 hover:text-white hover:bg-gray-800"
+                className="text-text-muted hover:text-white hover:bg-surface-raised"
                 title="Undo (Ctrl+Z)"
               >
                 <Undo className="w-4 h-4" />
@@ -129,7 +129,7 @@ export function EditorToolbar({
                 disabled={!canRedo}
                 size="sm"
                 variant="ghost"
-                className="text-gray-400 hover:text-white hover:bg-gray-800"
+                className="text-text-muted hover:text-white hover:bg-surface-raised"
                 title="Redo (Ctrl+Y)"
               >
                 <Redo className="w-4 h-4" />
@@ -140,7 +140,7 @@ export function EditorToolbar({
 
         {/* Divider */}
         {(onSave || onUndo || onRedo) && item && (
-          <div className="h-6 w-px bg-gray-700 mx-2" />
+          <div className="h-6 w-px bg-border-default mx-2" />
         )}
 
         {/* Run/Test Buttons */}
@@ -152,7 +152,7 @@ export function EditorToolbar({
                 size="sm"
                 variant="ghost"
                 data-tutorial-id="run-workflow"
-                className="text-gray-300 hover:text-white hover:bg-gray-800"
+                className="text-text-muted hover:text-white hover:bg-surface-raised"
               >
                 <Play className="w-4 h-4 mr-2" />
                 Run
@@ -163,7 +163,7 @@ export function EditorToolbar({
                 onClick={onTest}
                 size="sm"
                 variant="ghost"
-                className="text-gray-300 hover:text-white hover:bg-gray-800"
+                className="text-text-muted hover:text-white hover:bg-surface-raised"
               >
                 <TestTube className="w-4 h-4 mr-2" />
                 Test
@@ -181,7 +181,7 @@ export function EditorToolbar({
             onClick={onShare}
             size="sm"
             variant="ghost"
-            className="text-gray-400 hover:text-white hover:bg-gray-800"
+            className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Share Project"
           >
             <Share2 className="w-4 h-4 mr-2" />
@@ -190,7 +190,7 @@ export function EditorToolbar({
         )}
 
         {/* Divider */}
-        {item && onShare && <div className="h-6 w-px bg-gray-700 mx-1" />}
+        {item && onShare && <div className="h-6 w-px bg-border-default mx-1" />}
 
         {/* Verify Project */}
         {onVerifyProject && (
@@ -198,7 +198,7 @@ export function EditorToolbar({
             onClick={onVerifyProject}
             size="sm"
             variant="ghost"
-            className="text-gray-300 hover:text-white hover:bg-gray-800"
+            className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Verify project configuration"
           >
             <ClipboardCheck className="w-4 h-4 mr-2" />
@@ -212,7 +212,7 @@ export function EditorToolbar({
             onClick={onExportProject}
             size="sm"
             variant="ghost"
-            className="text-gray-300 hover:text-white hover:bg-gray-800"
+            className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Export entire project for qontinui-runner"
           >
             <FolderDown className="w-4 h-4 mr-2" />
@@ -222,7 +222,7 @@ export function EditorToolbar({
 
         {/* Divider */}
         {(onVerifyProject || onExportProject) && (
-          <div className="h-6 w-px bg-gray-700 mx-1" />
+          <div className="h-6 w-px bg-border-default mx-1" />
         )}
 
         {/* Import/Export Workflow */}
@@ -233,7 +233,7 @@ export function EditorToolbar({
                 onClick={onExport}
                 size="sm"
                 variant="ghost"
-                className="text-gray-400 hover:text-white hover:bg-gray-800"
+                className="text-text-muted hover:text-white hover:bg-surface-raised"
                 title="Export Workflow"
               >
                 <Download className="w-4 h-4" />
@@ -244,7 +244,7 @@ export function EditorToolbar({
                 onClick={onImport}
                 size="sm"
                 variant="ghost"
-                className="text-gray-400 hover:text-white hover:bg-gray-800"
+                className="text-text-muted hover:text-white hover:bg-surface-raised"
                 title="Import Workflow"
               >
                 <Upload className="w-4 h-4" />
@@ -253,7 +253,7 @@ export function EditorToolbar({
 
             {/* Divider */}
             {(onExport || onImport) && (
-              <div className="h-6 w-px bg-gray-700 mx-1" />
+              <div className="h-6 w-px bg-border-default mx-1" />
             )}
           </>
         )}
@@ -264,7 +264,7 @@ export function EditorToolbar({
             onClick={onDuplicate}
             size="sm"
             variant="ghost"
-            className="text-gray-400 hover:text-white hover:bg-gray-800"
+            className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Duplicate"
           >
             <Copy className="w-4 h-4 mr-2" />
@@ -317,7 +317,7 @@ export function CompactToolbar({
   return (
     <div
       className={cn(
-        "flex items-center gap-1 px-2 py-1.5 border-b border-gray-800 bg-gray-950",
+        "flex items-center gap-1 px-2 py-1.5 border-b border-border-subtle bg-surface-canvas",
         className
       )}
     >

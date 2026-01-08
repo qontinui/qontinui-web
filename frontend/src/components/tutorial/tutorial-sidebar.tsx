@@ -27,10 +27,10 @@ export function TutorialSidebar({ tutorial }: TutorialSidebarProps) {
     <div className="space-y-2 px-4">
       {/* Header */}
       <div className="mb-4">
-        <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+        <h3 className="font-semibold text-text-primary dark:text-white mb-1">
           Tutorial Steps
         </h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
+        <p className="text-sm text-text-muted dark:text-text-muted">
           {currentStepIndex + 1} of {tutorial.steps.length}
         </p>
       </div>
@@ -50,8 +50,8 @@ export function TutorialSidebar({ tutorial }: TutorialSidebarProps) {
                 isCurrent
                   ? "bg-cyan-50 dark:bg-cyan-950 border border-cyan-200 dark:border-cyan-800"
                   : isCompleted
-                    ? "hover:bg-gray-100 dark:hover:bg-gray-800"
-                    : "hover:bg-gray-100 dark:hover:bg-gray-800"
+                    ? "hover:bg-surface-raised dark:hover:bg-surface-raised"
+                    : "hover:bg-surface-raised dark:hover:bg-surface-raised"
               }`}
               disabled={isUpcoming}
               aria-current={isCurrent ? "step" : undefined}
@@ -63,7 +63,7 @@ export function TutorialSidebar({ tutorial }: TutorialSidebarProps) {
                 ) : isCurrent ? (
                   <Circle className="h-5 w-5 text-cyan-600 dark:text-cyan-400 fill-cyan-600 dark:fill-cyan-400" />
                 ) : (
-                  <Circle className="h-5 w-5 text-gray-400 dark:text-gray-600" />
+                  <Circle className="h-5 w-5 text-text-muted dark:text-text-muted" />
                 )}
               </div>
 
@@ -73,13 +73,13 @@ export function TutorialSidebar({ tutorial }: TutorialSidebarProps) {
                   className={`font-medium text-sm truncate ${
                     isCurrent
                       ? "text-cyan-900 dark:text-cyan-100"
-                      : "text-gray-900 dark:text-gray-200"
+                      : "text-text-primary dark:text-text-secondary"
                   }`}
                 >
                   {step.title}
                 </p>
                 {step.action && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                  <p className="text-xs text-text-muted dark:text-text-muted truncate mt-0.5">
                     {step.action}
                   </p>
                 )}
@@ -96,8 +96,8 @@ export function TutorialSidebar({ tutorial }: TutorialSidebarProps) {
 
       {/* Footer info */}
       {tutorial.estimatedTime && (
-        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+        <div className="mt-6 pt-4 border-t border-border-subtle dark:border-border-default">
+          <p className="text-xs text-text-muted dark:text-text-muted">
             <span className="font-medium">Estimated time:</span>{" "}
             {tutorial.estimatedTime} min
           </p>

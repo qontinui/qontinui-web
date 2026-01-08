@@ -43,7 +43,7 @@ export function IfNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
 export function LoopNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const outputLabels = [
     { id: "main-0", label: "Loop", color: "bg-blue-500 text-white" },
-    { id: "main-1", label: "Exit", color: "bg-gray-500 text-white" },
+    { id: "main-1", label: "Exit", color: "bg-surface-raised text-white" },
   ];
 
   return (
@@ -70,7 +70,7 @@ export function SwitchNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
     label: output.label,
     color:
       output.id === "default"
-        ? "bg-gray-500 text-white"
+        ? "bg-surface-raised text-white"
         : "bg-blue-500 text-white",
   }));
 
@@ -84,7 +84,7 @@ export function SwitchNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
 
       {/* Show case values as tooltips/hints */}
       <div className="absolute left-0 bottom-full mb-2 pointer-events-none">
-        <div className="text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm border border-gray-200">
+        <div className="text-xs text-text-muted bg-white px-2 py-1 rounded shadow-sm border border-border-subtle">
           {cases.length} case{cases.length !== 1 ? "s" : ""}
         </div>
       </div>

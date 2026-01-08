@@ -60,13 +60,13 @@ export function TransitionMatrixView({
       <table className="w-full border-collapse">
         <thead>
           <tr>
-            <th className="sticky top-0 left-0 z-20 bg-[#27272A] border border-gray-700 p-2 text-xs font-medium text-gray-400">
+            <th className="sticky top-0 left-0 z-20 bg-surface-raised border border-border-default p-2 text-xs font-medium text-text-muted">
               From \ To
             </th>
             {states.map((state) => (
               <th
                 key={state.id}
-                className="sticky top-0 z-10 bg-[#27272A] border border-gray-700 p-2 text-xs font-medium text-gray-400 min-w-[100px]"
+                className="sticky top-0 z-10 bg-surface-raised border border-border-default p-2 text-xs font-medium text-text-muted min-w-[100px]"
               >
                 <div className="truncate" title={state.name}>
                   {state.name}
@@ -78,7 +78,7 @@ export function TransitionMatrixView({
         <tbody>
           {states.map((fromState) => (
             <tr key={fromState.id}>
-              <td className="sticky left-0 z-10 bg-[#27272A] border border-gray-700 p-2 text-xs font-medium">
+              <td className="sticky left-0 z-10 bg-surface-raised border border-border-default p-2 text-xs font-medium">
                 <div className="truncate" title={fromState.name}>
                   {fromState.name}
                 </div>
@@ -93,7 +93,7 @@ export function TransitionMatrixView({
                 return (
                   <td
                     key={toState.id}
-                    className="border border-gray-700 p-0 cursor-pointer hover:opacity-80 transition-opacity"
+                    className="border border-border-default p-0 cursor-pointer hover:opacity-80 transition-opacity"
                     onClick={() => onTransitionClick(fromState.id, toState.id)}
                   >
                     <div

@@ -43,7 +43,7 @@ function ProjectHeader({ projectId }: { projectId: string | null }) {
   } = useProjectNameEditor({ projectId });
 
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+    <div className="flex items-center justify-between px-6 py-4 border-b border-border-default">
       <div className="flex items-center gap-4">
         {isEditing ? (
           <div className="flex items-center gap-2">
@@ -53,7 +53,7 @@ function ProjectHeader({ projectId }: { projectId: string | null }) {
               onChange={(e) => setEditedName(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={cancelEditing}
-              className="h-8 w-64 bg-gray-800 border-gray-600 text-white text-xl font-semibold"
+              className="h-8 w-64 bg-surface-raised border-border-default text-white text-xl font-semibold"
               placeholder="Project name"
             />
             <Button
@@ -61,7 +61,7 @@ function ProjectHeader({ projectId }: { projectId: string | null }) {
               variant="ghost"
               onMouseDown={(e) => e.preventDefault()}
               onClick={saveName}
-              className="h-8 w-8 p-0 text-green-500 hover:text-green-400 hover:bg-gray-700"
+              className="h-8 w-8 p-0 text-green-500 hover:text-green-400 hover:bg-surface-raised"
             >
               <Check className="h-4 w-4" />
             </Button>
@@ -70,7 +70,7 @@ function ProjectHeader({ projectId }: { projectId: string | null }) {
               variant="ghost"
               onMouseDown={(e) => e.preventDefault()}
               onClick={cancelEditing}
-              className="h-8 w-8 p-0 text-red-500 hover:text-red-400 hover:bg-gray-700"
+              className="h-8 w-8 p-0 text-red-500 hover:text-red-400 hover:bg-surface-raised"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -80,14 +80,14 @@ function ProjectHeader({ projectId }: { projectId: string | null }) {
             className="flex items-center gap-2 group cursor-pointer"
             onClick={startEditing}
           >
-            <h1 className="text-xl font-semibold text-white group-hover:text-[#00D9FF] transition-colors">
+            <h1 className="text-xl font-semibold text-white group-hover:text-brand-primary transition-colors">
               {projectName || "Untitled Project"}
             </h1>
-            <Pencil className="h-4 w-4 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <Pencil className="h-4 w-4 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         )}
         {lastSaved && (
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-text-muted">
             Last saved: {new Date(lastSaved).toLocaleTimeString()}
           </span>
         )}
@@ -101,9 +101,9 @@ function ProjectHeader({ projectId }: { projectId: string | null }) {
  */
 function LoadingOverlay() {
   return (
-    <div className="absolute inset-0 bg-[#1E1E1E]/80 flex items-center justify-center z-50">
+    <div className="absolute inset-0 bg-surface-base/80 flex items-center justify-center z-50">
       <div className="flex flex-col items-center gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
+        <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
         <span className="text-white">Loading project...</span>
       </div>
     </div>
@@ -132,7 +132,7 @@ function AutomationBuilderContent() {
   });
 
   return (
-    <div className="h-full w-full flex flex-col bg-[#1E1E1E] relative">
+    <div className="h-full w-full flex flex-col bg-surface-base relative">
       {/* Loading Overlay */}
       {isLoading && <LoadingOverlay />}
 
@@ -157,8 +157,8 @@ export default function AutomationBuilder() {
   return (
     <Suspense
       fallback={
-        <div className="h-full w-full flex items-center justify-center bg-[#1E1E1E]">
-          <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
+        <div className="h-full w-full flex items-center justify-center bg-surface-base">
+          <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
         </div>
       }
     >

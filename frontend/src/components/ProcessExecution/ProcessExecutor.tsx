@@ -456,7 +456,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
             <Terminal className="w-5 h-5 text-blue-600" />
             <div>
               <h3 className="font-semibold">{process.name}</h3>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-text-muted">
                 {status.isRunning ? (
                   <>
                     Action {status.currentAction + 1} of {status.totalActions}
@@ -476,7 +476,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
               className={`p-2 rounded-lg transition-colors ${
                 debuggerOpen
                   ? "bg-blue-600 text-white"
-                  : "hover:bg-gray-100 text-gray-600"
+                  : "hover:bg-surface-raised text-text-muted"
               }`}
               title="Toggle debugger"
             >
@@ -490,7 +490,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
                 className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
                   apiConnected
                     ? "bg-green-600 text-white hover:bg-green-700"
-                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                    : "bg-surface-raised text-text-muted cursor-not-allowed"
                 }`}
               >
                 <Play className="w-4 h-4" />
@@ -528,7 +528,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
             {status.results.length > 0 && !status.isRunning && (
               <button
                 onClick={resetExecution}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-2"
+                className="px-4 py-2 bg-surface-raised text-white rounded-lg hover:bg-surface-raised/80 flex items-center gap-2"
               >
                 <RotateCcw className="w-4 h-4" />
                 Reset
@@ -537,7 +537,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
             <button
               onClick={() => setShowDetails(!showDetails)}
-              className="p-2 hover:bg-gray-100 rounded-lg"
+              className="p-2 hover:bg-surface-raised rounded-lg"
             >
               <ChevronRight
                 className={`w-4 h-4 transition-transform ${showDetails ? "rotate-90" : ""}`}
@@ -549,14 +549,14 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         {/* Progress Bar */}
         {status.isRunning && (
           <div className="mt-4">
-            <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
+            <div className="flex items-center justify-between text-sm text-text-muted mb-1">
               <span>Progress</span>
               <span>
                 {Math.round((status.currentAction / status.totalActions) * 100)}
                 %
               </span>
             </div>
-            <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div className="w-full h-2 bg-surface-raised rounded-full overflow-hidden">
               <div
                 className="h-full bg-blue-600 transition-all"
                 style={{
@@ -571,11 +571,11 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         {(status.isRunning || status.results.length > 0) && (
           <div className="flex items-center gap-6 mt-4 text-sm">
             <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-gray-500" />
+              <Clock className="w-4 h-4 text-text-muted" />
               <span>Time: {getElapsedTime()}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-gray-500" />
+              <Activity className="w-4 h-4 text-text-muted" />
               <span>Success Rate: {getSuccessRate().toFixed(0)}%</span>
             </div>
             <div className="flex items-center gap-2">
@@ -609,14 +609,14 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-mono text-gray-500">
+                    <span className="text-sm font-mono text-text-muted">
                       {index + 1}
                     </span>
                     <span className="text-sm font-medium">{action.type}</span>
                     {action.config &&
                       typeof action.config === "object" &&
                       "description" in action.config && (
-                        <span className="text-sm text-gray-600">
+                        <span className="text-sm text-text-muted">
                           {String(action.config.description)}
                         </span>
                       )}
@@ -633,7 +633,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
                         ) : (
                           <XCircle className="w-4 h-4 text-red-500" />
                         )}
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-text-muted">
                           {result.duration}ms
                         </span>
                       </>
@@ -646,7 +646,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
           {/* Execution Log */}
           {executionLog.length > 0 && (
-            <div className="bg-gray-900 text-gray-100 p-4 max-h-48 overflow-y-auto">
+            <div className="bg-surface-canvas text-text-secondary p-4 max-h-48 overflow-y-auto">
               <div className="font-mono text-xs space-y-1">
                 {executionLog.map((log, index) => (
                   <div key={index}>{log}</div>

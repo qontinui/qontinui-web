@@ -58,7 +58,7 @@ export function SnapshotDetailDialog({
         );
       case "old":
         return (
-          <Badge className="bg-gray-100 text-gray-800 border-gray-300">
+          <Badge className="bg-surface-raised text-text-primary border-border-default">
             Old
           </Badge>
         );
@@ -83,7 +83,7 @@ export function SnapshotDetailDialog({
         );
       case "low":
         return (
-          <Badge className="bg-gray-100 text-gray-800 border-gray-300">
+          <Badge className="bg-surface-raised text-text-primary border-border-default">
             Low Priority
           </Badge>
         );
@@ -104,7 +104,7 @@ export function SnapshotDetailDialog({
 
         {loading && (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+            <Loader2 className="w-8 h-8 animate-spin text-text-muted" />
           </div>
         )}
 
@@ -121,8 +121,8 @@ export function SnapshotDetailDialog({
               {/* Header Info */}
               <div className="space-y-3">
                 <div>
-                  <div className="text-sm text-gray-600">Run ID</div>
-                  <div className="font-mono text-sm bg-gray-100 px-3 py-2 rounded mt-1">
+                  <div className="text-sm text-text-muted">Run ID</div>
+                  <div className="font-mono text-sm bg-surface-raised px-3 py-2 rounded mt-1">
                     {detail.run_id}
                   </div>
                 </div>
@@ -199,7 +199,7 @@ export function SnapshotDetailDialog({
               </div>
 
               {/* Timestamp */}
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-text-muted">
                 Created{" "}
                 <span className="font-medium">
                   {formatDistanceToNow(new Date(detail.start_time), {
@@ -210,7 +210,7 @@ export function SnapshotDetailDialog({
 
               {/* States Covered */}
               <div>
-                <div className="text-sm font-medium text-gray-900 mb-2">
+                <div className="text-sm font-medium text-text-primary mb-2">
                   States Covered ({detail.states.length})
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -224,7 +224,7 @@ export function SnapshotDetailDialog({
 
               {/* Action Types */}
               <div>
-                <div className="text-sm font-medium text-gray-900 mb-2">
+                <div className="text-sm font-medium text-text-primary mb-2">
                   Action Types ({detail.action_types.length})
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -243,28 +243,28 @@ export function SnapshotDetailDialog({
               {/* Screenshot Grid */}
               {detail.screenshots && detail.screenshots.length > 0 && (
                 <div>
-                  <div className="text-sm font-medium text-gray-900 mb-3">
+                  <div className="text-sm font-medium text-text-primary mb-3">
                     Screenshots ({detail.screenshots.length})
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {detail.screenshots.slice(0, 6).map((screenshot, idx) => (
                       <div
                         key={idx}
-                        className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50"
+                        className="border border-border-subtle rounded-lg overflow-hidden bg-surface-canvas"
                       >
-                        <div className="aspect-video bg-gray-200 flex items-center justify-center">
-                          <ImageIcon className="w-8 h-8 text-gray-400" />
+                        <div className="aspect-video bg-surface-raised flex items-center justify-center">
+                          <ImageIcon className="w-8 h-8 text-text-muted" />
                         </div>
                         <div className="p-2">
-                          <div className="text-xs text-gray-600 truncate">
+                          <div className="text-xs text-text-muted truncate">
                             {screenshot.states.join(", ")}
                           </div>
                         </div>
                       </div>
                     ))}
                     {detail.screenshots.length > 6 && (
-                      <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center aspect-video">
-                        <div className="text-center text-gray-600">
+                      <div className="border border-border-subtle rounded-lg overflow-hidden bg-surface-raised flex items-center justify-center aspect-video">
+                        <div className="text-center text-text-muted">
                           <div className="text-2xl font-bold">
                             +{detail.screenshots.length - 6}
                           </div>
@@ -279,7 +279,7 @@ export function SnapshotDetailDialog({
               {/* Tags */}
               {detail.tags && detail.tags.length > 0 && (
                 <div>
-                  <div className="text-sm font-medium text-gray-900 mb-2">
+                  <div className="text-sm font-medium text-text-primary mb-2">
                     Tags
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -295,10 +295,10 @@ export function SnapshotDetailDialog({
               {/* Notes */}
               {detail.notes && (
                 <div>
-                  <div className="text-sm font-medium text-gray-900 mb-2">
+                  <div className="text-sm font-medium text-text-primary mb-2">
                     Notes
                   </div>
-                  <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <div className="text-sm text-text-secondary bg-surface-canvas p-3 rounded-lg border border-border-subtle">
                     {detail.notes}
                   </div>
                 </div>

@@ -82,15 +82,15 @@ export function BulkCreationWizard({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white">
+        <Button className="bg-brand-secondary hover:bg-brand-secondary/80 text-white">
           <Layers className="w-4 h-4 mr-2" />
           Bulk Create
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="bg-[#27272A] border-gray-700 max-w-2xl">
+      <DialogContent className="bg-surface-raised border-border-default max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-[#BD00FF]">
+          <DialogTitle className="text-brand-secondary">
             Bulk Transition Creation
           </DialogTitle>
           <DialogDescription>
@@ -102,7 +102,7 @@ export function BulkCreationWizard({
           {step === 1 && (
             <div className="space-y-3">
               <Label>Select Source States</Label>
-              <ScrollArea className="h-[300px] border border-gray-700 rounded p-3">
+              <ScrollArea className="h-[300px] border border-border-default rounded p-3">
                 <div className="space-y-2">
                   {states.map((state) => (
                     <div key={state.id} className="flex items-center gap-2">
@@ -123,7 +123,7 @@ export function BulkCreationWizard({
                   ))}
                 </div>
               </ScrollArea>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-text-muted">
                 Selected: {sourceStates.length} state(s)
               </p>
             </div>
@@ -132,7 +132,7 @@ export function BulkCreationWizard({
           {step === 2 && (
             <div className="space-y-3">
               <Label>Select Target States</Label>
-              <ScrollArea className="h-[300px] border border-gray-700 rounded p-3">
+              <ScrollArea className="h-[300px] border border-border-default rounded p-3">
                 <div className="space-y-2">
                   {states.map((state) => (
                     <div key={state.id} className="flex items-center gap-2">
@@ -153,7 +153,7 @@ export function BulkCreationWizard({
                   ))}
                 </div>
               </ScrollArea>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-text-muted">
                 Selected: {targetStates.length} state(s)
               </p>
             </div>
@@ -163,7 +163,7 @@ export function BulkCreationWizard({
             <div className="space-y-3">
               <Label>Configure Transitions</Label>
 
-              <div className="space-y-3 border border-gray-700 rounded p-4">
+              <div className="space-y-3 border border-border-default rounded p-4">
                 <div className="space-y-2">
                   <Label className="text-xs">Timeout (ms)</Label>
                   <Input
@@ -175,7 +175,7 @@ export function BulkCreationWizard({
                         timeout: parseInt(e.target.value) || 0,
                       })
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
                 </div>
 
@@ -190,7 +190,7 @@ export function BulkCreationWizard({
                         retryCount: parseInt(e.target.value) || 0,
                       })
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
                 </div>
 
@@ -205,7 +205,7 @@ export function BulkCreationWizard({
                       })
                     }
                   >
-                    <SelectTrigger className="bg-transparent border-gray-700">
+                    <SelectTrigger className="bg-transparent border-border-default">
                       <SelectValue placeholder="Add workflow..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -225,7 +225,7 @@ export function BulkCreationWizard({
                         return (
                           <div
                             key={wId}
-                            className="flex items-center justify-between p-2 bg-gray-800 rounded"
+                            className="flex items-center justify-between p-2 bg-surface-raised rounded"
                           >
                             <span className="text-sm">
                               {workflow?.name || "Unknown"}
@@ -258,10 +258,10 @@ export function BulkCreationWizard({
           {step === 4 && (
             <div className="space-y-3">
               <Label>Preview</Label>
-              <div className="border border-gray-700 rounded p-4 space-y-2">
-                <p className="text-sm text-gray-400">
+              <div className="border border-border-default rounded p-4 space-y-2">
+                <p className="text-sm text-text-muted">
                   Will create{" "}
-                  <span className="text-[#00D9FF] font-medium">
+                  <span className="text-brand-primary font-medium">
                     {sourceStates.length * targetStates.length}
                   </span>{" "}
                   transition(s)
@@ -272,7 +272,7 @@ export function BulkCreationWizard({
                       targetStates.map((toId) => (
                         <div
                           key={`${fromId}-${toId}`}
-                          className="flex items-center gap-2 p-2 bg-gray-800 rounded"
+                          className="flex items-center gap-2 p-2 bg-surface-raised rounded"
                         >
                           <span>
                             {states.find((s) => s.id === fromId)?.name}
@@ -295,11 +295,11 @@ export function BulkCreationWizard({
               variant="outline"
               onClick={() => setStep(Math.max(1, step - 1))}
               disabled={step === 1}
-              className="border-gray-700"
+              className="border-border-default"
             >
               Previous
             </Button>
-            <span className="text-xs text-gray-400">Step {step} of 4</span>
+            <span className="text-xs text-text-muted">Step {step} of 4</span>
             {step < 4 ? (
               <Button
                 onClick={() => setStep(Math.min(4, step + 1))}
@@ -307,14 +307,14 @@ export function BulkCreationWizard({
                   (step === 1 && sourceStates.length === 0) ||
                   (step === 2 && targetStates.length === 0)
                 }
-                className="bg-[#BD00FF] hover:bg-[#BD00FF]/80"
+                className="bg-brand-secondary hover:bg-brand-secondary/80"
               >
                 Next
               </Button>
             ) : (
               <Button
                 onClick={handleComplete}
-                className="bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+                className="bg-brand-success hover:bg-brand-success/80 text-black"
               >
                 Create Transitions
               </Button>

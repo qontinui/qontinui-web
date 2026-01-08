@@ -156,7 +156,7 @@ export function AIToolbarButton({
         disabled={disabled || !isConnected}
         className={`relative flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
           disabled || !isConnected
-            ? "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+            ? "bg-surface-raised dark:bg-surface-raised text-text-muted dark:text-text-muted cursor-not-allowed"
             : "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl"
         }`}
         title={
@@ -181,7 +181,7 @@ export function AIToolbarButton({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-900 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50">
+        <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-surface-canvas rounded-lg shadow-2xl border border-border-subtle dark:border-border-default overflow-hidden z-50">
           {/* Header */}
           <div className="px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white">
             <div className="flex items-center gap-2 mb-1">
@@ -206,15 +206,15 @@ export function AIToolbarButton({
                     setIsOpen(false);
                   }}
                   disabled={disabled || !isConnected}
-                  className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                  className="w-full px-4 py-3 text-left hover:bg-surface-raised/80 dark:hover:bg-surface-raised transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg group-hover:bg-purple-100 dark:group-hover:bg-purple-900/30 transition-colors">
-                      <Icon className="w-4 h-4 text-gray-600 dark:text-gray-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+                    <div className="p-2 bg-surface-raised dark:bg-surface-raised rounded-lg group-hover:bg-purple-100 dark:group-hover:bg-purple-900/30 transition-colors">
+                      <Icon className="w-4 h-4 text-text-muted dark:text-text-muted group-hover:text-purple-600 dark:group-hover:text-purple-400" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-sm text-gray-900 dark:text-white">
+                        <span className="font-medium text-sm text-text-primary dark:text-white">
                           {item.label}
                         </span>
                         {item.badge !== undefined && (
@@ -223,10 +223,10 @@ export function AIToolbarButton({
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      <p className="text-xs text-text-muted dark:text-text-muted mb-1">
                         {item.description}
                       </p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 font-mono">
+                      <p className="text-xs text-text-muted dark:text-text-muted font-mono">
                         {item.shortcut}
                       </p>
                     </div>

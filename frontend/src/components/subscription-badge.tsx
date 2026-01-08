@@ -108,7 +108,7 @@ export function SubscriptionBadge() {
         <Button
           size="sm"
           variant="default"
-          className="bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] hover:opacity-90 transition-opacity"
+          className="bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 transition-opacity"
           onClick={() => router.push('/pricing')}
         >
           <Zap className="h-4 w-4 mr-1" />

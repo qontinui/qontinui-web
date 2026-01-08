@@ -114,9 +114,9 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
-      <div className="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-1">
+      <div className="flex items-center gap-1 bg-surface-raised border border-border-default rounded-lg shadow-xl p-1">
         {/* Node count badge */}
-        <div className="px-2 py-1 text-xs text-gray-400 border-r border-gray-700">
+        <div className="px-2 py-1 text-xs text-text-muted border-r border-border-default">
           {nodeIds.length} {nodeIds.length === 1 ? "node" : "nodes"}
         </div>
 
@@ -130,10 +130,10 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
               group relative px-3 py-2 rounded transition-all duration-150
               ${
                 action.disabled
-                  ? "text-gray-500 cursor-not-allowed"
+                  ? "text-text-muted cursor-not-allowed"
                   : action.danger
                     ? "text-red-400 hover:bg-red-900/20"
-                    : "text-gray-200 hover:bg-gray-700"
+                    : "text-text-secondary hover:bg-surface-raised/80"
               }
             `}
             title={action.label}
@@ -141,10 +141,10 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
             {action.icon}
 
             {/* Tooltip */}
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-canvas text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
               {action.label}
               {action.shortcut && (
-                <span className="ml-2 text-gray-400">{action.shortcut}</span>
+                <span className="ml-2 text-text-muted">{action.shortcut}</span>
               )}
             </div>
           </button>
@@ -154,7 +154,7 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
         {onClose && (
           <button
             onClick={onClose}
-            className="px-2 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors ml-1 border-l border-gray-700"
+            className="px-2 py-2 text-text-muted hover:text-white hover:bg-surface-raised/80 rounded transition-colors ml-1 border-l border-border-default"
           >
             <svg
               className="w-4 h-4"

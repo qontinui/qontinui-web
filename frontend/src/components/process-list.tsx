@@ -241,10 +241,10 @@ export function ProcessList({
         draggable
         onDragStart={(e) => handleDragStart(e, process)}
         onDragEnd={handleDragEnd}
-        className={`cursor-pointer transition-all hover:border-[#00D9FF]/50 !py-0 !gap-0 ${
+        className={`cursor-pointer transition-all hover:border-brand-primary/50 !py-0 !gap-0 ${
           selectedProcess?.id === process.id
-            ? "border-[#00D9FF] bg-[#00D9FF]/10"
-            : "border-gray-700 bg-[#27272A]"
+            ? "border-brand-primary bg-brand-primary/10"
+            : "border-border-default bg-surface-raised"
         } ${draggedProcess?.id === process.id ? "opacity-50" : ""}`}
         onClick={() => onSelectProcess(process)}
       >
@@ -269,7 +269,7 @@ export function ProcessList({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-4 w-4 p-0 text-gray-400 hover:text-red-400"
+                className="h-4 w-4 p-0 text-text-muted hover:text-red-400"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete(process.id, process.name);
@@ -288,13 +288,13 @@ export function ProcessList({
     <TooltipProvider>
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
+          <h3 className="text-sm font-medium text-text-muted uppercase tracking-wide">
             Process Library
           </h3>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-1.5 text-gray-400 hover:text-[#00D9FF] flex items-center gap-1"
+            className="h-7 px-1.5 text-text-muted hover:text-brand-primary flex items-center gap-1"
             onClick={() => setShowNewCategoryInput(true)}
             title="Add new category"
           >
@@ -316,7 +316,7 @@ export function ProcessList({
                 }
               }}
               placeholder="Category name..."
-              className="h-7 text-xs bg-transparent border-gray-700"
+              className="h-7 text-xs bg-transparent border-border-default"
               autoFocus
             />
             <Button size="sm" className="h-7 px-2" onClick={handleAddCategory}>
@@ -337,7 +337,7 @@ export function ProcessList({
                 key={category}
                 className={`space-y-1 rounded-lg transition-all ${
                   dragOverCategory === category
-                    ? "bg-[#00D9FF]/10 ring-2 ring-[#00D9FF]/50"
+                    ? "bg-brand-primary/10 ring-2 ring-brand-primary/50"
                     : ""
                 }`}
                 onDragOver={handleDragOver}
@@ -349,7 +349,7 @@ export function ProcessList({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 p-0 px-1 text-gray-400 hover:text-white flex-1 justify-start"
+                    className="h-6 p-0 px-1 text-text-muted hover:text-white flex-1 justify-start"
                     onClick={() => toggleCategory(category)}
                   >
                     {isCollapsed ? (
@@ -371,7 +371,7 @@ export function ProcessList({
                     {onCreateProcess && (
                       <Button
                         size="sm"
-                        className="h-6 w-6 p-0 bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                        className="h-6 w-6 p-0 bg-brand-primary hover:bg-brand-primary/80 text-black"
                         onClick={() => onCreateProcess(category)}
                         title={`Create new process in ${category}`}
                       >
@@ -383,7 +383,7 @@ export function ProcessList({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
+                        className="h-6 w-6 p-0 text-text-muted hover:text-red-400"
                         onClick={() => handleDeleteCategory(category)}
                       >
                         <Trash2 className="w-3 h-3" />
@@ -397,7 +397,7 @@ export function ProcessList({
                 {!isCollapsed && (
                   <div className="ml-4 space-y-1">
                     {categoryProcesses.length === 0 ? (
-                      <div className="text-xs text-gray-500 italic py-2">
+                      <div className="text-xs text-text-muted italic py-2">
                         Drop processes here
                       </div>
                     ) : (
@@ -414,7 +414,7 @@ export function ProcessList({
             (cat) => !allCategories.includes(cat)
           ) && (
             <div className="space-y-1">
-              <div className="text-xs text-gray-500">Uncategorized</div>
+              <div className="text-xs text-text-muted">Uncategorized</div>
               <div className="ml-4 space-y-1">
                 {processes
                   .filter(

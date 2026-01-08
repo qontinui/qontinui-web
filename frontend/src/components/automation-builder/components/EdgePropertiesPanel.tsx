@@ -152,7 +152,7 @@ export function EdgePropertiesPanel({
 
   if (!edge) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 p-8 text-center">
+      <div className="h-full flex items-center justify-center text-text-muted p-8 text-center">
         <div>
           <Zap className="w-12 h-12 mx-auto mb-4 opacity-50" />
           <p className="text-sm">Select an edge to edit its properties</p>
@@ -169,31 +169,31 @@ export function EdgePropertiesPanel({
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-950 border-l border-gray-800">
+    <div className="h-full flex flex-col bg-surface-canvas border-l border-border-subtle">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-800">
+      <div className="flex items-center justify-between p-4 border-b border-border-subtle">
         <div className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-[#00D9FF]" />
+          <Zap className="w-5 h-5 text-brand-primary" />
           <h3 className="font-semibold text-white">Edge Properties</h3>
         </div>
         <Button
           variant="ghost"
           size="icon"
           onClick={onClose}
-          className="h-8 w-8 text-gray-400 hover:text-white"
+          className="h-8 w-8 text-text-muted hover:text-white"
         >
           <X className="w-4 h-4" />
         </Button>
       </div>
 
       {/* Edge Info */}
-      <div className="p-4 border-b border-gray-800 bg-gray-900/50">
-        <div className="text-xs text-gray-400 mb-2">Connection</div>
+      <div className="p-4 border-b border-border-subtle bg-surface-canvas/50">
+        <div className="text-xs text-text-muted mb-2">Connection</div>
         <div className="flex items-center gap-2 text-sm">
           <span className="text-white font-medium truncate max-w-[100px]">
             {edge.sourceName}
           </span>
-          <span className="text-gray-500">→</span>
+          <span className="text-text-muted">→</span>
           <span className="text-white font-medium truncate max-w-[100px]">
             {edge.targetName}
           </span>
@@ -205,7 +205,7 @@ export function EdgePropertiesPanel({
             {edge.outputType}
           </span>
           {edge.outputIndex > 0 && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-text-muted">
               Output #{edge.outputIndex}
             </span>
           )}
@@ -216,7 +216,7 @@ export function EdgePropertiesPanel({
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {/* Label */}
         <div className="space-y-2">
-          <Label className="flex items-center gap-2 text-gray-300">
+          <Label className="flex items-center gap-2 text-text-muted">
             <Tag className="w-4 h-4" />
             Label
           </Label>
@@ -224,19 +224,21 @@ export function EdgePropertiesPanel({
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g., Success, Login Failed, Retry"
-            className="bg-gray-900 border-gray-700 text-white placeholder:text-gray-500"
+            className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Human-readable name displayed on the edge
           </p>
         </div>
 
         {/* Weight */}
         <div className="space-y-2">
-          <Label className="flex items-center gap-2 text-gray-300">
+          <Label className="flex items-center gap-2 text-text-muted">
             <Scale className="w-4 h-4" />
             Weight
-            <span className="ml-auto text-[#00D9FF] font-mono">{weight}%</span>
+            <span className="ml-auto text-brand-primary font-mono">
+              {weight}%
+            </span>
           </Label>
           <Slider
             value={[weight]}
@@ -246,7 +248,7 @@ export function EdgePropertiesPanel({
             step={5}
             className="py-2"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Priority/probability (higher = more likely to be taken)
           </p>
         </div>
@@ -256,13 +258,13 @@ export function EdgePropertiesPanel({
           <CollapsibleTrigger asChild>
             <Button
               variant="ghost"
-              className="w-full justify-between text-gray-300 hover:text-white hover:bg-gray-800"
+              className="w-full justify-between text-text-muted hover:text-white hover:bg-surface-raised"
             >
               <span className="flex items-center gap-2">
                 <Zap className="w-4 h-4" />
                 Condition
                 {conditionType !== "always" && (
-                  <span className="px-2 py-0.5 rounded bg-[#00D9FF]/20 text-[#00D9FF] text-xs">
+                  <span className="px-2 py-0.5 rounded bg-brand-primary/20 text-brand-primary text-xs">
                     Active
                   </span>
                 )}
@@ -274,14 +276,14 @@ export function EdgePropertiesPanel({
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-4 pt-4">
             <div className="space-y-2">
-              <Label className="text-gray-400 text-xs">Condition Type</Label>
+              <Label className="text-text-muted text-xs">Condition Type</Label>
               <Select
                 value={conditionType}
                 onValueChange={(val) =>
                   setConditionType(val as EdgeCondition["type"])
                 }
               >
-                <SelectTrigger className="bg-gray-900 border-gray-700 text-white">
+                <SelectTrigger className="bg-surface-canvas border-border-default text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -298,17 +300,17 @@ export function EdgePropertiesPanel({
 
             {conditionType === "expression" && (
               <div className="space-y-2">
-                <Label className="text-gray-400 text-xs">
+                <Label className="text-text-muted text-xs">
                   JavaScript Expression
                 </Label>
                 <Textarea
                   value={conditionExpression}
                   onChange={(e) => setConditionExpression(e.target.value)}
                   placeholder="e.g., result.success === true"
-                  className="bg-gray-900 border-gray-700 text-white placeholder:text-gray-500 font-mono text-sm"
+                  className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted font-mono text-sm"
                   rows={3}
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-muted">
                   Expression evaluated at runtime. Access previous action result
                   via `result`.
                 </p>
@@ -318,24 +320,26 @@ export function EdgePropertiesPanel({
             {conditionType === "variable" && (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label className="text-gray-400 text-xs">Variable Name</Label>
+                  <Label className="text-text-muted text-xs">
+                    Variable Name
+                  </Label>
                   <Input
                     value={conditionVariable}
                     onChange={(e) => setConditionVariable(e.target.value)}
                     placeholder="e.g., loginStatus, itemCount"
-                    className="bg-gray-900 border-gray-700 text-white placeholder:text-gray-500"
+                    className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-2">
-                    <Label className="text-gray-400 text-xs">Operator</Label>
+                    <Label className="text-text-muted text-xs">Operator</Label>
                     <Select
                       value={conditionOperator}
                       onValueChange={(val) =>
                         setConditionOperator(val as EdgeCondition["operator"])
                       }
                     >
-                      <SelectTrigger className="bg-gray-900 border-gray-700 text-white">
+                      <SelectTrigger className="bg-surface-canvas border-border-default text-white">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -349,12 +353,12 @@ export function EdgePropertiesPanel({
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-gray-400 text-xs">Value</Label>
+                    <Label className="text-text-muted text-xs">Value</Label>
                     <Input
                       value={conditionValue}
                       onChange={(e) => setConditionValue(e.target.value)}
                       placeholder="true, 0, 'success'"
-                      className="bg-gray-900 border-gray-700 text-white placeholder:text-gray-500"
+                      className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted"
                       disabled={conditionOperator === "exists"}
                     />
                   </div>
@@ -364,7 +368,7 @@ export function EdgePropertiesPanel({
 
             {(conditionType === "timeout" ||
               conditionType === "retry-exhausted") && (
-              <p className="text-xs text-gray-500 p-2 bg-gray-800 rounded">
+              <p className="text-xs text-text-muted p-2 bg-surface-raised rounded">
                 This edge will be followed when the source action{" "}
                 {conditionType === "timeout"
                   ? "times out"
@@ -377,7 +381,7 @@ export function EdgePropertiesPanel({
 
         {/* Description */}
         <div className="space-y-2">
-          <Label className="flex items-center gap-2 text-gray-300">
+          <Label className="flex items-center gap-2 text-text-muted">
             <FileText className="w-4 h-4" />
             Description
           </Label>
@@ -385,24 +389,24 @@ export function EdgePropertiesPanel({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Optional notes about this connection..."
-            className="bg-gray-900 border-gray-700 text-white placeholder:text-gray-500"
+            className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted"
             rows={2}
           />
         </div>
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-800 flex gap-2">
+      <div className="p-4 border-t border-border-subtle flex gap-2">
         <Button
           variant="outline"
           onClick={onClose}
-          className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+          className="flex-1 border-border-default text-text-muted hover:bg-surface-raised"
         >
           Cancel
         </Button>
         <Button
           onClick={handleSave}
-          className="flex-1 bg-[#00D9FF] text-black hover:bg-[#00D9FF]/90"
+          className="flex-1 bg-brand-primary text-black hover:bg-brand-primary/90"
         >
           Save Changes
         </Button>

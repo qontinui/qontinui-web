@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@xyflow/react/dist/style.css";
+@import "@qontinui/design-tokens/css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -43,7 +44,44 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* Qontinui Theme Colors */
+  /* ========================================
+   * Qontinui Brand Colors
+   * Professional palette - softer than neon
+   * ======================================== */
+
+  /* Brand - Primary palette */
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-brand-success: var(--brand-success);
+
+  /* Surface - Backgrounds */
+  --color-surface-canvas: var(--surface-canvas);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+
+  /* Border colors */
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-border-interactive: var(--border-interactive);
+
+  /* Semantic colors */
+  --color-success: var(--success);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-muted: var(--warning-muted);
+  --color-error: var(--error);
+  --color-error-muted: var(--error-muted);
+  --color-info: var(--info);
+  --color-info-muted: var(--info-muted);
+
+  /* Glow effects */
+  --color-glow-primary: var(--glow-primary);
+  --color-glow-secondary: var(--glow-secondary);
+  --color-glow-success: var(--glow-success);
+
+  /* Legacy qontinui- prefixed colors (for gradual migration) */
   --color-qontinui-canvas: rgb(var(--qontinui-canvas));
   --color-qontinui-panel: rgb(var(--qontinui-panel));
   --color-qontinui-cyan: rgb(var(--qontinui-cyan));
@@ -88,7 +126,7 @@
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.705 0.015 286.067);
 
-  /* Qontinui Theme Tokens */
+  /* Legacy Qontinui tokens (for gradual migration) */
   --qontinui-canvas: 10 10 11; /* #0A0A0B */
   --qontinui-panel: 39 39 42; /* #27272A */
   --qontinui-cyan: 0 217 255; /* #00D9FF */
@@ -97,6 +135,38 @@
   --qontinui-border-dark: 31 31 35; /* #1F1F23 gray-800 */
   --qontinui-border-medium: 63 63 70; /* #3F3F46 gray-700 */
   --qontinui-dot-pattern: 51 51 51; /* #333333 */
+
+  /* Qontinui Brand Colors - sourced from @qontinui/design-tokens */
+  --brand-primary: var(--qontinui-brand-primary);
+  --brand-secondary: var(--qontinui-brand-secondary);
+  --brand-success: var(--qontinui-brand-success);
+
+  /* Surface Colors - sourced from @qontinui/design-tokens */
+  --surface-canvas: var(--qontinui-surface-canvas);
+  --surface-raised: var(--qontinui-surface-raised);
+  --surface-hover: var(--qontinui-surface-hover);
+  --surface-active: var(--qontinui-surface-active);
+
+  /* Border Colors - sourced from @qontinui/design-tokens */
+  --border-subtle: var(--qontinui-border-subtle);
+  --border-default: var(--qontinui-border-default);
+  --border-strong: var(--qontinui-border-strong);
+  --border-interactive: var(--qontinui-border-interactive);
+
+  /* Semantic Colors - sourced from @qontinui/design-tokens */
+  --success: var(--qontinui-success);
+  --success-muted: var(--qontinui-success-muted);
+  --warning: var(--qontinui-warning);
+  --warning-muted: var(--qontinui-warning-muted);
+  --error: var(--qontinui-error);
+  --error-muted: var(--qontinui-error-muted);
+  --info: var(--qontinui-info);
+  --info-muted: var(--qontinui-info-muted);
+
+  /* Glow Effects - sourced from @qontinui/design-tokens */
+  --glow-primary: var(--qontinui-glow-primary);
+  --glow-secondary: var(--qontinui-glow-secondary);
+  --glow-success: var(--qontinui-glow-success);
 }
 
 .dark {
@@ -132,7 +202,7 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.552 0.016 285.938);
 
-  /* Qontinui Theme Tokens - same in dark mode */
+  /* Legacy Qontinui tokens - same in dark mode */
   --qontinui-canvas: 10 10 11; /* #0A0A0B */
   --qontinui-panel: 39 39 42; /* #27272A */
   --qontinui-cyan: 0 217 255; /* #00D9FF */
@@ -141,6 +211,34 @@
   --qontinui-border-dark: 31 31 35; /* #1F1F23 gray-800 */
   --qontinui-border-medium: 63 63 70; /* #3F3F46 gray-700 */
   --qontinui-dot-pattern: 51 51 51; /* #333333 */
+
+  /* Qontinui Brand Colors - sourced from @qontinui/design-tokens (same in dark mode) */
+  --brand-primary: var(--qontinui-brand-primary);
+  --brand-secondary: var(--qontinui-brand-secondary);
+  --brand-success: var(--qontinui-brand-success);
+
+  --surface-canvas: var(--qontinui-surface-canvas);
+  --surface-raised: var(--qontinui-surface-raised);
+  --surface-hover: var(--qontinui-surface-hover);
+  --surface-active: var(--qontinui-surface-active);
+
+  --border-subtle: var(--qontinui-border-subtle);
+  --border-default: var(--qontinui-border-default);
+  --border-strong: var(--qontinui-border-strong);
+  --border-interactive: var(--qontinui-border-interactive);
+
+  --success: var(--qontinui-success);
+  --success-muted: var(--qontinui-success-muted);
+  --warning: var(--qontinui-warning);
+  --warning-muted: var(--qontinui-warning-muted);
+  --error: var(--qontinui-error);
+  --error-muted: var(--qontinui-error-muted);
+  --info: var(--qontinui-info);
+  --info-muted: var(--qontinui-info-muted);
+
+  --glow-primary: var(--qontinui-glow-primary);
+  --glow-secondary: var(--qontinui-glow-secondary);
+  --glow-success: var(--qontinui-glow-success);
 }
 
 @layer base {
@@ -152,43 +250,71 @@
   }
 }
 
-/* Custom Qontinui styles for gaming aesthetic */
+/* ========================================
+ * Qontinui Utility Classes
+ * ======================================== */
 @layer utilities {
+  /* Dot grid pattern for canvases */
   .dot-grid {
-    background-image: radial-gradient(circle, #00d9ff 1px, transparent 1px);
+    background-image: radial-gradient(
+      circle,
+      var(--brand-primary) 1px,
+      transparent 1px
+    );
     background-size: 20px 20px;
-    opacity: 0.1;
+    opacity: 0.08;
   }
 
+  /* Subtle glow effects (professional, reduced intensity) */
+  .glow-primary {
+    box-shadow: 0 0 12px var(--glow-primary);
+  }
+
+  .glow-secondary {
+    box-shadow: 0 0 12px var(--glow-secondary);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 12px var(--glow-success);
+  }
+
+  /* Legacy glow classes (mapped to new system) */
   .glow-cyan {
-    box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+    box-shadow: 0 0 12px var(--glow-primary);
   }
 
   .glow-purple {
-    box-shadow: 0 0 20px rgba(189, 0, 255, 0.3);
+    box-shadow: 0 0 12px var(--glow-secondary);
   }
 
   .glow-green {
-    box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+    box-shadow: 0 0 12px var(--glow-success);
   }
 
-  .pulse-cyan {
-    animation: pulse-cyan 2s infinite;
+  /* Subtle pulse animation */
+  .pulse-primary {
+    animation: pulse-primary 2s infinite;
   }
 
-  @keyframes pulse-cyan {
+  @keyframes pulse-primary {
     0%,
     100% {
-      box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+      box-shadow: 0 0 12px var(--glow-primary);
     }
     50% {
-      box-shadow: 0 0 30px rgba(0, 217, 255, 0.6);
+      box-shadow: 0 0 20px var(--glow-primary);
     }
   }
 
+  /* Legacy pulse class */
+  .pulse-cyan {
+    animation: pulse-primary 2s infinite;
+  }
+
+  /* Gradient border (updated with new colors) */
   .gradient-border {
     position: relative;
-    background: #27272a;
+    background: var(--surface-raised);
     border-radius: 0.625rem;
   }
 
@@ -197,7 +323,12 @@
     position: absolute;
     inset: 0;
     padding: 1px;
-    background: linear-gradient(45deg, #00d9ff, #bd00ff, #00ff88);
+    background: linear-gradient(
+      45deg,
+      var(--brand-primary),
+      var(--brand-secondary),
+      var(--brand-success)
+    );
     border-radius: inherit;
     mask:
       linear-gradient(#fff 0 0) content-box,
@@ -256,5 +387,53 @@
       transform: translateY(100vh) rotate(720deg);
       opacity: 0;
     }
+  }
+
+  /* Dark scrollbar (updated colors) */
+  .scrollbar-dark {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 3px;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-thumb:hover {
+    background-color: var(--border-interactive);
+  }
+
+  /* Custom scrollbar (alias for scrollbar-dark) */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--border-interactive);
   }
 }

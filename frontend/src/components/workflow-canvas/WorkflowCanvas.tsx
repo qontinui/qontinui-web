@@ -846,7 +846,7 @@ function WorkflowCanvasInner({
           <div className="flex gap-2">
             <button
               onClick={handleFitView}
-              className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-sm"
+              className="px-3 py-2 bg-surface-raised hover:bg-surface-raised/80 text-white rounded text-sm"
               title="Fit view (Ctrl+F)"
               data-tutorial-id="fit-view"
             >
@@ -856,7 +856,7 @@ function WorkflowCanvasInner({
               <>
                 <button
                   onClick={handleAutoLayout}
-                  className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-sm"
+                  className="px-3 py-2 bg-surface-raised hover:bg-surface-raised/80 text-white rounded text-sm"
                   title="Auto layout (Ctrl+L)"
                   data-tutorial-id="auto-layout"
                 >
@@ -869,7 +869,7 @@ function WorkflowCanvasInner({
 
         {/* Bottom panel - Info */}
         <Panel position="bottom-left" className="workflow-canvas-panel">
-          <div className="text-xs text-gray-400">
+          <div className="text-xs text-text-muted">
             <div>Nodes: {nodes.length}</div>
             <div>Edges: {edges.length}</div>
             {selectedNode && (

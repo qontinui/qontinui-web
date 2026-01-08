@@ -111,18 +111,18 @@ export function PackageSearchBar({
       <div className="flex gap-2">
         {/* Search Input */}
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <Input
             type="text"
             placeholder="Search packages..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="pl-10 pr-10 bg-gray-900/50 border-gray-700 focus:border-cyan-500"
+            className="pl-10 pr-10 bg-surface-canvas/50 border-border-default focus:border-brand-primary"
           />
           {query && (
             <button
               onClick={handleClearSearch}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
             >
               <X className="w-4 h-4" />
             </button>
@@ -136,7 +136,7 @@ export function PackageSearchBar({
             setSortBy(value as SearchFilters["sort_by"])
           }
         >
-          <SelectTrigger className="w-[180px] bg-gray-900/50 border-gray-700">
+          <SelectTrigger className="w-[180px] bg-surface-canvas/50 border-border-default">
             <SelectValue placeholder="Sort by..." />
           </SelectTrigger>
           <SelectContent>
@@ -153,14 +153,14 @@ export function PackageSearchBar({
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
-              className="relative bg-gray-900/50 border-gray-700"
+              className="relative bg-surface-canvas/50 border-border-default"
             >
               <SlidersHorizontal className="w-4 h-4 mr-2" />
               Filters
               {activeFiltersCount > 0 && (
                 <Badge
                   variant="default"
-                  className="ml-2 h-5 w-5 rounded-full p-0 flex items-center justify-center bg-cyan-500 text-white text-xs"
+                  className="ml-2 h-5 w-5 rounded-full p-0 flex items-center justify-center bg-brand-primary text-white text-xs"
                 >
                   {activeFiltersCount}
                 </Badge>
@@ -217,7 +217,7 @@ export function PackageSearchBar({
           {selectedCategory && (
             <Badge
               variant="secondary"
-              className="gap-1 cursor-pointer hover:bg-gray-700"
+              className="gap-1 cursor-pointer hover:bg-surface-raised"
               onClick={() => setSelectedCategory(undefined)}
             >
               Category: {getCategoryLabel(selectedCategory)}
@@ -227,7 +227,7 @@ export function PackageSearchBar({
           {verifiedOnly && (
             <Badge
               variant="secondary"
-              className="gap-1 cursor-pointer hover:bg-gray-700"
+              className="gap-1 cursor-pointer hover:bg-surface-raised"
               onClick={() => setVerifiedOnly(false)}
             >
               Verified only

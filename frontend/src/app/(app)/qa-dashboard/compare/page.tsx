@@ -34,7 +34,7 @@ function ComparePageContent() {
   if (!projectIdParam) {
     return (
       <div className="container mx-auto p-8">
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle/50">
           <CardContent className="p-12 text-center">
             <div className="text-red-400 mb-4">
               No project specified. Please select a project first.
@@ -42,7 +42,7 @@ function ComparePageContent() {
             <Button
               onClick={() => router.push("/qa-dashboard")}
               variant="outline"
-              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+              className="border-border-default hover:border-brand-primary hover:text-brand-primary"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to QA Dashboard
@@ -58,7 +58,7 @@ function ComparePageContent() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold mb-2">Compare Test Runs</h1>
-          <p className="text-gray-400">
+          <p className="text-text-muted">
             Analyze differences between two test runs to identify improvements
             or regressions
           </p>
@@ -68,7 +68,7 @@ function ComparePageContent() {
             router.push(`/qa-dashboard/runs?project_id=${projectIdParam}`)
           }
           variant="outline"
-          className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+          className="border-border-default hover:border-brand-primary hover:text-brand-primary"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Runs
@@ -85,9 +85,9 @@ function ComparePageContent() {
       )}
 
       {!run1Id || !run2Id ? (
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle/50">
           <CardContent className="p-12 text-center">
-            <div className="text-gray-400">
+            <div className="text-text-muted">
               Select two test runs above to see a detailed comparison
             </div>
           </CardContent>
@@ -102,9 +102,9 @@ export default function ComparePage() {
     <Suspense
       fallback={
         <div className="container mx-auto p-8">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardContent className="p-12 text-center">
-              <div className="text-gray-400">Loading...</div>
+              <div className="text-text-muted">Loading...</div>
             </CardContent>
           </Card>
         </div>

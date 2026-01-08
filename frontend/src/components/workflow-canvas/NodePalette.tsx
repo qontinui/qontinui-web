@@ -169,7 +169,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
           <h3 className="node-palette__title">Nodes</h3>
 
           {/* Right: Tips */}
-          <div className="flex flex-col items-start text-xs text-gray-500 leading-relaxed">
+          <div className="flex flex-col items-start text-xs text-text-muted leading-relaxed">
             <span>Drag to add</span>
             <span>Click for center</span>
             <span>Ctrl+K to search</span>

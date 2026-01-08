@@ -104,26 +104,26 @@ export function FormatConversionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] bg-[#1A1A1C] border-gray-700">
+      <DialogContent className="sm:max-w-[500px] bg-surface-overlay border-border-default">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-[#00D9FF]">
+          <DialogTitle className="flex items-center gap-2 text-brand-primary">
             {isSequentialToGraph ? (
               <>
                 <List className="w-5 h-5" />
                 <ArrowRight className="w-4 h-4" />
-                <WorkflowIcon className="w-5 h-5 text-[#00FF88]" />
+                <WorkflowIcon className="w-5 h-5 text-brand-success" />
                 <span>Switch to Graph View</span>
               </>
             ) : (
               <>
-                <WorkflowIcon className="w-5 h-5 text-[#00FF88]" />
+                <WorkflowIcon className="w-5 h-5 text-brand-success" />
                 <ArrowRight className="w-4 h-4" />
                 <List className="w-5 h-5" />
                 <span>Switch to Sequential View</span>
               </>
             )}
           </DialogTitle>
-          <DialogDescription className="text-gray-400">
+          <DialogDescription className="text-text-muted">
             {isSequentialToGraph
               ? "Change the preferred view mode for this workflow to graph visualization."
               : "Change the preferred view mode for this workflow to sequential timeline."}
@@ -132,10 +132,10 @@ export function FormatConversionDialog({
 
         <div className="space-y-4 py-4">
           {/* Item Info */}
-          <div className="bg-gray-800/50 rounded-lg p-4">
-            <div className="text-sm text-gray-300">
+          <div className="bg-surface-raised/50 rounded-lg p-4">
+            <div className="text-sm text-text-secondary">
               <div className="font-medium mb-1">{item.name}</div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-text-muted">
                 {item.actions.length} actions •{" "}
                 {isLinearWorkflow(item) ? "Linear" : "Branching"}
               </div>
@@ -161,7 +161,7 @@ export function FormatConversionDialog({
 
           {/* Conversion Info */}
           {canConvert && (
-            <div className="space-y-2 text-sm text-gray-400">
+            <div className="space-y-2 text-sm text-text-muted">
               {isSequentialToGraph ? (
                 <>
                   <p>✓ Workflow will be displayed in graph view</p>
@@ -183,7 +183,7 @@ export function FormatConversionDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="border-gray-700 hover:bg-gray-800"
+            className="border-border-default hover:bg-surface-raised"
           >
             Cancel
           </Button>
@@ -192,8 +192,8 @@ export function FormatConversionDialog({
             disabled={!canConvert || converting}
             className={
               isSequentialToGraph
-                ? "bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
-                : "bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                ? "bg-brand-success hover:bg-brand-success/80 text-black"
+                : "bg-brand-primary hover:bg-brand-primary/80 text-black"
             }
           >
             {converting ? "Switching..." : "Switch View"}

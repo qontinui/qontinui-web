@@ -19,6 +19,8 @@ from app.db.base import Base
 
 
 class Project(Base):
+    """Project model representing a user project."""
+
     __tablename__ = "projects"
 
     id = Column(
@@ -109,6 +111,20 @@ class Project(Base):
     )
     execution_runs = relationship(
         "ExecutionRun",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    task_runs = relationship(
+        "TaskRun",
+        back_populates="project",
+    )
+    verification_tests = relationship(
+        "VerificationTest",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    workflow_test_associations = relationship(
+        "WorkflowTestAssociation",
         back_populates="project",
         cascade="all, delete-orphan",
     )

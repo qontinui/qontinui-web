@@ -130,10 +130,10 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
 
   return (
     <>
-      <div className="p-4 border-b bg-gray-50">
+      <div className="p-4 border-b bg-surface-canvas">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-lg font-semibold text-text-primary">
               Region Properties
             </h3>
             {showSaved && (
@@ -145,10 +145,10 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
           </div>
           <button
             onClick={() => onDelete(region.id)}
-            className="p-1 hover:bg-gray-200 rounded"
+            className="p-1 hover:bg-surface-raised/80 rounded"
             title="Delete region"
           >
-            <X className="w-4 h-4 text-gray-700" />
+            <X className="w-4 h-4 text-text-muted" />
           </button>
         </div>
       </div>
@@ -156,20 +156,20 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
       <div className="p-4 space-y-4">
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-text-muted mb-1">
             Name
           </label>
           <input
             type="text"
             value={region.name}
             onChange={handleNameChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
           />
         </div>
 
         {/* Type Toggle */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-text-muted mb-2">
             Region Type
           </label>
           <div className="flex gap-2">
@@ -177,7 +177,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 region.type === "StateRegion"
                   ? "bg-green-500 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  : "bg-surface-raised text-text-muted hover:bg-surface-raised/80"
               }`}
               onClick={() => handleTypeChange("StateRegion")}
             >
@@ -187,7 +187,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 region.type === "SearchRegion"
                   ? "bg-yellow-500 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  : "bg-surface-raised text-text-muted hover:bg-surface-raised/80"
               }`}
               onClick={() => handleTypeChange("SearchRegion")}
             >
@@ -199,7 +199,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
         {/* Save to State (for StateRegion) */}
         {region.type === "StateRegion" && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-text-muted mb-1">
               Save to State
             </label>
             <select
@@ -210,7 +210,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                 onUpdate(updatedRegion);
                 showSavedIndicator();
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+              className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
             >
               <option value="">Select state</option>
               {states.map((state) => (
@@ -226,7 +226,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
         {region.type === "SearchRegion" && (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-text-muted mb-1">
                 Select State
               </label>
               <select
@@ -241,7 +241,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   onUpdate(updatedRegion);
                   showSavedIndicator();
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
               >
                 <option value="">Select state</option>
                 {states.map((state) => (
@@ -250,14 +250,14 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-text-muted mt-1">
                 This populates the StateImage dropdown below
               </p>
             </div>
 
             {region.saveToStateImageStateId && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-text-muted mb-1">
                   Save to StateImage
                 </label>
                 <select
@@ -271,7 +271,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                     onUpdate(updatedRegion);
                     showSavedIndicator();
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                  className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
                 >
                   <option value="">Select StateImage</option>
                   {states
@@ -282,7 +282,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                       </option>
                     ))}
                 </select>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-text-muted mt-1">
                   SearchRegion will be saved to this StateImage
                 </p>
               </div>
@@ -291,23 +291,23 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
         )}
 
         {/* Link to StateImage Match Checkbox */}
-        <div className="pt-2 border-t border-gray-300">
+        <div className="pt-2 border-t border-border-default">
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="link-to-match"
               checked={linkToMatch}
               onChange={(e) => handleLinkToMatchChange(e.target.checked)}
-              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              className="w-4 h-4 text-blue-600 border-border-default rounded focus:ring-blue-500"
             />
             <label
               htmlFor="link-to-match"
-              className="text-sm font-medium text-gray-700"
+              className="text-sm font-medium text-text-muted"
             >
               Link to StateImage Match
             </label>
           </div>
-          <p className="text-xs text-gray-500 mt-1 ml-6">
+          <p className="text-xs text-text-muted mt-1 ml-6">
             Position and size will be determined at runtime by the linked image
             match
           </p>
@@ -315,13 +315,13 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
 
         {/* Position & Size (greyed when linked) */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-text-muted mb-1">
             Position & Size
           </label>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label
-                className={`block text-xs ${linkToMatch ? "text-gray-400" : "text-gray-500"}`}
+                className={`block text-xs ${linkToMatch ? "text-text-muted" : "text-text-muted"}`}
               >
                 X
               </label>
@@ -332,16 +332,16 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   handleBoundsChange("x", Number(e.target.value))
                 }
                 disabled={linkToMatch}
-                className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
+                className={`w-full px-2 py-1 border border-border-default rounded text-sm ${
                   linkToMatch
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "text-gray-900"
+                    ? "bg-surface-raised text-text-muted cursor-not-allowed"
+                    : "text-text-primary"
                 }`}
               />
             </div>
             <div>
               <label
-                className={`block text-xs ${linkToMatch ? "text-gray-400" : "text-gray-500"}`}
+                className={`block text-xs ${linkToMatch ? "text-text-muted" : "text-text-muted"}`}
               >
                 Y
               </label>
@@ -352,16 +352,16 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   handleBoundsChange("y", Number(e.target.value))
                 }
                 disabled={linkToMatch}
-                className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
+                className={`w-full px-2 py-1 border border-border-default rounded text-sm ${
                   linkToMatch
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "text-gray-900"
+                    ? "bg-surface-raised text-text-muted cursor-not-allowed"
+                    : "text-text-primary"
                 }`}
               />
             </div>
             <div>
               <label
-                className={`block text-xs ${linkToMatch ? "text-gray-400" : "text-gray-500"}`}
+                className={`block text-xs ${linkToMatch ? "text-text-muted" : "text-text-muted"}`}
               >
                 Width
               </label>
@@ -372,16 +372,16 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   handleBoundsChange("width", Number(e.target.value))
                 }
                 disabled={linkToMatch}
-                className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
+                className={`w-full px-2 py-1 border border-border-default rounded text-sm ${
                   linkToMatch
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "text-gray-900"
+                    ? "bg-surface-raised text-text-muted cursor-not-allowed"
+                    : "text-text-primary"
                 }`}
               />
             </div>
             <div>
               <label
-                className={`block text-xs ${linkToMatch ? "text-gray-400" : "text-gray-500"}`}
+                className={`block text-xs ${linkToMatch ? "text-text-muted" : "text-text-muted"}`}
               >
                 Height
               </label>
@@ -392,10 +392,10 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   handleBoundsChange("height", Number(e.target.value))
                 }
                 disabled={linkToMatch}
-                className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
+                className={`w-full px-2 py-1 border border-border-default rounded text-sm ${
                   linkToMatch
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "text-gray-900"
+                    ? "bg-surface-raised text-text-muted cursor-not-allowed"
+                    : "text-text-primary"
                 }`}
               />
             </div>
@@ -406,13 +406,13 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
         {linkToMatch && (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-text-muted mb-1">
                 State
               </label>
               <select
                 value={linkedMatchState}
                 onChange={(e) => handleLinkedMatchStateChange(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
               >
                 <option value="">Select state</option>
                 {states.map((state) => (
@@ -421,20 +421,20 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-text-muted mt-1">
                 State of the linked image (populates Linked Image dropdown)
               </p>
             </div>
 
             {linkedMatchState && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-text-muted mb-1">
                   Linked Image
                 </label>
                 <select
                   value={linkedMatchImage}
                   onChange={(e) => handleLinkedMatchImageChange(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                  className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
                 >
                   <option value="">Select StateImage</option>
                   {states
@@ -445,7 +445,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                       </option>
                     ))}
                 </select>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-text-muted mt-1">
                   The linked StateImage will define this region&apos;s position
                   at runtime
                 </p>

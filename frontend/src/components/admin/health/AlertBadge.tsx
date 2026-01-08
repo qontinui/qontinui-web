@@ -47,7 +47,7 @@ const statusConfig = {
     label: "Down",
   },
   disabled: {
-    color: "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20",
+    color: "bg-gray-500/10 text-text-muted border-gray-500/20",
     icon: AlertCircle,
     label: "Disabled",
   },

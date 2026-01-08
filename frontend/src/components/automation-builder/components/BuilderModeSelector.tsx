@@ -28,7 +28,7 @@ export function BuilderModeSelector({
   return (
     <div
       className={cn(
-        "flex items-center gap-1 p-1 bg-gray-900 rounded-lg",
+        "flex items-center gap-1 p-1 bg-surface-canvas rounded-lg",
         className
       )}
     >
@@ -38,10 +38,10 @@ export function BuilderModeSelector({
         disabled={disabled}
         className={cn(
           "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all duration-200",
-          "hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
+          "hover:bg-surface-raised disabled:opacity-50 disabled:cursor-not-allowed",
           isSequential
-            ? "bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/30"
-            : "text-gray-400 border border-transparent"
+            ? "bg-brand-primary/10 text-brand-primary border border-brand-primary/30"
+            : "text-text-muted border border-transparent"
         )}
         title="Sequential mode - Linear, step-by-step processes"
       >
@@ -55,10 +55,10 @@ export function BuilderModeSelector({
         disabled={disabled}
         className={cn(
           "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all duration-200",
-          "hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
+          "hover:bg-surface-raised disabled:opacity-50 disabled:cursor-not-allowed",
           !isSequential
-            ? "bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/30"
-            : "text-gray-400 border border-transparent"
+            ? "bg-brand-success/10 text-brand-success border border-brand-success/30"
+            : "text-text-muted border border-transparent"
         )}
         title="Graph mode - Visual workflows with branching and loops"
       >
@@ -88,7 +88,7 @@ export function CompactModeSelector({
   return (
     <div
       className={cn(
-        "flex items-center gap-0.5 p-0.5 bg-gray-900 rounded-md",
+        "flex items-center gap-0.5 p-0.5 bg-surface-canvas rounded-md",
         className
       )}
     >
@@ -97,8 +97,10 @@ export function CompactModeSelector({
         disabled={disabled}
         className={cn(
           "p-2 rounded transition-all duration-200",
-          "hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
-          isSequential ? "bg-[#00D9FF]/10 text-[#00D9FF]" : "text-gray-500"
+          "hover:bg-surface-raised disabled:opacity-50 disabled:cursor-not-allowed",
+          isSequential
+            ? "bg-brand-primary/10 text-brand-primary"
+            : "text-text-muted"
         )}
         title={showTooltips ? "Sequential mode" : undefined}
       >
@@ -109,8 +111,10 @@ export function CompactModeSelector({
         disabled={disabled}
         className={cn(
           "p-2 rounded transition-all duration-200",
-          "hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
-          !isSequential ? "bg-[#00FF88]/10 text-[#00FF88]" : "text-gray-500"
+          "hover:bg-surface-raised disabled:opacity-50 disabled:cursor-not-allowed",
+          !isSequential
+            ? "bg-brand-success/10 text-brand-success"
+            : "text-text-muted"
         )}
         title={showTooltips ? "Graph mode" : undefined}
       >

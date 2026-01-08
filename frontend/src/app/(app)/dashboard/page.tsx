@@ -337,11 +337,11 @@ export default function Dashboard() {
   const getStatusColor = (status: Project["status"]) => {
     switch (status) {
       case "production":
-        return "bg-[#00FF88]/20 text-[#00FF88] border-[#00FF88]/30";
+        return "bg-brand-success/20 text-brand-success border-brand-success/30";
       case "testing":
-        return "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30";
+        return "bg-brand-primary/20 text-brand-primary border-brand-primary/30";
       case "draft":
-        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+        return "bg-surface-raised/20 text-text-muted border-border-subtle/30";
     }
   };
 
@@ -402,7 +402,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Early Access Banner */}
       <EarlyAccessBanner onExport={handleExport} />
 
@@ -416,24 +416,24 @@ export default function Dashboard() {
                 {isNewUser() ? "Welcome" : "Welcome back"},{" "}
                 {user.full_name || user.username}
               </h2>
-              <p className="text-gray-400">
+              <p className="text-text-muted">
                 Manage your automation configurations and projects
               </p>
             </div>
 
             <div className="flex gap-4">
-              <div className="flex items-center gap-2 px-4 py-3 bg-[#1A1A1B]/50 border border-gray-800/50 rounded-lg backdrop-blur-sm">
-                <FolderOpen className="w-5 h-5 text-[#00D9FF]" />
-                <span className="text-sm text-gray-400">Total Projects</span>
-                <span className="text-lg font-bold text-[#00D9FF]">
+              <div className="flex items-center gap-2 px-4 py-3 bg-surface-raised/50 border border-border-subtle/50 rounded-lg backdrop-blur-sm">
+                <FolderOpen className="w-5 h-5 text-brand-primary" />
+                <span className="text-sm text-text-muted">Total Projects</span>
+                <span className="text-lg font-bold text-brand-primary">
                   {projects.length}
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 px-4 py-3 bg-[#1A1A1B]/50 border border-gray-800/50 rounded-lg backdrop-blur-sm">
-                <Clock className="w-5 h-5 text-[#BD00FF]" />
-                <span className="text-sm text-gray-400">Last Activity</span>
-                <span className="text-lg font-bold text-[#BD00FF]">
+              <div className="flex items-center gap-2 px-4 py-3 bg-surface-raised/50 border border-border-subtle/50 rounded-lg backdrop-blur-sm">
+                <Clock className="w-5 h-5 text-brand-secondary" />
+                <span className="text-sm text-text-muted">Last Activity</span>
+                <span className="text-lg font-bold text-brand-secondary">
                   {lastActivity
                     ? getRelativeTime(lastActivity.timestamp.toISOString())
                     : "No activity"}
@@ -449,45 +449,45 @@ export default function Dashboard() {
             <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card
-                className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm hover:border-[#00D9FF]/50 hover:shadow-[0_0_20px_rgba(0,217,255,0.1)] transition-all duration-300 cursor-pointer group"
+                className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-primary/50 hover:shadow-[0_0_20px_var(--glow-primary)] transition-all duration-300 cursor-pointer group"
                 onClick={handleNewProject}
               >
                 <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-[#00D9FF]/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-[#00D9FF]/30 transition-colors">
-                    <Plus className="w-6 h-6 text-[#00D9FF]" />
+                  <div className="w-12 h-12 bg-brand-primary/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-primary/30 transition-colors">
+                    <Plus className="w-6 h-6 text-brand-primary" />
                   </div>
                   <h4 className="font-semibold mb-2">Create New Project</h4>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-text-muted">
                     Start building a new automation configuration
                   </p>
                 </CardContent>
               </Card>
 
               <Card
-                className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm hover:border-[#BD00FF]/50 hover:shadow-[0_0_20px_rgba(189,0,255,0.1)] transition-all duration-300 cursor-pointer group"
+                className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-secondary/50 hover:shadow-[0_0_20px_var(--glow-secondary)] transition-all duration-300 cursor-pointer group"
                 onClick={handleBrowseTemplates}
               >
                 <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-[#BD00FF]/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-[#BD00FF]/30 transition-colors">
-                    <Template className="w-6 h-6 text-[#BD00FF]" />
+                  <div className="w-12 h-12 bg-brand-secondary/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-secondary/30 transition-colors">
+                    <Template className="w-6 h-6 text-brand-secondary" />
                   </div>
                   <h4 className="font-semibold mb-2">Browse Templates</h4>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-text-muted">
                     Explore pre-built automation templates
                   </p>
                 </CardContent>
               </Card>
 
               <Card
-                className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm hover:border-[#00FF88]/50 hover:shadow-[0_0_20px_rgba(0,255,136,0.1)] transition-all duration-300 cursor-pointer group"
+                className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-success/50 hover:shadow-[0_0_20px_var(--glow-success)] transition-all duration-300 cursor-pointer group"
                 onClick={handleImportProject}
               >
                 <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-[#00FF88]/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-[#00FF88]/30 transition-colors">
-                    <Upload className="w-6 h-6 text-[#00FF88]" />
+                  <div className="w-12 h-12 bg-brand-success/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-success/30 transition-colors">
+                    <Upload className="w-6 h-6 text-brand-success" />
                   </div>
                   <h4 className="font-semibold mb-2">Import Configuration</h4>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-text-muted">
                     Upload existing automation files
                   </p>
                 </CardContent>
@@ -504,7 +504,7 @@ export default function Dashboard() {
               <h3 className="text-xl font-semibold">Your Projects</h3>
               <Button
                 onClick={handleNewProject}
-                className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+                className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
                 data-tour="new-project"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -513,24 +513,24 @@ export default function Dashboard() {
             </div>
 
             {loading ? (
-              <div className="text-center py-8 text-gray-400">
+              <div className="text-center py-8 text-text-muted">
                 Loading projects...
               </div>
             ) : projects.length === 0 ? (
-              <Card className="bg-[#1A1A1B]/30 border-gray-800/50 border-dashed backdrop-blur-sm">
+              <Card className="bg-surface-raised/30 border-border-subtle/50 border-dashed backdrop-blur-sm">
                 <CardContent className="p-12 text-center">
-                  <div className="w-16 h-16 bg-[#00D9FF]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <FolderOpen className="w-8 h-8 text-[#00D9FF]" />
+                  <div className="w-16 h-16 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <FolderOpen className="w-8 h-8 text-brand-primary" />
                   </div>
-                  <h4 className="text-xl font-semibold mb-2 text-gray-300">
+                  <h4 className="text-xl font-semibold mb-2 text-text-secondary">
                     No projects yet
                   </h4>
-                  <p className="text-gray-500 mb-6">
+                  <p className="text-text-muted mb-6">
                     Create your first automation project to get started
                   </p>
                   <Button
                     onClick={handleNewProject}
-                    className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+                    className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Create First Project
@@ -544,10 +544,10 @@ export default function Dashboard() {
                   return (
                     <Card
                       key={project.id}
-                      className={`bg-[#1A1A1B]/50 backdrop-blur-sm transition-all duration-300 group ${
+                      className={`bg-surface-raised/50 backdrop-blur-sm transition-all duration-300 group ${
                         isSelected
-                          ? "border-[#00D9FF] shadow-[0_0_20px_rgba(0,217,255,0.2)] ring-1 ring-[#00D9FF]/50"
-                          : "border-gray-800/50 hover:border-[#00D9FF]/30 hover:shadow-[0_0_20px_rgba(0,217,255,0.05)]"
+                          ? "border-brand-primary shadow-[0_0_20px_var(--glow-primary)] ring-1 ring-brand-primary/50"
+                          : "border-border-subtle/50 hover:border-brand-primary/30 hover:shadow-[0_0_20px_var(--glow-primary)]"
                       }`}
                     >
                       <CardContent className="p-6">
@@ -555,7 +555,7 @@ export default function Dashboard() {
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center gap-2 min-w-0 flex-1">
                               {isSelected && (
-                                <div className="w-5 h-5 rounded-full bg-[#00D9FF] flex items-center justify-center flex-shrink-0">
+                                <div className="w-5 h-5 rounded-full bg-brand-primary flex items-center justify-center flex-shrink-0">
                                   <Check className="w-3 h-3 text-black" />
                                 </div>
                               )}
@@ -573,10 +573,10 @@ export default function Dashboard() {
                               {project.status}
                             </Badge>
                           </div>
-                          <p className="text-gray-400 text-sm mb-3 line-clamp-2">
+                          <p className="text-text-muted text-sm mb-3 line-clamp-2">
                             {project.description}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-text-muted">
                             Modified {getRelativeTime(project.updated_at)}
                           </p>
                         </div>
@@ -589,8 +589,8 @@ export default function Dashboard() {
                             }
                             className={`flex-1 ${
                               isSelected
-                                ? "bg-[#00D9FF]/30 text-[#00D9FF] border border-[#00D9FF]/50"
-                                : "bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30 hover:border-[#00D9FF]/50"
+                                ? "bg-brand-primary/30 text-brand-primary border border-brand-primary/50"
+                                : "bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:border-brand-primary/50"
                             }`}
                           >
                             {isSelected ? (
@@ -612,7 +612,7 @@ export default function Dashboard() {
                               e.stopPropagation();
                               handleDeleteProject(project);
                             }}
-                            className="border-gray-700 hover:border-red-500 hover:text-red-400 bg-transparent"
+                            className="border-border-default hover:border-red-500 hover:text-red-400 bg-transparent"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -628,7 +628,7 @@ export default function Dashboard() {
           {/* Recent Activity Sidebar */}
           {projects.length > 0 && (
             <div className="lg:col-span-1">
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="text-lg">Recent Activity</CardTitle>
                 </CardHeader>
@@ -637,17 +637,17 @@ export default function Dashboard() {
                     {activities.slice(0, 5).map((activity) => (
                       <div
                         key={activity.id}
-                        className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-800/30 transition-colors"
+                        className="flex items-start gap-3 p-3 rounded-lg hover:bg-surface-hover/30 transition-colors"
                       >
-                        <div className="w-2 h-2 bg-[#00D9FF] rounded-full mt-2 flex-shrink-0" />
+                        <div className="w-2 h-2 bg-brand-primary rounded-full mt-2 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-200 line-clamp-1">
+                          <p className="text-sm font-medium text-text-secondary line-clamp-1">
                             {activity.type === "created"
                               ? "Created"
                               : "Updated"}{" "}
                             {activity.projectName}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-text-muted">
                             {getRelativeTime(activity.timestamp.toISOString())}
                           </p>
                         </div>

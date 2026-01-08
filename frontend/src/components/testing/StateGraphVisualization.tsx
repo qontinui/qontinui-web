@@ -38,11 +38,11 @@ function StateNode({ data }: { data: StateNodeData }) {
 
   return (
     <div
-      className={`px-4 py-3 rounded-lg border-2 bg-[#1A1A1B] ${getSuccessRateColor(data.success_rate)} min-w-[150px]`}
+      className={`px-4 py-3 rounded-lg border-2 bg-surface-raised ${getSuccessRateColor(data.success_rate)} min-w-[150px]`}
     >
       <div className="font-medium text-white mb-1">{data.label}</div>
       <div className="flex items-center justify-between text-xs">
-        <span className="text-gray-400">{data.visit_count} visits</span>
+        <span className="text-text-muted">{data.visit_count} visits</span>
         <span
           className={
             data.success_rate >= 90
@@ -137,7 +137,7 @@ export function StateGraphVisualization({
           fontSize: 12,
         },
         labelBgStyle: {
-          fill: "#1A1A1B",
+          fill: "var(--color-surface-raised)",
           fillOpacity: 0.8,
         },
         markerEnd: {
@@ -155,9 +155,9 @@ export function StateGraphVisualization({
 
   if (isLoading) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">Loading state graph...</div>
+          <div className="text-text-muted">Loading state graph...</div>
         </CardContent>
       </Card>
     );
@@ -165,7 +165,7 @@ export function StateGraphVisualization({
 
   if (error) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
           <div className="text-red-400">
             Error loading state graph: {error.message}
@@ -177,34 +177,34 @@ export function StateGraphVisualization({
 
   if (!graphData || graphData.nodes.length === 0) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle>State Graph</CardTitle>
         </CardHeader>
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">No state graph data available</div>
+          <div className="text-text-muted">No state graph data available</div>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>State Transition Graph</CardTitle>
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-green-500" />
-              <span className="text-gray-400">90%+ success</span>
+              <span className="text-text-muted">90%+ success</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-yellow-500" />
-              <span className="text-gray-400">70-90% success</span>
+              <span className="text-text-muted">70-90% success</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-red-500" />
-              <span className="text-gray-400">&lt;70% success</span>
+              <span className="text-text-muted">&lt;70% success</span>
             </div>
           </div>
         </div>
@@ -219,12 +219,12 @@ export function StateGraphVisualization({
             nodeTypes={nodeTypes}
             fitView
             attributionPosition="bottom-left"
-            className="bg-[#0A0A0B] rounded-lg"
+            className="bg-surface-canvas rounded-lg"
           >
             <Background color="#333" gap={16} />
-            <Controls className="bg-[#1A1A1B] border border-gray-700" />
+            <Controls className="bg-surface-raised border border-border-default" />
             <MiniMap
-              className="bg-[#1A1A1B] border border-gray-700"
+              className="bg-surface-raised border border-border-default"
               nodeColor={(node) => {
                 const rate = node.data.success_rate as number;
                 if (rate >= 90) return "#10b981";
@@ -237,21 +237,23 @@ export function StateGraphVisualization({
 
         {/* Graph Stats */}
         <div className="grid grid-cols-3 gap-4 mt-6">
-          <div className="text-center p-3 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-1">Total States</div>
-            <div className="text-2xl font-bold text-[#00D9FF]">
+          <div className="text-center p-3 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-1">Total States</div>
+            <div className="text-2xl font-bold text-brand-primary">
               {graphData.nodes.length}
             </div>
           </div>
-          <div className="text-center p-3 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-1">Total Transitions</div>
-            <div className="text-2xl font-bold text-[#BD00FF]">
+          <div className="text-center p-3 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-1">
+              Total Transitions
+            </div>
+            <div className="text-2xl font-bold text-brand-secondary">
               {graphData.edges.length}
             </div>
           </div>
-          <div className="text-center p-3 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-1">Avg Success Rate</div>
-            <div className="text-2xl font-bold text-[#00FF88]">
+          <div className="text-center p-3 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-1">Avg Success Rate</div>
+            <div className="text-2xl font-bold text-brand-success">
               {(
                 graphData.edges.reduce(
                   (acc, edge) => acc + edge.success_rate,

@@ -111,7 +111,7 @@ export function AvatarUpload({
   const displayUrl = previewUrl || avatarUrl;
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
       <CardHeader>
         <CardTitle className="text-xl">Profile Picture</CardTitle>
         <CardDescription>Upload a profile picture or avatar</CardDescription>
@@ -120,7 +120,7 @@ export function AvatarUpload({
         <div className="flex items-center gap-6">
           {/* Avatar Display */}
           <div className="relative">
-            <div className="w-32 h-32 rounded-full overflow-hidden bg-gradient-to-br from-[#00D9FF]/20 to-[#BD00FF]/20 border-2 border-gray-700 flex items-center justify-center">
+            <div className="w-32 h-32 rounded-full overflow-hidden bg-gradient-to-br from-brand-primary/20 to-brand-secondary/20 border-2 border-border-default flex items-center justify-center">
               {displayUrl ? (
                 <img
                   src={displayUrl}
@@ -128,12 +128,12 @@ export function AvatarUpload({
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <User className="w-16 h-16 text-gray-500" />
+                <User className="w-16 h-16 text-text-muted" />
               )}
             </div>
             {isUploading && (
               <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-[#00D9FF] animate-spin" />
+                <Loader2 className="w-8 h-8 text-brand-primary animate-spin" />
               </div>
             )}
           </div>
@@ -143,15 +143,15 @@ export function AvatarUpload({
             <div
               className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
                 isDragOver
-                  ? "border-[#00D9FF] bg-[#00D9FF]/10"
-                  : "border-gray-700 hover:border-gray-600"
+                  ? "border-brand-primary bg-brand-primary/10"
+                  : "border-border-default hover:border-border-default"
               }`}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
             >
-              <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-sm text-gray-400 mb-2">
+              <Upload className="w-8 h-8 text-text-muted mx-auto mb-2" />
+              <p className="text-sm text-text-muted mb-2">
                 Drag and drop an image here, or click to browse
               </p>
               <input
@@ -165,12 +165,12 @@ export function AvatarUpload({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30"
+                className="bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30"
               >
                 <Upload className="w-4 h-4 mr-2" />
                 Choose File
               </Button>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-text-muted mt-2">
                 PNG, JPG or GIF (max. 5MB)
               </p>
             </div>

@@ -97,28 +97,28 @@ export default function ProjectLiveTestingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               onClick={() => router.push(`/projects/${projectId}/testing`)}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Testing
             </Button>
-            <div className="h-6 w-px bg-gray-700" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            <div className="h-6 w-px bg-border-default" />
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               Live Testing Dashboard
             </h1>
           </div>
           <div className="flex items-center gap-3">
             <Button
               onClick={handleStartNewTest}
-              className="bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] hover:opacity-90 text-black font-medium"
+              className="bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 text-black font-medium"
             >
               <Play className="w-4 h-4 mr-2" />
               Start New Test
@@ -133,17 +133,17 @@ export default function ProjectLiveTestingPage() {
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as "live" | "history")}
         >
-          <TabsList className="bg-[#1A1A1B]/50 border border-gray-800/50 mb-6">
+          <TabsList className="bg-surface-raised/50 border border-border-subtle/50 mb-6">
             <TabsTrigger
               value="live"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#00D9FF] data-[state=active]:to-[#BD00FF] data-[state=active]:text-black"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-brand-primary data-[state=active]:to-brand-secondary data-[state=active]:text-black"
             >
               <PlayCircle className="w-4 h-4 mr-2" />
               Live Execution
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#00D9FF] data-[state=active]:to-[#BD00FF] data-[state=active]:text-black"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-brand-primary data-[state=active]:to-brand-secondary data-[state=active]:text-black"
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               Test History
@@ -159,7 +159,7 @@ export default function ProjectLiveTestingPage() {
                     <h2 className="text-lg font-medium text-white">
                       Live Test Execution
                     </h2>
-                    <p className="text-sm text-gray-400 mt-1">
+                    <p className="text-sm text-text-muted mt-1">
                       Real-time monitoring of test execution and results
                     </p>
                   </div>
@@ -167,7 +167,7 @@ export default function ProjectLiveTestingPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => setActiveTestRunId(undefined)}
-                    className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                    className="border-border-default hover:border-brand-primary hover:text-brand-primary"
                   >
                     Clear Selection
                   </Button>
@@ -179,19 +179,19 @@ export default function ProjectLiveTestingPage() {
                 />
               </>
             ) : (
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+              <Card className="bg-surface-raised/50 border-border-subtle/50">
                 <CardContent className="p-12 text-center">
-                  <PlayCircle className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <PlayCircle className="w-16 h-16 text-text-muted mx-auto mb-4" />
                   <h3 className="text-xl font-medium text-white mb-2">
                     No Active Test
                   </h3>
-                  <p className="text-gray-400 mb-6">
+                  <p className="text-text-muted mb-6">
                     Start a new test or select a running test from history to
                     see live results
                   </p>
                   <Button
                     onClick={handleStartNewTest}
-                    className="bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] hover:opacity-90 text-black font-medium"
+                    className="bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 text-black font-medium"
                   >
                     <Play className="w-4 h-4 mr-2" />
                     Start New Test
@@ -205,16 +205,16 @@ export default function ProjectLiveTestingPage() {
           <TabsContent value="history" className="space-y-6">
             <div>
               <h2 className="text-lg font-medium text-white">Test History</h2>
-              <p className="text-sm text-gray-400 mt-1">
+              <p className="text-sm text-text-muted mt-1">
                 View and analyze past test executions
               </p>
             </div>
 
             {/* Filters */}
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+            <Card className="bg-surface-raised/50 border-border-subtle/50">
               <CardHeader>
                 <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-gray-400" />
+                  <Filter className="w-4 h-4 text-text-muted" />
                   <CardTitle className="text-base">Filters</CardTitle>
                 </div>
               </CardHeader>
@@ -226,18 +226,18 @@ export default function ProjectLiveTestingPage() {
                         placeholder="Search test runs..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="bg-[#0A0A0B]/50 border-gray-700 focus:border-[#00D9FF]"
+                        className="bg-surface-canvas/50 border-border-default focus:border-brand-primary"
                       />
                       <Button
                         onClick={() => refetchTestRuns()}
-                        className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                        className="bg-brand-primary hover:bg-brand-primary/80 text-black"
                       >
                         <Search className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="bg-[#0A0A0B]/50 border-gray-700">
+                    <SelectTrigger className="bg-surface-canvas/50 border-border-default">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -253,9 +253,9 @@ export default function ProjectLiveTestingPage() {
 
             {/* Test Runs List */}
             {testRunsLoading ? (
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+              <Card className="bg-surface-raised/50 border-border-subtle/50">
                 <CardContent className="p-12 text-center">
-                  <div className="text-gray-400">Loading test runs...</div>
+                  <div className="text-text-muted">Loading test runs...</div>
                 </CardContent>
               </Card>
             ) : testRunsData?.items && testRunsData.items.length > 0 ? (
@@ -279,13 +279,13 @@ export default function ProjectLiveTestingPage() {
                 ))}
               </div>
             ) : (
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+              <Card className="bg-surface-raised/50 border-border-subtle/50">
                 <CardContent className="p-12 text-center">
-                  <RefreshCw className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <RefreshCw className="w-16 h-16 text-text-muted mx-auto mb-4" />
                   <h3 className="text-xl font-medium text-white mb-2">
                     No Test Runs Found
                   </h3>
-                  <p className="text-gray-400 mb-6">
+                  <p className="text-text-muted mb-6">
                     {searchQuery || statusFilter !== "all"
                       ? "No test runs match your filters. Try adjusting your search criteria."
                       : "Start your first test to see results here"}
@@ -293,7 +293,7 @@ export default function ProjectLiveTestingPage() {
                   {!searchQuery && statusFilter === "all" && (
                     <Button
                       onClick={handleStartNewTest}
-                      className="bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] hover:opacity-90 text-black font-medium"
+                      className="bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 text-black font-medium"
                     >
                       <Play className="w-4 h-4 mr-2" />
                       Start First Test
@@ -310,7 +310,7 @@ export default function ProjectLiveTestingPage() {
                   variant="outline"
                   size="sm"
                   disabled={testRunsData.page === 1}
-                  className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                  className="border-border-default hover:border-brand-primary hover:text-brand-primary"
                 >
                   Previous
                 </Button>
@@ -321,7 +321,7 @@ export default function ProjectLiveTestingPage() {
                   variant="outline"
                   size="sm"
                   disabled={testRunsData.page === testRunsData.total_pages}
-                  className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                  className="border-border-default hover:border-brand-primary hover:text-brand-primary"
                 >
                   Next
                 </Button>

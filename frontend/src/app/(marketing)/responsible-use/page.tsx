@@ -3,14 +3,14 @@ export default function ResponsibleUseFAQ() {
     <div className="min-h-screen bg-white">
       <div className="max-w-4xl mx-auto px-4 py-12">
         <h1 className="text-4xl font-bold mb-8">Responsible Use FAQ</h1>
-        <p className="text-sm text-gray-600 mb-8">
+        <p className="text-sm text-text-muted mb-8">
           Last updated: January 6, 2025
         </p>
 
         <div className="space-y-8 text-muted-foreground">
           {/* Introduction */}
           <section className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-900">
+            <h2 className="text-2xl font-semibold mb-4 text-text-primary">
               Welcome to Qontinui
             </h2>
             <p className="mb-4">
@@ -41,7 +41,7 @@ export default function ResponsibleUseFAQ() {
 
           {/* Quick Reference */}
           <section className="bg-green-50 border border-green-200 rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-900">
+            <h2 className="text-2xl font-semibold mb-4 text-text-primary">
               Quick Reference: Safe vs. Risky Use
             </h2>
             <div className="grid md:grid-cols-2 gap-6">
@@ -75,7 +75,7 @@ export default function ResponsibleUseFAQ() {
 
           {/* Getting Started */}
           <section>
-            <h2 className="text-3xl font-bold mb-6 text-gray-900">
+            <h2 className="text-3xl font-bold mb-6 text-text-primary">
               Getting Started
             </h2>
 
@@ -173,7 +173,7 @@ export default function ResponsibleUseFAQ() {
 
           {/* Legal and Safety */}
           <section>
-            <h2 className="text-3xl font-bold mb-6 text-gray-900">
+            <h2 className="text-3xl font-bold mb-6 text-text-primary">
               Legal and Safety
             </h2>
 
@@ -362,7 +362,7 @@ export default function ResponsibleUseFAQ() {
 
           {/* Gaming Automation */}
           <section>
-            <h2 className="text-3xl font-bold mb-6 text-gray-900">
+            <h2 className="text-3xl font-bold mb-6 text-text-primary">
               Gaming Automation
             </h2>
 
@@ -566,7 +566,7 @@ export default function ResponsibleUseFAQ() {
 
           {/* Technical Questions */}
           <section>
-            <h2 className="text-3xl font-bold mb-6 text-gray-900">
+            <h2 className="text-3xl font-bold mb-6 text-text-primary">
               Technical Questions
             </h2>
 
@@ -690,7 +690,7 @@ export default function ResponsibleUseFAQ() {
 
           {/* Pricing and Plans */}
           <section>
-            <h2 className="text-3xl font-bold mb-6 text-gray-900">
+            <h2 className="text-3xl font-bold mb-6 text-text-primary">
               Pricing and Plans
             </h2>
 
@@ -787,7 +787,7 @@ export default function ResponsibleUseFAQ() {
 
           {/* Best Practices */}
           <section>
-            <h2 className="text-3xl font-bold mb-6 text-gray-900">
+            <h2 className="text-3xl font-bold mb-6 text-text-primary">
               Best Practices
             </h2>
 
@@ -1014,8 +1014,8 @@ export default function ResponsibleUseFAQ() {
           </section>
 
           {/* Still Have Questions? */}
-          <section className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-900">
+          <section className="bg-surface-canvas border border-border-subtle rounded-lg p-6">
+            <h2 className="text-2xl font-semibold mb-4 text-text-primary">
               Still Have Questions?
             </h2>
             <p className="mb-4">
@@ -1044,7 +1044,7 @@ export default function ResponsibleUseFAQ() {
 
           {/* Important Disclaimers */}
           <section className="bg-yellow-50 border border-yellow-300 rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-900">
+            <h2 className="text-2xl font-semibold mb-4 text-text-primary">
               Important Disclaimers
             </h2>
             <ul className="list-disc pl-6 space-y-3">

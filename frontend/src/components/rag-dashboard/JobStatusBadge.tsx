@@ -19,12 +19,12 @@ const statusConfig: Record<
   },
   in_progress: {
     label: "In Progress",
-    className: "border-[#00D9FF]/50 text-[#00D9FF] bg-[#00D9FF]/10",
+    className: "border-brand-primary/50 text-brand-primary bg-brand-primary/10",
     icon: Loader2,
   },
   completed: {
     label: "Completed",
-    className: "border-[#00FF88]/50 text-[#00FF88] bg-[#00FF88]/10",
+    className: "border-brand-success/50 text-brand-success bg-brand-success/10",
     icon: CheckCircle2,
   },
   failed: {
@@ -34,7 +34,7 @@ const statusConfig: Record<
   },
   cancelled: {
     label: "Cancelled",
-    className: "border-gray-500/50 text-gray-500 bg-gray-500/10",
+    className: "border-text-muted/50 text-text-muted bg-text-muted/10",
     icon: Ban,
   },
 };

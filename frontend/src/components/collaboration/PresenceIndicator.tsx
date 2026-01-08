@@ -41,7 +41,7 @@ const statusColors = {
   active: "bg-green-500/10 text-green-500 border-green-500/20",
   viewing: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   editing: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  idle: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  idle: "bg-gray-500/10 text-text-muted border-gray-500/20",
 };
 
 const statusDotColors = {

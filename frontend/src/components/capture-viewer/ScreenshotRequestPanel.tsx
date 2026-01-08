@@ -140,7 +140,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <Card>
         <CollapsibleTrigger asChild>
-          <CardHeader className="cursor-pointer hover:bg-gray-50 transition-colors">
+          <CardHeader className="cursor-pointer hover:bg-surface-raised/80 transition-colors">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Camera className="h-5 w-5 text-blue-600" />
@@ -149,9 +149,9 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                 </CardTitle>
               </div>
               {isOpen ? (
-                <ChevronUp className="h-5 w-5 text-gray-500" />
+                <ChevronUp className="h-5 w-5 text-text-muted" />
               ) : (
-                <ChevronDown className="h-5 w-5 text-gray-500" />
+                <ChevronDown className="h-5 w-5 text-text-muted" />
               )}
             </div>
             <CardDescription>
@@ -178,14 +178,14 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
             {/* Event Types */}
             <div className="space-y-3">
               <Label className="text-base font-semibold">Event Types</Label>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-text-muted">
                 Select which types of events should trigger screenshot capture
               </p>
               <div className="space-y-2">
                 {EVENT_TYPE_OPTIONS.map((option) => (
                   <div
                     key={option.value}
-                    className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+                    className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-surface-raised/80 transition-colors"
                   >
                     <Checkbox
                       id={`event-${option.value}`}
@@ -201,7 +201,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                       >
                         {option.label}
                       </label>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-text-muted">
                         {option.description}
                       </p>
                     </div>
@@ -214,7 +214,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
             {eventTypes.includes("mouse_click") && (
               <div className="space-y-3">
                 <Label className="text-base font-semibold">Mouse Buttons</Label>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-text-muted">
                   Select which mouse buttons to capture
                 </p>
                 <div className="flex gap-2 flex-wrap">
@@ -239,7 +239,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
               <Label htmlFor="maxCount" className="text-base font-semibold">
                 Maximum Screenshots
               </Label>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-text-muted">
                 Limit the number of screenshots to generate (1-1000)
               </p>
               <Input
@@ -268,7 +268,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                   >
                     Capture After Delay
                   </Label>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-text-muted">
                     Also capture screenshots after a delay (useful for
                     animations or UI updates)
                   </p>
@@ -292,7 +292,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                     }
                     className="w-32"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Screenshots will be taken both immediately and after{" "}
                     {afterDelayMs}ms
                   </p>
@@ -301,9 +301,9 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
             </div>
 
             {/* Summary */}
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="p-3 bg-surface-canvas rounded-lg border border-border-subtle">
               <h4 className="font-semibold text-sm mb-2">Request Summary</h4>
-              <div className="text-sm space-y-1 text-gray-700">
+              <div className="text-sm space-y-1 text-text-secondary">
                 <p>
                   <span className="font-medium">Event Types:</span>{" "}
                   {eventTypes.length > 0
@@ -359,7 +359,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
             </div>
 
             {/* Additional Info */}
-            <div className="text-xs text-gray-500 space-y-1">
+            <div className="text-xs text-text-muted space-y-1">
               <p>
                 Screenshots are processed in the background and may take several
                 minutes depending on the number of events.

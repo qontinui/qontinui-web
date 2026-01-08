@@ -41,7 +41,7 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
   return (
     <div className="space-y-6">
       {/* Search Form */}
-      <Card className="bg-gray-900/50 border-gray-800">
+      <Card className="bg-surface-canvas/50 border-border-subtle">
         <CardHeader>
           <CardTitle className="text-white">Semantic Search</CardTitle>
         </CardHeader>
@@ -52,12 +52,12 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="flex-1 bg-gray-800 border-gray-700"
+              className="flex-1 bg-surface-raised border-border-default"
             />
             <Button
               onClick={handleSearch}
               disabled={!query.trim() || isPending}
-              className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+              className="bg-brand-primary hover:bg-brand-primary/80 text-black"
             >
               {isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -70,7 +70,7 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-gray-400">
+              <Label className="text-text-muted">
                 Min Similarity: {Math.round(minSimilarity * 100)}%
               </Label>
               <Slider
@@ -83,7 +83,7 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-gray-400">Max Results: {limit}</Label>
+              <Label className="text-text-muted">Max Results: {limit}</Label>
               <Slider
                 value={[limit]}
                 onValueChange={(values) => setLimit(values[0] ?? 20)}
@@ -107,13 +107,13 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
       )}
 
       {data && (
-        <Card className="bg-gray-900/50 border-gray-800">
+        <Card className="bg-surface-canvas/50 border-border-subtle">
           <CardHeader>
             <CardTitle className="text-white flex items-center justify-between">
               <span>Results</span>
               <Badge
                 variant="outline"
-                className="border-gray-700 text-gray-400"
+                className="border-border-default text-text-muted"
               >
                 {data.total_found} found
               </Badge>
@@ -122,9 +122,9 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
           <CardContent>
             {data.results.length === 0 ? (
               <div className="text-center py-12">
-                <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400 text-lg">No results found</p>
-                <p className="text-gray-500 text-sm mt-1">
+                <Search className="w-12 h-12 text-text-muted mx-auto mb-4" />
+                <p className="text-text-muted text-lg">No results found</p>
+                <p className="text-text-muted text-sm mt-1">
                   Try adjusting your search query or lowering the similarity
                   threshold
                 </p>
@@ -134,29 +134,29 @@ export function RAGSearchPanel({ projectId }: RAGSearchPanelProps) {
                 {data.results.map((result: SearchResultItem, index: number) => (
                   <div
                     key={result.embedding.id}
-                    className="flex items-center gap-4 p-3 bg-gray-800/50 rounded-lg"
+                    className="flex items-center gap-4 p-3 bg-surface-raised/50 rounded-lg"
                   >
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 text-sm font-medium text-gray-300">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-surface-raised text-sm font-medium text-text-default">
                       {index + 1}
                     </div>
-                    <div className="w-12 h-12 bg-gray-700 rounded flex items-center justify-center">
-                      <ImageIcon className="w-6 h-6 text-gray-500" />
+                    <div className="w-12 h-12 bg-surface-raised rounded flex items-center justify-center">
+                      <ImageIcon className="w-6 h-6 text-text-muted" />
                     </div>
                     <div className="flex-1">
                       <p className="font-medium text-white">
                         {result.embedding.pattern_name ||
                           result.embedding.pattern_id}
                       </p>
-                      <p className="text-sm text-gray-400">
+                      <p className="text-sm text-text-muted">
                         State: {result.embedding.state_name}
                       </p>
                     </div>
                     <Badge
                       className={`${
                         result.similarity_score > 0.8
-                          ? "bg-[#00FF88]/20 text-[#00FF88] border-[#00FF88]/50"
+                          ? "bg-brand-success/20 text-brand-success border-brand-success/50"
                           : result.similarity_score > 0.6
-                            ? "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/50"
+                            ? "bg-brand-primary/20 text-brand-primary border-brand-primary/50"
                             : "bg-yellow-500/20 text-yellow-500 border-yellow-500/50"
                       }`}
                       variant="outline"

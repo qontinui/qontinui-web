@@ -52,8 +52,8 @@ export function ActiveConnectionsList() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF]" />
-        <span className="ml-3 text-gray-400">
+        <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
+        <span className="ml-3 text-text-muted">
           Loading active connections...
         </span>
       </div>
@@ -66,15 +66,15 @@ export function ActiveConnectionsList() {
       error.message?.includes("proxy") ||
       error.message?.includes("network");
     return (
-      <Card className="bg-[#1A1A1B] border-gray-800 p-12">
+      <Card className="bg-surface-raised border-border-subtle p-12">
         <div className="text-center">
-          <WifiOff className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-          <h3 className="text-xl font-semibold text-gray-300 mb-2">
+          <WifiOff className="w-16 h-16 mx-auto text-text-muted mb-4" />
+          <h3 className="text-xl font-semibold text-text-muted mb-2">
             {isConnectionError
               ? "Unable to Connect to Server"
               : "Failed to Load Connections"}
           </h3>
-          <p className="text-gray-400 mb-6 max-w-md mx-auto">
+          <p className="text-text-muted mb-6 max-w-md mx-auto">
             {isConnectionError
               ? "The backend server appears to be offline or unreachable. Please ensure the server is running and try again."
               : error.message ||
@@ -85,7 +85,7 @@ export function ActiveConnectionsList() {
               setError(null);
               refetch();
             }}
-            className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+            className="bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             <RefreshCw className="w-4 h-4 mr-2" />
             Try Again
@@ -98,11 +98,11 @@ export function ActiveConnectionsList() {
   if (!connections || connections.length === 0) {
     return (
       <div className="text-center py-12">
-        <Monitor className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-        <h3 className="text-xl font-semibold text-gray-300 mb-2">
+        <Monitor className="w-16 h-16 mx-auto text-text-muted mb-4" />
+        <h3 className="text-xl font-semibold text-text-muted mb-2">
           No Active Connections
         </h3>
-        <p className="text-gray-400">
+        <p className="text-text-muted">
           No runners are currently connected to your account
         </p>
       </div>
@@ -115,20 +115,20 @@ export function ActiveConnectionsList() {
         {connections.map((connection) => (
           <Card
             key={connection.id}
-            className="bg-[#1A1A1B] border-gray-800 p-6"
+            className="bg-surface-raised border-border-subtle p-6"
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 {/* Header with Status */}
                 <div className="flex items-center gap-3 mb-4">
-                  <Monitor className="w-5 h-5 text-[#00D9FF]" />
+                  <Monitor className="w-5 h-5 text-brand-primary" />
                   <h3 className="text-lg font-semibold text-white">
                     {connection.runner_name || "Unknown Runner"}
                   </h3>
                   <StatusIndicator status="active" showLabel={false} />
                   <Badge
                     variant="outline"
-                    className="border-green-500/50 text-green-500"
+                    className="border-brand-success/50 text-brand-success"
                   >
                     Connected
                   </Badge>
@@ -138,9 +138,9 @@ export function ActiveConnectionsList() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Connected Since */}
                   <div className="flex items-start gap-3">
-                    <Clock className="w-4 h-4 text-gray-400 mt-1" />
+                    <Clock className="w-4 h-4 text-text-muted mt-1" />
                     <div>
-                      <p className="text-sm text-gray-400">Connected</p>
+                      <p className="text-sm text-text-muted">Connected</p>
                       <p className="text-white font-medium">
                         {formatRelativeTime(connection.connected_at)}
                       </p>
@@ -150,9 +150,9 @@ export function ActiveConnectionsList() {
                   {/* IP Address */}
                   {connection.ip_address && (
                     <div className="flex items-start gap-3">
-                      <MapPin className="w-4 h-4 text-gray-400 mt-1" />
+                      <MapPin className="w-4 h-4 text-text-muted mt-1" />
                       <div>
-                        <p className="text-sm text-gray-400">IP Address</p>
+                        <p className="text-sm text-text-muted">IP Address</p>
                         <p className="text-white font-medium font-mono text-sm">
                           {connection.ip_address}
                         </p>
@@ -163,9 +163,9 @@ export function ActiveConnectionsList() {
                   {/* Project */}
                   {connection.project_name && (
                     <div className="flex items-start gap-3">
-                      <div className="w-4 h-4 bg-[#00D9FF] rounded mt-1" />
+                      <div className="w-4 h-4 bg-brand-primary rounded mt-1" />
                       <div>
-                        <p className="text-sm text-gray-400">Project</p>
+                        <p className="text-sm text-text-muted">Project</p>
                         <p className="text-white font-medium">
                           {connection.project_name}
                         </p>
@@ -175,7 +175,7 @@ export function ActiveConnectionsList() {
                 </div>
 
                 {/* Session ID */}
-                <div className="mt-4 text-xs text-gray-500">
+                <div className="mt-4 text-xs text-text-muted">
                   Session ID: {connection.id}
                 </div>
               </div>
@@ -200,7 +200,7 @@ export function ActiveConnectionsList() {
         open={disconnectingId !== null}
         onOpenChange={(open) => !open && setDisconnectingId(null)}
       >
-        <AlertDialogContent className="bg-[#1A1A1B] border-gray-800">
+        <AlertDialogContent className="bg-surface-raised border-border-subtle">
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect Runner?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -209,7 +209,7 @@ export function ActiveConnectionsList() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-gray-700">
+            <AlertDialogCancel className="border-border-default">
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction

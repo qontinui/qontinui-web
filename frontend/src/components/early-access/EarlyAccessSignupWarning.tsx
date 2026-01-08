@@ -46,7 +46,7 @@ export function EarlyAccessSignupWarning() {
             <AlertTitle className="text-lg font-bold mb-3 text-blue-300">
               EARLY ACCESS - Launching February 2026
             </AlertTitle>
-            <AlertDescription className="space-y-2 text-sm text-gray-300">
+            <AlertDescription className="space-y-2 text-sm text-text-secondary">
               <p>You&apos;re trying Qontinui before the official launch!</p>
 
               <div className="space-y-1.5 my-3">
@@ -68,7 +68,7 @@ export function EarlyAccessSignupWarning() {
                 </div>
               </div>
 
-              <p className="text-gray-400 italic mt-3">
+              <p className="text-text-muted italic mt-3">
                 By signing up, you&apos;re joining as an early tester. Your
                 feedback helps shape the product!
               </p>
@@ -90,12 +90,12 @@ export function EarlyAccessSignupWarning() {
 
       {/* Learn More Modal */}
       <Dialog open={showLearnMore} onOpenChange={setShowLearnMore}>
-        <DialogContent className="max-w-2xl border-gray-800/50 bg-[#0A0A0B] text-white">
+        <DialogContent className="max-w-2xl border-border-subtle/50 bg-surface-canvas text-white">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-blue-400">
               Early Access FAQ
             </DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogDescription className="text-text-muted">
               Everything you need to know about using Qontinui in early access
             </DialogDescription>
           </DialogHeader>
@@ -106,7 +106,7 @@ export function EarlyAccessSignupWarning() {
               <h3 className="font-semibold text-white mb-2">
                 Q: What does &quot;early access&quot; mean?
               </h3>
-              <p className="text-gray-300 text-sm leading-relaxed">
+              <p className="text-text-secondary text-sm leading-relaxed">
                 You can use qontinui-web now, before the official February 2026
                 launch. All features work, but the interface and functionality
                 may change based on user feedback.
@@ -117,7 +117,7 @@ export function EarlyAccessSignupWarning() {
               <h3 className="font-semibold text-white mb-2">
                 Q: Will I lose my work?
               </h3>
-              <p className="text-gray-300 text-sm leading-relaxed">
+              <p className="text-text-secondary text-sm leading-relaxed">
                 Not if you export! Use the export icon in the sidebar or the
                 Export button at the top of the canvas to save your automation
                 as a JSON file. This JSON will always be compatible with future
@@ -129,7 +129,7 @@ export function EarlyAccessSignupWarning() {
               <h3 className="font-semibold text-white mb-2">
                 Q: What are &quot;breaking changes&quot;?
               </h3>
-              <p className="text-gray-300 text-sm leading-relaxed">
+              <p className="text-text-secondary text-sm leading-relaxed">
                 We might reorganize the interface, change workflows, or update
                 features before launch. Your saved JSON files will always
                 import, but the web interface might look different between
@@ -141,7 +141,7 @@ export function EarlyAccessSignupWarning() {
               <h3 className="font-semibold text-white mb-2">
                 Q: Should I use this for production?
               </h3>
-              <p className="text-gray-300 text-sm leading-relaxed">
+              <p className="text-text-secondary text-sm leading-relaxed">
                 If you export your work regularly, yes! Many users run
                 automations from exported JSON files using qontinui-runner
                 (desktop app).
@@ -152,7 +152,7 @@ export function EarlyAccessSignupWarning() {
               <h3 className="font-semibold text-white mb-2">
                 Q: How often should I export?
               </h3>
-              <p className="text-gray-300 text-sm leading-relaxed">
+              <p className="text-text-secondary text-sm leading-relaxed">
                 After each significant change. Think of it like &quot;Save&quot;
                 in a document.
               </p>
@@ -162,7 +162,7 @@ export function EarlyAccessSignupWarning() {
               <h3 className="font-semibold text-white mb-2">
                 Q: What happens after February 2026 launch?
               </h3>
-              <p className="text-gray-300 text-sm leading-relaxed">
+              <p className="text-text-secondary text-sm leading-relaxed">
                 Early access ends, official version launches. All your exported
                 JSON files will import seamlessly. Accounts created during early
                 access remain active.

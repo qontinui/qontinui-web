@@ -111,13 +111,13 @@ export function ProjectSettingsComponent({
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-white mb-2">Project Settings</h2>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-text-muted">
           Configure default behavior for automation actions
         </p>
       </div>
 
       <Tabs defaultValue="execution" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 bg-gray-800">
+        <TabsList className="grid w-full grid-cols-6 bg-surface-raised">
           <TabsTrigger value="execution">Execution</TabsTrigger>
           <TabsTrigger value="recognition">Recognition</TabsTrigger>
           <TabsTrigger value="mouse">Mouse</TabsTrigger>
@@ -127,9 +127,9 @@ export function ProjectSettingsComponent({
         </TabsList>
 
         <TabsContent value="execution" className="space-y-4">
-          <Card className="border-gray-700 bg-[#27272A]">
+          <Card className="border-border-default bg-surface-raised">
             <CardHeader>
-              <CardTitle className="text-[#00D9FF]">
+              <CardTitle className="text-brand-primary">
                 Execution Settings
               </CardTitle>
               <CardDescription>
@@ -139,7 +139,7 @@ export function ProjectSettingsComponent({
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Default Timeout (ms)
                   </Label>
                   <Input
@@ -153,15 +153,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Maximum time to wait for actions to complete
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Default Retry Count
                   </Label>
                   <Input
@@ -175,15 +175,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Number of times to retry failed actions
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Action Delay (ms)
                   </Label>
                   <Input
@@ -197,15 +197,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Delay between consecutive actions
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Failure Strategy
                   </Label>
                   <Select
@@ -214,10 +214,10 @@ export function ProjectSettingsComponent({
                       updateExecutionSettings("failure_strategy", value)
                     }
                   >
-                    <SelectTrigger className="bg-transparent border-gray-700">
+                    <SelectTrigger className="bg-transparent border-border-default">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#27272A] border-gray-700">
+                    <SelectContent className="bg-surface-raised border-border-default">
                       <SelectItem value="stop">Stop on Failure</SelectItem>
                       <SelectItem value="continue">
                         Continue on Failure
@@ -225,7 +225,7 @@ export function ProjectSettingsComponent({
                       <SelectItem value="pause">Pause on Failure</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     What to do when an action fails
                   </p>
                 </div>
@@ -235,9 +235,9 @@ export function ProjectSettingsComponent({
         </TabsContent>
 
         <TabsContent value="recognition" className="space-y-4">
-          <Card className="border-gray-700 bg-[#27272A]">
+          <Card className="border-border-default bg-surface-raised">
             <CardHeader>
-              <CardTitle className="text-[#00D9FF]">
+              <CardTitle className="text-brand-primary">
                 Recognition Settings
               </CardTitle>
               <CardDescription>
@@ -247,7 +247,7 @@ export function ProjectSettingsComponent({
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Minimum Similarity (0.0-1.0)
                   </Label>
                   <Input
@@ -262,38 +262,38 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Minimum similarity threshold for image matching
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">Color Space</Label>
+                  <Label className="text-sm text-text-muted">Color Space</Label>
                   <Select
                     value={settings.recognition.color_space}
                     onValueChange={(value) =>
                       updateRecognitionSettings("color_space", value)
                     }
                   >
-                    <SelectTrigger className="bg-transparent border-gray-700">
+                    <SelectTrigger className="bg-transparent border-border-default">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#27272A] border-gray-700">
+                    <SelectContent className="bg-surface-raised border-border-default">
                       <SelectItem value="rgb">RGB</SelectItem>
                       <SelectItem value="grayscale">Grayscale</SelectItem>
                       <SelectItem value="hsv">HSV</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Color space for image processing
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm text-gray-400">
+                    <Label className="text-sm text-text-muted">
                       Multi-Scale Search
                     </Label>
                     <Switch
@@ -303,14 +303,14 @@ export function ProjectSettingsComponent({
                       }
                     />
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Search at multiple scales (experimental)
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm text-gray-400">
+                    <Label className="text-sm text-text-muted">
                       Edge Detection
                     </Label>
                     <Switch
@@ -320,14 +320,16 @@ export function ProjectSettingsComponent({
                       }
                     />
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Use edge detection for matching
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm text-gray-400">OCR Enabled</Label>
+                    <Label className="text-sm text-text-muted">
+                      OCR Enabled
+                    </Label>
                     <Switch
                       checked={settings.recognition.ocr_enabled}
                       onCheckedChange={(checked) =>
@@ -335,7 +337,7 @@ export function ProjectSettingsComponent({
                       }
                     />
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Enable optical character recognition
                   </p>
                 </div>
@@ -345,9 +347,9 @@ export function ProjectSettingsComponent({
         </TabsContent>
 
         <TabsContent value="mouse" className="space-y-4">
-          <Card className="border-gray-700 bg-[#27272A]">
+          <Card className="border-border-default bg-surface-raised">
             <CardHeader>
-              <CardTitle className="text-[#00D9FF]">
+              <CardTitle className="text-brand-primary">
                 Mouse Action Timing
               </CardTitle>
               <CardDescription>
@@ -357,7 +359,7 @@ export function ProjectSettingsComponent({
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Click Hold Duration (ms)
                   </Label>
                   <Input
@@ -371,15 +373,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     How long to hold button during click
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Click Release Delay (ms)
                   </Label>
                   <Input
@@ -393,15 +395,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Delay after releasing button
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Double Click Interval (ms)
                   </Label>
                   <Input
@@ -415,16 +417,16 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Time between double clicks
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm text-gray-400">
+                    <Label className="text-sm text-text-muted">
                       Click Safety Release
                     </Label>
                     <Switch
@@ -434,13 +436,13 @@ export function ProjectSettingsComponent({
                       }
                     />
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Release all buttons before clicking
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Drag Start Delay (ms)
                   </Label>
                   <Input
@@ -454,15 +456,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Delay before starting drag
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Drag End Delay (ms)
                   </Label>
                   <Input
@@ -476,15 +478,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Delay after ending drag
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Drag Default Duration (ms)
                   </Label>
                   <Input
@@ -498,15 +500,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Default drag animation duration
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Move Default Duration (ms)
                   </Label>
                   <Input
@@ -520,15 +522,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Default move animation duration
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Safety Release Delay (ms)
                   </Label>
                   <Input
@@ -542,9 +544,9 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Delay after safety release
                   </p>
                 </div>
@@ -554,9 +556,9 @@ export function ProjectSettingsComponent({
         </TabsContent>
 
         <TabsContent value="keyboard" className="space-y-4">
-          <Card className="border-gray-700 bg-[#27272A]">
+          <Card className="border-border-default bg-surface-raised">
             <CardHeader>
-              <CardTitle className="text-[#00D9FF]">
+              <CardTitle className="text-brand-primary">
                 Keyboard Action Timing
               </CardTitle>
               <CardDescription>
@@ -566,7 +568,7 @@ export function ProjectSettingsComponent({
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Key Hold Duration (ms)
                   </Label>
                   <Input
@@ -580,15 +582,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     How long to hold key during press
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Key Release Delay (ms)
                   </Label>
                   <Input
@@ -602,15 +604,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Delay after releasing key
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Typing Interval (ms)
                   </Label>
                   <Input
@@ -624,15 +626,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Delay between typed characters
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Hotkey Hold Duration (ms)
                   </Label>
                   <Input
@@ -646,15 +648,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Duration for hotkey holds
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Hotkey Press Interval (ms)
                   </Label>
                   <Input
@@ -668,9 +670,9 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Interval between hotkey presses
                   </p>
                 </div>
@@ -680,9 +682,9 @@ export function ProjectSettingsComponent({
         </TabsContent>
 
         <TabsContent value="find" className="space-y-4">
-          <Card className="border-gray-700 bg-[#27272A]">
+          <Card className="border-border-default bg-surface-raised">
             <CardHeader>
-              <CardTitle className="text-[#00D9FF]">
+              <CardTitle className="text-brand-primary">
                 Find Action Settings
               </CardTitle>
               <CardDescription>
@@ -692,7 +694,7 @@ export function ProjectSettingsComponent({
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Default Timeout (ms)
                   </Label>
                   <Input
@@ -706,15 +708,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Maximum time for find operations
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Default Retry Count
                   </Label>
                   <Input
@@ -728,15 +730,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Number of find retries (0 = no retries)
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Search Interval (ms)
                   </Label>
                   <Input
@@ -750,9 +752,9 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Delay between search attempts
                   </p>
                 </div>
@@ -762,9 +764,9 @@ export function ProjectSettingsComponent({
         </TabsContent>
 
         <TabsContent value="wait" className="space-y-4">
-          <Card className="border-gray-700 bg-[#27272A]">
+          <Card className="border-border-default bg-surface-raised">
             <CardHeader>
-              <CardTitle className="text-[#00D9FF]">
+              <CardTitle className="text-brand-primary">
                 Action Pause Settings
               </CardTitle>
               <CardDescription>
@@ -774,7 +776,7 @@ export function ProjectSettingsComponent({
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Global Pause Before Action (ms)
                   </Label>
                   <Input
@@ -788,15 +790,15 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Pause before every action begins
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm text-gray-400">
+                  <Label className="text-sm text-text-muted">
                     Global Pause After Action (ms)
                   </Label>
                   <Input
@@ -810,9 +812,9 @@ export function ProjectSettingsComponent({
                         Number(e.target.value)
                       )
                     }
-                    className="bg-transparent border-gray-700"
+                    className="bg-transparent border-border-default"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Pause after every action completes
                   </p>
                 </div>

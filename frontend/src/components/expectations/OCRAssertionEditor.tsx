@@ -64,15 +64,15 @@ export function OCRAssertionEditor({
   const showRegionFields = assertion.type === "text_in_region";
 
   return (
-    <Card className="p-4 bg-gray-800/50 border-gray-700 space-y-3">
+    <Card className="p-4 bg-surface-raised/50 border-border-default space-y-3">
       {/* Header with delete button */}
       <div className="flex items-center justify-between">
-        <Label className="text-sm text-gray-300">OCR Assertion</Label>
+        <Label className="text-sm text-text-secondary">OCR Assertion</Label>
         <Button
           variant="ghost"
           size="sm"
           onClick={onDelete}
-          className="h-8 w-8 p-0 text-gray-500 hover:text-red-400 hover:bg-red-500/10"
+          className="h-8 w-8 p-0 text-text-muted hover:text-red-400 hover:bg-red-500/10"
         >
           <Trash2 className="w-4 h-4" />
         </Button>
@@ -80,14 +80,14 @@ export function OCRAssertionEditor({
 
       {/* Assertion Type */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-500">Assertion Type</Label>
+        <Label className="text-xs text-text-muted">Assertion Type</Label>
         <Select
           value={assertion.type}
           onValueChange={(value) =>
             updateAssertion({ type: value as OCRAssertionType })
           }
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -100,30 +100,30 @@ export function OCRAssertionEditor({
             <SelectItem value="text_in_region">Text in Region</SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           {getAssertionTypeDescription(assertion.type)}
         </p>
       </div>
 
       {/* Text Pattern */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-500">Text Pattern</Label>
+        <Label className="text-xs text-text-muted">Text Pattern</Label>
         <Input
           type="text"
           value={assertion.pattern}
           onChange={(e) => updateAssertion({ pattern: e.target.value })}
           placeholder="Enter text to search for"
-          className="bg-transparent border-gray-700 font-mono text-sm"
+          className="bg-transparent border-border-default font-mono text-sm"
         />
       </div>
 
       {/* Regex Toggle */}
       <div className="flex items-center justify-between py-2">
         <div className="space-y-0.5">
-          <Label className="text-xs text-gray-500">
+          <Label className="text-xs text-text-muted">
             Use Regular Expression
           </Label>
-          <p className="text-xs text-gray-600">
+          <p className="text-xs text-text-muted">
             Treat pattern as a regex pattern
           </p>
         </div>
@@ -137,7 +137,7 @@ export function OCRAssertionEditor({
       {showCountFields && (
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <Label className="text-xs text-gray-500">Min Count</Label>
+            <Label className="text-xs text-text-muted">Min Count</Label>
             <Input
               type="number"
               min={0}
@@ -150,11 +150,11 @@ export function OCRAssertionEditor({
                 })
               }
               placeholder="0"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-500">Max Count</Label>
+            <Label className="text-xs text-text-muted">Max Count</Label>
             <Input
               type="number"
               min={0}
@@ -167,7 +167,7 @@ export function OCRAssertionEditor({
                 })
               }
               placeholder="∞"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
         </div>
@@ -176,10 +176,10 @@ export function OCRAssertionEditor({
       {/* Region Fields (for text_in_region) */}
       {showRegionFields && (
         <div className="space-y-3">
-          <Label className="text-xs text-gray-500">Region Bounds</Label>
+          <Label className="text-xs text-text-muted">Region Bounds</Label>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label className="text-xs text-gray-600">X</Label>
+              <Label className="text-xs text-text-muted">X</Label>
               <Input
                 type="number"
                 min={0}
@@ -195,11 +195,11 @@ export function OCRAssertionEditor({
                   })
                 }
                 placeholder="0"
-                className="bg-transparent border-gray-700"
+                className="bg-transparent border-border-default"
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs text-gray-600">Y</Label>
+              <Label className="text-xs text-text-muted">Y</Label>
               <Input
                 type="number"
                 min={0}
@@ -215,11 +215,11 @@ export function OCRAssertionEditor({
                   })
                 }
                 placeholder="0"
-                className="bg-transparent border-gray-700"
+                className="bg-transparent border-border-default"
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs text-gray-600">Width</Label>
+              <Label className="text-xs text-text-muted">Width</Label>
               <Input
                 type="number"
                 min={1}
@@ -235,11 +235,11 @@ export function OCRAssertionEditor({
                   })
                 }
                 placeholder="100"
-                className="bg-transparent border-gray-700"
+                className="bg-transparent border-border-default"
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs text-gray-600">Height</Label>
+              <Label className="text-xs text-text-muted">Height</Label>
               <Input
                 type="number"
                 min={1}
@@ -255,7 +255,7 @@ export function OCRAssertionEditor({
                   })
                 }
                 placeholder="100"
-                className="bg-transparent border-gray-700"
+                className="bg-transparent border-border-default"
               />
             </div>
           </div>

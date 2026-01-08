@@ -78,7 +78,7 @@ export function ShellActionProperties({
     <>
       {/* Command */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400 flex items-center gap-2">
+        <Label className="text-xs text-text-muted flex items-center gap-2">
           <Terminal className="w-4 h-4" />
           Command
         </Label>
@@ -87,22 +87,22 @@ export function ShellActionProperties({
           value={config.command || ""}
           onChange={(e) => updateConfig("command", e.target.value)}
           placeholder="echo 'Hello World'"
-          className="bg-transparent border-gray-700 font-mono text-sm"
+          className="bg-transparent border-border-default font-mono text-sm"
         />
-        <p className="text-xs text-gray-500">The shell command to execute</p>
+        <p className="text-xs text-text-muted">The shell command to execute</p>
       </div>
 
       {/* Shell Type */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Shell</Label>
+        <Label className="text-xs text-text-muted">Shell</Label>
         <Select
           value={config.shell || "bash"}
           onValueChange={(value) => updateConfig("shell", value)}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             {SHELL_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
@@ -114,20 +114,20 @@ export function ShellActionProperties({
 
       {/* Output Format */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Output Format</Label>
+        <Label className="text-xs text-text-muted">Output Format</Label>
         <Select
           value={config.outputFormat || "text"}
           onValueChange={(value) => updateConfig("outputFormat", value)}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             {OUTPUT_FORMAT_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 <div>
                   <span>{opt.label}</span>
-                  <span className="text-gray-500 ml-2 text-xs">
+                  <span className="text-text-muted ml-2 text-xs">
                     - {opt.description}
                   </span>
                 </div>
@@ -139,7 +139,7 @@ export function ShellActionProperties({
 
       {/* Output Variable */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Output Variable</Label>
+        <Label className="text-xs text-text-muted">Output Variable</Label>
         <Input
           type="text"
           value={config.outputVariable || ""}
@@ -147,18 +147,18 @@ export function ShellActionProperties({
             updateConfig("outputVariable", e.target.value || undefined)
           }
           placeholder="command_output"
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Store command output in this workflow variable
         </p>
       </div>
 
-      <Separator className="bg-gray-700" />
+      <Separator className="bg-border-default" />
 
       {/* Advanced Configuration */}
       <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
-        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300">
+        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-text-muted hover:text-text-default">
           {showAdvanced ? (
             <ChevronDown className="w-4 h-4" />
           ) : (
@@ -169,7 +169,7 @@ export function ShellActionProperties({
         <CollapsibleContent className="space-y-4 mt-3">
           {/* Working Directory */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Working Directory</Label>
+            <Label className="text-xs text-text-muted">Working Directory</Label>
             <Input
               type="text"
               value={config.workingDirectory || ""}
@@ -177,13 +177,15 @@ export function ShellActionProperties({
                 updateConfig("workingDirectory", e.target.value || undefined)
               }
               placeholder="/path/to/directory"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
 
           {/* Exit Code Variable */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Exit Code Variable</Label>
+            <Label className="text-xs text-text-muted">
+              Exit Code Variable
+            </Label>
             <Input
               type="text"
               value={config.exitCodeVariable || ""}
@@ -191,13 +193,13 @@ export function ShellActionProperties({
                 updateConfig("exitCodeVariable", e.target.value || undefined)
               }
               placeholder="exit_code"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
 
           {/* Capture Stderr */}
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">Capture Stderr</Label>
+            <Label className="text-xs text-text-muted">Capture Stderr</Label>
             <Switch
               checked={config.captureStderr || false}
               onCheckedChange={(checked) =>
@@ -209,7 +211,7 @@ export function ShellActionProperties({
           {/* Stderr Variable */}
           {config.captureStderr && (
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Stderr Variable</Label>
+              <Label className="text-xs text-text-muted">Stderr Variable</Label>
               <Input
                 type="text"
                 value={config.stderrVariable || ""}
@@ -217,43 +219,43 @@ export function ShellActionProperties({
                   updateConfig("stderrVariable", e.target.value || undefined)
                 }
                 placeholder="stderr_output"
-                className="bg-transparent border-gray-700"
+                className="bg-transparent border-border-default"
               />
             </div>
           )}
 
           {/* Stdin */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Stdin Input</Label>
+            <Label className="text-xs text-text-muted">Stdin Input</Label>
             <Textarea
               value={config.stdin || ""}
               onChange={(e) =>
                 updateConfig("stdin", e.target.value || undefined)
               }
               placeholder="Input to pass to command..."
-              className="bg-transparent border-gray-700 min-h-[60px] font-mono text-sm"
+              className="bg-transparent border-border-default min-h-[60px] font-mono text-sm"
             />
           </div>
 
           {/* Timeout */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Timeout (ms)</Label>
+            <Label className="text-xs text-text-muted">Timeout (ms)</Label>
             <Input
               type="number"
               min="1000"
               max="600000"
               value={config.timeout || 30000}
               onChange={(e) => updateConfig("timeout", Number(e.target.value))}
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Max execution time in milliseconds
             </p>
           </div>
 
           {/* Fail on Error */}
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">
+            <Label className="text-xs text-text-muted">
               Fail on Non-Zero Exit
             </Label>
             <Switch
@@ -266,20 +268,20 @@ export function ShellActionProperties({
 
           {/* Description */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Description</Label>
+            <Label className="text-xs text-text-muted">Description</Label>
             <Textarea
               value={config.description || ""}
               onChange={(e) =>
                 updateConfig("description", e.target.value || undefined)
               }
               placeholder="Describe what this command does..."
-              className="bg-transparent border-gray-700 min-h-[60px]"
+              className="bg-transparent border-border-default min-h-[60px]"
             />
           </div>
         </CollapsibleContent>
       </Collapsible>
 
-      <Separator className="bg-gray-700" />
+      <Separator className="bg-border-default" />
 
       {/* Timing Properties */}
       <TimingProperties action={action} updateConfig={updateConfig} />
@@ -325,11 +327,11 @@ export function ShellScriptActionProperties({
     <>
       {/* Script */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400 flex items-center gap-2">
+        <Label className="text-xs text-text-muted flex items-center gap-2">
           <FileTerminal className="w-4 h-4" />
           Script
         </Label>
-        <div className="border border-gray-700 rounded overflow-hidden">
+        <div className="border border-border-default rounded overflow-hidden">
           <Editor
             height="200px"
             language={getEditorLanguage(config.shell)}
@@ -348,22 +350,22 @@ export function ShellScriptActionProperties({
             }}
           />
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Multi-line shell script to execute
         </p>
       </div>
 
       {/* Shell Type */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Shell</Label>
+        <Label className="text-xs text-text-muted">Shell</Label>
         <Select
           value={config.shell || "bash"}
           onValueChange={(value) => updateConfig("shell", value)}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             {SHELL_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
@@ -375,20 +377,20 @@ export function ShellScriptActionProperties({
 
       {/* Output Format */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Output Format</Label>
+        <Label className="text-xs text-text-muted">Output Format</Label>
         <Select
           value={config.outputFormat || "text"}
           onValueChange={(value) => updateConfig("outputFormat", value)}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             {OUTPUT_FORMAT_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 <div>
                   <span>{opt.label}</span>
-                  <span className="text-gray-500 ml-2 text-xs">
+                  <span className="text-text-muted ml-2 text-xs">
                     - {opt.description}
                   </span>
                 </div>
@@ -400,7 +402,7 @@ export function ShellScriptActionProperties({
 
       {/* Output Variable */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Output Variable</Label>
+        <Label className="text-xs text-text-muted">Output Variable</Label>
         <Input
           type="text"
           value={config.outputVariable || ""}
@@ -408,18 +410,18 @@ export function ShellScriptActionProperties({
             updateConfig("outputVariable", e.target.value || undefined)
           }
           placeholder="script_output"
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Store script output in this workflow variable
         </p>
       </div>
 
-      <Separator className="bg-gray-700" />
+      <Separator className="bg-border-default" />
 
       {/* Advanced Configuration */}
       <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
-        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300">
+        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-text-muted hover:text-text-default">
           {showAdvanced ? (
             <ChevronDown className="w-4 h-4" />
           ) : (
@@ -430,7 +432,7 @@ export function ShellScriptActionProperties({
         <CollapsibleContent className="space-y-4 mt-3">
           {/* Working Directory */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Working Directory</Label>
+            <Label className="text-xs text-text-muted">Working Directory</Label>
             <Input
               type="text"
               value={config.workingDirectory || ""}
@@ -438,13 +440,15 @@ export function ShellScriptActionProperties({
                 updateConfig("workingDirectory", e.target.value || undefined)
               }
               placeholder="/path/to/directory"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
 
           {/* Exit Code Variable */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Exit Code Variable</Label>
+            <Label className="text-xs text-text-muted">
+              Exit Code Variable
+            </Label>
             <Input
               type="text"
               value={config.exitCodeVariable || ""}
@@ -452,13 +456,13 @@ export function ShellScriptActionProperties({
                 updateConfig("exitCodeVariable", e.target.value || undefined)
               }
               placeholder="exit_code"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
 
           {/* Capture Stderr */}
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">Capture Stderr</Label>
+            <Label className="text-xs text-text-muted">Capture Stderr</Label>
             <Switch
               checked={config.captureStderr || false}
               onCheckedChange={(checked) =>
@@ -470,7 +474,7 @@ export function ShellScriptActionProperties({
           {/* Stderr Variable */}
           {config.captureStderr && (
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Stderr Variable</Label>
+              <Label className="text-xs text-text-muted">Stderr Variable</Label>
               <Input
                 type="text"
                 value={config.stderrVariable || ""}
@@ -478,43 +482,43 @@ export function ShellScriptActionProperties({
                   updateConfig("stderrVariable", e.target.value || undefined)
                 }
                 placeholder="stderr_output"
-                className="bg-transparent border-gray-700"
+                className="bg-transparent border-border-default"
               />
             </div>
           )}
 
           {/* Stdin */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Stdin Input</Label>
+            <Label className="text-xs text-text-muted">Stdin Input</Label>
             <Textarea
               value={config.stdin || ""}
               onChange={(e) =>
                 updateConfig("stdin", e.target.value || undefined)
               }
               placeholder="Input to pass to script..."
-              className="bg-transparent border-gray-700 min-h-[60px] font-mono text-sm"
+              className="bg-transparent border-border-default min-h-[60px] font-mono text-sm"
             />
           </div>
 
           {/* Timeout */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Timeout (ms)</Label>
+            <Label className="text-xs text-text-muted">Timeout (ms)</Label>
             <Input
               type="number"
               min="1000"
               max="600000"
               value={config.timeout || 60000}
               onChange={(e) => updateConfig("timeout", Number(e.target.value))}
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Max execution time in milliseconds
             </p>
           </div>
 
           {/* Fail on Error */}
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">
+            <Label className="text-xs text-text-muted">
               Fail on Non-Zero Exit
             </Label>
             <Switch
@@ -527,20 +531,20 @@ export function ShellScriptActionProperties({
 
           {/* Description */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Description</Label>
+            <Label className="text-xs text-text-muted">Description</Label>
             <Textarea
               value={config.description || ""}
               onChange={(e) =>
                 updateConfig("description", e.target.value || undefined)
               }
               placeholder="Describe what this script does..."
-              className="bg-transparent border-gray-700 min-h-[60px]"
+              className="bg-transparent border-border-default min-h-[60px]"
             />
           </div>
         </CollapsibleContent>
       </Collapsible>
 
-      <Separator className="bg-gray-700" />
+      <Separator className="bg-border-default" />
 
       {/* Timing Properties */}
       <TimingProperties action={action} updateConfig={updateConfig} />

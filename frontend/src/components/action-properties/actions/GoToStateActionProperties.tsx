@@ -100,22 +100,24 @@ export function GoToStateActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           Target States{" "}
           {selectedStates.length > 0 && `(${selectedStates.length} selected)`}
         </Label>
-        <div className="text-xs text-gray-500 mb-2">
+        <div className="text-xs text-text-muted mb-2">
           Select one or more states to navigate to. The runner will find the
           optimal path.
         </div>
-        <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-700 rounded p-2">
+        <div className="space-y-2 max-h-60 overflow-y-auto border border-border-default rounded p-2">
           {states.length === 0 ? (
-            <div className="text-xs text-gray-500 p-2">No states available</div>
+            <div className="text-xs text-text-muted p-2">
+              No states available
+            </div>
           ) : (
             states.map((state) => (
               <div
                 key={state.id}
-                className="flex items-center space-x-2 p-1 hover:bg-gray-800 rounded"
+                className="flex items-center space-x-2 p-1 hover:bg-surface-raised rounded"
               >
                 <Checkbox
                   id={`state-${state.id}`}
@@ -123,11 +125,11 @@ export function GoToStateActionProperties({
                   onCheckedChange={(checked) =>
                     handleStateToggle(state.id, checked as boolean)
                   }
-                  className="border-gray-600"
+                  className="border-border-subtle"
                 />
                 <label
                   htmlFor={`state-${state.id}`}
-                  className="text-sm text-gray-300 cursor-pointer flex-1"
+                  className="text-sm text-text-default cursor-pointer flex-1"
                 >
                   {state.name || state.id}
                 </label>
@@ -140,18 +142,18 @@ export function GoToStateActionProperties({
         {selectedStates.length > 1 && (
           <div className="mt-2 space-y-1">
             {isValidating ? (
-              <div className="text-xs text-gray-400 flex items-center gap-1">
+              <div className="text-xs text-text-muted flex items-center gap-1">
                 <span className="animate-spin">&#8635;</span>
                 Validating path reachability...
               </div>
             ) : validationResult ? (
               validationResult.reachable ? (
-                <div className="text-xs text-green-400 flex items-center gap-1">
+                <div className="text-xs text-brand-success flex items-center gap-1">
                   <span>&#10003;</span>
                   {validationResult.reason ||
                     "All selected states can be reached simultaneously"}
                   {validationResult.path && (
-                    <span className="text-gray-500">
+                    <span className="text-text-muted">
                       ({validationResult.path.length} transition
                       {validationResult.path.length !== 1 ? "s" : ""})
                     </span>
@@ -170,7 +172,7 @@ export function GoToStateActionProperties({
                       validationResult.details?.unreachable_targets;
                     if (Array.isArray(unreachable) && unreachable.length > 0) {
                       return (
-                        <div className="mt-1 text-gray-500 pl-4">
+                        <div className="mt-1 text-text-muted pl-4">
                           Unreachable: {unreachable.join(", ")}
                         </div>
                       );

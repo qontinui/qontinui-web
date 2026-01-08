@@ -78,7 +78,7 @@ export function DiscoveriesList({ status, projectId }: DiscoveriesListProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
       </div>
     );
   }
@@ -87,7 +87,7 @@ export function DiscoveriesList({ status, projectId }: DiscoveriesListProps) {
     return (
       <div className="text-center py-12">
         <div className="text-red-500 mb-2">Failed to load discoveries</div>
-        <div className="text-sm text-gray-400">
+        <div className="text-sm text-text-muted">
           {error instanceof Error ? error.message : "Unknown error"}
         </div>
       </div>
@@ -100,7 +100,7 @@ export function DiscoveriesList({ status, projectId }: DiscoveriesListProps) {
     <div className="space-y-4">
       {/* Type filter */}
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-gray-400">
+        <div className="flex items-center gap-2 text-sm text-text-muted">
           <Filter size={14} />
           <span>Filter by type:</span>
         </div>
@@ -110,22 +110,22 @@ export function DiscoveriesList({ status, projectId }: DiscoveriesListProps) {
             setTypeFilter(value as DiscoveryType | "all")
           }
         >
-          <SelectTrigger className="w-[180px] bg-gray-900/50 border-gray-700 text-white">
+          <SelectTrigger className="w-[180px] bg-surface-canvas/50 border-border-default text-white">
             <SelectValue placeholder="Select type" />
           </SelectTrigger>
-          <SelectContent className="bg-[#1A1A1B] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             {discoveryTypes.map((type) => (
               <SelectItem
                 key={type.value}
                 value={type.value}
-                className="text-white hover:bg-gray-800"
+                className="text-white hover:bg-surface-raised"
               >
                 {type.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-text-muted">
           {discoveries.length}{" "}
           {discoveries.length === 1 ? "discovery" : "discoveries"}
         </div>
@@ -133,10 +133,12 @@ export function DiscoveriesList({ status, projectId }: DiscoveriesListProps) {
 
       {/* Empty state */}
       {discoveries.length === 0 ? (
-        <div className="text-center py-12 bg-[#1A1A1B] rounded-lg border border-gray-800">
-          <Inbox className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-          <div className="text-lg text-gray-400 mb-1">No discoveries found</div>
-          <div className="text-sm text-gray-500">
+        <div className="text-center py-12 bg-surface-raised rounded-lg border border-border-subtle">
+          <Inbox className="w-12 h-12 text-text-muted mx-auto mb-4" />
+          <div className="text-lg text-text-muted mb-1">
+            No discoveries found
+          </div>
+          <div className="text-sm text-text-muted">
             {status === "pending"
               ? "There are no pending discoveries to review."
               : status === "accepted"

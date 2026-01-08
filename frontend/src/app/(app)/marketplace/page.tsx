@@ -118,24 +118,24 @@ export default function MarketplacePage() {
     <RequireProject pageName="Marketplace">
       <div className="min-h-screen bg-background">
         {/* Header */}
-        <div className="border-b border-gray-800/50 bg-gradient-to-b from-cyan-500/5 via-purple-500/5 to-transparent">
+        <div className="border-b border-border-subtle bg-gradient-to-b from-brand-primary/5 via-brand-secondary/5 to-transparent">
           <div className="container mx-auto px-6 py-8">
             <div className="flex items-start justify-between mb-6">
               <div>
                 <div className="flex items-center gap-3 mb-2">
-                  <Store className="w-8 h-8 text-cyan-500" />
-                  <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-500 via-purple-500 to-green-500 bg-clip-text text-transparent">
+                  <Store className="w-8 h-8 text-brand-primary" />
+                  <h1 className="text-3xl font-bold bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-success bg-clip-text text-transparent">
                     Community Code Marketplace
                   </h1>
                 </div>
-                <p className="text-gray-400 text-lg">
+                <p className="text-text-muted text-lg">
                   Discover and share automation packages created by the
                   community
                 </p>
               </div>
               <Button
                 onClick={handlePublishClick}
-                className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600"
+                className="bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-brand-primary/90 hover:to-brand-secondary/90"
               >
                 <Package className="w-4 h-4 mr-2" />
                 Publish Package
@@ -157,7 +157,7 @@ export default function MarketplacePage() {
             onValueChange={(v) => setSelectedTab(v as typeof selectedTab)}
           >
             <div className="flex items-center justify-between mb-6">
-              <TabsList className="bg-gray-900/50">
+              <TabsList className="bg-surface-canvas">
                 <TabsTrigger value="all" className="gap-2">
                   <Package className="w-4 h-4" />
                   All Packages
@@ -236,7 +236,7 @@ export default function MarketplacePage() {
                 >
                   Previous
                 </Button>
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-text-muted">
                   Page {searchResult.page} of {searchResult.total_pages}
                 </div>
                 <Button
@@ -299,7 +299,7 @@ function PackageGrid({
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="h-64 bg-gray-900/30 rounded-lg border border-gray-800 animate-pulse"
+            className="h-64 bg-surface-raised/30 rounded-lg border border-border-subtle animate-pulse"
           />
         ))}
       </div>
@@ -309,11 +309,11 @@ function PackageGrid({
   if (packages.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Package className="w-16 h-16 text-gray-600 mb-4" />
-        <h3 className="text-xl font-semibold text-gray-400 mb-2">
+        <Package className="w-16 h-16 text-text-muted mb-4" />
+        <h3 className="text-xl font-semibold text-text-muted mb-2">
           No packages found
         </h3>
-        <p className="text-gray-500">
+        <p className="text-text-muted">
           Try adjusting your search filters or check back later for new
           packages.
         </p>

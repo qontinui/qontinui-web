@@ -107,7 +107,7 @@ function getStatusIcon(status: Invitation["status"]) {
     case "expired":
       return <XCircle className="h-4 w-4 text-red-500" />;
     case "revoked":
-      return <XCircle className="h-4 w-4 text-gray-500" />;
+      return <XCircle className="h-4 w-4 text-text-muted" />;
   }
 }
 

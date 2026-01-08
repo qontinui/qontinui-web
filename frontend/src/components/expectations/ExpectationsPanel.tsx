@@ -45,11 +45,11 @@ export function ExpectationsPanel({
   );
 
   return (
-    <div className="h-full flex flex-col bg-[#18181B] border-l border-gray-800">
+    <div className="h-full flex flex-col bg-surface-canvas border-l border-border-subtle">
       <Tabs defaultValue="global" className="flex flex-col h-full">
         {/* Tab Headers */}
-        <div className="border-b border-gray-800 px-4 pt-4">
-          <TabsList className="w-full grid grid-cols-3 bg-gray-800/50">
+        <div className="border-b border-border-subtle px-4 pt-4">
+          <TabsList className="w-full grid grid-cols-3 bg-surface-raised/50">
             <TabsTrigger
               value="global"
               className="flex items-center gap-2 text-xs"

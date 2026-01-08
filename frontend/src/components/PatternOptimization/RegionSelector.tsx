@@ -129,9 +129,9 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
     if (currentRegion || screenshot?.region) {
       const region = currentRegion || screenshot?.region;
       if (region) {
-        ctx.strokeStyle = "#00D9FF";
+        ctx.strokeStyle = "#4A90D9";
         ctx.lineWidth = 2;
-        ctx.fillStyle = "rgba(0, 217, 255, 0.2)";
+        ctx.fillStyle = "rgba(74, 144, 217, 0.2)";
 
         const x = region.x * zoom;
         const y = region.y * zoom;
@@ -143,7 +143,7 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
 
         // Draw corner handles
         const handleSize = 6;
-        ctx.fillStyle = "#00D9FF";
+        ctx.fillStyle = "#4A90D9";
         ctx.fillRect(
           x - handleSize / 2,
           y - handleSize / 2,
@@ -290,10 +290,10 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
 
   if (!screenshot) {
     return (
-      <Card className="h-full flex items-center justify-center bg-[#27272A]/50 border-gray-700">
+      <Card className="h-full flex items-center justify-center bg-surface-raised/50 border-border-default">
         <div className="text-center">
-          <Crosshair className="w-12 h-12 mx-auto mb-2 text-gray-500" />
-          <p className="text-sm text-gray-400">
+          <Crosshair className="w-12 h-12 mx-auto mb-2 text-text-muted" />
+          <p className="text-sm text-text-muted">
             Select a screenshot to define region
           </p>
         </div>
@@ -304,7 +304,7 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
   return (
     <div className="flex flex-col h-full space-y-2">
       {/* Toolbar */}
-      <div className="flex items-center justify-between p-2 bg-[#27272A]/50 rounded">
+      <div className="flex items-center justify-between p-2 bg-surface-raised/50 rounded">
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -314,7 +314,7 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
           >
             <ZoomOut className="w-4 h-4" />
           </Button>
-          <span className="text-xs text-gray-400 w-12 text-center">
+          <span className="text-xs text-text-muted w-12 text-center">
             {Math.round(zoom * 100)}%
           </span>
           <Button
@@ -334,13 +334,13 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
             <Maximize2 className="w-4 h-4" />
           </Button>
 
-          <div className="w-px h-5 bg-gray-700" />
+          <div className="w-px h-5 bg-border-default" />
 
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setShowGrid(!showGrid)}
-            className={cn("h-7 w-7 p-0", showGrid && "text-[#00D9FF]")}
+            className={cn("h-7 w-7 p-0", showGrid && "text-brand-primary")}
           >
             <Grid className="w-4 h-4" />
           </Button>
@@ -348,7 +348,7 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
             size="sm"
             variant="ghost"
             onClick={() => setShowCrosshair(!showCrosshair)}
-            className={cn("h-7 w-7 p-0", showCrosshair && "text-[#00D9FF]")}
+            className={cn("h-7 w-7 p-0", showCrosshair && "text-brand-primary")}
           >
             <Crosshair className="w-4 h-4" />
           </Button>
@@ -360,7 +360,7 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
             variant="outline"
             onClick={handleCopyToAll}
             disabled={!currentRegion}
-            className="h-7 px-2 text-xs border-gray-700 hover:border-[#00D9FF]"
+            className="h-7 px-2 text-xs border-border-default hover:border-brand-primary"
           >
             <Copy className="w-3 h-3 mr-1" />
             Copy to All
@@ -370,7 +370,7 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
             variant="outline"
             onClick={handleReset}
             disabled={!currentRegion}
-            className="h-7 px-2 text-xs border-gray-700 hover:border-red-500"
+            className="h-7 px-2 text-xs border-border-default hover:border-red-500"
           >
             <RotateCcw className="w-3 h-3 mr-1" />
             Reset
@@ -381,7 +381,7 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
       {/* Canvas container */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto bg-[#27272A]/50 rounded p-4"
+        className="flex-1 overflow-auto bg-surface-raised/50 rounded p-4"
       >
         <canvas
           ref={canvasRef}
@@ -395,10 +395,10 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
 
       {/* Region info */}
       {currentRegion && (
-        <div className="p-2 bg-[#27272A]/50 rounded">
+        <div className="p-2 bg-surface-raised/50 rounded">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-400">Region:</span>
-            <span className="font-mono text-[#00D9FF]">
+            <span className="text-text-muted">Region:</span>
+            <span className="font-mono text-brand-primary">
               {Math.round(currentRegion.x)}, {Math.round(currentRegion.y)} •{" "}
               {Math.round(currentRegion.width)}×
               {Math.round(currentRegion.height)}

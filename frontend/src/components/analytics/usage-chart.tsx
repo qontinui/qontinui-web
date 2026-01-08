@@ -31,18 +31,26 @@ export function UsageChart({ data }: UsageChartProps) {
     : [];
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
       <CardHeader>
         <CardTitle className="text-lg">API Usage Over Time</CardTitle>
-        <p className="text-sm text-gray-400">Last 7 days</p>
+        <p className="text-sm text-text-muted">Last 7 days</p>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
           <AreaChart data={chartData}>
             <defs>
               <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#00D9FF" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#00D9FF" stopOpacity={0} />
+                <stop
+                  offset="5%"
+                  stopColor="var(--color-brand-primary)"
+                  stopOpacity={0.3}
+                />
+                <stop
+                  offset="95%"
+                  stopColor="var(--color-brand-primary)"
+                  stopOpacity={0}
+                />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
@@ -50,8 +58,8 @@ export function UsageChart({ data }: UsageChartProps) {
             <YAxis stroke="#666" style={{ fontSize: "12px" }} />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#1A1A1B",
-                border: "1px solid #333",
+                backgroundColor: "hsl(var(--surface-raised))",
+                border: "1px solid hsl(var(--border-subtle))",
                 borderRadius: "8px",
                 color: "#fff",
               }}
@@ -59,7 +67,7 @@ export function UsageChart({ data }: UsageChartProps) {
             <Area
               type="monotone"
               dataKey="value"
-              stroke="#00D9FF"
+              stroke="var(--color-brand-primary)"
               strokeWidth={2}
               fill="url(#colorValue)"
             />

@@ -18,7 +18,12 @@ export type User = components["schemas"]["UserRead"];
 export type UserCreate = components["schemas"]["UserCreate"];
 export type UserUpdate = components["schemas"]["UserUpdate"];
 
-export type Project = components["schemas"]["Project"];
+// Extend Project type with version field (not in generated types but returned by backend)
+type ProjectBase = components["schemas"]["Project"];
+export type Project = ProjectBase & {
+  /** Server version for optimistic concurrency control */
+  version: number;
+};
 export type ProjectCreate = components["schemas"]["ProjectCreate"];
 export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 

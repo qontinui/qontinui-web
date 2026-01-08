@@ -39,7 +39,7 @@ export function ImageDeletionDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="bg-[#27272A] border-gray-700 max-w-2xl"
+        className="bg-surface-raised border-border-default max-w-2xl"
         onSubmit={() => {
           onConfirmDelete();
           onOpenChange(false);
@@ -50,7 +50,7 @@ export function ImageDeletionDialog({
             {hasUsage && <AlertTriangle className="w-6 h-6 text-yellow-500" />}
             {hasUsage ? "Warning: Image In Use" : "Delete Image?"}
           </DialogTitle>
-          <DialogDescription className="text-gray-400">
+          <DialogDescription className="text-text-muted">
             {hasUsage
               ? "This image is currently being used in your automation."
               : `Are you sure you want to delete "${imageName}"?`}
@@ -82,16 +82,16 @@ export function ImageDeletionDialog({
 
               {totalStates > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-gray-300">
+                  <h4 className="text-sm font-medium text-text-secondary">
                     Used in States ({totalStates}):
                   </h4>
-                  <div className="max-h-32 overflow-y-auto bg-gray-800/50 rounded-lg p-3 space-y-1">
+                  <div className="max-h-32 overflow-y-auto bg-surface-raised/50 rounded-lg p-3 space-y-1">
                     {usageInfo.states.map((state) => (
                       <div
                         key={state.id}
-                        className="text-sm text-gray-300 flex items-center gap-2"
+                        className="text-sm text-text-secondary flex items-center gap-2"
                       >
-                        <span className="w-2 h-2 bg-[#00FF88] rounded-full flex-shrink-0" />
+                        <span className="w-2 h-2 bg-brand-success rounded-full flex-shrink-0" />
                         {state.name || state.id}
                       </div>
                     ))}
@@ -101,18 +101,18 @@ export function ImageDeletionDialog({
 
               {totalProcesses > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-gray-300">
+                  <h4 className="text-sm font-medium text-text-secondary">
                     Used in Workflows ({totalProcesses}):
                   </h4>
-                  <div className="max-h-32 overflow-y-auto bg-gray-800/50 rounded-lg p-3 space-y-1">
+                  <div className="max-h-32 overflow-y-auto bg-surface-raised/50 rounded-lg p-3 space-y-1">
                     {usageInfo.processes.map((process) => (
                       <div
                         key={process.id}
-                        className="text-sm text-gray-300 flex items-center gap-2"
+                        className="text-sm text-text-secondary flex items-center gap-2"
                       >
-                        <span className="w-2 h-2 bg-[#BD00FF] rounded-full flex-shrink-0" />
+                        <span className="w-2 h-2 bg-brand-secondary rounded-full flex-shrink-0" />
                         {process.name || process.id}
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-text-muted">
                           ({process.actionCount} action
                           {process.actionCount > 1 ? "s" : ""})
                         </span>
@@ -134,7 +134,7 @@ export function ImageDeletionDialog({
               </div>
             </>
           ) : (
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-text-muted">
               This image is not currently being used and can be safely deleted.
             </p>
           )}
@@ -144,7 +144,7 @@ export function ImageDeletionDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="border-gray-600 hover:bg-gray-800"
+            className="border-border-default hover:bg-surface-raised"
           >
             Cancel
           </Button>
@@ -156,7 +156,7 @@ export function ImageDeletionDialog({
             className={
               hasUsage
                 ? "bg-red-600 hover:bg-red-700 text-white"
-                : "bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+                : "bg-brand-success hover:bg-brand-success/80 text-black"
             }
           >
             {hasUsage ? "Delete Anyway" : "Delete"}

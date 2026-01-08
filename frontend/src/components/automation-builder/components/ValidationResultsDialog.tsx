@@ -119,10 +119,10 @@ export function ValidationResultsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] bg-gray-950 border-gray-800">
+      <DialogContent className="sm:max-w-[600px] bg-surface-canvas border-border-subtle">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ClipboardCheck className="w-5 h-5 text-[#00D9FF]" />
+            <ClipboardCheck className="w-5 h-5 text-brand-primary" />
             Project Validation Results
           </DialogTitle>
           <DialogDescription>
@@ -175,7 +175,7 @@ export function ValidationResultsDialog({
               {/* Non-workflow issues (monitors, states) */}
               {nonWorkflowIssues.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-text-muted flex items-center gap-2">
                     <Monitor className="w-4 h-4 text-red-400" />
                     General Issues
                   </h3>
@@ -183,7 +183,7 @@ export function ValidationResultsDialog({
                     {nonWorkflowIssues.map((issue, idx) => (
                       <div
                         key={idx}
-                        className="bg-gray-900/50 rounded-lg p-3 border border-gray-800"
+                        className="bg-surface-canvas/50 rounded-lg p-3 border border-border-subtle"
                       >
                         <div className="flex items-start gap-2">
                           {issue.severity === "error" ? (
@@ -194,7 +194,7 @@ export function ValidationResultsDialog({
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               {getCategoryIcon(issue.category)}
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-text-muted">
                                 {getCategoryLabel(issue.category)}
                               </span>
                             </div>
@@ -218,7 +218,7 @@ export function ValidationResultsDialog({
               {/* Workflow Issues */}
               {workflowsWithIssues.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-text-muted flex items-center gap-2">
                     <Workflow className="w-4 h-4 text-yellow-400" />
                     Workflow Issues
                   </h3>
@@ -234,7 +234,7 @@ export function ValidationResultsDialog({
                       return (
                         <div
                           key={workflow.workflowId}
-                          className="bg-gray-900/50 rounded-lg p-3 border border-gray-800"
+                          className="bg-surface-canvas/50 rounded-lg p-3 border border-border-subtle"
                         >
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-sm font-medium text-white">
@@ -247,7 +247,7 @@ export function ValidationResultsDialog({
                                 onNavigateToWorkflow(workflow.workflowId);
                                 onOpenChange(false);
                               }}
-                              className="h-7 px-2 text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+                              className="h-7 px-2 text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
                             >
                               <ExternalLink className="w-3 h-3 mr-1" />
                               Go to workflow
@@ -267,7 +267,7 @@ export function ValidationResultsDialog({
                                     <span className="flex-1">
                                       {error.message}
                                     </span>
-                                    <span className="text-gray-600 text-[10px]">
+                                    <span className="text-text-muted text-[10px]">
                                       {getCategoryLabel(error.category)}
                                     </span>
                                   </li>
@@ -289,7 +289,7 @@ export function ValidationResultsDialog({
                                     <span className="flex-1">
                                       {warning.message}
                                     </span>
-                                    <span className="text-gray-600 text-[10px]">
+                                    <span className="text-text-muted text-[10px]">
                                       {getCategoryLabel(warning.category)}
                                     </span>
                                   </li>
@@ -313,7 +313,7 @@ export function ValidationResultsDialog({
             className={
               isValid
                 ? "bg-green-600 hover:bg-green-600/80 text-white"
-                : "bg-gray-700 hover:bg-gray-600 text-white"
+                : "bg-surface-raised hover:bg-surface-raised/80 text-white"
             }
           >
             {isValid ? "Great!" : "Close"}

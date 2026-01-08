@@ -2,14 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Monitor, X, Wifi, WifiOff } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Monitor } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -42,7 +35,7 @@ interface MonitorSelectorProps {
 export function MonitorSelector({
   monitors = [0],
   onChange,
-  label = "Monitors",
+  label = "Hardware Selection",
   showLabel = true,
   maxMonitors = 4,
   showConnectionStatus = true,
@@ -62,154 +55,126 @@ export function MonitorSelector({
     ? runnerMonitors.map((m) => m.index)
     : Array.from({ length: maxMonitors }, (_, i) => i);
 
-  const unselectedMonitors = availableMonitors.filter(
-    (m) => !monitors.includes(m)
-  );
+  // Sort monitors by x position if available (runner data)
+  const sortedMonitorIndices = isRunnerConnected
+    ? [...runnerMonitors].sort((a, b) => a.x - b.x).map((m) => m.index)
+    : availableMonitors;
 
-  const addMonitor = (monitorIndex: number) => {
-    if (!monitors.includes(monitorIndex)) {
+  const toggleMonitor = (monitorIndex: number) => {
+    if (monitors.includes(monitorIndex)) {
+      // Allow unselecting provided at least one remains or empty state is allowed (prop check?)
+      // Current behavior: allow empty list in UI, let parent validate
+      onChange(
+        monitors.filter((m) => m !== monitorIndex).sort((a, b) => a - b)
+      );
+    } else {
       onChange([...monitors, monitorIndex].sort((a, b) => a - b));
     }
   };
 
-  const removeMonitor = (monitorIndex: number) => {
-    const newMonitors = monitors.filter((m) => m !== monitorIndex);
-    // Always keep at least one monitor selected
-    if (newMonitors.length === 0) {
-      return;
+  const isAllSelected =
+    availableMonitors.length > 0 &&
+    monitors.length === availableMonitors.length;
+
+  const toggleAll = () => {
+    if (isAllSelected) {
+      onChange([]);
+    } else {
+      onChange([...availableMonitors]);
     }
-    onChange(newMonitors);
   };
 
-  const getMonitorLabel = (index: number): string => {
-    // Use real monitor data if available
+  const getMonitorSize = (index: number): string => {
     const monitor = runnerMonitors.find((m) => m.index === index);
     if (monitor && isRunnerConnected) {
-      // Capitalize position
-      return (
-        monitor.position.charAt(0).toUpperCase() + monitor.position.slice(1)
-      );
+      return `${monitor.width}×${monitor.height}`;
     }
-    // Fallback labels when runner not connected
-    const fallbackLabels: { [key: number]: string } = {
-      0: "Primary",
-      1: "Left",
-      2: "Right",
-      3: "Top",
-    };
-    return fallbackLabels[index] || `Monitor ${index}`;
-  };
-
-  const getMonitorTooltip = (index: number): string | undefined => {
-    const monitor = runnerMonitors.find((m) => m.index === index);
-    if (monitor && isRunnerConnected) {
-      return monitor.description;
-    }
-    return undefined;
+    return "1920×1080 (Default)";
   };
 
   return (
-    <TooltipProvider>
-      <div className="space-y-2">
-        {showLabel && (
-          <div className="flex items-center gap-2">
-            <Label className="text-xs text-gray-400">{label}</Label>
-            {showConnectionStatus && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="cursor-help">
-                    {isRunnerConnected ? (
-                      <Wifi className="w-3 h-3 text-green-500" />
-                    ) : (
-                      <WifiOff className="w-3 h-3 text-gray-500" />
-                    )}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                  {isRunnerConnected
-                    ? `Connected to runner (${runnerMonitors.length} monitors detected)`
-                    : "Runner not connected - using default monitors"}
-                </TooltipContent>
-              </Tooltip>
-            )}
+    <div className="space-y-4">
+      {showLabel && (
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <Label className="text-brand-secondary text-lg font-mono">
+              {label}
+            </Label>
+            <p className="text-sm text-text-muted font-mono">
+              Select the physical display for automation execution
+            </p>
           </div>
-        )}
-
-        <div className="flex flex-wrap gap-2 items-center">
-          {/* Display selected monitors as badges */}
-          {monitors.map((monitorIndex) => {
-            const tooltip = getMonitorTooltip(monitorIndex);
-            const badge = (
-              <Badge
-                key={monitorIndex}
-                variant="secondary"
-                className="bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30 flex items-center gap-1 px-2 py-1"
-              >
-                <Monitor className="w-3 h-3" />
-                <span className="text-xs">
-                  [{monitorIndex}] {getMonitorLabel(monitorIndex)}
-                </span>
-                <button
-                  onClick={() => removeMonitor(monitorIndex)}
-                  className="ml-1 hover:text-red-400 transition-colors"
-                  disabled={monitors.length === 1}
-                  title={
-                    monitors.length === 1
-                      ? "At least one monitor must be selected"
-                      : "Remove monitor"
-                  }
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </Badge>
-            );
-
-            if (tooltip) {
-              return (
-                <Tooltip key={monitorIndex}>
-                  <TooltipTrigger asChild>{badge}</TooltipTrigger>
-                  <TooltipContent>{tooltip}</TooltipContent>
-                </Tooltip>
-              );
-            }
-            return badge;
-          })}
-
-          {/* Add monitor button/dropdown */}
-          {unselectedMonitors.length > 0 && (
-            <Select onValueChange={(value) => addMonitor(parseInt(value))}>
-              <SelectTrigger className="w-[140px] h-7 border-gray-600 bg-gray-800 text-xs">
-                <SelectValue placeholder="Add monitor" />
-              </SelectTrigger>
-              <SelectContent>
-                {unselectedMonitors.map((index) => {
-                  const tooltip = getMonitorTooltip(index);
-                  return (
-                    <SelectItem
-                      key={index}
-                      value={index.toString()}
-                      title={tooltip}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Monitor className="w-3 h-3" />[{index}]{" "}
-                        {getMonitorLabel(index)}
-                      </span>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
+          {availableMonitors.length > 1 && (
+            <button
+              onClick={toggleAll}
+              className="text-xs text-brand-primary hover:text-brand-primary/80 font-mono underline opacity-70 hover:opacity-100 transition-opacity"
+            >
+              {isAllSelected ? "Deselect All" : "Select All"}
+            </button>
           )}
         </div>
+      )}
 
-        {monitors.length === 0 && (
-          <p className="text-xs text-amber-400 flex items-center gap-1">
-            <span>⚠</span>
-            <span>At least one monitor must be selected</span>
-          </p>
-        )}
+      {/* Connection warning if needed, though simpler is better per v0 design */}
+      {!isRunnerConnected && showConnectionStatus && (
+        <div className="text-xs text-amber-500 font-mono bg-amber-500/10 p-2 rounded border border-amber-500/20">
+          Runner disconnected. Using default configuration.
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {sortedMonitorIndices.map((monitorIndex) => {
+          const isSelected = monitors.includes(monitorIndex);
+          const monitorData = runnerMonitors.find(
+            (m) => m.index === monitorIndex
+          );
+          const isPrimary = monitorData?.is_primary;
+
+          return (
+            <button
+              key={monitorIndex}
+              onClick={() => toggleMonitor(monitorIndex)}
+              className={`
+                relative p-4 rounded-lg border-2 transition-all h-32 flex flex-col items-center justify-center gap-3
+                ${
+                  isSelected
+                    ? "border-brand-secondary bg-brand-secondary/20 shadow-[0_0_30px_rgba(189,0,255,0.4)]"
+                    : "border-brand-secondary/20 bg-surface-canvas/50 hover:border-brand-secondary/50 hover:bg-brand-secondary/10"
+                }
+              `}
+            >
+              <Monitor
+                className={`w-8 h-8 ${isSelected ? "text-brand-secondary" : "text-brand-secondary/60"}`}
+              />
+              <div className="text-center">
+                <div
+                  className={`font-semibold text-sm ${isSelected ? "text-brand-secondary" : "text-white"}`}
+                >
+                  {isPrimary
+                    ? `Primary Display [${monitorIndex}]`
+                    : `Display ${monitorIndex}`}
+                </div>
+                <div className="text-xs text-text-muted font-mono mt-1">
+                  {getMonitorSize(monitorIndex)}
+                </div>
+              </div>
+              {isSelected && (
+                <div className="absolute top-2 right-2">
+                  <div className="w-2 h-2 bg-brand-success rounded-full shadow-[0_0_10px_rgba(0,255,136,0.8)] animate-pulse" />
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
-    </TooltipProvider>
+
+      {monitors.length === 0 && (
+        <div className="text-xs text-destructive animate-pulse font-mono flex items-center gap-2 justify-center">
+          <span className="w-2 h-2 bg-destructive rounded-full" />
+          NO HARDWARE SELECTED
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -273,7 +238,7 @@ export function MonitorDisplay({
             <Badge
               key={monitorIndex}
               variant="secondary"
-              className="bg-gray-700/50 text-gray-300 border-gray-600 flex items-center gap-1 px-1.5 py-0.5"
+              className="bg-surface-raised/50 text-text-secondary border-border-default flex items-center gap-1 px-1.5 py-0.5"
             >
               <Monitor className="w-2.5 h-2.5" />
               <span className="text-[10px]">

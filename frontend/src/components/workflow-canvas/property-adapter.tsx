@@ -368,7 +368,7 @@ export function PropertyEditorWrapper({
 
   if (!action) {
     return (
-      <div className="text-gray-400 text-sm p-4">
+      <div className="text-text-muted text-sm p-4">
         Action not found: {actionId}
       </div>
     );

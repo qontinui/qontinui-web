@@ -31,13 +31,13 @@ const getActivityIcon = (type: string) => {
 const getActivityColor = (type: string) => {
   switch (type) {
     case "create":
-      return "#00FF88";
+      return "var(--color-brand-success)";
     case "update":
-      return "#00D9FF";
+      return "var(--color-brand-primary)";
     case "delete":
       return "#FF4444";
     case "export":
-      return "#BD00FF";
+      return "var(--color-brand-secondary)";
     case "run":
       return "#FFB800";
     default:
@@ -65,10 +65,10 @@ const getRelativeTime = (timestamp: string) => {
 
 export function ActivityTimeline({ activities }: ActivityTimelineProps) {
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
       <CardHeader>
         <CardTitle className="text-lg">Recent Activity</CardTitle>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-text-muted">
           Latest actions in your workspace
         </p>
       </CardHeader>
@@ -82,7 +82,7 @@ export function ActivityTimeline({ activities }: ActivityTimelineProps) {
               return (
                 <div
                   key={activity.id}
-                  className="flex items-start gap-3 pb-4 border-b border-gray-800/50 last:border-0 last:pb-0"
+                  className="flex items-start gap-3 pb-4 border-b border-border-subtle/50 last:border-0 last:pb-0"
                 >
                   <div
                     className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
@@ -91,15 +91,15 @@ export function ActivityTimeline({ activities }: ActivityTimelineProps) {
                     <Icon className="w-4 h-4" style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-200 line-clamp-2">
+                    <p className="text-sm text-text-secondary line-clamp-2">
                       {activity.description}
                     </p>
                     {activity.project_name && (
-                      <p className="text-xs text-[#00D9FF] mt-1">
+                      <p className="text-xs text-brand-primary mt-1">
                         {activity.project_name}
                       </p>
                     )}
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-text-muted mt-1">
                       {getRelativeTime(activity.timestamp)}
                     </p>
                   </div>
@@ -107,7 +107,7 @@ export function ActivityTimeline({ activities }: ActivityTimelineProps) {
               );
             })
           ) : (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-text-muted">
               No recent activity
             </div>
           )}

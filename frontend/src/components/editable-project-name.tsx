@@ -103,7 +103,7 @@ export function EditableProjectName({
               }
             }, 150);
           }}
-          className="h-7 py-0 px-2 text-lg font-semibold bg-[#0F0F10] border-[#00D9FF] text-white"
+          className="h-7 py-0 px-2 text-lg font-semibold bg-surface-canvas border-brand-primary text-white"
           maxLength={255}
           disabled={isSaving}
         />
@@ -132,7 +132,7 @@ export function EditableProjectName({
       <h4
         className={cn(
           "font-semibold text-lg transition-colors line-clamp-1",
-          isSelected ? "text-[#00D9FF]" : "group-hover:text-[#00D9FF]",
+          isSelected ? "text-brand-primary" : "group-hover:text-brand-primary",
           className
         )}
       >
@@ -140,7 +140,7 @@ export function EditableProjectName({
       </h4>
       <button
         onClick={handleStartEditing}
-        className="p-1 rounded opacity-0 group-hover/name:opacity-100 hover:bg-gray-700/50 text-gray-400 hover:text-[#00D9FF] transition-all"
+        className="p-1 rounded opacity-0 group-hover/name:opacity-100 hover:bg-surface-raised/50 text-text-muted hover:text-brand-primary transition-all"
         title="Edit name"
       >
         <Pencil className="w-3.5 h-3.5" />

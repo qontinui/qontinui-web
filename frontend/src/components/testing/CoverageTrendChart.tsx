@@ -33,9 +33,9 @@ export function CoverageTrendChart({
 
   if (isLoading) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">Loading coverage trends...</div>
+          <div className="text-text-muted">Loading coverage trends...</div>
         </CardContent>
       </Card>
     );
@@ -43,7 +43,7 @@ export function CoverageTrendChart({
 
   if (error) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
           <div className="text-red-400">
             Error loading trends: {error.message}
@@ -55,12 +55,12 @@ export function CoverageTrendChart({
 
   if (!trends || trends.length === 0) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle>Coverage Trends</CardTitle>
         </CardHeader>
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">
+          <div className="text-text-muted">
             No coverage data available for the selected period
           </div>
         </CardContent>
@@ -78,7 +78,7 @@ export function CoverageTrendChart({
   }));
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <CardHeader>
         <CardTitle>Coverage Trends</CardTitle>
       </CardHeader>
@@ -124,25 +124,25 @@ export function CoverageTrendChart({
             <Line
               type="monotone"
               dataKey="coverage"
-              stroke="#00D9FF"
+              stroke="var(--color-brand-primary)"
               strokeWidth={2}
-              dot={{ fill: "#00D9FF", r: 4 }}
+              dot={{ fill: "var(--color-brand-primary)", r: 4 }}
               activeDot={{ r: 6 }}
             />
             <Line
               type="monotone"
               dataKey="statesCovered"
-              stroke="#BD00FF"
+              stroke="var(--color-brand-secondary)"
               strokeWidth={2}
-              dot={{ fill: "#BD00FF", r: 4 }}
+              dot={{ fill: "var(--color-brand-secondary)", r: 4 }}
               activeDot={{ r: 6 }}
             />
             <Line
               type="monotone"
               dataKey="testRuns"
-              stroke="#00FF88"
+              stroke="var(--color-brand-success)"
               strokeWidth={2}
-              dot={{ fill: "#00FF88", r: 4 }}
+              dot={{ fill: "var(--color-brand-success)", r: 4 }}
               activeDot={{ r: 6 }}
             />
           </LineChart>
@@ -150,9 +150,9 @@ export function CoverageTrendChart({
 
         {/* Summary Stats */}
         <div className="grid grid-cols-3 gap-4 mt-6">
-          <div className="text-center p-4 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-1">Average Coverage</div>
-            <div className="text-2xl font-bold text-[#00D9FF]">
+          <div className="text-center p-4 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-1">Average Coverage</div>
+            <div className="text-2xl font-bold text-brand-primary">
               {(
                 trends.reduce((acc, t) => acc + t.coverage_percentage, 0) /
                 trends.length
@@ -160,15 +160,15 @@ export function CoverageTrendChart({
               %
             </div>
           </div>
-          <div className="text-center p-4 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-1">Total Test Runs</div>
-            <div className="text-2xl font-bold text-[#BD00FF]">
+          <div className="text-center p-4 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-1">Total Test Runs</div>
+            <div className="text-2xl font-bold text-brand-secondary">
               {trends.reduce((acc, t) => acc + t.test_run_count, 0)}
             </div>
           </div>
-          <div className="text-center p-4 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-1">Latest Coverage</div>
-            <div className="text-2xl font-bold text-[#00FF88]">
+          <div className="text-center p-4 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-1">Latest Coverage</div>
+            <div className="text-2xl font-bold text-brand-success">
               {trends[trends.length - 1]?.coverage_percentage.toFixed(1)}%
             </div>
           </div>

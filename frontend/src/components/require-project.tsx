@@ -47,7 +47,7 @@ export function RequireProject({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
+        <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
       </div>
     );
   }
@@ -57,20 +57,20 @@ export function RequireProject({
     // This handles the case where the user isn&apos;t logged in or their session expired
     return (
       <div className="flex items-center justify-center min-h-[400px] p-4">
-        <Card className="bg-[#1A1A1B]/30 border-gray-800/50 border-dashed backdrop-blur-sm max-w-md">
+        <Card className="bg-surface-raised/30 border-border-subtle/50 border-dashed backdrop-blur-sm max-w-md">
           <CardContent className="p-12 text-center">
-            <div className="w-16 h-16 bg-[#00D9FF]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FolderOpen className="w-8 h-8 text-[#00D9FF]" />
+            <div className="w-16 h-16 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FolderOpen className="w-8 h-8 text-brand-primary" />
             </div>
-            <h4 className="text-xl font-semibold mb-2 text-gray-300">
+            <h4 className="text-xl font-semibold mb-2 text-text-muted">
               No projects yet
             </h4>
-            <p className="text-gray-500 mb-6">
+            <p className="text-text-muted mb-6">
               Create your first project to access {pageName}
             </p>
             <Button
               asChild
-              className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+              className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
             >
               <Link href="/dashboard">
                 <Plus className="w-4 h-4 mr-2" />
@@ -87,20 +87,20 @@ export function RequireProject({
   if (!projects || projects.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px] p-4">
-        <Card className="bg-[#1A1A1B]/30 border-gray-800/50 border-dashed backdrop-blur-sm max-w-md">
+        <Card className="bg-surface-raised/30 border-border-subtle/50 border-dashed backdrop-blur-sm max-w-md">
           <CardContent className="p-12 text-center">
-            <div className="w-16 h-16 bg-[#00D9FF]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FolderOpen className="w-8 h-8 text-[#00D9FF]" />
+            <div className="w-16 h-16 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FolderOpen className="w-8 h-8 text-brand-primary" />
             </div>
-            <h4 className="text-xl font-semibold mb-2 text-gray-300">
+            <h4 className="text-xl font-semibold mb-2 text-text-muted">
               No projects yet
             </h4>
-            <p className="text-gray-500 mb-6">
+            <p className="text-text-muted mb-6">
               Create your first project to access {pageName}
             </p>
             <Button
               asChild
-              className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+              className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
             >
               <Link href="/dashboard">
                 <Plus className="w-4 h-4 mr-2" />
@@ -117,20 +117,20 @@ export function RequireProject({
   if (!hasProjectSelected) {
     return (
       <div className="flex items-center justify-center min-h-[400px] p-4">
-        <Card className="bg-[#1A1A1B]/30 border-gray-800/50 border-dashed backdrop-blur-sm max-w-md">
+        <Card className="bg-surface-raised/30 border-border-subtle/50 border-dashed backdrop-blur-sm max-w-md">
           <CardContent className="p-12 text-center">
-            <div className="w-16 h-16 bg-[#00D9FF]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <MousePointerClick className="w-8 h-8 text-[#00D9FF]" />
+            <div className="w-16 h-16 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <MousePointerClick className="w-8 h-8 text-brand-primary" />
             </div>
-            <h4 className="text-xl font-semibold mb-2 text-gray-300">
+            <h4 className="text-xl font-semibold mb-2 text-text-muted">
               No project selected
             </h4>
-            <p className="text-gray-500 mb-6">
+            <p className="text-text-muted mb-6">
               Select or create a project from the dashboard to access {pageName}
             </p>
             <Button
               asChild
-              className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+              className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
             >
               <Link href="/dashboard">
                 <FolderOpen className="w-4 h-4 mr-2" />

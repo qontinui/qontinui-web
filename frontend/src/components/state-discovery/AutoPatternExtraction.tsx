@@ -228,7 +228,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
               value={stateName}
               onChange={(e) => setStateName(e.target.value)}
             />
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-text-muted">
               Used for naming detected patterns
             </p>
           </div>
@@ -242,7 +242,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
               value={screenshotPaths}
               onChange={(e) => setScreenshotPaths(e.target.value)}
             />
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-text-muted">
               Absolute paths to screenshot files on the server
             </p>
           </div>
@@ -303,7 +303,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
           <div className="space-y-2">
             <div className="flex justify-between">
               <Label>Min Confidence Threshold</Label>
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-text-muted">
                 {(minConfidence * 100).toFixed(0)}%
               </span>
             </div>
@@ -315,7 +315,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
               step={0.05}
               className="w-full"
             />
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-text-muted">
               Minimum confidence level for detected patterns
             </p>
           </div>
@@ -349,7 +349,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
                 Detected Patterns ({detectedPatterns.length})
               </CardTitle>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-text-muted">
                   {selectedPatterns.size} selected
                 </span>
                 <Button
@@ -370,11 +370,11 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
                   className={`p-2 border rounded cursor-pointer transition-all ${
                     selectedPatterns.has(pattern.suggested_name)
                       ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200"
-                      : "border-gray-200 hover:bg-gray-50"
+                      : "border-border-subtle hover:bg-surface-raised/80"
                   }`}
                   onClick={() => handleTogglePattern(pattern.suggested_name)}
                 >
-                  <div className="aspect-square bg-gray-100 rounded mb-2 overflow-hidden flex items-center justify-center">
+                  <div className="aspect-square bg-surface-raised rounded mb-2 overflow-hidden flex items-center justify-center">
                     {pattern.image_data ? (
                       <img
                         src={pattern.image_data}
@@ -382,7 +382,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
                         className="max-w-full max-h-full object-contain"
                       />
                     ) : (
-                      <ImageIcon className="w-8 h-8 text-gray-400" />
+                      <ImageIcon className="w-8 h-8 text-text-muted" />
                     )}
                   </div>
                   <div className="space-y-1">
@@ -409,7 +409,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
                       </span>
                     </div>
                     <div
-                      className="text-xs text-gray-500 truncate"
+                      className="text-xs text-text-muted truncate"
                       title={
                         pattern.region
                           ? `${pattern.region.w}x${pattern.region.h}`
@@ -436,7 +436,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="pt-6">
           <h4 className="text-sm font-semibold mb-2">How to use:</h4>
-          <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
+          <ol className="text-sm text-text-secondary space-y-1 list-decimal list-inside">
             <li>Enter a state name for pattern naming</li>
             <li>Provide screenshot file paths (from server filesystem)</li>
             <li>Select which pattern types to detect</li>

@@ -1,39 +1,36 @@
 /**
  * State List Component
  *
- * Displays discovered states from web extraction with:
- * - Screenshot preview with state bounding boxes
- * - State metadata (name, type, element count)
- * - Selection capabilities for import
+ * Four-column layout for discovered states:
+ * 1. Left: Page thumbnails
+ * 2. States list with selection checkboxes
+ * 3. Elements of the selected state
+ * 4. Right: Selected element details (position, size, image)
  */
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useState, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import {
   FileSearch,
   Component,
   CheckSquare,
   Square,
-  Image as ImageIcon,
-  AlertCircle,
-  Eye,
+  Download,
+  Loader2,
 } from "lucide-react";
-import { runnerClient } from "@/lib/runner-client";
-import type { ExtractionAnnotation } from "@/services/extraction-service";
-import { StateImageModal } from "./StateImageModal";
+import type {
+  ExtractionAnnotation,
+  ImportResult,
+} from "@/services/extraction-service";
+import { PageThumbnailList } from "./PageThumbnailList";
+import { ElementList } from "./ElementList";
+import { ElementDetailView } from "./ElementDetailView";
 
 interface StateAnnotation {
   id: string;
@@ -48,171 +45,6 @@ interface StateAnnotation {
   element_ids: string[];
 }
 
-interface StateListProps {
-  annotations: ExtractionAnnotation[];
-  selectedStateIds: Set<string>;
-  onSelectionChange: (stateIds: Set<string>) => void;
-  extractionId?: string;
-}
-
-/**
- * Screenshot preview with state bounding boxes overlaid
- */
-function ScreenshotPreview({
-  extractionId,
-  screenshotId,
-  states,
-  selectedStateIds,
-  onToggleState,
-  viewportWidth,
-  viewportHeight,
-}: {
-  extractionId: string;
-  screenshotId: string;
-  states: StateAnnotation[];
-  selectedStateIds: Set<string>;
-  onToggleState: (stateId: string) => void;
-  viewportWidth: number;
-  viewportHeight: number;
-}) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadScreenshot() {
-      try {
-        setLoading(true);
-        setError(null);
-        const result = await runnerClient.getExtractionScreenshot(
-          extractionId,
-          screenshotId
-        );
-        if (!mounted) return;
-
-        if (result.success && result.blob) {
-          const url = URL.createObjectURL(result.blob);
-          setImageUrl(url);
-        } else {
-          setError(result.error || "Failed to load screenshot");
-        }
-      } catch (e) {
-        if (!mounted) return;
-        setError(e instanceof Error ? e.message : "Failed to load screenshot");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    loadScreenshot();
-
-    return () => {
-      mounted = false;
-      if (imageUrl) {
-        URL.revokeObjectURL(imageUrl);
-      }
-    };
-  }, [extractionId, screenshotId]);
-
-  // Calculate scale to fit preview (max 400px wide)
-  const maxPreviewWidth = 400;
-  const scale = Math.min(1, maxPreviewWidth / viewportWidth);
-  const previewWidth = viewportWidth * scale;
-  const previewHeight = viewportHeight * scale;
-
-  if (loading) {
-    return (
-      <div
-        className="bg-muted animate-pulse rounded-lg flex items-center justify-center"
-        style={{ width: previewWidth, height: previewHeight }}
-      >
-        <ImageIcon className="h-8 w-8 text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (error || !imageUrl) {
-    return (
-      <div
-        className="bg-muted rounded-lg flex flex-col items-center justify-center gap-2 p-4"
-        style={{ width: previewWidth, height: Math.min(previewHeight, 150) }}
-      >
-        <AlertCircle className="h-6 w-6 text-muted-foreground" />
-        <p className="text-xs text-muted-foreground text-center">
-          {error || "Screenshot unavailable"}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Make sure the runner is connected
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="relative rounded-lg overflow-hidden border"
-      style={{ width: previewWidth, height: previewHeight }}
-    >
-      {/* Screenshot image */}
-      <img
-        src={imageUrl}
-        alt="Page screenshot"
-        className="w-full h-full object-cover"
-        style={{ width: previewWidth, height: previewHeight }}
-      />
-
-      {/* State bounding box overlays */}
-      {states.map((state) => {
-        const isSelected = selectedStateIds.has(state.id);
-        return (
-          <div
-            key={state.id}
-            className={`absolute border-2 cursor-pointer transition-all ${
-              isSelected
-                ? "border-[#00D9FF] bg-[#00D9FF]/20"
-                : "border-yellow-400 bg-yellow-400/10 hover:bg-yellow-400/20"
-            }`}
-            style={{
-              left: state.bbox.x * scale,
-              top: state.bbox.y * scale,
-              width: state.bbox.width * scale,
-              height: state.bbox.height * scale,
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleState(state.id);
-            }}
-            title={`${state.name} (${state.state_type})`}
-          >
-            {/* State label */}
-            <div
-              className={`absolute -top-5 left-0 text-xs px-1 py-0.5 rounded whitespace-nowrap ${
-                isSelected
-                  ? "bg-[#00D9FF] text-black"
-                  : "bg-yellow-400 text-black"
-              }`}
-            >
-              {state.name}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// Extended state annotation with annotation context
-interface StateWithContext extends StateAnnotation {
-  source_url: string;
-  viewport: string;
-  screenshot_id: string;
-  viewport_width: number;
-  viewport_height: number;
-}
-
-// Element annotation type for the modal
 interface ElementAnnotation {
   id: string;
   name?: string | null;
@@ -228,22 +60,83 @@ interface ElementAnnotation {
   confidence?: number;
 }
 
+interface StateListProps {
+  annotations: ExtractionAnnotation[];
+  selectedStateIds: Set<string>;
+  onSelectionChange: (stateIds: Set<string>) => void;
+  extractionId?: string;
+  onImport?: (stateIds: string[]) => Promise<ImportResult>;
+}
+
+interface StateWithContext extends StateAnnotation {
+  source_url: string;
+  viewport: string;
+  screenshot_id: string;
+  viewport_width: number;
+  viewport_height: number;
+}
+
 export function StateList({
   annotations,
   selectedStateIds,
   onSelectionChange,
   extractionId,
+  onImport,
 }: StateListProps) {
-  // State for viewing a specific state's image
-  const [viewingState, setViewingState] = useState<StateWithContext | null>(
+  const [isImporting, setIsImporting] = useState(false);
+  // Selected page (annotation) - defaults to first
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<
+    string | null
+  >(annotations[0]?.screenshot_id || null);
+
+  // Selected state for viewing its elements
+  const [selectedStateId, setSelectedStateId] = useState<string | null>(null);
+
+  // Selected element for viewing details
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(
     null
   );
-  // Elements from the current annotation being viewed
-  const [viewingElements, setViewingElements] = useState<ElementAnnotation[]>(
-    []
+
+  // Get the selected annotation
+  const selectedAnnotation = useMemo(
+    () =>
+      annotations.find((a) => a.screenshot_id === selectedAnnotationId) || null,
+    [annotations, selectedAnnotationId]
   );
 
-  // Collect all states from all annotations with context
+  // States for the selected annotation
+  const annotationStates = useMemo(
+    () => (selectedAnnotation?.states as StateAnnotation[]) || [],
+    [selectedAnnotation]
+  );
+
+  // All elements for the selected annotation
+  const annotationElements = useMemo(
+    () => (selectedAnnotation?.elements as ElementAnnotation[]) || [],
+    [selectedAnnotation]
+  );
+
+  // Get the selected state
+  const selectedState = useMemo(
+    () => annotationStates.find((s) => s.id === selectedStateId) || null,
+    [annotationStates, selectedStateId]
+  );
+
+  // Elements belonging to the selected state
+  const stateElements = useMemo(() => {
+    if (!selectedState) return [];
+    return annotationElements.filter((el) =>
+      selectedState.element_ids.includes(el.id)
+    );
+  }, [selectedState, annotationElements]);
+
+  // Get the selected element
+  const selectedElement = useMemo(
+    () => stateElements.find((el) => el.id === selectedElementId) || null,
+    [stateElements, selectedElementId]
+  );
+
+  // All states across all annotations
   const allStates = useMemo<StateWithContext[]>(
     () =>
       annotations.flatMap((annotation) =>
@@ -278,29 +171,53 @@ export function StateList({
     onSelectionChange(new Set());
   };
 
-  // Handle viewing a state's image
-  const handleViewState = (
-    state: StateAnnotation,
-    annotation: ExtractionAnnotation
-  ) => {
-    const stateWithContext: StateWithContext = {
-      ...state,
-      source_url: annotation.source_url,
-      viewport: `${annotation.viewport_width}x${annotation.viewport_height}`,
-      screenshot_id: annotation.screenshot_id,
-      viewport_width: annotation.viewport_width,
-      viewport_height: annotation.viewport_height,
-    };
-    setViewingState(stateWithContext);
-    // Store elements from this annotation for the modal
-    const elements = (annotation.elements as ElementAnnotation[]) || [];
-    setViewingElements(elements);
+  const handleSelectPage = () => {
+    if (!selectedAnnotation) return;
+    const pageStateIds = annotationStates.map((s) => s.id);
+    const allSelected = pageStateIds.every((id) => selectedStateIds.has(id));
+    const newSelection = new Set(selectedStateIds);
+
+    if (allSelected) {
+      pageStateIds.forEach((id) => newSelection.delete(id));
+    } else {
+      pageStateIds.forEach((id) => newSelection.add(id));
+    }
+    onSelectionChange(newSelection);
   };
 
-  // Handle closing the modal
-  const handleCloseModal = () => {
-    setViewingState(null);
-    setViewingElements([]);
+  const handleSelectState = (stateId: string) => {
+    setSelectedStateId(stateId);
+    setSelectedElementId(null); // Reset element selection when state changes
+  };
+
+  const handleSelectElement = (elementId: string) => {
+    setSelectedElementId(elementId);
+  };
+
+  const handleSelectAnnotation = (annotationId: string) => {
+    setSelectedAnnotationId(annotationId);
+    setSelectedStateId(null);
+    setSelectedElementId(null);
+  };
+
+  const handleImportSelected = async () => {
+    if (!onImport || selectedStateIds.size === 0) return;
+    setIsImporting(true);
+    try {
+      await onImport(Array.from(selectedStateIds));
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleImportAll = async () => {
+    if (!onImport) return;
+    setIsImporting(true);
+    try {
+      await onImport([]);
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   if (allStates.length === 0) {
@@ -322,198 +239,221 @@ export function StateList({
     );
   }
 
+  const pageAllSelected = annotationStates.every((s) =>
+    selectedStateIds.has(s.id)
+  );
+
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex-1 flex flex-col min-h-0">
+      <CardHeader className="shrink-0 py-1 px-4">
         <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2">
-              <FileSearch className="h-5 w-5" />
-              Discovered States
-            </CardTitle>
-            <CardDescription>
-              {allStates.length} state{allStates.length !== 1 ? "s" : ""} found
-              across {annotations.length} page
-              {annotations.length !== 1 ? "s" : ""}
-            </CardDescription>
-          </div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <FileSearch className="h-4 w-4" />
+            Discovered States
+            {selectedStateIds.size > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {selectedStateIds.size} selected
+              </Badge>
+            )}
+          </CardTitle>
           <div className="flex gap-2">
+            {onImport && (
+              <>
+                <Button
+                  onClick={handleImportSelected}
+                  variant="default"
+                  size="sm"
+                  disabled={selectedStateIds.size === 0 || isImporting}
+                >
+                  {isImporting ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-1" />
+                  )}
+                  Import Selected
+                </Button>
+                <Button
+                  onClick={handleImportAll}
+                  variant="outline"
+                  size="sm"
+                  disabled={isImporting}
+                >
+                  {isImporting ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-1" />
+                  )}
+                  Import All
+                </Button>
+              </>
+            )}
             <Button
               onClick={handleSelectAll}
-              variant="outline"
+              variant="ghost"
               size="sm"
               disabled={selectedStateIds.size === allStates.length}
             >
-              <CheckSquare className="h-4 w-4 mr-2" />
-              Select All
+              <CheckSquare className="h-4 w-4 mr-1" />
+              All
             </Button>
             <Button
               onClick={handleDeselectAll}
-              variant="outline"
+              variant="ghost"
               size="sm"
               disabled={selectedStateIds.size === 0}
             >
-              <Square className="h-4 w-4 mr-2" />
+              <Square className="h-4 w-4 mr-1" />
               Clear
             </Button>
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-[600px] pr-4">
-          <div className="space-y-6">
-            {/* Group by annotation (screenshot) */}
-            {annotations.map((annotation) => {
-              const annotationStates = annotation.states as StateAnnotation[];
-              if (annotationStates.length === 0) return null;
 
-              return (
-                <div
-                  key={annotation.screenshot_id}
-                  className="border rounded-lg p-4 space-y-4"
-                >
-                  {/* Annotation header */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium truncate max-w-md">
-                        {annotation.source_url}
+      <CardContent className="flex-1 min-h-0 p-0">
+        <div className="h-full flex border-t">
+          {/* Column 1: Page Thumbnails */}
+          <div className="w-80 shrink-0 border-r bg-muted/30 h-full overflow-hidden">
+            {extractionId && (
+              <PageThumbnailList
+                annotations={annotations}
+                extractionId={extractionId}
+                selectedAnnotationId={selectedAnnotationId}
+                onSelectAnnotation={handleSelectAnnotation}
+              />
+            )}
+          </div>
+
+          {/* Column 2: States List */}
+          <div className="w-72 shrink-0 border-r flex flex-col h-full overflow-hidden">
+            {selectedAnnotation && (
+              <>
+                {/* Page Header */}
+                <div className="p-3 border-b shrink-0 bg-muted/20">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {selectedAnnotation.source_url}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {annotation.viewport_width}x{annotation.viewport_height}{" "}
-                        • {annotationStates.length} state
+                        {selectedAnnotation.viewport_width}x
+                        {selectedAnnotation.viewport_height} •{" "}
+                        {annotationStates.length} state
                         {annotationStates.length !== 1 ? "s" : ""}
                       </p>
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        const stateIds = annotationStates.map((s) => s.id);
-                        const allSelected = stateIds.every((id) =>
-                          selectedStateIds.has(id)
-                        );
-                        const newSelection = new Set(selectedStateIds);
-                        if (allSelected) {
-                          stateIds.forEach((id) => newSelection.delete(id));
-                        } else {
-                          stateIds.forEach((id) => newSelection.add(id));
-                        }
-                        onSelectionChange(newSelection);
-                      }}
+                      className="shrink-0 text-xs"
+                      onClick={handleSelectPage}
                     >
-                      {annotationStates.every((s) =>
-                        selectedStateIds.has(s.id)
-                      ) ? (
+                      {pageAllSelected ? (
                         <>
-                          <Square className="h-4 w-4 mr-1" />
-                          Deselect Page
+                          <Square className="h-3 w-3 mr-1" />
+                          Deselect
                         </>
                       ) : (
                         <>
-                          <CheckSquare className="h-4 w-4 mr-1" />
-                          Select Page
+                          <CheckSquare className="h-3 w-3 mr-1" />
+                          Select
                         </>
                       )}
                     </Button>
                   </div>
+                </div>
 
-                  {/* Screenshot preview with overlays */}
-                  {extractionId && (
-                    <ScreenshotPreview
-                      extractionId={extractionId}
-                      screenshotId={annotation.screenshot_id}
-                      states={annotationStates}
-                      selectedStateIds={selectedStateIds}
-                      onToggleState={handleToggleState}
-                      viewportWidth={annotation.viewport_width}
-                      viewportHeight={annotation.viewport_height}
-                    />
-                  )}
+                {/* States */}
+                <ScrollArea className="flex-1">
+                  <div className="p-2 space-y-1">
+                    {annotationStates.map((state) => {
+                      const isChecked = selectedStateIds.has(state.id);
+                      const isSelected = selectedStateId === state.id;
 
-                  {/* State list for this annotation */}
-                  <div className="space-y-2">
-                    {annotationStates.map((state) => (
-                      <div
-                        key={state.id}
-                        className={`flex items-center gap-3 p-2 rounded-md transition-colors ${
-                          selectedStateIds.has(state.id)
-                            ? "bg-[#00D9FF]/10 border border-[#00D9FF]"
-                            : "hover:bg-muted"
-                        }`}
-                      >
-                        <Checkbox
-                          checked={selectedStateIds.has(state.id)}
-                          onCheckedChange={() => handleToggleState(state.id)}
-                        />
+                      return (
                         <div
-                          className="flex-1 min-w-0 cursor-pointer"
-                          onClick={() => handleToggleState(state.id)}
+                          key={state.id}
+                          className={`flex items-center gap-2 p-2 rounded-md transition-colors cursor-pointer ${
+                            isSelected
+                              ? "bg-brand-primary/20 ring-1 ring-brand-primary"
+                              : isChecked
+                                ? "bg-primary/10"
+                                : "hover:bg-muted"
+                          }`}
+                          onClick={() => handleSelectState(state.id)}
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">
-                              {state.name}
-                            </span>
-                            <Badge variant="outline" className="text-xs">
-                              {state.state_type}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Component className="h-3 w-3" />
-                              {state.element_ids.length} elements
-                            </span>
-                            <span>
-                              ({state.bbox.x}, {state.bbox.y}) •{" "}
-                              {state.bbox.width}×{state.bbox.height}
-                            </span>
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={() => handleToggleState(state.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm truncate">
+                                {state.name}
+                              </span>
+                              <Badge variant="outline" className="text-[10px]">
+                                {state.state_type}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-0.5">
+                                <Component className="h-3 w-3" />
+                                {state.element_ids.length}
+                              </span>
+                              <span>
+                                {state.bbox.width}×{state.bbox.height}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                        {/* View state image button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 flex-shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewState(state, annotation);
-                          }}
-                          title="View state image"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
-                </div>
-              );
-            })}
+                </ScrollArea>
+              </>
+            )}
           </div>
-        </ScrollArea>
 
-        {selectedStateIds.size > 0 && (
-          <>
-            <Separator className="my-4" />
-            <div className="text-sm text-center text-muted-foreground">
-              {selectedStateIds.size} state
-              {selectedStateIds.size !== 1 ? "s" : ""} selected for import
-            </div>
-          </>
-        )}
+          {/* Column 3: Elements List */}
+          <div className="w-72 shrink-0 border-r bg-muted/20 h-full overflow-hidden">
+            {selectedState ? (
+              <ElementList
+                elements={stateElements}
+                selectedElementId={selectedElementId}
+                onSelectElement={handleSelectElement}
+                stateName={selectedState.name}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center p-4">
+                <div className="text-center text-muted-foreground">
+                  <Component className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Select a state to view elements</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Column 4: Element Details */}
+          <div className="flex-1 min-w-0 bg-muted/10 h-full overflow-hidden">
+            {selectedElement && selectedAnnotation && extractionId ? (
+              <ElementDetailView
+                element={selectedElement}
+                extractionId={extractionId}
+                screenshotId={selectedAnnotation.screenshot_id}
+                viewportWidth={selectedAnnotation.viewport_width}
+                viewportHeight={selectedAnnotation.viewport_height}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center p-4">
+                <div className="text-center text-muted-foreground">
+                  <Component className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Select an element to view details</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </CardContent>
-
-      {/* State Image Modal */}
-      {viewingState && extractionId && (
-        <StateImageModal
-          isOpen={!!viewingState}
-          onClose={handleCloseModal}
-          state={viewingState}
-          elements={viewingElements}
-          extractionId={extractionId}
-          screenshotId={viewingState.screenshot_id}
-          viewportWidth={viewingState.viewport_width}
-          viewportHeight={viewingState.viewport_height}
-        />
-      )}
     </Card>
   );
 }

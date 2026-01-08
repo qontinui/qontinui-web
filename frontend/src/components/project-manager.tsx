@@ -172,11 +172,7 @@ export function ProjectManager({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-gray-700 dark:text-gray-300"
-          >
+          <Button variant="outline" size="sm" className="text-text-secondary">
             <FileText className="w-4 h-4 mr-2" />
             Project
             <ChevronDown className="w-4 h-4 ml-2" />

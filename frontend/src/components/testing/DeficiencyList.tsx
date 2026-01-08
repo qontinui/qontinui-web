@@ -84,9 +84,9 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
 
   if (isLoading) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">Loading deficiencies...</div>
+          <div className="text-text-muted">Loading deficiencies...</div>
         </CardContent>
       </Card>
     );
@@ -94,7 +94,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
 
   if (error) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
           <div className="text-red-400">
             Error loading deficiencies: {error.message}
@@ -109,7 +109,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
   const currentPage = data?.page || 1;
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl">Deficiencies</CardTitle>
@@ -118,7 +118,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
               size="sm"
               variant="outline"
               onClick={() => handleExport("csv")}
-              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+              className="border-border-default hover:border-brand-primary hover:text-brand-primary"
             >
               <Download className="w-4 h-4 mr-2" />
               Export
@@ -136,18 +136,18 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                className="bg-[#0A0A0B]/50 border-gray-700 focus:border-[#00D9FF]"
+                className="bg-surface-canvas/50 border-border-default focus:border-brand-primary"
               />
               <Button
                 onClick={handleSearch}
-                className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                className="bg-brand-primary hover:bg-brand-primary/80 text-black"
               >
                 <Search className="w-4 h-4" />
               </Button>
             </div>
           </div>
           <Select value={severityFilter} onValueChange={handleSeverityChange}>
-            <SelectTrigger className="bg-[#0A0A0B]/50 border-gray-700">
+            <SelectTrigger className="bg-surface-canvas/50 border-border-default">
               <SelectValue placeholder="Severity" />
             </SelectTrigger>
             <SelectContent>
@@ -159,7 +159,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={handleStatusChange}>
-            <SelectTrigger className="bg-[#0A0A0B]/50 border-gray-700">
+            <SelectTrigger className="bg-surface-canvas/50 border-border-default">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -174,7 +174,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
 
         {/* Results */}
         {deficiencies.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
+          <div className="text-center py-12 text-text-muted">
             No deficiencies found. Adjust your filters or run more tests.
           </div>
         ) : (
@@ -188,7 +188,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
             {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-6">
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-text-muted">
                   Page {currentPage} of {totalPages} • {data?.total || 0} total
                   deficiencies
                 </div>
@@ -198,7 +198,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
                     variant="outline"
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage === 1}
-                    className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                    className="border-border-default hover:border-brand-primary hover:text-brand-primary"
                   >
                     <ChevronLeft className="w-4 h-4" />
                     Previous
@@ -208,7 +208,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
                     variant="outline"
                     onClick={() => handlePageChange(currentPage + 1)}
                     disabled={currentPage === totalPages}
-                    className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                    className="border-border-default hover:border-brand-primary hover:text-brand-primary"
                   >
                     Next
                     <ChevronRight className="w-4 h-4" />

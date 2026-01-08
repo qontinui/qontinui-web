@@ -49,10 +49,10 @@ export function ActiveStatesChecklist({
 }: ActiveStatesChecklistProps) {
   if (!allStates || allStates.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500 text-sm">
+      <div className="text-center py-8 text-text-muted text-sm">
         <Info className="w-8 h-8 mx-auto mb-2 opacity-50" />
         <div>No states defined</div>
-        <div className="text-xs text-gray-600 mt-1">
+        <div className="text-xs text-text-muted mt-1">
           Create states in the automation builder
         </div>
       </div>
@@ -77,13 +77,13 @@ export function ActiveStatesChecklist({
     <div className="space-y-3">
       {/* Summary */}
       <div className="flex items-center justify-between text-xs">
-        <span className="text-gray-500">
+        <span className="text-text-muted">
           {activeCount} of {totalCount} active
         </span>
         {activeCount > 0 && (
           <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-[#00D9FF] animate-pulse" />
-            <span className="text-[#00D9FF]">Active</span>
+            <div className="w-2 h-2 rounded-full bg-brand-primary animate-pulse" />
+            <span className="text-brand-primary">Active</span>
           </div>
         )}
       </div>
@@ -101,16 +101,16 @@ export function ActiveStatesChecklist({
                 className={cn(
                   "p-3 rounded-lg border transition-all",
                   isActive
-                    ? "bg-[#00D9FF]/10 border-[#00D9FF]/50"
-                    : "bg-[#1A1A1B]/30 border-gray-800"
+                    ? "bg-brand-primary/10 border-brand-primary/50"
+                    : "bg-[#1A1A1B]/30 border-border-subtle"
                 )}
               >
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 mt-0.5">
                     {isActive ? (
-                      <CheckCircle2 className="w-5 h-5 text-[#00D9FF]" />
+                      <CheckCircle2 className="w-5 h-5 text-brand-primary" />
                     ) : (
-                      <Circle className="w-5 h-5 text-gray-600" />
+                      <Circle className="w-5 h-5 text-text-muted" />
                     )}
                   </div>
 
@@ -118,19 +118,19 @@ export function ActiveStatesChecklist({
                     <div
                       className={cn(
                         "font-medium text-sm mb-1",
-                        isActive ? "text-[#00D9FF]" : "text-gray-400"
+                        isActive ? "text-brand-primary" : "text-text-muted"
                       )}
                     >
                       {state.name}
                     </div>
 
                     {state.description && (
-                      <div className="text-xs text-gray-500 mb-1 line-clamp-2">
+                      <div className="text-xs text-text-muted mb-1 line-clamp-2">
                         {state.description}
                       </div>
                     )}
 
-                    <div className="text-xs text-gray-600">{metadata}</div>
+                    <div className="text-xs text-text-muted">{metadata}</div>
 
                     {/* State flags */}
                     <div className="flex items-center gap-2 mt-2">
@@ -155,7 +155,7 @@ export function ActiveStatesChecklist({
 
       {/* Help Text */}
       {activeCount === 0 && (
-        <div className="text-xs text-gray-600 text-center p-4 bg-[#1A1A1B]/30 rounded border border-gray-800">
+        <div className="text-xs text-text-muted text-center p-4 bg-[#1A1A1B]/30 rounded border border-border-subtle">
           <Info className="w-4 h-4 mx-auto mb-1 opacity-50" />
           No states are currently active. States become active as the workflow
           progresses through GO_TO_STATE and Find State actions.

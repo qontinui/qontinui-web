@@ -181,14 +181,14 @@ export function TransitionBuilder() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="w-full bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white">
+        <Button className="w-full bg-brand-secondary hover:bg-brand-secondary/80 text-white">
           <Plus className="w-4 h-4 mr-2" />
           Create Transition
         </Button>
       </DialogTrigger>
 
       <DialogContent
-        className="bg-[#27272A] border-gray-700"
+        className="bg-surface-raised border-border-default"
         style={{
           maxWidth:
             transitionType === "OutgoingTransition" ? "1400px" : "672px",
@@ -196,10 +196,10 @@ export function TransitionBuilder() {
         }}
       >
         <DialogHeader>
-          <DialogTitle className="text-[#00D9FF]">
+          <DialogTitle className="text-brand-primary">
             Create Transition
           </DialogTitle>
-          <DialogDescription className="text-gray-400 text-sm">
+          <DialogDescription className="text-text-muted text-sm">
             Define how states transition in your automation workflow
           </DialogDescription>
         </DialogHeader>
@@ -210,17 +210,17 @@ export function TransitionBuilder() {
             setTransitionType(v as "IncomingTransition" | "OutgoingTransition")
           }
         >
-          <TabsList className="grid w-[400px] mx-auto grid-cols-2 bg-gray-800">
+          <TabsList className="grid w-[400px] mx-auto grid-cols-2 bg-surface-overlay">
             <TabsTrigger
               value="OutgoingTransition"
-              className="data-[state=active]:bg-[#BD00FF]"
+              className="data-[state=active]:bg-brand-secondary"
             >
               <MoveRight className="w-4 h-4 mr-2" />
               Outgoing
             </TabsTrigger>
             <TabsTrigger
               value="IncomingTransition"
-              className="data-[state=active]:bg-[#00FF88]"
+              className="data-[state=active]:bg-brand-success"
             >
               <Target className="w-4 h-4 mr-2" />
               Incoming
@@ -231,7 +231,7 @@ export function TransitionBuilder() {
             <div>
               <Label className="mb-2 block">From State (Origin)</Label>
               <Select value={fromState} onValueChange={handleFromStateChange}>
-                <SelectTrigger className="bg-transparent border-gray-600">
+                <SelectTrigger className="bg-transparent border-border-subtle">
                   <SelectValue placeholder="Select origin state" />
                 </SelectTrigger>
                 <SelectContent>
@@ -261,10 +261,10 @@ export function TransitionBuilder() {
                 <Label className="text-sm font-semibold mb-2 text-red-400">
                   States to Deactivate
                 </Label>
-                <Card className="bg-gray-800 border-red-400/50">
+                <Card className="bg-surface-overlay border-red-400/50">
                   <CardContent className="p-3 h-[400px] overflow-y-auto">
                     {deactivateStates.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center pt-8">
+                      <p className="text-sm text-text-muted text-center pt-8">
                         No states selected
                       </p>
                     ) : (
@@ -293,7 +293,7 @@ export function TransitionBuilder() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-6 w-6 p-0 hover:bg-gray-600"
+                                  className="h-6 w-6 p-0 hover:bg-surface-sunken"
                                   onClick={() =>
                                     removeFromDeactivateStates(state.id)
                                   }
@@ -312,13 +312,13 @@ export function TransitionBuilder() {
 
               {/* Available States Column - MIDDLE */}
               <div>
-                <Label className="text-sm font-semibold mb-2 text-gray-400">
+                <Label className="text-sm font-semibold mb-2 text-text-muted">
                   Available States
                 </Label>
-                <Card className="bg-gray-800 border-gray-700">
+                <Card className="bg-surface-overlay border-border-default">
                   <CardContent className="p-3 h-[400px] overflow-y-auto">
                     {getAvailableStates().length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center pt-8">
+                      <p className="text-sm text-text-muted text-center pt-8">
                         No available states
                       </p>
                     ) : (
@@ -338,7 +338,7 @@ export function TransitionBuilder() {
                               <ChevronLeft className="h-4 w-4" />
                             </Button>
 
-                            <div className="flex-1 p-2 rounded bg-gray-700 hover:bg-gray-600 text-center">
+                            <div className="flex-1 p-2 rounded bg-surface-sunken hover:bg-surface-overlay text-center">
                               <span className="text-sm">{state.name}</span>
                             </div>
 
@@ -346,7 +346,7 @@ export function TransitionBuilder() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-6 w-6 p-0 text-[#00FF88] hover:text-[#00FF88]/80 hover:bg-[#00FF88]/20"
+                              className="h-6 w-6 p-0 text-brand-success hover:text-brand-success/80 hover:bg-brand-success/20"
                               onClick={() => addToActivateStates(state.id)}
                             >
                               <ChevronRight className="h-4 w-4" />
@@ -361,13 +361,13 @@ export function TransitionBuilder() {
 
               {/* States to Activate Column - RIGHT */}
               <div>
-                <Label className="text-sm font-semibold mb-2 text-[#00FF88]">
+                <Label className="text-sm font-semibold mb-2 text-brand-success">
                   States to Activate
                 </Label>
-                <Card className="bg-gray-800 border-[#00FF88]/50">
+                <Card className="bg-surface-overlay border-brand-success/50">
                   <CardContent className="p-3 h-[400px] overflow-y-auto">
                     {activateStates.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center pt-8">
+                      <p className="text-sm text-text-muted text-center pt-8">
                         No states selected
                       </p>
                     ) : (
@@ -377,7 +377,7 @@ export function TransitionBuilder() {
                           return state ? (
                             <div
                               key={state.id}
-                              className="flex items-center justify-between p-2 rounded bg-[#00FF88]/20 border border-[#00FF88]/50"
+                              className="flex items-center justify-between p-2 rounded bg-brand-success/20 border border-brand-success/50"
                             >
                               <span className="text-sm">{state.name}</span>
                               <Button
@@ -409,7 +409,7 @@ export function TransitionBuilder() {
                   value={incomingTransitionState}
                   onValueChange={setIncomingTransitionState}
                 >
-                  <SelectTrigger className="bg-transparent border-gray-600 mt-2">
+                  <SelectTrigger className="bg-transparent border-border-subtle mt-2">
                     <SelectValue placeholder="Select state" />
                   </SelectTrigger>
                   <SelectContent>
@@ -422,8 +422,8 @@ export function TransitionBuilder() {
                 </Select>
               </div>
 
-              <div className="p-4 bg-gray-800 rounded-lg mt-4">
-                <p className="text-sm text-gray-400">
+              <div className="p-4 bg-surface-overlay rounded-lg mt-4">
+                <p className="text-sm text-text-muted">
                   IncomingTransitions are executed automatically after any
                   successful OutgoingTransition that navigates to this state.
                   They&apos;re useful for setup actions that should always
@@ -434,11 +434,11 @@ export function TransitionBuilder() {
           </TabsContent>
         </Tabs>
 
-        <div className="space-y-4 pt-4 border-t border-gray-700">
+        <div className="space-y-4 pt-4 border-t border-border-default">
           <div>
             <Label>Process to Execute</Label>
             <Select value={selectedProcess} onValueChange={setSelectedProcess}>
-              <SelectTrigger className="bg-transparent border-gray-600 mt-2">
+              <SelectTrigger className="bg-transparent border-border-subtle mt-2">
                 <SelectValue placeholder="Select a process to execute" />
               </SelectTrigger>
               <SelectContent className="max-h-[300px]">
@@ -462,7 +462,7 @@ export function TransitionBuilder() {
             </Select>
             {selectedProcess &&
               workflows.find((p) => p.id === selectedProcess)?.description && (
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-xs text-text-muted mt-2">
                   {workflows.find((p) => p.id === selectedProcess)?.description}
                 </p>
               )}
@@ -473,13 +473,13 @@ export function TransitionBuilder() {
           <Button
             variant="outline"
             onClick={() => setOpen(false)}
-            className="px-8 border-gray-600"
+            className="px-8 border-border-subtle"
           >
             Cancel
           </Button>
           <Button
             onClick={handleCreate}
-            className="px-8 bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+            className="px-8 bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             Create{" "}
             {transitionType === "OutgoingTransition" ? "Outgoing" : "Incoming"}

@@ -63,7 +63,7 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
   ];
 
   return (
-    <div className="flex items-center gap-2 p-3 bg-gray-50 border-b">
+    <div className="flex items-center gap-2 p-3 bg-surface-canvas border-b">
       {/* Play/Pause Button */}
       {!isRunning ? (
         <button
@@ -71,7 +71,7 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
           disabled={state === "completed" || state === "error"}
           className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
             state === "completed" || state === "error"
-              ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+              ? "bg-surface-raised text-text-muted cursor-not-allowed"
               : "bg-green-600 text-white hover:bg-green-700"
           }`}
           title="Play"
@@ -96,7 +96,7 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
         disabled={isIdle}
         className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
           isIdle
-            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+            ? "bg-surface-raised text-text-muted cursor-not-allowed"
             : "bg-red-600 text-white hover:bg-red-700"
         }`}
         title="Stop"
@@ -111,7 +111,7 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
         disabled={isRunning && !isPaused}
         className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
           isRunning && !isPaused
-            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+            ? "bg-surface-raised text-text-muted cursor-not-allowed"
             : "bg-blue-600 text-white hover:bg-blue-700"
         }`}
         title="Step forward one action"
@@ -121,12 +121,12 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
       </button>
 
       {/* Divider */}
-      <div className="h-8 w-px bg-gray-300 mx-2" />
+      <div className="h-8 w-px bg-border-default mx-2" />
 
       {/* Speed Control */}
       <div className="flex items-center gap-2">
-        <Gauge className="w-4 h-4 text-gray-600" />
-        <span className="text-sm text-gray-600 font-medium">Speed:</span>
+        <Gauge className="w-4 h-4 text-text-muted" />
+        <span className="text-sm text-text-muted font-medium">Speed:</span>
         <div className="flex gap-1 bg-white rounded-lg border p-1">
           {speedOptions.map((option) => (
             <button
@@ -135,7 +135,7 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
               className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                 speed === option.value
                   ? "bg-blue-600 text-white"
-                  : "text-gray-700 hover:bg-gray-100"
+                  : "text-text-secondary hover:bg-surface-raised"
               }`}
               title={option.delay}
             >
@@ -164,10 +164,10 @@ export const ExecutionControls: React.FC<ExecutionControlsProps> = ({
                   ? "bg-red-500"
                   : state === "completed"
                     ? "bg-blue-500"
-                    : "bg-gray-400"
+                    : "bg-text-muted"
           }`}
         />
-        <span className="text-sm text-gray-600 font-medium capitalize">
+        <span className="text-sm text-text-muted font-medium capitalize">
           {state}
         </span>
       </div>

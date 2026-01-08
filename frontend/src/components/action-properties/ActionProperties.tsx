@@ -42,7 +42,7 @@ export function ActionProperties({
 
   if (!action) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500">
+      <div className="flex items-center justify-center h-full text-text-muted">
         <div className="text-center">
           <Settings className="w-12 h-12 mx-auto mb-3 opacity-50" />
           <p>Select an action</p>
@@ -114,14 +114,14 @@ export function ActionProperties({
   if (!PropertiesComponent) {
     return (
       <div className="space-y-4">
-        <Card className="border-gray-700 bg-[#27272A]">
+        <Card className="border-border-default bg-surface-raised">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-[#00D9FF]">
+            <CardTitle className="text-sm font-medium text-brand-primary">
               {action.type} Properties
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-text-muted">
               Properties for {action.type} action
             </p>
           </CardContent>
@@ -140,9 +140,9 @@ export function ActionProperties({
 
   return (
     <div className="space-y-4">
-      <Card className="border-gray-700 bg-[#27272A]">
+      <Card className="border-border-default bg-surface-raised">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-[#00D9FF]">
+          <CardTitle className="text-sm font-medium text-brand-primary">
             {action.type} Properties
           </CardTitle>
         </CardHeader>

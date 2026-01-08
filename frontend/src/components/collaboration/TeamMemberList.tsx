@@ -78,7 +78,7 @@ const roleColors = {
   owner: "bg-purple-500/10 text-purple-500 border-purple-500/20",
   admin: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   member: "bg-green-500/10 text-green-500 border-green-500/20",
-  viewer: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  viewer: "bg-surface-raised/10 text-text-muted border-border-default",
 };
 
 export function TeamMemberList({

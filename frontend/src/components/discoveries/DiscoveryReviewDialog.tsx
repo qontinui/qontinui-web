@@ -51,7 +51,7 @@ export function DiscoveryReviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="bg-[#1A1A1B] border-gray-800 sm:max-w-lg">
+      <DialogContent className="bg-surface-raised border-border-subtle sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isAccepting ? (
@@ -63,7 +63,7 @@ export function DiscoveryReviewDialog({
               {isAccepting ? "Accept Discovery" : "Reject Discovery"}
             </span>
           </DialogTitle>
-          <DialogDescription className="text-gray-400">
+          <DialogDescription className="text-text-muted">
             {isAccepting
               ? "This discovery will be marked as accepted and can be applied to your configuration."
               : "This discovery will be marked as rejected and will be hidden from the pending list."}
@@ -72,14 +72,14 @@ export function DiscoveryReviewDialog({
 
         <div className="space-y-4 py-4">
           {/* Discovery summary */}
-          <div className="bg-gray-900/50 rounded-lg p-4 space-y-2">
+          <div className="bg-surface-canvas/50 rounded-lg p-4 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-400">Type</span>
+              <span className="text-sm text-text-muted">Type</span>
               <DiscoveryTypeBadge type={discovery.discovery_type} />
             </div>
             <div className="text-white font-medium">{discovery.title}</div>
             {discovery.description && (
-              <div className="text-sm text-gray-400">
+              <div className="text-sm text-text-muted">
                 {discovery.description}
               </div>
             )}
@@ -87,7 +87,7 @@ export function DiscoveryReviewDialog({
 
           {/* Notes input */}
           <div className="space-y-2">
-            <Label htmlFor="notes" className="text-gray-300">
+            <Label htmlFor="notes" className="text-text-secondary">
               Notes (optional)
             </Label>
             <Textarea
@@ -99,7 +99,7 @@ export function DiscoveryReviewDialog({
                   ? "Add any notes about why you're accepting this discovery..."
                   : "Add any notes about why you're rejecting this discovery..."
               }
-              className="bg-gray-900/50 border-gray-700 text-white placeholder:text-gray-500 min-h-[100px] resize-none"
+              className="bg-surface-canvas/50 border-border-default text-white placeholder:text-text-muted min-h-[100px] resize-none"
             />
           </div>
         </div>
@@ -109,7 +109,7 @@ export function DiscoveryReviewDialog({
             variant="ghost"
             onClick={() => handleClose(false)}
             disabled={isSubmitting}
-            className="text-gray-400 hover:text-white hover:bg-gray-800"
+            className="text-text-muted hover:text-white hover:bg-surface-raised"
           >
             Cancel
           </Button>

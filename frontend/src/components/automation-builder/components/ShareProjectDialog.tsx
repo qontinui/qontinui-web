@@ -80,7 +80,7 @@ const permissionIcons = {
 };
 
 const permissionColors = {
-  view: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  view: "bg-gray-500/10 text-text-muted border-gray-500/20",
   comment: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   edit: "bg-green-500/10 text-green-500 border-green-500/20",
   admin: "bg-purple-500/10 text-purple-500 border-purple-500/20",
@@ -255,7 +255,7 @@ export function ShareProjectDialog({
           {/* Share Options */}
           <div className="space-y-4">
             {/* Mode Tabs */}
-            <div className="flex gap-2 p-1 bg-gray-900 rounded-lg border border-gray-800">
+            <div className="flex gap-2 p-1 bg-surface-canvas rounded-lg border border-border-subtle">
               <Button
                 variant={shareMode === "user" ? "secondary" : "ghost"}
                 size="sm"
@@ -329,7 +329,7 @@ export function ShareProjectDialog({
                         min={new Date().toISOString().split("T")[0]}
                         className="pr-8"
                       />
-                      <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                      <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
                     </div>
                   </div>
                 </div>
@@ -403,7 +403,7 @@ export function ShareProjectDialog({
                         min={new Date().toISOString().split("T")[0]}
                         className="pr-8"
                       />
-                      <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                      <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
                     </div>
                   </div>
                 </div>
@@ -455,7 +455,7 @@ export function ShareProjectDialog({
                     )}
                   </Button>
                 </div>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-text-muted">
                   Anyone with this link can view the project
                 </p>
               </div>
@@ -479,7 +479,7 @@ export function ShareProjectDialog({
                 return (
                   <div
                     key={collaborator.id}
-                    className="flex items-center justify-between gap-3 p-3 border border-gray-800 rounded-lg bg-gray-950/50"
+                    className="flex items-center justify-between gap-3 p-3 border border-border-subtle rounded-lg bg-surface-canvas/50"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <Avatar
@@ -490,13 +490,13 @@ export function ShareProjectDialog({
                             )}
                           </span>
                         }
-                        className="h-8 w-8 bg-gray-800"
+                        className="h-8 w-8 bg-surface-raised"
                       />
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="font-medium truncate text-sm">
                           {collaborator.name || collaborator.email}
                         </span>
-                        <span className="text-xs text-gray-400 truncate">
+                        <span className="text-xs text-text-muted truncate">
                           {collaborator.email}
                         </span>
                       </div>
@@ -568,7 +568,7 @@ export function ShareProjectDialog({
                 );
               })}
               {collaborators.length === 0 && (
-                <div className="text-center py-12 text-gray-400 border border-gray-800 rounded-lg bg-gray-950/30">
+                <div className="text-center py-12 text-text-muted border border-border-subtle rounded-lg bg-surface-canvas/30">
                   <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">No collaborators yet</p>
                   <p className="text-xs mt-1">

@@ -38,15 +38,15 @@ export default function ProjectDeficienciesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               onClick={() => router.push(`/projects/${projectId}/testing`)}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back
@@ -60,7 +60,7 @@ export default function ProjectDeficienciesPage() {
               variant="outline"
               size="sm"
               onClick={() => router.push(`/projects/${projectId}/testing`)}
-              className="border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+              className="border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Test Runs
@@ -71,7 +71,7 @@ export default function ProjectDeficienciesPage() {
               onClick={() =>
                 router.push(`/projects/${projectId}/testing/coverage`)
               }
-              className="border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+              className="border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
             >
               <TrendingUp className="w-4 h-4 mr-2" />
               Coverage
@@ -84,7 +84,7 @@ export default function ProjectDeficienciesPage() {
       <main className="p-6 max-w-7xl mx-auto">
         <div className="mb-6">
           <h2 className="text-2xl font-bold mb-2">Deficiencies</h2>
-          <p className="text-gray-400">
+          <p className="text-text-muted">
             Track and manage deficiencies found during testing
           </p>
         </div>

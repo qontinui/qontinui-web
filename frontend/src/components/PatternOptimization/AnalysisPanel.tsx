@@ -264,7 +264,7 @@ export function AnalysisPanel() {
             variant="outline"
             onClick={handleStartAnalysis}
             disabled={!canAnalyze || isAnalyzing}
-            className="border-gray-700 hover:border-[#00D9FF]"
+            className="border-border-default hover:border-brand-primary"
           >
             {isAnalyzing ? (
               <>
@@ -285,7 +285,7 @@ export function AnalysisPanel() {
             disabled={
               !selectedStrategy || !analysis || selectedPatterns.size === 0
             }
-            className="border-gray-700 hover:border-[#BD00FF]"
+            className="border-border-default hover:border-brand-secondary"
             title={
               selectedPatterns.size === 0
                 ? "Select patterns first"
@@ -299,10 +299,12 @@ export function AnalysisPanel() {
       </div>
 
       {!analysis ? (
-        <Card className="flex-1 flex items-center justify-center bg-[#27272A]/50 border-gray-700">
+        <Card className="flex-1 flex items-center justify-center bg-surface-raised/50 border-border-default">
           <div className="text-center">
-            <BarChart3 className="w-12 h-12 mx-auto mb-2 text-gray-500" />
-            <p className="text-sm text-gray-400">Run analysis to see results</p>
+            <BarChart3 className="w-12 h-12 mx-auto mb-2 text-text-muted" />
+            <p className="text-sm text-text-muted">
+              Run analysis to see results
+            </p>
           </div>
         </Card>
       ) : (
@@ -311,7 +313,7 @@ export function AnalysisPanel() {
           onValueChange={setActiveTab}
           className="flex-1 flex flex-col overflow-hidden"
         >
-          <TabsList className="grid grid-cols-4 w-full bg-[#27272A] border-b border-gray-800 flex-shrink-0">
+          <TabsList className="grid grid-cols-4 w-full bg-surface-raised border-b border-border-subtle flex-shrink-0">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="patterns">Patterns</TabsTrigger>
             <TabsTrigger value="strategies">Strategies</TabsTrigger>
@@ -323,13 +325,13 @@ export function AnalysisPanel() {
             className="flex-1 space-y-4 overflow-y-auto p-2"
           >
             {/* Statistics */}
-            <Card className="bg-[#27272A]/50 border-gray-700">
+            <Card className="bg-surface-raised/50 border-border-default">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Pattern Statistics</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-text-muted">
                     Patterns Extracted
                   </span>
                   <span className="text-sm font-bold">
@@ -337,19 +339,21 @@ export function AnalysisPanel() {
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-400">Mean Similarity</span>
-                  <span className="text-sm font-bold text-[#00D9FF]">
+                  <span className="text-xs text-text-muted">
+                    Mean Similarity
+                  </span>
+                  <span className="text-sm font-bold text-brand-primary">
                     {(analysis.statistics.meanSimilarity * 100).toFixed(1)}%
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-400">Variance</span>
+                  <span className="text-xs text-text-muted">Variance</span>
                   <span className="text-sm font-bold">
                     {(analysis.statistics.variance * 100).toFixed(2)}%
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-400">Range</span>
+                  <span className="text-xs text-text-muted">Range</span>
                   <span className="text-sm font-bold">
                     {(analysis.statistics.minSimilarity * 100).toFixed(1)}% -{" "}
                     {(analysis.statistics.maxSimilarity * 100).toFixed(1)}%
@@ -357,7 +361,7 @@ export function AnalysisPanel() {
                 </div>
                 {analysis.statistics.outliers.length > 0 && (
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-400">Outliers</span>
+                    <span className="text-xs text-text-muted">Outliers</span>
                     <Badge variant="destructive" className="text-xs">
                       {analysis.statistics.outliers.length}
                     </Badge>
@@ -368,7 +372,7 @@ export function AnalysisPanel() {
 
             {/* Recommendations */}
             {bestStrategy && (
-              <Card className="bg-[#27272A]/50 border-gray-700">
+              <Card className="bg-surface-raised/50 border-border-default">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-green-500" />
@@ -397,7 +401,7 @@ export function AnalysisPanel() {
                         confidence
                       </Badge>
                     </div>
-                    <div className="text-xs text-gray-400">
+                    <div className="text-xs text-text-muted">
                       <span title="True Positive Rate - How often it correctly finds the pattern">
                         TPR:{" "}
                         {(
@@ -414,7 +418,7 @@ export function AnalysisPanel() {
                         %
                       </span>
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-text-muted mt-1">
                       {bestStrategy.recommendations.confidenceLevel ===
                         "medium" && (
                         <span>
@@ -441,7 +445,7 @@ export function AnalysisPanel() {
                       size="sm"
                       variant="outline"
                       onClick={() => selectStrategy(bestStrategy.strategy)}
-                      className="w-full border-gray-700 hover:border-green-500 text-xs"
+                      className="w-full border-border-default hover:border-green-500 text-xs"
                       title="Select this strategy for creating StateImages"
                     >
                       Select This Strategy
@@ -456,11 +460,11 @@ export function AnalysisPanel() {
             value="patterns"
             className="flex-1 space-y-2 overflow-y-auto p-2"
           >
-            <Card className="bg-[#27272A]/50 border-gray-700">
+            <Card className="bg-surface-raised/50 border-border-default">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center justify-between">
                   <span>Extracted Patterns</span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-text-muted">
                     {selectedPatterns.size} /{" "}
                     {analysis.extractedPatterns.length} selected
                   </span>
@@ -468,7 +472,7 @@ export function AnalysisPanel() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {analysis.extractedPatterns.length === 0 ? (
-                  <div className="text-center py-4 text-gray-400 text-sm">
+                  <div className="text-center py-4 text-text-muted text-sm">
                     No patterns extracted yet
                   </div>
                 ) : (
@@ -482,7 +486,7 @@ export function AnalysisPanel() {
                             new Set(analysis.extractedPatterns.map((p) => p.id))
                           )
                         }
-                        className="text-xs border-gray-700 hover:border-[#00D9FF]"
+                        className="text-xs border-border-default hover:border-brand-primary"
                       >
                         Select All
                       </Button>
@@ -490,7 +494,7 @@ export function AnalysisPanel() {
                         size="sm"
                         variant="outline"
                         onClick={() => setSelectedPatterns(new Set())}
-                        className="text-xs border-gray-700 hover:border-red-500"
+                        className="text-xs border-border-default hover:border-red-500"
                       >
                         Clear Selection
                       </Button>
@@ -504,8 +508,8 @@ export function AnalysisPanel() {
                             className={cn(
                               "border rounded-lg p-2 transition-all",
                               isSelected
-                                ? "border-[#00D9FF] bg-[#00D9FF]/10"
-                                : "border-gray-700"
+                                ? "border-brand-primary bg-brand-primary/10"
+                                : "border-border-default"
                             )}
                           >
                             <div
@@ -520,7 +524,7 @@ export function AnalysisPanel() {
                                 setSelectedPatterns(newSelection);
                               }}
                             >
-                              <div className="aspect-video bg-gray-800 rounded mb-2 flex items-center justify-center overflow-hidden">
+                              <div className="aspect-video bg-surface-raised rounded mb-2 flex items-center justify-center overflow-hidden">
                                 {pattern.imageUrl ? (
                                   <img
                                     src={
@@ -532,7 +536,7 @@ export function AnalysisPanel() {
                                     className="w-full h-full object-contain"
                                   />
                                 ) : (
-                                  <Layers className="w-8 h-8 text-gray-600" />
+                                  <Layers className="w-8 h-8 text-text-muted" />
                                 )}
                               </div>
                               <div className="flex items-center justify-between">
@@ -540,11 +544,11 @@ export function AnalysisPanel() {
                                   Pattern {idx + 1}
                                 </span>
                                 {isSelected && (
-                                  <CheckCircle className="w-4 h-4 text-[#00D9FF]" />
+                                  <CheckCircle className="w-4 h-4 text-brand-primary" />
                                 )}
                               </div>
                             </div>
-                            <div className="mt-2 pt-2 border-t border-gray-700">
+                            <div className="mt-2 pt-2 border-t border-border-default">
                               <PatternEditor
                                 pattern={pattern}
                                 onUpdatePattern={updatePattern}
@@ -554,8 +558,8 @@ export function AnalysisPanel() {
                         );
                       })}
                     </div>
-                    <div className="mt-4 pt-4 border-t border-gray-700">
-                      <p className="text-xs text-gray-400 mb-2">
+                    <div className="mt-4 pt-4 border-t border-border-default">
+                      <p className="text-xs text-text-muted mb-2">
                         Select the patterns you want to include in the
                         StateImage. At least one pattern must be selected.
                       </p>
@@ -571,24 +575,24 @@ export function AnalysisPanel() {
             className="flex-1 space-y-2 overflow-y-auto p-2"
           >
             {/* Metrics explanation */}
-            <Card className="bg-[#27272A]/30 border-gray-700">
+            <Card className="bg-surface-raised/30 border-border-default">
               <CardContent className="p-3">
                 <div className="text-xs space-y-1">
-                  <div className="mb-3 p-2 bg-[#00D9FF]/10 rounded">
-                    <p className="text-xs text-[#00D9FF]">
+                  <div className="mb-3 p-2 bg-brand-primary/10 rounded">
+                    <p className="text-xs text-brand-primary">
                       <span className="font-medium">Workflow:</span> 1) Analyze
                       patterns → 2) Select a strategy → 3) Create StateImages
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-text-muted mt-1">
                       The &quot;Select This Strategy&quot; button chooses which
                       method to use. The &quot;Create StateImages&quot; button
                       adds them to your project.
                     </p>
                   </div>
-                  <p className="font-medium text-gray-300 mb-2">
+                  <p className="font-medium text-text-secondary mb-2">
                     Understanding Metrics:
                   </p>
-                  <div className="grid grid-cols-2 gap-2 text-gray-400">
+                  <div className="grid grid-cols-2 gap-2 text-text-muted">
                     <div>
                       <span className="font-medium text-green-400">
                         TPR (True Positive Rate):
@@ -608,8 +612,8 @@ export function AnalysisPanel() {
                       </p>
                     </div>
                   </div>
-                  <div className="mt-2 pt-2 border-t border-gray-700">
-                    <p className="text-gray-500">
+                  <div className="mt-2 pt-2 border-t border-border-default">
+                    <p className="text-text-muted">
                       <span className="font-medium">
                         Why medium confidence with 100% similarity?
                       </span>{" "}
@@ -633,8 +637,9 @@ export function AnalysisPanel() {
                 <Card
                   key={type}
                   className={cn(
-                    "bg-[#27272A]/50 border-gray-700 cursor-pointer transition-all",
-                    isSelected && "border-[#00D9FF] ring-1 ring-[#00D9FF]/50"
+                    "bg-surface-raised/50 border-border-default cursor-pointer transition-all",
+                    isSelected &&
+                      "border-brand-primary ring-1 ring-brand-primary/50"
                   )}
                   onClick={() =>
                     evaluation && selectStrategy(evaluation.strategy)
@@ -648,7 +653,7 @@ export function AnalysisPanel() {
                         </h4>
 
                         {/* Strategy description */}
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-text-muted mt-1">
                           {type === "multi-pattern" &&
                             "Uses multiple pattern variations for robust matching"}
                           {type === "consensus" &&
@@ -667,7 +672,9 @@ export function AnalysisPanel() {
                                 title="True Positive Rate - Detection accuracy"
                               >
                                 <CheckCircle className="w-3 h-3 text-green-500" />
-                                <span className="text-gray-300">Accuracy:</span>{" "}
+                                <span className="text-text-secondary">
+                                  Accuracy:
+                                </span>{" "}
                                 {(
                                   evaluation.performance.truePositiveRate * 100
                                 ).toFixed(1)}
@@ -678,7 +685,7 @@ export function AnalysisPanel() {
                                 title="False Positive Rate - Mistake rate"
                               >
                                 <AlertCircle className="w-3 h-3 text-red-500" />
-                                <span className="text-gray-300">
+                                <span className="text-text-secondary">
                                   Errors:
                                 </span>{" "}
                                 {(
@@ -690,8 +697,8 @@ export function AnalysisPanel() {
                                 className="flex items-center gap-1"
                                 title="Processing time per match"
                               >
-                                <Activity className="w-3 h-3 text-[#00D9FF]" />
-                                <span className="text-gray-300">
+                                <Activity className="w-3 h-3 text-brand-primary" />
+                                <span className="text-text-secondary">
                                   Speed:
                                 </span>{" "}
                                 {evaluation.performance.processingTime.toFixed(
@@ -702,10 +709,10 @@ export function AnalysisPanel() {
                             </div>
                             <div>
                               <div className="flex justify-between items-center mb-1">
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-text-muted">
                                   Confidence
                                 </span>
-                                <span className="text-xs text-gray-400">
+                                <span className="text-xs text-text-muted">
                                   {(
                                     evaluation.performance.averageConfidence *
                                     100
@@ -713,9 +720,9 @@ export function AnalysisPanel() {
                                   %
                                 </span>
                               </div>
-                              <div className="h-1 bg-gray-700 rounded overflow-hidden">
+                              <div className="h-1 bg-border-default rounded overflow-hidden">
                                 <div
-                                  className="h-full bg-[#00D9FF] transition-all"
+                                  className="h-full bg-brand-primary transition-all"
                                   style={{
                                     width: `${evaluation.performance.averageConfidence * 100}%`,
                                   }}
@@ -750,7 +757,7 @@ export function AnalysisPanel() {
                       </div>
 
                       {isSelected && (
-                        <CheckCircle className="w-5 h-5 text-[#00D9FF]" />
+                        <CheckCircle className="w-5 h-5 text-brand-primary" />
                       )}
                     </div>
                   </CardContent>
@@ -763,7 +770,7 @@ export function AnalysisPanel() {
             value="similarity"
             className="flex-1 overflow-y-auto p-2"
           >
-            <Card className="bg-[#27272A]/50 border-gray-700">
+            <Card className="bg-surface-raised/50 border-border-default">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Similarity Matrix</CardTitle>
               </CardHeader>
@@ -772,9 +779,14 @@ export function AnalysisPanel() {
                   <table className="w-full text-xs">
                     <thead>
                       <tr>
-                        <th className="p-1 text-left text-gray-400">Pattern</th>
+                        <th className="p-1 text-left text-text-muted">
+                          Pattern
+                        </th>
                         {analysis.extractedPatterns.map((_, i) => (
-                          <th key={i} className="p-1 text-center text-gray-400">
+                          <th
+                            key={i}
+                            className="p-1 text-center text-text-muted"
+                          >
                             P{i + 1}
                           </th>
                         ))}
@@ -783,13 +795,13 @@ export function AnalysisPanel() {
                     <tbody>
                       {analysis.similarityMatrix.scores.map((row, i) => (
                         <tr key={i}>
-                          <td className="p-1 text-gray-400">P{i + 1}</td>
+                          <td className="p-1 text-text-muted">P{i + 1}</td>
                           {row.map((score, j) => (
                             <td
                               key={j}
                               className={cn(
                                 "p-1 text-center",
-                                i === j && "bg-gray-800",
+                                i === j && "bg-surface-raised",
                                 score >= 0.9 && i !== j && "text-green-500",
                                 score < 0.7 && i !== j && "text-red-500"
                               )}

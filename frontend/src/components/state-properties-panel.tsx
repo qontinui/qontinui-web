@@ -238,89 +238,91 @@ export function StatePropertiesPanel({
   };
 
   return (
-    <Card className="border-gray-700 bg-[#27272A] h-full flex flex-col">
-      <CardHeader className="pb-2 flex-shrink-0">
-        <CardTitle className="text-sm font-medium text-[#00D9FF]">
-          State Properties
-        </CardTitle>
+    <Card className="border-0 bg-transparent h-full flex flex-col">
+      <CardHeader className="pb-1 flex-shrink-0 px-0">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium text-brand-primary">
+            State Properties
+          </CardTitle>
+          <details className="group">
+            <summary className="flex items-center gap-1 cursor-pointer text-xs text-text-muted hover:text-brand-primary transition-colors list-none py-1 px-2 bg-surface-raised/30 rounded">
+              <span className="font-medium">Options</span>
+              <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+            </summary>
+            <div className="absolute right-0 mt-1 p-3 space-y-3 bg-surface-raised border border-border-default rounded-lg shadow-lg z-10 w-64">
+              <div className="space-y-1">
+                <Label className="text-xs text-text-muted">Description</Label>
+                <Textarea
+                  value={state.description}
+                  onChange={(e) => updateState({ description: e.target.value })}
+                  className="bg-transparent border-border-default"
+                  rows={2}
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="initial-state"
+                  checked={state.initial || false}
+                  onCheckedChange={(checked) =>
+                    updateState({ initial: checked as boolean })
+                  }
+                  className="border-border-subtle data-[state=checked]:bg-brand-primary data-[state=checked]:border-brand-primary"
+                />
+                <Label
+                  htmlFor="initial-state"
+                  className="text-xs text-text-muted cursor-pointer"
+                >
+                  Initial State
+                </Label>
+              </div>
+            </div>
+          </details>
+        </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden px-6 pt-2 pb-6">
-        <div className="space-y-2 flex-shrink-0">
-          <Label className="text-xs text-gray-400">State Name</Label>
+      <CardContent className="flex-1 flex flex-col gap-2 overflow-hidden px-0 pt-1 pb-6">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Label className="text-xs text-text-muted whitespace-nowrap">
+            State Name
+          </Label>
           <Input
             value={state.name}
             onChange={(e) => updateState({ name: e.target.value })}
-            className="bg-transparent border-gray-700"
+            className="bg-transparent border-border-default h-7 text-sm"
           />
         </div>
 
-        <details className="group flex-shrink-0">
-          <summary className="flex items-center justify-between cursor-pointer text-xs text-gray-300 hover:text-[#00D9FF] transition-colors list-none py-1 px-2 bg-gray-800/30 rounded">
-            <span className="font-medium">Options</span>
-            <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
-          </summary>
-          <div className="mt-2 space-y-3 pl-2 border-l-2 border-gray-700">
-            <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Description</Label>
-              <Textarea
-                value={state.description}
-                onChange={(e) => updateState({ description: e.target.value })}
-                className="bg-transparent border-gray-700"
-                rows={2}
-              />
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="initial-state"
-                checked={state.initial || false}
-                onCheckedChange={(checked) =>
-                  updateState({ initial: checked as boolean })
-                }
-                className="border-gray-600 data-[state=checked]:bg-[#00D9FF] data-[state=checked]:border-[#00D9FF]"
-              />
-              <Label
-                htmlFor="initial-state"
-                className="text-xs text-gray-400 cursor-pointer"
-              >
-                Initial State (Expected at start)
-              </Label>
-            </div>
-          </div>
-        </details>
-
         <Tabs
           defaultValue="images"
-          className="flex-1 flex flex-col min-h-0 border border-gray-700 rounded-lg bg-[#1A1A1B] overflow-hidden"
+          className="flex-1 flex flex-col min-h-0 rounded-lg bg-surface-raised overflow-hidden"
         >
-          <TabsList className="grid w-full grid-cols-5 h-10 bg-[#1A1A1B] border-b border-gray-700 p-1 rounded-none">
+          <TabsList className="grid w-full grid-cols-5 h-10 bg-surface-raised/80 p-1 rounded-none">
             <TabsTrigger
               value="images"
-              className="text-xs flex items-center justify-center data-[state=active]:bg-[#00D9FF]/20 data-[state=active]:text-[#00D9FF] data-[state=active]:border data-[state=active]:border-[#00D9FF]/50 data-[state=inactive]:text-gray-400 transition-all"
+              className="text-xs flex items-center justify-center data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary data-[state=active]:border data-[state=active]:border-brand-primary/50 data-[state=inactive]:text-text-muted transition-all"
             >
               <ImageIcon className="w-4 h-4" />
             </TabsTrigger>
             <TabsTrigger
               value="regions"
-              className="text-xs flex items-center justify-center data-[state=active]:bg-[#BD00FF]/20 data-[state=active]:text-[#BD00FF] data-[state=active]:border data-[state=active]:border-[#BD00FF]/50 data-[state=inactive]:text-gray-400 transition-all"
+              className="text-xs flex items-center justify-center data-[state=active]:bg-brand-secondary/20 data-[state=active]:text-brand-secondary data-[state=active]:border data-[state=active]:border-brand-secondary/50 data-[state=inactive]:text-text-muted transition-all"
             >
               <Map className="w-4 h-4" />
             </TabsTrigger>
             <TabsTrigger
               value="locations"
-              className="text-xs flex items-center justify-center data-[state=active]:bg-[#00FF88]/20 data-[state=active]:text-[#00FF88] data-[state=active]:border data-[state=active]:border-[#00FF88]/50 data-[state=inactive]:text-gray-400 transition-all"
+              className="text-xs flex items-center justify-center data-[state=active]:bg-brand-success/20 data-[state=active]:text-brand-success data-[state=active]:border data-[state=active]:border-brand-success/50 data-[state=inactive]:text-text-muted transition-all"
             >
               <MapPin className="w-4 h-4" />
             </TabsTrigger>
             <TabsTrigger
               value="strings"
-              className="text-xs flex items-center justify-center data-[state=active]:bg-[#FFD700]/20 data-[state=active]:text-[#FFD700] data-[state=active]:border data-[state=active]:border-[#FFD700]/50 data-[state=inactive]:text-gray-400 transition-all"
+              className="text-xs flex items-center justify-center data-[state=active]:bg-[#FFD700]/20 data-[state=active]:text-[#FFD700] data-[state=active]:border data-[state=active]:border-[#FFD700]/50 data-[state=inactive]:text-text-muted transition-all"
             >
               <Type className="w-4 h-4" />
             </TabsTrigger>
             <TabsTrigger
               value="transitions"
-              className="text-xs flex items-center justify-center data-[state=active]:bg-[#00FF88]/20 data-[state=active]:text-[#00FF88] data-[state=active]:border data-[state=active]:border-[#00FF88]/50 data-[state=inactive]:text-gray-400 transition-all"
+              className="text-xs flex items-center justify-center data-[state=active]:bg-brand-success/20 data-[state=active]:text-brand-success data-[state=active]:border data-[state=active]:border-brand-success/50 data-[state=inactive]:text-text-muted transition-all"
             >
               <Target className="w-4 h-4" />
             </TabsTrigger>
@@ -332,23 +334,23 @@ export function StatePropertiesPanel({
             className="flex-1 flex flex-col min-h-0 p-4"
           >
             <div className="flex items-center justify-between mb-2">
-              <Label className="text-xs text-[#00D9FF]">StateImages</Label>
+              <Label className="text-xs text-brand-primary">StateImages</Label>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={addStateImage}
-                className="text-[#00D9FF] hover:text-[#00D9FF]/80"
+                className="text-brand-primary hover:text-brand-primary/80"
               >
                 <Plus className="w-3 h-3" />
               </Button>
             </div>
 
             {!state.stateImages || state.stateImages.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center border border-dashed border-gray-600 rounded">
-                <p className="text-sm text-gray-500">No images configured</p>
+              <div className="flex-1 flex items-center justify-center border border-dashed border-border-subtle rounded">
+                <p className="text-sm text-text-muted">No images configured</p>
               </div>
             ) : (
-              <div className="flex-1 space-y-2 overflow-y-auto pr-2">
+              <div className="flex-1 grid grid-cols-2 gap-3 overflow-y-auto scrollbar-dark pr-2 content-start">
                 {state.stateImages.map((stateImage, index) => {
                   const isAdvancedExpanded = expandedAdvancedSections.has(
                     stateImage.id
@@ -375,16 +377,25 @@ export function StatePropertiesPanel({
                   return (
                     <div
                       key={stateImage.id}
-                      className="p-2 bg-[#00D9FF]/10 border border-[#00D9FF]/30 rounded"
+                      className="rounded-lg overflow-hidden border-l-4 border-l-brand-primary bg-brand-primary/[0.03]"
                     >
-                      <div className="space-y-1.5">
+                      {/* Header bar with index */}
+                      <div className="bg-brand-primary/15 px-3 py-2 flex items-center gap-2">
+                        <span className="text-brand-primary text-xs font-bold min-w-[1.25rem]">
+                          {index + 1}
+                        </span>
+                        <span className="text-text-secondary text-xs font-medium truncate flex-1">
+                          {stateImage.name || "Unnamed"}
+                        </span>
+                      </div>
+                      <div className="p-3 space-y-2">
                         <div className="flex items-center gap-2">
                           <Input
                             value={stateImage.name}
                             onChange={(e) =>
                               updateStateImage(index, { name: e.target.value })
                             }
-                            className="flex-1 h-6 bg-gray-900 border-gray-600 text-gray-200 text-xs px-2"
+                            className="flex-1 h-6 bg-surface-canvas border-border-subtle text-text-secondary text-xs px-2"
                             placeholder="StateImage name"
                           />
                           {/* Move button with popover */}
@@ -393,7 +404,7 @@ export function StatePropertiesPanel({
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 text-[#00D9FF] hover:text-[#00D9FF]/80"
+                                className="h-6 w-6 p-0 text-brand-primary hover:text-brand-primary/80"
                                 title="Move to another state"
                                 disabled={allStates.length <= 1}
                               >
@@ -401,20 +412,20 @@ export function StatePropertiesPanel({
                               </Button>
                             </PopoverTrigger>
                             <PopoverContent
-                              className="w-56 p-2 bg-[#27272A] border-gray-700"
+                              className="w-56 p-2 bg-surface-raised border-border-default"
                               align="end"
                             >
                               <div className="space-y-2">
-                                <p className="text-xs text-gray-400 font-medium px-1">
+                                <p className="text-xs text-text-muted font-medium px-1">
                                   Move to state:
                                 </p>
-                                <div className="max-h-48 overflow-y-auto space-y-1">
+                                <div className="max-h-48 overflow-y-auto scrollbar-dark space-y-1">
                                   {allStates
                                     .filter((s) => s.id !== state.id)
                                     .map((targetState) => (
                                       <button
                                         key={targetState.id}
-                                        className="w-full text-left px-2 py-1.5 text-xs text-gray-200 hover:bg-[#00D9FF]/20 hover:text-[#00D9FF] rounded transition-colors"
+                                        className="w-full text-left px-2 py-1.5 text-xs text-text-secondary hover:bg-brand-primary/20 hover:text-brand-primary rounded transition-colors"
                                         onClick={() => {
                                           moveStateImage(index, targetState.id);
                                         }}
@@ -425,7 +436,7 @@ export function StatePropertiesPanel({
                                 </div>
                                 {allStates.filter((s) => s.id !== state.id)
                                   .length === 0 && (
-                                  <p className="text-xs text-gray-500 italic px-1">
+                                  <p className="text-xs text-text-muted italic px-1">
                                     No other states available
                                   </p>
                                 )}
@@ -445,7 +456,7 @@ export function StatePropertiesPanel({
 
                         {/* Summary info and pattern count */}
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-gray-400">
+                          <span className="text-text-muted">
                             {(stateImage.patterns || []).length} pattern
                             {(stateImage.patterns || []).length !== 1
                               ? "s"
@@ -461,7 +472,7 @@ export function StatePropertiesPanel({
                             );
                             return (
                               totalSearchRegions > 0 && (
-                                <span className="text-gray-400">
+                                <span className="text-text-muted">
                                   {totalSearchRegions} search region
                                   {totalSearchRegions > 1 ? "s" : ""}
                                 </span>
@@ -472,9 +483,9 @@ export function StatePropertiesPanel({
 
                         {/* StateImage Options */}
                         {(stateImage.patterns || []).length > 1 && (
-                          <div className="pt-2 border-t border-[#00D9FF]/20">
+                          <div className="pt-2 border-t border-brand-primary/20">
                             <details className="group">
-                              <summary className="flex items-center justify-between cursor-pointer text-xs text-gray-300 hover:text-[#00D9FF] transition-colors list-none mb-2">
+                              <summary className="flex items-center justify-between cursor-pointer text-xs text-text-secondary hover:text-brand-primary transition-colors list-none mb-2">
                                 <span className="font-medium">
                                   RAG Find Options
                                 </span>
@@ -482,7 +493,7 @@ export function StatePropertiesPanel({
                               </summary>
                               <div className="space-y-2 pl-2">
                                 <div className="space-y-1">
-                                  <Label className="text-xs text-gray-400">
+                                  <Label className="text-xs text-text-muted">
                                     Multi-Pattern Search Mode
                                   </Label>
                                   <Select
@@ -499,10 +510,10 @@ export function StatePropertiesPanel({
                                       });
                                     }}
                                   >
-                                    <SelectTrigger className="bg-transparent border-gray-700 h-7 text-xs">
+                                    <SelectTrigger className="bg-transparent border-border-default h-7 text-xs">
                                       <SelectValue placeholder="Use project default" />
                                     </SelectTrigger>
-                                    <SelectContent className="bg-[#27272A] border-gray-700">
+                                    <SelectContent className="bg-surface-raised border-border-default">
                                       <SelectItem value="default">
                                         Use Project Default
                                       </SelectItem>
@@ -514,7 +525,7 @@ export function StatePropertiesPanel({
                                       </SelectItem>
                                     </SelectContent>
                                   </Select>
-                                  <p className="text-xs text-gray-500">
+                                  <p className="text-xs text-text-muted">
                                     Default mode for RAG Find when this
                                     StateImage has multiple patterns. Can be
                                     overridden per action.
@@ -526,9 +537,9 @@ export function StatePropertiesPanel({
                         )}
 
                         {/* Patterns List */}
-                        <div className="pt-2 border-t border-[#00D9FF]/20">
+                        <div className="pt-2 border-t border-brand-primary/20">
                           <details className="group" open>
-                            <summary className="flex items-center justify-between cursor-pointer text-xs text-gray-300 hover:text-[#00D9FF] transition-colors list-none mb-2">
+                            <summary className="flex items-center justify-between cursor-pointer text-xs text-text-secondary hover:text-brand-primary transition-colors list-none mb-2">
                               <span className="font-medium">
                                 Patterns ({(stateImage.patterns || []).length})
                               </span>
@@ -539,13 +550,13 @@ export function StatePropertiesPanel({
                                 (pattern, pIdx) => (
                                   <div
                                     key={pattern.id}
-                                    className="p-2 bg-gray-900/50 border border-gray-700 rounded space-y-1.5"
+                                    className="p-2 bg-surface-canvas/50 border border-border-default rounded space-y-1.5"
                                   >
                                     {/* Pattern header with image */}
                                     <div className="flex items-start gap-2">
                                       {/* Pattern image */}
                                       <div
-                                        className="w-24 h-16 bg-gray-800 rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-[#00D9FF] transition-all"
+                                        className="w-24 h-16 bg-surface-raised rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-brand-primary transition-all"
                                         onClick={() =>
                                           setOpenImageSelectorId(
                                             `${stateImage.id}_pattern_${pIdx}`
@@ -581,7 +592,7 @@ export function StatePropertiesPanel({
                                             />
                                           ) : (
                                             <div className="w-full h-full flex items-center justify-center">
-                                              <ImageIcon className="w-4 h-4 text-gray-600" />
+                                              <ImageIcon className="w-4 h-4 text-text-muted" />
                                             </div>
                                           );
                                         })()}
@@ -603,7 +614,7 @@ export function StatePropertiesPanel({
                                               patterns: updatedPatterns,
                                             });
                                           }}
-                                          className="h-6 bg-gray-800 border-gray-600 text-gray-200 text-xs px-2 mb-1"
+                                          className="h-6 bg-surface-raised border-border-subtle text-text-secondary text-xs px-2 mb-1"
                                           placeholder={`Pattern ${pIdx + 1}`}
                                         />
                                         <ImageStatsDisplay
@@ -614,7 +625,7 @@ export function StatePropertiesPanel({
                                         />
                                         {(pattern.searchRegions?.length || 0) >
                                           0 && (
-                                          <div className="text-xs text-gray-500 mt-0.5">
+                                          <div className="text-xs text-text-muted mt-0.5">
                                             {pattern.searchRegions!.length}{" "}
                                             search region
                                             {pattern.searchRegions!.length > 1
@@ -664,11 +675,11 @@ export function StatePropertiesPanel({
                                               patterns: updatedPatterns,
                                             });
                                           }}
-                                          className="border-gray-600 data-[state=checked]:bg-[#00D9FF] data-[state=checked]:border-[#00D9FF]"
+                                          className="border-border-subtle data-[state=checked]:bg-brand-primary data-[state=checked]:border-brand-primary"
                                         />
                                         <Label
                                           htmlFor={`pattern-fixed-${pattern.id}`}
-                                          className="text-xs text-gray-300 cursor-pointer"
+                                          className="text-xs text-text-secondary cursor-pointer"
                                         >
                                           Fixed Position
                                         </Label>
@@ -676,17 +687,17 @@ export function StatePropertiesPanel({
 
                                       {/* Options - Collapsible section */}
                                       <details className="group">
-                                        <summary className="flex items-center justify-between cursor-pointer text-xs text-gray-300 hover:text-[#00D9FF] transition-colors list-none py-1 px-2 bg-gray-800/30 rounded">
+                                        <summary className="flex items-center justify-between cursor-pointer text-xs text-text-secondary hover:text-brand-primary transition-colors list-none py-1 px-2 bg-surface-raised/30 rounded">
                                           <span className="font-medium">
                                             Options
                                           </span>
                                           <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
                                         </summary>
-                                        <div className="mt-2 space-y-3 pl-2 border-l-2 border-gray-700">
+                                        <div className="mt-2 space-y-3 pl-2 border-l-2 border-border-default">
                                           {/* Search Regions section */}
                                           <div className="space-y-2">
                                             <div className="flex items-center justify-between">
-                                              <Label className="text-xs text-gray-300 font-medium">
+                                              <Label className="text-xs text-text-secondary font-medium">
                                                 Search Regions (
                                                 {
                                                   (pattern.searchRegions || [])
@@ -697,7 +708,7 @@ export function StatePropertiesPanel({
                                               <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                className="h-5 px-2 text-xs text-[#BD00FF] hover:text-[#BD00FF]/80"
+                                                className="h-5 px-2 text-xs text-brand-secondary hover:text-brand-secondary/80"
                                                 onClick={() => {
                                                   setShowAddSearchRegionDialog({
                                                     stateImageIndex: index,
@@ -750,12 +761,12 @@ export function StatePropertiesPanel({
                                                     return (
                                                       <div
                                                         key={srIdx}
-                                                        className="flex items-center justify-between gap-2 py-1 px-2 bg-gray-900/50 border border-[#BD00FF]/30 rounded text-xs"
+                                                        className="flex items-center justify-between gap-2 py-1 px-2 bg-surface-canvas/50 border border-brand-secondary/30 rounded text-xs"
                                                       >
                                                         <div className="flex items-center gap-2 flex-1 min-w-0">
                                                           {hasLinkedPosition &&
                                                           linkedInfo ? (
-                                                            <span className="text-gray-300 truncate flex items-center gap-1.5">
+                                                            <span className="text-text-secondary truncate flex items-center gap-1.5">
                                                               <Link2 className="w-3 h-3 flex-shrink-0" />
                                                               {
                                                                 linkedInfo.stateName
@@ -767,22 +778,22 @@ export function StatePropertiesPanel({
                                                             </span>
                                                           ) : (
                                                             <>
-                                                              <span className="text-gray-400">
+                                                              <span className="text-text-muted">
                                                                 ↖
                                                               </span>
-                                                              <span className="text-gray-300">
+                                                              <span className="text-text-secondary">
                                                                 {sr.x},{sr.y}
                                                               </span>
-                                                              <span className="text-gray-400">
+                                                              <span className="text-text-muted">
                                                                 ↔
                                                               </span>
-                                                              <span className="text-gray-300">
+                                                              <span className="text-text-secondary">
                                                                 {sr.width}
                                                               </span>
-                                                              <span className="text-gray-400">
+                                                              <span className="text-text-muted">
                                                                 ↕
                                                               </span>
-                                                              <span className="text-gray-300">
+                                                              <span className="text-text-secondary">
                                                                 {sr.height}
                                                               </span>
                                                             </>
@@ -834,7 +845,7 @@ export function StatePropertiesPanel({
                                                 )}
                                               </div>
                                             ) : (
-                                              <div className="text-xs text-gray-500 italic py-2 px-2 bg-gray-900/30 rounded border border-dashed border-gray-700">
+                                              <div className="text-xs text-text-muted italic py-2 px-2 bg-surface-canvas/30 rounded border border-dashed border-border-default">
                                                 No search regions defined. Add
                                                 regions in Create Regions &
                                                 Locations.
@@ -843,16 +854,16 @@ export function StatePropertiesPanel({
                                           </div>
 
                                           {/* Similarity slider - optional */}
-                                          <div className="space-y-1 pt-2 border-t border-gray-700">
+                                          <div className="space-y-1 pt-2 border-t border-border-default">
                                             <div className="flex items-center justify-between">
-                                              <Label className="text-xs text-gray-300">
+                                              <Label className="text-xs text-text-secondary">
                                                 Pattern Similarity Override
                                               </Label>
                                               <div className="flex items-center gap-2">
                                                 {pattern.similarity !==
                                                 undefined ? (
                                                   <>
-                                                    <span className="text-xs text-gray-400">
+                                                    <span className="text-xs text-text-muted">
                                                       {(
                                                         pattern.similarity * 100
                                                       ).toFixed(0)}
@@ -861,7 +872,7 @@ export function StatePropertiesPanel({
                                                     <Button
                                                       variant="ghost"
                                                       size="sm"
-                                                      className="h-4 w-4 p-0 text-gray-500 hover:text-red-400"
+                                                      className="h-4 w-4 p-0 text-text-muted hover:text-red-400"
                                                       onClick={() => {
                                                         const updatedPatterns =
                                                           [
@@ -893,7 +904,7 @@ export function StatePropertiesPanel({
                                                     </Button>
                                                   </>
                                                 ) : (
-                                                  <span className="text-xs text-gray-500">
+                                                  <span className="text-xs text-text-muted">
                                                     (using{" "}
                                                     {stateImage.probability !==
                                                     undefined
@@ -935,7 +946,7 @@ export function StatePropertiesPanel({
                                                   }}
                                                   className="w-full"
                                                 />
-                                                <p className="text-xs text-gray-500 italic">
+                                                <p className="text-xs text-text-muted italic">
                                                   Minimum match confidence for
                                                   this pattern
                                                 </p>
@@ -944,7 +955,7 @@ export function StatePropertiesPanel({
                                               <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+                                                className="w-full h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
                                                 onClick={() => {
                                                   const updatedPatterns = [
                                                     ...(stateImage.patterns ||
@@ -1017,7 +1028,7 @@ export function StatePropertiesPanel({
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full h-7 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10 border border-dashed border-[#00D9FF]/30"
+                                className="w-full h-7 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10 border border-dashed border-brand-primary/30"
                                 onClick={() => {
                                   const newPattern = {
                                     id: `pattern_${Date.now()}`,
@@ -1052,11 +1063,11 @@ export function StatePropertiesPanel({
                         )}
 
                         {/* Advanced Properties Section (Collapsible) */}
-                        <div className="pt-1.5 border-t border-[#00D9FF]/20">
+                        <div className="pt-1.5 border-t border-brand-primary/20">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="w-full h-7 flex items-center justify-between text-xs text-gray-300 hover:text-[#00D9FF] hover:bg-[#00D9FF]/10 px-2"
+                            className="w-full h-7 flex items-center justify-between text-xs text-text-secondary hover:text-brand-primary hover:bg-brand-primary/10 px-2"
                             onClick={() => {
                               setExpandedAdvancedSections((prev) => {
                                 const newSet = new Set(prev);
@@ -1080,17 +1091,17 @@ export function StatePropertiesPanel({
                           </Button>
 
                           {isAdvancedExpanded && (
-                            <div className="space-y-2 mt-2 p-2 bg-gray-800/50 border border-gray-700 rounded">
+                            <div className="space-y-2 mt-2 p-2 bg-surface-raised/50 border border-border-default rounded">
                               {/* StateImage-level Search Regions */}
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between">
-                                  <Label className="text-xs text-gray-300">
+                                  <Label className="text-xs text-text-secondary">
                                     StateImage Search Regions
                                   </Label>
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-5 px-2 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80"
+                                    className="h-5 px-2 text-xs text-brand-primary hover:text-brand-primary/80"
                                     onClick={() =>
                                       setShowAddSearchRegionDialog({
                                         stateImageIndex: index,
@@ -1133,21 +1144,21 @@ export function StatePropertiesPanel({
                                         return (
                                           <div
                                             key={sr.id}
-                                            className="flex items-center justify-between p-1.5 bg-gray-900/50 rounded border border-gray-700"
+                                            className="flex items-center justify-between p-1.5 bg-surface-canvas/50 rounded border border-border-default"
                                           >
                                             <div className="flex-1 min-w-0">
-                                              <div className="text-xs text-gray-300 truncate">
+                                              <div className="text-xs text-text-secondary truncate">
                                                 {sr.name}
                                               </div>
                                               {hasLinkedPosition &&
                                               linkedInfo ? (
-                                                <div className="text-xs text-gray-400 mt-1 flex items-center gap-1.5">
+                                                <div className="text-xs text-text-muted mt-1 flex items-center gap-1.5">
                                                   <Link2 className="w-3 h-3 flex-shrink-0" />
                                                   {linkedInfo.stateName} →{" "}
                                                   {linkedInfo.imageName}
                                                 </div>
                                               ) : (
-                                                <div className="text-xs text-gray-400 mt-1">
+                                                <div className="text-xs text-text-muted mt-1">
                                                   ↖ {sr.x},{sr.y} ↔ {sr.width} ↕{" "}
                                                   {sr.height}
                                                 </div>
@@ -1177,12 +1188,12 @@ export function StatePropertiesPanel({
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="text-xs text-gray-500 italic p-2 bg-gray-900/30 rounded">
+                                  <div className="text-xs text-text-muted italic p-2 bg-surface-canvas/30 rounded">
                                     No search regions (searches whole screen)
                                   </div>
                                 )}
-                                <div className="text-xs text-gray-500 bg-gray-900/50 p-2 rounded border border-gray-700 mt-1">
-                                  <div className="font-medium text-gray-400 mb-1">
+                                <div className="text-xs text-text-muted bg-surface-canvas/50 p-2 rounded border border-border-default mt-1">
+                                  <div className="font-medium text-text-muted mb-1">
                                     Search Region Hierarchy:
                                   </div>
                                   <div className="space-y-0.5 pl-2">
@@ -1196,8 +1207,8 @@ export function StatePropertiesPanel({
 
                               {/* Search Mode (only show if 2+ patterns) */}
                               {(stateImage.patterns || []).length >= 2 && (
-                                <div className="space-y-1 pb-2 border-b border-gray-700">
-                                  <Label className="text-xs text-gray-300">
+                                <div className="space-y-1 pb-2 border-b border-border-default">
+                                  <Label className="text-xs text-text-secondary">
                                     Pattern Search Mode
                                   </Label>
                                   <Select
@@ -1211,10 +1222,10 @@ export function StatePropertiesPanel({
                                       })
                                     }
                                   >
-                                    <SelectTrigger className="bg-gray-900 border-gray-600 text-xs h-8">
+                                    <SelectTrigger className="bg-surface-canvas border-border-subtle text-xs h-8">
                                       <SelectValue />
                                     </SelectTrigger>
-                                    <SelectContent className="bg-[#27272A] border-gray-700">
+                                    <SelectContent className="bg-surface-raised border-border-default">
                                       <SelectItem value="default">
                                         Default search mode
                                       </SelectItem>
@@ -1226,7 +1237,7 @@ export function StatePropertiesPanel({
                                       </SelectItem>
                                     </SelectContent>
                                   </Select>
-                                  <p className="text-xs text-gray-500 italic">
+                                  <p className="text-xs text-text-muted italic">
                                     {(stateImage.searchMode as string) === "rag"
                                       ? "RAG search mode enabled"
                                       : (stateImage.searchMode as string) ===
@@ -1240,13 +1251,13 @@ export function StatePropertiesPanel({
                               {/* StateImage-level Similarity Override (optional) */}
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between">
-                                  <Label className="text-xs text-gray-300">
+                                  <Label className="text-xs text-text-secondary">
                                     StateImage Similarity Override
                                   </Label>
                                   <div className="flex items-center gap-2">
                                     {stateImage.probability !== undefined ? (
                                       <>
-                                        <span className="text-xs text-gray-400">
+                                        <span className="text-xs text-text-muted">
                                           {(
                                             stateImage.probability * 100
                                           ).toFixed(0)}
@@ -1255,7 +1266,7 @@ export function StatePropertiesPanel({
                                         <Button
                                           variant="ghost"
                                           size="sm"
-                                          className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+                                          className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
                                           onClick={() => {
                                             const { probability, ...rest } =
                                               stateImage;
@@ -1273,7 +1284,7 @@ export function StatePropertiesPanel({
                                         </Button>
                                       </>
                                     ) : (
-                                      <span className="text-xs text-gray-500">
+                                      <span className="text-xs text-text-muted">
                                         (using project default)
                                       </span>
                                     )}
@@ -1295,7 +1306,7 @@ export function StatePropertiesPanel({
                                       }}
                                       className="w-full"
                                     />
-                                    <p className="text-xs text-gray-500 italic">
+                                    <p className="text-xs text-text-muted italic">
                                       Override for all patterns in this
                                       StateImage (pattern-specific overrides
                                       take precedence)
@@ -1306,7 +1317,7 @@ export function StatePropertiesPanel({
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+                                    className="w-full h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
                                     onClick={() => {
                                       updateStateImage(index, {
                                         probability: 0.85,
@@ -1320,8 +1331,8 @@ export function StatePropertiesPanel({
                               </div>
 
                               {/* Similarity Hierarchy Info */}
-                              <div className="text-xs text-gray-500 bg-gray-900/50 p-2 rounded border border-gray-700">
-                                <div className="font-medium text-gray-400 mb-1">
+                              <div className="text-xs text-text-muted bg-surface-canvas/50 p-2 rounded border border-border-default">
+                                <div className="font-medium text-text-muted mb-1">
                                   Similarity Hierarchy:
                                 </div>
                                 <div className="space-y-0.5 pl-2">
@@ -1333,7 +1344,7 @@ export function StatePropertiesPanel({
                               </div>
 
                               {/* Monitor Assignment */}
-                              <div className="space-y-1 pt-2 border-t border-gray-700">
+                              <div className="space-y-1 pt-2 border-t border-border-default">
                                 <MonitorSelector
                                   monitors={stateImage.monitors || [0]}
                                   onChange={(monitors) =>
@@ -1343,7 +1354,7 @@ export function StatePropertiesPanel({
                                   showLabel={true}
                                   showConnectionStatus={true}
                                 />
-                                <p className="text-xs text-gray-500 italic">
+                                <p className="text-xs text-text-muted italic">
                                   Which monitors to search for this image
                                 </p>
                               </div>
@@ -1351,8 +1362,8 @@ export function StatePropertiesPanel({
                               {(stateImage.patterns || []).some(
                                 (p) => p.similarity !== undefined
                               ) && (
-                                <div className="space-y-1 pt-2 border-t border-gray-700">
-                                  <Label className="text-xs text-gray-400 font-medium">
+                                <div className="space-y-1 pt-2 border-t border-border-default">
+                                  <Label className="text-xs text-text-muted font-medium">
                                     Pattern-Specific Overrides:
                                   </Label>
                                   {(stateImage.patterns || []).map(
@@ -1364,13 +1375,13 @@ export function StatePropertiesPanel({
                                           key={pattern.id}
                                           className="flex items-center justify-between text-xs"
                                         >
-                                          <span className="text-gray-400">
+                                          <span className="text-text-muted">
                                             {pattern.name ||
                                               `Pattern ${pIdx + 1}`}
                                             :
                                           </span>
                                           <div className="flex items-center gap-2">
-                                            <span className="text-gray-300">
+                                            <span className="text-text-secondary">
                                               {(
                                                 pattern.similarity * 100
                                               ).toFixed(0)}
@@ -1379,7 +1390,7 @@ export function StatePropertiesPanel({
                                             <Button
                                               variant="ghost"
                                               size="sm"
-                                              className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+                                              className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
                                               onClick={() => {
                                                 const updatedPatterns = [
                                                   ...(stateImage.patterns ||
@@ -1408,7 +1419,7 @@ export function StatePropertiesPanel({
                                       );
                                     }
                                   )}
-                                  <p className="text-xs text-gray-500 italic mt-1">
+                                  <p className="text-xs text-text-muted italic mt-1">
                                     Set in Pattern Options above
                                   </p>
                                 </div>
@@ -1430,20 +1441,20 @@ export function StatePropertiesPanel({
             className="flex-1 flex flex-col min-h-0 p-4"
           >
             <div className="flex items-center justify-between mb-2">
-              <Label className="text-xs text-gray-400">State Regions</Label>
+              <Label className="text-xs text-text-muted">State Regions</Label>
               <Info
-                className="w-4 h-4 text-gray-500"
+                className="w-4 h-4 text-text-muted"
                 aria-label="Regions are created in Create Regions & Locations tab"
               />
             </div>
             {state.regions?.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center border border-dashed border-gray-600 rounded">
-                <p className="text-sm text-gray-500">
+              <div className="flex-1 flex items-center justify-center border border-dashed border-border-subtle rounded">
+                <p className="text-sm text-text-muted">
                   No regions defined. Use Create Regions & Locations tab.
                 </p>
               </div>
             ) : (
-              <div className="flex-1 space-y-2 overflow-y-auto pr-2">
+              <div className="flex-1 grid grid-cols-2 gap-3 overflow-y-auto scrollbar-dark pr-2 content-start">
                 {state.regions?.map((region, index) => {
                   // Check if this region has a linked reference image
                   const hasLinkedPosition = !!region.referenceImageId;
@@ -1468,43 +1479,51 @@ export function StatePropertiesPanel({
                   return (
                     <div
                       key={region.id}
-                      className="space-y-2 p-3 bg-gray-800/50 border border-gray-700 rounded"
+                      className="rounded-lg overflow-hidden border-l-4 border-l-brand-secondary bg-brand-secondary/[0.03]"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="text-sm font-medium text-gray-200">
-                            {region.name}
-                          </div>
-                          {hasLinkedPosition && linkedInfo ? (
-                            <div className="text-xs text-gray-400 mt-1 flex items-center gap-1.5">
-                              <Link2 className="w-3 h-3 flex-shrink-0" />
-                              {linkedInfo.stateName} → {linkedInfo.imageName}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-gray-400 mt-1">
-                              ↖ {region.x},{region.y} ↔ {region.width} ↕{" "}
-                              {region.height}
-                            </div>
-                          )}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 text-red-400 hover:text-red-300"
-                          onClick={() => removeRegion(index)}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
+                      {/* Header bar with index */}
+                      <div className="bg-brand-secondary/15 px-3 py-2 flex items-center gap-2">
+                        <span className="text-brand-secondary text-xs font-bold min-w-[1.25rem]">
+                          {index + 1}
+                        </span>
+                        <span className="text-text-secondary text-xs font-medium truncate flex-1">
+                          {region.name || "Unnamed"}
+                        </span>
                       </div>
-                      <MonitorSelector
-                        monitors={region.monitors || [0]}
-                        onChange={(monitors) =>
-                          updateRegion(index, "monitors", monitors)
-                        }
-                        label="Monitors"
-                        showLabel={true}
-                        showConnectionStatus={false}
-                      />
+                      <div className="p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            {hasLinkedPosition && linkedInfo ? (
+                              <div className="text-xs text-text-muted mt-1 flex items-center gap-1.5">
+                                <Link2 className="w-3 h-3 flex-shrink-0" />
+                                {linkedInfo.stateName} → {linkedInfo.imageName}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-text-muted mt-1">
+                                ↖ {region.x},{region.y} ↔ {region.width} ↕{" "}
+                                {region.height}
+                              </div>
+                            )}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-red-400 hover:text-red-300"
+                            onClick={() => removeRegion(index)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                        <MonitorSelector
+                          monitors={region.monitors || [0]}
+                          onChange={(monitors) =>
+                            updateRegion(index, "monitors", monitors)
+                          }
+                          label="Monitors"
+                          showLabel={true}
+                          showConnectionStatus={false}
+                        />
+                      </div>
                     </div>
                   );
                 })}
@@ -1518,138 +1537,146 @@ export function StatePropertiesPanel({
             className="flex-1 flex flex-col min-h-0 p-4"
           >
             <div className="flex items-center justify-between mb-2">
-              <Label className="text-xs text-gray-400">State Locations</Label>
+              <Label className="text-xs text-text-muted">State Locations</Label>
               <Info
-                className="w-4 h-4 text-gray-500"
+                className="w-4 h-4 text-text-muted"
                 aria-label="Locations are created in Create Regions & Locations tab"
               />
             </div>
             {state.locations?.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center border border-dashed border-gray-600 rounded">
-                <p className="text-sm text-gray-500">
+              <div className="flex-1 flex items-center justify-center border border-dashed border-border-subtle rounded">
+                <p className="text-sm text-text-muted">
                   No locations defined. Use Create Regions & Locations tab.
                 </p>
               </div>
             ) : (
-              <div className="flex-1 space-y-2 overflow-y-auto pr-2">
+              <div className="flex-1 grid grid-cols-2 gap-3 overflow-y-auto scrollbar-dark pr-2 content-start">
                 {state.locations?.map((location, index) => (
                   <div
                     key={location.id}
-                    className="space-y-2 p-3 bg-[#00FF88]/10 border border-[#00FF88]/30 rounded"
+                    className="rounded-lg overflow-hidden border-l-4 border-l-brand-success bg-brand-success/[0.03]"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-200">
-                          {location.name}
-                        </div>
+                    {/* Header bar with index */}
+                    <div className="bg-brand-success/15 px-3 py-2 flex items-center gap-2">
+                      <span className="text-brand-success text-xs font-bold min-w-[1.25rem]">
+                        {index + 1}
+                      </span>
+                      <span className="text-text-secondary text-xs font-medium truncate flex-1">
+                        {location.name || "Unnamed"}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0 text-red-400 hover:text-red-300"
+                        onClick={() => removeLocation(index)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center gap-2">
                         {!location.referenceImageId && (
-                          <div className="text-xs text-gray-400 mt-1">
+                          <div className="text-xs text-text-muted">
                             <span>
                               ↖ {location.x},{location.y}
                             </span>
                           </div>
                         )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-red-400 hover:text-red-300"
-                        onClick={() => removeLocation(index)}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </div>
 
-                    {/* Relative positioning details */}
-                    {location.referenceImageId && (
-                      <details className="text-xs text-gray-400 pl-2 border-l-2 border-[#00FF88]/30 mt-1">
-                        <summary className="cursor-pointer hover:text-gray-300 list-none flex items-center gap-1">
-                          <ImageIcon className="w-3 h-3" />
-                          <span>Relative to image</span>
-                        </summary>
-                        <div className="mt-2 space-y-1">
-                          <div>
-                            Reference:{" "}
-                            {(() => {
-                              // First check if it&apos;s in the current state
-                              const imageInCurrentState =
-                                state.stateImages?.find(
-                                  (img) => img.id === location.referenceImageId
-                                );
-                              if (imageInCurrentState)
-                                return imageInCurrentState.name;
-
-                              // Then check in the referenceStateId if it exists
-                              if (location.referenceImageId) {
-                                // First check current state
-                                const imageInState = state.stateImages?.find(
-                                  (img) => img.id === location.referenceImageId
-                                );
-                                if (imageInState) return imageInState.name;
-
-                                // Then check all states
-                                for (const s of allStates) {
-                                  const img = s.stateImages?.find(
+                      {/* Relative positioning details */}
+                      {location.referenceImageId && (
+                        <details className="text-xs text-text-muted pl-2 border-l-2 border-brand-success/30 mt-1">
+                          <summary className="cursor-pointer hover:text-text-secondary list-none flex items-center gap-1">
+                            <ImageIcon className="w-3 h-3" />
+                            <span>Relative to image</span>
+                          </summary>
+                          <div className="mt-2 space-y-1">
+                            <div>
+                              Reference:{" "}
+                              {(() => {
+                                // First check if it&apos;s in the current state
+                                const imageInCurrentState =
+                                  state.stateImages?.find(
                                     (img) =>
                                       img.id === location.referenceImageId
                                   );
-                                  if (img) return img.name;
-                                }
-                              }
-                              return "Unknown";
-                            })()}
-                          </div>
-                          {location.anchorType && (
-                            <div>Position: {location.anchorType}</div>
-                          )}
-                          {(location.percentW !== undefined ||
-                            location.percentH !== undefined) && (
-                            <div>
-                              Offset: {(location.percentW ?? 0) * 100}% W,{" "}
-                              {(location.percentH ?? 0) * 100}% H
-                            </div>
-                          )}
-                          {(location.offsetX !== undefined &&
-                            location.offsetX !== 0) ||
-                          (location.offsetY !== undefined &&
-                            location.offsetY !== 0) ? (
-                            <div>
-                              Offsets: {location.offsetX || 0},{" "}
-                              {location.offsetY || 0}
-                            </div>
-                          ) : null}
-                        </div>
-                      </details>
-                    )}
+                                if (imageInCurrentState)
+                                  return imageInCurrentState.name;
 
-                    {/* Anchor info */}
-                    {location.anchor && (
-                      <details className="text-xs text-gray-400 pl-2 border-l-2 border-[#00FF88]/50 mt-1">
-                        <summary className="cursor-pointer hover:text-gray-300 list-none">
-                          <span className="inline flex items-center gap-1 text-[#00FF88]">
-                            ⚓ Anchor
-                          </span>
-                        </summary>
-                        <div className="mt-2 space-y-1 text-gray-500">
-                          <div>
-                            Defines:{" "}
-                            {location.anchorType
-                              ?.replace(/_/g, " ")
-                              .replace(/\b\w/g, (l) => l.toUpperCase()) ||
-                              "Center"}
+                                // Then check in the referenceStateId if it exists
+                                if (location.referenceImageId) {
+                                  // First check current state
+                                  const imageInState = state.stateImages?.find(
+                                    (img) =>
+                                      img.id === location.referenceImageId
+                                  );
+                                  if (imageInState) return imageInState.name;
+
+                                  // Then check all states
+                                  for (const s of allStates) {
+                                    const img = s.stateImages?.find(
+                                      (img) =>
+                                        img.id === location.referenceImageId
+                                    );
+                                    if (img) return img.name;
+                                  }
+                                }
+                                return "Unknown";
+                              })()}
+                            </div>
+                            {location.anchorType && (
+                              <div>Position: {location.anchorType}</div>
+                            )}
+                            {(location.percentW !== undefined ||
+                              location.percentH !== undefined) && (
+                              <div>
+                                Offset: {(location.percentW ?? 0) * 100}% W,{" "}
+                                {(location.percentH ?? 0) * 100}% H
+                              </div>
+                            )}
+                            {(location.offsetX !== undefined &&
+                              location.offsetX !== 0) ||
+                            (location.offsetY !== undefined &&
+                              location.offsetY !== 0) ? (
+                              <div>
+                                Offsets: {location.offsetX || 0},{" "}
+                                {location.offsetY || 0}
+                              </div>
+                            ) : null}
                           </div>
-                        </div>
-                      </details>
-                    )}
-                    <MonitorSelector
-                      monitors={location.monitors || [0]}
-                      onChange={(monitors) =>
-                        updateLocation(index, "monitors", monitors)
-                      }
-                      label="Monitors"
-                      showLabel={true}
-                      showConnectionStatus={false}
-                    />
+                        </details>
+                      )}
+
+                      {/* Anchor info */}
+                      {location.anchor && (
+                        <details className="text-xs text-text-muted pl-2 border-l-2 border-brand-success/50 mt-1">
+                          <summary className="cursor-pointer hover:text-text-secondary list-none">
+                            <span className="inline flex items-center gap-1 text-brand-success">
+                              ⚓ Anchor
+                            </span>
+                          </summary>
+                          <div className="mt-2 space-y-1 text-text-muted">
+                            <div>
+                              Defines:{" "}
+                              {location.anchorType
+                                ?.replace(/_/g, " ")
+                                .replace(/\b\w/g, (l) => l.toUpperCase()) ||
+                                "Center"}
+                            </div>
+                          </div>
+                        </details>
+                      )}
+                      <MonitorSelector
+                        monitors={location.monitors || [0]}
+                        onChange={(monitors) =>
+                          updateLocation(index, "monitors", monitors)
+                        }
+                        label="Monitors"
+                        showLabel={true}
+                        showConnectionStatus={false}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1662,22 +1689,22 @@ export function StatePropertiesPanel({
             className="flex-1 flex flex-col min-h-0 p-4"
           >
             <div className="flex items-center justify-between mb-2">
-              <Label className="text-xs text-gray-400">State Strings</Label>
+              <Label className="text-xs text-text-muted">State Strings</Label>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={addString}
-                className="text-gray-400 hover:text-gray-300"
+                className="text-text-muted hover:text-text-secondary"
               >
                 <Plus className="w-3 h-3" />
               </Button>
             </div>
             {state.strings?.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center border border-dashed border-gray-600 rounded">
-                <p className="text-sm text-gray-500">No strings defined</p>
+              <div className="flex-1 flex items-center justify-center border border-dashed border-border-subtle rounded">
+                <p className="text-sm text-text-muted">No strings defined</p>
               </div>
             ) : (
-              <div className="flex-1 space-y-2 overflow-y-auto pr-2">
+              <div className="flex-1 grid grid-cols-2 gap-3 overflow-y-auto scrollbar-dark pr-2 content-start">
                 {state.strings?.map((string, index) => {
                   // Get active flags for badge display
                   const activeFlags = [
@@ -1705,224 +1732,237 @@ export function StatePropertiesPanel({
                   return (
                     <div
                       key={string.id}
-                      className="space-y-2 p-2 bg-gray-800/50 border border-gray-700 rounded"
+                      className="rounded-lg overflow-hidden border-l-4 border-l-[#FFD700] bg-[#FFD700]/[0.03]"
                     >
-                      {/* Name and Delete */}
-                      <div className="flex items-center gap-2">
-                        <Input
-                          value={string.name}
-                          onChange={(e) =>
-                            updateString(index, "name", e.target.value)
-                          }
-                          className="flex-1 h-7 bg-gray-900 border-gray-600 text-gray-200 text-xs"
-                          placeholder="String name"
-                        />
+                      {/* Header bar with index */}
+                      <div className="bg-[#FFD700]/15 px-3 py-2 flex items-center gap-2">
+                        <span className="text-[#FFD700] text-xs font-bold min-w-[1.25rem]">
+                          {index + 1}
+                        </span>
+                        <span className="text-text-secondary text-xs font-medium truncate flex-1">
+                          {string.name || "Unnamed"}
+                        </span>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-7 p-0 text-red-400 hover:text-red-300"
+                          className="h-5 w-5 p-0 text-red-400 hover:text-red-300"
                           onClick={() => removeString(index)}
                         >
                           <Trash2 className="w-3 h-3" />
                         </Button>
                       </div>
-
-                      {/* Active Flags Badges */}
-                      {activeFlags.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {activeFlags.map((flag) => (
-                            <Badge
-                              key={flag.label}
-                              variant="outline"
-                              className={`text-xs px-2 py-0.5 ${flag.color} border`}
-                            >
-                              {flag.label}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Type Flags Checkboxes */}
-                      <div className="space-y-1.5 pt-1 border-t border-gray-700">
-                        <Label className="text-xs text-gray-400 font-semibold">
-                          Type Flags
-                        </Label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {/* Identifier Checkbox */}
-                          <div
-                            className="flex items-center space-x-1.5"
-                            title="Use for OCR verification - the string will be searched for in the image"
-                          >
-                            <Checkbox
-                              id={`string-identifier-${string.id}`}
-                              checked={string.identifier || false}
-                              onCheckedChange={(checked) =>
-                                updateString(
-                                  index,
-                                  "identifier",
-                                  checked as boolean
-                                )
-                              }
-                              className="border-gray-600 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
-                            />
-                            <Label
-                              htmlFor={`string-identifier-${string.id}`}
-                              className="text-xs text-gray-300 cursor-pointer"
-                            >
-                              Identifier
-                            </Label>
-                            <Info className="w-3 h-3 text-gray-500" />
-                          </div>
-
-                          {/* Input Text Checkbox (DEFAULT) */}
-                          <div
-                            className="flex items-center space-x-1.5"
-                            title="Text to be typed - will be typed into the active field"
-                          >
-                            <Checkbox
-                              id={`string-inputtext-${string.id}`}
-                              checked={
-                                string.inputText !== undefined
-                                  ? string.inputText
-                                  : true
-                              }
-                              onCheckedChange={(checked) =>
-                                updateString(
-                                  index,
-                                  "inputText",
-                                  checked as boolean
-                                )
-                              }
-                              className="border-gray-600 data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
-                            />
-                            <Label
-                              htmlFor={`string-inputtext-${string.id}`}
-                              className="text-xs text-gray-300 cursor-pointer"
-                            >
-                              Input Text
-                            </Label>
-                            <Info className="w-3 h-3 text-gray-500" />
-                          </div>
-
-                          {/* Expected Text Checkbox */}
-                          <div
-                            className="flex items-center space-x-1.5"
-                            title="Expected text for validation - used to verify expected content"
-                          >
-                            <Checkbox
-                              id={`string-expected-${string.id}`}
-                              checked={string.expectedText || false}
-                              onCheckedChange={(checked) =>
-                                updateString(
-                                  index,
-                                  "expectedText",
-                                  checked as boolean
-                                )
-                              }
-                              className="border-gray-600 data-[state=checked]:bg-purple-500 data-[state=checked]:border-purple-500"
-                            />
-                            <Label
-                              htmlFor={`string-expected-${string.id}`}
-                              className="text-xs text-gray-300 cursor-pointer"
-                            >
-                              Expected Text
-                            </Label>
-                            <Info className="w-3 h-3 text-gray-500" />
-                          </div>
-
-                          {/* Regex Pattern Checkbox */}
-                          <div
-                            className="flex items-center space-x-1.5"
-                            title="Regex pattern - the value will be treated as a regular expression"
-                          >
-                            <Checkbox
-                              id={`string-regex-${string.id}`}
-                              checked={string.regexPattern || false}
-                              onCheckedChange={(checked) =>
-                                updateString(
-                                  index,
-                                  "regexPattern",
-                                  checked as boolean
-                                )
-                              }
-                              className="border-gray-600 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
-                            />
-                            <Label
-                              htmlFor={`string-regex-${string.id}`}
-                              className="text-xs text-gray-300 cursor-pointer"
-                            >
-                              Regex Pattern
-                            </Label>
-                            <Info className="w-3 h-3 text-gray-500" />
-                          </div>
-                        </div>
-
-                        {/* Regex Warning Message */}
-                        {string.regexPattern && (
-                          <div className="flex items-start gap-2 p-2 bg-orange-500/10 border border-orange-500/30 rounded mt-2">
-                            <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-                            <div className="text-xs text-orange-300">
-                              <div className="font-semibold mb-0.5">
-                                Regex Mode Active
-                              </div>
-                              <div className="text-orange-400/80">
-                                The value will be interpreted as a regular
-                                expression pattern. Special characters like .,
-                                *, +, ?, etc. have special meaning.
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* String Value */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs text-gray-400">Value</Label>
-                          <SpecialKeysSelector
-                            onInsertKey={(newText) =>
-                              updateString(index, "value", newText)
+                      <div className="p-3 space-y-2">
+                        {/* Name input */}
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={string.name}
+                            onChange={(e) =>
+                              updateString(index, "name", e.target.value)
                             }
-                            textAreaRef={
-                              stringTextAreaRefs.current[string.id]
-                                ? {
-                                    current:
-                                      stringTextAreaRefs.current[string.id]!,
-                                  }
-                                : undefined
-                            }
+                            className="flex-1 h-7 bg-surface-canvas border-border-subtle text-text-secondary text-xs"
+                            placeholder="String name"
                           />
                         </div>
-                        <Textarea
-                          ref={setStringTextAreaRef(string.id)}
-                          value={string.value}
-                          onChange={(e) =>
-                            updateString(index, "value", e.target.value)
-                          }
-                          className="w-full min-h-[60px] bg-gray-900 border-gray-600 text-gray-200 text-xs font-mono"
-                          placeholder="String value"
-                          rows={2}
-                        />
-                        {string.value && (
-                          <div className="p-2 bg-gray-900/50 rounded-md border border-gray-700">
-                            <div className="text-xs text-gray-500 mb-1">
-                              Preview:
-                            </div>
-                            <div className="text-xs font-mono text-gray-300 break-all">
-                              <SpecialKeyDisplay text={string.value} />
-                            </div>
+
+                        {/* Active Flags Badges */}
+                        {activeFlags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {activeFlags.map((flag) => (
+                              <Badge
+                                key={flag.label}
+                                variant="outline"
+                                className={`text-xs px-2 py-0.5 ${flag.color} border`}
+                              >
+                                {flag.label}
+                              </Badge>
+                            ))}
                           </div>
                         )}
+
+                        {/* Type Flags Checkboxes */}
+                        <div className="space-y-1.5 pt-1 border-t border-border-default">
+                          <Label className="text-xs text-text-muted font-semibold">
+                            Type Flags
+                          </Label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {/* Identifier Checkbox */}
+                            <div
+                              className="flex items-center space-x-1.5"
+                              title="Use for OCR verification - the string will be searched for in the image"
+                            >
+                              <Checkbox
+                                id={`string-identifier-${string.id}`}
+                                checked={string.identifier || false}
+                                onCheckedChange={(checked) =>
+                                  updateString(
+                                    index,
+                                    "identifier",
+                                    checked as boolean
+                                  )
+                                }
+                                className="border-border-subtle data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+                              />
+                              <Label
+                                htmlFor={`string-identifier-${string.id}`}
+                                className="text-xs text-text-secondary cursor-pointer"
+                              >
+                                Identifier
+                              </Label>
+                              <Info className="w-3 h-3 text-text-muted" />
+                            </div>
+
+                            {/* Input Text Checkbox (DEFAULT) */}
+                            <div
+                              className="flex items-center space-x-1.5"
+                              title="Text to be typed - will be typed into the active field"
+                            >
+                              <Checkbox
+                                id={`string-inputtext-${string.id}`}
+                                checked={
+                                  string.inputText !== undefined
+                                    ? string.inputText
+                                    : true
+                                }
+                                onCheckedChange={(checked) =>
+                                  updateString(
+                                    index,
+                                    "inputText",
+                                    checked as boolean
+                                  )
+                                }
+                                className="border-border-subtle data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
+                              />
+                              <Label
+                                htmlFor={`string-inputtext-${string.id}`}
+                                className="text-xs text-text-secondary cursor-pointer"
+                              >
+                                Input Text
+                              </Label>
+                              <Info className="w-3 h-3 text-text-muted" />
+                            </div>
+
+                            {/* Expected Text Checkbox */}
+                            <div
+                              className="flex items-center space-x-1.5"
+                              title="Expected text for validation - used to verify expected content"
+                            >
+                              <Checkbox
+                                id={`string-expected-${string.id}`}
+                                checked={string.expectedText || false}
+                                onCheckedChange={(checked) =>
+                                  updateString(
+                                    index,
+                                    "expectedText",
+                                    checked as boolean
+                                  )
+                                }
+                                className="border-border-subtle data-[state=checked]:bg-purple-500 data-[state=checked]:border-purple-500"
+                              />
+                              <Label
+                                htmlFor={`string-expected-${string.id}`}
+                                className="text-xs text-text-secondary cursor-pointer"
+                              >
+                                Expected Text
+                              </Label>
+                              <Info className="w-3 h-3 text-text-muted" />
+                            </div>
+
+                            {/* Regex Pattern Checkbox */}
+                            <div
+                              className="flex items-center space-x-1.5"
+                              title="Regex pattern - the value will be treated as a regular expression"
+                            >
+                              <Checkbox
+                                id={`string-regex-${string.id}`}
+                                checked={string.regexPattern || false}
+                                onCheckedChange={(checked) =>
+                                  updateString(
+                                    index,
+                                    "regexPattern",
+                                    checked as boolean
+                                  )
+                                }
+                                className="border-border-subtle data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
+                              />
+                              <Label
+                                htmlFor={`string-regex-${string.id}`}
+                                className="text-xs text-text-secondary cursor-pointer"
+                              >
+                                Regex Pattern
+                              </Label>
+                              <Info className="w-3 h-3 text-text-muted" />
+                            </div>
+                          </div>
+
+                          {/* Regex Warning Message */}
+                          {string.regexPattern && (
+                            <div className="flex items-start gap-2 p-2 bg-orange-500/10 border border-orange-500/30 rounded mt-2">
+                              <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+                              <div className="text-xs text-orange-300">
+                                <div className="font-semibold mb-0.5">
+                                  Regex Mode Active
+                                </div>
+                                <div className="text-orange-400/80">
+                                  The value will be interpreted as a regular
+                                  expression pattern. Special characters like .,
+                                  *, +, ?, etc. have special meaning.
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* String Value */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs text-text-muted">
+                              Value
+                            </Label>
+                            <SpecialKeysSelector
+                              onInsertKey={(newText) =>
+                                updateString(index, "value", newText)
+                              }
+                              textAreaRef={
+                                stringTextAreaRefs.current[string.id]
+                                  ? {
+                                      current:
+                                        stringTextAreaRefs.current[string.id]!,
+                                    }
+                                  : undefined
+                              }
+                            />
+                          </div>
+                          <Textarea
+                            ref={setStringTextAreaRef(string.id)}
+                            value={string.value}
+                            onChange={(e) =>
+                              updateString(index, "value", e.target.value)
+                            }
+                            className="w-full min-h-[60px] bg-surface-canvas border-border-subtle text-text-secondary text-xs font-mono"
+                            placeholder="String value"
+                            rows={2}
+                          />
+                          {string.value && (
+                            <div className="p-2 bg-surface-canvas/50 rounded-md border border-border-default">
+                              <div className="text-xs text-text-muted mb-1">
+                                Preview:
+                              </div>
+                              <div className="text-xs font-mono text-text-secondary break-all">
+                                <SpecialKeyDisplay text={string.value} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <MonitorSelector
+                          monitors={string.monitors || [0]}
+                          onChange={(monitors) =>
+                            updateString(index, "monitors", monitors)
+                          }
+                          label="Monitors"
+                          showLabel={true}
+                          showConnectionStatus={false}
+                        />
                       </div>
-                      <MonitorSelector
-                        monitors={string.monitors || [0]}
-                        onChange={(monitors) =>
-                          updateString(index, "monitors", monitors)
-                        }
-                        label="Monitors"
-                        showLabel={true}
-                        showConnectionStatus={false}
-                      />
                     </div>
                   );
                 })}
@@ -1936,13 +1976,15 @@ export function StatePropertiesPanel({
             className="flex-1 flex flex-col min-h-0 p-4"
           >
             <div className="flex items-center justify-between mb-2">
-              <Label className="text-xs text-[#00FF88]">
+              <Label className="text-xs text-brand-success">
                 Incoming Transition
               </Label>
-              <Badge className="bg-[#00FF88] text-black text-xs px-2">1</Badge>
+              <Badge className="bg-brand-success text-black text-xs px-2">
+                1
+              </Badge>
             </div>
 
-            <div className="flex-1 space-y-2 overflow-y-auto pr-2">
+            <div className="flex-1 space-y-2 overflow-y-auto scrollbar-dark pr-2">
               {(() => {
                 // Get or create the incoming transition for this state
                 const transition = incomingTransitions[0] || {
@@ -1970,7 +2012,7 @@ export function StatePropertiesPanel({
                 return (
                   <div
                     key={transition.id}
-                    className="p-3 bg-gray-800/50 border border-[#00FF88]/30 rounded space-y-2"
+                    className="p-3 bg-surface-raised/50 border border-brand-success/30 rounded-lg space-y-2"
                   >
                     {/* Transition Header */}
                     <div className="flex items-center justify-between">
@@ -1981,15 +2023,15 @@ export function StatePropertiesPanel({
                               isExpanded ? null : transition.id
                             )
                           }
-                          className="hover:text-[#00FF88] transition-colors"
+                          className="hover:text-brand-success transition-colors"
                         >
                           {isExpanded ? (
-                            <ChevronDown className="w-4 h-4 text-[#00FF88]" />
+                            <ChevronDown className="w-4 h-4 text-brand-success" />
                           ) : (
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
+                            <ChevronRight className="w-4 h-4 text-text-muted" />
                           )}
                         </button>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-text-muted">
                           {(transition.workflows?.length || 0) === 0
                             ? "returns true"
                             : `${transition.workflows.length} workflow${transition.workflows.length !== 1 ? "s" : ""}`}
@@ -1999,12 +2041,12 @@ export function StatePropertiesPanel({
 
                     {/* Expanded Content */}
                     {isExpanded && (
-                      <div className="space-y-3 pt-2 border-t border-gray-700">
+                      <div className="space-y-3 pt-2 border-t border-border-default">
                         {/* Workflows List */}
                         {transition.workflows &&
                           transition.workflows.length > 0 && (
                             <div className="space-y-1.5">
-                              <Label className="text-xs text-gray-400">
+                              <Label className="text-xs text-text-muted">
                                 Workflows (execute in order):
                               </Label>
                               <div className="space-y-1">
@@ -2020,9 +2062,9 @@ export function StatePropertiesPanel({
                                   return (
                                     <div
                                       key={workflowId}
-                                      className="flex items-center gap-2 text-xs text-gray-300 p-2 bg-gray-900/50 rounded"
+                                      className="flex items-center gap-2 text-xs text-text-secondary p-2 bg-surface-canvas/50 rounded"
                                     >
-                                      <Badge className="bg-[#00D9FF] text-black text-xs px-1.5">
+                                      <Badge className="bg-brand-primary text-black text-xs px-1.5">
                                         {idx + 1}
                                       </Badge>
                                       <span className="flex-1">
@@ -2031,7 +2073,7 @@ export function StatePropertiesPanel({
 
                                       {/* Helper badge for auto-generated workflows */}
                                       {isHelper ? (
-                                        <Badge className="bg-[#00FF88]/20 text-[#00FF88] border-[#00FF88]/30 text-xs px-1.5">
+                                        <Badge className="bg-brand-success/20 text-brand-success border-brand-success/30 text-xs px-1.5">
                                           Helper
                                         </Badge>
                                       ) : (
@@ -2071,14 +2113,14 @@ export function StatePropertiesPanel({
                           )}
 
                         {/* Quick Helper Button */}
-                        <div className="space-y-2 pb-2 border-b border-gray-700">
-                          <Label className="text-xs text-gray-400">
+                        <div className="space-y-2 pb-2 border-b border-border-default">
+                          <Label className="text-xs text-text-muted">
                             Quick Helper:
                           </Label>
                           <Button
                             variant="outline"
                             size="sm"
-                            className="w-full h-8 text-xs bg-[#00FF88]/10 border-[#00FF88]/30 text-[#00FF88] hover:bg-[#00FF88]/20 hover:text-[#00FF88] hover:border-[#00FF88]/50 transition-colors"
+                            className="w-full h-8 text-xs bg-brand-success/10 border-brand-success/30 text-brand-success hover:bg-brand-success/20 hover:text-brand-success hover:border-brand-success/50 transition-colors"
                             onClick={() =>
                               handleAddFindAnyImageHelper(transition)
                             }
@@ -2092,7 +2134,7 @@ export function StatePropertiesPanel({
                           </Button>
                           {(!state.stateImages ||
                             state.stateImages.length === 0) && (
-                            <p className="text-xs text-gray-500 italic">
+                            <p className="text-xs text-text-muted italic">
                               Add state images first to use this helper
                             </p>
                           )}
@@ -2100,7 +2142,7 @@ export function StatePropertiesPanel({
 
                         {/* Add Workflow */}
                         <div className="space-y-2">
-                          <Label className="text-xs text-gray-400">
+                          <Label className="text-xs text-text-muted">
                             Filter by Category:
                           </Label>
                           <Select
@@ -2112,10 +2154,10 @@ export function StatePropertiesPanel({
                               }));
                             }}
                           >
-                            <SelectTrigger className="bg-gray-900 border-gray-600 text-xs h-8">
+                            <SelectTrigger className="bg-surface-canvas border-border-subtle text-xs h-8">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent className="bg-[#27272A] border-gray-700">
+                            <SelectContent className="bg-surface-raised border-border-default">
                               <SelectItem value="All">
                                 All Categories
                               </SelectItem>
@@ -2149,7 +2191,7 @@ export function StatePropertiesPanel({
 
                         {availableWorkflows.length > 0 ? (
                           <div className="space-y-2">
-                            <Label className="text-xs text-gray-400">
+                            <Label className="text-xs text-text-muted">
                               Add Workflow:
                             </Label>
                             <Select
@@ -2165,10 +2207,10 @@ export function StatePropertiesPanel({
                                 });
                               }}
                             >
-                              <SelectTrigger className="bg-gray-900 border-gray-600 text-xs h-8">
+                              <SelectTrigger className="bg-surface-canvas border-border-subtle text-xs h-8">
                                 <SelectValue placeholder="Select workflow to add..." />
                               </SelectTrigger>
-                              <SelectContent className="bg-[#27272A] border-gray-700">
+                              <SelectContent className="bg-surface-raised border-border-default">
                                 {availableWorkflows.map((workflow) => (
                                   <SelectItem
                                     key={workflow.id}
@@ -2192,7 +2234,7 @@ export function StatePropertiesPanel({
                             </Select>
                           </div>
                         ) : (
-                          <p className="text-xs text-gray-500 text-center py-2">
+                          <p className="text-xs text-text-muted text-center py-2">
                             {categoryFilter === "Incoming Transitions"
                               ? "No workflows in Incoming Transitions category. Use the Quick Helper or try 'All Categories'."
                               : "No available workflows in this category"}
@@ -2215,13 +2257,13 @@ export function StatePropertiesPanel({
           onClick={() => setShowAddSearchRegionDialog(null)}
         >
           <div
-            className="bg-[#27272A] border border-gray-700 rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto"
+            className="bg-surface-raised border border-border-default rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto scrollbar-dark"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-gray-200 mb-4">
+            <h3 className="text-lg font-semibold text-text-secondary mb-4">
               Add Search Region
             </h3>
-            <p className="text-sm text-gray-400 mb-4">
+            <p className="text-sm text-text-muted mb-4">
               Select a StateRegion from this state to add as a search region to
               this{" "}
               {showAddSearchRegionDialog.patternIndex !== undefined
@@ -2326,12 +2368,12 @@ export function StatePropertiesPanel({
                       }}
                       className={`w-full text-left p-3 rounded border transition-colors ${
                         alreadyAdded
-                          ? "border-gray-700 bg-gray-800/30 text-gray-500 cursor-not-allowed"
-                          : "border-gray-600 hover:border-[#BD00FF] hover:bg-gray-800/50 text-gray-200"
+                          ? "border-border-default bg-surface-raised/30 text-text-muted cursor-not-allowed"
+                          : "border-border-subtle hover:border-brand-secondary hover:bg-surface-raised/50 text-text-secondary"
                       }`}
                     >
                       <div className="font-medium">{region.name}</div>
-                      <div className="text-xs text-gray-400 mt-1">
+                      <div className="text-xs text-text-muted mt-1">
                         {region.referenceImageId ? (
                           <>
                             <Link2 className="w-3 h-3 inline mr-1" />
@@ -2342,7 +2384,7 @@ export function StatePropertiesPanel({
                         )}
                       </div>
                       {alreadyAdded && (
-                        <div className="text-xs text-gray-500 mt-1">
+                        <div className="text-xs text-text-muted mt-1">
                           Already added
                         </div>
                       )}
@@ -2351,7 +2393,7 @@ export function StatePropertiesPanel({
                 })}
               </div>
             ) : (
-              <div className="text-sm text-gray-500 text-center py-8">
+              <div className="text-sm text-text-muted text-center py-8">
                 No StateRegions available in this state. Create regions in the
                 Create Regions & Locations tab.
               </div>
@@ -2361,7 +2403,7 @@ export function StatePropertiesPanel({
               <Button
                 variant="ghost"
                 onClick={() => setShowAddSearchRegionDialog(null)}
-                className="text-gray-400 hover:text-gray-200"
+                className="text-text-muted hover:text-text-secondary"
               >
                 Cancel
               </Button>

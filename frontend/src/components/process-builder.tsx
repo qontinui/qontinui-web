@@ -163,11 +163,11 @@ export function ProcessBuilder() {
   return (
     <div className="flex h-full">
       {/* Left Panel - Unified Library */}
-      <div className="flex-[2] min-w-[300px] max-w-[600px] border-r border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
+      <div className="flex-[2] min-w-[300px] max-w-[600px] border-r border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto">
         <div className="space-y-4">
           <Button
             onClick={() => createNewProcess()}
-            className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+            className="w-full bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
           >
             <Plus className="w-4 h-4 mr-2" />
             New Workflow
@@ -195,7 +195,7 @@ export function ProcessBuilder() {
                   const updated = { ...selectedProcess, name: e.target.value };
                   handleUpdateProcess(updated);
                 }}
-                className="text-xl font-bold bg-transparent border-gray-700 focus:border-[#00D9FF]"
+                className="text-xl font-bold bg-transparent border-border-default focus:border-brand-primary"
                 placeholder="Process name"
               />
 
@@ -206,11 +206,11 @@ export function ProcessBuilder() {
                   setOptionsExpanded((e.target as HTMLDetailsElement).open)
                 }
               >
-                <summary className="flex items-center justify-between cursor-pointer text-xs text-gray-300 hover:text-[#00D9FF] transition-colors list-none py-1 px-2 bg-gray-800/30 rounded">
+                <summary className="flex items-center justify-between cursor-pointer text-xs text-text-secondary hover:text-brand-primary transition-colors list-none py-1 px-2 bg-surface-raised/30 rounded">
                   <span className="font-medium">Options</span>
                   <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
                 </summary>
-                <div className="mt-2 space-y-3 pl-2 border-l-2 border-gray-700">
+                <div className="mt-2 space-y-3 pl-2 border-l-2 border-border-default">
                   <Textarea
                     value={selectedProcess.description}
                     onChange={(e) => {
@@ -220,13 +220,13 @@ export function ProcessBuilder() {
                       };
                       handleUpdateProcess(updated);
                     }}
-                    className="bg-transparent border-gray-700 focus:border-[#00D9FF]"
+                    className="bg-transparent border-border-default focus:border-brand-primary"
                     placeholder="Process description"
                     rows={2}
                   />
 
                   <div className="flex items-center gap-2">
-                    <label className="text-sm text-gray-400">Category:</label>
+                    <label className="text-sm text-text-muted">Category:</label>
                     <Select
                       value={selectedProcess.category || "Main"}
                       onValueChange={(value) => {
@@ -234,7 +234,7 @@ export function ProcessBuilder() {
                         handleUpdateProcess(updated);
                       }}
                     >
-                      <SelectTrigger className="w-48 bg-transparent border-gray-700">
+                      <SelectTrigger className="w-48 bg-transparent border-border-default">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -250,8 +250,8 @@ export function ProcessBuilder() {
                           >
                             {category}
                             {category === "Main" && (
-                              <span className="ml-2 text-xs text-gray-400">
-                                • Runner executable
+                              <span className="ml-2 text-xs text-text-muted">
+                                - Runner executable
                               </span>
                             )}
                           </SelectItem>
@@ -261,16 +261,16 @@ export function ProcessBuilder() {
                   </div>
 
                   {/* Integration Test Configuration */}
-                  <Card className="border-gray-700 bg-[#27272A]/50">
+                  <Card className="border-border-default bg-surface-raised/50">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium text-gray-400">
+                      <CardTitle className="text-sm font-medium text-text-muted">
                         Integration Test Configuration
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {/* Initial Screenshot */}
                       <div className="space-y-2">
-                        <Label className="text-sm text-gray-400">
+                        <Label className="text-sm text-text-muted">
                           Initial Screenshot
                         </Label>
                         <div className="flex items-center gap-2">
@@ -288,7 +288,7 @@ export function ProcessBuilder() {
                             trigger={
                               <Button
                                 variant="outline"
-                                className="w-full justify-start border-gray-700 bg-transparent hover:bg-gray-800"
+                                className="w-full justify-start border-border-default bg-transparent hover:bg-surface-raised"
                               >
                                 <Camera className="w-4 h-4 mr-2" />
                                 {selectedProcess.initialScreenshotId
@@ -312,25 +312,25 @@ export function ProcessBuilder() {
                                 };
                                 handleUpdateProcess(updated);
                               }}
-                              className="hover:bg-gray-800"
+                              className="hover:bg-surface-raised"
                             >
                               ×
                             </Button>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-text-muted">
                           Screenshot to start the test with
                         </p>
                       </div>
 
                       {/* Initial Active States */}
                       <div className="space-y-2">
-                        <Label className="text-sm text-gray-400">
+                        <Label className="text-sm text-text-muted">
                           Initial Active States
                         </Label>
                         <div className="space-y-2 max-h-40 overflow-y-auto">
                           {states.length === 0 ? (
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-text-muted">
                               No states defined yet
                             </p>
                           ) : (
@@ -359,11 +359,11 @@ export function ProcessBuilder() {
                                     };
                                     handleUpdateProcess(updated);
                                   }}
-                                  className="border-gray-600 data-[state=checked]:bg-[#00D9FF] data-[state=checked]:border-[#00D9FF]"
+                                  className="border-border-default data-[state=checked]:bg-brand-primary data-[state=checked]:border-brand-primary"
                                 />
                                 <Label
                                   htmlFor={`state-${state.id}`}
-                                  className="text-sm font-normal text-gray-300 cursor-pointer"
+                                  className="text-sm font-normal text-text-secondary cursor-pointer"
                                 >
                                   {state.name}
                                 </Label>
@@ -371,7 +371,7 @@ export function ProcessBuilder() {
                             ))
                           )}
                         </div>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-text-muted">
                           States that should be active at test start
                         </p>
                       </div>
@@ -379,9 +379,9 @@ export function ProcessBuilder() {
                   </Card>
 
                   {/* Transition Selection */}
-                  <Card className="border-gray-700 bg-[#27272A]/50">
+                  <Card className="border-border-default bg-surface-raised/50">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium text-gray-400">
+                      <CardTitle className="text-sm font-medium text-text-muted">
                         Use as Transition
                       </CardTitle>
                     </CardHeader>
@@ -391,7 +391,7 @@ export function ProcessBuilder() {
                           setTransitionType("outgoing");
                           setShowTransitionDialog(true);
                         }}
-                        className="w-full bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white"
+                        className="w-full bg-brand-secondary hover:bg-brand-secondary/80 text-white"
                       >
                         <ArrowRight className="w-4 h-4 mr-2" />
                         Create Outgoing Transition
@@ -401,7 +401,7 @@ export function ProcessBuilder() {
                           setTransitionType("incoming");
                           setShowTransitionDialog(true);
                         }}
-                        className="w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+                        className="w-full bg-brand-success hover:bg-brand-success/80 text-black"
                       >
                         <Target className="w-4 h-4 mr-2" />
                         Create Incoming Transition
@@ -443,7 +443,7 @@ export function ProcessBuilder() {
             />
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-500">
+          <div className="flex items-center justify-center h-full text-text-muted">
             <div className="text-center">
               <Play className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p className="text-lg">Select a process to edit</p>
@@ -454,7 +454,7 @@ export function ProcessBuilder() {
       </div>
 
       {/* Right Panel - Action Properties */}
-      <div className="flex-[2] min-w-[300px] max-w-[600px] border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
+      <div className="flex-[2] min-w-[300px] max-w-[600px] border-l border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto">
         <ActionProperties
           action={selectedAction as ActionPropertiesAction | null}
           onUpdateAction={(updated: ActionPropertiesAction) => {

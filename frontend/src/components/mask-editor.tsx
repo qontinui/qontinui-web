@@ -741,12 +741,12 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onCancel()}>
       <DialogContent
-        className="!top-[5vh] !translate-y-0 bg-[#0A0A0B] border-gray-800 !max-w-[68vw] p-0 gap-0 flex flex-col"
+        className="!top-[5vh] !translate-y-0 bg-surface-canvas border-border-subtle !max-w-[68vw] p-0 gap-0 flex flex-col"
         style={{ height: "90vh", maxHeight: "90vh" }}
         showCloseButton={false}
       >
         {/* Custom Header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border-subtle shrink-0">
           <DialogTitle className="text-lg font-semibold">
             Mask Editor - {imageName}
           </DialogTitle>
@@ -755,19 +755,19 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
             areas with eraser
           </DialogDescription>
           <div className="flex items-center gap-3 mr-8">
-            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
               <input
                 type="checkbox"
                 checked={cropToMask}
                 onChange={(e) => setCropToMask(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[#BD00FF] focus:ring-[#BD00FF] focus:ring-offset-0"
+                className="w-4 h-4 rounded border-border-default bg-surface-raised text-brand-secondary focus:ring-brand-secondary focus:ring-offset-0"
               />
               <span>Crop to mask</span>
             </label>
             <Button
               onClick={handleSave}
               size="sm"
-              className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white"
+              className="bg-brand-secondary hover:bg-brand-secondary/80 text-white"
             >
               <Save className="w-4 h-4 mr-2" />
               Save
@@ -776,7 +776,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
               onClick={onClose}
               size="sm"
               variant="outline"
-              className="border-gray-700 hover:border-gray-600"
+              className="border-border-default hover:border-border-subtle"
             >
               <X className="w-4 h-4 mr-2" />
               Cancel
@@ -787,14 +787,14 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
         {/* Main Content */}
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* Left Toolbar */}
-          <div className="w-12 bg-gray-800 flex flex-col items-center py-4 gap-2">
+          <div className="w-12 bg-surface-raised flex flex-col items-center py-4 gap-2">
             <Button
               variant="ghost"
               size="icon"
               className={cn(
                 "w-9 h-9",
                 tool === "brush" &&
-                  "bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white"
+                  "bg-brand-secondary hover:bg-brand-secondary/80 text-white"
               )}
               onClick={() => setTool("brush")}
               title="Brush - Add to mask"
@@ -808,7 +808,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
               className={cn(
                 "w-9 h-9",
                 tool === "eraser" &&
-                  "bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white"
+                  "bg-brand-secondary hover:bg-brand-secondary/80 text-white"
               )}
               onClick={() => setTool("eraser")}
               title="Eraser - Remove from mask"
@@ -878,8 +878,8 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
           {/* Center Canvas Area */}
           <div className="flex-1 flex flex-col min-w-0">
             {/* Top Controls */}
-            <div className="bg-gray-800 p-2 flex items-center gap-4 shrink-0">
-              <span className="text-sm text-gray-400 whitespace-nowrap">
+            <div className="bg-surface-raised p-2 flex items-center gap-4 shrink-0">
+              <span className="text-sm text-text-muted whitespace-nowrap">
                 Brush Size:
               </span>
               <Slider
@@ -890,11 +890,13 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                 step={1}
                 className="w-48"
               />
-              <span className="text-sm text-gray-300 w-8">{brushSize[0]}</span>
+              <span className="text-sm text-text-secondary w-8">
+                {brushSize[0]}
+              </span>
 
               <Separator orientation="vertical" className="h-6 mx-2" />
 
-              <span className="text-sm text-gray-400 whitespace-nowrap">
+              <span className="text-sm text-text-muted whitespace-nowrap">
                 Removal Tolerance:
               </span>
               <Slider
@@ -905,20 +907,20 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                 step={1}
                 className="w-48"
               />
-              <span className="text-sm text-gray-300 w-8">
+              <span className="text-sm text-text-secondary w-8">
                 {removalTolerance[0]}
               </span>
             </div>
 
-            <div className="flex-1 flex gap-4 p-4 bg-[#0A0A0B] min-h-0">
+            <div className="flex-1 flex gap-4 p-4 bg-surface-canvas min-h-0">
               {/* Left Side - Result Canvas (Editable) */}
               <div className="flex-1 flex flex-col gap-2 min-w-0">
-                <h3 className="text-sm font-medium text-[#00D9FF] text-center shrink-0">
+                <h3 className="text-sm font-medium text-brand-primary text-center shrink-0">
                   Result (with Transparency) - Draw Here
                 </h3>
                 <div
                   ref={resultContainerRef}
-                  className="flex-1 bg-gray-800 rounded overflow-hidden relative min-h-0"
+                  className="flex-1 bg-surface-raised rounded overflow-hidden relative min-h-0"
                 >
                   <canvas
                     ref={resultCanvasRef}
@@ -950,10 +952,10 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
               <div className="w-64 flex flex-col gap-4 shrink-0">
                 {/* Original Image */}
                 <div className="flex-1 flex flex-col gap-2 min-h-0">
-                  <h3 className="text-sm font-medium text-gray-400 text-center shrink-0">
+                  <h3 className="text-sm font-medium text-text-muted text-center shrink-0">
                     Original Image
                   </h3>
-                  <div className="flex-1 bg-gray-800 rounded overflow-hidden min-h-0">
+                  <div className="flex-1 bg-surface-raised rounded overflow-hidden min-h-0">
                     <canvas
                       ref={originalCanvasRef}
                       className="w-full h-full object-contain"
@@ -964,10 +966,10 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
 
                 {/* Mask Visualization */}
                 <div className="flex-1 flex flex-col gap-2 min-h-0">
-                  <h3 className="text-sm font-medium text-gray-400 text-center shrink-0">
+                  <h3 className="text-sm font-medium text-text-muted text-center shrink-0">
                     Mask
                   </h3>
-                  <div className="flex-1 bg-gray-800 rounded overflow-hidden min-h-0">
+                  <div className="flex-1 bg-surface-raised rounded overflow-hidden min-h-0">
                     <canvas
                       ref={maskCanvasRef}
                       className="w-full h-full object-contain"
@@ -978,45 +980,51 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
               </div>
             </div>
 
-            <div className="bg-gray-800 p-2 text-xs text-gray-400 shrink-0">
+            <div className="bg-surface-raised p-2 text-xs text-text-muted shrink-0">
               <ul className="list-disc list-inside space-y-1">
                 <li>
-                  <strong className="text-gray-300">Result:</strong> Draw on
-                  this canvas to edit the mask (shows final image with
+                  <strong className="text-text-secondary">Result:</strong> Draw
+                  on this canvas to edit the mask (shows final image with
                   transparency)
                 </li>
                 <li>
-                  <strong className="text-gray-300">Original:</strong>{" "}
+                  <strong className="text-text-secondary">Original:</strong>{" "}
                   Unmodified source image
                 </li>
                 <li>
-                  <strong className="text-gray-300">Mask:</strong> Visual
+                  <strong className="text-text-secondary">Mask:</strong> Visual
                   representation of the mask (white = visible, black =
                   transparent)
                 </li>
                 <li>
-                  <strong className="text-gray-300">Brush:</strong> Add pixels
-                  to mask (make areas visible)
+                  <strong className="text-text-secondary">Brush:</strong> Add
+                  pixels to mask (make areas visible)
                 </li>
                 <li>
-                  <strong className="text-gray-300">Eraser:</strong> Remove
-                  pixels from mask (make areas transparent)
+                  <strong className="text-text-secondary">Eraser:</strong>{" "}
+                  Remove pixels from mask (make areas transparent)
                 </li>
                 <li>
-                  <strong className="text-gray-300">Undo/Redo:</strong> Navigate
-                  through last 10 changes
+                  <strong className="text-text-secondary">Undo/Redo:</strong>{" "}
+                  Navigate through last 10 changes
                 </li>
                 <li>
-                  <strong className="text-gray-300">Remove Background:</strong>{" "}
+                  <strong className="text-text-secondary">
+                    Remove Background:
+                  </strong>{" "}
                   Automatically detect and remove background (samples edge
                   colors)
                 </li>
                 <li>
-                  <strong className="text-gray-300">Remove Border:</strong>{" "}
+                  <strong className="text-text-secondary">
+                    Remove Border:
+                  </strong>{" "}
                   Automatically detect and remove border pixels
                 </li>
                 <li>
-                  <strong className="text-gray-300">Removal Tolerance:</strong>{" "}
+                  <strong className="text-text-secondary">
+                    Removal Tolerance:
+                  </strong>{" "}
                   Adjust color matching sensitivity (0-50, default: 10)
                 </li>
               </ul>

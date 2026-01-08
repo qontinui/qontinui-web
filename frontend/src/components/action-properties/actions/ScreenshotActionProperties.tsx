@@ -24,7 +24,7 @@ export function ScreenshotActionProperties({
     <>
       {/* Output Variable */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           Output Variable (optional)
         </Label>
         <Input
@@ -33,10 +33,10 @@ export function ScreenshotActionProperties({
           onChange={(e) =>
             updateConfig("outputVariable", e.target.value || undefined)
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
           placeholder="screenshot_data"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Variable name to store the screenshot data (base64 PNG)
         </p>
       </div>
@@ -45,8 +45,8 @@ export function ScreenshotActionProperties({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <FolderOpen className="w-4 h-4 text-gray-400" />
-            <Label className="text-xs text-gray-400">Save to File</Label>
+            <FolderOpen className="w-4 h-4 text-text-muted" />
+            <Label className="text-xs text-text-muted">Save to File</Label>
           </div>
           <Checkbox
             id="saveToFile"
@@ -69,7 +69,7 @@ export function ScreenshotActionProperties({
           <div className="space-y-3 pl-4 border-l-2 border-violet-500/30">
             {/* Filename */}
             <div className="space-y-1">
-              <Label className="text-xs text-gray-400">
+              <Label className="text-xs text-text-muted">
                 Filename (optional)
               </Label>
               <Input
@@ -81,10 +81,10 @@ export function ScreenshotActionProperties({
                     filename: e.target.value || undefined,
                   })
                 }
-                className="bg-transparent border-gray-700"
+                className="bg-transparent border-border-default"
                 placeholder="screenshot-{{timestamp}}.png"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Leave empty for auto-generated name. Supports {"{{timestamp}}"}{" "}
                 placeholder.
               </p>
@@ -92,7 +92,7 @@ export function ScreenshotActionProperties({
 
             {/* Directory */}
             <div className="space-y-1">
-              <Label className="text-xs text-gray-400">
+              <Label className="text-xs text-text-muted">
                 Directory (optional)
               </Label>
               <Input
@@ -104,10 +104,10 @@ export function ScreenshotActionProperties({
                     directory: e.target.value || undefined,
                   })
                 }
-                className="bg-transparent border-gray-700"
+                className="bg-transparent border-border-default"
                 placeholder=".automation-results/latest/screenshots"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Default: AI Builder screenshot directory for analysis
               </p>
             </div>
@@ -126,7 +126,7 @@ export function ScreenshotActionProperties({
       {/* Capture Region */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">
+          <Label className="text-xs text-text-muted">
             Capture Region (optional)
           </Label>
           <Checkbox
@@ -154,12 +154,12 @@ export function ScreenshotActionProperties({
 
         {hasRegion && (
           <div className="space-y-2 pl-4 border-l-2 border-violet-500/30">
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Capture a specific region instead of full screen
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label className="text-xs text-gray-400">X</Label>
+                <Label className="text-xs text-text-muted">X</Label>
                 <Input
                   type="number"
                   min="0"
@@ -179,11 +179,11 @@ export function ScreenshotActionProperties({
                       x: Number.parseInt(e.target.value) || 0,
                     })
                   }
-                  className="bg-transparent border-gray-700"
+                  className="bg-transparent border-border-default"
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-gray-400">Y</Label>
+                <Label className="text-xs text-text-muted">Y</Label>
                 <Input
                   type="number"
                   min="0"
@@ -203,11 +203,11 @@ export function ScreenshotActionProperties({
                       y: Number.parseInt(e.target.value) || 0,
                     })
                   }
-                  className="bg-transparent border-gray-700"
+                  className="bg-transparent border-border-default"
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-gray-400">Width</Label>
+                <Label className="text-xs text-text-muted">Width</Label>
                 <Input
                   type="number"
                   min="1"
@@ -227,11 +227,11 @@ export function ScreenshotActionProperties({
                       width: Number.parseInt(e.target.value) || 800,
                     })
                   }
-                  className="bg-transparent border-gray-700"
+                  className="bg-transparent border-border-default"
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-gray-400">Height</Label>
+                <Label className="text-xs text-text-muted">Height</Label>
                 <Input
                   type="number"
                   min="1"
@@ -251,7 +251,7 @@ export function ScreenshotActionProperties({
                       height: Number.parseInt(e.target.value) || 600,
                     })
                   }
-                  className="bg-transparent border-gray-700"
+                  className="bg-transparent border-border-default"
                 />
               </div>
             </div>

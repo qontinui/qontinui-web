@@ -657,25 +657,25 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   // Show loading state while hydrating
   if (isHydrating) {
     return (
-      <div className="h-full flex flex-col bg-[#0A0A0B] items-center justify-center">
+      <div className="h-full flex flex-col bg-surface-canvas items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 mx-auto mb-3 text-blue-600 animate-spin" />
-          <p className="text-gray-400">Loading pattern tests...</p>
+          <p className="text-text-muted">Loading pattern tests...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#0A0A0B]">
+    <div className="h-full flex flex-col bg-surface-canvas">
       {/* Header */}
-      <div className="bg-[#27272A] border-b border-gray-800 px-6 py-4">
+      <div className="bg-surface-raised border-b border-border-subtle px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Search className="w-6 h-6 text-blue-600" />
             <div>
               <h2 className="text-xl font-semibold">Pattern Matching Test</h2>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-text-muted">
                 Test image pattern matching on screenshots with real Qontinui
                 engine
               </p>
@@ -720,10 +720,10 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Configuration */}
-        <div className="w-96 bg-[#27272A]/50 border-r overflow-y-auto">
+        <div className="w-96 bg-surface-raised/50 border-r overflow-y-auto">
           <div className="p-4 space-y-4">
             {/* Screenshot Selection */}
-            <div className="bg-[#27272A]/50 rounded-lg border border-gray-800">
+            <div className="bg-surface-raised/50 rounded-lg border border-border-subtle">
               <ScreenshotPicker
                 currentScreenshot={
                   selectedScreenshot
@@ -741,8 +741,8 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
             </div>
 
             {/* Template Image Selection */}
-            <div className="bg-[#0A0A0B] p-3 rounded-lg border border-gray-800 border-gray-700">
-              <label className="block text-sm font-semibold text-gray-800 mb-2">
+            <div className="bg-surface-canvas p-3 rounded-lg border border-border-subtle border-border-default">
+              <label className="block text-sm font-semibold text-text-secondary mb-2">
                 <ImageIcon className="w-4 h-4 inline mr-1" />
                 Pattern Image
               </label>
@@ -753,7 +753,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                   className={`flex-1 px-3 py-1.5 text-sm rounded font-medium transition-colors ${
                     templateSource === "upload"
                       ? "bg-blue-600 text-white shadow-sm"
-                      : "bg-[#27272A]/50 text-gray-300 border border-gray-800 border-gray-700 hover:bg-gray-50"
+                      : "bg-surface-raised/50 text-text-secondary border border-border-subtle border-border-default hover:bg-surface-raised/80"
                   }`}
                 >
                   Upload
@@ -763,7 +763,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                   className={`flex-1 px-3 py-1.5 text-sm rounded font-medium transition-colors ${
                     templateSource === "state"
                       ? "bg-blue-600 text-white shadow-sm"
-                      : "bg-[#27272A]/50 text-gray-300 border border-gray-800 border-gray-700 hover:bg-gray-50"
+                      : "bg-surface-raised/50 text-text-secondary border border-border-subtle border-border-default hover:bg-surface-raised/80"
                   }`}
                 >
                   State Image
@@ -773,7 +773,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                   className={`flex-1 px-3 py-1.5 text-sm rounded font-medium transition-colors ${
                     templateSource === "asset"
                       ? "bg-blue-600 text-white shadow-sm"
-                      : "bg-[#27272A]/50 text-gray-300 border border-gray-800 border-gray-700 hover:bg-gray-50"
+                      : "bg-surface-raised/50 text-text-secondary border border-border-subtle border-border-default hover:bg-surface-raised/80"
                   }`}
                 >
                   Asset
@@ -824,9 +824,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                         });
                       }
                     }}
-                    className="w-full px-3 py-2 border border-gray-800 border-gray-400 rounded-lg text-sm text-white bg-[#27272A]/50 font-medium focus:outline-none focus:ring-2 focus:ring-[#00D9FF] focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-border-default rounded-lg text-sm text-white bg-surface-raised/50 font-medium focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-brand-primary"
                   >
-                    <option value="" className="text-gray-400 font-normal">
+                    <option value="" className="text-text-muted font-normal">
                       Select state image
                     </option>
                     {states.map((state) => (
@@ -839,7 +839,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                           <option
                             key={img.id}
                             value={img.id}
-                            className="text-gray-800 font-medium"
+                            className="text-text-secondary font-medium"
                           >
                             {img.name}
                           </option>
@@ -852,7 +852,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                   {states.some(
                     (s) => s.stateImages && s.stateImages.length > 0
                   ) && (
-                    <div className="max-h-48 overflow-y-auto bg-[#27272A]/50 p-2 rounded-lg border border-gray-800 border-gray-700">
+                    <div className="max-h-48 overflow-y-auto bg-surface-raised/50 p-2 rounded-lg border border-border-subtle border-border-default">
                       <div className="grid grid-cols-4 gap-2">
                         {states.flatMap((state) =>
                           (state.stateImages || []).map((img) => (
@@ -872,7 +872,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                               className={`p-1 border-2 rounded transition-all ${
                                 selectedStateImage === img.id
                                   ? "border-blue-500 bg-blue-100 shadow-lg ring-2 ring-blue-300"
-                                  : "border-gray-700 bg-[#0A0A0B] hover:border-gray-500 hover:bg-white"
+                                  : "border-border-default bg-surface-canvas hover:border-border-subtle hover:bg-white"
                               }`}
                               title={`${state.name} - ${img.name}`}
                             >
@@ -887,14 +887,14 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                                     className="w-full h-12 object-contain"
                                   />
                                 ) : (
-                                  <div className="w-full h-12 bg-gray-700 flex items-center justify-center border border-gray-800 border-gray-700 rounded">
-                                    <span className="text-xs text-gray-400 font-medium">
+                                  <div className="w-full h-12 bg-surface-raised flex items-center justify-center border border-border-subtle border-border-default rounded">
+                                    <span className="text-xs text-text-muted font-medium">
                                       No image
                                     </span>
                                   </div>
                                 );
                               })()}
-                              <span className="text-xs text-white font-semibold block mt-1 truncate px-1 bg-[#27272A]/50 bg-opacity-90 rounded">
+                              <span className="text-xs text-white font-semibold block mt-1 truncate px-1 bg-surface-raised/50 bg-opacity-90 rounded">
                                 {img.name}
                               </span>
                             </button>
@@ -907,7 +907,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                   {!states.some(
                     (s) => s.stateImages && s.stateImages.length > 0
                   ) && (
-                    <div className="text-sm text-gray-300 bg-yellow-50 border border-gray-800 border-yellow-200 p-3 rounded-lg text-center font-medium">
+                    <div className="text-sm text-text-secondary bg-yellow-50 border border-border-subtle border-yellow-200 p-3 rounded-lg text-center font-medium">
                       No state images available. Define them in the State
                       Structure tab.
                     </div>
@@ -927,7 +927,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       handleAssetImageSelect(asset.url);
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-800 border-gray-400 rounded-lg text-sm text-white bg-[#27272A]/50 font-medium"
+                  className="w-full px-3 py-2 border border-border-default rounded-lg text-sm text-white bg-surface-raised/50 font-medium"
                 >
                   <option value="">Select asset image</option>
                   {images.map((img) => (
@@ -940,14 +940,14 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
 
               {/* Template Preview */}
               {templateImage && (
-                <div className="mt-3 p-3 bg-[#27272A] rounded-lg border border-gray-800 border-gray-700">
-                  <div className="text-xs font-bold text-gray-800 mb-2 uppercase tracking-wide">
+                <div className="mt-3 p-3 bg-surface-raised rounded-lg border border-border-subtle border-border-default">
+                  <div className="text-xs font-bold text-text-secondary mb-2 uppercase tracking-wide">
                     Template Preview
                   </div>
                   <div className="flex justify-center">
                     <canvas
                       ref={templateCanvasRef}
-                      className="border border-gray-800 border-gray-700"
+                      className="border border-border-subtle border-border-default"
                     />
                   </div>
                 </div>
@@ -955,15 +955,15 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
             </div>
 
             {/* Matching Parameters */}
-            <div className="bg-[#0A0A0B] p-3 rounded-lg border border-gray-800 border-gray-700">
-              <label className="block text-sm font-semibold text-gray-800 mb-3">
+            <div className="bg-surface-canvas p-3 rounded-lg border border-border-subtle border-border-default">
+              <label className="block text-sm font-semibold text-text-secondary mb-3">
                 <Sliders className="w-4 h-4 inline mr-1" />
                 Matching Parameters
               </label>
 
               <div className="space-y-3">
                 <div>
-                  <label className="text-sm text-gray-300 font-medium">
+                  <label className="text-sm text-text-secondary font-medium">
                     Similarity Threshold
                   </label>
                   <div className="flex items-center gap-2">
@@ -978,7 +978,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       }
                       className="flex-1"
                     />
-                    <span className="text-sm font-mono font-bold text-white w-12 bg-[#27272A]/50 px-1 py-0.5 rounded border border-gray-800 border-gray-700">
+                    <span className="text-sm font-mono font-bold text-white w-12 bg-surface-raised/50 px-1 py-0.5 rounded border border-border-subtle border-border-default">
                       {(similarity * 100).toFixed(0)}%
                     </span>
                   </div>
@@ -991,14 +991,14 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                     onChange={(e) => setFindAll(e.target.checked)}
                     className="w-4 h-4"
                   />
-                  <span className="text-sm text-gray-800 font-medium">
+                  <span className="text-sm text-text-secondary font-medium">
                     Find all matches
                   </span>
                 </label>
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-sm text-gray-300 font-medium">
+                    <label className="text-sm text-text-secondary font-medium">
                       Search Region
                     </label>
                     {searchRegion && (
@@ -1011,12 +1011,12 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                     )}
                   </div>
                   {searchRegion ? (
-                    <div className="text-xs bg-[#27272A]/50 p-2 rounded border border-gray-800 border-gray-700 font-mono font-semibold text-white">
+                    <div className="text-xs bg-surface-raised/50 p-2 rounded border border-border-subtle border-border-default font-mono font-semibold text-white">
                       ({searchRegion.x}, {searchRegion.y}) -{" "}
                       {searchRegion.width}×{searchRegion.height}
                     </div>
                   ) : (
-                    <div className="text-xs text-gray-400 bg-[#27272A]/50 p-2 rounded border border-gray-800 border-gray-700 italic">
+                    <div className="text-xs text-text-muted bg-surface-raised/50 p-2 rounded border border-border-subtle border-border-default italic">
                       Full screenshot (click and drag to define region)
                     </div>
                   )}
@@ -1039,7 +1039,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                   !templateImage ||
                   !apiConnected ||
                   isSearching
-                    ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                    ? "bg-surface-raised text-text-muted cursor-not-allowed"
                     : "bg-blue-600 text-white hover:bg-blue-700"
                 }`}
               >
@@ -1091,7 +1091,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
               {matches.length > 0 && (
                 <button
                   onClick={exportResults}
-                  className="w-full mt-2 px-4 py-2 bg-[#27272A] text-gray-300 rounded-lg hover:bg-gray-700 flex items-center justify-center gap-2"
+                  className="w-full mt-2 px-4 py-2 bg-surface-raised text-text-secondary rounded-lg hover:bg-surface-raised/80 flex items-center justify-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   Export Results
@@ -1107,14 +1107,14 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                 </h3>
                 <div className="space-y-3">
                   {/* Template Preview */}
-                  <div className="bg-[#0A0A0B] p-2 rounded border border-gray-700">
-                    <div className="text-xs text-gray-400 mb-1">
+                  <div className="bg-surface-canvas p-2 rounded border border-border-default">
+                    <div className="text-xs text-text-muted mb-1">
                       Template Image:
                     </div>
                     <img
                       src={templateImage}
                       alt="Template"
-                      className="max-w-full h-auto border border-[#00D9FF] rounded"
+                      className="max-w-full h-auto border border-brand-primary rounded"
                       style={{
                         maxHeight: "100px",
                         imageRendering: "pixelated",
@@ -1134,7 +1134,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                         }
                       }}
                     />
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-text-muted mt-1">
                       Size: {(templateImage.length / 1024).toFixed(1)}KB
                     </div>
                     {templateImage.length < 2000 && (
@@ -1149,7 +1149,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
 
                   {/* Quick Test Buttons */}
                   <div className="space-y-2">
-                    <div className="text-xs text-gray-400 mb-1">
+                    <div className="text-xs text-text-muted mb-1">
                       Quick Tests:
                     </div>
                     <button
@@ -1175,13 +1175,13 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                 <h3 className="font-bold text-white mb-3">Results Summary</h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Matches Found:</span>
+                    <span className="text-text-muted">Matches Found:</span>
                     <span className="font-medium text-white">
                       {matches.length}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Best Score:</span>
+                    <span className="text-text-muted">Best Score:</span>
                     <span className="font-medium text-green-400">
                       {Math.max(...matches.map((m) => m.score * 100)).toFixed(
                         1
@@ -1190,7 +1190,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Avg Score:</span>
+                    <span className="text-text-muted">Avg Score:</span>
                     <span className="font-medium text-white">
                       {(
                         (matches.reduce((sum, m) => sum + m.score, 0) /
@@ -1201,7 +1201,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Search Time:</span>
+                    <span className="text-text-muted">Search Time:</span>
                     <span className="font-medium text-white">
                       {searchTime}ms
                     </span>
@@ -1215,32 +1215,32 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
         {/* Center Panel - Visualization */}
         <div className="flex-1 flex flex-col">
           {/* Visualization Controls */}
-          <div className="bg-[#27272A] border-b border-gray-800 px-4 py-2">
+          <div className="bg-surface-raised border-b border-border-subtle px-4 py-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1">
                   <button
                     onClick={handleZoomOut}
-                    className="p-1.5 hover:bg-blue-50 rounded border border-gray-800 border-gray-700 bg-[#27272A]/50 text-gray-300 hover:text-blue-600 transition-colors"
+                    className="p-1.5 hover:bg-blue-50 rounded border border-border-subtle border-border-default bg-surface-raised/50 text-text-secondary hover:text-blue-600 transition-colors"
                     title="Zoom Out"
                   >
                     <ZoomOut className="w-4 h-4" />
                   </button>
                   <button
                     onClick={handleFitToScreen}
-                    className="p-1.5 hover:bg-blue-50 rounded border border-gray-800 border-gray-700 bg-[#27272A]/50 text-gray-300 hover:text-blue-600 transition-colors"
+                    className="p-1.5 hover:bg-blue-50 rounded border border-border-subtle border-border-default bg-surface-raised/50 text-text-secondary hover:text-blue-600 transition-colors"
                     title="Fit to Screen"
                   >
                     <Maximize2 className="w-4 h-4" />
                   </button>
                   <button
                     onClick={handleZoomIn}
-                    className="p-1.5 hover:bg-blue-50 rounded border border-gray-800 border-gray-700 bg-[#27272A]/50 text-gray-300 hover:text-blue-600 transition-colors"
+                    className="p-1.5 hover:bg-blue-50 rounded border border-border-subtle border-border-default bg-surface-raised/50 text-text-secondary hover:text-blue-600 transition-colors"
                     title="Zoom In"
                   >
                     <ZoomIn className="w-4 h-4" />
                   </button>
-                  <span className="text-sm font-mono font-bold text-white px-2 py-0.5 bg-[#27272A] rounded border border-gray-800 border-gray-700">
+                  <span className="text-sm font-mono font-bold text-white px-2 py-0.5 bg-surface-raised rounded border border-border-subtle border-border-default">
                     {Math.round(zoom * 100)}%
                   </span>
                 </div>
@@ -1253,7 +1253,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       onChange={(e) => setShowMatches(e.target.checked)}
                       className="w-4 h-4 accent-blue-600"
                     />
-                    <span className="text-sm font-semibold text-gray-800">
+                    <span className="text-sm font-semibold text-text-secondary">
                       Matches
                     </span>
                   </label>
@@ -1264,7 +1264,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       onChange={(e) => setShowScores(e.target.checked)}
                       className="w-4 h-4 accent-blue-600"
                     />
-                    <span className="text-sm font-semibold text-gray-800">
+                    <span className="text-sm font-semibold text-text-secondary">
                       Scores
                     </span>
                   </label>
@@ -1275,7 +1275,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       onChange={(e) => setShowHeatmap(e.target.checked)}
                       className="w-4 h-4 accent-blue-600"
                     />
-                    <span className="text-sm font-semibold text-gray-800">
+                    <span className="text-sm font-semibold text-text-secondary">
                       Heatmap
                     </span>
                   </label>
@@ -1286,7 +1286,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       onChange={(e) => setHighlightBest(e.target.checked)}
                       className="w-4 h-4 accent-blue-600"
                     />
-                    <span className="text-sm font-semibold text-gray-800">
+                    <span className="text-sm font-semibold text-text-secondary">
                       Best Match
                     </span>
                   </label>
@@ -1295,7 +1295,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
 
               {matches.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <Target className="w-4 h-4 text-gray-400" />
+                  <Target className="w-4 h-4 text-text-muted" />
                   <span className="text-sm font-bold text-white">
                     {matches.length} matches
                   </span>
@@ -1305,12 +1305,12 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
           </div>
 
           {/* Canvas Area */}
-          <div className="flex-1 flex items-center justify-center p-4 overflow-auto bg-[#27272A]">
+          <div className="flex-1 flex items-center justify-center p-4 overflow-auto bg-surface-raised">
             {selectedScreenshot ? (
               <div className="relative max-w-full max-h-full">
                 <canvas
                   ref={canvasRef}
-                  className="border border-gray-800 border-gray-700 shadow-lg max-w-full max-h-full"
+                  className="border border-border-subtle border-border-default shadow-lg max-w-full max-h-full"
                   style={{
                     cursor: isPanning
                       ? "grabbing"
@@ -1332,7 +1332,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       <span className="font-medium">Match Details</span>
                       <button
                         onClick={() => setSelectedMatch(null)}
-                        className="text-gray-400 hover:text-white"
+                        className="text-text-muted hover:text-white"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -1370,7 +1370,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                 )}
               </div>
             ) : (
-              <div className="text-center text-gray-500">
+              <div className="text-center text-text-muted">
                 <Camera className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p>Select a screenshot to begin</p>
               </div>
@@ -1379,7 +1379,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
         </div>
 
         {/* Right Panel - Match Results */}
-        <div className="w-80 bg-[#27272A]/50 border-l overflow-y-auto">
+        <div className="w-80 bg-surface-raised/50 border-l overflow-y-auto">
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -1394,7 +1394,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
             </div>
 
             {matches.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-text-muted">
                 <Target className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p className="text-sm">No matches found</p>
                 <p className="text-xs mt-1">
@@ -1413,7 +1413,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
                         selectedMatch === match
                           ? "border-blue-500 bg-blue-50 shadow-md"
-                          : "border-gray-700 hover:border-gray-700 hover:bg-gray-50"
+                          : "border-border-default hover:border-border-default hover:bg-surface-raised/80"
                       }`}
                     >
                       {/* Match Header */}
@@ -1442,7 +1442,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       </div>
 
                       {/* Match Image - will render when image loads */}
-                      <div className="mb-2 bg-[#27272A] rounded overflow-hidden">
+                      <div className="mb-2 bg-surface-raised rounded overflow-hidden">
                         <MatchThumbnail
                           screenshot={selectedScreenshot}
                           match={match}
@@ -1450,9 +1450,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                       </div>
 
                       {/* Match Details */}
-                      <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
+                      <div className="grid grid-cols-2 gap-2 text-xs text-text-muted">
                         <div>
-                          <div className="font-medium text-gray-500">
+                          <div className="font-medium text-text-muted">
                             Position
                           </div>
                           <div className="font-mono">
@@ -1460,13 +1460,15 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                           </div>
                         </div>
                         <div>
-                          <div className="font-medium text-gray-500">Size</div>
+                          <div className="font-medium text-text-muted">
+                            Size
+                          </div>
                           <div className="font-mono">
                             {match.region.width} × {match.region.height}
                           </div>
                         </div>
                         <div className="col-span-2">
-                          <div className="font-medium text-gray-500">
+                          <div className="font-medium text-text-muted">
                             Center
                           </div>
                           <div className="font-mono">

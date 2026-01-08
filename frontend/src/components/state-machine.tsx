@@ -757,7 +757,7 @@ export function StateStructure() {
             target: transitionNodeId,
             type: "transitionEdge",
             data: { transition, isMultiTarget: true },
-            style: { stroke: "#BD00FF", strokeWidth: 2 },
+            style: { stroke: "var(--brand-secondary)", strokeWidth: 2 },
           });
 
           // Create edges from transition node to each target state
@@ -1294,7 +1294,7 @@ export function StateStructure() {
   if (pageState.isHydrating) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-400">Loading page state...</div>
+        <div className="text-text-muted">Loading page state...</div>
       </div>
     );
   }
@@ -1302,11 +1302,11 @@ export function StateStructure() {
   return (
     <div className="flex h-full">
       {/* Left Sidebar */}
-      <div className="w-80 border-r border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
+      <div className="w-80 border-r border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto scrollbar-dark">
         <div className="space-y-4">
           <Button
             onClick={handleAddState}
-            className="w-full bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white"
+            className="w-full bg-[var(--brand-secondary)] hover:bg-[var(--brand-secondary)]/80 text-white"
           >
             <Plus className="w-4 h-4 mr-2" />
             Add State
@@ -1314,7 +1314,7 @@ export function StateStructure() {
 
           <Button
             onClick={applyAutoLayout}
-            className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+            className="w-full bg-[var(--brand-primary)] hover:bg-[var(--brand-primary)]/80 text-black"
           >
             <Network className="w-4 h-4 mr-2" />
             Auto Layout
@@ -1330,23 +1330,23 @@ export function StateStructure() {
           </Button>
 
           <div className="space-y-2">
-            <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
+            <h3 className="text-sm font-medium text-text-muted uppercase tracking-wide">
               States
             </h3>
             {states.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-text-muted">
                 <Square className="w-8 h-8 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No states yet</p>
               </div>
             ) : (
-              <div className="space-y-1 max-h-60 overflow-y-auto">
+              <div className="space-y-1 max-h-60 overflow-y-auto scrollbar-dark">
                 {states.map((state) => (
                   <div
                     key={state.id}
                     className={`flex items-center gap-2 p-2 rounded transition-colors cursor-pointer ${
                       selectedNode === state.id
-                        ? "bg-[#BD00FF]/20 border border-[#BD00FF]"
-                        : "hover:bg-gray-700"
+                        ? "bg-[var(--brand-secondary)]/20 border border-[var(--brand-secondary)]"
+                        : "hover:bg-surface-raised/80"
                     }`}
                     onClick={() => {
                       setSelectedNode(state.id);
@@ -1359,7 +1359,7 @@ export function StateStructure() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
+                      className="h-6 w-6 p-0 text-text-muted hover:text-red-400"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteState(state.id);
@@ -1374,7 +1374,7 @@ export function StateStructure() {
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
+            <h3 className="text-sm font-medium text-text-muted uppercase tracking-wide">
               Transitions
             </h3>
             <OutgoingTransitionBuilder />
@@ -1394,7 +1394,7 @@ export function StateStructure() {
       )}
 
       {/* Main Canvas */}
-      <div className="flex-1 relative bg-[#0A0A0B] min-h-0">
+      <div className="flex-1 relative bg-surface-canvas min-h-0">
         <div
           className="absolute inset-0"
           onDragOver={handleDragOver}
@@ -1428,7 +1428,7 @@ export function StateStructure() {
               setSelectedEdge(null);
             }}
             fitView
-            className="bg-[#0A0A0B]"
+            className="bg-surface-canvas"
           >
             <Background
               variant={BackgroundVariant.Dots}
@@ -1436,7 +1436,7 @@ export function StateStructure() {
               size={1}
               color="#333"
             />
-            <Controls className="bg-[#27272A] border-gray-700 [&>button]:bg-[#27272A] [&>button]:border-gray-700 [&>button]:text-white [&>button:hover]:bg-gray-600" />
+            <Controls className="bg-surface-raised border-border-default [&>button]:bg-surface-raised [&>button]:border-border-default [&>button]:text-white [&>button:hover]:bg-surface-raised/80" />
             {/* Position manager uses measured node dimensions to place transitions */}
             <TransitionPositionManager
               transitions={transitions.filter(
@@ -1449,59 +1449,55 @@ export function StateStructure() {
         </div>
       </div>
 
-      {/* Right Panel */}
-      <div className="w-96 border-l border-gray-800 bg-[#27272A]/50 overflow-y-auto p-4">
-        {selectedState ? (
-          <StatePropertiesPanel
-            state={selectedState}
-            allStates={states}
-            images={images}
-            incomingTransitions={transitions.filter(
-              (t): t is IncomingTransition =>
-                t.type === "IncomingTransition" &&
-                t.toState === selectedState.id
-            )}
-            workflows={workflows}
-            updateState={updateSelectedState}
-            addTransition={addTransition}
-            updateTransition={updateTransition}
-            deleteTransition={deleteTransition}
-            addWorkflow={addWorkflow}
-            addStateImage={addStateImage}
-            updateStateImage={updateStateImage}
-            removeStateImage={removeStateImage}
-            moveStateImage={moveStateImage}
-            addRegion={addRegion}
-            updateRegion={updateRegion}
-            removeRegion={removeRegion}
-            addLocation={addLocation}
-            updateLocation={updateLocation}
-            removeLocation={removeLocation}
-            addString={addString}
-            updateString={updateString}
-            removeString={removeString}
-          />
-        ) : selectedTransition ? (
-          <TransitionPropertiesPanel
-            transition={selectedTransition}
-            states={states}
-            processes={workflows}
-            updateTransition={updateSelectedTransition}
-            deleteTransition={(transitionId) => {
-              deleteTransition(transitionId);
-              setSelectedEdge(null);
-            }}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-gray-500">
-            <div className="text-center">
-              <Settings className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>Select a state or transition</p>
-              <p className="text-sm">to configure properties</p>
-            </div>
+      {/* Right Panel - only shown when a state or transition is selected */}
+      {(selectedState || selectedTransition) && (
+        <div className="w-[768px] border-l border-border-subtle bg-surface-raised/95 backdrop-blur-sm overflow-hidden flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="flex-1 overflow-y-auto scrollbar-dark p-4">
+            {selectedState ? (
+              <StatePropertiesPanel
+                state={selectedState}
+                allStates={states}
+                images={images}
+                incomingTransitions={transitions.filter(
+                  (t): t is IncomingTransition =>
+                    t.type === "IncomingTransition" &&
+                    t.toState === selectedState.id
+                )}
+                workflows={workflows}
+                updateState={updateSelectedState}
+                addTransition={addTransition}
+                updateTransition={updateTransition}
+                deleteTransition={deleteTransition}
+                addWorkflow={addWorkflow}
+                addStateImage={addStateImage}
+                updateStateImage={updateStateImage}
+                removeStateImage={removeStateImage}
+                moveStateImage={moveStateImage}
+                addRegion={addRegion}
+                updateRegion={updateRegion}
+                removeRegion={removeRegion}
+                addLocation={addLocation}
+                updateLocation={updateLocation}
+                removeLocation={removeLocation}
+                addString={addString}
+                updateString={updateString}
+                removeString={removeString}
+              />
+            ) : selectedTransition ? (
+              <TransitionPropertiesPanel
+                transition={selectedTransition}
+                states={states}
+                processes={workflows}
+                updateTransition={updateSelectedTransition}
+                deleteTransition={(transitionId) => {
+                  deleteTransition(transitionId);
+                  setSelectedEdge(null);
+                }}
+              />
+            ) : null}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Batch Monitor Settings Dialog */}
       <BatchMonitorSettingsDialog

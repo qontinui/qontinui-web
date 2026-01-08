@@ -62,19 +62,19 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
     const lowerAction = action.toLowerCase();
 
     if (lowerAction.includes("login") || lowerAction.includes("signin")) {
-      return "text-[#00FF88]";
+      return "text-brand-success";
     }
     if (lowerAction.includes("delete")) {
       return "text-red-400";
     }
     if (lowerAction.includes("upload") || lowerAction.includes("create")) {
-      return "text-[#00D9FF]";
+      return "text-brand-primary";
     }
     if (lowerAction.includes("edit") || lowerAction.includes("update")) {
-      return "text-[#BD00FF]";
+      return "text-brand-secondary";
     }
 
-    return "text-gray-400";
+    return "text-text-muted";
   };
 
   const formatTimestamp = (timestamp: string) => {
@@ -116,11 +116,11 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
   };
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#BD00FF]/20 rounded-lg flex items-center justify-center">
-            <Activity className="w-5 h-5 text-[#BD00FF]" />
+          <div className="w-10 h-10 bg-brand-secondary/20 rounded-lg flex items-center justify-center">
+            <Activity className="w-5 h-5 text-brand-secondary" />
           </div>
           <div>
             <CardTitle className="text-xl">Recent Activity</CardTitle>
@@ -133,8 +133,8 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
       <CardContent>
         {activities.length === 0 ? (
           <div className="text-center py-8">
-            <Activity className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-            <p className="text-gray-400">No recent activity</p>
+            <Activity className="w-12 h-12 text-border-default mx-auto mb-3" />
+            <p className="text-text-muted">No recent activity</p>
           </div>
         ) : (
           <ScrollArea className="h-[400px] pr-4">
@@ -142,7 +142,7 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
               {activities.map((activity) => (
                 <div
                   key={activity.id}
-                  className="flex items-start gap-3 p-4 rounded-lg bg-[#0A0A0B]/50 border border-gray-800/50 hover:border-gray-700/50 transition-colors"
+                  className="flex items-start gap-3 p-4 rounded-lg bg-surface-canvas/50 border border-border-subtle/50 hover:border-border-default/50 transition-colors"
                 >
                   {/* Icon */}
                   <div
@@ -163,12 +163,12 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
                       <p className="text-sm font-medium text-white">
                         {activity.action}
                       </p>
-                      <span className="text-xs text-gray-500 whitespace-nowrap">
+                      <span className="text-xs text-text-muted whitespace-nowrap">
                         {formatTimestamp(activity.timestamp)}
                       </span>
                     </div>
 
-                    <p className="text-sm text-gray-400 mb-2">
+                    <p className="text-sm text-text-muted mb-2">
                       {activity.description}
                     </p>
 
@@ -177,7 +177,7 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
                       {activity.ip_address && (
                         <Badge
                           variant="outline"
-                          className="text-xs bg-gray-800/30 border-gray-700 text-gray-400"
+                          className="text-xs bg-surface-raised/30 border-border-default text-text-muted"
                         >
                           IP: {activity.ip_address}
                         </Badge>
@@ -186,7 +186,7 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
                         getBrowserInfo(activity.user_agent) && (
                           <Badge
                             variant="outline"
-                            className="text-xs bg-gray-800/30 border-gray-700 text-gray-400"
+                            className="text-xs bg-surface-raised/30 border-border-default text-text-muted"
                           >
                             {getBrowserInfo(activity.user_agent)}
                           </Badge>

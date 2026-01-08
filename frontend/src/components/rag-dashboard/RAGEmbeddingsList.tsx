@@ -63,7 +63,7 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
   }
 
   return (
-    <Card className="bg-gray-900/50 border-gray-800">
+    <Card className="bg-surface-canvas/50 border-border-subtle">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-white">Indexed Elements</CardTitle>
@@ -71,10 +71,10 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
             value={stateFilter ?? "all"}
             onValueChange={handleStateChange}
           >
-            <SelectTrigger className="w-48 bg-gray-800 border-gray-700">
+            <SelectTrigger className="w-48 bg-surface-raised border-border-default">
               <SelectValue placeholder="Filter by state" />
             </SelectTrigger>
-            <SelectContent className="bg-gray-800 border-gray-700">
+            <SelectContent className="bg-surface-raised border-border-default">
               <SelectItem value="all">All States</SelectItem>
               {statesData?.states.map((state) => (
                 <SelectItem key={state.state_id} value={state.state_id}>
@@ -89,14 +89,14 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
         {isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full bg-gray-800" />
+              <Skeleton key={i} className="h-12 w-full bg-surface-raised" />
             ))}
           </div>
         ) : !data?.items.length ? (
           <div className="text-center py-12">
-            <ImageIcon className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <p className="text-gray-400 text-lg">No embeddings found</p>
-            <p className="text-gray-500 text-sm mt-1">
+            <ImageIcon className="w-12 h-12 text-text-muted mx-auto mb-4" />
+            <p className="text-text-muted text-lg">No embeddings found</p>
+            <p className="text-text-muted text-sm mt-1">
               Connect a runner and process your project configuration to
               generate embeddings
             </p>
@@ -105,22 +105,25 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
           <>
             <div className="max-h-[500px] overflow-y-auto">
               <Table>
-                <TableHeader className="sticky top-0 bg-gray-900/95 z-10">
-                  <TableRow className="border-gray-800">
-                    <TableHead className="text-gray-400 w-[300px]">
+                <TableHeader className="sticky top-0 bg-surface-canvas/95 z-10">
+                  <TableRow className="border-border-subtle">
+                    <TableHead className="text-text-muted w-[300px]">
                       Pattern
                     </TableHead>
-                    <TableHead className="text-gray-400">State</TableHead>
-                    <TableHead className="text-gray-400">Size</TableHead>
-                    <TableHead className="text-gray-400">Updated</TableHead>
+                    <TableHead className="text-text-muted">State</TableHead>
+                    <TableHead className="text-text-muted">Size</TableHead>
+                    <TableHead className="text-text-muted">Updated</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.items.map((embedding: EmbeddingItem) => (
-                    <TableRow key={embedding.id} className="border-gray-800">
+                    <TableRow
+                      key={embedding.id}
+                      className="border-border-subtle"
+                    >
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-gray-800 rounded flex items-center justify-center overflow-hidden flex-shrink-0">
+                          <div className="w-12 h-12 bg-surface-raised rounded flex items-center justify-center overflow-hidden flex-shrink-0">
                             {embedding.image_url ? (
                               <img
                                 src={embedding.image_url}
@@ -139,7 +142,7 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                               />
                             ) : null}
                             <ImageIcon
-                              className={`w-5 h-5 text-gray-500 ${embedding.image_url ? "hidden" : ""}`}
+                              className={`w-5 h-5 text-text-muted ${embedding.image_url ? "hidden" : ""}`}
                             />
                           </div>
                           <div className="min-w-0 flex-1">
@@ -155,13 +158,13 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                             </div>
                             {embedding.text_description ? (
                               <p
-                                className="text-xs text-gray-400 truncate"
+                                className="text-xs text-text-muted truncate"
                                 title={embedding.text_description}
                               >
                                 {embedding.text_description}
                               </p>
                             ) : (
-                              <p className="text-xs text-gray-500">
+                              <p className="text-xs text-text-muted">
                                 {embedding.image_width}x{embedding.image_height}
                               </p>
                             )}
@@ -171,18 +174,18 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                       <TableCell>
                         <Badge
                           variant="outline"
-                          className="border-[#BD00FF]/50 text-[#BD00FF]"
+                          className="border-brand-secondary/50 text-brand-secondary"
                         >
                           {embedding.state_name}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="text-gray-400 text-sm">
+                        <span className="text-text-muted text-sm">
                           {embedding.image_width}x{embedding.image_height}
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className="text-gray-400 text-sm">
+                        <span className="text-text-muted text-sm">
                           {new Date(embedding.updated_at).toLocaleDateString()}
                         </span>
                       </TableCell>
@@ -193,8 +196,8 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
             </div>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-800">
-              <p className="text-sm text-gray-400">
+            <div className="flex items-center justify-between mt-4 pt-4 border-t border-border-subtle">
+              <p className="text-sm text-text-muted">
                 Showing {(page - 1) * limit + 1} -{" "}
                 {Math.min(page * limit, data.total)} of {data.total}
               </p>
@@ -204,11 +207,11 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                   size="sm"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="border-gray-700"
+                  className="border-border-default"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <span className="text-sm text-gray-400">
+                <span className="text-sm text-text-muted">
                   Page {page} of {Math.ceil(data.total / limit)}
                 </span>
                 <Button
@@ -216,7 +219,7 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                   size="sm"
                   onClick={() => setPage((p) => p + 1)}
                   disabled={!data.has_more}
-                  className="border-gray-700"
+                  className="border-border-default"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </Button>

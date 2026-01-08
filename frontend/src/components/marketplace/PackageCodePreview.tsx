@@ -11,8 +11,8 @@ import type { Monaco } from "@monaco-editor/react";
 const Editor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-full bg-gray-950 border border-gray-800 rounded-lg">
-      <div className="text-gray-400">Loading editor...</div>
+    <div className="flex items-center justify-center h-full bg-surface-canvas border border-border-subtle rounded-lg">
+      <div className="text-text-muted">Loading editor...</div>
     </div>
   ),
 });
@@ -74,18 +74,20 @@ export function PackageCodePreview({
   return (
     <div
       className={cn(
-        "relative rounded-lg overflow-hidden border border-gray-800",
+        "relative rounded-lg overflow-hidden border border-border-subtle",
         isFullscreen && "fixed inset-4 z-50",
         className
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-900/80 border-b border-gray-800">
+      <div className="flex items-center justify-between px-4 py-2 bg-surface-canvas/80 border-b border-border-subtle">
         <div className="flex items-center gap-2">
           {fileName && (
-            <span className="text-sm text-gray-300 font-mono">{fileName}</span>
+            <span className="text-sm text-text-secondary font-mono">
+              {fileName}
+            </span>
           )}
-          <span className="text-xs text-gray-500 uppercase">{language}</span>
+          <span className="text-xs text-text-muted uppercase">{language}</span>
         </div>
         <div className="flex items-center gap-2">
           <Button

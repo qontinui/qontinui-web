@@ -71,10 +71,10 @@ export function PlaybackControls({
   const jumpToEnd = () => onJumpTo(totalSteps - 1);
 
   return (
-    <div className="bg-[#1A1A1B]/80 backdrop-blur-sm border border-gray-800/50 rounded-lg p-4">
+    <div className="bg-surface-raised/80 backdrop-blur-sm border border-border-subtle/50 rounded-lg p-4">
       {/* Progress Bar */}
       <div className="mb-4">
-        <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+        <div className="flex items-center justify-between text-xs text-text-muted mb-2">
           <span>
             Step {currentIndex + 1} of {totalSteps}
           </span>
@@ -99,7 +99,7 @@ export function PlaybackControls({
             size="sm"
             onClick={jumpToStart}
             disabled={disabled || !hasPrevious}
-            className="h-8 w-8 p-0 hover:bg-gray-700/50"
+            className="h-8 w-8 p-0 hover:bg-border-default/50"
             title="Jump to start"
           >
             <Rewind className="w-4 h-4" />
@@ -109,7 +109,7 @@ export function PlaybackControls({
             size="sm"
             onClick={onPrevious}
             disabled={disabled || !hasPrevious}
-            className="h-8 w-8 p-0 hover:bg-gray-700/50"
+            className="h-8 w-8 p-0 hover:bg-border-default/50"
             title="Previous step"
           >
             <SkipBack className="w-4 h-4" />
@@ -123,7 +123,7 @@ export function PlaybackControls({
             size="sm"
             onClick={onReset}
             disabled={disabled}
-            className="h-8 w-8 p-0 hover:bg-gray-700/50"
+            className="h-8 w-8 p-0 hover:bg-border-default/50"
             title="Reset"
           >
             <RotateCcw className="w-4 h-4" />
@@ -133,7 +133,7 @@ export function PlaybackControls({
             size="sm"
             onClick={isPlaying ? onPause : onPlay}
             disabled={disabled || totalSteps === 0}
-            className="h-10 w-10 p-0 rounded-full bg-[#00D9FF] hover:bg-[#00D9FF]/80"
+            className="h-10 w-10 p-0 rounded-full bg-brand-primary hover:bg-brand-primary/80"
             title={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? (
@@ -151,7 +151,7 @@ export function PlaybackControls({
             size="sm"
             onClick={onNext}
             disabled={disabled || !hasNext}
-            className="h-8 w-8 p-0 hover:bg-gray-700/50"
+            className="h-8 w-8 p-0 hover:bg-border-default/50"
             title="Next step"
           >
             <SkipForward className="w-4 h-4" />
@@ -161,7 +161,7 @@ export function PlaybackControls({
             size="sm"
             onClick={jumpToEnd}
             disabled={disabled || !hasNext}
-            className="h-8 w-8 p-0 hover:bg-gray-700/50"
+            className="h-8 w-8 p-0 hover:bg-border-default/50"
             title="Jump to end"
           >
             <FastForward className="w-4 h-4" />
@@ -174,15 +174,15 @@ export function PlaybackControls({
           onValueChange={(value) => onSpeedChange(parseFloat(value))}
           disabled={disabled}
         >
-          <SelectTrigger className="w-20 h-8 bg-gray-800/50 border-gray-700">
+          <SelectTrigger className="w-20 h-8 bg-surface-raised/50 border-border-default">
             <SelectValue placeholder="Speed" />
           </SelectTrigger>
-          <SelectContent className="bg-[#1A1A1B] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             {SPEED_OPTIONS.map((option) => (
               <SelectItem
                 key={option.value}
                 value={option.value.toString()}
-                className="text-gray-300 hover:bg-gray-800"
+                className="text-text-muted hover:bg-surface-raised"
               >
                 {option.label}
               </SelectItem>
@@ -220,7 +220,7 @@ export function PlaybackControlsCompact({
         size="sm"
         onClick={onPrevious}
         disabled={disabled || !hasPrevious}
-        className="h-7 w-7 p-0 hover:bg-gray-700/50"
+        className="h-7 w-7 p-0 hover:bg-border-default/50"
         title="Previous"
       >
         <SkipBack className="w-3.5 h-3.5" />
@@ -230,7 +230,7 @@ export function PlaybackControlsCompact({
         size="sm"
         onClick={isPlaying ? onPause : onPlay}
         disabled={disabled || totalSteps === 0}
-        className="h-7 w-7 p-0 hover:bg-gray-700/50"
+        className="h-7 w-7 p-0 hover:bg-border-default/50"
         title={isPlaying ? "Pause" : "Play"}
       >
         {isPlaying ? (
@@ -244,12 +244,12 @@ export function PlaybackControlsCompact({
         size="sm"
         onClick={onNext}
         disabled={disabled || !hasNext}
-        className="h-7 w-7 p-0 hover:bg-gray-700/50"
+        className="h-7 w-7 p-0 hover:bg-border-default/50"
         title="Next"
       >
         <SkipForward className="w-3.5 h-3.5" />
       </Button>
-      <span className="text-xs text-gray-400 ml-1">
+      <span className="text-xs text-text-muted ml-1">
         {currentIndex + 1}/{totalSteps}
       </span>
     </div>

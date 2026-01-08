@@ -87,22 +87,22 @@ export function RagFindActionProperties({
     <>
       {/* StateImage Selection */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           Select Element (StateImage)
         </Label>
         <Select
           value={selectedStateImageId}
           onValueChange={handleStateImageSelect}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue placeholder="Select an element to find" />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700 max-h-60">
+          <SelectContent className="bg-surface-raised border-border-default max-h-60">
             {allStateImages.map(({ stateImage, state }) => (
               <SelectItem key={stateImage.id} value={stateImage.id}>
                 <div className="flex flex-col">
                   <span>{stateImage.name || stateImage.id}</span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-text-muted">
                     from {state.name}
                   </span>
                 </div>
@@ -111,7 +111,7 @@ export function RagFindActionProperties({
           </SelectContent>
         </Select>
         {selectedItem && (
-          <div className="text-xs text-gray-400 mt-2">
+          <div className="text-xs text-text-muted mt-2">
             Using RAG embeddings to find &quot;{selectedItem.stateImage.name}
             &quot; from state &quot;{selectedItem.state.name}&quot;
             {selectedItem.stateImage.patterns &&
@@ -129,7 +129,7 @@ export function RagFindActionProperties({
         selectedItem.stateImage.patterns &&
         selectedItem.stateImage.patterns.length > 1 && (
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">
+            <Label className="text-xs text-text-muted">
               Multi-Pattern Search Mode
             </Label>
             <Select
@@ -141,14 +141,14 @@ export function RagFindActionProperties({
                 )
               }
             >
-              <SelectTrigger className="bg-transparent border-gray-700">
+              <SelectTrigger className="bg-transparent border-border-default">
                 <SelectValue placeholder="Use default" />
               </SelectTrigger>
-              <SelectContent className="bg-[#27272A] border-gray-700">
+              <SelectContent className="bg-surface-raised border-border-default">
                 <SelectItem value="default">
                   Use Default
                   {selectedItem.stateImage.ragMultiPatternMode && (
-                    <span className="text-xs text-gray-500 ml-2">
+                    <span className="text-xs text-text-muted ml-2">
                       (StateImage: {selectedItem.stateImage.ragMultiPatternMode}
                       )
                     </span>
@@ -158,7 +158,7 @@ export function RagFindActionProperties({
                 <SelectItem value="combined">Search Combined Vector</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               How to search when this StateImage has multiple patterns.
               &quot;All&quot; searches each pattern separately,
               &quot;Combined&quot; uses a single combined vector.
@@ -169,13 +169,13 @@ export function RagFindActionProperties({
       {/* OCR Filter (Optional) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">
+          <Label className="text-xs text-text-muted">
             OCR Text Filter (Optional)
           </Label>
           {ocrFilter?.text && (
             <button
               onClick={handleClearOcrFilter}
-              className="text-xs text-gray-500 hover:text-gray-300"
+              className="text-xs text-text-muted hover:text-text-default"
             >
               Clear
             </button>
@@ -185,7 +185,7 @@ export function RagFindActionProperties({
           value={ocrFilter?.text || ""}
           onChange={(e) => handleOcrFilterChange("text", e.target.value)}
           placeholder="Filter by text content"
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
         {ocrFilter?.text && (
           <div className="flex gap-2">
@@ -195,10 +195,10 @@ export function RagFindActionProperties({
                 handleOcrFilterChange("matchMode", value)
               }
             >
-              <SelectTrigger className="bg-transparent border-gray-700 w-32">
+              <SelectTrigger className="bg-transparent border-border-default w-32">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-[#27272A] border-gray-700">
+              <SelectContent className="bg-surface-raised border-border-default">
                 <SelectItem value="exact">Exact</SelectItem>
                 <SelectItem value="contains">Contains</SelectItem>
                 <SelectItem value="regex">Regex</SelectItem>
@@ -210,32 +210,32 @@ export function RagFindActionProperties({
 
       {/* Top K Results */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Max Results</Label>
+        <Label className="text-xs text-text-muted">Max Results</Label>
         <Input
           type="number"
           min={1}
           max={10}
           value={topK}
           onChange={(e) => updateConfig("topK", parseInt(e.target.value) || 1)}
-          className="bg-transparent border-gray-700 w-24"
+          className="bg-transparent border-border-default w-24"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Number of matching locations to return (1-10)
         </p>
       </div>
 
       {/* Output Variable */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           Output Variable (Optional)
         </Label>
         <Input
           value={outputVariable}
           onChange={(e) => updateConfig("outputVariable", e.target.value)}
           placeholder="e.g., foundLocations"
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Store results in this variable for use in later actions
         </p>
       </div>

@@ -45,7 +45,7 @@ export function ExtractionProgress({ session }: ExtractionProgressProps) {
       case "failed":
         return <XCircle className="h-5 w-5 text-destructive" />;
       case "running":
-        return <Loader2 className="h-5 w-5 animate-spin text-[#00D9FF]" />;
+        return <Loader2 className="h-5 w-5 animate-spin text-brand-primary" />;
       case "pending":
       default:
         return <Clock className="h-5 w-5 text-muted-foreground" />;

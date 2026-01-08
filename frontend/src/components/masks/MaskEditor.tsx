@@ -331,7 +331,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
   };
 
   return (
-    <div className="mask-editor bg-gray-900 text-white p-4 rounded-lg">
+    <div className="mask-editor bg-surface-canvas text-white p-4 rounded-lg">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold">Mask Editor</h2>
         <div className="flex gap-2">
@@ -349,10 +349,10 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
 
       <div className="grid grid-cols-[auto_1fr] gap-4">
         {/* Toolbar */}
-        <div className="w-16 bg-gray-800 rounded p-2 space-y-2">
+        <div className="w-16 bg-surface-raised rounded p-2 space-y-2">
           <button
             onClick={() => setTool("brush")}
-            className={`w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 ${
+            className={`w-12 h-12 rounded flex items-center justify-center hover:bg-surface-raised/80 ${
               tool === "brush" ? "bg-purple-600" : ""
             }`}
             title="Brush"
@@ -361,7 +361,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
           </button>
           <button
             onClick={() => setTool("eraser")}
-            className={`w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 ${
+            className={`w-12 h-12 rounded flex items-center justify-center hover:bg-surface-raised/80 ${
               tool === "eraser" ? "bg-purple-600" : ""
             }`}
             title="Eraser"
@@ -370,7 +370,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
           </button>
           <button
             onClick={() => setTool("rectangle")}
-            className={`w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 ${
+            className={`w-12 h-12 rounded flex items-center justify-center hover:bg-surface-raised/80 ${
               tool === "rectangle" ? "bg-purple-600" : ""
             }`}
             title="Rectangle"
@@ -379,18 +379,18 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
           </button>
           <button
             onClick={() => setTool("circle")}
-            className={`w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 ${
+            className={`w-12 h-12 rounded flex items-center justify-center hover:bg-surface-raised/80 ${
               tool === "circle" ? "bg-purple-600" : ""
             }`}
             title="Circle"
           >
             <Circle className="w-5 h-5" />
           </button>
-          <div className="h-px bg-gray-700 my-2" />
+          <div className="h-px bg-surface-raised my-2" />
           <button
             onClick={undo}
             disabled={historyIndex < 0}
-            className="w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 disabled:opacity-50"
+            className="w-12 h-12 rounded flex items-center justify-center hover:bg-surface-raised/80 disabled:opacity-50"
             title="Undo"
           >
             <Undo className="w-5 h-5" />
@@ -398,22 +398,22 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
           <button
             onClick={redo}
             disabled={historyIndex >= history.length - 1}
-            className="w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700 disabled:opacity-50"
+            className="w-12 h-12 rounded flex items-center justify-center hover:bg-surface-raised/80 disabled:opacity-50"
             title="Redo"
           >
             <Redo className="w-5 h-5" />
           </button>
           <button
             onClick={resetMask}
-            className="w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700"
+            className="w-12 h-12 rounded flex items-center justify-center hover:bg-surface-raised/80"
             title="Reset"
           >
             <RotateCcw className="w-5 h-5" />
           </button>
-          <div className="h-px bg-gray-700 my-2" />
+          <div className="h-px bg-surface-raised my-2" />
           <button
             onClick={exportMask}
-            className="w-12 h-12 rounded flex items-center justify-center hover:bg-gray-700"
+            className="w-12 h-12 rounded flex items-center justify-center hover:bg-surface-raised/80"
             title="Export"
           >
             <Download className="w-5 h-5" />
@@ -422,10 +422,10 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
 
         {/* Canvas Area */}
         <div className="flex flex-col">
-          <div className="bg-gray-800 rounded p-4 mb-4">
+          <div className="bg-surface-raised rounded p-4 mb-4">
             <div className="flex items-center gap-4 mb-4">
               <div className="flex-1">
-                <label className="text-sm text-gray-400">
+                <label className="text-sm text-text-muted">
                   Brush Size: {brushSize}px
                 </label>
                 <Slider
@@ -438,7 +438,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                 />
               </div>
               <div className="flex-1">
-                <label className="text-sm text-gray-400">
+                <label className="text-sm text-text-muted">
                   Opacity: {Math.round(opacity * 100)}%
                 </label>
                 <Slider
@@ -453,33 +453,33 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
               <div className="flex gap-1">
                 <button
                   onClick={zoomOut}
-                  className="p-2 rounded hover:bg-gray-700"
+                  className="p-2 rounded hover:bg-surface-raised/80"
                   title="Zoom Out"
                 >
                   <ZoomOut className="w-4 h-4" />
                 </button>
                 <button
                   onClick={resetZoom}
-                  className="p-2 rounded hover:bg-gray-700"
+                  className="p-2 rounded hover:bg-surface-raised/80"
                   title="Reset Zoom"
                 >
                   <Maximize className="w-4 h-4" />
                 </button>
                 <button
                   onClick={zoomIn}
-                  className="p-2 rounded hover:bg-gray-700"
+                  className="p-2 rounded hover:bg-surface-raised/80"
                   title="Zoom In"
                 >
                   <ZoomIn className="w-4 h-4" />
                 </button>
-                <span className="text-sm text-gray-400 ml-2">
+                <span className="text-sm text-text-muted ml-2">
                   {Math.round(zoom * 100)}%
                 </span>
               </div>
             </div>
 
             <div
-              className="relative overflow-hidden bg-gray-900 rounded"
+              className="relative overflow-hidden bg-surface-canvas rounded"
               style={{
                 width: "100%",
                 height: "500px",
@@ -503,14 +503,14 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
                   onMouseLeave={handleMouseUp}
-                  className="border border-gray-600"
+                  className="border border-border-default"
                 />
                 <canvas ref={maskCanvasRef} className="hidden" />
               </div>
             </div>
           </div>
 
-          <div className="text-sm text-gray-400">
+          <div className="text-sm text-text-muted">
             <p>• Use Brush to add to mask, Eraser to remove from mask</p>
             <p>• Hold Shift + drag or use middle mouse to pan</p>
             <p>• Purple overlay shows active mask areas</p>

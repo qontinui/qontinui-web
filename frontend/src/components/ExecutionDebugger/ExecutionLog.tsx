@@ -35,9 +35,9 @@ const LOG_LEVEL_CONFIG = {
   },
   debug: {
     icon: Bug,
-    color: "text-gray-600",
-    bg: "bg-gray-50",
-    border: "border-gray-200",
+    color: "text-text-muted",
+    bg: "bg-surface-raised/50",
+    border: "border-border-subtle",
   },
 };
 
@@ -46,7 +46,7 @@ const CATEGORY_COLORS = {
   condition: "text-purple-600",
   loop: "text-green-600",
   variable: "text-orange-600",
-  system: "text-gray-600",
+  system: "text-text-muted",
 };
 
 interface LogEntryProps {
@@ -81,7 +81,7 @@ const LogEntry: React.FC<LogEntryProps> = ({ entry, isExpanded, onToggle }) => {
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-mono text-gray-500">
+                <span className="text-xs font-mono text-text-muted">
                   {formatTimestamp(entry.timestamp)}
                 </span>
                 <span
@@ -92,22 +92,22 @@ const LogEntry: React.FC<LogEntryProps> = ({ entry, isExpanded, onToggle }) => {
                   {entry.category}
                 </span>
                 {entry.actionIndex !== undefined && (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-text-muted">
                     Action {entry.actionIndex}
                   </span>
                 )}
               </div>
-              <p className="text-sm text-gray-900 break-words">
+              <p className="text-sm text-text-primary break-words">
                 {entry.message}
               </p>
             </div>
             {hasDetails && (
               <button
                 onClick={onToggle}
-                className="flex-shrink-0 p-1 hover:bg-white rounded transition-colors"
+                className="flex-shrink-0 p-1 hover:bg-surface-raised rounded transition-colors"
               >
                 <ChevronDown
-                  className={`w-4 h-4 text-gray-500 transition-transform ${
+                  className={`w-4 h-4 text-text-muted transition-transform ${
                     isExpanded ? "" : "-rotate-90"
                   }`}
                 />
@@ -115,8 +115,8 @@ const LogEntry: React.FC<LogEntryProps> = ({ entry, isExpanded, onToggle }) => {
             )}
           </div>
           {isExpanded && hasDetails && (
-            <div className="mt-2 p-2 bg-white rounded border text-xs font-mono overflow-x-auto">
-              <pre className="text-gray-700">
+            <div className="mt-2 p-2 bg-surface-canvas rounded border border-border-subtle text-xs font-mono overflow-x-auto">
+              <pre className="text-text-secondary">
                 {JSON.stringify(entry.details, null, 2)}
               </pre>
             </div>
@@ -220,14 +220,14 @@ export const ExecutionLog: React.FC = () => {
   );
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 text-gray-100">
+    <div className="flex flex-col h-full bg-surface-canvas text-text-primary">
       {/* Header */}
-      <div className="p-3 border-b border-gray-700 bg-gray-800">
+      <div className="p-3 border-b border-border-subtle bg-surface-raised">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-blue-400" />
             <h3 className="font-semibold text-sm">Execution Log</h3>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-text-muted">
               ({filteredLogs.length}/{logs.length})
             </span>
           </div>
@@ -237,8 +237,8 @@ export const ExecutionLog: React.FC = () => {
               onClick={() => setShowFilters(!showFilters)}
               className={`p-1.5 rounded transition-colors ${
                 showFilters
-                  ? "bg-blue-600 text-white"
-                  : "hover:bg-gray-700 text-gray-400"
+                  ? "bg-brand-primary text-black"
+                  : "hover:bg-surface-canvas text-text-muted"
               }`}
               title="Toggle filters"
             >
@@ -247,7 +247,7 @@ export const ExecutionLog: React.FC = () => {
             <button
               onClick={handleExport}
               disabled={logs.length === 0}
-              className="p-1.5 hover:bg-gray-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-gray-400"
+              className="p-1.5 hover:bg-surface-canvas rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-text-muted"
               title="Export logs"
             >
               <Download className="w-4 h-4" />
@@ -255,7 +255,7 @@ export const ExecutionLog: React.FC = () => {
             <button
               onClick={clearLogs}
               disabled={logs.length === 0}
-              className="p-1.5 hover:bg-gray-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-gray-400"
+              className="p-1.5 hover:bg-surface-canvas rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-text-muted"
               title="Clear logs"
             >
               <Trash2 className="w-4 h-4" />
@@ -265,10 +265,10 @@ export const ExecutionLog: React.FC = () => {
 
         {/* Filters */}
         {showFilters && (
-          <div className="mt-3 pt-3 border-t border-gray-700 space-y-2">
+          <div className="mt-3 pt-3 border-t border-border-subtle space-y-2">
             {/* Level Filter */}
             <div>
-              <div className="text-xs font-semibold text-gray-400 mb-1">
+              <div className="text-xs font-semibold text-text-muted mb-1">
                 Level
               </div>
               <div className="flex gap-2 flex-wrap">
@@ -279,8 +279,8 @@ export const ExecutionLog: React.FC = () => {
                       onClick={() => toggleLevelFilter(level)}
                       className={`px-2 py-1 text-xs rounded transition-colors ${
                         levelFilter.has(level)
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+                          ? "bg-brand-primary text-black"
+                          : "bg-surface-canvas text-text-muted hover:bg-surface-raised"
                       }`}
                     >
                       {level}
@@ -292,7 +292,7 @@ export const ExecutionLog: React.FC = () => {
 
             {/* Category Filter */}
             <div>
-              <div className="text-xs font-semibold text-gray-400 mb-1">
+              <div className="text-xs font-semibold text-text-muted mb-1">
                 Category
               </div>
               <div className="flex gap-2 flex-wrap">
@@ -304,8 +304,8 @@ export const ExecutionLog: React.FC = () => {
                     onClick={() => toggleCategoryFilter(category)}
                     className={`px-2 py-1 text-xs rounded transition-colors ${
                       categoryFilter.has(category)
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+                        ? "bg-brand-primary text-black"
+                        : "bg-surface-canvas text-text-muted hover:bg-surface-raised"
                     }`}
                   >
                     {category}
@@ -323,7 +323,7 @@ export const ExecutionLog: React.FC = () => {
         className="flex-1 overflow-y-auto p-3 space-y-1"
       >
         {filteredLogs.length === 0 ? (
-          <div className="text-center text-gray-500 text-sm py-8">
+          <div className="text-center text-text-muted text-sm py-8">
             {logs.length === 0
               ? "No logs yet"
               : "No logs match the current filters"}

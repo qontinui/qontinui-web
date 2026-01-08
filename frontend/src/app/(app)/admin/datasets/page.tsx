@@ -129,13 +129,13 @@ export default function DatasetsPage() {
   const getSourceBadgeColor = (source: string) => {
     switch (source) {
       case "runner_export":
-        return "bg-blue-500";
+        return "bg-brand-primary";
       case "manual_upload":
-        return "bg-green-500";
+        return "bg-brand-success";
       case "merged":
-        return "bg-purple-500";
+        return "bg-brand-secondary";
       default:
-        return "bg-gray-500";
+        return "bg-surface-raised";
     }
   };
 

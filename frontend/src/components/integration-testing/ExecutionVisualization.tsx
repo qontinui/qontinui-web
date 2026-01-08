@@ -61,23 +61,23 @@ export function ExecutionVisualization({
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
-            <p className="text-sm text-gray-500">Workflow</p>
+            <p className="text-sm text-text-muted">Workflow</p>
             <p className="font-semibold">{result.workflow_name}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Success Rate</p>
+            <p className="text-sm text-text-muted">Success Rate</p>
             <p className="font-semibold">
               {Math.round(result.success_rate * 100)}%
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Actions</p>
+            <p className="text-sm text-text-muted">Actions</p>
             <p className="font-semibold">
               {result.successful_actions}/{result.total_actions}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Duration</p>
+            <p className="text-sm text-text-muted">Duration</p>
             <p className="font-semibold">
               {Math.round(result.total_duration_ms)}ms
             </p>
@@ -87,7 +87,7 @@ export function ExecutionVisualization({
 
       {/* Screenshot Viewer */}
       <Card className="p-0 overflow-hidden">
-        <div className="relative bg-gray-900">
+        <div className="relative bg-surface-canvas">
           {/* Screenshot */}
           <img
             src={screenshotUrl}

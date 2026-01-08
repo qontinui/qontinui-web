@@ -63,7 +63,7 @@ export function PatternPreviewCard({
     <div className="border rounded-lg p-3 mb-2 bg-white shadow-sm hover:shadow-md transition-shadow">
       {/* Header with index */}
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-semibold text-gray-500">
+        <div className="text-xs font-semibold text-text-muted">
           Pattern #{index + 1}
         </div>
         <Button
@@ -77,7 +77,7 @@ export function PatternPreviewCard({
       </div>
 
       {/* Pattern Image */}
-      <div className="mb-2 bg-gray-100 rounded overflow-hidden border border-gray-200">
+      <div className="mb-2 bg-surface-raised rounded overflow-hidden border border-border-default">
         <img
           src={pattern.imageData}
           alt={pattern.name}
@@ -112,7 +112,7 @@ export function PatternPreviewCard({
               variant="ghost"
               size="sm"
               onClick={handleCancelName}
-              className="h-7 w-7 p-0 text-gray-600 hover:text-gray-700"
+              className="h-7 w-7 p-0 text-text-secondary hover:text-text-primary"
             >
               <X className="h-3 w-3" />
             </Button>
@@ -135,7 +135,7 @@ export function PatternPreviewCard({
       </div>
 
       {/* Region Info */}
-      <div className="text-xs text-gray-600 mb-2">
+      <div className="text-xs text-text-secondary mb-2">
         <div>
           Position: ({Math.round(pattern.region.x)},{" "}
           {Math.round(pattern.region.y)})
@@ -149,7 +149,7 @@ export function PatternPreviewCard({
       {/* States */}
       <div className="mb-2">
         <div className="flex items-center justify-between mb-1">
-          <div className="text-xs font-medium text-gray-700">States</div>
+          <div className="text-xs font-medium text-text-secondary">States</div>
           {!isEditingStates && (
             <Button
               variant="ghost"
@@ -199,7 +199,7 @@ export function PatternPreviewCard({
         ) : (
           <div className="flex flex-wrap gap-1">
             {pattern.states.length === 0 ? (
-              <span className="text-xs text-gray-400 italic">
+              <span className="text-xs text-text-muted italic">
                 No states assigned
               </span>
             ) : (
@@ -220,7 +220,7 @@ export function PatternPreviewCard({
       </div>
 
       {/* Source Info */}
-      <div className="text-xs text-gray-500 pt-2 border-t">
+      <div className="text-xs text-text-muted pt-2 border-t">
         From screenshot #{pattern.sourceScreenshotIndex + 1}
       </div>
     </div>

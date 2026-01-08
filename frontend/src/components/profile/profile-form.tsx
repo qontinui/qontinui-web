@@ -84,7 +84,7 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
   };
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -94,7 +94,7 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
           {!isEditing && (
             <Button
               onClick={() => setIsEditing(true)}
-              className="bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30"
+              className="bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30"
             >
               Edit Profile
             </Button>
@@ -105,14 +105,14 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="full_name" className="text-gray-300">
+              <Label htmlFor="full_name" className="text-text-secondary">
                 Full Name *
               </Label>
               <Input
                 id="full_name"
                 {...register("full_name")}
                 disabled={!isEditing}
-                className="bg-[#0A0A0B] border-gray-700 text-white disabled:opacity-70"
+                className="bg-surface-canvas border-border-default text-white disabled:opacity-70"
               />
               {errors.full_name && (
                 <p className="text-sm text-red-500">
@@ -122,20 +122,20 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="username" className="text-gray-300">
+              <Label htmlFor="username" className="text-text-secondary">
                 Username
               </Label>
               <Input
                 id="username"
                 {...register("username")}
                 disabled
-                className="bg-[#0A0A0B] border-gray-700 text-gray-500 cursor-not-allowed"
+                className="bg-surface-canvas border-border-default text-text-muted cursor-not-allowed"
                 title="Username cannot be changed"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-gray-300">
+              <Label htmlFor="email" className="text-text-secondary">
                 Email *
               </Label>
               <Input
@@ -143,7 +143,7 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 type="email"
                 {...register("email")}
                 disabled={!isEditing}
-                className="bg-[#0A0A0B] border-gray-700 text-white disabled:opacity-70"
+                className="bg-surface-canvas border-border-default text-white disabled:opacity-70"
               />
               {errors.email && (
                 <p className="text-sm text-red-500">{errors.email.message}</p>
@@ -151,14 +151,14 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="company" className="text-gray-300">
+              <Label htmlFor="company" className="text-text-secondary">
                 Company
               </Label>
               <Input
                 id="company"
                 {...register("company")}
                 disabled={!isEditing}
-                className="bg-[#0A0A0B] border-gray-700 text-white disabled:opacity-70"
+                className="bg-surface-canvas border-border-default text-white disabled:opacity-70"
                 placeholder="Your company name"
               />
               {errors.company && (
@@ -167,7 +167,7 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="phone" className="text-gray-300">
+              <Label htmlFor="phone" className="text-text-secondary">
                 Phone Number
               </Label>
               <Input
@@ -175,7 +175,7 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 type="tel"
                 {...register("phone")}
                 disabled={!isEditing}
-                className="bg-[#0A0A0B] border-gray-700 text-white disabled:opacity-70"
+                className="bg-surface-canvas border-border-default text-white disabled:opacity-70"
                 placeholder="+1 (555) 123-4567"
               />
               {errors.phone && (
@@ -189,7 +189,7 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+                className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
               >
                 {isSubmitting ? (
                   <>
@@ -208,7 +208,7 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 onClick={handleCancel}
                 disabled={isSubmitting}
                 variant="outline"
-                className="border-gray-700 hover:border-gray-600 bg-transparent"
+                className="border-border-default hover:border-border-default bg-transparent"
               >
                 Cancel
               </Button>

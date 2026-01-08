@@ -80,15 +80,15 @@ export function CheckpointEditor({
 
       {/* Checkpoint Name */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-500">Checkpoint Name</Label>
+        <Label className="text-xs text-text-muted">Checkpoint Name</Label>
         <Input
           type="text"
           value={checkpoint.name}
           onChange={(e) => updateCheckpoint({ name: e.target.value })}
           placeholder="e.g., After Login, Dashboard Loaded"
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
-        <p className="text-xs text-gray-600">
+        <p className="text-xs text-text-muted">
           Descriptive name for this checkpoint in the workflow
         </p>
       </div>
@@ -96,8 +96,10 @@ export function CheckpointEditor({
       {/* Screenshot Required Toggle */}
       <div className="flex items-center justify-between py-2">
         <div className="space-y-0.5">
-          <Label className="text-sm text-gray-300">Screenshot Required</Label>
-          <p className="text-xs text-gray-600">
+          <Label className="text-sm text-text-secondary">
+            Screenshot Required
+          </Label>
+          <p className="text-xs text-text-muted">
             Capture screenshot at this checkpoint for validation
           </p>
         </div>
@@ -112,12 +114,12 @@ export function CheckpointEditor({
       {/* OCR Assertions Section */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <Label className="text-sm text-gray-300">OCR Assertions</Label>
+          <Label className="text-sm text-text-secondary">OCR Assertions</Label>
           <Button
             variant="ghost"
             size="sm"
             onClick={addOCRAssertion}
-            className="h-7 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+            className="h-7 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
           >
             <Plus className="w-3 h-3 mr-1" />
             Add Assertion
@@ -125,11 +127,11 @@ export function CheckpointEditor({
         </div>
 
         {checkpoint.ocrAssertions.length === 0 ? (
-          <Card className="p-4 bg-gray-800/30 border-gray-700">
-            <p className="text-sm text-gray-500 text-center">
+          <Card className="p-4 bg-surface-raised/30 border-border-default">
+            <p className="text-sm text-text-muted text-center">
               No OCR assertions defined
             </p>
-            <p className="text-xs text-gray-600 text-center mt-1">
+            <p className="text-xs text-text-muted text-center mt-1">
               Add assertions to validate text on screen
             </p>
           </Card>
@@ -154,19 +156,19 @@ export function CheckpointEditor({
       />
 
       {/* Summary */}
-      <div className="p-3 bg-gray-800/30 border border-gray-700 rounded-md">
-        <p className="text-xs text-gray-400 font-medium mb-2">
+      <div className="p-3 bg-surface-raised/30 border border-border-default rounded-md">
+        <p className="text-xs text-text-muted font-medium mb-2">
           Checkpoint Summary:
         </p>
-        <ul className="text-xs text-gray-500 space-y-1">
+        <ul className="text-xs text-text-muted space-y-1">
           <li>
-            <span className="text-gray-400">
+            <span className="text-text-muted">
               {checkpoint.ocrAssertions.length}
             </span>{" "}
             OCR assertion(s)
           </li>
           <li>
-            <span className="text-gray-400">
+            <span className="text-text-muted">
               {checkpoint.claudeReviewNotes.length}
             </span>{" "}
             Claude review note(s)
@@ -176,8 +178,8 @@ export function CheckpointEditor({
             <span
               className={
                 checkpoint.screenshotRequired
-                  ? "text-green-400"
-                  : "text-gray-400"
+                  ? "text-brand-success"
+                  : "text-text-muted"
               }
             >
               {checkpoint.screenshotRequired ? "Required" : "Optional"}

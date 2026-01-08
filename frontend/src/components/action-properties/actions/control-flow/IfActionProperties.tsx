@@ -73,8 +73,8 @@ export function IfActionProperties({
 
       {/* Condition Builder */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Condition</Label>
-        <div className="p-3 bg-gray-800/50 rounded-md border border-gray-700">
+        <Label className="text-xs text-text-muted">Condition</Label>
+        <div className="p-3 bg-surface-raised/50 rounded-md border border-border-default">
           <ConditionEditor
             condition={condition}
             onChange={handleConditionChange}
@@ -83,7 +83,7 @@ export function IfActionProperties({
             images={images.map((img) => ({ id: img.id, name: img.name }))}
           />
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Define the condition that determines which branch to execute
         </p>
       </div>
@@ -104,7 +104,7 @@ export function IfActionProperties({
             minActions={0}
           />
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Actions to execute when the condition evaluates to true
         </p>
       </div>
@@ -122,7 +122,7 @@ export function IfActionProperties({
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+              className="h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
               onClick={handleAddElseBranch}
             >
               <Plus className="w-3 h-3 mr-1" />
@@ -132,7 +132,7 @@ export function IfActionProperties({
             <Button
               variant="ghost"
               size="sm"
-              className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+              className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
               onClick={handleRemoveElseBranch}
               title="Remove else branch"
             >
@@ -151,14 +151,14 @@ export function IfActionProperties({
                 minActions={0}
               />
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Actions to execute when the condition evaluates to false
             </p>
           </>
         )}
 
         {config.elseActions === undefined && (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             No else branch defined. If the condition is false, execution will
             continue to the next action.
           </p>
@@ -166,9 +166,9 @@ export function IfActionProperties({
       </div>
 
       {/* Usage Tips */}
-      <div className="p-3 bg-gray-800/30 border border-gray-700 rounded-md">
-        <p className="text-xs text-gray-400 font-medium mb-2">Tips:</p>
-        <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
+      <div className="p-3 bg-surface-raised/30 border border-border-default rounded-md">
+        <p className="text-xs text-text-muted font-medium mb-2">Tips:</p>
+        <ul className="text-xs text-text-muted space-y-1 list-disc list-inside">
           <li>Use action IDs from your workflow to reference actions</li>
           <li>Then-actions execute when condition is true</li>
           <li>Else-actions are optional and execute when condition is false</li>

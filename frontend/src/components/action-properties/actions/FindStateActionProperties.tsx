@@ -46,18 +46,20 @@ export function FindStateActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           States to Check{" "}
           {selectedStates.length > 0 && `(${selectedStates.length} selected)`}
         </Label>
-        <div className="text-xs text-gray-500 mb-2">
+        <div className="text-xs text-text-muted mb-2">
           Select states to check for visibility. The action will search for all
           images of the selected states and return which states are currently
           active on screen.
         </div>
-        <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-700 rounded p-2">
+        <div className="space-y-2 max-h-60 overflow-y-auto border border-border-default rounded p-2">
           {states.length === 0 ? (
-            <div className="text-xs text-gray-500 p-2">No states available</div>
+            <div className="text-xs text-text-muted p-2">
+              No states available
+            </div>
           ) : (
             states.map((state) => {
               const imageCount = state.stateImages?.length || 0;
@@ -66,7 +68,7 @@ export function FindStateActionProperties({
               return (
                 <div
                   key={state.id}
-                  className="flex items-center space-x-2 p-1 hover:bg-gray-800 rounded"
+                  className="flex items-center space-x-2 p-1 hover:bg-surface-raised rounded"
                 >
                   <Checkbox
                     id={`state-${state.id}`}
@@ -74,14 +76,14 @@ export function FindStateActionProperties({
                     onCheckedChange={(checked) =>
                       handleStateToggle(state.id, checked as boolean)
                     }
-                    className="border-gray-600"
+                    className="border-border-subtle"
                   />
                   <label
                     htmlFor={`state-${state.id}`}
-                    className="text-sm text-gray-300 cursor-pointer flex-1 flex items-center justify-between"
+                    className="text-sm text-text-default cursor-pointer flex-1 flex items-center justify-between"
                   >
                     <span>{state.name || state.id}</span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-text-muted">
                       {imageCount} image{imageCount !== 1 ? "s" : ""}
                     </span>
                   </label>
@@ -103,17 +105,17 @@ export function FindStateActionProperties({
 
       {/* Output Variable */}
       <div className="space-y-2 mt-4">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           Output Variable (optional)
         </Label>
-        <div className="text-xs text-gray-500 mb-1">
+        <div className="text-xs text-text-muted mb-1">
           Variable name to store the array of active state IDs
         </div>
         <Input
           value={outputVariable}
           onChange={(e) => handleOutputVariableChange(e.target.value)}
           placeholder="e.g., activeStates"
-          className="bg-gray-800 border-gray-700 text-sm"
+          className="bg-surface-raised border-border-default text-sm"
         />
       </div>
 

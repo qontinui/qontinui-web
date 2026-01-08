@@ -80,13 +80,13 @@ export function QontinuiSelect({
         >
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
-        <SelectContent className="bg-[#27272A] border border-gray-700">
+        <SelectContent className="bg-[#27272A] border border-border-default">
           <SelectGroup>
             {options.map((option) => (
               <SelectItem
                 key={option.value}
                 value={option.value}
-                className="text-gray-300 focus:bg-[#0A0A0B] focus:text-white"
+                className="text-text-secondary focus:bg-[#0A0A0B] focus:text-white"
               >
                 {option.label}
               </SelectItem>

@@ -216,14 +216,14 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                 <div
                   key={pattern.id}
                   onClick={() => setSelectedPattern(pattern)}
-                  className={`p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors ${
+                  className={`p-3 border rounded-lg cursor-pointer hover:bg-surface-raised/80 transition-colors ${
                     selectedPattern?.id === pattern.id
                       ? "border-blue-500 bg-blue-50"
-                      : "border-gray-200"
+                      : "border-border-default"
                   }`}
                 >
                   <div className="font-medium text-sm">{pattern.name}</div>
-                  <div className="text-xs text-gray-600 mt-1">
+                  <div className="text-xs text-text-muted mt-1">
                     {pattern.width}×{pattern.height} • Density:{" "}
                     {(pattern.maskDensity * 100).toFixed(1)}%
                   </div>
@@ -233,12 +233,12 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                     >
                       {analysis.quality}
                     </span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-text-muted">
                       θ={pattern.similarityThreshold.toFixed(2)}
                     </span>
                   </div>
                   <div className="mt-1">
-                    <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-1 bg-surface-raised rounded-full overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-blue-400 to-green-500"
                         style={{ width: `${pattern.avgConfidence * 100}%` }}
@@ -280,10 +280,10 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
             {/* Similarity Threshold Slider */}
             <div className="mb-3">
               <div className="flex justify-between items-center mb-1">
-                <label className="text-xs font-medium text-gray-700">
+                <label className="text-xs font-medium text-text-secondary">
                   Similarity Threshold
                 </label>
-                <span className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">
+                <span className="text-xs font-mono bg-surface-raised px-1.5 py-0.5 rounded">
                   {(extractionConfig.similarityThreshold * 100).toFixed(0)}%
                 </span>
               </div>
@@ -300,7 +300,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                 }
                 className="w-full"
               />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <div className="flex justify-between text-xs text-text-muted mt-1">
                 <span>Less strict</span>
                 <span>More strict</span>
               </div>
@@ -308,7 +308,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
 
             {/* Color Averaging Method */}
             <div className="mb-3">
-              <label className="text-xs font-medium text-gray-700 block mb-1">
+              <label className="text-xs font-medium text-text-secondary block mb-1">
                 Pixel Averaging Method
               </label>
               <select
@@ -349,10 +349,12 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                   }
                   className="mr-2"
                 />
-                <span className="font-medium text-gray-700">Clean up mask</span>
+                <span className="font-medium text-text-secondary">
+                  Clean up mask
+                </span>
               </label>
               {extractionConfig.morphologicalOps.enabled && (
-                <div className="ml-6 mt-1 text-xs text-gray-600">
+                <div className="ml-6 mt-1 text-xs text-text-muted">
                   Removes noise and fills gaps
                 </div>
               )}
@@ -378,7 +380,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                   <h2 className="text-xl font-semibold">
                     {selectedPattern.name}
                   </h2>
-                  <div className="text-sm text-gray-600 mt-1">
+                  <div className="text-sm text-text-muted mt-1">
                     ID: {selectedPattern.id} • Created:{" "}
                     {new Date(selectedPattern.createdAt).toLocaleDateString()}
                   </div>
@@ -389,7 +391,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                     className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                       showConfidenceMap
                         ? "bg-blue-500 text-white"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                        : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"
                     }`}
                   >
                     {showConfidenceMap ? "Hide" : "Show"} Confidence
@@ -399,7 +401,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                     className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                       isPreviewMode
                         ? "bg-green-500 text-white"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                        : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"
                     }`}
                   >
                     {isPreviewMode ? "Exit Preview" : "Preview Mode"}
@@ -416,25 +418,25 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                     </h3>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Dimensions:</span>
+                        <span className="text-text-muted">Dimensions:</span>
                         <span className="font-mono">
                           {selectedPattern.width}×{selectedPattern.height}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Total Pixels:</span>
+                        <span className="text-text-muted">Total Pixels:</span>
                         <span className="font-mono">
                           {selectedPattern.totalPixels.toLocaleString()}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Active Pixels:</span>
+                        <span className="text-text-muted">Active Pixels:</span>
                         <span className="font-mono text-green-600">
                           {selectedPattern.activePixels.toLocaleString()}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Mask Density:</span>
+                        <span className="text-text-muted">Mask Density:</span>
                         <span className="font-mono">
                           {(selectedPattern.maskDensity * 100).toFixed(1)}%
                         </span>
@@ -448,7 +450,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                     </h3>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Threshold:</span>
+                        <span className="text-text-muted">Threshold:</span>
                         <span className="font-mono">
                           {(selectedPattern.similarityThreshold * 100).toFixed(
                             0
@@ -457,25 +459,25 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Min Confidence:</span>
+                        <span className="text-text-muted">Min Confidence:</span>
                         <span className="font-mono text-red-600">
                           {(selectedPattern.minConfidence * 100).toFixed(1)}%
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Avg Confidence:</span>
+                        <span className="text-text-muted">Avg Confidence:</span>
                         <span className="font-mono text-blue-600">
                           {(selectedPattern.avgConfidence * 100).toFixed(1)}%
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Max Confidence:</span>
+                        <span className="text-text-muted">Max Confidence:</span>
                         <span className="font-mono text-green-600">
                           {(selectedPattern.maxConfidence * 100).toFixed(1)}%
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Std Deviation:</span>
+                        <span className="text-text-muted">Std Deviation:</span>
                         <span className="font-mono">
                           {(selectedPattern.stdDevConfidence * 100).toFixed(1)}%
                         </span>
@@ -542,7 +544,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                               {analysis.recommendations.map((rec, i) => (
                                 <div
                                   key={i}
-                                  className="text-xs text-gray-600 flex items-start"
+                                  className="text-xs text-text-muted flex items-start"
                                 >
                                   <span className="mr-1">•</span>
                                   <span>{rec}</span>
@@ -563,7 +565,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                     <h3 className="text-sm font-semibold mb-2">
                       Pattern Visualization
                     </h3>
-                    <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                    <div className="border border-border-default rounded-lg p-4 bg-surface-raised">
                       <div className="relative">
                         {/* Averaged Pattern Image */}
                         <div className="bg-checkerboard rounded">
@@ -571,7 +573,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                             id="pattern-canvas"
                             width={selectedPattern.width}
                             height={selectedPattern.height}
-                            className="max-w-full h-auto border border-gray-300"
+                            className="max-w-full h-auto border border-border-default"
                           />
                         </div>
 
@@ -595,7 +597,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                       {showConfidenceMap && (
                         <div className="mt-3">
                           <div className="flex justify-between items-center">
-                            <label className="text-xs font-medium text-gray-600">
+                            <label className="text-xs font-medium text-text-muted">
                               Confidence Overlay Opacity
                             </label>
                             <span className="text-xs font-mono bg-white px-1.5 py-0.5 rounded">
@@ -622,7 +624,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                     <h3 className="text-sm font-semibold mb-2">
                       Confidence Distribution
                     </h3>
-                    <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                    <div className="border border-border-default rounded-lg p-4 bg-white">
                       <div className="h-32">
                         {/* Histogram visualization would go here */}
                         <div className="h-full flex items-end justify-between gap-1">
@@ -638,7 +640,9 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                               <div
                                 key={i}
                                 className={`flex-1 rounded-t transition-colors ${
-                                  isActive ? "bg-green-500" : "bg-gray-300"
+                                  isActive
+                                    ? "bg-green-500"
+                                    : "bg-surface-raised"
                                 }`}
                                 style={{ height: `${height}%` }}
                                 title={`${(binStart * 100).toFixed(0)}%-${(binEnd * 100).toFixed(0)}%`}
@@ -647,7 +651,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                           })}
                         </div>
                       </div>
-                      <div className="flex justify-between text-xs text-gray-500 mt-2">
+                      <div className="flex justify-between text-xs text-text-muted mt-2">
                         <span>0%</span>
                         <span>Confidence</span>
                         <span>100%</span>
@@ -676,27 +680,27 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                       Performance Metrics
                     </h3>
                     <div className="grid grid-cols-3 gap-3 text-center">
-                      <div className="border border-gray-200 rounded-lg p-3 bg-white">
+                      <div className="border border-border-default rounded-lg p-3 bg-white">
                         <div className="text-2xl font-bold text-blue-600">
                           {selectedPattern.matchCount}
                         </div>
-                        <div className="text-xs text-gray-600 mt-1">
+                        <div className="text-xs text-text-muted mt-1">
                           Total Matches
                         </div>
                       </div>
-                      <div className="border border-gray-200 rounded-lg p-3 bg-white">
+                      <div className="border border-border-default rounded-lg p-3 bg-white">
                         <div className="text-2xl font-bold text-green-600">
                           {(selectedPattern.successRate * 100).toFixed(0)}%
                         </div>
-                        <div className="text-xs text-gray-600 mt-1">
+                        <div className="text-xs text-text-muted mt-1">
                           Success Rate
                         </div>
                       </div>
-                      <div className="border border-gray-200 rounded-lg p-3 bg-white">
+                      <div className="border border-border-default rounded-lg p-3 bg-white">
                         <div className="text-2xl font-bold text-purple-600">
                           {selectedPattern.avgMatchTime.toFixed(1)}ms
                         </div>
-                        <div className="text-xs text-gray-600 mt-1">
+                        <div className="text-xs text-text-muted mt-1">
                           Avg Match Time
                         </div>
                       </div>
@@ -706,10 +710,10 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="h-full flex items-center justify-center text-gray-500">
+            <div className="h-full flex items-center justify-center text-text-muted">
               <div className="text-center">
                 <svg
-                  className="w-16 h-16 mx-auto mb-4 text-gray-300"
+                  className="w-16 h-16 mx-auto mb-4 text-text-secondary"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"

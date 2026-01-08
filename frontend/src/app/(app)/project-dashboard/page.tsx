@@ -350,52 +350,67 @@ function generateMockProjectData() {
 
   // Workflow statistics
   const workflowsByComplexity = [
-    { range: "Simple (1-5)", count: 58, fill: "#00FF88" },
-    { range: "Medium (6-10)", count: 47, fill: "#00D9FF" },
-    { range: "Complex (11-15)", count: 30, fill: "#FFD700" },
-    { range: "Very Complex (16+)", count: 7, fill: "#FF6B6B" },
+    { range: "Simple (1-5)", count: 58, fill: "var(--brand-success)" },
+    { range: "Medium (6-10)", count: 47, fill: "var(--brand-primary)" },
+    { range: "Complex (11-15)", count: 30, fill: "var(--warning)" },
+    { range: "Very Complex (16+)", count: 7, fill: "var(--error)" },
   ];
 
   const workflowsByFolder = [
-    { name: "Authentication", count: 35, fill: "#00D9FF" },
-    { name: "Navigation", count: 28, fill: "#BD00FF" },
-    { name: "Forms", count: 24, fill: "#00FF88" },
-    { name: "Testing", count: 21, fill: "#FFD700" },
-    { name: "API", count: 18, fill: "#FF6B6B" },
-    { name: "Uncategorized", count: 16, fill: "#888888" },
+    { name: "Authentication", count: 35, fill: "var(--brand-primary)" },
+    { name: "Navigation", count: 28, fill: "var(--brand-secondary)" },
+    { name: "Forms", count: 24, fill: "var(--brand-success)" },
+    { name: "Testing", count: 21, fill: "var(--warning)" },
+    { name: "API", count: 18, fill: "var(--error)" },
+    { name: "Uncategorized", count: 16, fill: "var(--text-muted)" },
   ];
 
   const statesByGroup = [
-    { name: "Login States", count: 45, fill: "#00D9FF" },
-    { name: "Dashboard States", count: 67, fill: "#BD00FF" },
-    { name: "Form States", count: 89, fill: "#00FF88" },
-    { name: "Error States", count: 34, fill: "#FF6B6B" },
-    { name: "Loading States", count: 56, fill: "#FFD700" },
-    { name: "Other", count: 96, fill: "#888888" },
+    { name: "Login States", count: 45, fill: "var(--brand-primary)" },
+    { name: "Dashboard States", count: 67, fill: "var(--brand-secondary)" },
+    { name: "Form States", count: 89, fill: "var(--brand-success)" },
+    { name: "Error States", count: 34, fill: "var(--error)" },
+    { name: "Loading States", count: 56, fill: "var(--warning)" },
+    { name: "Other", count: 96, fill: "var(--text-muted)" },
   ];
 
   const imagesByFolder = [
-    { name: "buttons", size: 234, fill: "#00D9FF", count: 234 },
-    { name: "icons", size: 189, fill: "#BD00FF", count: 189 },
-    { name: "backgrounds", size: 156, fill: "#00FF88", count: 156 },
-    { name: "forms", size: 143, fill: "#FFD700", count: 143 },
-    { name: "navigation", size: 128, fill: "#FF6B6B", count: 128 },
-    { name: "misc", size: 393, fill: "#888888", count: 393 },
+    { name: "buttons", size: 234, fill: "var(--brand-primary)", count: 234 },
+    { name: "icons", size: 189, fill: "var(--brand-secondary)", count: 189 },
+    {
+      name: "backgrounds",
+      size: 156,
+      fill: "var(--brand-success)",
+      count: 156,
+    },
+    { name: "forms", size: 143, fill: "var(--warning)", count: 143 },
+    { name: "navigation", size: 128, fill: "var(--error)", count: 128 },
+    { name: "misc", size: 393, fill: "var(--text-muted)", count: 393 },
   ];
 
   const transitionsByType = [
-    { name: "Outgoing", count: 312, fill: "#00D9FF" },
-    { name: "Incoming", count: 212, fill: "#BD00FF" },
+    { name: "Outgoing", count: 312, fill: "var(--brand-primary)" },
+    { name: "Incoming", count: 212, fill: "var(--brand-secondary)" },
   ];
 
   // Storage statistics
   const storageStats = {
     totalSize: 847.5, // MB
     byType: [
-      { type: "Images", size: 723.2, count: 1243, fill: "#00D9FF" },
-      { type: "Workflows", size: 45.8, count: 142, fill: "#BD00FF" },
-      { type: "States", size: 52.3, count: 387, fill: "#00FF88" },
-      { type: "Other", size: 26.2, count: 524, fill: "#888888" },
+      {
+        type: "Images",
+        size: 723.2,
+        count: 1243,
+        fill: "var(--brand-primary)",
+      },
+      {
+        type: "Workflows",
+        size: 45.8,
+        count: 142,
+        fill: "var(--brand-secondary)",
+      },
+      { type: "States", size: 52.3, count: 387, fill: "var(--brand-success)" },
+      { type: "Other", size: 26.2, count: 524, fill: "var(--text-muted)" },
     ],
   };
 
@@ -472,10 +487,11 @@ function MetricCard({
   trend?: number;
 }) {
   const TrendIcon = trend && trend > 0 ? TrendingUp : TrendingDown;
-  const trendColor = trend && trend > 0 ? "#00FF88" : "#FF6B6B";
+  const trendColor =
+    trend && trend > 0 ? "var(--brand-success)" : "var(--error)";
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm hover:border-gray-700 transition-all">
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-border-default transition-all">
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3 flex-1">
@@ -486,7 +502,7 @@ function MetricCard({
               <Icon className="w-5 h-5" style={{ color }} />
             </div>
             <div>
-              <p className="text-xs text-gray-400 mb-1">{label}</p>
+              <p className="text-xs text-text-muted mb-1">{label}</p>
               <p className="text-2xl font-bold" style={{ color }}>
                 {value}
               </p>
@@ -521,9 +537,9 @@ function HealthScoreGauge({
   factors: HealthFactors;
 }) {
   const getScoreColor = (score: number) => {
-    if (score >= 80) return "#00FF88";
-    if (score >= 60) return "#FFD700";
-    return "#FF6B6B";
+    if (score >= 80) return "var(--brand-success)";
+    if (score >= 60) return "var(--warning)";
+    return "var(--error)";
   };
 
   const getScoreLabel = (score: number) => {
@@ -556,7 +572,7 @@ function HealthScoreGauge({
               cx="80"
               cy="80"
               r="70"
-              stroke="#2A2A2B"
+              stroke="var(--surface-raised)"
               strokeWidth="12"
               fill="none"
             />
@@ -575,7 +591,7 @@ function HealthScoreGauge({
             <p className="text-4xl font-bold" style={{ color }}>
               {score}
             </p>
-            <p className="text-xs text-gray-400">out of 100</p>
+            <p className="text-xs text-text-muted">out of 100</p>
           </div>
         </div>
         <p className="mt-3 text-lg font-semibold" style={{ color }}>
@@ -611,33 +627,33 @@ function HealthScoreGauge({
 
       <div className="space-y-2 text-sm">
         <div className="flex items-center justify-between">
-          <span className="text-gray-400">Test Coverage</span>
+          <span className="text-text-muted">Test Coverage</span>
           <span className="font-medium">
             {factors.testCoverage.toFixed(1)}%
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-gray-400">Documentation</span>
+          <span className="text-text-muted">Documentation</span>
           <span className="font-medium">{factors.docCoverage.toFixed(1)}%</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-gray-400">Organization</span>
+          <span className="text-text-muted">Organization</span>
           <span className="font-medium">
             {factors.organization.toFixed(1)}%
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-gray-400">Complexity</span>
+          <span className="text-text-muted">Complexity</span>
           <span className="font-medium">{factors.complexity.toFixed(1)}%</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-gray-400">Clean Resources</span>
+          <span className="text-text-muted">Clean Resources</span>
           <span className="font-medium">
             {factors.unusedResources.toFixed(1)}%
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-gray-400">Valid References</span>
+          <span className="text-text-muted">Valid References</span>
           <span className="font-medium">
             {factors.brokenReferences.toFixed(1)}%
           </span>
@@ -664,11 +680,11 @@ function HealthIssuesList({ issues }: { issues: HealthIssue[] }) {
   const getIssueColor = (type: HealthIssue["type"]) => {
     switch (type) {
       case "error":
-        return "#FF6B6B";
+        return "var(--error)";
       case "warning":
-        return "#FFD700";
+        return "var(--warning)";
       case "info":
-        return "#00D9FF";
+        return "var(--brand-primary)";
     }
   };
 
@@ -681,7 +697,7 @@ function HealthIssuesList({ issues }: { issues: HealthIssue[] }) {
         return (
           <div
             key={issue.id}
-            className="p-3 rounded-lg border border-gray-800/50 hover:border-gray-700 transition-all cursor-pointer"
+            className="p-3 rounded-lg border border-border-subtle/50 hover:border-border-default transition-all cursor-pointer"
             style={{ backgroundColor: `${color}08` }}
             onClick={() => router.push(issue.link)}
           >
@@ -704,7 +720,7 @@ function HealthIssuesList({ issues }: { issues: HealthIssue[] }) {
                     {issue.count}
                   </Badge>
                 </div>
-                <p className="text-xs text-gray-400 mb-2">
+                <p className="text-xs text-text-muted mb-2">
                   {issue.description}
                 </p>
                 {issue.affectedResources.length > 0 && (
@@ -713,7 +729,7 @@ function HealthIssuesList({ issues }: { issues: HealthIssue[] }) {
                       <Badge
                         key={resource}
                         variant="outline"
-                        className="text-xs bg-gray-800/50 border-gray-700"
+                        className="text-xs bg-surface-hover/50 border-border-default"
                       >
                         {resource}
                       </Badge>
@@ -721,7 +737,7 @@ function HealthIssuesList({ issues }: { issues: HealthIssue[] }) {
                     {issue.affectedResources.length > 3 && (
                       <Badge
                         variant="outline"
-                        className="text-xs bg-gray-800/50 border-gray-700"
+                        className="text-xs bg-surface-hover/50 border-border-default"
                       >
                         +{issue.affectedResources.length - 3} more
                       </Badge>
@@ -744,7 +760,7 @@ function ResourceOverviewTabs({
 }) {
   return (
     <Tabs defaultValue="workflows" className="w-full">
-      <TabsList className="grid w-full grid-cols-4 bg-gray-800/30">
+      <TabsList className="grid w-full grid-cols-4 bg-surface-hover/30">
         <TabsTrigger value="workflows">Workflows</TabsTrigger>
         <TabsTrigger value="states">States</TabsTrigger>
         <TabsTrigger value="images">Images</TabsTrigger>
@@ -753,7 +769,7 @@ function ResourceOverviewTabs({
 
       <TabsContent value="workflows" className="space-y-4 mt-4">
         <div className="grid grid-cols-2 gap-4">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle className="text-sm">By Complexity</CardTitle>
             </CardHeader>
@@ -775,8 +791,8 @@ function ResourceOverviewTabs({
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#1A1A1B",
-                      border: "1px solid #333",
+                      backgroundColor: "var(--surface-raised)",
+                      border: "1px solid var(--border-default)",
                       borderRadius: "8px",
                     }}
                   />
@@ -793,7 +809,7 @@ function ResourceOverviewTabs({
                         className="w-3 h-3 rounded"
                         style={{ backgroundColor: item.fill }}
                       />
-                      <span className="text-gray-400">{item.range}</span>
+                      <span className="text-text-muted">{item.range}</span>
                     </div>
                     <span className="font-medium">{item.count}</span>
                   </div>
@@ -802,7 +818,7 @@ function ResourceOverviewTabs({
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle className="text-sm">By Folder</CardTitle>
             </CardHeader>
@@ -821,8 +837,8 @@ function ResourceOverviewTabs({
                   <YAxis stroke="#666" style={{ fontSize: "10px" }} />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#1A1A1B",
-                      border: "1px solid #333",
+                      backgroundColor: "var(--surface-raised)",
+                      border: "1px solid var(--border-default)",
                       borderRadius: "8px",
                     }}
                   />
@@ -840,7 +856,7 @@ function ResourceOverviewTabs({
 
       <TabsContent value="states" className="space-y-4 mt-4">
         <div className="grid grid-cols-2 gap-4">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle className="text-sm">By Group</CardTitle>
             </CardHeader>
@@ -862,8 +878,8 @@ function ResourceOverviewTabs({
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#1A1A1B",
-                      border: "1px solid #333",
+                      backgroundColor: "var(--surface-raised)",
+                      border: "1px solid var(--border-default)",
                       borderRadius: "8px",
                     }}
                   />
@@ -880,7 +896,7 @@ function ResourceOverviewTabs({
                         className="w-3 h-3 rounded"
                         style={{ backgroundColor: item.fill }}
                       />
-                      <span className="text-gray-400">{item.name}</span>
+                      <span className="text-text-muted">{item.name}</span>
                     </div>
                     <span className="font-medium">{item.count}</span>
                   </div>
@@ -889,21 +905,21 @@ function ResourceOverviewTabs({
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle className="text-sm">Distribution Stats</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">Avg Images per State</span>
+                  <span className="text-text-muted">Avg Images per State</span>
                   <span className="font-medium">3.2</span>
                 </div>
                 <Progress value={64} className="h-2" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">
+                  <span className="text-text-muted">
                     Avg Transitions per State
                   </span>
                   <span className="font-medium">1.4</span>
@@ -912,14 +928,14 @@ function ResourceOverviewTabs({
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">States with Regions</span>
+                  <span className="text-text-muted">States with Regions</span>
                   <span className="font-medium">67%</span>
                 </div>
                 <Progress value={67} className="h-2" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">States with Locations</span>
+                  <span className="text-text-muted">States with Locations</span>
                   <span className="font-medium">54%</span>
                 </div>
                 <Progress value={54} className="h-2" />
@@ -931,7 +947,7 @@ function ResourceOverviewTabs({
 
       <TabsContent value="images" className="space-y-4 mt-4">
         <div className="grid grid-cols-2 gap-4">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle className="text-sm">By Folder (Treemap)</CardTitle>
             </CardHeader>
@@ -940,7 +956,7 @@ function ResourceOverviewTabs({
                 <Treemap
                   data={data.imagesByFolder}
                   dataKey="size"
-                  stroke="#1A1A1B"
+                  stroke="var(--surface-raised)"
                   content={(props: TreemapNode) =>
                     TreemapContent(props) as React.ReactElement
                   }
@@ -949,28 +965,28 @@ function ResourceOverviewTabs({
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle className="text-sm">Usage Statistics</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">Used in Workflows</span>
+                  <span className="text-text-muted">Used in Workflows</span>
                   <span className="font-medium">67%</span>
                 </div>
                 <Progress value={67} className="h-2" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">Used in States</span>
+                  <span className="text-text-muted">Used in States</span>
                   <span className="font-medium">81%</span>
                 </div>
                 <Progress value={81} className="h-2" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">Unused Images</span>
+                  <span className="text-text-muted">Unused Images</span>
                   <span className="font-medium text-yellow-500">13%</span>
                 </div>
                 <Progress value={13} className="h-2" />
@@ -978,15 +994,15 @@ function ResourceOverviewTabs({
               <Separator />
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Total Storage</span>
+                  <span className="text-text-muted">Total Storage</span>
                   <span className="font-medium">723.2 MB</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Avg Image Size</span>
+                  <span className="text-text-muted">Avg Image Size</span>
                   <span className="font-medium">582 KB</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Largest Image</span>
+                  <span className="text-text-muted">Largest Image</span>
                   <span className="font-medium">4.7 MB</span>
                 </div>
               </div>
@@ -997,7 +1013,7 @@ function ResourceOverviewTabs({
 
       <TabsContent value="transitions" className="space-y-4 mt-4">
         <div className="grid grid-cols-2 gap-4">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle className="text-sm">By Type</CardTitle>
             </CardHeader>
@@ -1019,8 +1035,8 @@ function ResourceOverviewTabs({
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#1A1A1B",
-                      border: "1px solid #333",
+                      backgroundColor: "var(--surface-raised)",
+                      border: "1px solid var(--border-default)",
                       borderRadius: "8px",
                     }}
                   />
@@ -1037,7 +1053,7 @@ function ResourceOverviewTabs({
                         className="w-3 h-3 rounded"
                         style={{ backgroundColor: item.fill }}
                       />
-                      <span className="text-gray-400">{item.name}</span>
+                      <span className="text-text-muted">{item.name}</span>
                     </div>
                     <span className="font-medium">{item.count}</span>
                   </div>
@@ -1046,28 +1062,28 @@ function ResourceOverviewTabs({
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle className="text-sm">Transition Stats</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">Avg Timeout (s)</span>
+                  <span className="text-text-muted">Avg Timeout (s)</span>
                   <span className="font-medium">15.3</span>
                 </div>
                 <Progress value={51} className="h-2" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">With Workflows</span>
+                  <span className="text-text-muted">With Workflows</span>
                   <span className="font-medium">89%</span>
                 </div>
                 <Progress value={89} className="h-2" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">Complex Transitions</span>
+                  <span className="text-text-muted">Complex Transitions</span>
                   <span className="font-medium">23%</span>
                 </div>
                 <Progress value={23} className="h-2" />
@@ -1075,11 +1091,11 @@ function ResourceOverviewTabs({
               <Separator />
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Max Retry Count</span>
+                  <span className="text-text-muted">Max Retry Count</span>
                   <span className="font-medium">5</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Avg States Activated</span>
+                  <span className="text-text-muted">Avg States Activated</span>
                   <span className="font-medium">2.3</span>
                 </div>
               </div>
@@ -1112,17 +1128,17 @@ function ActivityTimeline({ activities }: { activities: ActivityEvent[] }) {
   const getActivityColor = (type: ActivityEvent["type"]) => {
     switch (type) {
       case "created":
-        return "#00FF88";
+        return "var(--brand-success)";
       case "modified":
-        return "#00D9FF";
+        return "var(--brand-primary)";
       case "deleted":
-        return "#FF6B6B";
+        return "var(--error)";
       case "imported":
-        return "#FFD700";
+        return "var(--warning)";
       case "exported":
-        return "#BD00FF";
+        return "var(--brand-secondary)";
       case "tested":
-        return "#888888";
+        return "var(--text-muted)";
     }
   };
 
@@ -1165,7 +1181,7 @@ function ActivityTimeline({ activities }: { activities: ActivityEvent[] }) {
           return (
             <div
               key={activity.id}
-              className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-800/30 transition-colors cursor-pointer"
+              className="flex items-start gap-3 p-3 rounded-lg hover:bg-surface-hover/30 transition-colors cursor-pointer"
             >
               <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -1177,23 +1193,23 @@ function ActivityTimeline({ activities }: { activities: ActivityEvent[] }) {
                 <p className="text-sm font-medium">
                   {activity.type.charAt(0).toUpperCase() +
                     activity.type.slice(1)}{" "}
-                  <span className="text-[#00D9FF]">
+                  <span className="text-brand-primary">
                     {activity.resourceName}
                   </span>
                 </p>
                 <div className="flex items-center gap-2 mt-1">
-                  <ResourceIcon className="w-3 h-3 text-gray-500" />
-                  <span className="text-xs text-gray-500">
+                  <ResourceIcon className="w-3 h-3 text-text-muted" />
+                  <span className="text-xs text-text-muted">
                     {activity.resourceType}
                   </span>
-                  <span className="text-gray-600">•</span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-text-muted">•</span>
+                  <span className="text-xs text-text-muted">
                     {getRelativeTime(activity.timestamp)}
                   </span>
                   {activity.user && (
                     <>
-                      <span className="text-gray-600">•</span>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-text-muted">•</span>
+                      <span className="text-xs text-text-muted">
                         {activity.user}
                       </span>
                     </>
@@ -1216,8 +1232,8 @@ function StorageAnalysis({
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <p className="text-sm text-gray-400 mb-1">Total Storage Used</p>
-        <p className="text-3xl font-bold text-[#00D9FF]">
+        <p className="text-sm text-text-muted mb-1">Total Storage Used</p>
+        <p className="text-3xl font-bold text-brand-primary">
           {stats.totalSize.toFixed(1)} MB
         </p>
       </div>
@@ -1239,8 +1255,8 @@ function StorageAnalysis({
           </Pie>
           <Tooltip
             contentStyle={{
-              backgroundColor: "#1A1A1B",
-              border: "1px solid #333",
+              backgroundColor: "var(--surface-raised)",
+              border: "1px solid var(--border-default)",
               borderRadius: "8px",
             }}
             formatter={(value) => `${Number(value).toFixed(1)} MB`}
@@ -1257,11 +1273,11 @@ function StorageAnalysis({
                   className="w-3 h-3 rounded"
                   style={{ backgroundColor: item.fill }}
                 />
-                <span className="text-gray-400">{item.type}</span>
+                <span className="text-text-muted">{item.type}</span>
               </div>
               <div className="text-right">
                 <span className="font-medium">{item.size.toFixed(1)} MB</span>
-                <span className="text-xs text-gray-500 ml-2">
+                <span className="text-xs text-text-muted ml-2">
                   ({item.count})
                 </span>
               </div>
@@ -1286,7 +1302,7 @@ function BulkOptimizationTools() {
       title: "Remove Unused Images",
       description: "Find and remove 156 images not used anywhere",
       icon: ImageIcon,
-      color: "#FF6B6B",
+      color: "var(--error)",
       action: "Clean Up",
       count: 156,
     },
@@ -1295,7 +1311,7 @@ function BulkOptimizationTools() {
       title: "Remove Orphaned States",
       description: "Delete 12 states not referenced by any workflow",
       icon: Layers,
-      color: "#FFD700",
+      color: "var(--warning)",
       action: "Remove",
       count: 12,
     },
@@ -1304,7 +1320,7 @@ function BulkOptimizationTools() {
       title: "Consolidate Duplicate States",
       description: "Merge 8 potentially duplicate states",
       icon: Copy,
-      color: "#00D9FF",
+      color: "var(--brand-primary)",
       action: "Consolidate",
       count: 8,
     },
@@ -1313,7 +1329,7 @@ function BulkOptimizationTools() {
       title: "Optimize Workflow Complexity",
       description: "Suggest optimizations for 7 complex workflows",
       icon: Target,
-      color: "#BD00FF",
+      color: "var(--brand-secondary)",
       action: "Optimize",
       count: 7,
     },
@@ -1322,7 +1338,7 @@ function BulkOptimizationTools() {
       title: "Fix Broken References",
       description: "Repair 8 broken image references",
       icon: Link2,
-      color: "#00FF88",
+      color: "var(--brand-success)",
       action: "Fix",
       count: 8,
     },
@@ -1331,7 +1347,7 @@ function BulkOptimizationTools() {
       title: "Compress Large Images",
       description: "Reduce size of 34 large images (>1MB)",
       icon: Archive,
-      color: "#888888",
+      color: "var(--text-muted)",
       action: "Compress",
       count: 34,
     },
@@ -1352,7 +1368,7 @@ function BulkOptimizationTools() {
         return (
           <Card
             key={tool.id}
-            className="bg-[#1A1A1B]/50 border-gray-800/50 hover:border-gray-700 transition-all"
+            className="bg-surface-raised/50 border-border-subtle/50 hover:border-border-default transition-all"
           >
             <CardContent className="p-4">
               <div className="flex items-start gap-3 mb-3">
@@ -1364,7 +1380,7 @@ function BulkOptimizationTools() {
                 </div>
                 <div className="flex-1">
                   <h4 className="text-sm font-semibold mb-1">{tool.title}</h4>
-                  <p className="text-xs text-gray-400">{tool.description}</p>
+                  <p className="text-xs text-text-muted">{tool.description}</p>
                 </div>
               </div>
               <Button
@@ -1430,55 +1446,55 @@ function ExportImportPanel() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Download className="w-5 h-5 text-[#00D9FF]" />
+            <Download className="w-5 h-5 text-brand-primary" />
             Export Project
           </CardTitle>
           <CardDescription>Download complete project backup</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-3 text-sm">
-            <div className="flex items-center justify-between p-2 rounded bg-gray-800/30">
-              <span className="text-gray-400">Workflows</span>
+            <div className="flex items-center justify-between p-2 rounded bg-surface-hover/30">
+              <span className="text-text-muted">Workflows</span>
               <Badge
                 variant="outline"
-                className="bg-gray-800/50 border-gray-700"
+                className="bg-surface-hover/50 border-border-default"
               >
                 142
               </Badge>
             </div>
-            <div className="flex items-center justify-between p-2 rounded bg-gray-800/30">
-              <span className="text-gray-400">States</span>
+            <div className="flex items-center justify-between p-2 rounded bg-surface-hover/30">
+              <span className="text-text-muted">States</span>
               <Badge
                 variant="outline"
-                className="bg-gray-800/50 border-gray-700"
+                className="bg-surface-hover/50 border-border-default"
               >
                 387
               </Badge>
             </div>
-            <div className="flex items-center justify-between p-2 rounded bg-gray-800/30">
-              <span className="text-gray-400">Images</span>
+            <div className="flex items-center justify-between p-2 rounded bg-surface-hover/30">
+              <span className="text-text-muted">Images</span>
               <Badge
                 variant="outline"
-                className="bg-gray-800/50 border-gray-700"
+                className="bg-surface-hover/50 border-border-default"
               >
                 1,243
               </Badge>
             </div>
-            <div className="flex items-center justify-between p-2 rounded bg-gray-800/30">
-              <span className="text-gray-400">Transitions</span>
+            <div className="flex items-center justify-between p-2 rounded bg-surface-hover/30">
+              <span className="text-text-muted">Transitions</span>
               <Badge
                 variant="outline"
-                className="bg-gray-800/50 border-gray-700"
+                className="bg-surface-hover/50 border-border-default"
               >
                 524
               </Badge>
             </div>
           </div>
           <Separator />
-          <div className="text-xs text-gray-400">
+          <div className="text-xs text-text-muted">
             <p className="mb-2">Export includes:</p>
             <ul className="list-disc list-inside space-y-1">
               <li>All workflow definitions</li>
@@ -1489,7 +1505,7 @@ function ExportImportPanel() {
             </ul>
           </div>
           <Button
-            className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+            className="w-full bg-brand-primary hover:bg-brand-primary/80 text-black"
             onClick={handleExport}
             disabled={isExporting}
           >
@@ -1508,10 +1524,10 @@ function ExportImportPanel() {
         </CardContent>
       </Card>
 
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Upload className="w-5 h-5 text-[#BD00FF]" />
+            <Upload className="w-5 h-5 text-brand-secondary" />
             Import Project
           </CardTitle>
           <CardDescription>
@@ -1519,12 +1535,12 @@ function ExportImportPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="border-2 border-dashed border-gray-700 rounded-lg p-8 text-center hover:border-gray-600 transition-colors cursor-pointer">
-            <Upload className="w-8 h-8 mx-auto mb-3 text-gray-500" />
-            <p className="text-sm text-gray-400 mb-1">
+          <div className="border-2 border-dashed border-border-subtle rounded-lg p-8 text-center hover:border-border-default transition-colors cursor-pointer">
+            <Upload className="w-8 h-8 mx-auto mb-3 text-text-muted" />
+            <p className="text-sm text-text-muted mb-1">
               Drop backup file here or click to browse
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Supports .json and .zip formats
             </p>
           </div>
@@ -1539,13 +1555,13 @@ function ExportImportPanel() {
                   defaultChecked
                   className="rounded"
                 />
-                <label htmlFor="merge" className="text-gray-400">
+                <label htmlFor="merge" className="text-text-muted">
                   Merge with existing data
                 </label>
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="replace" className="rounded" />
-                <label htmlFor="replace" className="text-gray-400">
+                <label htmlFor="replace" className="text-text-muted">
                   Replace existing items
                 </label>
               </div>
@@ -1556,14 +1572,14 @@ function ExportImportPanel() {
                   defaultChecked
                   className="rounded"
                 />
-                <label htmlFor="backup-before" className="text-gray-400">
+                <label htmlFor="backup-before" className="text-text-muted">
                   Create backup before import
                 </label>
               </div>
             </div>
           </div>
           <Button
-            className="w-full bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white"
+            className="w-full bg-brand-secondary hover:bg-brand-secondary/80 text-white"
             onClick={() => setIsImporting(true)}
             disabled={isImporting}
           >
@@ -1609,12 +1625,12 @@ const TreemapContent = ({
 }) => {
   if (!x || !y || !width || !height) return null;
   const colors = [
-    "#00D9FF",
-    "#BD00FF",
-    "#00FF88",
-    "#FFD700",
-    "#FF6B6B",
-    "#888888",
+    "var(--brand-primary)",
+    "var(--brand-secondary)",
+    "var(--brand-success)",
+    "var(--warning)",
+    "var(--error)",
+    "var(--text-muted)",
   ];
   return (
     <g>
@@ -1626,7 +1642,7 @@ const TreemapContent = ({
         style={{
           fill: colors[(index || 0) % colors.length],
           fillOpacity: 0.9,
-          stroke: "#1A1A1B",
+          stroke: "var(--surface-raised)",
           strokeWidth: 2,
         }}
       />
@@ -1677,21 +1693,21 @@ export default function ProjectDashboardPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white p-6">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-canvas to-surface-canvas text-white p-6">
       <div className="max-w-[1600px] mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-[#00D9FF] via-[#BD00FF] to-[#00FF88] bg-clip-text text-transparent">
+            <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-success bg-clip-text text-transparent">
               Project Dashboard
             </h1>
-            <p className="text-gray-400 text-lg">
+            <p className="text-text-muted text-lg">
               Complete project resource management and health monitoring
             </p>
             <div className="flex items-center gap-4 mt-3">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-gray-500" />
-                <span className="text-sm text-gray-500">
+                <Clock className="w-4 h-4 text-text-muted" />
+                <span className="text-sm text-text-muted">
                   Last updated: Just now
                 </span>
               </div>
@@ -1709,7 +1725,7 @@ export default function ProjectDashboardPage() {
             <Button
               onClick={handleExportProject}
               variant="outline"
-              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
             >
               <Download className="w-4 h-4 mr-2" />
               Export
@@ -1717,7 +1733,7 @@ export default function ProjectDashboardPage() {
             <Button
               onClick={handleImportProject}
               variant="outline"
-              className="border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF] bg-transparent"
+              className="border-border-default hover:border-brand-secondary hover:text-brand-secondary bg-transparent"
             >
               <Upload className="w-4 h-4 mr-2" />
               Import
@@ -1725,7 +1741,7 @@ export default function ProjectDashboardPage() {
             <Button
               onClick={() => router.push("/automation-builder/settings")}
               variant="outline"
-              className="border-gray-700 hover:border-[#FFD700] hover:text-[#FFD700] bg-transparent"
+              className="border-border-default hover:border-warning hover:text-warning bg-transparent"
             >
               <Settings className="w-4 h-4 mr-2" />
               Settings
@@ -1739,53 +1755,53 @@ export default function ProjectDashboardPage() {
             icon={FileCode}
             label="Total Workflows"
             value={data.metrics.totalWorkflows}
-            color="#00D9FF"
+            color="var(--brand-primary)"
             trend={data.metrics.trends.workflows}
           />
           <MetricCard
             icon={Layers}
             label="Total States"
             value={data.metrics.totalStates}
-            color="#BD00FF"
+            color="var(--brand-secondary)"
             trend={data.metrics.trends.states}
           />
           <MetricCard
             icon={ImageIcon}
             label="Total Images"
             value={data.metrics.totalImages}
-            color="#00FF88"
+            color="var(--brand-success)"
             trend={data.metrics.trends.images}
           />
           <MetricCard
             icon={GitBranch}
             label="Total Transitions"
             value={data.metrics.totalTransitions}
-            color="#FFD700"
+            color="var(--warning)"
             trend={data.metrics.trends.transitions}
           />
           <MetricCard
             icon={TestTube}
             label="Test Coverage"
             value={`${data.metrics.testCoverage.toFixed(1)}%`}
-            color="#FF6B6B"
+            color="var(--error)"
           />
           <MetricCard
             icon={BookOpen}
             label="Doc Coverage"
             value={`${data.metrics.docCoverage.toFixed(1)}%`}
-            color="#888888"
+            color="var(--text-muted)"
           />
         </div>
 
         {/* Global Search */}
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+        <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
           <CardContent className="p-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-muted" />
               <Input
                 type="text"
                 placeholder="Search across workflows, states, images, and transitions..."
-                className="pl-10 bg-gray-800/50 border-gray-700 focus:border-[#00D9FF] h-12 text-base"
+                className="pl-10 bg-surface-hover/50 border-border-default focus:border-brand-primary h-12 text-base"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -1799,7 +1815,7 @@ export default function ProjectDashboardPage() {
           className="w-full"
           onValueChange={setSelectedTab}
         >
-          <TabsList className="grid w-full grid-cols-6 bg-gray-800/30 p-1">
+          <TabsList className="grid w-full grid-cols-6 bg-surface-hover/30 p-1">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="resources">Resources</TabsTrigger>
             <TabsTrigger value="health">Health</TabsTrigger>
@@ -1814,10 +1830,10 @@ export default function ProjectDashboardPage() {
               {/* Left Column - 2/3 width */}
               <div className="lg:col-span-2 space-y-6">
                 {/* Project Activity Timeline */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Activity className="w-5 h-5 text-[#00D9FF]" />
+                      <Activity className="w-5 h-5 text-brand-primary" />
                       Project Activity Timeline
                     </CardTitle>
                     <CardDescription>
@@ -1837,12 +1853,12 @@ export default function ProjectDashboardPage() {
                           >
                             <stop
                               offset="5%"
-                              stopColor="#00D9FF"
+                              stopColor="var(--brand-primary)"
                               stopOpacity={0.3}
                             />
                             <stop
                               offset="95%"
-                              stopColor="#00D9FF"
+                              stopColor="var(--brand-primary)"
                               stopOpacity={0}
                             />
                           </linearGradient>
@@ -1855,12 +1871,12 @@ export default function ProjectDashboardPage() {
                           >
                             <stop
                               offset="5%"
-                              stopColor="#BD00FF"
+                              stopColor="var(--brand-secondary)"
                               stopOpacity={0.3}
                             />
                             <stop
                               offset="95%"
-                              stopColor="#BD00FF"
+                              stopColor="var(--brand-secondary)"
                               stopOpacity={0}
                             />
                           </linearGradient>
@@ -1873,12 +1889,12 @@ export default function ProjectDashboardPage() {
                           >
                             <stop
                               offset="5%"
-                              stopColor="#00FF88"
+                              stopColor="var(--brand-success)"
                               stopOpacity={0.3}
                             />
                             <stop
                               offset="95%"
-                              stopColor="#00FF88"
+                              stopColor="var(--brand-success)"
                               stopOpacity={0}
                             />
                           </linearGradient>
@@ -1891,12 +1907,12 @@ export default function ProjectDashboardPage() {
                           >
                             <stop
                               offset="5%"
-                              stopColor="#FFD700"
+                              stopColor="var(--warning)"
                               stopOpacity={0.3}
                             />
                             <stop
                               offset="95%"
-                              stopColor="#FFD700"
+                              stopColor="var(--warning)"
                               stopOpacity={0}
                             />
                           </linearGradient>
@@ -1910,8 +1926,8 @@ export default function ProjectDashboardPage() {
                         <YAxis stroke="#666" style={{ fontSize: "10px" }} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1A1A1B",
-                            border: "1px solid #333",
+                            backgroundColor: "var(--surface-raised)",
+                            border: "1px solid var(--border-default)",
                             borderRadius: "8px",
                           }}
                         />
@@ -1919,28 +1935,28 @@ export default function ProjectDashboardPage() {
                         <Area
                           type="monotone"
                           dataKey="workflows"
-                          stroke="#00D9FF"
+                          stroke="var(--brand-primary)"
                           fill="url(#colorWorkflows)"
                           strokeWidth={2}
                         />
                         <Area
                           type="monotone"
                           dataKey="states"
-                          stroke="#BD00FF"
+                          stroke="var(--brand-secondary)"
                           fill="url(#colorStates)"
                           strokeWidth={2}
                         />
                         <Area
                           type="monotone"
                           dataKey="images"
-                          stroke="#00FF88"
+                          stroke="var(--brand-success)"
                           fill="url(#colorImages)"
                           strokeWidth={2}
                         />
                         <Area
                           type="monotone"
                           dataKey="transitions"
-                          stroke="#FFD700"
+                          stroke="var(--warning)"
                           fill="url(#colorTransitions)"
                           strokeWidth={2}
                         />
@@ -1950,10 +1966,10 @@ export default function ProjectDashboardPage() {
                 </Card>
 
                 {/* Resource Overview */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <BarChart3 className="w-5 h-5 text-[#BD00FF]" />
+                      <BarChart3 className="w-5 h-5 text-brand-secondary" />
                       Resource Overview
                     </CardTitle>
                     <CardDescription>
@@ -1966,10 +1982,10 @@ export default function ProjectDashboardPage() {
                 </Card>
 
                 {/* Most Used Resources */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-[#00FF88]" />
+                      <TrendingUp className="w-5 h-5 text-brand-success" />
                       Most Used Resources
                     </CardTitle>
                     <CardDescription>
@@ -1986,10 +2002,10 @@ export default function ProjectDashboardPage() {
                           transition: GitBranch,
                         };
                         const colors = {
-                          workflow: "#00D9FF",
-                          state: "#BD00FF",
-                          image: "#00FF88",
-                          transition: "#FFD700",
+                          workflow: "var(--brand-primary)",
+                          state: "var(--brand-secondary)",
+                          image: "var(--brand-success)",
+                          transition: "var(--warning)",
                         };
                         const Icon = icons[resource.type];
                         const color = colors[resource.type];
@@ -1997,7 +2013,7 @@ export default function ProjectDashboardPage() {
                         return (
                           <div
                             key={resource.id}
-                            className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-800/30 transition-colors cursor-pointer"
+                            className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-hover/30 transition-colors cursor-pointer"
                           >
                             <div className="flex items-center gap-3 flex-1">
                               <div
@@ -2016,12 +2032,12 @@ export default function ProjectDashboardPage() {
                                 <div className="flex items-center gap-2 mt-1">
                                   <Badge
                                     variant="outline"
-                                    className="text-xs bg-gray-800/50 border-gray-700"
+                                    className="text-xs bg-surface-hover/50 border-border-default"
                                   >
                                     {resource.type}
                                   </Badge>
                                   {resource.lastUsed && (
-                                    <span className="text-xs text-gray-500">
+                                    <span className="text-xs text-text-muted">
                                       Last used: {resource.lastUsed}
                                     </span>
                                   )}
@@ -2032,7 +2048,7 @@ export default function ProjectDashboardPage() {
                               <p className="font-semibold text-sm">
                                 {resource.usageCount.toLocaleString()}
                               </p>
-                              <p className="text-xs text-gray-500">uses</p>
+                              <p className="text-xs text-text-muted">uses</p>
                             </div>
                           </div>
                         );
@@ -2045,10 +2061,10 @@ export default function ProjectDashboardPage() {
               {/* Right Column - 1/3 width */}
               <div className="space-y-6">
                 {/* Project Health Score */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Activity className="w-5 h-5 text-[#00FF88]" />
+                      <Activity className="w-5 h-5 text-brand-success" />
                       Project Health Score
                     </CardTitle>
                     <CardDescription>
@@ -2064,10 +2080,10 @@ export default function ProjectDashboardPage() {
                 </Card>
 
                 {/* Storage Analysis */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <HardDrive className="w-5 h-5 text-[#FFD700]" />
+                      <HardDrive className="w-5 h-5 text-warning" />
                       Storage Analysis
                     </CardTitle>
                     <CardDescription>
@@ -2080,20 +2096,20 @@ export default function ProjectDashboardPage() {
                 </Card>
 
                 {/* Quick Actions */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="text-lg">Quick Actions</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
                     <Button
-                      className="w-full justify-start bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30"
+                      className="w-full justify-start bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30"
                       onClick={() => router.push("/automation-builder")}
                     >
                       <FileCode className="w-4 h-4 mr-2" />
                       Browse Workflows
                     </Button>
                     <Button
-                      className="w-full justify-start bg-[#BD00FF]/10 hover:bg-[#BD00FF]/20 text-[#BD00FF] border border-[#BD00FF]/30"
+                      className="w-full justify-start bg-brand-secondary/10 hover:bg-brand-secondary/20 text-brand-secondary border border-brand-secondary/30"
                       onClick={() =>
                         router.push("/automation-builder/dependencies")
                       }
@@ -2102,14 +2118,14 @@ export default function ProjectDashboardPage() {
                       View Dependencies
                     </Button>
                     <Button
-                      className="w-full justify-start bg-[#00FF88]/10 hover:bg-[#00FF88]/20 text-[#00FF88] border border-[#00FF88]/30"
+                      className="w-full justify-start bg-brand-success/10 hover:bg-brand-success/20 text-brand-success border border-brand-success/30"
                       onClick={() => router.push("/automation-builder/testing")}
                     >
                       <TestTube className="w-4 h-4 mr-2" />
                       Run Tests
                     </Button>
                     <Button
-                      className="w-full justify-start bg-[#FFD700]/10 hover:bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/30"
+                      className="w-full justify-start bg-warning/10 hover:bg-warning/20 text-warning border border-warning/30"
                       onClick={() =>
                         router.push("/automation-builder/analytics")
                       }
@@ -2125,7 +2141,7 @@ export default function ProjectDashboardPage() {
 
           {/* Resources Tab */}
           <TabsContent value="resources" className="space-y-6 mt-6">
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+            <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle>Resource Statistics</CardTitle>
                 <CardDescription>
@@ -2141,7 +2157,7 @@ export default function ProjectDashboardPage() {
           {/* Health Tab */}
           <TabsContent value="health" className="space-y-6 mt-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle>Health Score</CardTitle>
                 </CardHeader>
@@ -2154,10 +2170,10 @@ export default function ProjectDashboardPage() {
               </Card>
 
               <div className="lg:col-span-2">
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm h-full">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm h-full">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-[#FF6B6B]" />
+                      <AlertTriangle className="w-5 h-5 text-error" />
                       Health Issues
                     </CardTitle>
                     <CardDescription>
@@ -2177,10 +2193,10 @@ export default function ProjectDashboardPage() {
           {/* Activity Tab */}
           <TabsContent value="activity" className="space-y-6 mt-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-[#00D9FF]" />
+                    <Activity className="w-5 h-5 text-brand-primary" />
                     Activity Timeline
                   </CardTitle>
                   <CardDescription>
@@ -2192,10 +2208,10 @@ export default function ProjectDashboardPage() {
                 </CardContent>
               </Card>
 
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-[#BD00FF]" />
+                    <Calendar className="w-5 h-5 text-brand-secondary" />
                     Activity Chart
                   </CardTitle>
                   <CardDescription>Activity over time</CardDescription>
@@ -2212,8 +2228,8 @@ export default function ProjectDashboardPage() {
                       <YAxis stroke="#666" style={{ fontSize: "10px" }} />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: "#1A1A1B",
-                          border: "1px solid #333",
+                          backgroundColor: "var(--surface-raised)",
+                          border: "1px solid var(--border-default)",
                           borderRadius: "8px",
                         }}
                       />
@@ -2221,25 +2237,25 @@ export default function ProjectDashboardPage() {
                       <Line
                         type="monotone"
                         dataKey="workflows"
-                        stroke="#00D9FF"
+                        stroke="var(--brand-primary)"
                         strokeWidth={2}
                       />
                       <Line
                         type="monotone"
                         dataKey="states"
-                        stroke="#BD00FF"
+                        stroke="var(--brand-secondary)"
                         strokeWidth={2}
                       />
                       <Line
                         type="monotone"
                         dataKey="images"
-                        stroke="#00FF88"
+                        stroke="var(--brand-success)"
                         strokeWidth={2}
                       />
                       <Line
                         type="monotone"
                         dataKey="transitions"
-                        stroke="#FFD700"
+                        stroke="var(--warning)"
                         strokeWidth={2}
                       />
                     </LineChart>
@@ -2251,10 +2267,10 @@ export default function ProjectDashboardPage() {
 
           {/* Optimization Tab */}
           <TabsContent value="optimization" className="space-y-6 mt-6">
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+            <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-[#FFD700]" />
+                  <Zap className="w-5 h-5 text-warning" />
                   Bulk Optimization Tools
                 </CardTitle>
                 <CardDescription>
@@ -2271,10 +2287,10 @@ export default function ProjectDashboardPage() {
           <TabsContent value="export-import" className="space-y-6 mt-6">
             <ExportImportPanel />
 
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+            <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Archive className="w-5 h-5 text-[#888888]" />
+                  <Archive className="w-5 h-5 text-text-muted" />
                   Recent Backups
                 </CardTitle>
                 <CardDescription>
@@ -2291,11 +2307,11 @@ export default function ProjectDashboardPage() {
                   ].map((backup, index) => (
                     <div
                       key={index}
-                      className="flex items-center justify-between p-3 rounded-lg border border-gray-800/50 hover:border-gray-700 transition-all cursor-pointer"
+                      className="flex items-center justify-between p-3 rounded-lg border border-border-subtle/50 hover:border-border-default transition-all cursor-pointer"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-gray-800/50 flex items-center justify-center">
-                          <Archive className="w-5 h-5 text-gray-500" />
+                        <div className="w-10 h-10 rounded-lg bg-surface-hover/50 flex items-center justify-center">
+                          <Archive className="w-5 h-5 text-text-muted" />
                         </div>
                         <div>
                           <p className="text-sm font-medium">
@@ -2304,11 +2320,11 @@ export default function ProjectDashboardPage() {
                           <div className="flex items-center gap-2 mt-1">
                             <Badge
                               variant="outline"
-                              className="text-xs bg-gray-800/50 border-gray-700"
+                              className="text-xs bg-surface-hover/50 border-border-default"
                             >
                               {backup.type}
                             </Badge>
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-text-muted">
                               {backup.size}
                             </span>
                           </div>
@@ -2318,7 +2334,7 @@ export default function ProjectDashboardPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-gray-700 hover:border-[#00D9FF]"
+                          className="border-border-default hover:border-brand-primary"
                         >
                           <Download className="w-3 h-3 mr-1" />
                           Download
@@ -2326,7 +2342,7 @@ export default function ProjectDashboardPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-gray-700 hover:border-[#00FF88]"
+                          className="border-border-default hover:border-brand-success"
                         >
                           <RefreshCw className="w-3 h-3 mr-1" />
                           Restore

@@ -36,7 +36,7 @@ export function VanishActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Image to Wait For</Label>
+        <Label className="text-xs text-text-muted">Image to Wait For</Label>
         {Boolean((action.config as Record<string, unknown>).removedImage) && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
             <span className="font-medium">Removed Image:</span>{" "}
@@ -57,7 +57,7 @@ export function VanishActionProperties({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Timeout (ms)</Label>
+        <Label className="text-xs text-text-muted">Timeout (ms)</Label>
         <Input
           type="number"
           min="0"
@@ -65,12 +65,12 @@ export function VanishActionProperties({
           onChange={(e) =>
             updateConfig("maxWaitTime", Number.parseInt(e.target.value))
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Check Interval (ms)</Label>
+        <Label className="text-xs text-text-muted">Check Interval (ms)</Label>
         <Input
           type="number"
           min="0"
@@ -78,7 +78,7 @@ export function VanishActionProperties({
           onChange={(e) =>
             updateConfig("pollInterval", Number.parseInt(e.target.value))
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
       </div>
 

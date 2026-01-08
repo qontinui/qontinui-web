@@ -150,7 +150,7 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
     >
       {/* Search Input */}
       <div className="quick-add-menu__search">
-        <Search className="quick-add-menu__search-icon h-4 w-4 text-gray-400" />
+        <Search className="quick-add-menu__search-icon h-4 w-4 text-text-muted" />
         <input
           ref={inputRef}
           type="text"
@@ -171,8 +171,8 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
         {/* Header */}
         {!query && recentTypes.length > 0 && (
           <div className="quick-add-menu__section-header">
-            <Clock className="h-3 w-3 text-gray-400" />
-            <span className="text-xs text-gray-600">Recent</span>
+            <Clock className="h-3 w-3 text-text-muted" />
+            <span className="text-xs text-text-muted">Recent</span>
           </div>
         )}
 
@@ -216,8 +216,8 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
           </div>
         ) : (
           <div className="quick-add-menu__empty">
-            <Search className="h-8 w-8 text-gray-300" />
-            <p className="text-sm text-gray-500">No nodes found</p>
+            <Search className="h-8 w-8 text-text-secondary" />
+            <p className="text-sm text-text-muted">No nodes found</p>
           </div>
         )}
       </div>
@@ -357,7 +357,9 @@ export const QuickActionsPanel: React.FC<QuickActionsPanelProps> = ({
     <div className={cn("quick-actions-panel", className)}>
       <div className="quick-actions-panel__header">
         <Zap className="h-4 w-4 text-yellow-500" />
-        <span className="text-sm font-medium text-gray-700">Quick Add</span>
+        <span className="text-sm font-medium text-text-secondary">
+          Quick Add
+        </span>
       </div>
       <div className="quick-actions-panel__grid">
         {quickNodes.map((metadata) => {

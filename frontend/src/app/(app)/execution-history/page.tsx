@@ -77,7 +77,7 @@ function getStatusIcon(status: string) {
     case "running":
       return <Clock className="w-4 h-4 text-blue-500 animate-pulse" />;
     default:
-      return <Clock className="w-4 h-4 text-gray-500" />;
+      return <Clock className="w-4 h-4 text-text-muted" />;
   }
 }
 
@@ -170,9 +170,9 @@ export default function ExecutionHistoryPage() {
 
   return (
     <RequireProject pageName="Execution History">
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         {/* Header */}
-        <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-4">
               <History className="w-6 h-6 text-[#F59E0B]" />
@@ -194,7 +194,7 @@ export default function ExecutionHistoryPage() {
           ) : (
             <div className="space-y-6">
               {/* Workflow and Run Selection */}
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+              <Card className="bg-surface-raised/50 border-border-subtle/50">
                 <CardHeader>
                   <CardTitle className="text-lg text-white flex items-center gap-2">
                     <Play className="w-5 h-5" />
@@ -205,12 +205,12 @@ export default function ExecutionHistoryPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Workflow Selector */}
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-400 flex items-center gap-2">
+                      <label className="text-sm font-medium text-text-muted flex items-center gap-2">
                         <Workflow className="w-4 h-4" />
                         Workflow
                       </label>
                       {workflowsLoading ? (
-                        <Skeleton className="h-9 w-full bg-gray-800/50" />
+                        <Skeleton className="h-9 w-full bg-surface-raised/50" />
                       ) : workflowsError ? (
                         <div className="text-sm text-red-400">
                           Failed to load workflows
@@ -222,10 +222,10 @@ export default function ExecutionHistoryPage() {
                             setSelectedWorkflow(value || null)
                           }
                         >
-                          <SelectTrigger className="w-full bg-gray-800/50 border-gray-700">
+                          <SelectTrigger className="w-full bg-surface-raised/50 border-border-default">
                             <SelectValue placeholder="Select a workflow..." />
                           </SelectTrigger>
-                          <SelectContent className="bg-[#1A1A1B] border-gray-700">
+                          <SelectContent className="bg-surface-raised border-border-default">
                             {workflows.map((workflow, index) => (
                               <SelectItem
                                 key={
@@ -234,12 +234,12 @@ export default function ExecutionHistoryPage() {
                                 }
                                 value={workflow.workflow_name}
                                 textValue={workflow.workflow_name}
-                                className="text-white hover:bg-gray-800"
+                                className="text-white hover:bg-surface-raised"
                               >
                                 <span className="flex-1">
                                   {workflow.workflow_name}
                                 </span>
-                                <span className="text-xs text-gray-500 ml-2">
+                                <span className="text-xs text-text-muted ml-2">
                                   {workflow.run_count} run
                                   {workflow.run_count !== 1 ? "s" : ""}
                                 </span>
@@ -248,7 +248,7 @@ export default function ExecutionHistoryPage() {
                           </SelectContent>
                         </Select>
                       ) : (
-                        <div className="text-sm text-gray-500 py-2">
+                        <div className="text-sm text-text-muted py-2">
                           No workflows with execution history found
                         </div>
                       )}
@@ -256,16 +256,16 @@ export default function ExecutionHistoryPage() {
 
                     {/* Run Selector */}
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-400 flex items-center gap-2">
+                      <label className="text-sm font-medium text-text-muted flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
                         Execution Run
                       </label>
                       {!selectedWorkflow ? (
-                        <div className="text-sm text-gray-500 py-2">
+                        <div className="text-sm text-text-muted py-2">
                           Select a workflow first
                         </div>
                       ) : runsLoading ? (
-                        <Skeleton className="h-9 w-full bg-gray-800/50" />
+                        <Skeleton className="h-9 w-full bg-surface-raised/50" />
                       ) : runsError ? (
                         <div className="text-sm text-red-400">
                           Failed to load runs
@@ -277,16 +277,16 @@ export default function ExecutionHistoryPage() {
                             setSelectedRunId(value || null)
                           }
                         >
-                          <SelectTrigger className="w-full bg-gray-800/50 border-gray-700">
+                          <SelectTrigger className="w-full bg-surface-raised/50 border-border-default">
                             <SelectValue placeholder="Select a run..." />
                           </SelectTrigger>
-                          <SelectContent className="bg-[#1A1A1B] border-gray-700 max-h-[300px]">
+                          <SelectContent className="bg-[#1A1A1B] border-border-default max-h-[300px]">
                             {runs.map((run) => (
                               <SelectItem
                                 key={run.id}
                                 value={run.id}
                                 textValue={formatRunDateTime(run.started_at)}
-                                className="text-white hover:bg-gray-800"
+                                className="text-white hover:bg-surface-raised"
                               >
                                 <div className="flex items-center gap-3">
                                   {getStatusIcon(run.status)}
@@ -295,7 +295,7 @@ export default function ExecutionHistoryPage() {
                                   </span>
                                   {run.duration_seconds !== null &&
                                     run.duration_seconds !== undefined && (
-                                      <span className="text-xs text-gray-500">
+                                      <span className="text-xs text-text-muted">
                                         ({run.duration_seconds}s)
                                       </span>
                                     )}
@@ -305,14 +305,14 @@ export default function ExecutionHistoryPage() {
                           </SelectContent>
                         </Select>
                       ) : (
-                        <div className="text-sm text-gray-500 py-2">
+                        <div className="text-sm text-text-muted py-2">
                           No runs found for this workflow
                         </div>
                       )}
                     </div>
                   </div>
 
-                  <p className="text-sm text-gray-500 mt-4">
+                  <p className="text-sm text-text-muted mt-4">
                     Select a workflow and execution run to view its tree event
                     history.
                   </p>
@@ -320,29 +320,29 @@ export default function ExecutionHistoryPage() {
               </Card>
 
               {/* Info Card */}
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+              <Card className="bg-surface-raised/50 border-border-subtle/50">
                 <CardContent className="py-12">
                   <div className="text-center">
-                    <History className="w-16 h-16 mx-auto mb-4 text-gray-600" />
-                    <h3 className="text-xl font-medium text-gray-300 mb-2">
+                    <History className="w-16 h-16 mx-auto mb-4 text-text-muted" />
+                    <h3 className="text-xl font-medium text-text-secondary mb-2">
                       Execution Tree Events
                     </h3>
-                    <p className="text-sm text-gray-500 max-w-md mx-auto">
+                    <p className="text-sm text-text-muted max-w-md mx-auto">
                       View detailed tree events for any execution run. This
                       shows the hierarchical structure of workflows, actions,
                       and transitions with timing, status, and metadata
                       information.
                     </p>
                     <div className="flex justify-center gap-4 mt-6">
-                      <div className="flex items-center gap-2 text-sm text-gray-400">
+                      <div className="flex items-center gap-2 text-sm text-text-muted">
                         <CheckCircle2 className="w-4 h-4 text-green-500" />
                         Success
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-400">
+                      <div className="flex items-center gap-2 text-sm text-text-muted">
                         <XCircle className="w-4 h-4 text-red-500" />
                         Failed
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-400">
+                      <div className="flex items-center gap-2 text-sm text-text-muted">
                         <Clock className="w-4 h-4 text-blue-500" />
                         Running
                       </div>

@@ -728,7 +728,8 @@ Generated: ${new Date().toLocaleString()}
 function WorkflowNodeComponent({ data }: { data: WorkflowNode["data"] }) {
   const getNodeColor = () => {
     if (data.isCircular) return "border-red-500 bg-red-50 dark:bg-red-950";
-    if (data.isUnused) return "border-gray-400 bg-gray-50 dark:bg-gray-900";
+    if (data.isUnused)
+      return "border-border-default bg-surface-canvas dark:bg-surface-canvas";
     if (data.isLeaf) return "border-green-500 bg-green-50 dark:bg-green-950";
     return "border-blue-500 bg-blue-50 dark:bg-blue-950";
   };
@@ -736,7 +737,7 @@ function WorkflowNodeComponent({ data }: { data: WorkflowNode["data"] }) {
   const getStatusIcon = () => {
     if (data.isCircular)
       return <AlertCircle className="h-3 w-3 text-red-600" />;
-    if (data.isUnused) return <EyeOff className="h-3 w-3 text-gray-500" />;
+    if (data.isUnused) return <EyeOff className="h-3 w-3 text-text-muted" />;
     if (data.isLeaf) return <Target className="h-3 w-3 text-green-600" />;
     return <Network className="h-3 w-3 text-blue-600" />;
   };
@@ -1362,7 +1363,7 @@ function DependencyGraphInner({
                 <span>Circular dependency</span>
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 rounded border-2 border-gray-400 bg-gray-50 dark:bg-gray-900" />
+                <div className="w-3 h-3 rounded border-2 border-border-default bg-surface-canvas dark:bg-surface-canvas" />
                 <span>Unused</span>
               </div>
             </div>
@@ -1502,7 +1503,7 @@ function DependencyGraphInner({
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-sm font-medium flex items-center gap-2">
-                    <EyeOff className="h-4 w-4 text-gray-600" />
+                    <EyeOff className="h-4 w-4 text-text-muted" />
                     Unused Workflows
                   </h4>
                   <Badge variant="secondary" className="text-xs">
@@ -1652,7 +1653,7 @@ function DependencyGraphInner({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Unused:</span>
-                    <span className="font-medium text-gray-600">
+                    <span className="font-medium text-text-muted">
                       {analysis.unusedWorkflows.length}
                     </span>
                   </div>

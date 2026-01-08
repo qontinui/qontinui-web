@@ -238,11 +238,11 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center justify-between p-3 border-b bg-gray-50">
+      <div className="flex items-center justify-between p-3 border-b bg-surface-canvas">
         <div className="flex items-center gap-2">
-          <Search className="w-4 h-4 text-gray-600" />
+          <Search className="w-4 h-4 text-text-muted" />
           <span className="text-sm font-medium">Match Visualization</span>
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-text-muted">
             ({matches.length} matches found)
           </span>
         </div>
@@ -287,14 +287,14 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
       {/* Canvas Container */}
       <div
         ref={containerRef}
-        className="flex-1 flex items-center justify-center bg-gray-100 p-5 overflow-auto"
+        className="flex-1 flex items-center justify-center bg-surface-raised p-5 overflow-auto"
       >
         <div className="relative">
           <canvas
             ref={canvasRef}
             onMouseMove={handleMouseMove}
             onMouseLeave={() => setHoveredMatch(null)}
-            className="border border-gray-300 shadow-lg cursor-crosshair"
+            className="border border-border-default shadow-lg cursor-crosshair"
           />
 
           {/* Scale indicator */}
@@ -329,7 +329,9 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
                 <div
                   key={index}
                   className={`flex items-center justify-between p-2 text-xs rounded cursor-pointer transition-colors ${
-                    hoveredMatch === match ? "bg-blue-100" : "hover:bg-gray-50"
+                    hoveredMatch === match
+                      ? "bg-blue-100"
+                      : "hover:bg-surface-raised/80"
                   }`}
                   onMouseEnter={() => setHoveredMatch(match)}
                   onMouseLeave={() => setHoveredMatch(null)}
@@ -338,7 +340,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
                     <Target className="w-3 h-3" />
                     <span>Match #{index + 1}</span>
                     {match.label && (
-                      <span className="text-gray-600">({match.label})</span>
+                      <span className="text-text-muted">({match.label})</span>
                     )}
                   </div>
                   <div className="flex items-center gap-3">

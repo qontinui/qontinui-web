@@ -75,8 +75,8 @@ export function PackageRatings({
       {/* Overall Rating */}
       <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
         {/* Average Rating */}
-        <div className="flex flex-col items-center justify-center p-6 bg-gray-900/50 rounded-lg border border-gray-800 min-w-[200px]">
-          <div className="text-5xl font-bold text-gray-100 mb-2">
+        <div className="flex flex-col items-center justify-center p-6 bg-surface-canvas/50 rounded-lg border border-border-subtle min-w-[200px]">
+          <div className="text-5xl font-bold text-text-primary mb-2">
             {averageRating.toFixed(1)}
           </div>
           <div className="flex gap-1 mb-2">
@@ -87,12 +87,12 @@ export function PackageRatings({
                   "w-5 h-5",
                   star <= Math.round(averageRating)
                     ? "fill-amber-500 text-amber-500"
-                    : "text-gray-600"
+                    : "text-text-muted"
                 )}
               />
             ))}
           </div>
-          <div className="text-sm text-gray-400">
+          <div className="text-sm text-text-muted">
             {totalRatings} {totalRatings === 1 ? "rating" : "ratings"}
           </div>
         </div>
@@ -102,16 +102,16 @@ export function PackageRatings({
           {ratingDistribution.map(({ stars, count, percentage }) => (
             <div key={stars} className="flex items-center gap-3">
               <div className="flex items-center gap-1 w-16">
-                <span className="text-sm text-gray-400">{stars}</span>
+                <span className="text-sm text-text-muted">{stars}</span>
                 <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
               </div>
-              <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div className="flex-1 h-2 bg-surface-raised rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-300"
                   style={{ width: `${percentage}%` }}
                 />
               </div>
-              <div className="w-12 text-sm text-gray-400 text-right">
+              <div className="w-12 text-sm text-text-muted text-right">
                 {count}
               </div>
             </div>
@@ -123,7 +123,7 @@ export function PackageRatings({
           <DialogTrigger asChild>
             <Button
               variant="outline"
-              className="bg-gray-900/50 border-cyan-500/50 hover:bg-cyan-950/30"
+              className="bg-surface-canvas/50 border-brand-primary/50 hover:bg-brand-primary/10"
             >
               <Star className="w-4 h-4 mr-2" />
               {userRating ? "Update Rating" : "Rate Package"}
@@ -156,14 +156,14 @@ export function PackageRatings({
                           "w-10 h-10 transition-colors",
                           star <= (hoverRating || selectedRating)
                             ? "fill-amber-500 text-amber-500"
-                            : "text-gray-600 hover:text-gray-500"
+                            : "text-text-muted hover:text-text-secondary"
                         )}
                       />
                     </button>
                   ))}
                 </div>
                 {selectedRating > 0 && (
-                  <div className="text-sm text-gray-400">
+                  <div className="text-sm text-text-muted">
                     {selectedRating === 1 && "Poor"}
                     {selectedRating === 2 && "Fair"}
                     {selectedRating === 3 && "Good"}
@@ -177,7 +177,7 @@ export function PackageRatings({
               <div className="space-y-2">
                 <label
                   htmlFor="review"
-                  className="text-sm font-medium text-gray-300"
+                  className="text-sm font-medium text-text-secondary"
                 >
                   Review (optional)
                 </label>
@@ -187,7 +187,7 @@ export function PackageRatings({
                   value={review}
                   onChange={(e) => setReview(e.target.value)}
                   rows={4}
-                  className="resize-none bg-gray-900/50 border-gray-700"
+                  className="resize-none bg-surface-canvas/50 border-border-default"
                 />
               </div>
             </div>
@@ -203,7 +203,7 @@ export function PackageRatings({
               <Button
                 onClick={handleSubmit}
                 disabled={selectedRating === 0 || isSubmitting}
-                className="bg-gradient-to-r from-cyan-500 to-purple-500"
+                className="bg-gradient-to-r from-brand-primary to-brand-secondary"
               >
                 {isSubmitting ? "Submitting..." : "Submit Rating"}
               </Button>
@@ -215,22 +215,22 @@ export function PackageRatings({
       {/* Reviews List */}
       {ratings.length > 0 && (
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-100">Reviews</h3>
+          <h3 className="text-lg font-semibold text-text-primary">Reviews</h3>
           <div className="space-y-4">
             {ratings.map((rating) => (
               <div
                 key={rating.id}
-                className="p-4 bg-gray-900/30 rounded-lg border border-gray-800"
+                className="p-4 bg-surface-canvas/30 rounded-lg border border-border-subtle"
               >
                 <div className="flex items-start gap-3">
-                  <Avatar className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center">
+                  <Avatar className="w-10 h-10 bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center">
                     <span className="text-white font-semibold">
                       {rating.user.username.charAt(0).toUpperCase()}
                     </span>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-gray-300">
+                      <span className="font-medium text-text-secondary">
                         {rating.user.username}
                       </span>
                       <div className="flex gap-0.5">
@@ -241,19 +241,19 @@ export function PackageRatings({
                               "w-3 h-3",
                               star <= rating.rating
                                 ? "fill-amber-500 text-amber-500"
-                                : "text-gray-600"
+                                : "text-text-muted"
                             )}
                           />
                         ))}
                       </div>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-text-muted">
                         {formatDistanceToNow(new Date(rating.created_at), {
                           addSuffix: true,
                         })}
                       </span>
                     </div>
                     {rating.review && (
-                      <p className="text-sm text-gray-400 mt-2">
+                      <p className="text-sm text-text-muted mt-2">
                         {rating.review}
                       </p>
                     )}

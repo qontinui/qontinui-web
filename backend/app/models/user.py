@@ -155,3 +155,11 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="assigned_to",
         foreign_keys="ExecutionIssue.assigned_to_user_id",
     )
+    task_runs = relationship(
+        "TaskRun",
+        back_populates="created_by",
+    )
+    verification_tests = relationship(
+        "VerificationTest",
+        back_populates="created_by",
+    )

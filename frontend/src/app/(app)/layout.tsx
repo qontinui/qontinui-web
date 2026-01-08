@@ -28,7 +28,7 @@ function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
   return (
     <div
       className={cn(
-        "fixed left-0 top-0 h-screen bg-[#0A0A0B] border-r border-gray-800/50",
+        "fixed left-0 top-0 h-screen bg-surface-canvas border-r border-border-subtle",
         isCollapsed ? "w-16" : "w-64"
       )}
     />

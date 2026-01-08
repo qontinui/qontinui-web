@@ -488,7 +488,7 @@ const StateDiscoveryTab: React.FC = () => {
               <Label className="text-sm font-medium">
                 Similarity Threshold
               </Label>
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-text-muted">
                 {similarityThreshold.toFixed(2)}
               </span>
             </div>
@@ -500,11 +500,11 @@ const StateDiscoveryTab: React.FC = () => {
               step={0.01}
               className="w-full"
             />
-            <div className="flex justify-between text-xs text-gray-500">
+            <div className="flex justify-between text-xs text-text-muted">
               <span>Loose (0.00)</span>
               <span>Strict (1.00)</span>
             </div>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-text-muted mt-1">
               Lower values find more variations, higher values require exact
               matches
             </p>
@@ -525,10 +525,10 @@ const StateDiscoveryTab: React.FC = () => {
               {selectedRegion && (
                 <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
                   <div className="font-medium">Selected Region:</div>
-                  <div className="text-gray-400">
+                  <div className="text-text-muted">
                     Position: ({selectedRegion.x}, {selectedRegion.y})
                   </div>
-                  <div className="text-gray-400">
+                  <div className="text-text-muted">
                     Size: {selectedRegion.width} × {selectedRegion.height}px
                   </div>
                   <Button
@@ -569,7 +569,7 @@ const StateDiscoveryTab: React.FC = () => {
           {isAnalyzing && (
             <div className="mt-4">
               <Progress value={analysisProgress} className="mb-2" />
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-text-muted">
                 Analyzing... {analysisProgress}%
               </p>
             </div>
@@ -585,7 +585,7 @@ const StateDiscoveryTab: React.FC = () => {
                 <div>
                   States: {filteredStates.length}
                   {filteredStates.length !== states?.length && (
-                    <span className="text-gray-500">
+                    <span className="text-text-muted">
                       {" "}
                       (of {states?.length})
                     </span>
@@ -594,7 +594,7 @@ const StateDiscoveryTab: React.FC = () => {
                 <div>
                   StateImages: {filteredStateImages.length}
                   {filteredStateImages.length !== stateImages?.length && (
-                    <span className="text-gray-500">
+                    <span className="text-text-muted">
                       {" "}
                       (of {stateImages?.length})
                     </span>
@@ -624,7 +624,7 @@ const StateDiscoveryTab: React.FC = () => {
                 <CardTitle className="text-sm">
                   States ({filteredStates.length})
                   {filteredStates.length !== states?.length && (
-                    <span className="text-gray-500 ml-1">(filtered)</span>
+                    <span className="text-text-muted ml-1">(filtered)</span>
                   )}
                 </CardTitle>
               </CardHeader>
@@ -635,7 +635,7 @@ const StateDiscoveryTab: React.FC = () => {
                     <button
                       key={state?.id || index}
                       className={cn(
-                        "w-full text-left px-2 py-1 rounded text-sm hover:bg-[#27272A]",
+                        "w-full text-left px-2 py-1 rounded text-sm hover:bg-surface-raised",
                         selectedState?.id === state?.id && "bg-blue-100"
                       )}
                       onClick={() => {
@@ -649,7 +649,7 @@ const StateDiscoveryTab: React.FC = () => {
                         <span className="truncate">
                           {state?.name || "Unnamed"}
                         </span>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-text-muted">
                           {state?.stateImageIds?.length || 0}
                         </span>
                       </div>
@@ -659,7 +659,7 @@ const StateDiscoveryTab: React.FC = () => {
               </CardContent>
             </Card>
           ) : (
-            <div className="mt-4 text-xs text-gray-500 text-center">
+            <div className="mt-4 text-xs text-text-muted text-center">
               No states found yet
             </div>
           )}
@@ -686,7 +686,7 @@ const StateDiscoveryTab: React.FC = () => {
                 <div className="space-y-2">
                   <Label className="text-xs flex justify-between">
                     <span>Max Dark Pixels</span>
-                    <span className="text-gray-500">
+                    <span className="text-text-muted">
                       {maxDarkPixelPercentage}%
                     </span>
                   </Label>
@@ -700,7 +700,7 @@ const StateDiscoveryTab: React.FC = () => {
                     step={5}
                     className="w-full"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Hide regions with more than {maxDarkPixelPercentage}% dark
                     pixels
                   </p>
@@ -710,7 +710,7 @@ const StateDiscoveryTab: React.FC = () => {
                 <div className="space-y-2">
                   <Label className="text-xs flex justify-between">
                     <span>Max Light Pixels</span>
-                    <span className="text-gray-500">
+                    <span className="text-text-muted">
                       {maxLightPixelPercentage}%
                     </span>
                   </Label>
@@ -724,7 +724,7 @@ const StateDiscoveryTab: React.FC = () => {
                     step={5}
                     className="w-full"
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Hide regions with more than {maxLightPixelPercentage}% light
                     pixels
                   </p>
@@ -766,22 +766,22 @@ const StateDiscoveryTab: React.FC = () => {
               </Tabs>
 
               {/* Zoom controls */}
-              <div className="flex items-center gap-2 bg-[#0A0A0B] border border-gray-800 border-gray-700 rounded-lg px-2 py-1">
+              <div className="flex items-center gap-2 bg-surface-canvas border border-border-default rounded-lg px-2 py-1">
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 hover:bg-gray-700 text-gray-300"
+                  className="h-7 px-2 hover:bg-surface-raised text-text-secondary"
                   onClick={() => setCanvasScale((s) => Math.max(s * 0.8, 0.1))}
                 >
                   <span className="text-lg">−</span>
                 </Button>
-                <span className="text-sm font-medium px-2 text-gray-300">
+                <span className="text-sm font-medium px-2 text-text-secondary">
                   {Math.round(canvasScale * 100)}%
                 </span>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 hover:bg-gray-700 text-gray-300"
+                  className="h-7 px-2 hover:bg-surface-raised text-text-secondary"
                   onClick={() => setCanvasScale((s) => Math.min(s * 1.2, 3))}
                 >
                   <span className="text-lg">+</span>
@@ -789,7 +789,7 @@ const StateDiscoveryTab: React.FC = () => {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 hover:bg-gray-700 text-gray-300"
+                  className="h-7 px-2 hover:bg-surface-raised text-text-secondary"
                   onClick={() => setCanvasScale(1)}
                 >
                   Fit
@@ -798,7 +798,7 @@ const StateDiscoveryTab: React.FC = () => {
 
               {selectedStateImages.size > 0 && (
                 <div className="flex items-center gap-2 ml-auto">
-                  <span className="text-sm text-gray-400">
+                  <span className="text-sm text-text-muted">
                     {selectedStateImages.size} selected
                   </span>
                   <Button
@@ -832,7 +832,7 @@ const StateDiscoveryTab: React.FC = () => {
               </div>
             ) : (
               <div
-                className="border border-gray-800 rounded-lg overflow-auto bg-[#0A0A0B]"
+                className="border border-border-subtle rounded-lg overflow-auto bg-surface-canvas"
                 style={{
                   flex: canvasScale < 0.8 ? "0 0 auto" : "1",
                   width:
@@ -861,7 +861,7 @@ const StateDiscoveryTab: React.FC = () => {
                     onImageSizeChange={setCanvasImageSize}
                   />
                 ) : (
-                  <div className="h-full flex items-center justify-center text-gray-400">
+                  <div className="h-full flex items-center justify-center text-text-muted">
                     <div className="text-center">
                       <Upload className="h-12 w-12 mx-auto mb-4" />
                       <p>Upload screenshots to begin</p>
@@ -907,7 +907,7 @@ const StateDiscoveryTab: React.FC = () => {
                   }}
                 />
               ) : (
-                <div className="text-center text-gray-400 mt-8">
+                <div className="text-center text-text-muted mt-8">
                   <p>Select a StateImage to view details</p>
                 </div>
               )}
@@ -938,7 +938,7 @@ const StateDiscoveryTab: React.FC = () => {
                   );
                 })()
               ) : (
-                <div className="text-center text-gray-400 mt-8">
+                <div className="text-center text-text-muted mt-8">
                   <p>Select a State to view details</p>
                 </div>
               )}

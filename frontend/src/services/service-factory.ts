@@ -24,6 +24,7 @@ import { RAGExportService } from "./rag-export-service";
 import { RAGDashboardService } from "./rag-dashboard-service";
 import { IssuesService } from "./issues-service";
 import { DiscoveriesService } from "./discoveries-service";
+import { AITasksService } from "./ai-tasks-service";
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -58,6 +59,7 @@ export class ServiceFactory {
   public readonly ragDashboardService: RAGDashboardService;
   public readonly issuesService: IssuesService;
   public readonly discoveriesService: DiscoveriesService;
+  public readonly aiTasksService: AITasksService;
 
   private constructor() {
     // Initialize auth services in dependency order
@@ -114,6 +116,9 @@ export class ServiceFactory {
     // Initialize discoveries service
     this.discoveriesService = new DiscoveriesService(this.httpClient);
 
+    // Initialize AI tasks service
+    this.aiTasksService = new AITasksService(this.httpClient);
+
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
       this.authService.logout();
@@ -160,3 +165,4 @@ export const ragExportService = factory.ragExportService;
 export const ragDashboardService = factory.ragDashboardService;
 export const issuesService = factory.issuesService;
 export const discoveriesService = factory.discoveriesService;
+export const aiTasksService = factory.aiTasksService;

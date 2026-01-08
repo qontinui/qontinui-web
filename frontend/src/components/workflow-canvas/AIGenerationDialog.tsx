@@ -211,25 +211,25 @@ export function AIGenerationDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="relative w-full max-w-6xl h-[90vh] bg-white dark:bg-gray-900 rounded-lg shadow-2xl flex flex-col">
+      <div className="relative w-full max-w-6xl h-[90vh] bg-white dark:bg-surface-canvas rounded-lg shadow-2xl flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle dark:border-border-default">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
               <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              <h2 className="text-xl font-semibold text-text-primary dark:text-white">
                 AI Workflow Generator
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm text-text-muted dark:text-text-muted">
                 Describe your workflow in plain English
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            className="p-2 hover:bg-surface-raised/50 dark:hover:bg-surface-raised rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -238,11 +238,11 @@ export function AIGenerationDialog({
         {/* Content */}
         <div className="flex-1 overflow-hidden flex">
           {/* Left Panel - Input */}
-          <div className="w-1/2 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+          <div className="w-1/2 border-r border-border-subtle dark:border-border-default flex flex-col">
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {/* Description Input */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary mb-2">
                   Workflow Description
                 </label>
                 <textarea
@@ -250,17 +250,17 @@ export function AIGenerationDialog({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Example: Create a workflow that logs into Gmail by clicking the login button and typing my credentials..."
-                  className="w-full h-48 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full h-48 px-4 py-3 border border-border-default dark:border-border-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none bg-white dark:bg-surface-raised text-text-primary dark:text-white"
                   disabled={state === "generating" || state === "refining"}
                 />
-                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                <div className="mt-2 text-xs text-text-muted dark:text-text-muted">
                   {description.length} characters
                 </div>
               </div>
 
               {/* Context Options */}
               <div className="space-y-3">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <h3 className="text-sm font-medium text-text-secondary dark:text-text-secondary">
                   Context Options
                 </h3>
 
@@ -272,7 +272,7 @@ export function AIGenerationDialog({
                       onChange={(e) => setUseExistingWorkflow(e.target.checked)}
                       className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
                     />
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                    <span className="text-sm text-text-muted dark:text-text-muted">
                       Extend existing workflow (
                       {existingWorkflow.actions.length} actions)
                     </span>
@@ -280,7 +280,7 @@ export function AIGenerationDialog({
                 )}
 
                 <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  <label className="block text-xs text-text-muted dark:text-text-muted mb-2">
                     Use Templates
                   </label>
                   <div className="flex flex-wrap gap-2">
@@ -302,7 +302,7 @@ export function AIGenerationDialog({
                         className={`px-3 py-1 text-xs rounded-full transition-colors ${
                           selectedTemplates.includes(templateId)
                             ? "bg-purple-600 text-white"
-                            : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                            : "bg-surface-raised/50 dark:bg-surface-raised text-text-muted dark:text-text-muted hover:bg-surface-raised dark:hover:bg-surface-raised/80"
                         }`}
                       >
                         {templateId.replace("_", " ")}
@@ -315,7 +315,7 @@ export function AIGenerationDialog({
               {/* Example Templates */}
               {showExamples && (
                 <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                  <h3 className="text-sm font-medium text-text-secondary dark:text-text-secondary mb-3">
                     Example Prompts
                   </h3>
                   <div className="space-y-2">
@@ -325,12 +325,12 @@ export function AIGenerationDialog({
                         <button
                           key={id}
                           onClick={() => handleTemplateSelect(template)}
-                          className="w-full text-left px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors group"
+                          className="w-full text-left px-4 py-3 bg-surface-raised/50 dark:bg-surface-raised hover:bg-surface-raised dark:hover:bg-surface-raised/80 rounded-lg transition-colors group"
                         >
-                          <div className="font-medium text-sm text-gray-900 dark:text-white mb-1">
+                          <div className="font-medium text-sm text-text-primary dark:text-white mb-1">
                             {template.name}
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                          <div className="text-xs text-text-muted dark:text-text-muted">
                             {template.description}
                           </div>
                         </button>
@@ -356,7 +356,7 @@ export function AIGenerationDialog({
             </div>
 
             {/* Generate Button */}
-            <div className="p-6 border-t border-gray-200 dark:border-gray-700">
+            <div className="p-6 border-t border-border-subtle dark:border-border-default">
               <button
                 onClick={handleGenerate}
                 disabled={
@@ -364,7 +364,7 @@ export function AIGenerationDialog({
                   state === "generating" ||
                   state === "refining"
                 }
-                className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-surface-raised disabled:text-text-muted dark:disabled:bg-surface-raised text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
               >
                 {state === "generating" ? (
                   <>
@@ -407,7 +407,7 @@ export function AIGenerationDialog({
                           JSON.stringify(currentWorkflow, null, 2)
                         );
                       }}
-                      className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      className="p-2 hover:bg-surface-raised/50 dark:hover:bg-surface-raised rounded-lg transition-colors"
                       title="Copy workflow JSON"
                     >
                       <Copy className="w-4 h-4" />
@@ -416,14 +416,14 @@ export function AIGenerationDialog({
 
                   {/* Workflow Preview */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <h3 className="text-sm font-medium text-text-secondary dark:text-text-secondary mb-2">
                       Generated Workflow
                     </h3>
-                    <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                      <div className="font-medium text-gray-900 dark:text-white mb-2">
+                    <div className="p-4 bg-surface-raised/50 dark:bg-surface-raised rounded-lg">
+                      <div className="font-medium text-text-primary dark:text-white mb-2">
                         {currentWorkflow?.name}
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                      <div className="text-sm text-text-muted dark:text-text-muted">
                         {currentWorkflow?.actions.length} actions
                       </div>
                     </div>
@@ -431,7 +431,7 @@ export function AIGenerationDialog({
 
                   {/* Explanation */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <h3 className="text-sm font-medium text-text-secondary dark:text-text-secondary mb-2">
                       Explanation
                     </h3>
                     <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-900 dark:text-blue-300">
@@ -442,14 +442,14 @@ export function AIGenerationDialog({
                   {/* Reasoning */}
                   {result.reasoning && result.reasoning.length > 0 && (
                     <div>
-                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <h3 className="text-sm font-medium text-text-secondary dark:text-text-secondary mb-2">
                         Reasoning
                       </h3>
                       <ul className="space-y-1">
                         {result.reasoning.map((reason, i) => (
                           <li
                             key={i}
-                            className="text-sm text-gray-600 dark:text-gray-400 flex items-start gap-2"
+                            className="text-sm text-text-muted dark:text-text-muted flex items-start gap-2"
                           >
                             <Check className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
                             {reason}
@@ -462,7 +462,7 @@ export function AIGenerationDialog({
                   {/* Alternatives */}
                   {result.alternatives && result.alternatives.length > 0 && (
                     <div>
-                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <h3 className="text-sm font-medium text-text-secondary dark:text-text-secondary mb-2">
                         Alternative Approaches
                       </h3>
                       <div className="space-y-2">
@@ -473,18 +473,18 @@ export function AIGenerationDialog({
                             className={`w-full text-left p-3 rounded-lg transition-colors ${
                               selectedAlternative === i
                                 ? "bg-purple-100 dark:bg-purple-900/30 border-2 border-purple-600"
-                                : "bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                : "bg-surface-raised/50 dark:bg-surface-raised hover:bg-surface-raised dark:hover:bg-surface-raised/80"
                             }`}
                           >
                             <div className="flex items-center justify-between mb-1">
-                              <div className="font-medium text-sm text-gray-900 dark:text-white">
+                              <div className="font-medium text-sm text-text-primary dark:text-white">
                                 Alternative {i + 1}
                               </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                              <div className="text-xs text-text-muted dark:text-text-muted">
                                 {Math.round(alt.confidence * 100)}%
                               </div>
                             </div>
-                            <div className="text-xs text-gray-600 dark:text-gray-400">
+                            <div className="text-xs text-text-muted dark:text-text-muted">
                               {alt.reason}
                             </div>
                           </button>
@@ -496,7 +496,7 @@ export function AIGenerationDialog({
                   {/* Suggestions */}
                   {result.suggestions && result.suggestions.length > 0 && (
                     <div>
-                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                      <h3 className="text-sm font-medium text-text-secondary dark:text-text-secondary mb-2 flex items-center gap-2">
                         <Lightbulb className="w-4 h-4 text-yellow-500" />
                         Suggestions
                       </h3>
@@ -504,7 +504,7 @@ export function AIGenerationDialog({
                         {result.suggestions.map((suggestion, i) => (
                           <li
                             key={i}
-                            className="text-sm text-gray-600 dark:text-gray-400"
+                            className="text-sm text-text-muted dark:text-text-muted"
                           >
                             {suggestion}
                           </li>
@@ -515,7 +515,7 @@ export function AIGenerationDialog({
 
                   {/* Refinement Input */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <h3 className="text-sm font-medium text-text-secondary dark:text-text-secondary mb-2">
                       Refine Workflow
                     </h3>
                     <div className="flex gap-2">
@@ -524,7 +524,7 @@ export function AIGenerationDialog({
                         value={refinementInput}
                         onChange={(e) => setRefinementInput(e.target.value)}
                         placeholder="e.g., Add error handling, Make it faster..."
-                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-800 text-sm"
+                        className="flex-1 px-3 py-2 border border-border-default dark:border-border-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-surface-raised text-sm"
                         disabled={state === "refining"}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && !e.shiftKey) {
@@ -538,7 +538,7 @@ export function AIGenerationDialog({
                         disabled={
                           !refinementInput.trim() || state === "refining"
                         }
-                        className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        className="px-4 py-2 bg-surface-raised hover:bg-surface-raised/80 disabled:bg-surface-raised disabled:text-text-muted dark:disabled:bg-surface-raised text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
                       >
                         {state === "refining" ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -552,10 +552,10 @@ export function AIGenerationDialog({
                 </div>
 
                 {/* Accept/Reject Buttons */}
-                <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+                <div className="p-6 border-t border-border-subtle dark:border-border-default flex gap-3">
                   <button
                     onClick={onClose}
-                    className="flex-1 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    className="flex-1 py-3 border border-border-default dark:border-border-default text-text-secondary dark:text-text-secondary rounded-lg font-medium hover:bg-surface-raised/50 dark:hover:bg-surface-raised transition-colors"
                   >
                     Cancel
                   </button>
@@ -574,21 +574,21 @@ export function AIGenerationDialog({
                   {state === "generating" ? (
                     <>
                       <Loader2 className="w-12 h-12 animate-spin text-purple-600 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                      <h3 className="text-lg font-medium text-text-primary dark:text-white mb-2">
                         Generating Workflow
                       </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                      <p className="text-sm text-text-muted dark:text-text-muted">
                         AI is analyzing your description and creating the
                         optimal workflow...
                       </p>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                      <Sparkles className="w-12 h-12 text-text-muted mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-text-primary dark:text-white mb-2">
                         No Workflow Generated Yet
                       </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                      <p className="text-sm text-text-muted dark:text-text-muted">
                         Describe your workflow and click Generate to see results
                       </p>
                     </>

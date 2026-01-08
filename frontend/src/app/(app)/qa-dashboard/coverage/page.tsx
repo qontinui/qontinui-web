@@ -45,20 +45,20 @@ export default function CoveragePage() {
 
   return (
     <RequireProject pageName="Test Coverage">
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         {/* Header */}
-        <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
                 onClick={() => router.push("/qa-dashboard")}
-                className="text-gray-400 hover:text-white"
+                className="text-text-muted hover:text-white"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-[#F59E0B] to-[#EF4444] bg-clip-text text-transparent">
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-warning to-error bg-clip-text text-transparent">
                 Test Coverage
               </h1>
             </div>
@@ -67,7 +67,7 @@ export default function CoveragePage() {
                 variant="outline"
                 size="sm"
                 onClick={() => router.push("/qa-dashboard")}
-                className="border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+                className="border-border-default hover:border-warning hover:text-warning"
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
                 Test Runs
@@ -76,7 +76,7 @@ export default function CoveragePage() {
                 variant="outline"
                 size="sm"
                 onClick={() => router.push("/qa-dashboard/deficiencies")}
-                className="border-gray-700 hover:border-[#EF4444] hover:text-[#EF4444]"
+                className="border-border-default hover:border-error hover:text-error"
               >
                 <AlertTriangle className="w-4 h-4 mr-2" />
                 Deficiencies
@@ -89,7 +89,7 @@ export default function CoveragePage() {
         <main className="p-6 max-w-7xl mx-auto">
           <div className="mb-8">
             <h2 className="text-3xl font-bold mb-2">Coverage Analysis</h2>
-            <p className="text-gray-400">
+            <p className="text-text-muted">
               Track test coverage trends and identify gaps in your testing
               strategy
             </p>
@@ -97,59 +97,61 @@ export default function CoveragePage() {
 
           {/* Coverage Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+            <Card className="bg-surface-raised/50 border-border-subtle/50">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-400">
+                <CardTitle className="text-sm font-medium text-text-muted">
                   Overall Coverage
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
-                    <div className="text-3xl font-bold text-[#F59E0B]">--</div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-3xl font-bold text-warning">--</div>
+                    <div className="text-xs text-text-muted mt-1">
                       Requires project selection
                     </div>
                   </div>
-                  <TrendingUp className="w-8 h-8 text-[#F59E0B]/50" />
+                  <TrendingUp className="w-8 h-8 text-warning/50" />
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+            <Card className="bg-surface-raised/50 border-border-subtle/50">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-400">
+                <CardTitle className="text-sm font-medium text-text-muted">
                   Passing Tests
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
-                    <div className="text-3xl font-bold text-green-500">--</div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-3xl font-bold text-brand-success">
+                      --
+                    </div>
+                    <div className="text-xs text-text-muted mt-1">
                       Requires project selection
                     </div>
                   </div>
-                  <CheckCircle2 className="w-8 h-8 text-green-500/50" />
+                  <CheckCircle2 className="w-8 h-8 text-brand-success/50" />
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+            <Card className="bg-surface-raised/50 border-border-subtle/50">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-400">
+                <CardTitle className="text-sm font-medium text-text-muted">
                   Failing Tests
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
-                    <div className="text-3xl font-bold text-red-500">--</div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-3xl font-bold text-error">--</div>
+                    <div className="text-xs text-text-muted mt-1">
                       Requires project selection
                     </div>
                   </div>
-                  <AlertTriangle className="w-8 h-8 text-red-500/50" />
+                  <AlertTriangle className="w-8 h-8 text-error/50" />
                 </div>
               </CardContent>
             </Card>
@@ -159,13 +161,13 @@ export default function CoveragePage() {
           {projectId ? (
             <CoverageTrendChart projectId={projectId} />
           ) : (
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+            <Card className="bg-surface-raised/50 border-border-subtle/50">
               <CardContent className="p-12 text-center">
-                <TrendingUp className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-300 mb-2">
+                <TrendingUp className="w-16 h-16 text-text-muted mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-text-secondary mb-2">
                   No Project Selected
                 </h3>
-                <p className="text-gray-400">
+                <p className="text-text-muted">
                   Please select a project from the dashboard to view coverage
                   trends
                 </p>

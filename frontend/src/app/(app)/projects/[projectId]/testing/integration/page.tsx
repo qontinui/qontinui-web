@@ -156,7 +156,7 @@ export default function IntegrationTestPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#00D9FF]" />
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
@@ -168,9 +168,9 @@ export default function IntegrationTestPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
@@ -182,14 +182,14 @@ export default function IntegrationTestPage() {
                   router.push(`/projects/${projectId}/testing`);
                 }
               }}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               {viewMode !== "list" && selectedRun
                 ? "Back to List"
                 : "Testing Dashboard"}
             </Button>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#0099CC] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-[#0099CC] bg-clip-text text-transparent">
               Integration Testing
             </h1>
             <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
@@ -226,7 +226,7 @@ export default function IntegrationTestPage() {
                 variant="outline"
                 size="sm"
                 onClick={toggleViewMode}
-                className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                className="border-border-default hover:border-brand-primary hover:text-brand-primary"
               >
                 {viewMode === "visual" ? (
                   <>
@@ -249,7 +249,7 @@ export default function IntegrationTestPage() {
                 size="sm"
                 onClick={fetchRuns}
                 disabled={loading}
-                className="border-gray-700 hover:border-gray-600"
+                className="border-border-default hover:border-border-default"
               >
                 <RefreshCw
                   className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
@@ -262,7 +262,7 @@ export default function IntegrationTestPage() {
             <Button
               onClick={runIntegrationTest}
               disabled={runningTest || !apiHealthy}
-              className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+              className="bg-brand-primary hover:bg-brand-primary/80 text-black"
             >
               {runningTest ? (
                 <>
@@ -325,7 +325,7 @@ export default function IntegrationTestPage() {
             {/* Welcome Section */}
             <div className="mb-8">
               <h2 className="text-3xl font-bold mb-2">Integration Test Runs</h2>
-              <p className="text-gray-400">
+              <p className="text-text-muted">
                 Run workflows in mock mode using historical data. No live GUI
                 required.
               </p>
@@ -334,7 +334,7 @@ export default function IntegrationTestPage() {
             {/* Runs List */}
             {loading && runs.length === 0 ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF]" />
+                <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
               </div>
             ) : runs.length === 0 ? (
               <EmptyState
@@ -382,13 +382,13 @@ interface EmptyStateProps {
 
 function EmptyState({ onRunTest, runningTest, apiHealthy }: EmptyStateProps) {
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <CardContent className="py-12 text-center">
-        <Activity className="w-16 h-16 mx-auto mb-4 text-gray-600" />
+        <Activity className="w-16 h-16 mx-auto mb-4 text-text-muted" />
         <h3 className="text-xl font-medium text-white mb-2">
           No Integration Tests Yet
         </h3>
-        <p className="text-gray-400 mb-6 max-w-md mx-auto">
+        <p className="text-text-muted mb-6 max-w-md mx-auto">
           Run your first integration test to validate workflow behavior using
           historical execution data. Tests run in mock mode without needing a
           live GUI.
@@ -396,7 +396,7 @@ function EmptyState({ onRunTest, runningTest, apiHealthy }: EmptyStateProps) {
         <Button
           onClick={onRunTest}
           disabled={runningTest || !apiHealthy}
-          className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+          className="bg-brand-primary hover:bg-brand-primary/80 text-black"
         >
           {runningTest ? (
             <>
@@ -460,7 +460,7 @@ function IntegrationTestRunsList({
         );
       default:
         return (
-          <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+          <Badge className="bg-surface-raised/20 text-text-muted border-border-subtle">
             {status}
           </Badge>
         );
@@ -483,7 +483,7 @@ function IntegrationTestRunsList({
       {runs.map((run) => (
         <Card
           key={run.id}
-          className="bg-[#1A1A1B]/50 border-gray-800/50 hover:border-gray-700/50 transition-colors cursor-pointer"
+          className="bg-surface-raised/50 border-border-subtle/50 hover:border-border-default/50 transition-colors cursor-pointer"
           onClick={() => onSelectRun(run.id)}
         >
           <CardContent className="py-4">
@@ -496,7 +496,7 @@ function IntegrationTestRunsList({
                     </span>
                     {getStatusBadge(run.status)}
                   </div>
-                  <div className="text-sm text-gray-400">
+                  <div className="text-sm text-text-muted">
                     {formatDate(run.started_at)}
                   </div>
                 </div>
@@ -504,7 +504,7 @@ function IntegrationTestRunsList({
 
               <div className="flex items-center gap-6 text-sm">
                 <div className="text-center">
-                  <div className="text-gray-400">Coverage</div>
+                  <div className="text-text-muted">Coverage</div>
                   <div
                     className={`font-bold ${
                       run.coverage_percentage >= 80
@@ -518,7 +518,7 @@ function IntegrationTestRunsList({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-gray-400">Success</div>
+                  <div className="text-text-muted">Success</div>
                   <div
                     className={`font-bold ${
                       run.success_rate >= 90
@@ -532,13 +532,13 @@ function IntegrationTestRunsList({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-gray-400">Actions</div>
+                  <div className="text-text-muted">Actions</div>
                   <div className="font-bold text-white">
                     {run.total_actions}
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-gray-400">Duration</div>
+                  <div className="text-text-muted">Duration</div>
                   <div className="font-bold text-white">
                     {formatDuration(run.duration_ms)}
                   </div>

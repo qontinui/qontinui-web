@@ -17,11 +17,11 @@ export function MetricCard({
   icon: Icon,
   trend,
   trendValue,
-  gradientFrom = "#00D9FF",
-  gradientTo = "#BD00FF",
+  gradientFrom = "var(--color-brand-primary)",
+  gradientTo = "var(--color-brand-secondary)",
 }: MetricCardProps) {
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm hover:border-[#00D9FF]/30 hover:shadow-[0_0_20px_rgba(0,217,255,0.05)] transition-all duration-300 relative overflow-hidden group">
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-primary/30 hover:shadow-[0_0_20px_rgba(0,217,255,0.05)] transition-all duration-300 relative overflow-hidden group">
       <div
         className="absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity duration-300"
         style={{
@@ -42,7 +42,7 @@ export function MetricCard({
             <div
               className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
                 trend === "up"
-                  ? "bg-[#00FF88]/20 text-[#00FF88]"
+                  ? "bg-brand-success/20 text-brand-success"
                   : "bg-red-500/20 text-red-400"
               }`}
             >
@@ -52,7 +52,7 @@ export function MetricCard({
           )}
         </div>
         <div className="space-y-1">
-          <p className="text-sm text-gray-400">{title}</p>
+          <p className="text-sm text-text-muted">{title}</p>
           <p className="text-2xl font-bold text-white">{value}</p>
         </div>
       </CardContent>

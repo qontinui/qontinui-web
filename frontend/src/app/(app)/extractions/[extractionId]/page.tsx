@@ -3,86 +3,93 @@
 /**
  * Extraction Detail Page
  *
- * Displays detailed information about a web extraction session:
- * - Session metadata (status, dates, source URLs)
- * - Configuration (viewports, max depth, etc.)
- * - Statistics (pages, elements, states)
- * - Annotations grouped by screenshot
- * - Import to workflow functionality
+ * Displays extraction results with:
+ * - Session metadata and statistics
+ * - Detection technique tabs (Elements, States, SAM3, Edge, OCR)
+ * - Screenshot viewer with bounding box overlays
+ * - Real vision extraction via Desktop Runner (runs locally on user's machine)
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import Link from "next/link";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
+import { runnerClient } from "@/lib/runner-client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
   Download,
   Trash2,
-  ChevronDown,
-  ChevronRight,
   Image as ImageIcon,
   Eye,
   Box,
   Clock,
   AlertCircle,
-  CheckCircle,
   Loader2,
+  Layers,
+  Grid3X3,
+  ScanLine,
+  Type,
+  RefreshCw,
+  Play,
 } from "lucide-react";
+import {
+  getVisionExtractionService,
+  type VisionExtractionResponse,
+  type EdgeDetectionResult,
+  type SAM3SegmentResult,
+  type OCRResult,
+} from "@/services/vision-extraction-service";
 
-// Types based on backend schemas
-interface ExtractionConfig {
-  viewports: [number, number][];
-  capture_hover_states: boolean;
-  capture_focus_states: boolean;
-  max_depth: number;
-  max_pages: number;
-  auth_cookies: Record<string, string>;
+// Types
+interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 interface ElementAnnotation {
   id: string;
-  bbox: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
+  bbox: BoundingBox;
   element_type: string;
   text_content: string | null;
   selector: string;
   is_interactive: boolean;
-  is_enabled: boolean;
-  semantic_role: string | null;
-  aria_label: string | null;
+  confidence?: number;
 }
 
 interface StateAnnotation {
   id: string;
   name: string;
-  bbox: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
+  bbox: BoundingBox;
   state_type: string;
   element_ids: string[];
+}
+
+interface VisionResults {
+  extraction_id?: string;
+  duration_ms?: number;
+  techniques_run: string[];
+  edge_results: EdgeDetectionResult[];
+  sam3_results: SAM3SegmentResult[];
+  ocr_results: OCRResult[];
+  merged_candidates: Array<{
+    id: string;
+    bbox: BoundingBox;
+    confidence: number;
+    category?: string;
+    text?: string;
+    detection_technique: string;
+    is_clickable: boolean;
+  }>;
+  edge_overlay?: string | null;
+  sam3_overlay?: string | null;
+  ocr_overlay?: string | null;
 }
 
 interface ExtractionAnnotation {
@@ -94,15 +101,14 @@ interface ExtractionAnnotation {
   viewport_height: number;
   elements: ElementAnnotation[];
   states: StateAnnotation[];
-  created_at: string;
-  updated_at: string;
+  vision_results?: VisionResults | null;
 }
 
 interface ExtractionSession {
   id: string;
   project_id: string;
   source_urls: string[];
-  config: ExtractionConfig;
+  config: Record<string, unknown>;
   status: string;
   stats: {
     pages_extracted?: number;
@@ -113,9 +119,38 @@ interface ExtractionSession {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
-  created_by: string | null;
   annotations: ExtractionAnnotation[];
 }
+
+// Colors for different element types
+const ELEMENT_COLORS: Record<string, { stroke: string; fill: string }> = {
+  button: { stroke: "#22c55e", fill: "rgba(34, 197, 94, 0.2)" },
+  input: { stroke: "#3b82f6", fill: "rgba(59, 130, 246, 0.2)" },
+  link: { stroke: "#a855f7", fill: "rgba(168, 85, 247, 0.2)" },
+  checkbox: { stroke: "#eab308", fill: "rgba(234, 179, 8, 0.2)" },
+  text: { stroke: "#9ca3af", fill: "rgba(156, 163, 175, 0.1)" },
+  image: { stroke: "#06b6d4", fill: "rgba(6, 182, 212, 0.2)" },
+  default: { stroke: "#ffffff", fill: "rgba(255, 255, 255, 0.1)" },
+};
+
+// Colors for states
+const STATE_COLORS = [
+  { stroke: "#ef4444", fill: "rgba(239, 68, 68, 0.3)" },
+  { stroke: "#22c55e", fill: "rgba(34, 197, 94, 0.3)" },
+  { stroke: "#3b82f6", fill: "rgba(59, 130, 246, 0.3)" },
+  { stroke: "#eab308", fill: "rgba(234, 179, 8, 0.3)" },
+  { stroke: "#a855f7", fill: "rgba(168, 85, 247, 0.3)" },
+];
+
+// SAM3 segment colors (for demo)
+const SAM3_COLORS = [
+  { stroke: "#f97316", fill: "rgba(249, 115, 34, 0.4)" },
+  { stroke: "#14b8a6", fill: "rgba(20, 184, 166, 0.4)" },
+  { stroke: "#8b5cf6", fill: "rgba(139, 92, 246, 0.4)" },
+  { stroke: "#ec4899", fill: "rgba(236, 72, 153, 0.4)" },
+];
+
+type DetectionTechnique = "elements" | "states" | "sam3" | "edge" | "ocr";
 
 export default function ExtractionDetailPage() {
   const router = useRouter();
@@ -128,9 +163,33 @@ export default function ExtractionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [expandedAnnotations, setExpandedAnnotations] = useState<Set<string>>(
-    new Set()
+
+  // Screenshot state
+  const [selectedAnnotationIdx, setSelectedAnnotationIdx] = useState(0);
+  const [screenshotCache, setScreenshotCache] = useState<Map<string, string>>(
+    new Map()
   );
+  const [loadingScreenshot, setLoadingScreenshot] = useState(false);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
+
+  // Detection technique
+  const [technique, setTechnique] = useState<DetectionTechnique>("elements");
+
+  // Vision extraction state
+  const [visionResults, setVisionResults] = useState<
+    Map<string, VisionExtractionResponse>
+  >(new Map());
+  const [runningVision, setRunningVision] = useState(false);
+
+  const [_visionError, setVisionError] = useState<string | null>(null);
+
+  // Uploaded screenshot for vision testing (when runner screenshots not available)
+  const [uploadedScreenshot, setUploadedScreenshot] = useState<string | null>(
+    null
+  );
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadExtraction();
@@ -149,144 +208,576 @@ export default function ExtractionDetailPage() {
     }
   };
 
+  // Get selected annotation
+  const selectedAnnotation = extraction?.annotations?.[selectedAnnotationIdx];
+
+  // Load screenshot
+  const loadScreenshot = useCallback(async () => {
+    if (!selectedAnnotation || !extractionId) return;
+
+    const screenshotId = selectedAnnotation.screenshot_id;
+    if (screenshotCache.has(screenshotId)) return;
+
+    setLoadingScreenshot(true);
+    setScreenshotError(null);
+
+    try {
+      const result = await runnerClient.getExtractionScreenshot(
+        extractionId,
+        screenshotId
+      );
+      if (result.success && result.blob) {
+        const url = URL.createObjectURL(result.blob);
+        setScreenshotCache((prev) => new Map(prev).set(screenshotId, url));
+      } else {
+        setScreenshotError(
+          result.error || "Screenshot not available. Is the Runner running?"
+        );
+      }
+    } catch (error) {
+      console.error("Failed to load screenshot:", error);
+      setScreenshotError(
+        "Failed to load screenshot. Make sure the Runner is connected."
+      );
+    } finally {
+      setLoadingScreenshot(false);
+    }
+  }, [selectedAnnotation, extractionId, screenshotCache]);
+
+  // Load screenshot when annotation changes
+  useEffect(() => {
+    if (selectedAnnotation) {
+      loadScreenshot();
+    }
+  }, [selectedAnnotation, loadScreenshot]);
+
+  // Run vision extraction on current screenshot
+  const runVisionExtraction = useCallback(async () => {
+    let base64: string;
+    let resultKey: string;
+
+    // Check for uploaded screenshot first, then cached screenshot
+    if (uploadedScreenshot) {
+      base64 = uploadedScreenshot;
+      resultKey = "uploaded";
+    } else if (selectedAnnotation) {
+      const screenshotUrl = screenshotCache.get(
+        selectedAnnotation.screenshot_id
+      );
+      if (!screenshotUrl) {
+        toast.error(
+          "No screenshot available. Upload a screenshot or ensure the Runner is connected."
+        );
+        return;
+      }
+      // Convert blob URL to base64
+      const response = await fetch(screenshotUrl);
+      const blob = await response.blob();
+      base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      resultKey = selectedAnnotation.screenshot_id;
+    } else {
+      toast.error("No screenshot available. Upload a screenshot first.");
+      return;
+    }
+
+    setRunningVision(true);
+    setVisionError(null);
+
+    try {
+      // Run vision extraction
+      const service = getVisionExtractionService();
+      const results = await service.extract({
+        screenshot: base64,
+        techniques: ["edge", "sam3", "ocr"],
+      });
+
+      setVisionResults((prev) => new Map(prev).set(resultKey, results));
+      toast.success(
+        `Vision extraction complete: ${results.edge_results.length} edges, ${results.sam3_results.length} segments, ${results.ocr_results.length} text regions`
+      );
+    } catch (error) {
+      console.error("Vision extraction failed:", error);
+      setVisionError(
+        error instanceof Error ? error.message : "Vision extraction failed"
+      );
+      toast.error(
+        "Vision extraction failed. Re-run the extraction with Desktop Runner for automatic vision processing."
+      );
+    } finally {
+      setRunningVision(false);
+    }
+  }, [selectedAnnotation, screenshotCache, uploadedScreenshot]);
+
+  // Handle file upload for vision extraction
+  const handleFileUpload = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64 = e.target?.result as string;
+        setUploadedScreenshot(base64);
+        toast.success("Screenshot uploaded. Click 'Run Vision' to analyze.");
+      };
+      reader.readAsDataURL(file);
+    },
+    []
+  );
+
+  // Get current vision results - prefer annotation's vision_results, fall back to manually run results
+  const currentVisionResults: VisionExtractionResponse | undefined =
+    selectedAnnotation?.vision_results
+      ? {
+          // Convert annotation vision_results to VisionExtractionResponse format
+          screenshot_id: selectedAnnotation.screenshot_id,
+          image_width: selectedAnnotation.viewport_width,
+          image_height: selectedAnnotation.viewport_height,
+          edge_results: selectedAnnotation.vision_results.edge_results || [],
+          sam3_results: selectedAnnotation.vision_results.sam3_results || [],
+          ocr_results: selectedAnnotation.vision_results.ocr_results || [],
+          merged_candidates:
+            selectedAnnotation.vision_results.merged_candidates || [],
+          edge_overlay: selectedAnnotation.vision_results.edge_overlay || null,
+          sam3_overlay: selectedAnnotation.vision_results.sam3_overlay || null,
+          ocr_overlay: selectedAnnotation.vision_results.ocr_overlay || null,
+          techniques_run:
+            selectedAnnotation.vision_results.techniques_run || [],
+          processing_time_ms:
+            selectedAnnotation.vision_results.duration_ms || 0,
+        }
+      : selectedAnnotation
+        ? visionResults.get(selectedAnnotation.screenshot_id)
+        : uploadedScreenshot
+          ? visionResults.get("uploaded")
+          : undefined;
+
+  // Get the screenshot to display (from cache or uploaded)
+  const displayScreenshot = selectedAnnotation
+    ? screenshotCache.get(selectedAnnotation.screenshot_id)
+    : null;
+  const hasScreenshot = !!displayScreenshot || !!uploadedScreenshot;
+
+  // Draw on canvas
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Get screenshot source: uploaded, cached, or none
+    const screenshotUrl =
+      uploadedScreenshot ||
+      (selectedAnnotation
+        ? screenshotCache.get(selectedAnnotation.screenshot_id)
+        : null);
+
+    const draw = () => {
+      // Clear canvas
+      ctx.fillStyle = "#1a1a1b";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (!screenshotUrl) {
+        // No screenshot - draw placeholder with upload prompt
+        canvas.width = 800;
+        canvas.height = 600;
+        ctx.fillStyle = "#1a1a1b";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "#6b7280";
+        ctx.font = "14px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          "Screenshot not available",
+          canvas.width / 2,
+          canvas.height / 2 - 30
+        );
+        ctx.fillText(
+          "Runner not connected or screenshots not stored.",
+          canvas.width / 2,
+          canvas.height / 2
+        );
+        ctx.fillStyle = "#00D9FF";
+        ctx.fillText(
+          "Click 'Upload Screenshot' to upload an image for vision analysis.",
+          canvas.width / 2,
+          canvas.height / 2 + 30
+        );
+        return;
+      }
+
+      const img = new Image();
+      img.src = screenshotUrl;
+      img.onload = () => {
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        ctx.drawImage(img, 0, 0);
+
+        // Draw based on selected technique
+        if (technique === "elements" && selectedAnnotation?.elements) {
+          drawElements(ctx, selectedAnnotation.elements);
+        } else if (technique === "states" && selectedAnnotation?.states) {
+          drawStates(ctx, selectedAnnotation.states);
+        } else if (technique === "sam3") {
+          drawSAM3Results(
+            ctx,
+            currentVisionResults?.sam3_results || [],
+            img.naturalWidth,
+            img.naturalHeight
+          );
+        } else if (technique === "edge") {
+          drawEdgeResults(
+            ctx,
+            currentVisionResults?.edge_results || [],
+            img.naturalWidth,
+            img.naturalHeight
+          );
+        } else if (technique === "ocr") {
+          drawOCRResults(ctx, currentVisionResults?.ocr_results || []);
+        }
+      };
+    };
+
+    draw();
+  }, [
+    selectedAnnotation,
+    screenshotCache,
+    technique,
+    currentVisionResults,
+    uploadedScreenshot,
+  ]);
+
+  // Draw elements
+  const drawElements = (
+    ctx: CanvasRenderingContext2D,
+    elements: ElementAnnotation[]
+  ) => {
+    for (const element of elements) {
+      const colors =
+        ELEMENT_COLORS[element.element_type] ?? ELEMENT_COLORS.default!;
+      const { x, y, width, height } = element.bbox;
+
+      ctx.strokeStyle = colors.stroke;
+      ctx.fillStyle = colors.fill;
+      ctx.lineWidth = 2;
+
+      ctx.fillRect(x, y, width, height);
+      ctx.strokeRect(x, y, width, height);
+
+      // Label
+      const label = element.text_content?.slice(0, 25) || element.element_type;
+      ctx.font = "11px sans-serif";
+      const textWidth = ctx.measureText(label).width;
+      const labelY = y > 16 ? y - 4 : y + height + 14;
+
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillRect(x, labelY - 12, textWidth + 6, 14);
+      ctx.fillStyle = colors.stroke;
+      ctx.fillText(label, x + 3, labelY - 1);
+    }
+  };
+
+  // Draw states
+  const drawStates = (
+    ctx: CanvasRenderingContext2D,
+    states: StateAnnotation[]
+  ) => {
+    states.forEach((state, idx) => {
+      const colors = STATE_COLORS[idx % STATE_COLORS.length]!;
+      const { x, y, width, height } = state.bbox;
+
+      ctx.strokeStyle = colors.stroke;
+      ctx.fillStyle = colors.fill;
+      ctx.lineWidth = 3;
+
+      ctx.fillRect(x, y, width, height);
+      ctx.strokeRect(x, y, width, height);
+
+      // Label
+      ctx.font = "bold 12px sans-serif";
+      const textWidth = ctx.measureText(state.name).width;
+      const labelY = y > 20 ? y - 6 : y + height + 16;
+
+      ctx.fillStyle = colors.stroke;
+      ctx.fillRect(x, labelY - 14, textWidth + 8, 18);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(state.name, x + 4, labelY);
+    });
+  };
+
+  // Draw SAM3 segmentation results
+  const drawSAM3Results = (
+    ctx: CanvasRenderingContext2D,
+    segments: SAM3SegmentResult[],
+    _width: number,
+    _height: number
+  ) => {
+    void _width;
+    void _height;
+
+    if (segments.length === 0) {
+      // No results - vision extraction runs automatically during extraction
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.fillRect(10, 10, 380, 24);
+      ctx.fillStyle = "#f97316";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(
+        "No SAM3 results. Vision runs automatically during extraction.",
+        16,
+        26
+      );
+      return;
+    }
+
+    // Draw each segment
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i]!;
+      const color = SAM3_COLORS[i % SAM3_COLORS.length]!;
+      const { x, y, width, height } = seg.bbox;
+
+      ctx.strokeStyle = color.stroke;
+      ctx.fillStyle = color.fill;
+      ctx.lineWidth = 2;
+      ctx.fillRect(x, y, width, height);
+      ctx.strokeRect(x, y, width, height);
+
+      // Label with score
+      const label = `${Math.round(seg.stability_score * 100)}%`;
+      ctx.font = "10px sans-serif";
+      const textWidth = ctx.measureText(label).width;
+      const labelY = y > 14 ? y - 3 : y + height + 12;
+
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillRect(x, labelY - 10, textWidth + 6, 13);
+      ctx.fillStyle = color.stroke;
+      ctx.fillText(label, x + 3, labelY);
+    }
+
+    // Info text
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(10, 10, 280, 24);
+    ctx.fillStyle = "#f97316";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`SAM3 Segments: ${segments.length} detected`, 16, 26);
+  };
+
+  // Draw edge detection results
+  const drawEdgeResults = (
+    ctx: CanvasRenderingContext2D,
+    edges: EdgeDetectionResult[],
+    _width: number,
+    _height: number
+  ) => {
+    void _width;
+    void _height;
+
+    if (edges.length === 0) {
+      // No results - vision extraction runs automatically during extraction
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.fillRect(10, 10, 380, 24);
+      ctx.fillStyle = "#00ff00";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(
+        "No edge results. Vision runs automatically during extraction.",
+        16,
+        26
+      );
+      return;
+    }
+
+    ctx.strokeStyle = "#00ff00";
+    ctx.lineWidth = 2;
+
+    for (const edge of edges) {
+      const { x, y, width, height } = edge.bbox;
+
+      // Draw contour if available
+      if (edge.contour_points && edge.contour_points.length > 0) {
+        ctx.beginPath();
+        ctx.moveTo(edge.contour_points[0]![0], edge.contour_points[0]![1]);
+        for (let i = 1; i < edge.contour_points.length; i++) {
+          ctx.lineTo(edge.contour_points[i]![0], edge.contour_points[i]![1]);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      } else {
+        // Draw bounding box
+        ctx.strokeRect(x, y, width, height);
+      }
+
+      // Label with vertex count
+      const label = `${edge.vertex_count}v`;
+      ctx.font = "9px sans-serif";
+      const textWidth = ctx.measureText(label).width;
+
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillRect(x, y - 12, textWidth + 4, 12);
+      ctx.fillStyle = "#00ff00";
+      ctx.fillText(label, x + 2, y - 2);
+    }
+
+    // Info text
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(10, 10, 280, 24);
+    ctx.fillStyle = "#00ff00";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`Edge Detection: ${edges.length} contours`, 16, 26);
+  };
+
+  // Draw OCR results
+  const drawOCRResults = (
+    ctx: CanvasRenderingContext2D,
+    ocrResults: OCRResult[]
+  ) => {
+    if (ocrResults.length === 0) {
+      // No results - vision extraction runs automatically during extraction
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.fillRect(10, 10, 380, 24);
+      ctx.fillStyle = "#a855f7";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(
+        "No OCR results. Vision runs automatically during extraction.",
+        16,
+        26
+      );
+      return;
+    }
+
+    for (const ocr of ocrResults) {
+      const { x, y, width, height } = ocr.bbox;
+
+      ctx.strokeStyle = "#a855f7";
+      ctx.fillStyle = "rgba(168, 85, 247, 0.2)";
+      ctx.lineWidth = 2;
+
+      ctx.fillRect(x, y, width, height);
+      ctx.strokeRect(x, y, width, height);
+
+      // Text label
+      const text = ocr.text.slice(0, 30);
+      ctx.font = "10px monospace";
+      const textWidth = ctx.measureText(text).width;
+      const labelY = y > 14 ? y - 3 : y + height + 12;
+
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillRect(x, labelY - 10, Math.min(textWidth + 6, width + 50), 13);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(text, x + 3, labelY);
+    }
+
+    // Info text
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(10, 10, 280, 24);
+    ctx.fillStyle = "#a855f7";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`OCR: ${ocrResults.length} text regions`, 16, 26);
+  };
+
   const handleImportStates = async () => {
     if (!extraction) return;
-
     setImporting(true);
     try {
       const result = await apiClient.importExtractionStates(extractionId, {
-        state_ids: [], // Empty array imports all states
+        state_ids: [],
       });
-
-      toast.success(
-        `Successfully imported ${result.imported_states} state(s) and ${result.imported_transitions} transition(s)`
-      );
+      toast.success(`Imported ${result.imported_states} state(s)`);
     } catch (error) {
       console.error("Error importing states:", error);
-      toast.error("Failed to import states to workflow");
+      toast.error("Failed to import states");
     } finally {
       setImporting(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this extraction session?")) {
-      return;
-    }
-
+    if (!confirm("Delete this extraction session?")) return;
     setDeleting(true);
     try {
       await apiClient.deleteExtractionSession(extractionId);
-      toast.success("Extraction session deleted");
+      toast.success("Extraction deleted");
       router.push(`/extractions?project=${projectId}`);
     } catch (error) {
       console.error("Error deleting extraction:", error);
-      toast.error("Failed to delete extraction session");
+      toast.error("Failed to delete");
       setDeleting(false);
     }
   };
 
-  const toggleAnnotation = (annotationId: string) => {
-    setExpandedAnnotations((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(annotationId)) {
-        newSet.delete(annotationId);
-      } else {
-        newSet.add(annotationId);
-      }
-      return newSet;
-    });
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
-      case "pending":
-        return <Clock className="h-5 w-5 text-yellow-500" />;
-      case "running":
-        return <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />;
-      case "failed":
-        return <AlertCircle className="h-5 w-5 text-red-500" />;
-      default:
-        return <AlertCircle className="h-5 w-5 text-gray-500" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-green-100 text-green-800 border-green-300";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800 border-yellow-300";
-      case "running":
-        return "bg-blue-100 text-blue-800 border-blue-300";
-      case "failed":
-        return "bg-red-100 text-red-800 border-red-300";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-300";
-    }
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, string> = {
+      completed: "bg-green-500/20 text-green-400 border-green-500/30",
+      running: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+      pending: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+      failed: "bg-red-500/20 text-red-400 border-red-500/30",
+    };
+    return variants[status] || "bg-surface-raised/20 text-text-muted";
   };
 
   if (loading) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
-        </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
       </div>
     );
   }
 
   if (!extraction) {
     return (
-      <div className="container mx-auto py-8">
+      <div className="p-8">
         <Card>
-          <CardHeader>
-            <CardTitle>Extraction Not Found</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button
-              variant="outline"
-              onClick={() => router.push(`/extractions?project=${projectId}`)}
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Extractions
-            </Button>
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <p className="mb-4">Extraction not found</p>
+            <Link href={`/extractions?project=${projectId}`}>
+              <Button variant="outline">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Extractions
+              </Button>
+            </Link>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  const totalElements = extraction.annotations.reduce(
-    (sum, ann) => sum + (ann.elements?.length || 0),
-    0
-  );
-  const totalStates = extraction.annotations.reduce(
-    (sum, ann) => sum + (ann.states?.length || 0),
-    0
-  );
+  const totalElements =
+    extraction.annotations?.reduce(
+      (sum, a) => sum + (a.elements?.length || 0),
+      0
+    ) || 0;
+  const totalStates =
+    extraction.annotations?.reduce(
+      (sum, a) => sum + (a.states?.length || 0),
+      0
+    ) || 0;
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="min-h-screen p-6 pb-20">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            onClick={() => router.push(`/extractions?project=${projectId}`)}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
+          <Link href={`/extractions?project=${projectId}`}>
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back
+            </Button>
+          </Link>
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              Extraction Session
-              {getStatusIcon(extraction.status)}
+            <h1 className="text-2xl font-bold flex items-center gap-3">
+              Extraction Results
+              <Badge className={getStatusBadge(extraction.status)}>
+                {extraction.status}
+              </Badge>
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Created {new Date(extraction.created_at).toLocaleString()}
+            <p className="text-sm text-muted-foreground">
+              {extraction.source_urls[0]}
+              {extraction.source_urls.length > 1 &&
+                ` +${extraction.source_urls.length - 1} more`}
             </p>
           </div>
         </div>
@@ -294,18 +785,14 @@ export default function ExtractionDetailPage() {
           <Button
             variant="outline"
             onClick={handleImportStates}
-            disabled={
-              importing ||
-              extraction.status !== "completed" ||
-              totalStates === 0
-            }
+            disabled={importing || totalStates === 0}
           >
             {importing ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Download className="mr-2 h-4 w-4" />
             )}
-            Import States to Workflow
+            Import States
           </Button>
           <Button
             variant="destructive"
@@ -322,339 +809,477 @@ export default function ExtractionDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6">
-        {/* Left Column: Info & Config */}
-        <div className="col-span-12 lg:col-span-4 space-y-6">
-          {/* Status & Info Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Session Info</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">
-                  Status
-                </label>
-                <div className="mt-1">
-                  <Badge
-                    variant="outline"
-                    className={`${getStatusColor(extraction.status)}`}
-                  >
-                    {extraction.status}
-                  </Badge>
-                </div>
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <ImageIcon className="h-8 w-8 text-muted-foreground" />
+            <div>
+              <div className="text-2xl font-bold">
+                {extraction.annotations?.length || 0}
               </div>
-
-              {extraction.error_message && (
-                <div>
-                  <label className="text-sm font-medium text-red-600">
-                    Error
-                  </label>
-                  <p className="mt-1 text-sm text-red-600">
-                    {extraction.error_message}
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">
-                  Source URLs ({extraction.source_urls.length})
-                </label>
-                <div className="mt-2 space-y-1">
-                  {extraction.source_urls.map((url, idx) => (
-                    <div
-                      key={idx}
-                      className="text-sm bg-accent/30 rounded px-2 py-1 truncate"
-                      title={url}
-                    >
-                      {url}
-                    </div>
-                  ))}
-                </div>
+              <div className="text-xs text-muted-foreground">Screenshots</div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <Box className="h-8 w-8 text-muted-foreground" />
+            <div>
+              <div className="text-2xl font-bold">{totalElements}</div>
+              <div className="text-xs text-muted-foreground">Elements</div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <Eye className="h-8 w-8 text-muted-foreground" />
+            <div>
+              <div className="text-2xl font-bold">{totalStates}</div>
+              <div className="text-xs text-muted-foreground">States</div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <Clock className="h-8 w-8 text-muted-foreground" />
+            <div>
+              <div className="text-sm font-medium">
+                {new Date(extraction.created_at).toLocaleDateString()}
               </div>
-
-              {extraction.started_at && (
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">
-                    Started
-                  </label>
-                  <p className="mt-1 text-sm">
-                    {new Date(extraction.started_at).toLocaleString()}
-                  </p>
-                </div>
-              )}
-
-              {extraction.completed_at && (
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">
-                    Completed
-                  </label>
-                  <p className="mt-1 text-sm">
-                    {new Date(extraction.completed_at).toLocaleString()}
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Configuration Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">
-                  Viewports
-                </label>
-                <div className="mt-1 space-y-1">
-                  {extraction.config.viewports.map((vp, idx) => (
-                    <div key={idx} className="text-sm">
-                      {vp[0]} x {vp[1]}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">
-                  Max Depth
-                </label>
-                <p className="mt-1 text-sm">{extraction.config.max_depth}</p>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">
-                  Max Pages
-                </label>
-                <p className="mt-1 text-sm">{extraction.config.max_pages}</p>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={extraction.config.capture_hover_states}
-                  disabled
-                  className="rounded"
-                />
-                <span className="text-muted-foreground">
-                  Capture Hover States
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={extraction.config.capture_focus_states}
-                  disabled
-                  className="rounded"
-                />
-                <span className="text-muted-foreground">
-                  Capture Focus States
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Statistics Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Statistics</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center p-3 bg-accent/30 rounded-lg">
-                  <ImageIcon className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                  <div className="text-2xl font-bold">
-                    {extraction.stats.pages_extracted || 0}
-                  </div>
-                  <div className="text-xs text-muted-foreground">Pages</div>
-                </div>
-                <div className="text-center p-3 bg-accent/30 rounded-lg">
-                  <Box className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                  <div className="text-2xl font-bold">{totalElements}</div>
-                  <div className="text-xs text-muted-foreground">Elements</div>
-                </div>
-                <div className="text-center p-3 bg-accent/30 rounded-lg">
-                  <Eye className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                  <div className="text-2xl font-bold">{totalStates}</div>
-                  <div className="text-xs text-muted-foreground">States</div>
-                </div>
-                <div className="text-center p-3 bg-accent/30 rounded-lg">
-                  <ImageIcon className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                  <div className="text-2xl font-bold">
-                    {extraction.annotations.length}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Screenshots
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column: Annotations */}
-        <Card className="col-span-12 lg:col-span-8">
-          <CardHeader>
-            <CardTitle className="text-lg">
-              Annotations ({extraction.annotations.length} screenshots)
-            </CardTitle>
-            <CardDescription>
-              Extracted elements and states from each screenshot
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {extraction.annotations.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <ImageIcon className="h-12 w-12 mb-2 opacity-50" />
-                <p>No annotations found</p>
-              </div>
-            ) : (
-              <ScrollArea className="h-[600px]">
-                <div className="space-y-3">
-                  {extraction.annotations.map((annotation) => {
-                    const isExpanded = expandedAnnotations.has(annotation.id);
-                    return (
-                      <Collapsible key={annotation.id}>
-                        <Card>
-                          <CollapsibleTrigger
-                            onClick={() => toggleAnnotation(annotation.id)}
-                            className="w-full"
-                          >
-                            <CardHeader className="cursor-pointer hover:bg-accent/50 transition-colors">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  {isExpanded ? (
-                                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                  )}
-                                  <div className="text-left">
-                                    <CardTitle className="text-sm font-medium">
-                                      {annotation.source_url}
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                      {annotation.viewport_width} x{" "}
-                                      {annotation.viewport_height} •{" "}
-                                      {annotation.elements?.length || 0}{" "}
-                                      elements •{" "}
-                                      {annotation.states?.length || 0} states
-                                    </CardDescription>
-                                  </div>
-                                </div>
-                                <div className="flex gap-2">
-                                  <Badge variant="outline" className="text-xs">
-                                    <Box className="h-3 w-3 mr-1" />
-                                    {annotation.elements?.length || 0}
-                                  </Badge>
-                                  <Badge variant="outline" className="text-xs">
-                                    <Eye className="h-3 w-3 mr-1" />
-                                    {annotation.states?.length || 0}
-                                  </Badge>
-                                </div>
-                              </div>
-                            </CardHeader>
-                          </CollapsibleTrigger>
-
-                          <CollapsibleContent>
-                            <CardContent className="pt-0">
-                              {/* Elements */}
-                              {annotation.elements &&
-                                annotation.elements.length > 0 && (
-                                  <div className="mb-4">
-                                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                                      <Box className="h-4 w-4" />
-                                      Elements ({annotation.elements.length})
-                                    </h4>
-                                    <div className="space-y-1">
-                                      {annotation.elements.map((element) => (
-                                        <div
-                                          key={element.id}
-                                          className="text-xs p-2 bg-accent/20 rounded"
-                                        >
-                                          <div className="flex items-center justify-between mb-1">
-                                            <Badge
-                                              variant="secondary"
-                                              className="text-xs"
-                                            >
-                                              {element.element_type}
-                                            </Badge>
-                                            <span className="text-muted-foreground">
-                                              {element.bbox.width} x{" "}
-                                              {element.bbox.height}
-                                            </span>
-                                          </div>
-                                          {element.text_content && (
-                                            <div className="text-muted-foreground truncate">
-                                              {element.text_content}
-                                            </div>
-                                          )}
-                                          {element.aria_label && (
-                                            <div className="text-muted-foreground text-xs">
-                                              aria: {element.aria_label}
-                                            </div>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                              {/* States */}
-                              {annotation.states &&
-                                annotation.states.length > 0 && (
-                                  <div>
-                                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                                      <Eye className="h-4 w-4" />
-                                      States ({annotation.states.length})
-                                    </h4>
-                                    <div className="space-y-1">
-                                      {annotation.states.map((state) => (
-                                        <div
-                                          key={state.id}
-                                          className="text-xs p-2 bg-blue-50 dark:bg-blue-950 rounded"
-                                        >
-                                          <div className="flex items-center justify-between mb-1">
-                                            <span className="font-medium">
-                                              {state.name}
-                                            </span>
-                                            <Badge
-                                              variant="outline"
-                                              className="text-xs"
-                                            >
-                                              {state.state_type}
-                                            </Badge>
-                                          </div>
-                                          <div className="text-muted-foreground">
-                                            {state.bbox.width} x{" "}
-                                            {state.bbox.height} •{" "}
-                                            {state.element_ids.length} elements
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                              {!annotation.elements?.length &&
-                                !annotation.states?.length && (
-                                  <p className="text-sm text-muted-foreground text-center py-4">
-                                    No annotations for this screenshot
-                                  </p>
-                                )}
-                            </CardContent>
-                          </CollapsibleContent>
-                        </Card>
-                      </Collapsible>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
-            )}
+              <div className="text-xs text-muted-foreground">Created</div>
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Main Content */}
+      {extraction.annotations && extraction.annotations.length > 0 ? (
+        <div className="flex gap-6">
+          {/* Left: Page selector */}
+          <Card className="w-56 shrink-0">
+            <CardHeader className="py-3">
+              <CardTitle className="text-sm">
+                Pages ({extraction.annotations.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-2 max-h-[600px] overflow-y-auto">
+              <div className="space-y-2">
+                {extraction.annotations.map((annotation, idx) => (
+                  <button
+                    key={annotation.id}
+                    onClick={() => setSelectedAnnotationIdx(idx)}
+                    className={`w-full text-left p-2 rounded-lg border transition-all ${
+                      idx === selectedAnnotationIdx
+                        ? "border-brand-primary bg-brand-primary/10"
+                        : "border-border hover:border-foreground/20"
+                    }`}
+                  >
+                    <div className="text-xs font-medium truncate">
+                      {(() => {
+                        try {
+                          return new URL(annotation.source_url).pathname || "/";
+                        } catch {
+                          return annotation.source_url.slice(0, 30);
+                        }
+                      })()}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-1">
+                      {annotation.elements?.length || 0} elements •{" "}
+                      {annotation.states?.length || 0} states
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Right: Detection visualization */}
+          <div className="flex-1 min-w-0">
+            <Card>
+              <CardHeader className="py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <CardTitle className="text-sm">Detection Results</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Tabs
+                      value={technique}
+                      onValueChange={(v) =>
+                        setTechnique(v as DetectionTechnique)
+                      }
+                    >
+                      <TabsList className="h-8">
+                        <TabsTrigger
+                          value="elements"
+                          className="text-xs px-3 h-7"
+                        >
+                          <Box className="h-3 w-3 mr-1" />
+                          Elements
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="states"
+                          className="text-xs px-3 h-7"
+                        >
+                          <Layers className="h-3 w-3 mr-1" />
+                          States
+                        </TabsTrigger>
+                        <TabsTrigger value="sam3" className="text-xs px-3 h-7">
+                          <Grid3X3 className="h-3 w-3 mr-1" />
+                          SAM3
+                        </TabsTrigger>
+                        <TabsTrigger value="edge" className="text-xs px-3 h-7">
+                          <ScanLine className="h-3 w-3 mr-1" />
+                          Edge
+                        </TabsTrigger>
+                        <TabsTrigger value="ocr" className="text-xs px-3 h-7">
+                          <Type className="h-3 w-3 mr-1" />
+                          OCR
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-8"
+                    >
+                      <ImageIcon className="h-4 w-4 mr-1" />
+                      Upload
+                    </Button>
+                    {selectedAnnotation?.vision_results ? (
+                      <Badge
+                        variant="outline"
+                        className="h-8 px-3 bg-green-500/10 border-green-500/30 text-green-400"
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        Vision Available
+                      </Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={runVisionExtraction}
+                        disabled={runningVision || !hasScreenshot}
+                        className="h-8"
+                      >
+                        {runningVision ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <Play className="h-4 w-4 mr-1" />
+                        )}
+                        Run Vision
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {/* Screenshot viewer */}
+                <div className="relative">
+                  {loadingScreenshot && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+                      <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
+                    </div>
+                  )}
+
+                  {screenshotError && (
+                    <div className="absolute top-4 left-4 right-4 z-10">
+                      <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-3 flex items-center gap-3">
+                        <AlertCircle className="h-5 w-5 text-yellow-500 shrink-0" />
+                        <div className="flex-1 text-sm text-yellow-200">
+                          {screenshotError}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={loadScreenshot}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          Retry
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="overflow-auto max-h-[600px] bg-muted/20">
+                    <canvas
+                      ref={canvasRef}
+                      className="block mx-auto"
+                      style={{ maxWidth: "100%" }}
+                    />
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="p-3 border-t bg-muted/10">
+                  <div className="flex flex-wrap gap-4 text-xs">
+                    {technique === "elements" && (
+                      <>
+                        {Object.entries(ELEMENT_COLORS)
+                          .filter(([k]) => k !== "default")
+                          .map(([type, colors]) => (
+                            <div key={type} className="flex items-center gap-1">
+                              <div
+                                className="w-3 h-3 rounded border"
+                                style={{
+                                  backgroundColor: colors.fill,
+                                  borderColor: colors.stroke,
+                                }}
+                              />
+                              <span>{type}</span>
+                            </div>
+                          ))}
+                      </>
+                    )}
+                    {technique === "states" &&
+                      selectedAnnotation?.states?.map((state, idx) => (
+                        <div key={state.id} className="flex items-center gap-1">
+                          <div
+                            className="w-3 h-3 rounded border"
+                            style={{
+                              backgroundColor:
+                                STATE_COLORS[idx % STATE_COLORS.length]!.fill,
+                              borderColor:
+                                STATE_COLORS[idx % STATE_COLORS.length]!.stroke,
+                            }}
+                          />
+                          <span>{state.name}</span>
+                        </div>
+                      ))}
+                    {technique === "sam3" &&
+                      (currentVisionResults?.sam3_results.length ? (
+                        <span className="text-muted-foreground">
+                          {currentVisionResults.sam3_results.length} segments
+                          detected •{" "}
+                          {currentVisionResults.processing_time_ms.toFixed(0)}ms
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          No SAM3 results. Vision extraction runs automatically
+                          during extraction.
+                        </span>
+                      ))}
+                    {technique === "edge" &&
+                      (currentVisionResults?.edge_results.length ? (
+                        <span className="text-muted-foreground">
+                          {currentVisionResults.edge_results.length} contours
+                          detected •{" "}
+                          {currentVisionResults.processing_time_ms.toFixed(0)}ms
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          No edge results. Vision extraction runs automatically
+                          during extraction.
+                        </span>
+                      ))}
+                    {technique === "ocr" &&
+                      (currentVisionResults?.ocr_results.length ? (
+                        <span className="text-muted-foreground">
+                          {currentVisionResults.ocr_results.length} text regions
+                          detected •{" "}
+                          {currentVisionResults.processing_time_ms.toFixed(0)}ms
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          No OCR results. Vision extraction runs automatically
+                          during extraction.
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Element/State List */}
+            {selectedAnnotation &&
+              (technique === "elements" || technique === "states") && (
+                <Card className="mt-4">
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm">
+                      {technique === "elements" ? "Elements" : "States"} on this
+                      page
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0 max-h-[300px] overflow-y-auto">
+                    <div className="divide-y">
+                      {technique === "elements" &&
+                        selectedAnnotation.elements?.map((element) => (
+                          <div
+                            key={element.id}
+                            className="p-3 hover:bg-accent/50"
+                          >
+                            <div className="flex items-center justify-between">
+                              <Badge
+                                variant="outline"
+                                style={{
+                                  borderColor:
+                                    ELEMENT_COLORS[element.element_type]
+                                      ?.stroke || "#fff",
+                                  color:
+                                    ELEMENT_COLORS[element.element_type]
+                                      ?.stroke || "#fff",
+                                }}
+                              >
+                                {element.element_type}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {element.bbox.width}x{element.bbox.height}
+                              </span>
+                            </div>
+                            {element.text_content && (
+                              <div className="text-sm text-muted-foreground mt-1 truncate">
+                                {element.text_content}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      {technique === "states" &&
+                        selectedAnnotation.states?.map((state, idx) => (
+                          <div
+                            key={state.id}
+                            className="p-3 hover:bg-accent/50"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-3 h-3 rounded"
+                                  style={{
+                                    backgroundColor:
+                                      STATE_COLORS[idx % STATE_COLORS.length]!
+                                        .stroke,
+                                  }}
+                                />
+                                <span className="font-medium">
+                                  {state.name}
+                                </span>
+                              </div>
+                              <Badge variant="outline">
+                                {state.state_type}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {state.element_ids?.length || 0} elements •{" "}
+                              {state.bbox.width}x{state.bbox.height}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+            {/* Vision Extraction Results List */}
+            {currentVisionResults &&
+              (technique === "sam3" ||
+                technique === "edge" ||
+                technique === "ocr") && (
+                <Card className="mt-4">
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm">
+                      {technique === "sam3" &&
+                        `SAM3 Segments (${currentVisionResults.sam3_results.length})`}
+                      {technique === "edge" &&
+                        `Edge Contours (${currentVisionResults.edge_results.length})`}
+                      {technique === "ocr" &&
+                        `OCR Text Regions (${currentVisionResults.ocr_results.length})`}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0 max-h-[300px] overflow-y-auto">
+                    <div className="divide-y">
+                      {technique === "sam3" &&
+                        currentVisionResults.sam3_results.map((seg, idx) => (
+                          <div key={seg.id} className="p-3 hover:bg-accent/50">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-3 h-3 rounded"
+                                  style={{
+                                    backgroundColor:
+                                      SAM3_COLORS[idx % SAM3_COLORS.length]!
+                                        .stroke,
+                                  }}
+                                />
+                                <span className="font-medium text-sm">
+                                  Segment {idx + 1}
+                                </span>
+                              </div>
+                              <Badge variant="outline">
+                                {Math.round(seg.stability_score * 100)}%
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Area: {seg.mask_area.toLocaleString()}px • IoU:{" "}
+                              {seg.predicted_iou.toFixed(2)} • {seg.bbox.width}x
+                              {seg.bbox.height}
+                            </div>
+                          </div>
+                        ))}
+                      {technique === "edge" &&
+                        currentVisionResults.edge_results.map((edge, idx) => (
+                          <div key={edge.id} className="p-3 hover:bg-accent/50">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded bg-green-500" />
+                                <span className="font-medium text-sm">
+                                  Contour {idx + 1}
+                                </span>
+                              </div>
+                              <Badge variant="outline">
+                                {edge.vertex_count} vertices
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Area:{" "}
+                              {Math.round(edge.contour_area).toLocaleString()}px
+                              • Aspect: {edge.aspect_ratio.toFixed(2)} •{" "}
+                              {edge.bbox.width}x{edge.bbox.height}
+                            </div>
+                          </div>
+                        ))}
+                      {technique === "ocr" &&
+                        currentVisionResults.ocr_results.map((ocr) => (
+                          <div key={ocr.id} className="p-3 hover:bg-accent/50">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <span className="font-medium text-sm truncate block">
+                                  &quot;{ocr.text}&quot;
+                                </span>
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className="ml-2 shrink-0"
+                              >
+                                {Math.round(ocr.confidence * 100)}%
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Language: {ocr.language} • {ocr.bbox.width}x
+                              {ocr.bbox.height} at ({ocr.bbox.x}, {ocr.bbox.y})
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+          </div>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="p-12 text-center">
+            <ImageIcon className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <p className="text-muted-foreground">
+              No extraction data available
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

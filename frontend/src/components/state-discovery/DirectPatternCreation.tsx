@@ -312,7 +312,7 @@ export function DirectPatternCreation() {
         <Sparkles className="h-6 w-6 text-purple-600" />
         <div>
           <h2 className="text-2xl font-bold">Direct Pattern Creation</h2>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-text-muted">
             Extract patterns directly from snapshots without uploading
             screenshots
           </p>
@@ -339,7 +339,7 @@ export function DirectPatternCreation() {
           />
 
           {loadingScreenshots && (
-            <div className="flex items-center justify-center py-4 text-gray-500">
+            <div className="flex items-center justify-center py-4 text-text-muted">
               <Loader2 className="w-5 h-5 animate-spin mr-2" />
               <span>Loading screenshots...</span>
             </div>
@@ -429,7 +429,7 @@ export function DirectPatternCreation() {
 
                 {/* Current screenshot info */}
                 {currentScreenshot && (
-                  <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                  <div className="text-xs text-text-muted bg-surface-canvas p-2 rounded">
                     <div className="font-medium">
                       {currentScreenshot.snapshotName} - Screenshot{" "}
                       {currentScreenshotIndex + 1}
@@ -461,7 +461,7 @@ export function DirectPatternCreation() {
                 </div>
 
                 {extractedPatterns.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">
+                  <div className="text-center py-8 text-text-muted">
                     <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">No patterns extracted yet</p>
                     <p className="text-xs mt-1">
@@ -502,7 +502,7 @@ export function DirectPatternCreation() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-text-muted">
                 {extractedPatterns.length} pattern
                 {extractedPatterns.length !== 1 ? "s" : ""} ready to save to
                 image library
@@ -525,7 +525,7 @@ export function DirectPatternCreation() {
             {saving && (
               <div className="space-y-2">
                 <Progress value={saveProgress} className="h-2" />
-                <p className="text-xs text-gray-600 text-center">
+                <p className="text-xs text-text-muted text-center">
                   Saving patterns... {saveProgress}%
                 </p>
               </div>

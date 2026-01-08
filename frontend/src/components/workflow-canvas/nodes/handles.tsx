@@ -135,7 +135,7 @@ export function MultiOutputHandles({
                 style={{ top: `${topPercent}%`, transform: "translateY(-50%)" }}
               >
                 <span
-                  className="px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap bg-gray-800 text-white shadow-sm"
+                  className="px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap bg-surface-raised text-white shadow-sm"
                   style={{ background: handleColor }}
                 >
                   {output.label}

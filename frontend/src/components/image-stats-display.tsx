@@ -17,7 +17,7 @@ export function ImageStatsDisplay({
 
   if (!imageDataUrl) {
     return (
-      <div className={`text-xs text-gray-500 ${className}`}>
+      <div className={`text-xs text-text-muted ${className}`}>
         No image selected
       </div>
     );
@@ -26,7 +26,7 @@ export function ImageStatsDisplay({
   if (!stats || stats.isLoading) {
     return (
       <div
-        className={`flex items-center gap-1 text-xs text-gray-400 ${className}`}
+        className={`flex items-center gap-1 text-xs text-text-muted ${className}`}
       >
         <Loader2 className="w-3 h-3 animate-spin" />
         <span>Loading...</span>
@@ -36,11 +36,11 @@ export function ImageStatsDisplay({
 
   return (
     <div className={`text-xs leading-tight ${className}`}>
-      <div className="font-mono text-gray-300">
+      <div className="font-mono text-text-secondary">
         {stats.width} × {stats.height}
       </div>
       {stats.transparencyPercent > 0 && (
-        <div className="text-[#00D9FF]">
+        <div className="text-brand-primary">
           {stats.transparencyPercent}% transparent
         </div>
       )}

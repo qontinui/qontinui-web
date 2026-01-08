@@ -120,12 +120,12 @@ export function DragActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">From</Label>
+        <Label className="text-xs text-text-muted">From</Label>
         <Select value={fromType} onValueChange={handleFromTypeChange}>
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="lastFindResult">Last Find Result</SelectItem>
             <SelectItem value="coordinates">Coordinates</SelectItem>
           </SelectContent>
@@ -133,7 +133,7 @@ export function DragActionProperties({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">To (Image)</Label>
+        <Label className="text-xs text-text-muted">To (Image)</Label>
         {Boolean(action.config.removedImageTo) && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
             <span className="font-medium">Removed Image:</span>{" "}
@@ -152,7 +152,7 @@ export function DragActionProperties({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Drag Duration (ms)</Label>
+        <Label className="text-xs text-text-muted">Drag Duration (ms)</Label>
         <Input
           type="number"
           min="0"
@@ -160,7 +160,7 @@ export function DragActionProperties({
           onChange={(e) =>
             updateConfig("drag_duration", Number.parseInt(e.target.value))
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
       </div>
 
@@ -172,7 +172,7 @@ export function DragActionProperties({
             updateConfig("smooth_movement", checked)
           }
         />
-        <Label htmlFor="smooth_movement" className="text-xs text-gray-400">
+        <Label htmlFor="smooth_movement" className="text-xs text-text-muted">
           Smooth movement
         </Label>
       </div>

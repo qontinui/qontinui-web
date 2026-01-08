@@ -27,14 +27,14 @@ export function TransitionFilters({
   return (
     <div className="grid grid-cols-4 gap-3">
       <div className="relative">
-        <Search className="absolute left-2 top-2.5 w-4 h-4 text-gray-400" />
+        <Search className="absolute left-2 top-2.5 w-4 h-4 text-text-muted" />
         <Input
           placeholder="Search transitions..."
           value={filters.searchQuery}
           onChange={(e) =>
             onFiltersChange({ ...filters, searchQuery: e.target.value })
           }
-          className="pl-8 bg-transparent border-gray-700"
+          className="pl-8 bg-transparent border-border-default"
         />
       </div>
 
@@ -44,7 +44,7 @@ export function TransitionFilters({
           onFiltersChange({ ...filters, fromState: value })
         }
       >
-        <SelectTrigger className="bg-transparent border-gray-700">
+        <SelectTrigger className="bg-transparent border-border-default">
           <SelectValue placeholder="From State" />
         </SelectTrigger>
         <SelectContent>
@@ -63,7 +63,7 @@ export function TransitionFilters({
           onFiltersChange({ ...filters, toState: value })
         }
       >
-        <SelectTrigger className="bg-transparent border-gray-700">
+        <SelectTrigger className="bg-transparent border-border-default">
           <SelectValue placeholder="To State" />
         </SelectTrigger>
         <SelectContent>
@@ -85,7 +85,7 @@ export function TransitionFilters({
           })
         }
       >
-        <SelectTrigger className="bg-transparent border-gray-700">
+        <SelectTrigger className="bg-transparent border-border-default">
           <SelectValue placeholder="Action Type" />
         </SelectTrigger>
         <SelectContent>

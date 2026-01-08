@@ -26,15 +26,15 @@ export function ScrollActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Direction</Label>
+        <Label className="text-xs text-text-muted">Direction</Label>
         <Select
           value={(config.direction as string) || "down"}
           onValueChange={(value) => updateConfig("direction", value)}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="up">Up</SelectItem>
             <SelectItem value="down">Down</SelectItem>
             <SelectItem value="left">Left</SelectItem>
@@ -44,7 +44,7 @@ export function ScrollActionProperties({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Amount (scroll units)</Label>
+        <Label className="text-xs text-text-muted">Amount (scroll units)</Label>
         <Input
           type="number"
           min="1"
@@ -52,12 +52,12 @@ export function ScrollActionProperties({
           onChange={(e) =>
             updateConfig("clicks", Number.parseInt(e.target.value))
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Scroll Duration (ms)</Label>
+        <Label className="text-xs text-text-muted">Scroll Duration (ms)</Label>
         <Input
           type="number"
           min="0"
@@ -68,7 +68,7 @@ export function ScrollActionProperties({
           onChange={(e) =>
             updateConfig("scroll_duration", Number.parseInt(e.target.value))
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
       </div>
 
@@ -81,7 +81,7 @@ export function ScrollActionProperties({
           }
           onCheckedChange={(checked) => updateConfig("smooth_scroll", checked)}
         />
-        <Label htmlFor="smooth_scroll" className="text-xs text-gray-400">
+        <Label htmlFor="smooth_scroll" className="text-xs text-text-muted">
           Smooth scroll
         </Label>
       </div>

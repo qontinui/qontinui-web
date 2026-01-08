@@ -401,22 +401,22 @@ export function SemanticAnalysisTab() {
   // Show loading state during hydration
   if (isHydrating) {
     return (
-      <div className="h-full flex items-center justify-center bg-[#0A0A0B]">
+      <div className="h-full flex items-center justify-center bg-surface-canvas">
         <div className="text-center">
-          <RefreshCw className="w-8 h-8 mx-auto mb-2 text-gray-400 animate-spin" />
-          <p className="text-sm text-gray-400">Loading page state...</p>
+          <RefreshCw className="w-8 h-8 mx-auto mb-2 text-text-muted animate-spin" />
+          <p className="text-sm text-text-muted">Loading page state...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex bg-[#0A0A0B]">
+    <div className="h-full flex bg-surface-canvas">
       {/* Left Panel - Controls */}
-      <div className="w-80 border-r border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
+      <div className="w-80 border-r border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto">
         <div className="space-y-4">
           {/* Image Upload */}
-          <Card className="bg-[#27272A]/50 border-gray-700">
+          <Card className="bg-surface-raised/50 border-border-default">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Image Upload</CardTitle>
             </CardHeader>
@@ -431,13 +431,13 @@ export function SemanticAnalysisTab() {
               <Button
                 onClick={() => fileInputRef.current?.click()}
                 variant="outline"
-                className="w-full border-gray-700 hover:border-[#00D9FF]"
+                className="w-full border-border-default hover:border-brand-primary"
               >
                 <Upload className="w-4 h-4 mr-2" />
                 Upload Screenshot
               </Button>
               {selectedImage && (
-                <div className="mt-2 text-xs text-gray-400">
+                <div className="mt-2 text-xs text-text-muted">
                   Image loaded and ready for analysis
                 </div>
               )}
@@ -445,7 +445,7 @@ export function SemanticAnalysisTab() {
           </Card>
 
           {/* Processing Options */}
-          <Card className="bg-[#27272A]/50 border-gray-700">
+          <Card className="bg-surface-raised/50 border-border-default">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Processing Options</CardTitle>
             </CardHeader>
@@ -490,7 +490,7 @@ export function SemanticAnalysisTab() {
                     Hybrid
                   </Button>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                <p className="text-[10px] text-text-muted mt-1 leading-tight">
                   {strategy === "sam2"
                     ? "Segmentation with masks"
                     : strategy === "sam3"
@@ -503,16 +503,16 @@ export function SemanticAnalysisTab() {
 
               {/* SAM3 Text Prompt Controls */}
               {strategy === "sam3" && (
-                <div className="space-y-3 p-3 border border-[#00D9FF]/30 rounded-md bg-[#00D9FF]/5">
+                <div className="space-y-3 p-3 border border-brand-primary/30 rounded-md bg-brand-primary/5">
                   <div>
                     <Label className="text-xs">Text Prompt (optional)</Label>
                     <Input
                       value={textPrompt}
                       onChange={(e) => setTextPrompt(e.target.value)}
                       placeholder="e.g., button, icon, text field..."
-                      className="mt-1 text-xs h-8 bg-[#27272A] border-gray-700 focus:border-[#00D9FF]"
+                      className="mt-1 text-xs h-8 bg-surface-raised border-border-default focus:border-brand-primary"
                     />
-                    <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                    <p className="text-[10px] text-text-muted mt-1 leading-tight">
                       Describe what you want to detect
                     </p>
                   </div>
@@ -574,7 +574,7 @@ export function SemanticAnalysisTab() {
                     OpenCV
                   </Button>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                <p className="text-[10px] text-text-muted mt-1 leading-tight">
                   {descriptionModel === "clip"
                     ? "AI semantic descriptions"
                     : "Rule-based CV detection"}
@@ -603,7 +603,7 @@ export function SemanticAnalysisTab() {
               <Button
                 onClick={processImage}
                 disabled={!selectedImage || processing}
-                className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                className="w-full bg-brand-primary hover:bg-brand-primary/80 text-black"
               >
                 {processing ? (
                   <>
@@ -621,7 +621,7 @@ export function SemanticAnalysisTab() {
           </Card>
 
           {/* Display Options */}
-          <Card className="bg-[#27272A]/50 border-gray-700">
+          <Card className="bg-surface-raised/50 border-border-default">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Display Options</CardTitle>
             </CardHeader>
@@ -646,17 +646,17 @@ export function SemanticAnalysisTab() {
 
           {/* Statistics */}
           {scene && (
-            <Card className="bg-[#27272A]/50 border-gray-700">
+            <Card className="bg-surface-raised/50 border-border-default">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Analysis Results</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">Total Objects</span>
+                  <span className="text-text-muted">Total Objects</span>
                   <span className="font-bold">{scene.object_count}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">Timestamp</span>
+                  <span className="text-text-muted">Timestamp</span>
                   <span>{new Date(scene.timestamp).toLocaleTimeString()}</span>
                 </div>
                 <div className="space-y-1 mt-3">
@@ -693,7 +693,7 @@ export function SemanticAnalysisTab() {
       {/* Center - Canvas */}
       <div className="flex-1 flex flex-col">
         {/* Toolbar */}
-        <div className="border-b border-gray-800 p-2 flex items-center justify-between">
+        <div className="border-b border-border-subtle p-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -719,7 +719,7 @@ export function SemanticAnalysisTab() {
             >
               Reset
             </Button>
-            <span className="text-xs text-gray-400 ml-2">
+            <span className="text-xs text-text-muted ml-2">
               Zoom: {(zoom * 100).toFixed(0)}%
             </span>
           </div>
@@ -728,7 +728,7 @@ export function SemanticAnalysisTab() {
         {/* Canvas Container */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-auto bg-gray-900 relative"
+          className="flex-1 overflow-auto bg-surface-canvas relative"
           style={{ cursor: isDragging ? "grabbing" : "grab" }}
         >
           {selectedImage ? (
@@ -763,8 +763,8 @@ export function SemanticAnalysisTab() {
           ) : (
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
-                <ImageIcon className="w-12 h-12 mx-auto mb-2 text-gray-500" />
-                <p className="text-sm text-gray-400">
+                <ImageIcon className="w-12 h-12 mx-auto mb-2 text-text-muted" />
+                <p className="text-sm text-text-muted">
                   Upload an image to begin semantic analysis
                 </p>
               </div>
@@ -774,12 +774,12 @@ export function SemanticAnalysisTab() {
       </div>
 
       {/* Right Panel - Object Details */}
-      <div className="w-96 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
+      <div className="w-96 border-l border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto">
         <h3 className="text-sm font-medium mb-4">Object Details</h3>
 
         {selectedObject ? (
           <div className="space-y-4">
-            <Card className="bg-[#27272A]/50 border-gray-700">
+            <Card className="bg-surface-raised/50 border-border-default">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center justify-between">
                   <span>{selectedObject.type.toUpperCase()}</span>
@@ -795,13 +795,13 @@ export function SemanticAnalysisTab() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <Label className="text-xs text-gray-400">Description</Label>
+                  <Label className="text-xs text-text-muted">Description</Label>
                   <p className="text-sm mt-1">{selectedObject.description}</p>
                 </div>
 
                 {selectedObject.ocr_text && (
                   <div>
-                    <Label className="text-xs text-gray-400">OCR Text</Label>
+                    <Label className="text-xs text-text-muted">OCR Text</Label>
                     <p className="text-sm mt-1 font-mono">
                       {selectedObject.ocr_text}
                     </p>
@@ -809,7 +809,7 @@ export function SemanticAnalysisTab() {
                 )}
 
                 <div>
-                  <Label className="text-xs text-gray-400">Position</Label>
+                  <Label className="text-xs text-text-muted">Position</Label>
                   <p className="text-xs mt-1 font-mono">
                     x: {selectedObject.bounding_box.x}, y:{" "}
                     {selectedObject.bounding_box.y}
@@ -821,16 +821,16 @@ export function SemanticAnalysisTab() {
                 </div>
 
                 <div>
-                  <Label className="text-xs text-gray-400">Attributes</Label>
+                  <Label className="text-xs text-text-muted">Attributes</Label>
                   <div className="mt-1 space-y-1">
                     {Object.entries(selectedObject.attributes).map(
                       ([key, value]) => (
                         <div key={key} className="flex justify-between text-xs">
-                          <span className="text-gray-400">{key}:</span>
+                          <span className="text-text-muted">{key}:</span>
                           <span
                             className={
                               key === "has_mask" && value
-                                ? "text-green-400"
+                                ? "text-brand-success"
                                 : ""
                             }
                           >
@@ -845,20 +845,20 @@ export function SemanticAnalysisTab() {
                 </div>
 
                 {selectedObject.pixel_mask && (
-                  <div className="pt-3 border-t border-gray-700">
-                    <Label className="text-xs text-gray-400">
+                  <div className="pt-3 border-t border-border-default">
+                    <Label className="text-xs text-text-muted">
                       Mask Information
                     </Label>
                     <div className="mt-2 space-y-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-green-400"></div>
+                        <div className="w-2 h-2 rounded-full bg-brand-success"></div>
                         <span className="text-xs">Pixel mask available</span>
                       </div>
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-text-muted">
                         Mask size: {selectedObject.bounding_box.width} ×{" "}
                         {selectedObject.bounding_box.height}
                       </div>
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-text-muted">
                         Area:{" "}
                         {(selectedObject.attributes as { area?: number })
                           .area ||
@@ -901,7 +901,7 @@ export function SemanticAnalysisTab() {
           </div>
         ) : scene ? (
           <div className="space-y-2">
-            <p className="text-xs text-gray-400 mb-3">
+            <p className="text-xs text-text-muted mb-3">
               Click on an object in the image to see details
             </p>
 
@@ -916,8 +916,8 @@ export function SemanticAnalysisTab() {
                   className={cn(
                     "p-2 rounded border cursor-pointer transition-all",
                     hoveredObject === obj.id
-                      ? "border-[#00D9FF] bg-[#00D9FF]/10"
-                      : "border-gray-700 hover:border-gray-600"
+                      ? "border-brand-primary bg-brand-primary/10"
+                      : "border-border-default hover:border-border-subtle"
                   )}
                 >
                   <div className="flex items-center justify-between">
@@ -944,7 +944,7 @@ export function SemanticAnalysisTab() {
                     </Badge>
                   </div>
                   {obj.ocr_text && (
-                    <p className="text-xs text-gray-400 mt-1 truncate">
+                    <p className="text-xs text-text-muted mt-1 truncate">
                       {obj.ocr_text}
                     </p>
                   )}
@@ -954,8 +954,8 @@ export function SemanticAnalysisTab() {
           </div>
         ) : (
           <div className="text-center">
-            <Info className="w-8 h-8 mx-auto mb-2 text-gray-500" />
-            <p className="text-xs text-gray-400">
+            <Info className="w-8 h-8 mx-auto mb-2 text-text-muted" />
+            <p className="text-xs text-text-muted">
               Process an image to see detected objects
             </p>
           </div>

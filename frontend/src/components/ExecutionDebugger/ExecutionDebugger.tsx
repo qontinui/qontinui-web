@@ -66,7 +66,7 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
       } bg-white shadow-2xl border-l flex flex-col z-40 transition-all duration-300`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b bg-gray-50">
+      <div className="flex items-center justify-between p-3 border-b bg-surface-canvas">
         <div className="flex items-center gap-2">
           <Bug className="w-5 h-5 text-blue-600" />
           <h2 className="font-bold text-sm">Execution Debugger</h2>
@@ -75,31 +75,31 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
               type="checkbox"
               checked={debugEnabled}
               onChange={(e) => setDebugEnabled(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="rounded border-border-default text-blue-600 focus:ring-blue-500"
             />
-            <span className="text-xs text-gray-600">Enable</span>
+            <span className="text-xs text-text-muted">Enable</span>
           </label>
         </div>
 
         <div className="flex items-center gap-1">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1.5 hover:bg-gray-200 rounded transition-colors"
+            className="p-1.5 hover:bg-surface-raised/80 rounded transition-colors"
             title={isExpanded ? "Minimize" : "Maximize"}
           >
             {isExpanded ? (
-              <Minimize2 className="w-4 h-4 text-gray-600" />
+              <Minimize2 className="w-4 h-4 text-text-muted" />
             ) : (
-              <Maximize2 className="w-4 h-4 text-gray-600" />
+              <Maximize2 className="w-4 h-4 text-text-muted" />
             )}
           </button>
           {onToggle && (
             <button
               onClick={onToggle}
-              className="p-1.5 hover:bg-gray-200 rounded transition-colors"
+              className="p-1.5 hover:bg-surface-raised/80 rounded transition-colors"
               title="Close debugger"
             >
-              <X className="w-4 h-4 text-gray-600" />
+              <X className="w-4 h-4 text-text-muted" />
             </button>
           )}
         </div>
@@ -118,21 +118,21 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
       {debugEnabled && state !== "idle" && (
         <div className="flex items-center gap-4 px-3 py-2 bg-blue-50 border-b text-xs">
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">Progress:</span>
-            <span className="font-semibold text-gray-900">
+            <span className="text-text-muted">Progress:</span>
+            <span className="font-semibold text-text-primary">
               {currentActionIndex >= 0 ? currentActionIndex + 1 : 0} /{" "}
               {actions.length}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">Success Rate:</span>
-            <span className="font-semibold text-gray-900">
+            <span className="text-text-muted">Success Rate:</span>
+            <span className="font-semibold text-text-primary">
               {metrics.successRate.toFixed(0)}%
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">Avg Time:</span>
-            <span className="font-semibold text-gray-900">
+            <span className="text-text-muted">Avg Time:</span>
+            <span className="font-semibold text-text-primary">
               {metrics.averageActionTime.toFixed(0)}ms
             </span>
           </div>
@@ -149,7 +149,7 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
               className={`flex-1 px-4 py-2 text-sm font-medium transition-colors relative ${
                 activeTab === tab.id
                   ? "text-blue-600 border-b-2 border-blue-600"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  : "text-text-muted hover:text-text-primary hover:bg-surface-canvas"
               }`}
             >
               {tab.label}
@@ -158,7 +158,7 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
                   className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
                     activeTab === tab.id
                       ? "bg-blue-100 text-blue-700"
-                      : "bg-gray-100 text-gray-600"
+                      : "bg-surface-raised text-text-muted"
                   }`}
                 >
                   {tab.badge}
@@ -172,8 +172,8 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
       {/* Content */}
       <div className="flex-1 overflow-hidden">
         {!debugEnabled ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
-            <Bug className="w-16 h-16 mb-4 text-gray-400" />
+          <div className="flex flex-col items-center justify-center h-full text-text-muted p-8 text-center">
+            <Bug className="w-16 h-16 mb-4 text-text-muted" />
             <h3 className="text-lg font-semibold mb-2">Debugger Disabled</h3>
             <p className="text-sm">
               Enable the debugger to track execution state, variables, and logs
@@ -205,7 +205,7 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
 
       {/* Footer with keyboard shortcuts */}
       {debugEnabled && (
-        <div className="border-t p-2 bg-gray-50 text-xs text-gray-600">
+        <div className="border-t p-2 bg-surface-canvas text-xs text-text-muted">
           <div className="flex items-center justify-between">
             <span>Shortcuts:</span>
             <div className="flex gap-3">

@@ -128,7 +128,7 @@ function GraphEditorInner({
   return (
     <div className="flex h-full w-full">
       {/* Node Palette */}
-      <div className="w-64 border-r border-gray-800 bg-gray-950">
+      <div className="w-64 border-r border-border-subtle bg-surface-canvas">
         <NodePalette
           position="left"
           collapsible={false}
@@ -167,7 +167,7 @@ function GraphEditorInner({
 
       {/* Edge Properties Panel - slides in from right when edge is selected */}
       {selectedEdge && (
-        <div className="w-80 flex-shrink-0 border-l border-gray-800">
+        <div className="w-80 flex-shrink-0 border-l border-border-subtle">
           <EdgePropertiesPanel
             edge={selectedEdge}
             onUpdate={handleEdgeUpdate}

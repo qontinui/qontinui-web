@@ -71,10 +71,12 @@ export function EarlyAccessBanner({ onExport }: EarlyAccessBannerProps) {
               <span className="text-blue-300 font-semibold">
                 🚀 Early Access
               </span>
-              <span className="text-gray-400">|</span>
-              <span className="text-gray-300">Launches Feb 2026</span>
-              <span className="text-gray-400">|</span>
-              <span className="text-gray-300">Export your work regularly</span>
+              <span className="text-text-muted">|</span>
+              <span className="text-text-secondary">Launches Feb 2026</span>
+              <span className="text-text-muted">|</span>
+              <span className="text-text-secondary">
+                Export your work regularly
+              </span>
             </div>
           </div>
 
@@ -97,7 +99,7 @@ export function EarlyAccessBanner({ onExport }: EarlyAccessBannerProps) {
               size="sm"
               variant="ghost"
               onClick={handleDismiss}
-              className="text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 h-8 w-8 p-0"
+              className="text-text-muted hover:text-text-secondary hover:bg-surface-raised/50 h-8 w-8 p-0"
               title="Dismiss for this session"
             >
               <X className="h-4 w-4" />

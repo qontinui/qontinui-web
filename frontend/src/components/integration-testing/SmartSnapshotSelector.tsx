@@ -195,7 +195,7 @@ export function SmartSnapshotSelector({
 
           {/* Selection Summary */}
           {selectedSnapshots.length > 0 && (
-            <div className="text-xs text-gray-600 mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+            <div className="text-xs text-text-muted mt-2 p-2 bg-blue-50 rounded border border-blue-200">
               <div className="font-medium text-blue-900">
                 {selectedSnapshots.length} snapshot
                 {selectedSnapshots.length > 1 ? "s" : ""} selected
@@ -212,7 +212,7 @@ export function SmartSnapshotSelector({
           {mode === "smart" && (
             <div className="space-y-4">
               {recommendationsLoading && (
-                <div className="flex items-center justify-center py-8 text-gray-500">
+                <div className="flex items-center justify-center py-8 text-text-muted">
                   <Loader2 className="w-5 h-5 animate-spin mr-2" />
                   <span className="text-sm">Analyzing snapshots...</span>
                 </div>
@@ -236,7 +236,7 @@ export function SmartSnapshotSelector({
               {!recommendationsLoading &&
                 !recommendationsError &&
                 recommendations.length === 0 && (
-                  <div className="text-center py-8 text-gray-500 text-sm">
+                  <div className="text-center py-8 text-text-muted text-sm">
                     <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-50" />
                     <p>No recommendations available</p>
                     <p className="text-xs mt-1">
@@ -249,7 +249,7 @@ export function SmartSnapshotSelector({
 
               {!recommendationsLoading && recommendations.length > 0 && (
                 <>
-                  <div className="text-sm text-gray-700 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+                  <div className="text-sm text-text-secondary bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
                     <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="font-medium text-blue-900">
@@ -287,7 +287,7 @@ export function SmartSnapshotSelector({
           {mode === "manual" && (
             <div className="space-y-4">
               {snapshotsLoading && (
-                <div className="flex items-center justify-center py-8 text-gray-500">
+                <div className="flex items-center justify-center py-8 text-text-muted">
                   <Loader2 className="w-5 h-5 animate-spin mr-2" />
                   <span className="text-sm">Loading snapshots...</span>
                 </div>
@@ -302,7 +302,7 @@ export function SmartSnapshotSelector({
               {!snapshotsLoading &&
                 !snapshotsError &&
                 snapshots.length === 0 && (
-                  <div className="text-center py-8 text-gray-500 text-sm">
+                  <div className="text-center py-8 text-text-muted text-sm">
                     <Database className="w-12 h-12 mx-auto mb-3 opacity-50" />
                     <p>No snapshots found</p>
                     <p className="text-xs mt-1">Import a snapshot to begin</p>
@@ -311,7 +311,7 @@ export function SmartSnapshotSelector({
 
               {!snapshotsLoading && snapshots.length > 0 && (
                 <>
-                  <div className="text-sm text-gray-700 bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-start gap-2">
+                  <div className="text-sm text-text-secondary bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="font-medium text-yellow-900">
@@ -340,7 +340,7 @@ export function SmartSnapshotSelector({
                             ${
                               isSelected
                                 ? "bg-blue-50 border-blue-300 ring-1 ring-blue-300"
-                                : "bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                                : "bg-white border-border-subtle hover:border-border-default hover:bg-surface-raised/80"
                             }
                           `}
                           onClick={() => handleToggle(snapshot)}
@@ -376,7 +376,7 @@ export function SmartSnapshotSelector({
                                     </TooltipProvider>
                                   )}
                                 </div>
-                                <div className="text-xs text-gray-500 whitespace-nowrap">
+                                <div className="text-xs text-text-muted whitespace-nowrap">
                                   {formatDistanceToNow(
                                     new Date(snapshot.start_time),
                                     {
@@ -404,7 +404,7 @@ export function SmartSnapshotSelector({
                                         {snapshot.successful_actions} successful
                                         actions
                                       </p>
-                                      <p className="text-xs text-gray-300">
+                                      <p className="text-xs text-text-secondary">
                                         {Math.round(metrics.successRate)}%
                                         success rate
                                       </p>
@@ -443,7 +443,7 @@ export function SmartSnapshotSelector({
                               </div>
 
                               {snapshot.duration_seconds !== null && (
-                                <div className="mt-1 text-xs text-gray-500">
+                                <div className="mt-1 text-xs text-text-muted">
                                   Duration:{" "}
                                   {Math.round(snapshot.duration_seconds)}s
                                 </div>
@@ -454,7 +454,7 @@ export function SmartSnapshotSelector({
                                   {snapshot.tags.map((tag) => (
                                     <span
                                       key={tag}
-                                      className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs"
+                                      className="px-2 py-0.5 bg-surface-raised text-text-secondary rounded text-xs"
                                     >
                                       {tag}
                                     </span>

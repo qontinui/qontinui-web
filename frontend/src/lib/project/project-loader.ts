@@ -3,6 +3,11 @@
  *
  * Core logic for loading projects from backend.
  * Uses state machine for predictable transitions.
+ *
+ * INTEGRATION WITH SYNC SYSTEM:
+ * - Uses SyncCoordinator's state machine to coordinate reloads
+ * - Updates VersionTracker after loading to track server version
+ * - Cancels pending changes via ChangeTracker when force=true
  */
 
 import { projectService } from "@/services/service-factory";
@@ -30,6 +35,8 @@ import { validateProjectId, projectIdsDiffer } from "./project-validator";
 export interface ProjectData {
   id: string | number;
   name: string;
+  /** Server version for optimistic concurrency control */
+  version: number;
   configuration: {
     workflows?: unknown[];
     states?: unknown[];
@@ -192,6 +199,12 @@ class ProjectLoaderService {
         );
         // Cancel any pending debounced saves to prevent race conditions
         debounceManager.cancelAll();
+        // Cancel pending changes in the new ChangeTracker
+        syncCoordinator.getChangeTracker().cancel();
+        // CRITICAL: Transition to reloading state to block saves
+        // This prevents the event-driven sync from saving old data
+        syncCoordinator.setLoadingFromBackend(true);
+        useAutomationStore.getState().setIsLoadingFromBackend(true);
       }
 
       // Fetch from backend
@@ -219,6 +232,12 @@ class ProjectLoaderService {
         projectId: normalizedId,
         error: errorMessage,
       });
+
+      // Reset loading flag if we set it earlier (when force=true)
+      if (force) {
+        syncCoordinator.setLoadingFromBackend(false);
+        useAutomationStore.getState().setIsLoadingFromBackend(false);
+      }
 
       this.stateMachine.send({ type: "ERROR", error: errorMessage });
 
@@ -298,12 +317,14 @@ class ProjectLoaderService {
     projectLogger.projectLoader("Project fetched", {
       projectId: project.id,
       projectName: project.name,
+      version: project.version,
       hasConfiguration: !!project.configuration,
     });
 
     return {
       id: project.id,
       name: project.name,
+      version: project.version,
       configuration: project.configuration as ProjectData["configuration"],
     };
   }
@@ -319,6 +340,10 @@ class ProjectLoaderService {
    * 2. Otherwise, check if IndexedDB has data for this project
    * 3. If yes, use IndexedDB data (it has the latest local changes)
    * 4. If no, use backend data (first time loading this project in this browser)
+   *
+   * SYNC INTEGRATION:
+   * - Updates the version tracker with the server version after loading
+   * - This enables optimistic concurrency control for subsequent saves
    */
   private async hydrateStore(
     projectData: ProjectData,
@@ -329,6 +354,7 @@ class ProjectLoaderService {
     projectLogger.projectLoader("Hydrating store", {
       projectId: projectData.id,
       projectName: projectData.name,
+      version: projectData.version,
       preferBackend,
     });
 
@@ -374,8 +400,12 @@ class ProjectLoaderService {
         store.setProjectName(projectData.name);
         store.setProjectId(String(projectData.id));
 
+        // Update version tracker with server version
+        syncCoordinator.updateServerVersion(projectData.version, true);
+
         projectLogger.projectLoader("Store hydrated from backend", {
           projectId: projectData.id,
+          version: projectData.version,
         });
         return;
       }
@@ -479,8 +509,13 @@ class ProjectLoaderService {
       store.setProjectName(projectData.name);
       store.setProjectId(String(projectData.id));
 
+      // Update version tracker with server version
+      // This enables optimistic concurrency control for saves
+      syncCoordinator.updateServerVersion(projectData.version, true);
+
       projectLogger.projectLoader("Store hydrated", {
         projectId: projectData.id,
+        version: projectData.version,
         source: hasLocalData ? "IndexedDB" : "backend",
       });
     } finally {

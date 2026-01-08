@@ -39,14 +39,14 @@ export function GridSettings({ onClose }: GridSettingsProps) {
   } = useCanvasStore();
 
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 min-w-[280px]">
+    <div className="bg-surface-raised border border-border-default rounded-lg shadow-xl p-4 min-w-[280px]">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-white font-semibold">Grid Settings</h3>
         {onClose && (
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-text-muted hover:text-white transition-colors"
           >
             <svg
               className="w-5 h-5"
@@ -69,12 +69,12 @@ export function GridSettings({ onClose }: GridSettingsProps) {
       <div className="space-y-4">
         {/* Show Grid Toggle */}
         <div className="flex items-center justify-between">
-          <label className="text-sm text-gray-300">Show Grid</label>
+          <label className="text-sm text-text-secondary">Show Grid</label>
           <button
             onClick={toggleGrid}
             className={`
               relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-              ${showGrid ? "bg-cyan-500" : "bg-gray-600"}
+              ${showGrid ? "bg-cyan-500" : "bg-border-default"}
             `}
           >
             <span
@@ -88,12 +88,12 @@ export function GridSettings({ onClose }: GridSettingsProps) {
 
         {/* Snap to Grid Toggle */}
         <div className="flex items-center justify-between">
-          <label className="text-sm text-gray-300">Snap to Grid</label>
+          <label className="text-sm text-text-secondary">Snap to Grid</label>
           <button
             onClick={toggleSnapToGrid}
             className={`
               relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-              ${snapToGrid ? "bg-cyan-500" : "bg-gray-600"}
+              ${snapToGrid ? "bg-cyan-500" : "bg-border-default"}
             `}
           >
             <span
@@ -107,7 +107,7 @@ export function GridSettings({ onClose }: GridSettingsProps) {
 
         {/* Grid Size */}
         <div>
-          <label className="text-sm text-gray-300 block mb-2">
+          <label className="text-sm text-text-secondary block mb-2">
             Grid Size: {gridSize}px
           </label>
           <div className="grid grid-cols-3 gap-2">
@@ -120,7 +120,7 @@ export function GridSettings({ onClose }: GridSettingsProps) {
                   ${
                     size === gridSize
                       ? "bg-cyan-500 text-white"
-                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                      : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"
                   }
                 `}
               >
@@ -131,10 +131,12 @@ export function GridSettings({ onClose }: GridSettingsProps) {
         </div>
 
         {/* Preview */}
-        <div className="pt-4 border-t border-gray-700">
-          <label className="text-sm text-gray-300 block mb-2">Preview</label>
+        <div className="pt-4 border-t border-border-default">
+          <label className="text-sm text-text-secondary block mb-2">
+            Preview
+          </label>
           <div
-            className="w-full h-24 rounded border border-gray-600"
+            className="w-full h-24 rounded border border-border-default"
             style={{
               backgroundImage: showGrid
                 ? `radial-gradient(circle, #3F3F46 2px, transparent 2px)`
@@ -160,7 +162,7 @@ export function GridSettingsButton() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-sm border border-gray-700 transition-colors"
+        className="px-3 py-2 bg-surface-raised hover:bg-surface-raised/80 text-white rounded text-sm border border-border-default transition-colors"
         title="Grid Settings"
       >
         <svg

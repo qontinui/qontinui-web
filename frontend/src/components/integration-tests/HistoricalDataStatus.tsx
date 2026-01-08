@@ -41,7 +41,7 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
   };
 
   return (
-    <Card className="bg-white border border-gray-200">
+    <Card className="bg-white border border-border-subtle">
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <Database className="w-4 h-4" />
@@ -64,7 +64,7 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
             </div>
           </div>
         ) : !stats ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-text-muted">
             <Database className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">No historical data available</p>
             <p className="text-xs mt-1">Run automations to collect data</p>
@@ -72,12 +72,14 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
         ) : (
           <div className="space-y-3">
             {/* Automation Runs */}
-            <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-surface-canvas">
               <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-gray-600" />
-                <span className="text-sm text-gray-700">Automation runs</span>
+                <Activity className="w-4 h-4 text-text-muted" />
+                <span className="text-sm text-text-secondary">
+                  Automation runs
+                </span>
               </div>
-              <span className="text-sm font-semibold text-gray-900">
+              <span className="text-sm font-semibold text-text-primary">
                 {formatNumber(
                   stats.automationRunsCount || stats.totalSnapshotRuns
                 )}
@@ -85,25 +87,29 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
             </div>
 
             {/* Total Actions */}
-            <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-surface-canvas">
               <div className="flex items-center gap-2">
-                <GitBranch className="w-4 h-4 text-gray-600" />
-                <span className="text-sm text-gray-700">Total actions</span>
+                <GitBranch className="w-4 h-4 text-text-muted" />
+                <span className="text-sm text-text-secondary">
+                  Total actions
+                </span>
               </div>
-              <span className="text-sm font-semibold text-gray-900">
+              <span className="text-sm font-semibold text-text-primary">
                 {formatNumber(stats.totalActionsCount || stats.totalActions)}
               </span>
             </div>
 
             {/* State Coverage */}
-            <div className="p-2 rounded-lg bg-gray-50">
+            <div className="p-2 rounded-lg bg-surface-canvas">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-700">State coverage</span>
-                <span className="text-sm font-semibold text-gray-900">
+                <span className="text-sm text-text-secondary">
+                  State coverage
+                </span>
+                <span className="text-sm font-semibold text-text-primary">
                   {(stats.stateCoveragePercentage || 0).toFixed(0)}%
                 </span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div className="w-full bg-surface-raised rounded-full h-2 overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
                     (stats.stateCoveragePercentage || 0) >= 80
@@ -118,10 +124,10 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
                 />
               </div>
               <div className="flex items-center justify-between mt-1">
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-text-muted">
                   {stats.uniqueStates} states covered
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-text-muted">
                   {formatNumber(stats.transitionsRecorded || 0)} transitions
                 </span>
               </div>
@@ -144,7 +150,7 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
 
             {/* Info Note */}
             <div className="pt-2 border-t">
-              <p className="text-xs text-gray-500 leading-relaxed">
+              <p className="text-xs text-text-muted leading-relaxed">
                 Historical data is used to simulate automation runs. Tests
                 randomly select from recorded matches for realistic variation.
               </p>

@@ -96,7 +96,7 @@ export function InstallDialog({
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Package className="w-5 h-5 text-cyan-500" />
+            <Package className="w-5 h-5 text-brand-primary" />
             Install Package
           </DialogTitle>
           <DialogDescription>
@@ -110,7 +110,7 @@ export function InstallDialog({
           <div className="space-y-2">
             <label
               htmlFor="project"
-              className="text-sm font-medium text-gray-300"
+              className="text-sm font-medium text-text-secondary"
             >
               Install to Project
             </label>
@@ -121,7 +121,7 @@ export function InstallDialog({
             >
               <SelectTrigger
                 id="project"
-                className="bg-gray-900/50 border-gray-700"
+                className="bg-surface-canvas/50 border-border-default"
               >
                 <SelectValue placeholder="Select a project..." />
               </SelectTrigger>
@@ -139,7 +139,7 @@ export function InstallDialog({
           <div className="space-y-2">
             <label
               htmlFor="version"
-              className="text-sm font-medium text-gray-300"
+              className="text-sm font-medium text-text-secondary"
             >
               Version
             </label>
@@ -150,7 +150,7 @@ export function InstallDialog({
             >
               <SelectTrigger
                 id="version"
-                className="bg-gray-900/50 border-gray-700"
+                className="bg-surface-canvas/50 border-border-default"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -172,10 +172,10 @@ export function InstallDialog({
           {/* Dependencies */}
           {hasDependencies && (
             <div className="space-y-2">
-              <div className="text-sm font-medium text-gray-300">
+              <div className="text-sm font-medium text-text-secondary">
                 Dependencies ({selectedVersion.dependencies.length})
               </div>
-              <div className="p-3 bg-gray-900/30 rounded-lg border border-gray-800 space-y-2">
+              <div className="p-3 bg-surface-canvas/30 rounded-lg border border-border-subtle space-y-2">
                 {selectedVersion.dependencies.map((dep, index) => (
                   <DependencyItem key={index} dependency={dep} />
                 ))}
@@ -218,7 +218,7 @@ export function InstallDialog({
                       <div className="font-medium text-green-500">
                         Security scan passed
                       </div>
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-text-muted">
                         No security issues detected
                       </div>
                     </div>
@@ -232,8 +232,8 @@ export function InstallDialog({
           {isInstalling && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">{getStatusMessage()}</span>
-                <span className="text-gray-400">{installProgress}%</span>
+                <span className="text-text-muted">{getStatusMessage()}</span>
+                <span className="text-text-muted">{installProgress}%</span>
               </div>
               <Progress value={installProgress} className="h-2" />
             </div>
@@ -277,7 +277,7 @@ export function InstallDialog({
             <Button
               onClick={handleInstall}
               disabled={!selectedProjectId || isInstalling || hasSecurityIssues}
-              className="bg-gradient-to-r from-cyan-500 to-purple-500"
+              className="bg-gradient-to-r from-brand-primary to-brand-secondary"
             >
               {isInstalling ? (
                 <>
@@ -298,8 +298,8 @@ export function InstallDialog({
 function DependencyItem({ dependency }: { dependency: PackageDependency }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <ChevronRight className="w-3 h-3 text-gray-500" />
-      <span className="text-gray-300">{dependency.package_name}</span>
+      <ChevronRight className="w-3 h-3 text-text-muted" />
+      <span className="text-text-secondary">{dependency.package_name}</span>
       <Badge variant="outline" className="text-xs">
         {dependency.version_constraint}
       </Badge>

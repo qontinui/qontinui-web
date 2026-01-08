@@ -30,8 +30,8 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
   onSave,
 }) => {
   return (
-    <div className="w-80 bg-[#27272A]/50 border-l border-gray-800 flex flex-col">
-      <div className="p-4 border-b border-gray-800 flex-shrink-0">
+    <div className="w-80 bg-surface-raised/50 border-l border-border-subtle flex flex-col">
+      <div className="p-4 border-b border-border-subtle flex-shrink-0">
         <h2 className="font-semibold text-white">Extracted Image</h2>
       </div>
 
@@ -40,9 +40,11 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
           <div className="space-y-4">
             {/* Extracted Image */}
             <div>
-              <h3 className="text-sm font-medium text-gray-300 mb-2">Image</h3>
+              <h3 className="text-sm font-medium text-text-secondary mb-2">
+                Image
+              </h3>
               <div
-                className="border border-gray-700 rounded p-2"
+                className="border border-border-default rounded p-2"
                 style={{
                   background: `
                     linear-gradient(45deg, #f3f4f6 25%, transparent 25%),
@@ -62,7 +64,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
                   style={{ maxHeight: "300px", objectFit: "contain" }}
                 />
               </div>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-text-muted mt-1">
                 {extractedResult.bounds.width}×{extractedResult.bounds.height}{" "}
                 pixels
               </p>
@@ -71,8 +73,10 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
             {/* Mask (if available) */}
             {extractedResult.mask && (
               <div>
-                <h3 className="text-sm font-medium text-gray-300 mb-2">Mask</h3>
-                <div className="border border-gray-700 rounded bg-[#0A0A0B] p-2">
+                <h3 className="text-sm font-medium text-text-secondary mb-2">
+                  Mask
+                </h3>
+                <div className="border border-border-default rounded bg-surface-canvas p-2">
                   <img
                     src={extractedResult.mask}
                     alt="Mask"
@@ -80,18 +84,18 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
                     style={{ maxHeight: "200px", objectFit: "contain" }}
                   />
                 </div>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-text-muted mt-1">
                   White = included, Black = masked
                 </p>
               </div>
             )}
 
             {/* Info */}
-            <div className="bg-[#00D9FF]/10 border border-[#00D9FF] rounded-md p-3">
+            <div className="bg-brand-primary/10 border border-brand-primary rounded-md p-3">
               <h4 className="text-sm font-medium text-white mb-1">
                 Processing Info
               </h4>
-              <ul className="text-xs text-gray-300 space-y-1">
+              <ul className="text-xs text-text-secondary space-y-1">
                 <li>
                   Mode:{" "}
                   {processingMode === "none"
@@ -118,14 +122,14 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
             <div className="space-y-2">
               <button
                 onClick={onEditMask}
-                className="w-full px-4 py-2.5 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 font-medium flex items-center justify-center gap-2"
+                className="w-full px-4 py-2.5 bg-brand-secondary text-white rounded-md hover:bg-brand-secondary/90 font-medium flex items-center justify-center gap-2"
               >
                 <Edit className="w-4 h-4" />
                 Edit Mask
               </button>
               <button
                 onClick={onSave}
-                className="w-full px-4 py-2.5 bg-[#00FF88] text-black rounded-md hover:bg-[#00FF88]/90 font-medium flex items-center justify-center gap-2"
+                className="w-full px-4 py-2.5 bg-brand-success text-black rounded-md hover:bg-brand-success/90 font-medium flex items-center justify-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 Save Image
@@ -135,12 +139,12 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
         ) : (
           <div className="text-center py-12">
             <div className="mb-3">
-              <div className="w-16 h-16 mx-auto bg-[#27272A] rounded-full flex items-center justify-center">
-                <Scissors className="w-8 h-8 text-gray-600" />
+              <div className="w-16 h-16 mx-auto bg-surface-raised rounded-full flex items-center justify-center">
+                <Scissors className="w-8 h-8 text-text-muted" />
               </div>
             </div>
             <p className="font-medium text-white">No Image Extracted</p>
-            <p className="text-sm text-gray-400 mt-1">
+            <p className="text-sm text-text-muted mt-1">
               Select a region and click Extract
             </p>
           </div>

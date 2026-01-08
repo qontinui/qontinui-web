@@ -90,7 +90,7 @@ export function TutorialDialog() {
         <DialogHeader className="border-b pb-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <DialogTitle className="text-2xl font-bold text-gray-900 dark:text-white">
+              <DialogTitle className="text-2xl font-bold text-text-primary dark:text-white">
                 {currentTutorial.title}
               </DialogTitle>
               {currentTutorial.description && (
@@ -101,7 +101,7 @@ export function TutorialDialog() {
             </div>
             <button
               onClick={closeTutorial}
-              className="inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors"
+              className="inline-flex items-center justify-center rounded-md p-2 text-text-muted hover:bg-surface-raised dark:text-text-muted dark:hover:bg-surface-raised transition-colors"
               aria-label="Close tutorial"
             >
               <X className="h-5 w-5" />
@@ -111,7 +111,7 @@ export function TutorialDialog() {
           {/* Progress bar */}
           <div className="mt-4 space-y-1">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600 dark:text-gray-400">
+              <span className="text-text-muted dark:text-text-muted">
                 Step {currentStepIndex + 1} of {currentTutorial.steps.length}
               </span>
               <span className="font-semibold bg-gradient-to-r from-cyan-600 to-green-600 bg-clip-text text-transparent">

@@ -157,7 +157,7 @@ export function OutgoingTransitionBuilder({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       {!preselectedWorkflow && !preselectedOriginState && (
         <DialogTrigger asChild>
-          <Button className="w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black">
+          <Button className="w-full bg-brand-success hover:bg-brand-success/80 text-black">
             <ArrowRightLeft className="w-4 h-4 mr-2" />
             Create Outgoing Transition
           </Button>
@@ -165,14 +165,14 @@ export function OutgoingTransitionBuilder({
       )}
 
       <DialogContent
-        className="bg-[#27272A] border-gray-700 max-h-[90vh] flex flex-col"
+        className="bg-surface-raised border-border-default max-h-[90vh] flex flex-col"
         style={{ maxWidth: "1400px", width: "95vw" }}
       >
         <DialogHeader>
-          <DialogTitle className="text-[#00FF88]">
+          <DialogTitle className="text-brand-success">
             Create Outgoing Transition
           </DialogTitle>
-          <DialogDescription className="text-gray-400 text-sm">
+          <DialogDescription className="text-text-muted text-sm">
             Define a transition from one state to multiple target states
           </DialogDescription>
         </DialogHeader>
@@ -181,7 +181,7 @@ export function OutgoingTransitionBuilder({
           <div>
             <Label className="mb-2 block">From State (Origin)</Label>
             <Select value={fromState} onValueChange={handleFromStateChange}>
-              <SelectTrigger className="bg-transparent border-gray-600">
+              <SelectTrigger className="bg-transparent border-border-subtle">
                 <SelectValue placeholder="Select origin state" />
               </SelectTrigger>
               <SelectContent className="z-[100]">
@@ -211,10 +211,10 @@ export function OutgoingTransitionBuilder({
               <Label className="text-sm font-semibold mb-2 text-red-400">
                 States to Deactivate
               </Label>
-              <Card className="bg-gray-800 border-red-400/50">
+              <Card className="bg-surface-overlay border-red-400/50">
                 <CardContent className="p-3 h-[400px] overflow-y-auto">
                   {deactivateStates.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center pt-8">
+                    <p className="text-sm text-text-muted text-center pt-8">
                       No states selected
                     </p>
                   ) : (
@@ -224,13 +224,13 @@ export function OutgoingTransitionBuilder({
                         return state ? (
                           <div
                             key={stateId}
-                            className="p-2 bg-gray-900 rounded flex items-center justify-between hover:bg-gray-700 cursor-pointer transition-colors"
+                            className="p-2 bg-surface-sunken rounded flex items-center justify-between hover:bg-surface-overlay cursor-pointer transition-colors"
                             onClick={() =>
                               moveToAvailable(stateId, "deactivate")
                             }
                           >
                             <span className="text-sm">{state.name}</span>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
+                            <ChevronRight className="w-4 h-4 text-text-muted" />
                           </div>
                         ) : null;
                       })}
@@ -245,14 +245,14 @@ export function OutgoingTransitionBuilder({
               <Label className="text-sm font-semibold mb-2">
                 Available States
               </Label>
-              <Card className="bg-gray-800">
+              <Card className="bg-surface-overlay">
                 <CardContent className="p-3 h-[400px] overflow-y-auto">
                   {!fromState ? (
-                    <p className="text-sm text-gray-500 text-center pt-8">
+                    <p className="text-sm text-text-muted text-center pt-8">
                       Select origin state first
                     </p>
                   ) : availableStates.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center pt-8">
+                    <p className="text-sm text-text-muted text-center pt-8">
                       No states available
                     </p>
                   ) : (
@@ -260,7 +260,7 @@ export function OutgoingTransitionBuilder({
                       {availableStates.map((state) => (
                         <div
                           key={state.id}
-                          className="p-2 bg-gray-900 rounded hover:bg-gray-700 transition-colors"
+                          className="p-2 bg-surface-sunken rounded hover:bg-surface-overlay transition-colors"
                         >
                           <div className="flex items-center justify-between">
                             <Button
@@ -298,10 +298,10 @@ export function OutgoingTransitionBuilder({
               <Label className="text-sm font-semibold mb-2 text-green-400">
                 States to Activate
               </Label>
-              <Card className="bg-gray-800 border-green-400/50">
+              <Card className="bg-surface-overlay border-green-400/50">
                 <CardContent className="p-3 h-[400px] overflow-y-auto">
                   {activateStates.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center pt-8">
+                    <p className="text-sm text-text-muted text-center pt-8">
                       No states selected
                     </p>
                   ) : (
@@ -311,10 +311,10 @@ export function OutgoingTransitionBuilder({
                         return state ? (
                           <div
                             key={stateId}
-                            className="p-2 bg-gray-900 rounded flex items-center justify-between hover:bg-gray-700 cursor-pointer transition-colors"
+                            className="p-2 bg-surface-sunken rounded flex items-center justify-between hover:bg-surface-overlay cursor-pointer transition-colors"
                             onClick={() => moveToAvailable(stateId, "activate")}
                           >
-                            <ChevronLeft className="w-4 h-4 text-gray-400" />
+                            <ChevronLeft className="w-4 h-4 text-text-muted" />
                             <span className="text-sm">{state.name}</span>
                           </div>
                         ) : null;
@@ -326,22 +326,22 @@ export function OutgoingTransitionBuilder({
             </div>
           </div>
 
-          <div className="space-y-4 pt-4 border-t border-gray-700">
+          <div className="space-y-4 pt-4 border-t border-border-default">
             <Label>Workflows to Execute (Optional)</Label>
 
             {/* Category Filter */}
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">
+              <Label className="text-xs text-text-muted">
                 Filter by Category
               </Label>
               <Select
                 value={workflowCategoryFilter}
                 onValueChange={setWorkflowCategoryFilter}
               >
-                <SelectTrigger className="bg-transparent border-gray-600">
+                <SelectTrigger className="bg-transparent border-border-subtle">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="z-[100] bg-[#27272A] border-gray-700">
+                <SelectContent className="z-[100] bg-surface-raised border-border-default">
                   <SelectItem value="All">All Categories</SelectItem>
                   <SelectItem value="Outgoing Transitions">
                     Outgoing Transitions
@@ -371,10 +371,10 @@ export function OutgoingTransitionBuilder({
 
             {/* Workflow Selection */}
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">
+              <Label className="text-xs text-text-muted">
                 Available Workflows
               </Label>
-              <div className="max-h-[180px] overflow-y-auto space-y-1 border border-gray-700 rounded p-2">
+              <div className="max-h-[180px] overflow-y-auto space-y-1 border border-border-default rounded p-2">
                 {workflows
                   .filter((w) => {
                     const category = w.category || "Main";
@@ -385,7 +385,7 @@ export function OutgoingTransitionBuilder({
                   })
                   .filter((w) => !selectedWorkflows.includes(w.id)).length ===
                 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">
+                  <p className="text-sm text-text-muted text-center py-4">
                     {workflowCategoryFilter === "Outgoing Transitions"
                       ? "No workflows in Outgoing Transitions category. Drag a StateImage to another state to create one, or try 'All Categories'."
                       : "No available workflows"}
@@ -407,7 +407,7 @@ export function OutgoingTransitionBuilder({
                         onClick={() =>
                           setSelectedWorkflows((prev) => [...prev, workflow.id])
                         }
-                        className="w-full text-left p-2 bg-gray-800 hover:bg-gray-700 rounded text-sm transition-colors"
+                        className="w-full text-left p-2 bg-surface-overlay hover:bg-surface-sunken rounded text-sm transition-colors"
                       >
                         <div className="flex items-center gap-2">
                           <span>{workflow.name}</span>
@@ -416,7 +416,7 @@ export function OutgoingTransitionBuilder({
                           </Badge>
                         </div>
                         {workflow.description && (
-                          <p className="text-xs text-gray-400 mt-1">
+                          <p className="text-xs text-text-muted mt-1">
                             {workflow.description}
                           </p>
                         )}
@@ -429,7 +429,7 @@ export function OutgoingTransitionBuilder({
             {/* Selected Workflows */}
             {selectedWorkflows.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-xs text-gray-400">
+                <Label className="text-xs text-text-muted">
                   Selected Workflows (will execute in order)
                 </Label>
                 <div className="space-y-1">
@@ -438,10 +438,10 @@ export function OutgoingTransitionBuilder({
                     return (
                       <div
                         key={workflowId}
-                        className="flex items-center justify-between p-2 bg-gray-800 rounded"
+                        className="flex items-center justify-between p-2 bg-surface-overlay rounded"
                       >
                         <div className="flex items-center gap-2 flex-1">
-                          <Badge className="text-xs bg-[#00FF88] text-black">
+                          <Badge className="text-xs bg-brand-success text-black">
                             {index + 1}
                           </Badge>
                           <span className="text-sm">
@@ -476,17 +476,17 @@ export function OutgoingTransitionBuilder({
         </div>
 
         {/* Fixed footer with buttons */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-gray-700 mt-4">
+        <div className="flex justify-end gap-3 pt-4 border-t border-border-default mt-4">
           <Button
             variant="outline"
             onClick={() => setOpen(false)}
-            className="px-8 border-gray-600"
+            className="px-8 border-border-subtle"
           >
             Cancel
           </Button>
           <Button
             onClick={handleCreate}
-            className="px-8 bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+            className="px-8 bg-brand-success hover:bg-brand-success/80 text-black"
           >
             Create Outgoing Transition
           </Button>

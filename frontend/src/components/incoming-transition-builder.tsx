@@ -90,19 +90,19 @@ export function IncomingTransitionBuilder({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       {!preselectedWorkflow && (
         <DialogTrigger asChild>
-          <Button className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black">
+          <Button className="w-full bg-brand-primary hover:bg-brand-primary/80 text-black">
             <ArrowDownToLine className="w-4 h-4 mr-2" />
             Create Incoming Transition
           </Button>
         </DialogTrigger>
       )}
 
-      <DialogContent className="bg-[#27272A] border-gray-700 max-w-2xl">
+      <DialogContent className="bg-surface-raised border-border-default max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-[#00D9FF]">
+          <DialogTitle className="text-brand-primary">
             Create Incoming Transition
           </DialogTitle>
-          <DialogDescription className="text-gray-400 text-sm">
+          <DialogDescription className="text-text-muted text-sm">
             Define a process that executes when entering a state
           </DialogDescription>
         </DialogHeader>
@@ -111,7 +111,7 @@ export function IncomingTransitionBuilder({
           <div>
             <Label>State (executes when entering)</Label>
             <Select value={toState} onValueChange={setToState}>
-              <SelectTrigger className="bg-transparent border-gray-600 mt-2">
+              <SelectTrigger className="bg-transparent border-border-subtle mt-2">
                 <SelectValue placeholder="Select state" />
               </SelectTrigger>
               <SelectContent>
@@ -124,8 +124,8 @@ export function IncomingTransitionBuilder({
             </Select>
           </div>
 
-          <div className="p-4 bg-gray-800 rounded-lg">
-            <p className="text-sm text-gray-400">
+          <div className="p-4 bg-surface-overlay rounded-lg">
+            <p className="text-sm text-text-muted">
               IncomingTransitions are executed automatically after any
               successful OutgoingTransition that navigates to this state.
               They&apos;re useful for setup actions that should always happen
@@ -133,22 +133,22 @@ export function IncomingTransitionBuilder({
             </p>
           </div>
 
-          <div className="pt-4 border-t border-gray-700 space-y-3">
+          <div className="pt-4 border-t border-border-default space-y-3">
             <Label>Workflows to Execute</Label>
 
             {/* Category Filter */}
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">
+              <Label className="text-xs text-text-muted">
                 Filter by Category
               </Label>
               <Select
                 value={workflowCategoryFilter}
                 onValueChange={setWorkflowCategoryFilter}
               >
-                <SelectTrigger className="bg-transparent border-gray-600">
+                <SelectTrigger className="bg-transparent border-border-subtle">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectContent className="bg-surface-raised border-border-default">
                   <SelectItem value="All">All Categories</SelectItem>
                   <SelectItem value="Incoming Transitions">
                     Incoming Transitions
@@ -178,10 +178,10 @@ export function IncomingTransitionBuilder({
 
             {/* Workflow Selection */}
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">
+              <Label className="text-xs text-text-muted">
                 Available Workflows
               </Label>
-              <div className="max-h-[200px] overflow-y-auto space-y-1 border border-gray-700 rounded p-2">
+              <div className="max-h-[200px] overflow-y-auto space-y-1 border border-border-default rounded p-2">
                 {workflows
                   .filter((w) => {
                     const category = w.category || "Main";
@@ -192,7 +192,7 @@ export function IncomingTransitionBuilder({
                   })
                   .filter((w) => !selectedWorkflows.includes(w.id)).length ===
                 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">
+                  <p className="text-sm text-text-muted text-center py-4">
                     {workflowCategoryFilter === "Incoming Transitions"
                       ? "No workflows in Incoming Transitions category. Create one using the workflow editor or try 'All Categories'."
                       : "No available workflows"}
@@ -214,7 +214,7 @@ export function IncomingTransitionBuilder({
                         onClick={() =>
                           setSelectedWorkflows((prev) => [...prev, workflow.id])
                         }
-                        className="w-full text-left p-2 bg-gray-800 hover:bg-gray-700 rounded text-sm transition-colors"
+                        className="w-full text-left p-2 bg-surface-overlay hover:bg-surface-sunken rounded text-sm transition-colors"
                       >
                         <div className="flex items-center gap-2">
                           <span>{workflow.name}</span>
@@ -223,7 +223,7 @@ export function IncomingTransitionBuilder({
                           </Badge>
                         </div>
                         {workflow.description && (
-                          <p className="text-xs text-gray-400 mt-1">
+                          <p className="text-xs text-text-muted mt-1">
                             {workflow.description}
                           </p>
                         )}
@@ -236,7 +236,7 @@ export function IncomingTransitionBuilder({
             {/* Selected Workflows */}
             {selectedWorkflows.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-xs text-gray-400">
+                <Label className="text-xs text-text-muted">
                   Selected Workflows (will execute in order)
                 </Label>
                 <div className="space-y-1">
@@ -245,10 +245,10 @@ export function IncomingTransitionBuilder({
                     return (
                       <div
                         key={workflowId}
-                        className="flex items-center justify-between p-2 bg-gray-800 rounded"
+                        className="flex items-center justify-between p-2 bg-surface-overlay rounded"
                       >
                         <div className="flex items-center gap-2 flex-1">
-                          <Badge className="text-xs bg-[#00D9FF] text-black">
+                          <Badge className="text-xs bg-brand-primary text-black">
                             {index + 1}
                           </Badge>
                           <span className="text-sm">
@@ -285,13 +285,13 @@ export function IncomingTransitionBuilder({
             <Button
               variant="outline"
               onClick={() => setOpen(false)}
-              className="px-8 border-gray-600"
+              className="px-8 border-border-subtle"
             >
               Cancel
             </Button>
             <Button
               onClick={handleCreate}
-              className="px-8 bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+              className="px-8 bg-brand-primary hover:bg-brand-primary/80 text-black"
             >
               Create Incoming Transition
             </Button>

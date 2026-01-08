@@ -198,7 +198,7 @@ export function ImageSelector({
         <DialogTrigger asChild>
           <Button
             variant="outline"
-            className="w-full justify-start bg-transparent border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+            className="w-full justify-start bg-transparent border-border-default hover:border-brand-primary hover:text-brand-primary"
           >
             {multiSelect ? (
               // Multi-select display
@@ -211,7 +211,7 @@ export function ImageSelector({
                   </span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 text-gray-400">
+                <div className="flex items-center gap-2 text-text-muted">
                   <ImageIcon className="w-4 h-4" />
                   <span>{placeholder}</span>
                 </div>
@@ -219,7 +219,7 @@ export function ImageSelector({
             ) : // Single-select display
             selectedImageData || isBase64 ? (
               <div className="flex items-center gap-2 w-full">
-                <div className="w-8 h-8 bg-gray-800 rounded flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 bg-surface-raised rounded flex items-center justify-center flex-shrink-0">
                   <img
                     src={
                       isBase64
@@ -234,21 +234,21 @@ export function ImageSelector({
                   <span className="truncate">{selectedImageData.name}</span>
                 ) : stats && !stats.isLoading ? (
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="font-mono text-gray-300">
-                      {stats.width}×{stats.height}
+                    <span className="font-mono text-text-secondary">
+                      {stats.width}x{stats.height}
                     </span>
                     {stats.transparencyPercent > 0 && (
-                      <span className="text-[#00D9FF]">
+                      <span className="text-brand-primary">
                         {stats.transparencyPercent}% trans
                       </span>
                     )}
                   </div>
                 ) : (
-                  <span className="text-gray-400 text-xs">Loading...</span>
+                  <span className="text-text-muted text-xs">Loading...</span>
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-gray-400">
+              <div className="flex items-center gap-2 text-text-muted">
                 <ImageIcon className="w-4 h-4" />
                 <span>{placeholder}</span>
               </div>
@@ -257,10 +257,10 @@ export function ImageSelector({
         </DialogTrigger>
       )}
 
-      <DialogContent className="bg-[#27272A] border-gray-700 max-w-4xl max-h-[80vh]">
+      <DialogContent className="bg-surface-raised border-border-default max-w-4xl max-h-[80vh]">
         <DialogHeader>
-          <DialogTitle className="text-[#00D9FF]">Select Image</DialogTitle>
-          <DialogDescription className="text-gray-400 text-sm">
+          <DialogTitle className="text-brand-primary">Select Image</DialogTitle>
+          <DialogDescription className="text-text-muted text-sm">
             Choose an image from your library
           </DialogDescription>
         </DialogHeader>
@@ -269,12 +269,12 @@ export function ImageSelector({
           {/* State Filter */}
           {showStateFilter && states.length > 0 && (
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-400" />
+              <Filter className="w-4 h-4 text-text-muted" />
               <Select
                 value={selectedStateFilter}
                 onValueChange={setSelectedStateFilter}
               >
-                <SelectTrigger className="w-48 bg-transparent border-gray-700">
+                <SelectTrigger className="w-48 bg-transparent border-border-default">
                   <SelectValue placeholder="Filter by state" />
                 </SelectTrigger>
                 <SelectContent>
@@ -291,12 +291,12 @@ export function ImageSelector({
 
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
             <Input
               placeholder="Search images..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-transparent border-gray-700 focus:border-[#00D9FF]"
+              className="pl-10 bg-transparent border-border-default focus:border-brand-primary"
             />
             {searchQuery && (
               <Button
@@ -313,7 +313,7 @@ export function ImageSelector({
           {/* Multi-select controls */}
           {multiSelect && (
             <div className="flex justify-between items-center">
-              <div className="text-sm text-gray-400">
+              <div className="text-sm text-text-muted">
                 {tempSelectedImages.length} image
                 {tempSelectedImages.length !== 1 ? "s" : ""} selected
               </div>
@@ -324,7 +324,7 @@ export function ImageSelector({
                   onClick={() => {
                     setTempSelectedImages([]);
                   }}
-                  className="border-gray-600 text-gray-400 hover:text-white"
+                  className="border-border-default text-text-muted hover:text-white"
                 >
                   Clear
                 </Button>
@@ -334,7 +334,7 @@ export function ImageSelector({
                   onClick={() => {
                     setOpen(false);
                   }}
-                  className="text-gray-400 hover:text-white"
+                  className="text-text-muted hover:text-white"
                 >
                   Cancel
                 </Button>
@@ -344,7 +344,7 @@ export function ImageSelector({
                     onSelectImages?.(tempSelectedImages);
                     setOpen(false);
                   }}
-                  className="bg-[#00D9FF] hover:bg-[#00B8D4] text-black"
+                  className="bg-brand-primary hover:bg-brand-primary/80 text-black"
                 >
                   Confirm
                 </Button>
@@ -355,13 +355,13 @@ export function ImageSelector({
           {/* Clear Selection (single-select) */}
           {!multiSelect && selectedImage && (
             <div className="flex justify-between items-center">
-              <div className="text-sm text-gray-400 flex items-center gap-2">
+              <div className="text-sm text-text-muted flex items-center gap-2">
                 <span>Current:</span>
                 {selectedImageData ? (
                   <span className="text-white">{selectedImageData.name}</span>
                 ) : isBase64 && stats && !stats.isLoading ? (
                   <span className="text-white font-mono">
-                    {stats.width}×{stats.height}
+                    {stats.width}x{stats.height}
                     {stats.transparencyPercent > 0
                       ? `, ${stats.transparencyPercent}% transparent`
                       : ""}
@@ -377,7 +377,7 @@ export function ImageSelector({
                   onSelectImage?.(null);
                   setOpen(false);
                 }}
-                className="border-gray-600 text-gray-400 hover:text-white"
+                className="border-border-default text-text-muted hover:text-white"
               >
                 Clear Selection
               </Button>
@@ -387,7 +387,7 @@ export function ImageSelector({
           {/* Image Grid */}
           <div className="max-h-96 overflow-y-auto">
             {filteredImages.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-text-muted">
                 {searchQuery ? (
                   <>
                     <Search className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -420,8 +420,8 @@ export function ImageSelector({
                       key={image.id}
                       className={`cursor-pointer transition-all relative ${
                         isSelected
-                          ? "border-[#00D9FF] bg-[#00D9FF]/10"
-                          : "border-gray-700 bg-[#27272A] hover:border-gray-600"
+                          ? "border-brand-primary bg-brand-primary/10"
+                          : "border-border-default bg-surface-raised hover:border-border-subtle"
                       }`}
                       onClick={() => {
                         if (multiSelect) {
@@ -442,14 +442,14 @@ export function ImageSelector({
                         {multiSelect && (
                           <div className="absolute top-2 right-2 z-10">
                             {isSelected ? (
-                              <CheckCircle2 className="w-5 h-5 text-[#00D9FF]" />
+                              <CheckCircle2 className="w-5 h-5 text-brand-primary" />
                             ) : (
-                              <Circle className="w-5 h-5 text-gray-500" />
+                              <Circle className="w-5 h-5 text-text-muted" />
                             )}
                           </div>
                         )}
                         <div className="space-y-2">
-                          <div className="aspect-square bg-gray-800 rounded overflow-hidden p-2">
+                          <div className="aspect-square bg-surface-raised rounded overflow-hidden p-2">
                             <img
                               src={image.url || "/placeholder.svg"}
                               alt={image.name}

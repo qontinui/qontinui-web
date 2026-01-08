@@ -71,7 +71,7 @@ export function MinimapEnhanced({
     return (
       <button
         onClick={() => setIsVisible(true)}
-        className="fixed bottom-4 right-4 z-[1000] px-3 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg shadow-xl text-white text-sm transition-colors"
+        className="fixed bottom-4 right-4 z-[1000] px-3 py-2 bg-surface-raised hover:bg-border-default border border-border-default rounded-lg shadow-xl text-white text-sm transition-colors"
         title="Show Minimap"
       >
         <svg
@@ -111,7 +111,7 @@ export function MinimapEnhanced({
       {showToggle && (
         <button
           onClick={() => setIsVisible(false)}
-          className="absolute top-2 right-2 p-1 bg-gray-900/50 hover:bg-gray-900/80 rounded text-gray-400 hover:text-white transition-colors"
+          className="absolute top-2 right-2 p-1 bg-surface-canvas/50 hover:bg-surface-canvas/80 rounded text-text-muted hover:text-white transition-colors"
           title="Hide Minimap"
         >
           <svg
@@ -132,28 +132,28 @@ export function MinimapEnhanced({
 
       {/* Legend */}
       <div className="absolute bottom-2 left-2 right-2 text-xs space-y-1">
-        <div className="bg-gray-900/80 rounded px-2 py-1 space-y-1">
-          <div className="text-gray-400 font-semibold mb-1">State</div>
+        <div className="bg-surface-canvas/80 rounded px-2 py-1 space-y-1">
+          <div className="text-text-muted font-semibold mb-1">State</div>
           <div className="flex items-center gap-2">
             <div
               className="w-2 h-2 rounded-full"
               style={{ backgroundColor: COLORS.running }}
             />
-            <span className="text-gray-400">Running</span>
+            <span className="text-text-muted">Running</span>
           </div>
           <div className="flex items-center gap-2">
             <div
               className="w-2 h-2 rounded-full"
               style={{ backgroundColor: COLORS.successState }}
             />
-            <span className="text-gray-400">Success</span>
+            <span className="text-text-muted">Success</span>
           </div>
           <div className="flex items-center gap-2">
             <div
               className="w-2 h-2 rounded-full"
               style={{ backgroundColor: COLORS.errorState }}
             />
-            <span className="text-gray-400">Error</span>
+            <span className="text-text-muted">Error</span>
           </div>
         </div>
       </div>

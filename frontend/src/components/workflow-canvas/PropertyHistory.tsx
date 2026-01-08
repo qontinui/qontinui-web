@@ -67,12 +67,12 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
     return (
       <div className={`p-4 ${className}`}>
         <div className="flex items-center gap-2 mb-4">
-          <History className="w-4 h-4 text-gray-400" />
-          <h4 className="text-sm font-semibold text-gray-400">
+          <History className="w-4 h-4 text-text-muted" />
+          <h4 className="text-sm font-semibold text-text-muted">
             Change History
           </h4>
         </div>
-        <div className="text-xs text-gray-500 text-center py-8">
+        <div className="text-xs text-text-muted text-center py-8">
           No changes recorded yet
         </div>
       </div>
@@ -86,7 +86,7 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <History className="w-4 h-4 text-purple-400" />
-            <h4 className="text-sm font-semibold text-gray-200">
+            <h4 className="text-sm font-semibold text-text-secondary">
               Change History
             </h4>
             <Badge variant="secondary" className="text-xs">
@@ -97,31 +97,31 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
             size="sm"
             variant="ghost"
             onClick={handleClearHistory}
-            className="h-7 text-xs text-gray-400 hover:text-red-400"
+            className="h-7 text-xs text-text-muted hover:text-red-400"
           >
             <Trash2 className="w-3 h-3 mr-1" />
             Clear
           </Button>
         </div>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Changes List */}
         <div className="space-y-3">
           {changes.map((change) => (
             <div
               key={`${change.property}-${change.timestamp}`}
-              className="p-3 rounded bg-gray-800/50 border border-gray-700 space-y-2"
+              className="p-3 rounded bg-surface-raised/50 border border-border-default space-y-2"
             >
               {/* Header */}
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="text-xs font-medium text-gray-300 font-mono">
+                  <div className="text-xs font-medium text-text-secondary font-mono">
                     {change.property}
                   </div>
                   <div className="flex items-center gap-2 mt-1">
-                    <Clock className="w-3 h-3 text-gray-500" />
-                    <span className="text-xs text-gray-500">
+                    <Clock className="w-3 h-3 text-text-muted" />
+                    <span className="text-xs text-text-muted">
                       {formatTimestamp(change.timestamp)}
                     </span>
                   </div>
@@ -130,7 +130,7 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
                   size="sm"
                   variant="ghost"
                   onClick={() => handleRevert(change.property)}
-                  className="h-6 text-xs text-gray-400 hover:text-blue-400"
+                  className="h-6 text-xs text-text-muted hover:text-blue-400"
                   title="Revert this change"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -143,7 +143,7 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
                   <div className="text-xs text-red-400 font-medium w-12">
                     From:
                   </div>
-                  <div className="flex-1 text-xs text-gray-400 font-mono bg-red-900/10 px-2 py-1 rounded border border-red-900/30">
+                  <div className="flex-1 text-xs text-text-muted font-mono bg-red-900/10 px-2 py-1 rounded border border-red-900/30">
                     {formatValue(change.oldValue)}
                   </div>
                 </div>
@@ -151,7 +151,7 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
                   <div className="text-xs text-green-400 font-medium w-12">
                     To:
                   </div>
-                  <div className="flex-1 text-xs text-gray-300 font-mono bg-green-900/10 px-2 py-1 rounded border border-green-900/30">
+                  <div className="flex-1 text-xs text-text-secondary font-mono bg-green-900/10 px-2 py-1 rounded border border-green-900/30">
                     {formatValue(change.newValue)}
                   </div>
                 </div>
@@ -162,7 +162,7 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
 
         {/* Info */}
         <div className="p-3 rounded bg-blue-900/20 border border-blue-700/30">
-          <div className="text-xs text-gray-300">
+          <div className="text-xs text-text-secondary">
             <strong>Change Tracking:</strong> All property modifications are
             tracked. Use the revert button to undo specific changes. Changes are
             auto-saved based on your settings.

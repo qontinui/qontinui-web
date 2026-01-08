@@ -96,7 +96,7 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const renderValidationIcon = () => {
     switch (validationStatus) {
       case "validating":
-        return <Loader2 className="w-3 h-3 animate-spin text-gray-500" />;
+        return <Loader2 className="w-3 h-3 animate-spin text-text-muted" />;
       case "valid":
         return <CheckCircle className="w-3 h-3 text-green-500" />;
       case "invalid":
@@ -117,7 +117,7 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
       <div className="mt-2">
         <button
           onClick={() => setShowEditor(!showEditor)}
-          className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-900 transition-colors"
+          className="flex items-center gap-2 text-xs text-text-muted hover:text-text-primary transition-colors"
         >
           <Code className="w-3 h-3" />
           {showEditor ? "Hide Code" : "Show Code"}
@@ -125,7 +125,7 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
         </button>
 
         {showEditor && (
-          <div className="mt-2 border border-gray-300 rounded-md overflow-hidden">
+          <div className="mt-2 border border-border-default rounded-md overflow-hidden">
             <Editor
               height="200px"
               defaultLanguage="python"
@@ -153,7 +153,7 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
             )}
 
             {/* Info footer */}
-            <div className="bg-gray-50 border-t border-gray-200 p-2 text-xs text-gray-600">
+            <div className="bg-surface-canvas border-t border-border-subtle p-2 text-xs text-text-muted">
               <div className="flex items-center justify-between">
                 <span>Output: {outputDisplay}</span>
                 <span>Timeout: {config.timeout || 30}s</span>
@@ -164,7 +164,7 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
 
         {/* Collapsed view - code preview */}
         {!showEditor && (
-          <div className="mt-1 text-xs text-gray-500 font-mono bg-gray-50 p-2 rounded border border-gray-200">
+          <div className="mt-1 text-xs text-text-muted font-mono bg-surface-canvas p-2 rounded border border-border-subtle">
             {codePreview}
           </div>
         )}
@@ -205,11 +205,11 @@ export function CustomFunctionNode(
       <div className="mt-2">
         <button
           onClick={() => setShowDetails(!showDetails)}
-          className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-900 transition-colors w-full"
+          className="flex items-center gap-2 text-xs text-text-muted hover:text-text-primary transition-colors w-full"
         >
           <Play className="w-3 h-3" />
           <span className="font-medium">{config.functionName}</span>
-          <span className="ml-auto text-gray-400">
+          <span className="ml-auto text-text-muted">
             {showDetails ? "▼" : "▶"}
           </span>
         </button>
@@ -252,7 +252,7 @@ export function CustomFunctionNode(
             )}
 
             {/* Function ID */}
-            <div className="text-gray-500 font-mono text-[10px]">
+            <div className="text-text-muted font-mono text-[10px]">
               ID: {config.functionId}
             </div>
           </div>

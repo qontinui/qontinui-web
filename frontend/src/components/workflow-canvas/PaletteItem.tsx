@@ -85,7 +85,7 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
     >
       {/* Drag Handle */}
       <div className="palette-item__drag-handle">
-        <GripVertical className="h-4 w-4 text-gray-400" />
+        <GripVertical className="h-4 w-4 text-text-muted" />
       </div>
 
       {/* Icon */}

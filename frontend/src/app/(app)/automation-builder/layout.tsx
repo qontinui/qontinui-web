@@ -27,12 +27,12 @@ function AutoSaveProvider({ children }: { children: React.ReactNode }) {
   // This ensures auto-save works even when navigating without URL project param
   const effectiveProjectId = urlProjectId || contextProjectId;
 
-  // Auto-save to backend every 10 seconds
+  // Auto-save to backend via event-driven sync (ChangeTracker)
+  // Saves happen 2s after last change, or 30s max delay
   // Local saves happen automatically via store subscriptions
   useProjectAutoSave({
     projectId: effectiveProjectId,
     enabled: !isLoading && effectiveProjectId !== null,
-    backendSaveInterval: 10000,
   });
 
   return <>{children}</>;

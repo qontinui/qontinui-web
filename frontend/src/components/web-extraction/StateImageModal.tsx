@@ -439,7 +439,7 @@ export function StateImageModal({
                     />
                     {/* Highlight the current region */}
                     <div
-                      className="absolute border-2 border-[#00D9FF] bg-[#00D9FF]/20 pointer-events-none"
+                      className="absolute border-2 border-brand-primary bg-brand-primary/20 pointer-events-none"
                       style={{
                         left: `${(currentBbox.x / viewportWidth) * 100}%`,
                         top: `${(currentBbox.y / viewportHeight) * 100}%`,
@@ -535,7 +535,7 @@ export function StateImageModal({
                             onClick={() => handleElementClick(element)}
                             className={`w-full text-left text-xs rounded px-2 py-1.5 transition-colors ${
                               selectedElement?.id === element.id
-                                ? "bg-[#00D9FF]/20 border border-[#00D9FF] text-foreground"
+                                ? "bg-brand-primary/20 border border-brand-primary text-foreground"
                                 : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
                             }`}
                             title={`${displayName}\nType: ${element.element_type}\n${element.text || ""}`}

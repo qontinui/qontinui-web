@@ -119,9 +119,9 @@ export function PackageCard({
 
       <CardContent className={cn("relative", compact && "py-2")}>
         {/* Author */}
-        <div className="flex items-center gap-2 text-sm text-gray-400 mb-3">
+        <div className="flex items-center gap-2 text-sm text-text-muted mb-3">
           <span>by</span>
-          <span className="font-medium text-gray-300">
+          <span className="font-medium text-text-secondary">
             {pkg.author.username}
           </span>
           {pkg.author.verified && (
@@ -130,7 +130,7 @@ export function PackageCard({
         </div>
 
         {/* Stats */}
-        <div className="flex items-center gap-4 text-sm text-gray-400">
+        <div className="flex items-center gap-4 text-sm text-text-muted">
           <div
             className="flex items-center gap-1"
             title={`${pkg.total_downloads} total downloads`}
@@ -145,7 +145,7 @@ export function PackageCard({
             >
               <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
               <span>{formatRating(pkg.average_rating)}</span>
-              <span className="text-gray-500">({pkg.rating_count})</span>
+              <span className="text-text-muted">({pkg.rating_count})</span>
             </div>
           )}
           <div className="flex items-center gap-1 text-xs">
@@ -155,7 +155,7 @@ export function PackageCard({
 
         {/* License */}
         {!compact && (
-          <div className="mt-2 text-xs text-gray-500">
+          <div className="mt-2 text-xs text-text-muted">
             License: {pkg.license}
           </div>
         )}

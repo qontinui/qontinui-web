@@ -111,6 +111,27 @@ from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.state_transition import StateTransition
 from app.models.storage_usage import StorageUsage
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
+from app.models.sync_lock import SyncLock
+from app.models.task_run import (  # New unified names; Backward compatibility aliases
+    AITask,
+    AITaskFinding,
+    AITaskFindingActionType,
+    AITaskFindingCategory,
+    AITaskFindingSeverity,
+    AITaskFindingStatus,
+    AITaskSession,
+    AITaskStatus,
+    FindingActionType,
+    FindingCategory,
+    FindingSeverity,
+    FindingStatus,
+    TaskRun,
+    TaskRunAutomation,
+    TaskRunFinding,
+    TaskRunSession,
+    TaskRunStatus,
+    TaskType,
+)
 from app.models.test_deficiency import (
     DeficiencySeverity,
     DeficiencyStatus,
@@ -118,6 +139,7 @@ from app.models.test_deficiency import (
     TestDeficiency,
 )
 from app.models.test_notification_preferences import TestNotificationPreferences
+from app.models.test_result import TestResult, TestResultStatus
 from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.training_dataset import (
     AnnotationSource,
@@ -138,6 +160,11 @@ from app.models.transition_execution import (
 from app.models.transition_reliability import TransitionReliability
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
+from app.models.verification_test import (
+    VerificationTest,
+    VerificationTestCategory,
+    VerificationTestType,
+)
 from app.models.video_capture import (
     ActionFrame,
     FrameIndex,
@@ -154,6 +181,7 @@ from app.models.visual_comparison_result import (
     VisualComparisonStatus,
 )
 from app.models.workflow_execution_history import WorkflowExecutionHistory
+from app.models.workflow_test_association import TriggerPoint, WorkflowTestAssociation
 from app.models.workflow_variable import (
     VariableHistory,
     VariableScope,
@@ -216,6 +244,7 @@ __all__ = [
     # State Discovery
     "DiscoveredState",
     "StateTransition",
+    "SyncLock",
     # Automation
     "EmbeddingGenerationJob",
     "ProjectEmbedding",
@@ -307,6 +336,26 @@ __all__ = [
     "TreeEventType",
     "TreeNodeType",
     "TreeNodeStatus",
+    # Task Runs (Unified task tracking - renamed from AI Tasks)
+    "TaskRun",
+    "TaskRunStatus",
+    "TaskRunSession",
+    "TaskRunFinding",
+    "TaskRunAutomation",
+    "TaskType",
+    "FindingCategory",
+    "FindingSeverity",
+    "FindingStatus",
+    "FindingActionType",
+    # Backward compatibility aliases (deprecated)
+    "AITask",
+    "AITaskStatus",
+    "AITaskSession",
+    "AITaskFinding",
+    "AITaskFindingCategory",
+    "AITaskFindingSeverity",
+    "AITaskFindingStatus",
+    "AITaskFindingActionType",
     # Recordings (State Discovery from Video)
     "Recording",
     "RecordingStatus",
@@ -327,4 +376,12 @@ __all__ = [
     "ReviewStatus",
     "ExportFormat",
     "ExportJobStatus",
+    # Verification Tests
+    "VerificationTest",
+    "VerificationTestType",
+    "VerificationTestCategory",
+    "TestResult",
+    "TestResultStatus",
+    "WorkflowTestAssociation",
+    "TriggerPoint",
 ]

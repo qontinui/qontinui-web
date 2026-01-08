@@ -121,12 +121,12 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-surface-raised/80 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <History className="w-4 h-4 text-gray-600" />
+          <History className="w-4 h-4 text-text-muted" />
           <span className="font-medium">Action History</span>
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-text-muted">
             ({actionHistory.snapshots.length} snapshots)
           </span>
         </div>
@@ -181,10 +181,10 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
               {groupSnapshotsByScreenshot().map(([screenshotId, snapshots]) => (
                 <div
                   key={screenshotId}
-                  className="border rounded-lg p-3 bg-gray-50"
+                  className="border rounded-lg p-3 bg-surface-canvas"
                 >
                   <div className="flex items-center gap-2 mb-2 text-sm font-medium">
-                    <Camera className="w-4 h-4 text-gray-600" />
+                    <Camera className="w-4 h-4 text-text-muted" />
                     {getScreenshotName(screenshotId)}
                   </div>
 
@@ -214,7 +214,7 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
                             </div>
 
                             {/* Snapshot Details */}
-                            <div className="text-xs text-gray-600 space-y-1">
+                            <div className="text-xs text-text-muted space-y-1">
                               {snapshot.matches.length > 0 && (
                                 <div>Matches: {snapshot.matches.length}</div>
                               )}
@@ -250,14 +250,14 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
                           <div className="flex items-center gap-1 ml-2">
                             <button
                               onClick={() => setEditingSnapshot(snapshot)}
-                              className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
+                              className="p-1 text-text-muted hover:text-blue-600 transition-colors"
                               title="Edit"
                             >
                               <Edit2 className="w-3 h-3" />
                             </button>
                             <button
                               onClick={() => handleDeleteSnapshot(snapshot.id)}
-                              className="p-1 text-gray-500 hover:text-red-600 transition-colors"
+                              className="p-1 text-text-muted hover:text-red-600 transition-colors"
                               title="Delete"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -271,7 +271,7 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-text-muted">
               <History className="w-8 h-8 mx-auto mb-2 opacity-50" />
               <p className="text-sm">No action snapshots yet</p>
               <p className="text-xs mt-1">
@@ -282,7 +282,7 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
 
           {/* Last Updated */}
           {actionHistory.lastUpdated && (
-            <div className="mt-4 pt-3 border-t text-xs text-gray-500 text-center">
+            <div className="mt-4 pt-3 border-t text-xs text-text-muted text-center">
               Last updated:{" "}
               {new Date(actionHistory.lastUpdated).toLocaleString()}
             </div>

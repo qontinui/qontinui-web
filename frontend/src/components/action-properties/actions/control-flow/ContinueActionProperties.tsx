@@ -27,14 +27,14 @@ export function ContinueActionProperties({
       {/* Optional Condition */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">
+          <Label className="text-xs text-text-muted">
             Continue Condition (Optional)
           </Label>
           {!config.condition ? (
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+              className="h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
               onClick={() =>
                 updateConfig("condition", {
                   type: "variable",
@@ -51,7 +51,7 @@ export function ContinueActionProperties({
             <Button
               variant="ghost"
               size="sm"
-              className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+              className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
               onClick={() => updateConfig("condition", undefined)}
               title="Remove condition (always continue)"
             >
@@ -61,7 +61,7 @@ export function ContinueActionProperties({
         </div>
 
         {config.condition && (
-          <div className="p-3 bg-gray-800/50 rounded-md border border-gray-700">
+          <div className="p-3 bg-surface-raised/50 rounded-md border border-border-default">
             <ConditionEditor
               condition={config.condition}
               onChange={(condition) => updateConfig("condition", condition)}
@@ -72,7 +72,7 @@ export function ContinueActionProperties({
         )}
 
         {!config.condition && (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Without a condition, the loop will always skip to the next iteration
             when this action executes.
           </p>
@@ -81,15 +81,15 @@ export function ContinueActionProperties({
 
       {/* Message */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Message (Optional)</Label>
+        <Label className="text-xs text-text-muted">Message (Optional)</Label>
         <Input
           type="text"
           value={config.message || ""}
           onChange={(e) => updateConfig("message", e.target.value || undefined)}
           placeholder="e.g., Skipping due to invalid data"
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Optional message to log when the continue occurs.
         </p>
       </div>

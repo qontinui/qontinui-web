@@ -174,8 +174,8 @@ export function StateTransitionGraph({
 
   if (nodes.length === 0) {
     return (
-      <div className="h-96 flex items-center justify-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-        <div className="text-center text-gray-500">
+      <div className="h-96 flex items-center justify-center bg-surface-canvas rounded-lg border-2 border-dashed border-border-default">
+        <div className="text-center text-text-muted">
           <p className="text-lg font-medium">No state transitions found</p>
           <p className="text-sm mt-1">
             Execute a process to visualize state transitions
@@ -203,8 +203,10 @@ export function StateTransitionGraph({
       </ReactFlow>
 
       {/* Legend */}
-      <div className="absolute bottom-4 right-4 bg-white p-3 rounded-lg shadow-lg border border-gray-200">
-        <div className="text-xs font-semibold text-gray-700 mb-2">Legend</div>
+      <div className="absolute bottom-4 right-4 bg-white p-3 rounded-lg shadow-lg border border-border-subtle">
+        <div className="text-xs font-semibold text-text-secondary mb-2">
+          Legend
+        </div>
         <div className="space-y-1.5 text-xs">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-green-100 border-2 border-green-400 rounded"></div>
@@ -222,7 +224,7 @@ export function StateTransitionGraph({
             <div className="w-3 h-3 bg-red-100 border-2 border-red-400 rounded"></div>
             <span>Uncovered</span>
           </div>
-          <div className="flex items-center gap-2 pt-1 border-t border-gray-200 mt-1">
+          <div className="flex items-center gap-2 pt-1 border-t border-border-subtle mt-1">
             <div className="w-8 h-0.5 bg-green-500"></div>
             <span>Covered Transition</span>
           </div>

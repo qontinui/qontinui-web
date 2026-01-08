@@ -107,7 +107,7 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
                     "flex flex-col items-center space-y-2",
                     status === "complete" && "text-green-600",
                     status === "active" && "text-blue-600",
-                    status === "pending" && "text-gray-400"
+                    status === "pending" && "text-text-muted"
                   )}
                 >
                   <div className="relative">
@@ -131,7 +131,9 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
                     <div
                       className={cn(
                         "absolute left-full top-4 w-full h-0.5",
-                        status === "complete" ? "bg-green-600" : "bg-gray-300"
+                        status === "complete"
+                          ? "bg-green-600"
+                          : "bg-surface-raised"
                       )}
                       style={{
                         width: "calc(100% - 2rem)",
@@ -147,15 +149,15 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
           {/* Progress bar */}
           <div className="space-y-2">
             <Progress value={progress} className="h-2" />
-            <div className="flex justify-between text-sm text-gray-600">
+            <div className="flex justify-between text-sm text-text-muted">
               <span>{currentStage?.name || "Processing"}</span>
               <span>{progress}%</span>
             </div>
           </div>
 
           {/* Status message */}
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-sm text-gray-600">
+          <div className="bg-surface-canvas rounded-lg p-3">
+            <p className="text-sm text-text-muted">
               {progress < 30 &&
                 "Creating pixel stability map across screenshots..."}
               {progress >= 30 &&

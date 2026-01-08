@@ -375,14 +375,14 @@ export function UnifiedProcessLibrary({
         draggable={isDraggable}
         onDragStart={(e) => handleDragStart(e, item)}
         onDragEnd={handleDragEnd}
-        className={`cursor-pointer transition-all hover:border-[#00D9FF]/50 !py-0 !gap-0 ${
+        className={`cursor-pointer transition-all hover:border-brand-primary/50 !py-0 !gap-0 ${
           isSelectionMode && isChecked
             ? "border-red-500 bg-red-500/10"
             : isItemSelected(item)
               ? isLinear
-                ? "border-[#00D9FF] bg-[#00D9FF]/10"
-                : "border-[#00FF88] bg-[#00FF88]/10"
-              : "border-gray-700 bg-[#27272A]"
+                ? "border-brand-primary bg-brand-primary/10"
+                : "border-brand-success bg-brand-success/10"
+              : "border-border-default bg-surface-raised"
         } ${draggedItem?.id === item.id ? "opacity-50" : ""}`}
         onClick={() => {
           if (isSelectionMode) {
@@ -400,13 +400,13 @@ export function UnifiedProcessLibrary({
                   checked={isChecked}
                   onCheckedChange={() => toggleItemSelection(item.id)}
                   onClick={(e) => e.stopPropagation()}
-                  className="h-3.5 w-3.5 flex-shrink-0 border-gray-500 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
+                  className="h-3.5 w-3.5 flex-shrink-0 border-border-default data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
                 />
               )}
               {isLinear ? (
-                <List className="w-3 h-3 text-[#00D9FF] flex-shrink-0" />
+                <List className="w-3 h-3 text-brand-primary flex-shrink-0" />
               ) : (
-                <WorkflowIcon className="w-3 h-3 text-[#00FF88] flex-shrink-0" />
+                <WorkflowIcon className="w-3 h-3 text-brand-success flex-shrink-0" />
               )}
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -423,7 +423,7 @@ export function UnifiedProcessLibrary({
               <Badge
                 variant="secondary"
                 className={`text-[10px] h-4 px-1 ${
-                  !isLinear ? "bg-[#00FF88]/20 text-[#00FF88]" : ""
+                  !isLinear ? "bg-brand-success/20 text-brand-success" : ""
                 }`}
               >
                 {getItemActionCount(item)}
@@ -432,7 +432,7 @@ export function UnifiedProcessLibrary({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-4 w-4 p-0 text-gray-400 hover:text-[#00FF88]"
+                  className="h-4 w-4 p-0 text-text-muted hover:text-brand-success"
                   onClick={(e) => {
                     e.stopPropagation();
                     onConvertItem(item);
@@ -446,7 +446,7 @@ export function UnifiedProcessLibrary({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-4 w-4 p-0 text-gray-400 hover:text-red-400"
+                  className="h-4 w-4 p-0 text-text-muted hover:text-red-400"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleDelete(item);
@@ -466,13 +466,13 @@ export function UnifiedProcessLibrary({
     <TooltipProvider>
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
+          <h3 className="text-sm font-medium text-text-muted uppercase tracking-wide">
             Automation Library
           </h3>
           <div className="flex items-center gap-1">
             {isSelectionMode ? (
               <>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-text-muted">
                   {selectedIds.size} selected
                 </span>
                 {selectedIds.size > 0 && (
@@ -489,7 +489,7 @@ export function UnifiedProcessLibrary({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-1.5 text-gray-400 hover:text-white"
+                  className="h-7 px-1.5 text-text-muted hover:text-white"
                   onClick={toggleSelectionMode}
                   title="Cancel selection"
                 >
@@ -501,7 +501,7 @@ export function UnifiedProcessLibrary({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-1.5 text-gray-400 hover:text-[#00D9FF] flex items-center gap-1"
+                  className="h-7 px-1.5 text-text-muted hover:text-brand-primary flex items-center gap-1"
                   onClick={toggleSelectionMode}
                   title="Select multiple workflows"
                 >
@@ -510,7 +510,7 @@ export function UnifiedProcessLibrary({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-1.5 text-gray-400 hover:text-[#00D9FF] flex items-center gap-1"
+                  className="h-7 px-1.5 text-text-muted hover:text-brand-primary flex items-center gap-1"
                   onClick={() => setShowNewCategoryInput(true)}
                   title="Add new category"
                 >
@@ -535,7 +535,7 @@ export function UnifiedProcessLibrary({
                 }
               }}
               placeholder="Category name..."
-              className="h-7 text-xs bg-transparent border-gray-700"
+              className="h-7 text-xs bg-transparent border-border-default"
               autoFocus
             />
             <Button size="sm" className="h-7 px-2" onClick={handleAddCategory}>
@@ -555,7 +555,7 @@ export function UnifiedProcessLibrary({
                 key={category.name}
                 className={`space-y-1 rounded-lg transition-all ${
                   dragOverCategory === category.name
-                    ? "bg-[#00D9FF]/10 ring-2 ring-[#00D9FF]/50"
+                    ? "bg-brand-primary/10 ring-2 ring-brand-primary/50"
                     : ""
                 }`}
                 onDragOver={handleDragOver}
@@ -573,13 +573,13 @@ export function UnifiedProcessLibrary({
                       onCheckedChange={() =>
                         toggleCategorySelection(category.name)
                       }
-                      className="h-3.5 w-3.5 ml-1 border-gray-500 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
+                      className="h-3.5 w-3.5 ml-1 border-border-default data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
                     />
                   )}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 p-0 px-1 text-gray-400 hover:text-white flex-1 justify-start"
+                    className="h-6 p-0 px-1 text-text-muted hover:text-white flex-1 justify-start"
                     onClick={() => toggleCategory(category.name)}
                   >
                     {isCollapsed ? (
@@ -599,7 +599,7 @@ export function UnifiedProcessLibrary({
                     {category.automationEnabled && (
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Play className="w-2.5 h-2.5 ml-1 text-[#00FF88]" />
+                          <Play className="w-2.5 h-2.5 ml-1 text-brand-success" />
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Available for runner automation</p>
@@ -612,7 +612,7 @@ export function UnifiedProcessLibrary({
                     {!isSelectionMode && onCreateSequential && (
                       <Button
                         size="sm"
-                        className="h-6 w-6 p-0 bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                        className="h-6 w-6 p-0 bg-brand-primary hover:bg-brand-primary/80 text-black"
                         onClick={() => onCreateSequential(category.name)}
                         title={`Create sequential workflow in ${category.name}`}
                       >
@@ -623,7 +623,7 @@ export function UnifiedProcessLibrary({
                     {!isSelectionMode && onCreateGraph && (
                       <Button
                         size="sm"
-                        className="h-6 w-6 p-0 bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+                        className="h-6 w-6 p-0 bg-brand-success hover:bg-brand-success/80 text-black"
                         onClick={() => onCreateGraph(category.name)}
                         title={`Create graph workflow in ${category.name}`}
                       >
@@ -639,8 +639,8 @@ export function UnifiedProcessLibrary({
                             size="sm"
                             className={`h-6 w-6 p-0 ${
                               category.automationEnabled
-                                ? "text-[#00FF88] hover:text-[#00FF88]/80"
-                                : "text-gray-500 hover:text-gray-400"
+                                ? "text-brand-success hover:text-brand-success/80"
+                                : "text-text-muted hover:text-text-secondary"
                             }`}
                             onClick={() => handleToggleAutomation(category)}
                             title={
@@ -667,7 +667,7 @@ export function UnifiedProcessLibrary({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
+                            className="h-6 w-6 p-0 text-text-muted hover:text-red-400"
                             onClick={() => handleDeleteCategory(category.name)}
                           >
                             <Trash2 className="w-3 h-3" />
@@ -683,7 +683,7 @@ export function UnifiedProcessLibrary({
                 {!isCollapsed && (
                   <div className="ml-4 space-y-1">
                     {categoryItems.length === 0 ? (
-                      <div className="text-xs text-gray-500 italic py-2">
+                      <div className="text-xs text-text-muted italic py-2">
                         Drop workflows here or use + buttons above
                       </div>
                     ) : (

@@ -483,7 +483,7 @@ export function ContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-[9999] min-w-[200px] bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden"
+      className="fixed z-[9999] min-w-[200px] bg-surface-raised border border-border-default rounded-lg shadow-xl overflow-hidden"
       style={{
         left: `${adjustedPosition.x}px`,
         top: `${adjustedPosition.y}px`,
@@ -493,7 +493,10 @@ export function ContextMenu({
         {items.map((item, index) => {
           if (item.divider) {
             return (
-              <div key={index} className="my-1 border-t border-gray-700" />
+              <div
+                key={index}
+                className="my-1 border-t border-border-default"
+              />
             );
           }
 
@@ -508,12 +511,12 @@ export function ContextMenu({
                   transition-colors duration-100
                   ${
                     item.disabled
-                      ? "text-gray-500 cursor-not-allowed"
+                      ? "text-text-muted cursor-not-allowed"
                       : item.danger
                         ? "text-red-400 hover:bg-red-900/20"
-                        : "text-gray-200 hover:bg-gray-700"
+                        : "text-text-secondary hover:bg-surface-raised"
                   }
-                  ${isSelected && !item.disabled ? "bg-gray-700" : ""}
+                  ${isSelected && !item.disabled ? "bg-surface-raised" : ""}
                 `}
                 onClick={() => handleItemClick(item, index)}
                 onMouseEnter={() => setSelectedIndex(index)}
@@ -527,7 +530,7 @@ export function ContextMenu({
                 </div>
 
                 {item.shortcut && (
-                  <span className="text-xs text-gray-500 flex-shrink-0">
+                  <span className="text-xs text-text-muted flex-shrink-0">
                     {item.shortcut}
                   </span>
                 )}
@@ -541,14 +544,14 @@ export function ContextMenu({
 
               {/* Submenu */}
               {hasSubmenu && activeSubmenu === index && (
-                <div className="absolute left-full top-0 ml-1 min-w-[200px] bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                <div className="absolute left-full top-0 ml-1 min-w-[200px] bg-surface-raised border border-border-default rounded-lg shadow-xl overflow-hidden">
                   <div className="py-1">
                     {item.submenu!.map((subItem, subIndex) => {
                       if (subItem.divider) {
                         return (
                           <div
                             key={subIndex}
-                            className="my-1 border-t border-gray-700"
+                            className="my-1 border-t border-border-default"
                           />
                         );
                       }
@@ -561,10 +564,10 @@ export function ContextMenu({
                             transition-colors duration-100
                             ${
                               subItem.disabled
-                                ? "text-gray-500 cursor-not-allowed"
+                                ? "text-text-muted cursor-not-allowed"
                                 : subItem.danger
                                   ? "text-red-400 hover:bg-red-900/20"
-                                  : "text-gray-200 hover:bg-gray-700"
+                                  : "text-text-secondary hover:bg-surface-raised"
                             }
                           `}
                           onClick={() => {
@@ -578,7 +581,7 @@ export function ContextMenu({
                           {subItem.icon && <span>{subItem.icon}</span>}
                           <span className="flex-1">{subItem.label}</span>
                           {subItem.shortcut && (
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-text-muted">
                               {subItem.shortcut}
                             </span>
                           )}

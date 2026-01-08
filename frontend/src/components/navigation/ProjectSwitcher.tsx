@@ -63,7 +63,7 @@ export function ProjectSwitcher({
             </div>
           ) : (
             <div className="flex items-center gap-2 min-w-0">
-              <FolderOpen className="h-4 w-4 text-gray-500 flex-shrink-0" />
+              <FolderOpen className="h-4 w-4 text-text-muted flex-shrink-0" />
               <span className="text-muted-foreground">Select project</span>
             </div>
           )}

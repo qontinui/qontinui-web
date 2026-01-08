@@ -48,8 +48,8 @@ import remarkGfm from "remark-gfm";
 const Editor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-64 bg-gray-950 border border-gray-800 rounded-lg">
-      <div className="text-gray-400">Loading editor...</div>
+    <div className="flex items-center justify-center h-64 bg-surface-canvas border border-border-subtle rounded-lg">
+      <div className="text-text-muted">Loading editor...</div>
     </div>
   ),
 });
@@ -174,24 +174,24 @@ export default function PublishPackagePage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="border-b border-gray-800/50 bg-gradient-to-b from-cyan-500/5 via-purple-500/5 to-transparent">
+      <div className="border-b border-border-subtle bg-gradient-to-b from-brand-primary/5 via-brand-secondary/5 to-transparent">
         <div className="container mx-auto px-6 py-6">
           <Button
             variant="ghost"
             onClick={handleBack}
-            className="mb-4 text-gray-400 hover:text-gray-300"
+            className="mb-4 text-text-muted hover:text-text-secondary"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Marketplace
           </Button>
 
           <div className="flex items-center gap-3 mb-2">
-            <Upload className="w-8 h-8 text-cyan-500" />
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-500 via-purple-500 to-green-500 bg-clip-text text-transparent">
+            <Upload className="w-8 h-8 text-brand-primary" />
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-success bg-clip-text text-transparent">
               Publish Package
             </h1>
           </div>
-          <p className="text-gray-400 text-lg">
+          <p className="text-text-muted text-lg">
             Share your automation code with the community
           </p>
         </div>
@@ -206,7 +206,7 @@ export default function PublishPackagePage() {
               value={activeTab}
               onValueChange={(v) => setActiveTab(v as typeof activeTab)}
             >
-              <TabsList className="bg-gray-900/50 w-full">
+              <TabsList className="bg-surface-raised/50 w-full">
                 <TabsTrigger value="details" className="flex-1">
                   Package Details
                 </TabsTrigger>
@@ -223,7 +223,7 @@ export default function PublishPackagePage() {
               </TabsList>
 
               <TabsContent value="details" className="mt-6 space-y-6">
-                <Card className="bg-gray-900/30 border-gray-800">
+                <Card className="bg-surface-raised/30 border-border-subtle">
                   <CardHeader>
                     <CardTitle>Basic Information</CardTitle>
                     <CardDescription>
@@ -239,7 +239,7 @@ export default function PublishPackagePage() {
                         placeholder="my-awesome-package"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="bg-gray-900/50 border-gray-700"
+                        className="bg-surface-raised/50 border-border-default"
                       />
                     </div>
 
@@ -252,7 +252,7 @@ export default function PublishPackagePage() {
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         rows={3}
-                        className="bg-gray-900/50 border-gray-700 resize-none"
+                        className="bg-surface-raised/50 border-border-default resize-none"
                       />
                     </div>
 
@@ -264,9 +264,9 @@ export default function PublishPackagePage() {
                         placeholder="main_function"
                         value={functionName}
                         onChange={(e) => setFunctionName(e.target.value)}
-                        className="bg-gray-900/50 border-gray-700"
+                        className="bg-surface-raised/50 border-border-default"
                       />
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-text-muted">
                         The main function that will be executed when this
                         package is used
                       </p>
@@ -281,7 +281,7 @@ export default function PublishPackagePage() {
                       >
                         <SelectTrigger
                           id="category"
-                          className="bg-gray-900/50 border-gray-700"
+                          className="bg-surface-raised/50 border-border-default"
                         >
                           <SelectValue />
                         </SelectTrigger>
@@ -310,7 +310,7 @@ export default function PublishPackagePage() {
                               handleAddTag();
                             }
                           }}
-                          className="bg-gray-900/50 border-gray-700"
+                          className="bg-surface-raised/50 border-border-default"
                         />
                         <Button
                           type="button"
@@ -326,7 +326,7 @@ export default function PublishPackagePage() {
                             <Badge
                               key={tag}
                               variant="secondary"
-                              className="cursor-pointer hover:bg-gray-700"
+                              className="cursor-pointer hover:bg-surface-raised"
                               onClick={() => handleRemoveTag(tag)}
                             >
                               {tag} ×
@@ -345,7 +345,7 @@ export default function PublishPackagePage() {
                       >
                         <SelectTrigger
                           id="license"
-                          className="bg-gray-900/50 border-gray-700"
+                          className="bg-surface-raised/50 border-border-default"
                         >
                           <SelectValue />
                         </SelectTrigger>
@@ -370,7 +370,7 @@ export default function PublishPackagePage() {
                       >
                         <SelectTrigger
                           id="visibility"
-                          className="bg-gray-900/50 border-gray-700"
+                          className="bg-surface-raised/50 border-border-default"
                         >
                           <SelectValue />
                         </SelectTrigger>
@@ -390,7 +390,7 @@ export default function PublishPackagePage() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-gray-900/30 border-gray-800">
+                <Card className="bg-surface-raised/30 border-border-subtle">
                   <CardHeader>
                     <CardTitle>Links (Optional)</CardTitle>
                     <CardDescription>
@@ -405,7 +405,7 @@ export default function PublishPackagePage() {
                         placeholder="https://github.com/username/repo"
                         value={repositoryUrl}
                         onChange={(e) => setRepositoryUrl(e.target.value)}
-                        className="bg-gray-900/50 border-gray-700"
+                        className="bg-surface-raised/50 border-border-default"
                       />
                     </div>
 
@@ -416,7 +416,7 @@ export default function PublishPackagePage() {
                         placeholder="https://mypackage.com"
                         value={homepageUrl}
                         onChange={(e) => setHomepageUrl(e.target.value)}
-                        className="bg-gray-900/50 border-gray-700"
+                        className="bg-surface-raised/50 border-border-default"
                       />
                     </div>
 
@@ -429,7 +429,7 @@ export default function PublishPackagePage() {
                         placeholder="https://docs.mypackage.com"
                         value={documentationUrl}
                         onChange={(e) => setDocumentationUrl(e.target.value)}
-                        className="bg-gray-900/50 border-gray-700"
+                        className="bg-surface-raised/50 border-border-default"
                       />
                     </div>
                   </CardContent>
@@ -437,7 +437,7 @@ export default function PublishPackagePage() {
               </TabsContent>
 
               <TabsContent value="code" className="mt-6">
-                <Card className="bg-gray-900/30 border-gray-800">
+                <Card className="bg-surface-raised/30 border-border-subtle">
                   <CardHeader>
                     <CardTitle>Package Code</CardTitle>
                     <CardDescription>
@@ -445,7 +445,7 @@ export default function PublishPackagePage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="h-[500px] border border-gray-800 rounded-lg overflow-hidden">
+                    <div className="h-[500px] border border-border-subtle rounded-lg overflow-hidden">
                       <Editor
                         value={code}
                         onChange={(value) => setCode(value || "")}
@@ -464,7 +464,7 @@ export default function PublishPackagePage() {
               </TabsContent>
 
               <TabsContent value="readme" className="mt-6">
-                <Card className="bg-gray-900/30 border-gray-800">
+                <Card className="bg-surface-raised/30 border-border-subtle">
                   <CardHeader>
                     <CardTitle>README (Markdown)</CardTitle>
                     <CardDescription>
@@ -477,10 +477,10 @@ export default function PublishPackagePage() {
                       value={readme}
                       onChange={(e) => setReadme(e.target.value)}
                       rows={15}
-                      className="bg-gray-900/50 border-gray-700 font-mono text-sm"
+                      className="bg-surface-raised/50 border-border-default font-mono text-sm"
                     />
                     {readme && (
-                      <div className="p-4 bg-gray-950 border border-gray-800 rounded-lg">
+                      <div className="p-4 bg-surface-canvas border border-border-subtle rounded-lg">
                         <div className="prose prose-invert prose-sm max-w-none">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {readme}
@@ -493,7 +493,7 @@ export default function PublishPackagePage() {
               </TabsContent>
 
               <TabsContent value="preview" className="mt-6 space-y-6">
-                <Card className="bg-gray-900/30 border-gray-800">
+                <Card className="bg-surface-raised/30 border-border-subtle">
                   <CardHeader>
                     <CardTitle>Package Preview</CardTitle>
                     <CardDescription>
@@ -502,10 +502,10 @@ export default function PublishPackagePage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
-                      <h3 className="text-2xl font-bold text-gray-100 mb-2">
+                      <h3 className="text-2xl font-bold text-text-primary mb-2">
                         {name || "Package Name"}
                       </h3>
-                      <p className="text-gray-400">
+                      <p className="text-text-muted">
                         {description || "Package description"}
                       </p>
                     </div>
@@ -525,7 +525,7 @@ export default function PublishPackagePage() {
 
                     {code && (
                       <div>
-                        <h4 className="font-semibold text-gray-300 mb-2">
+                        <h4 className="font-semibold text-text-secondary mb-2">
                           Code Preview
                         </h4>
                         <PackageCodePreview
@@ -545,7 +545,7 @@ export default function PublishPackagePage() {
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Security Scan */}
-            <Card className="bg-gray-900/30 border-gray-800">
+            <Card className="bg-surface-raised/30 border-border-subtle">
               <CardHeader>
                 <CardTitle className="text-base">Security Scan</CardTitle>
                 <CardDescription>
@@ -568,19 +568,19 @@ export default function PublishPackagePage() {
                     variant={securityScanPassed ? "default" : "destructive"}
                     className={
                       securityScanPassed
-                        ? "border-green-500/50 bg-green-950/20"
+                        ? "border-brand-success/50 bg-brand-success/10"
                         : ""
                     }
                   >
                     <AlertDescription className="flex items-start gap-2">
                       {securityScanPassed ? (
                         <>
-                          <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5 text-green-500" />
+                          <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5 text-brand-success" />
                           <div>
-                            <div className="font-medium text-green-500">
+                            <div className="font-medium text-brand-success">
                               Scan passed
                             </div>
-                            <div className="text-xs text-gray-400">
+                            <div className="text-xs text-text-muted">
                               No security issues detected
                             </div>
                           </div>
@@ -606,13 +606,13 @@ export default function PublishPackagePage() {
             </Card>
 
             {/* Guidelines */}
-            <Card className="bg-gray-900/30 border-gray-800">
+            <Card className="bg-surface-raised/30 border-border-subtle">
               <CardHeader>
                 <CardTitle className="text-base">
                   Publishing Guidelines
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm text-gray-400">
+              <CardContent className="space-y-2 text-sm text-text-muted">
                 <ul className="space-y-2 list-disc list-inside">
                   <li>Provide clear, descriptive names</li>
                   <li>Write comprehensive documentation</li>
@@ -627,7 +627,7 @@ export default function PublishPackagePage() {
             {/* Publish Button */}
             <Button
               size="lg"
-              className="w-full bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600"
+              className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-brand-primary/90 hover:to-brand-secondary/90"
               onClick={handlePublish}
               disabled={
                 !isFormValid() ||
@@ -649,7 +649,7 @@ export default function PublishPackagePage() {
             </Button>
 
             {!isFormValid() && (
-              <p className="text-xs text-gray-500 text-center">
+              <p className="text-xs text-text-muted text-center">
                 Please fill in all required fields (*)
               </p>
             )}

@@ -229,12 +229,12 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
   }
 
   const arrowClasses = {
-    top: "bottom-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-t-transparent border-b-white dark:border-b-gray-800",
+    top: "bottom-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-t-transparent border-b-white dark:border-b-surface-raised",
     bottom:
-      "top-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-b-transparent border-t-white dark:border-t-gray-800",
-    left: "right-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-l-transparent border-r-white dark:border-r-gray-800",
+      "top-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-b-transparent border-t-white dark:border-t-surface-raised",
+    left: "right-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-l-transparent border-r-white dark:border-r-surface-raised",
     right:
-      "left-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-r-transparent border-l-white dark:border-l-gray-800",
+      "left-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-r-transparent border-l-white dark:border-l-surface-raised",
   };
 
   return (
@@ -246,8 +246,8 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
         exit={{ opacity: 0, scale: 0.95 }}
         transition={{ duration: 0.2 }}
         className={`
-          fixed z-[10002] bg-white dark:bg-gray-800 rounded-lg shadow-2xl
-          border border-gray-200 dark:border-gray-700 max-w-md
+          fixed z-[10002] bg-white dark:bg-surface-raised rounded-lg shadow-2xl
+          border border-border-subtle dark:border-border-default max-w-md
           ${className}
         `}
         style={{
@@ -275,16 +275,16 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
         />
 
         {/* Header */}
-        <div className="flex items-start justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-start justify-between p-4 border-b border-border-subtle dark:border-border-default">
           <div className="flex-1 pr-2">
             <h3
               id="tooltip-title"
-              className="text-lg font-semibold text-gray-900 dark:text-white"
+              className="text-lg font-semibold text-text-primary dark:text-white"
             >
               {title}
             </h3>
             {currentStep !== undefined && totalSteps !== undefined && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              <p className="text-xs text-text-muted dark:text-text-muted mt-0.5">
                 Step {currentStep} of {totalSteps}
               </p>
             )}
@@ -292,7 +292,7 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
           {showClose && (
             <button
               onClick={onClose}
-              className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              className="flex-shrink-0 text-text-muted hover:text-text-muted dark:hover:text-text-secondary transition-colors"
               aria-label="Close tutorial"
             >
               <X className="w-5 h-5" />
@@ -302,18 +302,18 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
 
         {/* Content */}
         <div id="tooltip-content" className="p-4">
-          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+          <p className="text-sm text-text-secondary dark:text-text-secondary whitespace-pre-wrap">
             {content}
           </p>
         </div>
 
         {/* Footer with navigation buttons */}
-        <div className="flex items-center justify-between p-4 border-t border-gray-200 dark:border-gray-700 gap-2">
+        <div className="flex items-center justify-between p-4 border-t border-border-subtle dark:border-border-default gap-2">
           <div className="flex gap-2">
             {showPrevious && !isFirstStep && (
               <button
                 onClick={onPrevious}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-secondary dark:text-text-secondary hover:bg-surface-raised dark:hover:bg-surface-raised rounded transition-colors"
                 aria-label="Previous step"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -326,7 +326,7 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
             {showSkip && !isLastStep && (
               <button
                 onClick={onSkip}
-                className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                className="px-3 py-1.5 text-sm font-medium text-text-muted dark:text-text-muted hover:text-text-primary dark:hover:text-text-secondary transition-colors"
                 aria-label="Skip tutorial"
               >
                 Skip

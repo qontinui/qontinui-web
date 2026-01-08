@@ -178,8 +178,8 @@ export default function TestRunDetailPage() {
   if (!run) {
     return (
       <RequireProject pageName="Test Run Details">
-        <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white flex items-center justify-center">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white flex items-center justify-center">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardContent className="p-12 text-center">
               <div className="text-red-400">Test run not found</div>
             </CardContent>
@@ -198,9 +198,9 @@ export default function TestRunDetailPage() {
 
   return (
     <RequireProject pageName="Test Run Details">
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         {/* Header */}
-        <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-4">
               <Button
@@ -208,19 +208,19 @@ export default function TestRunDetailPage() {
                 onClick={() =>
                   router.push(`/projects/${projectId}/testing/runs`)
                 }
-                className="text-gray-400 hover:text-white"
+                className="text-text-muted hover:text-white"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 All Runs
               </Button>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
                 Test Run Details
               </h1>
             </div>
             <Button
               onClick={handleExport}
               variant="outline"
-              className="border-gray-700 hover:bg-gray-800"
+              className="border-border-default hover:bg-surface-raised"
             >
               <Download className="w-4 h-4 mr-2" />
               Export
@@ -232,14 +232,14 @@ export default function TestRunDetailPage() {
         <main className="p-6 max-w-7xl mx-auto">
           <div className="space-y-6">
             {/* Header Card with Run Metadata */}
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+            <Card className="bg-surface-raised/50 border-border-subtle/50">
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-2xl mb-2">
                       {run.workflow_name}
                     </CardTitle>
-                    <CardDescription className="text-gray-400">
+                    <CardDescription className="text-text-muted">
                       Run ID: {run.id} • Started{" "}
                       {format(
                         new Date(run.start_time),
@@ -271,7 +271,7 @@ export default function TestRunDetailPage() {
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
                   <div className="space-y-2">
-                    <div className="text-sm text-gray-400 flex items-center gap-2">
+                    <div className="text-sm text-text-muted flex items-center gap-2">
                       <Clock className="w-4 h-4" />
                       Duration
                     </div>
@@ -282,32 +282,32 @@ export default function TestRunDetailPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm text-gray-400">Coverage</div>
-                    <div className="text-2xl font-bold text-[#00D9FF]">
+                    <div className="text-sm text-text-muted">Coverage</div>
+                    <div className="text-2xl font-bold text-brand-primary">
                       {run.coverage_percentage.toFixed(1)}%
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-text-muted">
                       {run.states_covered} / {run.total_states} states
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm text-gray-400">Success Rate</div>
+                    <div className="text-sm text-text-muted">Success Rate</div>
                     <div className="text-2xl font-bold text-green-500">
                       {successRate}%
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-text-muted">
                       {run.successful_transitions} / {run.total_transitions}{" "}
                       transitions
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm text-gray-400">Deficiencies</div>
+                    <div className="text-sm text-text-muted">Deficiencies</div>
                     <div className="text-2xl font-bold text-red-400">
                       {run.deficiencies_found}
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm text-gray-400">Runner</div>
+                    <div className="text-sm text-text-muted">Runner</div>
                     <div className="text-sm font-mono truncate">
                       {run.runner_id.slice(0, 8)}...
                     </div>
@@ -318,7 +318,7 @@ export default function TestRunDetailPage() {
 
             {/* Tabbed Content */}
             <Tabs defaultValue="timeline" className="w-full">
-              <TabsList className="bg-[#1A1A1B]/50 border border-gray-800/50">
+              <TabsList className="bg-surface-raised/50 border border-border-subtle/50">
                 <TabsTrigger value="timeline">Step Timeline</TabsTrigger>
                 <TabsTrigger value="coverage">Coverage</TabsTrigger>
                 <TabsTrigger value="deficiencies">
@@ -328,7 +328,7 @@ export default function TestRunDetailPage() {
 
               {/* Timeline Tab */}
               <TabsContent value="timeline">
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+                <Card className="bg-surface-raised/50 border-border-subtle/50">
                   <CardHeader>
                     <CardTitle>Execution Timeline</CardTitle>
                     <CardDescription>
@@ -353,7 +353,7 @@ export default function TestRunDetailPage() {
                                 className="flex items-center gap-4 p-4 cursor-pointer hover:bg-white/5"
                                 onClick={() => toggleStep(transition.id)}
                               >
-                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#0A0A0B]/50 flex items-center justify-center text-xs font-bold">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-surface-canvas/50 flex items-center justify-center text-xs font-bold">
                                   {index + 1}
                                 </div>
                                 <div className="flex-shrink-0">
@@ -368,12 +368,12 @@ export default function TestRunDetailPage() {
                                     <span className="font-medium text-sm">
                                       {transition.from_state}
                                     </span>
-                                    <span className="text-gray-500">→</span>
+                                    <span className="text-text-muted">→</span>
                                     <span className="font-medium text-sm">
                                       {transition.to_state}
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-4 text-xs text-gray-400">
+                                  <div className="flex items-center gap-4 text-xs text-text-muted">
                                     <Badge
                                       variant="outline"
                                       className="text-xs"
@@ -397,7 +397,7 @@ export default function TestRunDetailPage() {
                                         alt="Transition screenshot"
                                         width={60}
                                         height={45}
-                                        className="rounded border border-gray-700 cursor-pointer hover:border-[#00D9FF]"
+                                        className="rounded border border-border-default cursor-pointer hover:border-brand-primary"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           setSelectedImage(
@@ -408,19 +408,19 @@ export default function TestRunDetailPage() {
                                     </div>
                                   )}
                                   {isExpanded ? (
-                                    <ChevronUp className="w-4 h-4 text-gray-400" />
+                                    <ChevronUp className="w-4 h-4 text-text-muted" />
                                   ) : (
-                                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                                    <ChevronDown className="w-4 h-4 text-text-muted" />
                                   )}
                                 </div>
                               </div>
 
                               {/* Expanded Details */}
                               {isExpanded && (
-                                <div className="px-4 pb-4 space-y-3 border-t border-gray-800/50">
+                                <div className="px-4 pb-4 space-y-3 border-t border-border-subtle/50">
                                   <div className="grid grid-cols-2 gap-4 pt-3">
                                     <div>
-                                      <div className="text-xs text-gray-400 mb-1">
+                                      <div className="text-xs text-text-muted mb-1">
                                         From State
                                       </div>
                                       <div className="text-sm font-mono">
@@ -428,7 +428,7 @@ export default function TestRunDetailPage() {
                                       </div>
                                     </div>
                                     <div>
-                                      <div className="text-xs text-gray-400 mb-1">
+                                      <div className="text-xs text-text-muted mb-1">
                                         To State
                                       </div>
                                       <div className="text-sm font-mono">
@@ -436,7 +436,7 @@ export default function TestRunDetailPage() {
                                       </div>
                                     </div>
                                     <div>
-                                      <div className="text-xs text-gray-400 mb-1">
+                                      <div className="text-xs text-text-muted mb-1">
                                         Action Type
                                       </div>
                                       <div className="text-sm">
@@ -444,7 +444,7 @@ export default function TestRunDetailPage() {
                                       </div>
                                     </div>
                                     <div>
-                                      <div className="text-xs text-gray-400 mb-1">
+                                      <div className="text-xs text-text-muted mb-1">
                                         Duration
                                       </div>
                                       <div className="text-sm">
@@ -466,7 +466,7 @@ export default function TestRunDetailPage() {
 
                                   {transition.screenshot_url && (
                                     <div>
-                                      <div className="text-xs text-gray-400 mb-2">
+                                      <div className="text-xs text-text-muted mb-2">
                                         Screenshot
                                       </div>
                                       <div className="relative">
@@ -475,7 +475,7 @@ export default function TestRunDetailPage() {
                                           alt="Transition screenshot"
                                           width={400}
                                           height={300}
-                                          className="rounded border border-gray-700 cursor-pointer hover:border-[#00D9FF]"
+                                          className="rounded border border-border-default cursor-pointer hover:border-brand-primary"
                                           onClick={() =>
                                             setSelectedImage(
                                               transition.screenshot_url
@@ -504,7 +504,7 @@ export default function TestRunDetailPage() {
                         })}
 
                         {run.transitions.length === 0 && (
-                          <div className="text-center py-12 text-gray-400">
+                          <div className="text-center py-12 text-text-muted">
                             No transitions recorded yet
                           </div>
                         )}
@@ -516,7 +516,7 @@ export default function TestRunDetailPage() {
 
               {/* Coverage Tab */}
               <TabsContent value="coverage">
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+                <Card className="bg-surface-raised/50 border-border-subtle/50">
                   <CardHeader>
                     <CardTitle>State Coverage Summary</CardTitle>
                     <CardDescription>
@@ -539,13 +539,13 @@ export default function TestRunDetailPage() {
                           return (
                             <div
                               key={state.state_name}
-                              className="flex items-center justify-between p-4 rounded-lg bg-[#0A0A0B]/50 border border-gray-800/30"
+                              className="flex items-center justify-between p-4 rounded-lg bg-surface-canvas/50 border border-border-subtle/30"
                             >
                               <div className="flex-1">
                                 <div className="font-medium mb-2">
                                   {state.state_name}
                                 </div>
-                                <div className="flex items-center gap-4 text-sm text-gray-400">
+                                <div className="flex items-center gap-4 text-sm text-text-muted">
                                   <span>
                                     Visited: {state.times_visited} times
                                   </span>
@@ -562,7 +562,7 @@ export default function TestRunDetailPage() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-3">
-                                <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
+                                <div className="w-24 h-2 bg-border-default rounded-full overflow-hidden">
                                   <div
                                     className="h-full bg-green-500"
                                     style={{
@@ -579,7 +579,7 @@ export default function TestRunDetailPage() {
                         })}
 
                         {run.state_coverage.length === 0 && (
-                          <div className="text-center py-12 text-gray-400">
+                          <div className="text-center py-12 text-text-muted">
                             No state coverage data yet
                           </div>
                         )}
@@ -591,7 +591,7 @@ export default function TestRunDetailPage() {
 
               {/* Deficiencies Tab */}
               <TabsContent value="deficiencies">
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+                <Card className="bg-surface-raised/50 border-border-subtle/50">
                   <CardHeader>
                     <CardTitle>Deficiencies Found</CardTitle>
                     <CardDescription>
@@ -601,7 +601,7 @@ export default function TestRunDetailPage() {
                   <CardContent>
                     <ScrollArea className="h-[600px] pr-4">
                       {run.deficiencies.length === 0 ? (
-                        <div className="text-center py-12 text-gray-400">
+                        <div className="text-center py-12 text-text-muted">
                           <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-green-500" />
                           No deficiencies found in this test run
                         </div>
@@ -610,7 +610,7 @@ export default function TestRunDetailPage() {
                           {run.deficiencies.map((deficiency) => (
                             <div
                               key={deficiency.id}
-                              className="p-4 rounded-lg bg-[#0A0A0B]/50 border border-red-500/30"
+                              className="p-4 rounded-lg bg-surface-canvas/50 border border-red-500/30"
                             >
                               <div className="flex items-start justify-between mb-3">
                                 <div className="flex items-center gap-2">
@@ -637,10 +637,10 @@ export default function TestRunDetailPage() {
                                   {deficiency.severity}
                                 </Badge>
                               </div>
-                              <p className="text-sm text-gray-400 mb-3">
+                              <p className="text-sm text-text-muted mb-3">
                                 {deficiency.description}
                               </p>
-                              <div className="text-xs text-gray-500 space-y-1">
+                              <div className="text-xs text-text-muted space-y-1">
                                 <div>State: {deficiency.state_name}</div>
                                 {deficiency.transition_from &&
                                   deficiency.transition_to && (
@@ -662,7 +662,7 @@ export default function TestRunDetailPage() {
                               )}
                               {deficiency.screenshot_url && (
                                 <div className="mt-3">
-                                  <div className="text-xs text-gray-400 mb-2">
+                                  <div className="text-xs text-text-muted mb-2">
                                     Screenshot
                                   </div>
                                   <Image
@@ -670,7 +670,7 @@ export default function TestRunDetailPage() {
                                     alt="Deficiency screenshot"
                                     width={200}
                                     height={150}
-                                    className="rounded border border-gray-700 cursor-pointer hover:border-[#00D9FF]"
+                                    className="rounded border border-border-default cursor-pointer hover:border-brand-primary"
                                     onClick={() =>
                                       setSelectedImage(
                                         deficiency.screenshot_url
@@ -696,7 +696,7 @@ export default function TestRunDetailPage() {
           open={selectedImage !== null}
           onOpenChange={() => setSelectedImage(null)}
         >
-          <DialogContent className="max-w-4xl bg-[#1A1A1B] border-gray-800">
+          <DialogContent className="max-w-4xl bg-surface-raised border-border-subtle">
             <DialogHeader>
               <DialogTitle>Screenshot</DialogTitle>
             </DialogHeader>
@@ -707,7 +707,7 @@ export default function TestRunDetailPage() {
                   alt="Full size screenshot"
                   width={1200}
                   height={800}
-                  className="rounded border border-gray-700 w-full h-auto"
+                  className="rounded border border-border-default w-full h-auto"
                 />
               </div>
             )}

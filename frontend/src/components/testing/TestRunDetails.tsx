@@ -17,9 +17,9 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
 
   if (isLoading) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">Loading test run details...</div>
+          <div className="text-text-muted">Loading test run details...</div>
         </CardContent>
       </Card>
     );
@@ -27,7 +27,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
 
   if (error || !run) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
           <div className="text-red-400">Error loading test run details</div>
         </CardContent>
@@ -43,14 +43,14 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
   return (
     <div className="space-y-6">
       {/* Header Card */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <div className="flex items-start justify-between">
             <div>
               <CardTitle className="text-2xl mb-2">
                 {run.workflow_name}
               </CardTitle>
-              <div className="text-sm text-gray-400">
+              <div className="text-sm text-text-muted">
                 Run ID: {run.id} • Started{" "}
                 {format(new Date(run.start_time), "MMM dd, yyyy HH:mm")}
               </div>
@@ -71,7 +71,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <div className="space-y-2">
-              <div className="text-sm text-gray-400">Duration</div>
+              <div className="text-sm text-text-muted">Duration</div>
               <div className="text-2xl font-bold">
                 {run.duration_seconds
                   ? `${Math.floor(run.duration_seconds / 60)}m ${run.duration_seconds % 60}s`
@@ -79,25 +79,25 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
               </div>
             </div>
             <div className="space-y-2">
-              <div className="text-sm text-gray-400">Coverage</div>
-              <div className="text-2xl font-bold text-[#00D9FF]">
+              <div className="text-sm text-text-muted">Coverage</div>
+              <div className="text-2xl font-bold text-brand-primary">
                 {run.coverage_percentage.toFixed(1)}%
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-text-muted">
                 {run.states_covered} / {run.total_states} states
               </div>
             </div>
             <div className="space-y-2">
-              <div className="text-sm text-gray-400">Success Rate</div>
+              <div className="text-sm text-text-muted">Success Rate</div>
               <div className="text-2xl font-bold text-green-500">
                 {successRate}%
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-text-muted">
                 {run.successful_transitions} / {run.total_transitions}
               </div>
             </div>
             <div className="space-y-2">
-              <div className="text-sm text-gray-400">Deficiencies</div>
+              <div className="text-sm text-text-muted">Deficiencies</div>
               <div className="text-2xl font-bold text-red-400">
                 {run.deficiencies_found}
               </div>
@@ -108,7 +108,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
 
       {/* Tabbed Content */}
       <Tabs defaultValue="transitions" className="w-full">
-        <TabsList className="bg-[#1A1A1B]/50 border border-gray-800/50">
+        <TabsList className="bg-surface-raised/50 border border-border-subtle/50">
           <TabsTrigger value="transitions">Transitions</TabsTrigger>
           <TabsTrigger value="coverage">State Coverage</TabsTrigger>
           <TabsTrigger value="deficiencies">Deficiencies</TabsTrigger>
@@ -116,7 +116,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
 
         {/* Transitions Tab */}
         <TabsContent value="transitions">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle>Transition Results</CardTitle>
             </CardHeader>
@@ -125,7 +125,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                 {run.transitions.map((transition) => (
                   <div
                     key={transition.id}
-                    className="flex items-start gap-4 p-4 rounded-lg bg-[#0A0A0B]/50 border border-gray-800/30"
+                    className="flex items-start gap-4 p-4 rounded-lg bg-surface-canvas/50 border border-border-subtle/30"
                   >
                     <div className="flex-shrink-0 mt-1">
                       {transition.success ? (
@@ -139,7 +139,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                         <span className="font-medium">
                           {transition.from_state}
                         </span>
-                        <span className="text-gray-500">→</span>
+                        <span className="text-text-muted">→</span>
                         <span className="font-medium">
                           {transition.to_state}
                         </span>
@@ -147,7 +147,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                           {transition.action_type}
                         </Badge>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-400">
+                      <div className="flex items-center gap-4 text-sm text-text-muted">
                         <span>{transition.duration_ms}ms</span>
                         <span>
                           {format(new Date(transition.executed_at), "HH:mm:ss")}
@@ -166,7 +166,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                           alt="Transition screenshot"
                           width={100}
                           height={75}
-                          className="rounded border border-gray-700 cursor-pointer hover:border-[#00D9FF]"
+                          className="rounded border border-border-default cursor-pointer hover:border-brand-primary"
                         />
                       </div>
                     )}
@@ -179,7 +179,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
 
         {/* Coverage Tab */}
         <TabsContent value="coverage">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle>State Coverage</CardTitle>
             </CardHeader>
@@ -188,11 +188,11 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                 {run.state_coverage.map((state) => (
                   <div
                     key={state.state_name}
-                    className="flex items-center justify-between p-4 rounded-lg bg-[#0A0A0B]/50 border border-gray-800/30"
+                    className="flex items-center justify-between p-4 rounded-lg bg-surface-canvas/50 border border-border-subtle/30"
                   >
                     <div className="flex-1">
                       <div className="font-medium mb-1">{state.state_name}</div>
-                      <div className="flex items-center gap-4 text-sm text-gray-400">
+                      <div className="flex items-center gap-4 text-sm text-text-muted">
                         <span>Visited: {state.times_visited}</span>
                         <span>Success: {state.successful_visits}</span>
                         <span>Failed: {state.failed_visits}</span>
@@ -200,7 +200,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">
+                      <div className="w-16 h-2 bg-surface-raised rounded-full overflow-hidden">
                         <div
                           className="h-full bg-green-500"
                           style={{
@@ -227,13 +227,13 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
 
         {/* Deficiencies Tab */}
         <TabsContent value="deficiencies">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader>
               <CardTitle>Deficiencies Found</CardTitle>
             </CardHeader>
             <CardContent>
               {run.deficiencies.length === 0 ? (
-                <div className="text-center py-12 text-gray-400">
+                <div className="text-center py-12 text-text-muted">
                   No deficiencies found in this test run
                 </div>
               ) : (
@@ -241,7 +241,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                   {run.deficiencies.map((deficiency) => (
                     <div
                       key={deficiency.id}
-                      className="p-4 rounded-lg bg-[#0A0A0B]/50 border border-red-500/30"
+                      className="p-4 rounded-lg bg-surface-canvas/50 border border-red-500/30"
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-2">
@@ -264,10 +264,10 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                           {deficiency.severity}
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-400 mb-2">
+                      <p className="text-sm text-text-muted mb-2">
                         {deficiency.description}
                       </p>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-text-muted">
                         State: {deficiency.state_name}
                         {deficiency.transition_from &&
                           deficiency.transition_to && (

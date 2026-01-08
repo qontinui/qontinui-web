@@ -186,7 +186,7 @@ export function MissingMonitorsDialog({
 
     if (typeErrors.length === 0) {
       return (
-        <div className="flex items-center justify-center h-40 text-gray-500">
+        <div className="flex items-center justify-center h-40 text-text-muted">
           <div className="text-center">
             <CheckSquare className="w-12 h-12 mx-auto mb-3 opacity-50 text-green-500" />
             <p>All {type}s have monitors assigned</p>
@@ -225,7 +225,7 @@ export function MissingMonitorsDialog({
         </div>
 
         {/* Error List */}
-        <ScrollArea className="h-[300px] border border-gray-800 rounded-lg">
+        <ScrollArea className="h-[300px] border border-border-subtle rounded-lg">
           <div className="p-2 space-y-1">
             {typeErrors.map((error) => {
               const errorKey = getErrorKey(error);
@@ -234,7 +234,7 @@ export function MissingMonitorsDialog({
               return (
                 <label
                   key={errorKey}
-                  className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-900 cursor-pointer transition-colors"
+                  className="flex items-start gap-3 p-3 rounded-lg hover:bg-surface-canvas cursor-pointer transition-colors"
                 >
                   <Checkbox
                     checked={isSelected}
@@ -244,7 +244,7 @@ export function MissingMonitorsDialog({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       {getElementIcon(error.elementType)}
-                      <span className="text-sm font-medium text-gray-200 truncate">
+                      <span className="text-sm font-medium text-text-secondary truncate">
                         {error.elementName}
                       </span>
                       {error.error === "invalid" && (
@@ -253,7 +253,7 @@ export function MissingMonitorsDialog({
                         </Badge>
                       )}
                     </div>
-                    <div className="text-xs text-gray-400 mb-1">
+                    <div className="text-xs text-text-muted mb-1">
                       State: {error.stateName}
                     </div>
                     <div className="text-xs text-amber-400">
@@ -275,7 +275,7 @@ export function MissingMonitorsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] bg-gray-950 border-gray-800">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] bg-surface-canvas border-border-subtle">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-500" />
@@ -289,9 +289,9 @@ export function MissingMonitorsDialog({
 
         <div className="space-y-4 py-4">
           {/* Monitor Selection */}
-          <div className="bg-gray-900 rounded-lg p-4 space-y-2">
+          <div className="bg-surface-canvas rounded-lg p-4 space-y-2">
             <Label className="text-sm font-medium">Assign Monitors</Label>
-            <p className="text-xs text-gray-500 mb-2">
+            <p className="text-xs text-text-muted mb-2">
               Select which monitors to apply to the selected elements
             </p>
             <MonitorSelector
@@ -311,7 +311,7 @@ export function MissingMonitorsDialog({
             ) : null}
           </div>
 
-          <Separator className="bg-gray-800" />
+          <Separator className="bg-border-subtle" />
 
           {/* Tabbed Error Lists */}
           <Tabs
@@ -369,14 +369,14 @@ export function MissingMonitorsDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="border-gray-700"
+            className="border-border-default"
           >
             Cancel
           </Button>
           <Button
             onClick={handleApply}
             disabled={selectedCount === 0 || monitors.length === 0}
-            className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+            className="bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             <Monitor className="w-4 h-4 mr-2" />
             Apply to {selectedCount} Element(s)

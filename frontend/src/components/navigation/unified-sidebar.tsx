@@ -83,14 +83,14 @@ const navItems: NavItem[] = [
     label: "Dashboard",
     icon: <LayoutDashboard size={28} />,
     route: "/dashboard",
-    color: "#00D9FF",
+    color: "var(--brand-primary)",
   },
   {
     id: "build",
     label: "Build",
     icon: <Network size={28} />,
     route: "/automation-builder/states",
-    color: "#BD00FF",
+    color: "var(--brand-secondary)",
     children: [
       {
         id: "state-machine",
@@ -98,7 +98,7 @@ const navItems: NavItem[] = [
         description: "Define states and transitions",
         icon: <Network size={22} />,
         route: "/automation-builder/states",
-        color: "#BD00FF",
+        color: "var(--brand-secondary)",
       },
       {
         id: "workflows",
@@ -106,7 +106,7 @@ const navItems: NavItem[] = [
         description: "Create automation action sequences",
         icon: <Workflow size={22} />,
         route: "/automation-builder",
-        color: "#BD00FF",
+        color: "var(--brand-secondary)",
       },
       {
         id: "variables",
@@ -114,7 +114,7 @@ const navItems: NavItem[] = [
         description: "Global configuration values",
         icon: <Sliders size={22} />,
         route: "/automation-builder/variables",
-        color: "#BD00FF",
+        color: "var(--brand-secondary)",
       },
       {
         id: "contexts",
@@ -122,7 +122,7 @@ const navItems: NavItem[] = [
         description: "Domain knowledge for AI tasks",
         icon: <BookOpen size={22} />,
         route: "/automation-builder/contexts",
-        color: "#BD00FF",
+        color: "var(--brand-secondary)",
       },
       {
         id: "components",
@@ -130,7 +130,7 @@ const navItems: NavItem[] = [
         description: "Reusable automation components",
         icon: <Box size={22} />,
         route: "/automation-builder/components",
-        color: "#BD00FF",
+        color: "var(--brand-secondary)",
       },
       {
         id: "marketplace",
@@ -138,7 +138,7 @@ const navItems: NavItem[] = [
         description: "Community automation packages",
         icon: <Store size={22} />,
         route: "/marketplace",
-        color: "#BD00FF",
+        color: "var(--brand-secondary)",
       },
     ],
   },
@@ -188,7 +188,7 @@ const navItems: NavItem[] = [
     label: "Create",
     icon: <Sparkles size={28} />,
     route: "/automation-builder/image-extraction",
-    color: "#00FF88",
+    color: "var(--brand-success)",
     children: [
       {
         id: "extract-images",
@@ -196,7 +196,7 @@ const navItems: NavItem[] = [
         description: "Cut pattern images from screenshots",
         icon: <Scissors size={22} />,
         route: "/automation-builder/image-extraction",
-        color: "#00FF88",
+        color: "var(--brand-success)",
       },
       {
         id: "optimize-patterns",
@@ -204,7 +204,7 @@ const navItems: NavItem[] = [
         description: "Improve pattern image quality",
         icon: <Sparkles size={22} />,
         route: "/automation-builder/pattern-optimization",
-        color: "#00FF88",
+        color: "var(--brand-success)",
       },
       {
         id: "annotations",
@@ -212,7 +212,7 @@ const navItems: NavItem[] = [
         description: "Create regions and locations for states",
         icon: <Scan size={22} />,
         route: "/automation-builder/annotations",
-        color: "#00FF88",
+        color: "var(--brand-success)",
         adminOnly: true,
       },
     ],
@@ -381,11 +381,28 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    id: "ai-tasks",
+    label: "AI Tasks",
+    icon: <Sparkles size={28} />,
+    route: "/ai-tasks",
+    color: "#9333EA",
+    children: [
+      {
+        id: "ai-tasks-list",
+        label: "All Tasks",
+        description: "View all AI analysis tasks",
+        icon: <Sparkles size={22} />,
+        route: "/ai-tasks",
+        color: "#9333EA",
+      },
+    ],
+  },
+  {
     id: "project-tools",
     label: "Project Tools",
     icon: <Box size={28} />,
     route: "/automation-builder/overview",
-    color: "#00D9FF",
+    color: "var(--brand-primary)",
     children: [
       {
         id: "overview",
@@ -393,7 +410,7 @@ const navItems: NavItem[] = [
         description: "Project summary and quick access",
         icon: <LayoutDashboard size={22} />,
         route: "/automation-builder/overview",
-        color: "#00D9FF",
+        color: "var(--brand-primary)",
       },
       {
         id: "dependencies",
@@ -401,7 +418,7 @@ const navItems: NavItem[] = [
         description: "View state and workflow relationships",
         icon: <GitBranch size={22} />,
         route: "/automation-builder/dependencies",
-        color: "#00D9FF",
+        color: "var(--brand-primary)",
       },
       {
         id: "documentation",
@@ -409,7 +426,7 @@ const navItems: NavItem[] = [
         description: "Auto-generated project docs",
         icon: <FileText size={22} />,
         route: "/automation-builder/documentation",
-        color: "#00D9FF",
+        color: "var(--brand-primary)",
       },
       {
         id: "automation-analytics",
@@ -417,7 +434,7 @@ const navItems: NavItem[] = [
         description: "Performance metrics and insights",
         icon: <BarChart3 size={22} />,
         route: "/automation-builder/analytics",
-        color: "#00D9FF",
+        color: "var(--brand-primary)",
       },
       {
         id: "issues",
@@ -425,7 +442,7 @@ const navItems: NavItem[] = [
         description: "Track and manage project issues",
         icon: <AlertCircle size={22} />,
         route: "/issues",
-        color: "#00D9FF",
+        color: "var(--brand-primary)",
       },
     ],
   },
@@ -867,7 +884,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     <div
       data-sidebar="true"
       className={cn(
-        "fixed left-0 top-0 h-screen bg-[#0A0A0B] border-r border-gray-800/50 flex flex-col transition-all duration-300 overflow-visible z-50",
+        "fixed left-0 top-0 h-screen bg-surface-canvas border-r border-border-subtle flex flex-col transition-all duration-300 overflow-visible z-50",
         isCollapsed ? "w-16" : "w-64",
         className
       )}
@@ -876,13 +893,13 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-cyan-500/5 via-purple-500/5 to-transparent pointer-events-none" />
 
       {/* Header */}
-      <div className="relative h-16 border-b border-gray-800/50 flex items-center justify-center px-3 py-2.5 bg-gradient-to-r from-cyan-500/5 via-purple-500/5 to-green-500/5">
+      <div className="relative h-16 border-b border-border-subtle flex items-center justify-center px-3 py-2.5 bg-gradient-to-r from-cyan-500/5 via-purple-500/5 to-green-500/5">
         {isCollapsed ? (
           <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
             Q
           </div>
         ) : (
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
             Qontinui
           </h1>
         )}
@@ -890,7 +907,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
 
       {/* Organization Switcher */}
       {!isCollapsed && (
-        <div className="px-3 pt-4 pb-2 border-b border-gray-800/50">
+        <div className="px-3 pt-4 pb-2 border-b border-border-subtle">
           {mounted ? (
             <OrganizationSwitcher
               organizations={switcherOrganizations}
@@ -898,17 +915,17 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
               onOrganizationChange={handleOrganizationChange}
               onCreateOrganization={handleCreateOrganization}
               loading={loading}
-              className="bg-gray-900/50 border-gray-700 hover:bg-gray-900 hover:border-gray-600"
+              className="bg-surface-raised/50 border-border-default hover:bg-surface-raised hover:border-border-default"
             />
           ) : (
-            <div className="h-10 w-full rounded-md bg-gray-900/50 border border-gray-700 animate-pulse" />
+            <div className="h-10 w-full rounded-md bg-surface-raised/50 border border-border-default animate-pulse" />
           )}
         </div>
       )}
 
       {/* Project Switcher */}
       {!isCollapsed && (
-        <div className="px-3 pt-2 pb-2 border-b border-gray-800/50">
+        <div className="px-3 pt-2 pb-2 border-b border-border-subtle">
           {mounted ? (
             <ProjectSwitcher
               projects={projects}
@@ -916,10 +933,10 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
               onProjectChange={handleProjectChange}
               onCreateProject={handleCreateProject}
               loading={projectsLoading}
-              className="bg-gray-900/50 border-gray-700 hover:bg-gray-900 hover:border-gray-600"
+              className="bg-surface-raised/50 border-border-default hover:bg-surface-raised hover:border-border-default"
             />
           ) : (
-            <div className="h-10 w-full rounded-md bg-gray-900/50 border border-gray-700 animate-pulse" />
+            <div className="h-10 w-full rounded-md bg-surface-raised/50 border border-border-default animate-pulse" />
           )}
         </div>
       )}
@@ -961,7 +978,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                   "w-full px-3 py-2.5 rounded-lg flex items-center justify-between gap-2 transition-all duration-300 relative group",
                   isRouteActive(item.route, item)
                     ? `bg-[${item.color}]10 border-l-3 border-[${item.color}]`
-                    : "hover:bg-gray-900"
+                    : "hover:bg-surface-raised"
                 )}
                 style={
                   isRouteActive(item.route, item)
@@ -1003,7 +1020,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 {/* Label & Chevron (only when expanded) */}
                 {!isCollapsed && (
                   <div className="flex items-center justify-between gap-2 flex-1 min-w-0">
-                    <span className="text-sm font-medium text-gray-100 truncate">
+                    <span className="text-sm font-medium text-text-primary truncate">
                       {item.label}
                     </span>
                     {item.children && (
@@ -1021,7 +1038,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 {/* Tooltip for Collapsed State */}
                 {isCollapsed && hoveredItem === item.id && (
                   <div
-                    className="absolute left-full ml-3 px-3 py-2 rounded-lg text-sm font-medium bg-gray-950 border text-gray-100 whitespace-nowrap z-50 pointer-events-none"
+                    className="absolute left-full ml-3 px-3 py-2 rounded-lg text-sm font-medium bg-surface-canvas border text-text-primary whitespace-nowrap z-50 pointer-events-none"
                     style={{
                       borderColor: item.color,
                       boxShadow: `0 0 12px ${item.color}40`,
@@ -1077,7 +1094,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-purple-500/5 to-transparent pointer-events-none" />
 
       {/* Footer with User Actions */}
-      <div className="border-t border-gray-800/50 p-2">
+      <div className="border-t border-border-subtle p-2">
         <TooltipProvider delayDuration={300}>
           {/* User action buttons */}
           {user && (
@@ -1091,7 +1108,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={handleExport}
-                    className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-[#BD00FF]"
+                    className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-brand-secondary"
                   >
                     <Download size={18} />
                   </button>
@@ -1105,7 +1122,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={handleImport}
-                    className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-[#00FF88]"
+                    className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-brand-success"
                   >
                     <Upload size={18} />
                   </button>
@@ -1119,7 +1136,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={() => router.push("/docs")}
-                    className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-[#00D9FF]"
+                    className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-brand-primary"
                   >
                     <FileText size={18} />
                   </button>
@@ -1133,7 +1150,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={handleLogout}
-                    className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-red-500"
+                    className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-red-500"
                   >
                     <LogOut size={18} />
                   </button>
@@ -1147,7 +1164,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
 
           {/* User info (when expanded) */}
           {user && !isCollapsed && (
-            <div className="flex items-center gap-2 px-2 py-1 mb-2 text-xs text-gray-500">
+            <div className="flex items-center gap-2 px-2 py-1 mb-2 text-xs text-text-muted">
               <User size={14} />
               <span className="truncate">{user.username || user.email}</span>
             </div>
@@ -1159,7 +1176,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
               <TooltipTrigger asChild>
                 <button
                   onClick={toggleCollapse}
-                  className="p-2 rounded-lg hover:bg-gray-900 transition-all duration-300 hover:scale-110 text-gray-400 hover:text-gray-100"
+                  className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-text-primary"
                 >
                   {isCollapsed ? (
                     <ChevronRight size={20} />

@@ -59,7 +59,7 @@ function CoverageStateNode({ data }: { data: StateNodeData }) {
       case "failing":
         return "border-red-500 bg-red-500/20 shadow-red-500/50";
       case "uncovered":
-        return "border-gray-600 bg-gray-600/10 shadow-gray-600/30";
+        return "border-border-default bg-border-default/10 shadow-border-default/30";
     }
   };
 
@@ -85,13 +85,13 @@ function CoverageStateNode({ data }: { data: StateNodeData }) {
       case "failing":
         return "text-red-400";
       case "uncovered":
-        return "text-gray-500";
+        return "text-text-muted";
     }
   };
 
   return (
     <div
-      className={`px-4 py-3 rounded-lg border-2 bg-[#1A1A1B] ${getNodeStyle(data.status)} min-w-[160px] shadow-lg cursor-pointer hover:scale-105 transition-transform`}
+      className={`px-4 py-3 rounded-lg border-2 bg-surface-raised ${getNodeStyle(data.status)} min-w-[160px] shadow-lg cursor-pointer hover:scale-105 transition-transform`}
     >
       <div className="flex items-center justify-between mb-2">
         <div className="font-medium text-white">{data.label}</div>
@@ -103,7 +103,7 @@ function CoverageStateNode({ data }: { data: StateNodeData }) {
         </div>
       </div>
       <div className="flex items-center justify-between text-xs">
-        <span className="text-gray-400">
+        <span className="text-text-muted">
           {data.covered ? `${data.visit_count} visits` : "Not tested"}
         </span>
         {data.covered && (
@@ -221,7 +221,7 @@ export function StateCoverageHeatMap({
       const covered = edge.attempt_count > 0;
 
       const getEdgeColor = (rate: number, covered: boolean) => {
-        if (!covered) return "#4a5568"; // gray-600
+        if (!covered) return "var(--color-border-subtle)"; // gray-600
         if (rate >= 90) return "#10b981"; // green-500
         if (rate >= 70) return "#eab308"; // yellow-500
         return "#ef4444"; // red-500
@@ -251,7 +251,7 @@ export function StateCoverageHeatMap({
           fontSize: 12,
         },
         labelBgStyle: {
-          fill: "#1A1A1B",
+          fill: "var(--color-surface-raised)",
           fillOpacity: 0.9,
         },
         markerEnd: {
@@ -291,9 +291,9 @@ export function StateCoverageHeatMap({
 
   if (isLoading) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">Loading coverage heat map...</div>
+          <div className="text-text-muted">Loading coverage heat map...</div>
         </CardContent>
       </Card>
     );
@@ -301,7 +301,7 @@ export function StateCoverageHeatMap({
 
   if (error) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
           <div className="text-red-400">
             Error loading coverage heat map: {error.message}
@@ -313,12 +313,14 @@ export function StateCoverageHeatMap({
 
   if (!graphData || graphData.nodes.length === 0) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle>State Coverage Heat Map</CardTitle>
         </CardHeader>
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">No state coverage data available</div>
+          <div className="text-text-muted">
+            No state coverage data available
+          </div>
         </CardContent>
       </Card>
     );
@@ -326,26 +328,26 @@ export function StateCoverageHeatMap({
 
   return (
     <>
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>State Coverage Heat Map</CardTitle>
             <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-green-500" />
-                <span className="text-gray-400">Passing (90%+)</span>
+                <span className="text-text-muted">Passing (90%+)</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                <span className="text-gray-400">Partial (70-90%)</span>
+                <span className="text-text-muted">Partial (70-90%)</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-red-500" />
-                <span className="text-gray-400">Failing (&lt;70%)</span>
+                <span className="text-text-muted">Failing (&lt;70%)</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-gray-600" />
-                <span className="text-gray-400">Not Tested</span>
+                <div className="w-3 h-3 rounded-full bg-border-default" />
+                <span className="text-text-muted">Not Tested</span>
               </div>
             </div>
           </div>
@@ -361,12 +363,12 @@ export function StateCoverageHeatMap({
               nodeTypes={nodeTypes}
               fitView
               attributionPosition="bottom-left"
-              className="bg-[#0A0A0B] rounded-lg"
+              className="bg-surface-canvas rounded-lg"
             >
               <Background color="#333" gap={16} />
-              <Controls className="bg-[#1A1A1B] border border-gray-700" />
+              <Controls className="bg-surface-raised border border-border-default" />
               <MiniMap
-                className="bg-[#1A1A1B] border border-gray-700"
+                className="bg-surface-raised border border-border-default"
                 nodeColor={(node) => {
                   const status = (node.data as unknown as StateNodeData).status;
                   switch (status) {
@@ -377,15 +379,15 @@ export function StateCoverageHeatMap({
                     case "failing":
                       return "#ef4444";
                     case "uncovered":
-                      return "#4a5568";
+                      return "var(--color-border-subtle)";
                   }
                 }}
               />
               <Panel
                 position="top-right"
-                className="bg-[#1A1A1B]/90 p-4 rounded-lg border border-gray-700"
+                className="bg-surface-raised/90 p-4 rounded-lg border border-border-default"
               >
-                <div className="text-xs text-gray-400 mb-2">
+                <div className="text-xs text-text-muted mb-2">
                   Coverage Breakdown
                 </div>
                 {coverageStats && (
@@ -409,14 +411,14 @@ export function StateCoverageHeatMap({
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-gray-500 text-xs">Untested:</span>
+                      <span className="text-text-muted text-xs">Untested:</span>
                       <span className="text-white font-medium text-xs">
                         {coverageStats.uncovered}
                       </span>
                     </div>
-                    <div className="border-t border-gray-700 my-2" />
+                    <div className="border-t border-border-default my-2" />
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-gray-400 text-xs">Total:</span>
+                      <span className="text-text-muted text-xs">Total:</span>
                       <span className="text-white font-bold text-xs">
                         {coverageStats.total}
                       </span>
@@ -429,10 +431,12 @@ export function StateCoverageHeatMap({
 
           {/* Overall Coverage Percentage */}
           {coverageStats && (
-            <div className="mt-6 p-4 bg-[#0A0A0B]/50 rounded-lg">
+            <div className="mt-6 p-4 bg-surface-canvas/50 rounded-lg">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-400">Overall Coverage</span>
-                <span className="text-2xl font-bold text-[#00D9FF]">
+                <span className="text-sm text-text-muted">
+                  Overall Coverage
+                </span>
+                <span className="text-2xl font-bold text-brand-primary">
                   {(
                     ((coverageStats.total - coverageStats.uncovered) /
                       coverageStats.total) *
@@ -441,7 +445,7 @@ export function StateCoverageHeatMap({
                   %
                 </span>
               </div>
-              <div className="h-3 bg-gray-800 rounded-full overflow-hidden">
+              <div className="h-3 bg-surface-raised rounded-full overflow-hidden">
                 <div className="h-full flex">
                   <div
                     className="bg-green-500"
@@ -473,12 +477,12 @@ export function StateCoverageHeatMap({
         open={selectedNode !== null}
         onOpenChange={(open) => !open && setSelectedNode(null)}
       >
-        <DialogContent className="bg-[#1A1A1B] border-gray-800">
+        <DialogContent className="bg-surface-raised border-border-subtle">
           <DialogHeader>
             <DialogTitle className="text-white">
               {selectedNode?.stateName}
             </DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogDescription className="text-text-muted">
               Execution details and statistics
             </DialogDescription>
           </DialogHeader>
@@ -486,7 +490,7 @@ export function StateCoverageHeatMap({
             <div className="space-y-4">
               {/* Status Badge */}
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400">Status:</span>
+                <span className="text-sm text-text-muted">Status:</span>
                 <span
                   className={`px-3 py-1 rounded-full text-xs font-medium ${
                     selectedNode.status === "passing"
@@ -495,7 +499,7 @@ export function StateCoverageHeatMap({
                         ? "bg-yellow-500/20 text-yellow-500"
                         : selectedNode.status === "failing"
                           ? "bg-red-500/20 text-red-500"
-                          : "bg-gray-600/20 text-gray-500"
+                          : "bg-border-default/20 text-text-muted"
                   }`}
                 >
                   {selectedNode.status.toUpperCase()}
@@ -504,26 +508,30 @@ export function StateCoverageHeatMap({
 
               {/* Metrics Grid */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 bg-[#0A0A0B]/50 rounded-lg">
-                  <div className="text-xs text-gray-400 mb-1">Total Visits</div>
-                  <div className="text-2xl font-bold text-[#00D9FF]">
+                <div className="p-3 bg-surface-canvas/50 rounded-lg">
+                  <div className="text-xs text-text-muted mb-1">
+                    Total Visits
+                  </div>
+                  <div className="text-2xl font-bold text-brand-primary">
                     {selectedNode.totalAttempts}
                   </div>
                 </div>
-                <div className="p-3 bg-[#0A0A0B]/50 rounded-lg">
-                  <div className="text-xs text-gray-400 mb-1">Success Rate</div>
-                  <div className="text-2xl font-bold text-[#00FF88]">
+                <div className="p-3 bg-surface-canvas/50 rounded-lg">
+                  <div className="text-xs text-text-muted mb-1">
+                    Success Rate
+                  </div>
+                  <div className="text-2xl font-bold text-brand-success">
                     {selectedNode.successRate.toFixed(1)}%
                   </div>
                 </div>
-                <div className="p-3 bg-[#0A0A0B]/50 rounded-lg">
-                  <div className="text-xs text-gray-400 mb-1">Successful</div>
+                <div className="p-3 bg-surface-canvas/50 rounded-lg">
+                  <div className="text-xs text-text-muted mb-1">Successful</div>
                   <div className="text-2xl font-bold text-green-500">
                     {selectedNode.successfulAttempts}
                   </div>
                 </div>
-                <div className="p-3 bg-[#0A0A0B]/50 rounded-lg">
-                  <div className="text-xs text-gray-400 mb-1">Failed</div>
+                <div className="p-3 bg-surface-canvas/50 rounded-lg">
+                  <div className="text-xs text-text-muted mb-1">Failed</div>
                   <div className="text-2xl font-bold text-red-500">
                     {selectedNode.failedAttempts}
                   </div>
@@ -533,10 +541,10 @@ export function StateCoverageHeatMap({
               {/* Success/Failure Breakdown */}
               {selectedNode.totalAttempts > 0 && (
                 <div>
-                  <div className="text-sm text-gray-400 mb-2">
+                  <div className="text-sm text-text-muted mb-2">
                     Execution Breakdown
                   </div>
-                  <div className="h-6 bg-gray-800 rounded-full overflow-hidden flex">
+                  <div className="h-6 bg-surface-raised rounded-full overflow-hidden flex">
                     <div
                       className="bg-green-500 flex items-center justify-center text-xs font-medium text-white"
                       style={{

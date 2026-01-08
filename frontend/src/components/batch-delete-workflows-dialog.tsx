@@ -40,12 +40,12 @@ export function BatchDeleteWorkflowsDialog({
         </DialogHeader>
 
         {count > 0 && (
-          <ScrollArea className="max-h-[200px] rounded-md border border-gray-700 p-2">
+          <ScrollArea className="max-h-[200px] rounded-md border border-border-default p-2">
             <ul className="space-y-1">
               {workflowNames.map((name, index) => (
                 <li
                   key={index}
-                  className="text-sm text-gray-300 truncate"
+                  className="text-sm text-text-secondary truncate"
                   title={name}
                 >
                   {name}

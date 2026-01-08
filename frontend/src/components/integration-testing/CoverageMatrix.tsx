@@ -34,7 +34,7 @@ export function CoverageMatrix({
 
   if (states.length === 0) {
     return (
-      <div className="p-8 text-center text-gray-500">
+      <div className="p-8 text-center text-text-muted">
         <p className="text-lg font-medium">No states found</p>
         <p className="text-sm mt-1">
           Run a process execution to generate coverage data
@@ -47,26 +47,26 @@ export function CoverageMatrix({
     <div className="overflow-x-auto">
       <table className="w-full border-collapse">
         <thead>
-          <tr className="bg-gray-50 border-b-2 border-gray-200">
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+          <tr className="bg-surface-canvas border-b-2 border-border-default">
+            <th className="px-4 py-3 text-left text-sm font-semibold text-text-secondary">
               State Name
             </th>
-            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">
+            <th className="px-4 py-3 text-center text-sm font-semibold text-text-secondary">
               Coverage
             </th>
-            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">
+            <th className="px-4 py-3 text-center text-sm font-semibold text-text-secondary">
               Screenshots
             </th>
-            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">
+            <th className="px-4 py-3 text-center text-sm font-semibold text-text-secondary">
               Actions
             </th>
-            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">
+            <th className="px-4 py-3 text-center text-sm font-semibold text-text-secondary">
               Action Types
             </th>
-            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">
+            <th className="px-4 py-3 text-center text-sm font-semibold text-text-secondary">
               Patterns
             </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+            <th className="px-4 py-3 text-left text-sm font-semibold text-text-secondary">
               Last Tested
             </th>
           </tr>
@@ -76,13 +76,13 @@ export function CoverageMatrix({
             <tr
               key={state.state_name}
               className={`
-                border-b border-gray-200 hover:bg-gray-50 transition-colors
+                border-b border-border-subtle hover:bg-surface-raised transition-colors
                 ${onStateClick ? "cursor-pointer" : ""}
               `}
               onClick={() => onStateClick?.(state.state_name)}
             >
               {/* State Name */}
-              <td className="px-4 py-3 text-sm font-medium text-gray-900">
+              <td className="px-4 py-3 text-sm font-medium text-text-primary">
                 <div className="flex items-center gap-2">
                   <span className="font-mono">{state.state_name}</span>
                   {state.screenshot_count === 0 && (
@@ -109,12 +109,12 @@ export function CoverageMatrix({
               </td>
 
               {/* Screenshots */}
-              <td className="px-4 py-3 text-center text-sm text-gray-700">
+              <td className="px-4 py-3 text-center text-sm text-text-secondary">
                 {state.screenshot_count}
               </td>
 
               {/* Actions Performed */}
-              <td className="px-4 py-3 text-center text-sm text-gray-700">
+              <td className="px-4 py-3 text-center text-sm text-text-secondary">
                 {state.actions_performed}
               </td>
 
@@ -125,24 +125,24 @@ export function CoverageMatrix({
                     state.action_types.map((type) => (
                       <span
                         key={type}
-                        className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs font-mono"
+                        className="px-2 py-0.5 bg-surface-raised text-text-secondary rounded text-xs font-mono"
                       >
                         {type}
                       </span>
                     ))
                   ) : (
-                    <span className="text-gray-400 text-xs">None</span>
+                    <span className="text-text-muted text-xs">None</span>
                   )}
                 </div>
               </td>
 
               {/* Patterns Tested */}
-              <td className="px-4 py-3 text-center text-sm text-gray-700">
+              <td className="px-4 py-3 text-center text-sm text-text-secondary">
                 {state.patterns_tested.length}
               </td>
 
               {/* Last Tested */}
-              <td className="px-4 py-3 text-sm text-gray-600">
+              <td className="px-4 py-3 text-sm text-text-muted">
                 {state.last_tested ? (
                   <span title={new Date(state.last_tested).toLocaleString()}>
                     {formatDistanceToNow(new Date(state.last_tested), {
@@ -150,7 +150,7 @@ export function CoverageMatrix({
                     })}
                   </span>
                 ) : (
-                  <span className="text-gray-400">Never</span>
+                  <span className="text-text-muted">Never</span>
                 )}
               </td>
             </tr>
@@ -159,19 +159,19 @@ export function CoverageMatrix({
       </table>
 
       {/* Summary Stats */}
-      <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+      <div className="mt-4 p-4 bg-surface-canvas rounded-lg border border-border-subtle">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
           <div>
-            <div className="text-2xl font-bold text-gray-900">
+            <div className="text-2xl font-bold text-text-primary">
               {states.length}
             </div>
-            <div className="text-sm text-gray-600">Total States</div>
+            <div className="text-sm text-text-muted">Total States</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-green-600">
               {states.filter((s) => s.coverage_percentage === 100).length}
             </div>
-            <div className="text-sm text-gray-600">Fully Covered</div>
+            <div className="text-sm text-text-muted">Fully Covered</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-yellow-600">
@@ -182,13 +182,13 @@ export function CoverageMatrix({
                 ).length
               }
             </div>
-            <div className="text-sm text-gray-600">Partial</div>
+            <div className="text-sm text-text-muted">Partial</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-red-600">
               {states.filter((s) => s.coverage_percentage === 0).length}
             </div>
-            <div className="text-sm text-gray-600">Uncovered</div>
+            <div className="text-sm text-text-muted">Uncovered</div>
           </div>
         </div>
       </div>

@@ -242,7 +242,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
       case "running":
         return <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />;
       default:
-        return <AlertCircle className="w-5 h-5 text-gray-400" />;
+        return <AlertCircle className="w-5 h-5 text-text-muted" />;
     }
   };
 
@@ -255,7 +255,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-semibold">Visual Test Runner</h2>
-          <p className="text-sm text-gray-600 mt-1">
+          <p className="text-sm text-text-muted mt-1">
             Using real Qontinui pattern matching
           </p>
         </div>
@@ -282,7 +282,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
             disabled={isRunning || !apiConnected || testCases.length === 0}
             className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors ${
               isRunning || !apiConnected
-                ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                ? "bg-surface-raised text-text-muted cursor-not-allowed"
                 : "bg-blue-600 text-white hover:bg-blue-700"
             }`}
           >
@@ -305,7 +305,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
       {testResults.length > 0 && (
         <div className="mb-6">
           <div className="flex items-center justify-between text-sm mb-2">
-            <span className="text-gray-600">
+            <span className="text-text-muted">
               Progress: {testResults.length} / {testCases.length}
             </span>
             <div className="flex items-center gap-4">
@@ -313,7 +313,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
               <span className="text-red-600">✗ {failedCount}</span>
             </div>
           </div>
-          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="w-full h-2 bg-surface-raised rounded-full overflow-hidden">
             <div className="h-full flex">
               <div
                 className="bg-green-500 transition-all"
@@ -340,7 +340,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
               className={`p-4 border rounded-lg transition-colors ${
                 status === "running"
                   ? "border-blue-300 bg-blue-50"
-                  : "border-gray-200"
+                  : "border-border-subtle"
               }`}
             >
               <div className="flex items-start justify-between">
@@ -348,7 +348,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
                   {getStatusIcon(status)}
                   <div>
                     <h4 className="font-medium">{testCase.name}</h4>
-                    <p className="text-sm text-gray-600 mt-1">
+                    <p className="text-sm text-text-muted mt-1">
                       Type: {testCase.type} | Screenshot:{" "}
                       {testCase.screenshot.name}
                     </p>
@@ -361,10 +361,10 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
                         </p>
                         {result.details !== undefined && (
                           <details className="mt-1">
-                            <summary className="text-xs text-gray-500 cursor-pointer">
+                            <summary className="text-xs text-text-muted cursor-pointer">
                               View Details
                             </summary>
-                            <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto">
+                            <pre className="mt-2 p-2 bg-surface-raised rounded text-xs overflow-auto">
                               {(() => {
                                 const details = result.details;
                                 return typeof details === "string"
@@ -379,7 +379,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
                   </div>
                 </div>
                 {result && (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-text-muted">
                     {result.duration}ms
                   </span>
                 )}
@@ -391,7 +391,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
 
       {/* Empty State */}
       {testCases.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-text-muted">
           <AlertCircle className="w-12 h-12 mx-auto mb-3" />
           <p>No test cases generated</p>
           <p className="text-sm mt-1">

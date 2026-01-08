@@ -91,7 +91,7 @@ export default function ProjectsTab() {
   const getComplexityBadge = (stateCount: number, transitionCount: number) => {
     const total = stateCount + transitionCount;
     if (total === 0)
-      return { label: "Empty", color: "bg-gray-500/10 text-gray-500" };
+      return { label: "Empty", color: "bg-gray-500/10 text-text-muted" };
     if (total < 5)
       return { label: "Simple", color: "bg-green-500/10 text-green-500" };
     if (total < 15)

@@ -272,7 +272,7 @@ export function RAGTestingTab() {
       canvas.height = container.clientHeight;
 
       // Clear canvas with background
-      ctx.fillStyle = "#1A1A1B";
+      ctx.fillStyle = "hsl(var(--surface-raised))";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Apply zoom/pan transforms
@@ -779,9 +779,9 @@ export function RAGTestingTab() {
   };
 
   return (
-    <div className="h-full flex bg-[#0A0A0B]">
+    <div className="h-full flex bg-surface-canvas">
       {/* Left Panel - Controls */}
-      <div className="w-80 border-r border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
+      <div className="w-80 border-r border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto">
         <div className="space-y-4">
           {/* Screenshot Selection */}
           <ScreenshotPicker
@@ -790,11 +790,11 @@ export function RAGTestingTab() {
             onSelectProjectScreenshot={handleSelectProjectScreenshot}
             onClearScreenshot={handleClearScreenshot}
             enableCapture={true}
-            className="bg-[#27272A]/50 border border-gray-700 rounded-lg"
+            className="bg-surface-raised/50 border border-border-default rounded-lg"
           />
 
           {/* Search Mode */}
-          <Card className="bg-[#27272A]/50 border-gray-700">
+          <Card className="bg-surface-raised/50 border-border-default">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Search className="w-4 h-4" />
@@ -803,14 +803,14 @@ export function RAGTestingTab() {
             </CardHeader>
             <CardContent className="space-y-4">
               {isSegmentationOnly ? (
-                <div className="p-3 rounded-lg bg-[#00D9FF]/10 border border-[#00D9FF]/30">
+                <div className="p-3 rounded-lg bg-brand-primary/10 border border-brand-primary/30">
                   <div className="flex items-center gap-2 mb-1">
-                    <Layers className="w-4 h-4 text-[#00D9FF]" />
-                    <span className="text-sm font-medium text-[#00D9FF]">
+                    <Layers className="w-4 h-4 text-brand-primary" />
+                    <span className="text-sm font-medium text-brand-primary">
                       Segmentation Only
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-text-muted">
                     No RAG elements configured. Segmentation will run without
                     element matching.
                   </p>
@@ -847,7 +847,7 @@ export function RAGTestingTab() {
                     <DialogTrigger asChild>
                       <Button
                         variant="outline"
-                        className="w-full border-gray-700 hover:border-[#00D9FF] justify-between"
+                        className="w-full border-border-default hover:border-brand-primary justify-between"
                       >
                         <span>
                           {selectedElementIds.length > 0
@@ -864,10 +864,10 @@ export function RAGTestingTab() {
                       <ScrollArea className="h-[60vh] pr-4">
                         {loadingElements ? (
                           <div className="flex items-center justify-center py-8">
-                            <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                            <RefreshCw className="w-6 h-6 animate-spin text-text-muted" />
                           </div>
                         ) : ragElements.length === 0 ? (
-                          <div className="text-center py-8 text-gray-400">
+                          <div className="text-center py-8 text-text-muted">
                             No RAG elements found in this project
                           </div>
                         ) : (
@@ -878,8 +878,8 @@ export function RAGTestingTab() {
                                 className={cn(
                                   "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
                                   selectedElementIds.includes(element.id)
-                                    ? "border-[#00D9FF] bg-[#00D9FF]/10"
-                                    : "border-gray-700 hover:border-gray-600"
+                                    ? "border-brand-primary bg-brand-primary/10"
+                                    : "border-border-default hover:border-border-subtle"
                                 )}
                                 onClick={() =>
                                   toggleElementSelection(element.id)
@@ -900,7 +900,7 @@ export function RAGTestingTab() {
                                       element.id}
                                   </div>
                                   {element.text_description && (
-                                    <div className="text-xs text-gray-400 mt-1 line-clamp-2">
+                                    <div className="text-xs text-text-muted mt-1 line-clamp-2">
                                       {element.text_description}
                                     </div>
                                   )}
@@ -921,7 +921,7 @@ export function RAGTestingTab() {
                         )}
                       </ScrollArea>
                       <div className="flex justify-between items-center pt-4 border-t">
-                        <span className="text-sm text-gray-400">
+                        <span className="text-sm text-text-muted">
                           {selectedElementIds.length} selected
                         </span>
                         <div className="flex gap-2">
@@ -944,7 +944,7 @@ export function RAGTestingTab() {
           </Card>
 
           {/* Matching Options / Run Button */}
-          <Card className="bg-[#27272A]/50 border-gray-700">
+          <Card className="bg-surface-raised/50 border-border-default">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">
                 {isSegmentationOnly ? "Run" : "Matching Options"}
@@ -961,7 +961,7 @@ export function RAGTestingTab() {
                         setMatchingStrategy(v as MatchingStrategy)
                       }
                     >
-                      <SelectTrigger className="mt-1 bg-[#27272A] border-gray-700">
+                      <SelectTrigger className="mt-1 bg-surface-raised border-border-default">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -973,7 +973,7 @@ export function RAGTestingTab() {
                         </SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-[10px] text-gray-400 mt-1">
+                    <p className="text-[10px] text-text-muted mt-1">
                       {matchingStrategy === "average"
                         ? "Average all pattern embeddings"
                         : "Match if any pattern exceeds threshold"}
@@ -1004,7 +1004,7 @@ export function RAGTestingTab() {
               <Button
                 onClick={runAnalysis}
                 disabled={!currentScreenshot?.url || isAnalyzing}
-                className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                className="w-full bg-brand-primary hover:bg-brand-primary/80 text-black"
               >
                 {isAnalyzing ? (
                   <>
@@ -1026,7 +1026,7 @@ export function RAGTestingTab() {
           </Card>
 
           {/* Display Options */}
-          <Card className="bg-[#27272A]/50 border-gray-700">
+          <Card className="bg-surface-raised/50 border-border-default">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Display Options</CardTitle>
             </CardHeader>
@@ -1054,21 +1054,21 @@ export function RAGTestingTab() {
 
           {/* Results Summary */}
           {segments.length > 0 && (
-            <Card className="bg-[#27272A]/50 border-gray-700">
+            <Card className="bg-surface-raised/50 border-border-default">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Results</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Segments:</span>
+                  <span className="text-text-muted">Segments:</span>
                   <span>{segments.length}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Matches:</span>
+                  <span className="text-text-muted">Matches:</span>
                   <span>{allMatches.length}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Processing:</span>
+                  <span className="text-text-muted">Processing:</span>
                   <span>{processingTime.toFixed(0)}ms</span>
                 </div>
               </CardContent>
@@ -1078,11 +1078,11 @@ export function RAGTestingTab() {
       </div>
 
       {/* Center Panel - Canvas */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-[#1A1A1B]">
+      <div className="flex-1 flex flex-col overflow-hidden bg-surface-raised">
         {/* Toolbar */}
         <div className="bg-white border-b p-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="text-sm text-gray-600 px-2">
+            <div className="text-sm text-text-muted px-2">
               <span className="font-medium">Left Click:</span> Select Segment •{" "}
               <span className="font-medium">Right Click:</span> Pan
             </div>
@@ -1091,24 +1091,24 @@ export function RAGTestingTab() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setZoom(Math.min(zoom * 1.2, 5))}
-              className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+              className="p-2 text-text-muted hover:bg-surface-canvas rounded"
               title="Zoom in"
             >
               <ZoomIn className="w-4 h-4" />
             </button>
-            <span className="text-sm text-gray-600 font-mono min-w-[60px] text-center">
+            <span className="text-sm text-text-muted font-mono min-w-[60px] text-center">
               {(zoom * 100).toFixed(0)}%
             </span>
             <button
               onClick={() => setZoom(Math.max(zoom * 0.8, 0.1))}
-              className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+              className="p-2 text-text-muted hover:bg-surface-canvas rounded"
               title="Zoom out"
             >
               <ZoomOut className="w-4 h-4" />
             </button>
             <button
               onClick={resetView}
-              className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+              className="p-2 text-text-muted hover:bg-surface-canvas rounded"
               title="Reset view"
             >
               <Maximize2 className="w-4 h-4" />
@@ -1131,7 +1131,7 @@ export function RAGTestingTab() {
               className="w-full h-full cursor-crosshair"
             />
           ) : (
-            <div className="h-full flex items-center justify-center text-gray-500">
+            <div className="h-full flex items-center justify-center text-text-muted">
               <div className="text-center">
                 <ImageIcon className="w-16 h-16 mx-auto mb-4 opacity-30" />
                 <p>Select a screenshot to begin</p>
@@ -1142,12 +1142,12 @@ export function RAGTestingTab() {
       </div>
 
       {/* Right Panel - Details */}
-      <div className="w-96 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
+      <div className="w-96 border-l border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto">
         <div className="space-y-4">
           {/* Selected Segment Details */}
           {selectedSegment ? (
             <>
-              <Card className="bg-[#27272A]/50 border-gray-700">
+              <Card className="bg-surface-raised/50 border-border-default">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <Layers className="w-4 h-4" />
@@ -1156,34 +1156,34 @@ export function RAGTestingTab() {
                 </CardHeader>
                 <CardContent className="space-y-3 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">ID:</span>
+                    <span className="text-text-muted">ID:</span>
                     <span className="font-mono">{selectedSegment.id}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Position:</span>
+                    <span className="text-text-muted">Position:</span>
                     <span>
                       ({selectedSegment.bbox.x}, {selectedSegment.bbox.y})
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Size:</span>
+                    <span className="text-text-muted">Size:</span>
                     <span>
                       {selectedSegment.bbox.width} x{" "}
                       {selectedSegment.bbox.height}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Mask Density:</span>
+                    <span className="text-text-muted">Mask Density:</span>
                     <span>
                       {(selectedSegment.mask_density * 100).toFixed(1)}%
                     </span>
                   </div>
                   {selectedSegment.text_description && (
                     <div>
-                      <span className="text-gray-400 block mb-1">
+                      <span className="text-text-muted block mb-1">
                         Segment Description:
                       </span>
-                      <p className="text-gray-300 bg-black/20 rounded p-2">
+                      <p className="text-text-secondary bg-black/20 rounded p-2">
                         {selectedSegment.text_description}
                       </p>
                     </div>
@@ -1193,7 +1193,7 @@ export function RAGTestingTab() {
 
               {/* Match Scores */}
               {selectedSegment.matches.length > 0 ? (
-                <Card className="bg-[#27272A]/50 border-gray-700">
+                <Card className="bg-surface-raised/50 border-border-default">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <Target className="w-4 h-4" />
@@ -1204,7 +1204,7 @@ export function RAGTestingTab() {
                     {selectedSegment.matches.map((match, idx) => (
                       <div
                         key={`${match.element_id}-${idx}`}
-                        className="p-3 rounded-lg border border-gray-700 space-y-3"
+                        className="p-3 rounded-lg border border-border-default space-y-3"
                       >
                         <div>
                           <div
@@ -1214,7 +1214,7 @@ export function RAGTestingTab() {
                             {match.element_name}
                           </div>
                           {match.text_description && (
-                            <p className="text-xs text-gray-400 mt-1 line-clamp-2">
+                            <p className="text-xs text-text-muted mt-1 line-clamp-2">
                               {match.text_description}
                             </p>
                           )}
@@ -1224,7 +1224,7 @@ export function RAGTestingTab() {
                         <div className="space-y-2">
                           <div>
                             <div className="flex justify-between text-xs mb-1">
-                              <span className="text-gray-400">Combined</span>
+                              <span className="text-text-muted">Combined</span>
                               <span
                                 style={{ color: getScoreColor(match.score) }}
                               >
@@ -1239,7 +1239,7 @@ export function RAGTestingTab() {
 
                           <div>
                             <div className="flex justify-between text-xs mb-1">
-                              <span className="text-gray-400">Visual</span>
+                              <span className="text-text-muted">Visual</span>
                               <span
                                 style={{
                                   color: getScoreColor(match.visual_similarity),
@@ -1257,7 +1257,7 @@ export function RAGTestingTab() {
                           {match.text_similarity !== null && (
                             <div>
                               <div className="flex justify-between text-xs mb-1">
-                                <span className="text-gray-400">Text</span>
+                                <span className="text-text-muted">Text</span>
                                 <span
                                   style={{
                                     color: getScoreColor(match.text_similarity),
@@ -1276,7 +1276,7 @@ export function RAGTestingTab() {
                           {match.ocr_similarity !== null && (
                             <div>
                               <div className="flex justify-between text-xs mb-1">
-                                <span className="text-gray-400">OCR</span>
+                                <span className="text-text-muted">OCR</span>
                                 <span
                                   style={{
                                     color: getScoreColor(match.ocr_similarity),
@@ -1295,8 +1295,8 @@ export function RAGTestingTab() {
 
                         {match.ocr_text && (
                           <div className="text-xs">
-                            <span className="text-gray-400">OCR Text: </span>
-                            <span className="text-gray-300">
+                            <span className="text-text-muted">OCR Text: </span>
+                            <span className="text-text-default">
                               &quot;{match.ocr_text}&quot;
                             </span>
                           </div>
@@ -1306,8 +1306,8 @@ export function RAGTestingTab() {
                   </CardContent>
                 </Card>
               ) : (
-                <Card className="bg-[#27272A]/50 border-gray-700">
-                  <CardContent className="py-8 text-center text-gray-500">
+                <Card className="bg-surface-raised/50 border-border-default">
+                  <CardContent className="py-8 text-center text-text-muted">
                     <X className="w-8 h-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">No matches found for this segment</p>
                   </CardContent>
@@ -1315,8 +1315,8 @@ export function RAGTestingTab() {
               )}
             </>
           ) : (
-            <Card className="bg-[#27272A]/50 border-gray-700">
-              <CardContent className="py-8 text-center text-gray-500">
+            <Card className="bg-surface-raised/50 border-border-default">
+              <CardContent className="py-8 text-center text-text-muted">
                 <Target className="w-8 h-8 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">Click a segment to view details</p>
               </CardContent>
@@ -1325,7 +1325,7 @@ export function RAGTestingTab() {
 
           {/* Segment List */}
           {segments.length > 0 && (
-            <Card className="bg-[#27272A]/50 border-gray-700">
+            <Card className="bg-surface-raised/50 border-border-default">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">
                   All Segments ({segments.length})
@@ -1340,8 +1340,8 @@ export function RAGTestingTab() {
                         className={cn(
                           "flex items-center justify-between p-2 rounded cursor-pointer transition-colors text-xs",
                           selectedSegmentId === segment.id
-                            ? "bg-[#00D9FF]/20 border border-[#00D9FF]/50"
-                            : "hover:bg-gray-800/50"
+                            ? "bg-brand-primary/20 border border-brand-primary/50"
+                            : "hover:bg-surface-raised/50"
                         )}
                         onClick={() => setSelectedSegmentId(segment.id)}
                       >

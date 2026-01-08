@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.error_codes import ErrorCode
-from app.crud.project import create_project, delete_project, get_project, update_project
+from app.crud.project import (
+    VersionConflictError,
+    create_project,
+    delete_project,
+    get_project,
+    update_project,
+)
 from app.middleware.error_handler import forbidden_error, not_found_error
 from app.models.organization import PermissionLevel
 from app.models.user import User
@@ -294,12 +300,35 @@ async def read_project(
     return project
 
 
-@router.put("/{project_id}", response_model=Project)
+@router.put(
+    "/{project_id}",
+    response_model=Project,
+    responses={
+        409: {
+            "description": "Version conflict - project was modified since last load",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {
+                            "message": "Version conflict: project was modified",
+                            "expected_version": 5,
+                            "current_version": 6,
+                        }
+                    }
+                }
+            },
+        },
+    },
+)
 async def update_existing_project(
     *,
     db: AsyncSession = Depends(get_async_db),
     project_id: UUID,
     project_update: ProjectUpdate,
+    expected_version: int | None = Query(
+        None,
+        description="Expected version for conditional update. If provided, update fails with 409 if version mismatch.",
+    ),
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """
@@ -307,6 +336,11 @@ async def update_existing_project(
 
     Requires edit permission on the project.
     Checks if project is locked by another user before allowing updates.
+
+    If expected_version is provided, performs a conditional update:
+    - Update succeeds only if current version matches expected_version
+    - Returns 409 Conflict with current version if mismatch
+    - This enables optimistic concurrency control
     """
     logger.info(
         "update_project_request",
@@ -369,7 +403,25 @@ async def update_existing_project(
             )
 
         logger.debug("update_project_calling_update")
-        updated_project = await update_project(db, project, project_update)
+        try:
+            updated_project = await update_project(
+                db, project, project_update, expected_version=expected_version
+            )
+        except VersionConflictError as e:
+            logger.warning(
+                "update_project_version_conflict",
+                project_id=str(project_id),
+                expected_version=e.expected,
+                current_version=e.current,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Version conflict: project was modified",
+                    "expected_version": e.expected,
+                    "current_version": e.current,
+                },
+            )
         logger.info("update_project_success", project_id=str(project_id))
 
         # Explicitly convert to Pydantic model for serialization

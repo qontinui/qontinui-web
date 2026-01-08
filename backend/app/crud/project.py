@@ -93,9 +93,42 @@ async def create_project(
     return db_project
 
 
+class VersionConflictError(Exception):
+    """Raised when expected version doesn't match current version."""
+
+    def __init__(self, expected: int, current: int):
+        self.expected = expected
+        self.current = current
+        super().__init__(f"Version conflict: expected {expected}, got {current}")
+
+
 async def update_project(
-    db: AsyncSession, project: Project, project_update: ProjectUpdate
+    db: AsyncSession,
+    project: Project,
+    project_update: ProjectUpdate,
+    expected_version: int | None = None,
 ) -> Project:
+    """
+    Update a project.
+
+    Args:
+        db: Database session
+        project: Project to update
+        project_update: Update data
+        expected_version: If provided, update only succeeds if current version matches.
+                         Raises VersionConflictError on mismatch.
+
+    Returns:
+        Updated project
+
+    Raises:
+        VersionConflictError: If expected_version doesn't match current version
+    """
+    # Check version for conditional update
+    if expected_version is not None:
+        if project.version != expected_version:
+            raise VersionConflictError(expected_version, project.version)  # type: ignore[arg-type]
+
     update_data = project_update.model_dump(exclude_unset=True)
 
     for field, value in update_data.items():

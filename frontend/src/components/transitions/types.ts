@@ -74,11 +74,13 @@ export const BUILT_IN_TEMPLATES: TransitionTemplate[] = [
   },
 ];
 
+// Design system color values for JS style props
+// These match the CSS variables in globals.css
 export const COLORS = {
-  primary: "#00D9FF",
-  success: "#00FF88",
-  warning: "#FFB800",
-  danger: "#FF4444",
-  purple: "#BD00FF",
-  gray: "#666666",
+  primary: "#4A90D9", // brand-primary
+  success: "#4DB89D", // brand-success
+  warning: "#E5A853", // warning
+  danger: "#E5534B", // error
+  purple: "#8B6BB5", // brand-secondary
+  gray: "#3A3A42", // border-default
 };

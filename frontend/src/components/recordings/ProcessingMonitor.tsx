@@ -82,7 +82,7 @@ export function ProcessingMonitor({
   }, [recordingId, polling, onComplete, onError]);
 
   const getPhaseIcon = (phase: ProcessingPhase) => {
-    if (!status) return <Clock className="h-5 w-5 text-gray-400" />;
+    if (!status) return <Clock className="h-5 w-5 text-text-muted" />;
 
     const currentPhaseIndex = Object.keys(ProcessingPhaseLabels).indexOf(
       status.phase || ""
@@ -94,7 +94,7 @@ export function ProcessingMonitor({
     } else if (currentPhaseIndex === thisPhaseIndex) {
       return <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />;
     } else {
-      return <Clock className="h-5 w-5 text-gray-400" />;
+      return <Clock className="h-5 w-5 text-text-muted" />;
     }
   };
 
@@ -121,7 +121,7 @@ export function ProcessingMonitor({
         return "text-yellow-600 dark:text-yellow-400";
       case "info":
       default:
-        return "text-gray-600 dark:text-gray-400";
+        return "text-text-muted";
     }
   };
 
@@ -243,7 +243,7 @@ export function ProcessingMonitor({
                         ? "bg-blue-50 dark:bg-blue-950"
                         : phaseStatus === "completed"
                           ? "bg-green-50 dark:bg-green-950"
-                          : "bg-gray-50 dark:bg-gray-900"
+                          : "bg-muted dark:bg-surface-raised"
                     }`}
                   >
                     {getPhaseIcon(phase)}

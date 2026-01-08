@@ -135,9 +135,9 @@ export function RecordingListPage() {
       case "validating":
         return <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />;
       case "cancelled":
-        return <XCircle className="h-5 w-5 text-gray-600" />;
+        return <XCircle className="h-5 w-5 text-text-muted" />;
       default:
-        return <Clock className="h-5 w-5 text-gray-600" />;
+        return <Clock className="h-5 w-5 text-text-muted" />;
     }
   };
 
@@ -151,7 +151,7 @@ export function RecordingListPage() {
       case "validating":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100";
       case "cancelled":
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100";
+        return "bg-muted text-muted-foreground dark:bg-surface-raised dark:text-foreground";
       default:
         return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100";
     }

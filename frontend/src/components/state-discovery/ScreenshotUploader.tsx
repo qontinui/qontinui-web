@@ -633,13 +633,15 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       {/* Drop Zone */}
       {screenshots.length === 0 && (
         <div
-          className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors"
+          className="border-2 border-dashed border-border-default rounded-lg p-6 text-center hover:border-border-subtle transition-colors"
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
-          <ImageIcon className="mx-auto h-12 w-12 text-gray-400 mb-2" />
-          <p className="text-sm text-gray-600">Drag and drop images here</p>
-          <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 50MB</p>
+          <ImageIcon className="mx-auto h-12 w-12 text-text-muted mb-2" />
+          <p className="text-sm text-text-secondary">
+            Drag and drop images here
+          </p>
+          <p className="text-xs text-text-muted mt-1">PNG, JPG up to 50MB</p>
         </div>
       )}
 
@@ -654,12 +656,12 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
                   "relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all",
                   selectedIndex === index
                     ? "border-blue-500 shadow-md"
-                    : "border-gray-200 hover:border-gray-300"
+                    : "border-border-subtle hover:border-border-default"
                 )}
                 onClick={() => onSelectScreenshot(index)}
               >
                 {/* Thumbnail */}
-                <div className="aspect-video bg-gray-100 flex items-center justify-center overflow-hidden">
+                <div className="aspect-video bg-surface-raised flex items-center justify-center overflow-hidden">
                   {(() => {
                     const key = `${file.name}_${file.size}_${file.lastModified}`;
                     const thumbnailUrl = thumbnails[key];
@@ -673,7 +675,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
                         />
                       );
                     } else {
-                      return <ImageIcon className="h-8 w-8 text-gray-400" />;
+                      return <ImageIcon className="h-8 w-8 text-text-muted" />;
                     }
                   })()}
                 </div>
@@ -681,7 +683,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
                 {/* Filename */}
                 <div className="p-2">
                   <p className="text-xs truncate">{file.name}</p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     {(file.size / 1024 / 1024).toFixed(2)} MB
                   </p>
                 </div>
@@ -706,7 +708,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
       {/* Screenshot count */}
       {screenshots.length > 0 && (
-        <p className="text-xs text-gray-500 text-center">
+        <p className="text-xs text-text-muted text-center">
           {screenshots.length} screenshot{screenshots.length !== 1 ? "s" : ""}{" "}
           uploaded
         </p>

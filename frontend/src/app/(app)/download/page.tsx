@@ -181,23 +181,23 @@ export default function DownloadPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => router.push("/connect-runner")}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Connect Runner
             </Button>
           </div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               Download Runner
             </h1>
           </div>
@@ -208,7 +208,7 @@ export default function DownloadPage() {
       <main className="p-6 max-w-5xl mx-auto">
         <div className="mb-8 text-center">
           <h2 className="text-3xl font-bold mb-3">Download Qontinui Runner</h2>
-          <p className="text-gray-400 max-w-2xl mx-auto">
+          <p className="text-text-muted max-w-2xl mx-auto">
             The desktop runner connects your computer to the Qontinui platform,
             enabling visual automation and workflow execution on your machine.
           </p>
@@ -222,8 +222,8 @@ export default function DownloadPage() {
               onClick={() => setSelectedPlatform(option.platform)}
               className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${
                 selectedPlatform === option.platform
-                  ? "bg-[#00D9FF]/10 border-[#00D9FF]/50 text-[#00D9FF]"
-                  : "bg-[#1A1A1B]/50 border-gray-800/50 text-gray-400 hover:border-gray-600 hover:text-white"
+                  ? "bg-brand-primary/10 border-brand-primary/50 text-brand-primary"
+                  : "bg-surface-raised/50 border-border-subtle/50 text-text-muted hover:border-border-default hover:text-white"
               }`}
             >
               {option.icon}
@@ -231,7 +231,7 @@ export default function DownloadPage() {
               {option.platform === detectedPlatform && (
                 <Badge
                   variant="outline"
-                  className="text-xs border-[#00D9FF]/50 text-[#00D9FF]"
+                  className="text-xs border-brand-primary/50 text-brand-primary"
                 >
                   Detected
                 </Badge>
@@ -244,13 +244,13 @@ export default function DownloadPage() {
         {currentOption && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Download Files */}
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+            <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-3">
-                  <Download className="w-5 h-5 text-[#00D9FF]" />
+                  <Download className="w-5 h-5 text-brand-primary" />
                   Download for {currentOption.name}
                 </CardTitle>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-text-muted">
                   {currentOption.description}
                 </p>
               </CardHeader>
@@ -260,32 +260,32 @@ export default function DownloadPage() {
                     key={file.name}
                     className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
                       file.recommended
-                        ? "bg-[#00D9FF]/5 border-[#00D9FF]/30 hover:border-[#00D9FF]/50"
-                        : "bg-[#0A0A0B]/50 border-gray-700 hover:border-gray-600"
+                        ? "bg-brand-primary/5 border-brand-primary/30 hover:border-brand-primary/50"
+                        : "bg-surface-canvas/50 border-border-default hover:border-border-subtle"
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <div
                         className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                           file.recommended
-                            ? "bg-[#00D9FF]/20"
-                            : "bg-gray-800/50"
+                            ? "bg-brand-primary/20"
+                            : "bg-surface-raised/50"
                         }`}
                       >
                         <Download
-                          className={`w-5 h-5 ${file.recommended ? "text-[#00D9FF]" : "text-gray-400"}`}
+                          className={`w-5 h-5 ${file.recommended ? "text-brand-primary" : "text-text-muted"}`}
                         />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{file.label}</span>
                           {file.recommended && (
-                            <Badge className="bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30 text-xs">
+                            <Badge className="bg-brand-primary/20 text-brand-primary border-brand-primary/30 text-xs">
                               Recommended
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-gray-500">{file.name}</p>
+                        <p className="text-sm text-text-muted">{file.name}</p>
                       </div>
                     </div>
                     <Button
@@ -293,8 +293,8 @@ export default function DownloadPage() {
                       size="sm"
                       className={
                         file.recommended
-                          ? "bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
-                          : "bg-gray-700 hover:bg-gray-600"
+                          ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
+                          : "bg-surface-raised hover:bg-surface-hover"
                       }
                     >
                       <Download className="w-4 h-4 mr-1" />
@@ -303,11 +303,11 @@ export default function DownloadPage() {
                   </div>
                 ))}
 
-                <div className="pt-4 border-t border-gray-800">
+                <div className="pt-4 border-t border-border-subtle">
                   <Link
                     href="https://github.com/qontinui/qontinui-runner/releases"
                     target="_blank"
-                    className="flex items-center gap-2 text-sm text-gray-400 hover:text-[#00D9FF] transition-colors"
+                    className="flex items-center gap-2 text-sm text-text-muted hover:text-brand-primary transition-colors"
                   >
                     <ExternalLink className="w-4 h-4" />
                     View all releases on GitHub
@@ -317,10 +317,10 @@ export default function DownloadPage() {
             </Card>
 
             {/* Installation Instructions */}
-            <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+            <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-[#00FF88]" />
+                  <CheckCircle2 className="w-5 h-5 text-brand-success" />
                   Installation Instructions
                 </CardTitle>
               </CardHeader>
@@ -328,10 +328,10 @@ export default function DownloadPage() {
                 <ol className="space-y-4">
                   {currentOption.instructions.map((instruction, index) => (
                     <li key={index} className="flex gap-3">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold text-sm">
+                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-r from-brand-primary to-brand-secondary flex items-center justify-center text-black font-bold text-sm">
                         {index + 1}
                       </div>
-                      <span className="text-gray-300 pt-0.5">
+                      <span className="text-text-secondary pt-0.5">
                         {instruction}
                       </span>
                     </li>
@@ -346,7 +346,7 @@ export default function DownloadPage() {
                         <p className="font-medium text-yellow-400 mb-1">
                           macOS Security Note
                         </p>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-sm text-text-muted">
                           Since the app is not signed with an Apple Developer
                           certificate, you&apos;ll need to right-click and
                           select &quot;Open&quot; the first time you launch it.
@@ -365,10 +365,10 @@ export default function DownloadPage() {
                         <p className="font-medium text-blue-400 mb-1">
                           Linux Dependencies
                         </p>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-sm text-text-muted">
                           The runner requires WebKitGTK. On Ubuntu/Debian,
                           install with:{" "}
-                          <code className="bg-gray-800 px-1 rounded">
+                          <code className="bg-surface-raised px-1 rounded">
                             sudo apt install libwebkit2gtk-4.1-0
                           </code>
                         </p>
@@ -382,7 +382,7 @@ export default function DownloadPage() {
         )}
 
         {/* System Requirements */}
-        <Card className="mt-6 bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+        <Card className="mt-6 bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
           <CardHeader>
             <CardTitle>System Requirements</CardTitle>
           </CardHeader>
@@ -390,10 +390,10 @@ export default function DownloadPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
                 <h4 className="font-medium mb-2 flex items-center gap-2">
-                  <Monitor className="w-4 h-4 text-[#00D9FF]" />
+                  <Monitor className="w-4 h-4 text-brand-primary" />
                   Windows
                 </h4>
-                <ul className="text-sm text-gray-400 space-y-1">
+                <ul className="text-sm text-text-muted space-y-1">
                   <li>Windows 10 or 11 (64-bit)</li>
                   <li>4 GB RAM minimum</li>
                   <li>500 MB disk space</li>
@@ -402,10 +402,10 @@ export default function DownloadPage() {
               </div>
               <div>
                 <h4 className="font-medium mb-2 flex items-center gap-2">
-                  <Apple className="w-4 h-4 text-[#00D9FF]" />
+                  <Apple className="w-4 h-4 text-brand-primary" />
                   macOS
                 </h4>
-                <ul className="text-sm text-gray-400 space-y-1">
+                <ul className="text-sm text-text-muted space-y-1">
                   <li>macOS 11 (Big Sur) or later</li>
                   <li>Intel or Apple Silicon</li>
                   <li>4 GB RAM minimum</li>
@@ -414,10 +414,10 @@ export default function DownloadPage() {
               </div>
               <div>
                 <h4 className="font-medium mb-2 flex items-center gap-2">
-                  <HardDrive className="w-4 h-4 text-[#00D9FF]" />
+                  <HardDrive className="w-4 h-4 text-brand-primary" />
                   Linux
                 </h4>
-                <ul className="text-sm text-gray-400 space-y-1">
+                <ul className="text-sm text-text-muted space-y-1">
                   <li>Ubuntu 20.04+, Debian 10+, Fedora 34+</li>
                   <li>4 GB RAM minimum</li>
                   <li>500 MB disk space</li>
@@ -430,10 +430,12 @@ export default function DownloadPage() {
 
         {/* Help Section */}
         <div className="mt-8 text-center">
-          <p className="text-gray-400 mb-4">Need help setting up the runner?</p>
+          <p className="text-text-muted mb-4">
+            Need help setting up the runner?
+          </p>
           <div className="flex justify-center gap-4">
             <Link href="/connect-runner">
-              <Button variant="outline" className="border-gray-700">
+              <Button variant="outline" className="border-border-default">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Setup Guide
               </Button>
@@ -442,7 +444,7 @@ export default function DownloadPage() {
               href="https://github.com/qontinui/qontinui-runner/issues"
               target="_blank"
             >
-              <Button variant="outline" className="border-gray-700">
+              <Button variant="outline" className="border-border-default">
                 <ExternalLink className="w-4 h-4 mr-2" />
                 Report an Issue
               </Button>

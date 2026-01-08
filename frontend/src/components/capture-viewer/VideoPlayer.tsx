@@ -337,7 +337,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       </div>
 
       {/* External Controls (always visible) */}
-      <div className="bg-gray-900 p-3 border-t border-gray-800">
+      <div className="bg-surface-raised p-3 border-t border-border-subtle">
         <div className="flex items-center justify-between text-white text-sm">
           <div className="flex items-center gap-4">
             <Button
@@ -362,7 +362,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               {formatTime(currentTimestamp)} / {formatTime(duration)}
             </div>
           </div>
-          <div className="text-xs text-gray-400">
+          <div className="text-xs text-muted-foreground">
             Shortcuts: Space (play/pause), ← → (skip), M (mute), F (fullscreen)
           </div>
         </div>

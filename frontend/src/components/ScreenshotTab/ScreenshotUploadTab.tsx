@@ -515,7 +515,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-[#0A0A0B]">
+    <div className="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-surface-canvas">
       {/* Upload Progress Indicator */}
       <ImageUploadProgress uploads={uploadingFiles} />
 
@@ -525,7 +525,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           {/* Upload and Capture buttons */}
           <div className="flex items-center gap-2">
             {saveStatus === "saved" && (
-              <div className="flex items-center gap-1 text-xs text-[#00FF88]">
+              <div className="flex items-center gap-1 text-xs text-brand-success">
                 <CheckCircle className="w-4 h-4" />
                 <span>Saved</span>
               </div>
@@ -558,13 +558,13 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
               </UploadButton>
 
               {showMonitorMenu && (
-                <div className="absolute left-0 mt-2 w-64 bg-[#27272A] rounded-md shadow-lg z-10 border border-gray-700">
+                <div className="absolute left-0 mt-2 w-64 bg-surface-raised rounded-md shadow-lg z-10 border border-border-default">
                   <div className="py-1">
-                    <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-700">
+                    <div className="px-4 py-2 text-xs text-text-muted border-b border-border-default">
                       Select monitor to capture
                     </div>
                     {availableMonitors.length === 0 ? (
-                      <div className="px-4 py-3 text-sm text-gray-400 flex items-center gap-2">
+                      <div className="px-4 py-3 text-sm text-text-muted flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         Loading monitors...
                       </div>
@@ -576,26 +576,26 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                             onClick={() =>
                               handleCaptureFromScreen(monitor.index)
                             }
-                            className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                            className="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-surface-raised flex items-center gap-2"
                           >
                             <Monitor className="w-4 h-4" />
                             Monitor {monitor.index + 1}
                             {monitor.is_primary && (
-                              <span className="text-xs text-[#00FF88] ml-1">
+                              <span className="text-xs text-brand-success ml-1">
                                 (Primary)
                               </span>
                             )}
-                            <span className="text-xs text-gray-500 ml-auto">
+                            <span className="text-xs text-text-muted ml-auto">
                               {monitor.width}x{monitor.height}
                             </span>
                           </button>
                         ))}
                         {availableMonitors.length > 1 && (
                           <>
-                            <div className="border-t border-gray-700 my-1"></div>
+                            <div className="border-t border-border-default my-1"></div>
                             <button
                               onClick={() => handleCaptureFromScreen(null)}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                              className="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-surface-raised flex items-center gap-2"
                             >
                               <Monitor className="w-4 h-4" />
                               All Monitors Combined
@@ -636,33 +636,33 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
               </CreateButton>
 
               {showExportMenu && (
-                <div className="absolute right-0 mt-2 w-56 bg-[#27272A] rounded-md shadow-lg z-10 border border-gray-700">
+                <div className="absolute right-0 mt-2 w-56 bg-surface-raised rounded-md shadow-lg z-10 border border-border-default">
                   <div className="py-1">
                     <button
                       onClick={handleExportJson}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-surface-raised flex items-center gap-2"
                     >
                       <FileJson className="w-4 h-4" />
                       Export as JSON
-                      <span className="text-xs text-gray-500 ml-auto">
+                      <span className="text-xs text-text-muted ml-auto">
                         qontinui
                       </span>
                     </button>
                     <button
                       onClick={handleExportPython}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-surface-raised flex items-center gap-2"
                     >
                       <FileCode className="w-4 h-4" />
                       Export as Python Code
                     </button>
-                    <div className="border-t border-gray-700 my-1"></div>
+                    <div className="border-t border-border-default my-1"></div>
                     <button
                       onClick={handleExportAll}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-surface-raised flex items-center gap-2"
                     >
                       <Download className="w-4 h-4" />
                       Export Raw Data
-                      <span className="text-xs text-gray-500 ml-auto">
+                      <span className="text-xs text-text-muted ml-auto">
                         debug
                       </span>
                     </button>
@@ -678,7 +678,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
       <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Screenshot List Sidebar */}
         <QontinuiSidebar className="overflow-y-auto">
-          <h3 className="text-sm font-medium text-gray-300 mb-3">
+          <h3 className="text-sm font-medium text-text-secondary mb-3">
             Screenshots ({screenshots.length})
           </h3>
 
@@ -692,7 +692,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                 className="group cursor-pointer p-2"
               >
                 {/* Thumbnail */}
-                <div className="aspect-video relative overflow-hidden rounded bg-[#0A0A0B]">
+                <div className="aspect-video relative overflow-hidden rounded bg-surface-canvas">
                   {screenshot.imageData ? (
                     <img
                       src={screenshot.imageData}
@@ -700,7 +700,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                       className="w-full h-full object-contain"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-500 text-xs">
+                    <div className="w-full h-full flex items-center justify-center text-text-muted text-xs">
                       No image
                     </div>
                   )}
@@ -727,14 +727,14 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                     />
                     <button
                       onClick={handleSaveEdit}
-                      className="p-1 bg-[#00FF88] text-black rounded hover:bg-[#00FF88]/90"
+                      className="p-1 bg-brand-success text-black rounded hover:bg-brand-success/90"
                       title="Save (Enter)"
                     >
                       <Check className="w-3 h-3" />
                     </button>
                     <button
                       onClick={handleCancelEdit}
-                      className="p-1 bg-gray-600 text-white rounded hover:bg-gray-500"
+                      className="p-1 bg-surface-raised text-white rounded hover:bg-surface-raised/80"
                       title="Cancel (Esc)"
                     >
                       <X className="w-3 h-3" />
@@ -742,7 +742,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                   </div>
                 ) : (
                   <div className="mt-2 flex items-center gap-1">
-                    <p className="flex-1 text-xs font-medium truncate text-gray-300">
+                    <p className="flex-1 text-xs font-medium truncate text-text-secondary">
                       {screenshot.name}
                     </p>
                     <button
@@ -750,7 +750,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                         e.stopPropagation();
                         handleStartEdit(screenshot);
                       }}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-[#00D9FF] transition-opacity"
+                      className="opacity-0 group-hover:opacity-100 p-1 text-text-muted hover:text-brand-primary transition-opacity"
                       title="Edit name"
                     >
                       <Edit2 className="w-3 h-3" />
@@ -783,7 +783,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                     <img
                       src={selectedScreenshot.imageData}
                       alt={selectedScreenshot.name}
-                      className="border border-gray-700 shadow-lg bg-[#27272A]"
+                      className="border border-border-default shadow-lg bg-surface-raised"
                       style={{
                         maxWidth: zoomMode === "fit" ? "100%" : "none",
                         height: "auto",
@@ -797,14 +797,14 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                     </div>
                   </>
                 ) : (
-                  <div className="flex items-center justify-center w-96 h-64 border border-gray-700 bg-[#27272A] text-gray-500">
+                  <div className="flex items-center justify-center w-96 h-64 border border-border-default bg-surface-raised text-text-muted">
                     Image not available
                   </div>
                 )}
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-500">
+            <div className="flex-1 flex items-center justify-center text-text-muted">
               <div className="text-center">
                 <Image className="w-12 h-12 mx-auto mb-2" />
                 <p>Upload screenshots to begin</p>

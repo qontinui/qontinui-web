@@ -262,7 +262,7 @@ export function ReportExportButton({
             {/* Custom Title */}
             <div className="space-y-2">
               <Label htmlFor="title">
-                Custom Title <span className="text-gray-400">(optional)</span>
+                Custom Title <span className="text-text-muted">(optional)</span>
               </Label>
               <Input
                 id="title"

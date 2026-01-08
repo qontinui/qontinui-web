@@ -114,14 +114,14 @@ export function ImageWithRefresh({
   if (isRefreshing && imageError) {
     return (
       <div
-        className={`bg-gray-800 rounded flex items-center justify-center ${className}`}
+        className={`bg-surface-raised rounded flex items-center justify-center ${className}`}
         role="status"
         aria-live="polite"
         aria-label="Refreshing image"
       >
         <div className="text-center p-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00D9FF] mx-auto mb-2"></div>
-          <p className="text-xs text-gray-400">Refreshing...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary mx-auto mb-2"></div>
+          <p className="text-xs text-text-muted">Refreshing...</p>
         </div>
       </div>
     );
@@ -130,7 +130,7 @@ export function ImageWithRefresh({
   if (imageError && !isRefreshing) {
     return (
       <div
-        className={`bg-gray-800 rounded flex items-center justify-center ${className}`}
+        className={`bg-surface-raised rounded flex items-center justify-center ${className}`}
         role="alert"
         aria-label="Failed to load image"
       >
@@ -138,7 +138,7 @@ export function ImageWithRefresh({
           <p className="text-xs text-red-400 mb-2">Failed to load image</p>
           <button
             onClick={refreshUrl}
-            className="text-xs text-[#00D9FF] hover:text-[#00B8D4] underline"
+            className="text-xs text-brand-primary hover:text-brand-primary/80 underline"
             aria-label="Retry loading image"
           >
             Retry

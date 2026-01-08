@@ -27,15 +27,15 @@ export function RunWorkflowActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Workflow to Run</Label>
+        <Label className="text-xs text-text-muted">Workflow to Run</Label>
         <Select
           value={(config.workflowId as string) || ""}
           onValueChange={(value) => updateConfig("workflowId", value)}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue placeholder="Select a workflow" />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             {processes.map((process) => (
               <SelectItem key={process.id} value={process.id}>
                 {process.name || process.id}
@@ -48,7 +48,7 @@ export function RunWorkflowActionProperties({
       {/* Repeat Configuration */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">Repeat Workflow</Label>
+          <Label className="text-xs text-text-muted">Repeat Workflow</Label>
           <Checkbox
             id="enableRepeat"
             checked={
@@ -84,10 +84,10 @@ export function RunWorkflowActionProperties({
           (config as unknown as Record<string, unknown>).enableRepeat
         ) && (
           <>
-            <div className="space-y-2 pl-4 border-l-2 border-[#BD00FF]/30">
+            <div className="space-y-2 pl-4 border-l-2 border-brand-secondary/30">
               {/* Max Repeats */}
               <div className="space-y-1">
-                <Label className="text-xs text-gray-400">Max Repeats</Label>
+                <Label className="text-xs text-text-muted">Max Repeats</Label>
                 <Input
                   type="number"
                   min="1"
@@ -102,10 +102,10 @@ export function RunWorkflowActionProperties({
                       Number.parseInt(e.target.value) || 10
                     )
                   }
-                  className="bg-transparent border-gray-700"
+                  className="bg-transparent border-border-default"
                   placeholder="10"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-muted">
                   {(config as unknown as Record<string, unknown>)
                     .repeatUntilSuccess
                     ? "Maximum attempts before giving up"
@@ -115,7 +115,7 @@ export function RunWorkflowActionProperties({
 
               {/* Delay Between Repeats */}
               <div className="space-y-1">
-                <Label className="text-xs text-gray-400">
+                <Label className="text-xs text-text-muted">
                   Delay Between Repeats (ms)
                 </Label>
                 <Input
@@ -131,10 +131,10 @@ export function RunWorkflowActionProperties({
                       Number.parseInt(e.target.value) || 0
                     )
                   }
-                  className="bg-transparent border-gray-700"
+                  className="bg-transparent border-border-default"
                   placeholder="0"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-muted">
                   Pause between each repeat execution
                 </p>
               </div>
@@ -154,11 +154,11 @@ export function RunWorkflowActionProperties({
                 <div className="space-y-1">
                   <Label
                     htmlFor="repeatUntilSuccess"
-                    className="text-xs text-gray-400 cursor-pointer"
+                    className="text-xs text-text-muted cursor-pointer"
                   >
                     Repeat Until Success or Max Repeats
                   </Label>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     Stop early if workflow succeeds, otherwise continue until
                     Max Repeats
                   </p>

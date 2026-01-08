@@ -72,7 +72,7 @@ export function RecommendationCard({
         ${
           isSelected
             ? "ring-2 ring-blue-500 bg-blue-50/50 shadow-md"
-            : "hover:shadow-md hover:border-gray-300"
+            : "hover:shadow-md hover:border-border-default"
         }
       `}
       onClick={onSelect}
@@ -88,7 +88,7 @@ export function RecommendationCard({
                 <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
               )}
             </div>
-            <p className="text-sm text-gray-600 mt-1">{reason}</p>
+            <p className="text-sm text-text-muted mt-1">{reason}</p>
           </div>
 
           <TooltipProvider>
@@ -100,12 +100,12 @@ export function RecommendationCard({
                   <div className={`text-2xl font-bold ${getScoreColor(score)}`}>
                     {Math.round(score)}
                   </div>
-                  <div className="text-xs text-gray-600">score</div>
+                  <div className="text-xs text-text-muted">score</div>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
                 <p>Recommendation score (0-100)</p>
-                <p className="text-xs text-gray-300 mt-1">
+                <p className="text-xs text-text-secondary mt-1">
                   Based on coverage, recency, and efficiency
                 </p>
               </TooltipContent>
@@ -117,7 +117,7 @@ export function RecommendationCard({
       <CardContent className="space-y-4">
         {/* Snapshots Included */}
         <div>
-          <div className="text-xs font-medium text-gray-700 mb-2">
+          <div className="text-xs font-medium text-text-secondary mb-2">
             Snapshots Included ({snapshots.length})
           </div>
           <div className="flex flex-wrap gap-2">
@@ -127,7 +127,7 @@ export function RecommendationCard({
                   <TooltipTrigger asChild>
                     <Badge
                       variant="outline"
-                      className="cursor-pointer hover:bg-gray-100"
+                      className="cursor-pointer hover:bg-surface-raised"
                       onClick={(e) => {
                         e.stopPropagation();
                         onViewDetails?.(snapshot.id);
@@ -138,11 +138,11 @@ export function RecommendationCard({
                   </TooltipTrigger>
                   <TooltipContent>
                     <p className="font-medium">{snapshot.run_id}</p>
-                    <p className="text-xs text-gray-300 mt-1">
+                    <p className="text-xs text-text-secondary mt-1">
                       {snapshot.total_actions} actions,{" "}
                       {snapshot.total_screenshots} screenshots
                     </p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-text-muted">
                       Click to view details
                     </p>
                   </TooltipContent>
@@ -160,15 +160,15 @@ export function RecommendationCard({
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="flex items-center gap-1 text-gray-700">
+                    <div className="flex items-center gap-1 text-text-secondary">
                       <CheckCircle2 className="w-3 h-3" />
                       <span>State Coverage</span>
-                      <Info className="w-3 h-3 text-gray-400" />
+                      <Info className="w-3 h-3 text-text-muted" />
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>Number of unique application states covered</p>
-                    <p className="text-xs text-gray-300 mt-1">
+                    <p className="text-xs text-text-secondary mt-1">
                       {coverage.state_coverage.covered_states} of{" "}
                       {coverage.state_coverage.total_states} states
                     </p>
@@ -189,15 +189,15 @@ export function RecommendationCard({
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="flex items-center gap-1 text-gray-700">
+                    <div className="flex items-center gap-1 text-text-secondary">
                       <Activity className="w-3 h-3" />
                       <span>Action Coverage</span>
-                      <Info className="w-3 h-3 text-gray-400" />
+                      <Info className="w-3 h-3 text-text-muted" />
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>Variety of action types included</p>
-                    <p className="text-xs text-gray-300 mt-1">
+                    <p className="text-xs text-text-secondary mt-1">
                       {coverage.action_coverage.covered_action_types} of{" "}
                       {coverage.action_coverage.total_action_types} types
                     </p>
@@ -217,7 +217,7 @@ export function RecommendationCard({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="flex items-center gap-1 text-xs text-gray-600">
+                  <div className="flex items-center gap-1 text-xs text-text-muted">
                     <ImageIcon className="w-3 h-3" />
                     <span>{coverage.screenshot_count} screenshots</span>
                   </div>
@@ -231,7 +231,7 @@ export function RecommendationCard({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="flex items-center gap-1 text-xs text-gray-600">
+                  <div className="flex items-center gap-1 text-xs text-text-muted">
                     <Clock className="w-3 h-3" />
                     <span>
                       ~{Math.round(estimated_execution_time_seconds)}s

@@ -21,12 +21,14 @@ export interface ActiveStatesVisualizerProps {
 /**
  * Color palette for different states (to distinguish overlapping states)
  */
+// Using CSS variable values for consistency with design system
+// Note: These are runtime color values, not Tailwind classes, since they're used in canvas drawing
 const STATE_COLORS = [
-  "#00D9FF", // Cyan
+  "var(--color-brand-primary)", // Primary (cyan)
   "#FF6B9D", // Pink
   "#FFD93D", // Yellow
-  "#6BCF7F", // Green
-  "#A78BFA", // Purple
+  "var(--color-brand-success)", // Success (green)
+  "var(--color-brand-secondary)", // Secondary (purple)
   "#F97316", // Orange
   "#EC4899", // Magenta
   "#14B8A6", // Teal
@@ -37,7 +39,9 @@ const STATE_COLORS = [
  */
 function getStateColor(_stateId: string, index: number): string {
   return (
-    STATE_COLORS[index % STATE_COLORS.length] ?? STATE_COLORS[0] ?? "#00D9FF"
+    STATE_COLORS[index % STATE_COLORS.length] ??
+    STATE_COLORS[0] ??
+    "var(--color-brand-primary)"
   );
 }
 
@@ -66,6 +70,7 @@ export function ActiveStatesVisualizer({
     canvas.height = canvasSize.height;
 
     // Clear canvas
+    // Using canvas background color (surface-canvas equivalent)
     ctx.fillStyle = "#0A0A0B";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -266,12 +271,12 @@ export function ActiveStatesVisualizer({
 
   if (!activeStates || activeStates.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[500px] bg-[#0A0A0B] rounded-lg border border-gray-800">
+      <div className="flex items-center justify-center h-[500px] bg-surface-canvas rounded-lg border border-border-subtle">
         <div className="text-center">
-          <div className="text-gray-500 mb-2">
+          <div className="text-text-muted mb-2">
             No active states at this step
           </div>
-          <div className="text-xs text-gray-600">
+          <div className="text-xs text-text-muted">
             States will appear here as the workflow progresses
           </div>
         </div>
@@ -288,18 +293,18 @@ export function ActiveStatesVisualizer({
             onClick={handleZoomOut}
             size="sm"
             variant="outline"
-            className="bg-[#1A1A1B]/50 border-gray-800 text-gray-400 hover:text-gray-200"
+            className="bg-surface-raised/50 border-border-subtle text-text-muted hover:text-text-secondary"
           >
             <ZoomOut className="w-4 h-4" />
           </Button>
-          <span className="text-sm text-gray-400 min-w-[60px] text-center">
+          <span className="text-sm text-text-muted min-w-[60px] text-center">
             {Math.round(zoom * 100)}%
           </span>
           <Button
             onClick={handleZoomIn}
             size="sm"
             variant="outline"
-            className="bg-[#1A1A1B]/50 border-gray-800 text-gray-400 hover:text-gray-200"
+            className="bg-surface-raised/50 border-border-subtle text-text-muted hover:text-text-secondary"
           >
             <ZoomIn className="w-4 h-4" />
           </Button>
@@ -307,21 +312,21 @@ export function ActiveStatesVisualizer({
             onClick={handleResetZoom}
             size="sm"
             variant="outline"
-            className="bg-[#1A1A1B]/50 border-gray-800 text-gray-400 hover:text-gray-200"
+            className="bg-surface-raised/50 border-border-subtle text-text-muted hover:text-text-secondary"
           >
             <Maximize2 className="w-4 h-4" />
           </Button>
         </div>
 
-        <div className="text-xs text-gray-500">Click and drag to pan</div>
+        <div className="text-xs text-text-muted">Click and drag to pan</div>
       </div>
 
       {/* Canvas Container */}
       <div
         ref={containerRef}
         className={cn(
-          "relative overflow-hidden rounded-lg border border-gray-800",
-          "bg-[#0A0A0B]",
+          "relative overflow-hidden rounded-lg border border-border-subtle",
+          "bg-surface-canvas",
           isDragging ? "cursor-grabbing" : "cursor-grab"
         )}
         style={{ height: "500px" }}
@@ -348,14 +353,14 @@ export function ActiveStatesVisualizer({
           return (
             <div
               key={state.id}
-              className="flex items-center gap-2 text-xs bg-[#1A1A1B]/50 px-3 py-1.5 rounded border border-gray-800"
+              className="flex items-center gap-2 text-xs bg-surface-raised/50 px-3 py-1.5 rounded border border-border-subtle"
             >
               <div
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: color }}
               />
-              <span className="text-gray-300">{state.name}</span>
-              <span className="text-gray-600">
+              <span className="text-text-secondary">{state.name}</span>
+              <span className="text-text-muted">
                 ({state.stateImages?.length || 0} images,{" "}
                 {state.regions?.length || 0} regions,{" "}
                 {state.locations?.length || 0} locations)

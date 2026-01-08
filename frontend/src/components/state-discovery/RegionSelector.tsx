@@ -332,7 +332,7 @@ const RegionSelector: React.FC<RegionSelectorProps> = ({
 
   // Debug info
   const debugInfo = process.env.NODE_ENV === "development" && (
-    <div className="text-xs text-gray-500 mb-2">
+    <div className="text-xs text-text-muted mb-2">
       isSelecting: {String(isSelecting)}, isDragging: {String(isDragging)},
       startPoint: ({Math.round(startPoint.x)}, {Math.round(startPoint.y)}),
       scale: {scale.toFixed(2)}
@@ -365,7 +365,7 @@ const RegionSelector: React.FC<RegionSelectorProps> = ({
           </Button>
         </div>
         {currentRegion && (
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-text-muted">
             Region: {Math.round(currentRegion.x)},{Math.round(currentRegion.y)}{" "}
             •{Math.round(currentRegion.width)}×
             {Math.round(currentRegion.height)}px
@@ -378,7 +378,7 @@ const RegionSelector: React.FC<RegionSelectorProps> = ({
         <CardContent className="p-0">
           <div
             ref={containerRef}
-            className="relative overflow-hidden bg-gray-100 border-2 border-gray-300"
+            className="relative overflow-hidden bg-surface-raised border-2 border-border-default"
             style={{
               height: "400px",
               cursor: isSelecting
@@ -481,7 +481,7 @@ const RegionSelector: React.FC<RegionSelectorProps> = ({
 
             {/* Instructions overlay */}
             {!imageUrl && (
-              <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+              <div className="absolute inset-0 flex items-center justify-center text-text-muted">
                 <div className="text-center">
                   <CropIcon className="h-12 w-12 mx-auto mb-2" />
                   <p>Upload screenshots to select analysis region</p>
@@ -495,7 +495,7 @@ const RegionSelector: React.FC<RegionSelectorProps> = ({
       {/* Instructions */}
       <Card className="bg-blue-50">
         <CardContent className="py-3">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-text-muted">
             <strong>Select Analysis Region:</strong> Click and drag to draw a
             rectangle around the area you want to analyze. Drag edges or corners
             to resize. Drag inside to move. This speeds up analysis by focusing

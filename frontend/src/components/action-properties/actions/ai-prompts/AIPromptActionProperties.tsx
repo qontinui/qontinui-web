@@ -72,7 +72,7 @@ export function AIPromptActionProperties({
 
       {/* AI Provider */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400 flex items-center gap-2">
+        <Label className="text-xs text-text-muted flex items-center gap-2">
           <Brain className="w-4 h-4" />
           AI Provider
         </Label>
@@ -80,15 +80,15 @@ export function AIPromptActionProperties({
           value={config.provider || "claude"}
           onValueChange={(value) => updateConfig("provider", value)}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             {AI_PROVIDER_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 <div>
                   <span>{opt.label}</span>
-                  <span className="text-gray-500 ml-2 text-xs">
+                  <span className="text-text-muted ml-2 text-xs">
                     - {opt.description}
                   </span>
                 </div>
@@ -100,14 +100,14 @@ export function AIPromptActionProperties({
 
       {/* Template ID or Inline Prompt */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Prompt Source</Label>
+        <Label className="text-xs text-text-muted">Prompt Source</Label>
         <div className="flex gap-2">
           <button
             type="button"
             className={`flex-1 px-3 py-2 text-sm rounded border ${
               !usingTemplate
                 ? "bg-purple-500 border-purple-500 text-white"
-                : "bg-transparent border-gray-700 text-gray-400 hover:border-purple-500"
+                : "bg-transparent border-border-default text-text-muted hover:border-purple-500"
             }`}
             onClick={() => {
               updateConfig("templateId", undefined);
@@ -121,7 +121,7 @@ export function AIPromptActionProperties({
             className={`flex-1 px-3 py-2 text-sm rounded border ${
               usingTemplate
                 ? "bg-purple-500 border-purple-500 text-white"
-                : "bg-transparent border-gray-700 text-gray-400 hover:border-purple-500"
+                : "bg-transparent border-border-default text-text-muted hover:border-purple-500"
             }`}
             onClick={() => {
               updateConfig("templateId", "");
@@ -136,15 +136,15 @@ export function AIPromptActionProperties({
       {/* Template ID (if using template) */}
       {usingTemplate && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Template ID</Label>
+          <Label className="text-xs text-text-muted">Template ID</Label>
           <Input
             type="text"
             value={config.templateId || ""}
             onChange={(e) => updateConfig("templateId", e.target.value)}
             placeholder="fix-type-errors"
-            className="bg-transparent border-gray-700"
+            className="bg-transparent border-border-default"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Reference to a prompt template from the library
           </p>
         </div>
@@ -153,7 +153,7 @@ export function AIPromptActionProperties({
       {/* Template Parameters (if using template) */}
       {usingTemplate && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Template Parameters</Label>
+          <Label className="text-xs text-text-muted">Template Parameters</Label>
           <Textarea
             value={
               config.templateParameters
@@ -171,9 +171,9 @@ export function AIPromptActionProperties({
               }
             }}
             placeholder='{"module_path": "src/core"}'
-            className="bg-transparent border-gray-700 min-h-[80px] font-mono text-sm"
+            className="bg-transparent border-border-default min-h-[80px] font-mono text-sm"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             JSON object with parameter values
           </p>
         </div>
@@ -182,7 +182,7 @@ export function AIPromptActionProperties({
       {/* Inline Prompt (if not using template) */}
       {!usingTemplate && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400 flex items-center gap-2">
+          <Label className="text-xs text-text-muted flex items-center gap-2">
             <Sparkles className="w-4 h-4" />
             Prompt
           </Label>
@@ -190,11 +190,11 @@ export function AIPromptActionProperties({
             value={config.prompt || ""}
             onChange={(e) => updateConfig("prompt", e.target.value)}
             placeholder="Fix all type errors in the current project"
-            className="bg-transparent border-gray-700 min-h-[100px] font-mono text-sm"
+            className="bg-transparent border-border-default min-h-[100px] font-mono text-sm"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Enter a natural language prompt or slash command (e.g.,{" "}
-            <code className="bg-gray-700 px-1 rounded">
+            <code className="bg-surface-raised px-1 rounded">
               /analyze-automation
             </code>
             )
@@ -204,7 +204,7 @@ export function AIPromptActionProperties({
 
       {/* Max Sessions */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Max Sessions</Label>
+        <Label className="text-xs text-text-muted">Max Sessions</Label>
         <Input
           type="number"
           min={1}
@@ -216,16 +216,16 @@ export function AIPromptActionProperties({
             )
           }
           placeholder="1"
-          className="bg-transparent border-gray-700 w-24"
+          className="bg-transparent border-border-default w-24"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           1 = one-shot, higher = auto-continue until complete
         </p>
       </div>
 
       {/* Output Variable */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Output Variable</Label>
+        <Label className="text-xs text-text-muted">Output Variable</Label>
         <Input
           type="text"
           value={config.outputVariable || ""}
@@ -233,18 +233,18 @@ export function AIPromptActionProperties({
             updateConfig("outputVariable", e.target.value || undefined)
           }
           placeholder="ai_result"
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Store AI output in this workflow variable
         </p>
       </div>
 
-      <Separator className="bg-gray-700" />
+      <Separator className="bg-border-default" />
 
       {/* Advanced Configuration */}
       <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
-        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300">
+        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-text-muted hover:text-text-default">
           {showAdvanced ? (
             <ChevronDown className="w-4 h-4" />
           ) : (
@@ -255,7 +255,7 @@ export function AIPromptActionProperties({
         <CollapsibleContent className="space-y-4 mt-3">
           {/* Working Directory */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Working Directory</Label>
+            <Label className="text-xs text-text-muted">Working Directory</Label>
             <Input
               type="text"
               value={config.workingDirectory || ""}
@@ -263,14 +263,15 @@ export function AIPromptActionProperties({
                 updateConfig("workingDirectory", e.target.value || undefined)
               }
               placeholder="/path/to/project"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
 
           {/* Results Directory (legacy) */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">
-              Results Directory <span className="text-gray-600">(legacy)</span>
+            <Label className="text-xs text-text-muted">
+              Results Directory{" "}
+              <span className="text-border-subtle">(legacy)</span>
             </Label>
             <Input
               type="text"
@@ -279,16 +280,16 @@ export function AIPromptActionProperties({
                 updateConfig("resultsDirectory", e.target.value || undefined)
               }
               placeholder=".automation-results/latest"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               For analysis prompts (backward compatibility)
             </p>
           </div>
 
           {/* Output File */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Output File</Label>
+            <Label className="text-xs text-text-muted">Output File</Label>
             <Input
               type="text"
               value={config.outputFile || ""}
@@ -296,25 +297,25 @@ export function AIPromptActionProperties({
                 updateConfig("outputFile", e.target.value || undefined)
               }
               placeholder="/path/to/output.txt"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               File path to write AI output
             </p>
           </div>
 
           {/* Timeout */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Timeout (ms)</Label>
+            <Label className="text-xs text-text-muted">Timeout (ms)</Label>
             <Input
               type="number"
               min="60000"
               max="1800000"
               value={config.timeout || 600000}
               onChange={(e) => updateConfig("timeout", Number(e.target.value))}
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Max execution time in milliseconds (default: 10 minutes)
             </p>
           </div>
@@ -322,8 +323,8 @@ export function AIPromptActionProperties({
           {/* Fail on Error */}
           <div className="flex items-center justify-between">
             <div>
-              <Label className="text-xs text-gray-400">Fail on Error</Label>
-              <p className="text-xs text-gray-500">
+              <Label className="text-xs text-text-muted">Fail on Error</Label>
+              <p className="text-xs text-text-muted">
                 Fail action if AI execution fails
               </p>
             </div>
@@ -337,20 +338,20 @@ export function AIPromptActionProperties({
 
           {/* Description */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Description</Label>
+            <Label className="text-xs text-text-muted">Description</Label>
             <Textarea
               value={config.description || ""}
               onChange={(e) =>
                 updateConfig("description", e.target.value || undefined)
               }
               placeholder="Describe what this prompt does..."
-              className="bg-transparent border-gray-700 min-h-[60px]"
+              className="bg-transparent border-border-default min-h-[60px]"
             />
           </div>
         </CollapsibleContent>
       </Collapsible>
 
-      <Separator className="bg-gray-700" />
+      <Separator className="bg-border-default" />
 
       {/* Timing Properties */}
       <TimingProperties action={action} updateConfig={updateConfig} />

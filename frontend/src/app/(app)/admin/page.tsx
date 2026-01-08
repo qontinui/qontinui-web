@@ -114,7 +114,7 @@ export default function AdminDashboard() {
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">Loading...</div>
+        <div className="text-text-muted">Loading...</div>
       </div>
     );
   }

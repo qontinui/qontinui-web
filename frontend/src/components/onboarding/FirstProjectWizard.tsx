@@ -245,17 +245,17 @@ export function FirstProjectWizard({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-3xl bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] border-gray-800 text-white"
+        className="max-w-3xl bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas border-border-subtle text-white"
         showCloseButton={false}
       >
         {/* Header with Progress */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+              <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
                 First Project Wizard
               </DialogTitle>
-              <DialogDescription className="text-gray-400">
+              <DialogDescription className="text-text-muted">
                 Step {currentStep} of {TOTAL_STEPS}
               </DialogDescription>
             </DialogHeader>
@@ -263,7 +263,7 @@ export function FirstProjectWizard({
               variant="ghost"
               size="icon"
               onClick={handleClose}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <X className="w-5 h-5" />
             </Button>
@@ -271,8 +271,11 @@ export function FirstProjectWizard({
 
           {/* Progress Bar */}
           <div className="space-y-2">
-            <Progress value={progressPercentage} className="h-2 bg-gray-800" />
-            <div className="flex justify-between text-xs text-gray-500">
+            <Progress
+              value={progressPercentage}
+              className="h-2 bg-surface-raised"
+            />
+            <div className="flex justify-between text-xs text-text-muted">
               <span>Welcome</span>
               <span>Name</span>
               <span>Template</span>
@@ -287,24 +290,24 @@ export function FirstProjectWizard({
           {/* Step 1: Welcome */}
           {currentStep === 1 && (
             <div className="text-center space-y-6">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-[#00D9FF]/20 to-[#BD00FF]/20 rounded-full border border-[#00D9FF]/30">
-                <Rocket className="w-10 h-10 text-[#00D9FF]" />
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-brand-primary/20 to-brand-secondary/20 rounded-full border border-brand-primary/30">
+                <Rocket className="w-10 h-10 text-brand-primary" />
               </div>
               <div className="space-y-3">
                 <h2 className="text-3xl font-bold">
                   Let&apos;s Create Your First Automation
                 </h2>
-                <p className="text-lg text-gray-400 max-w-2xl mx-auto">
+                <p className="text-lg text-text-muted max-w-2xl mx-auto">
                   We&apos;ll guide you through building a simple automation
                   step-by-step
                 </p>
               </div>
-              <div className="bg-[#1A1A1B]/50 border border-gray-800 rounded-lg p-6 max-w-xl mx-auto">
+              <div className="bg-surface-raised/50 border border-border-subtle rounded-lg p-6 max-w-xl mx-auto">
                 <div className="flex items-start gap-4 text-left">
-                  <Sparkles className="w-6 h-6 text-[#BD00FF] flex-shrink-0 mt-1" />
+                  <Sparkles className="w-6 h-6 text-brand-secondary flex-shrink-0 mt-1" />
                   <div>
                     <h3 className="font-semibold mb-2">What is Automation?</h3>
-                    <p className="text-sm text-gray-400">
+                    <p className="text-sm text-text-muted">
                       Automations are visual workflows that perform repetitive
                       tasks for you. Using state machines and image recognition,
                       you can automate games, business processes, testing, and
@@ -320,18 +323,18 @@ export function FirstProjectWizard({
           {currentStep === 2 && (
             <div className="space-y-6 max-w-xl mx-auto">
               <div className="text-center space-y-2">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-[#00D9FF]/20 to-[#BD00FF]/20 rounded-full border border-[#00D9FF]/30 mb-4">
-                  <FileText className="w-8 h-8 text-[#00D9FF]" />
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-brand-primary/20 to-brand-secondary/20 rounded-full border border-brand-primary/30 mb-4">
+                  <FileText className="w-8 h-8 text-brand-primary" />
                 </div>
                 <h2 className="text-2xl font-bold">Name Your Project</h2>
-                <p className="text-gray-400">
+                <p className="text-text-muted">
                   Give your automation a memorable name
                 </p>
               </div>
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300">
+                  <label className="text-sm font-medium text-text-secondary">
                     Project Name <span className="text-red-400">*</span>
                   </label>
                   <Input
@@ -340,13 +343,13 @@ export function FirstProjectWizard({
                       updateState({ projectName: e.target.value })
                     }
                     placeholder="Enter project name..."
-                    className="bg-[#1A1A1B] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#00D9FF]"
+                    className="bg-surface-raised border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
                     autoFocus
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300">
+                  <label className="text-sm font-medium text-text-secondary">
                     Suggestions
                   </label>
                   <div className="flex flex-wrap gap-2">
@@ -357,7 +360,7 @@ export function FirstProjectWizard({
                           variant="outline"
                           size="sm"
                           onClick={() => handleSuggestion(suggestion)}
-                          className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] text-gray-300"
+                          className="border-border-default hover:border-brand-primary hover:text-brand-primary text-text-secondary"
                         >
                           {suggestion}
                         </Button>
@@ -367,9 +370,9 @@ export function FirstProjectWizard({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300">
+                  <label className="text-sm font-medium text-text-secondary">
                     Description{" "}
-                    <span className="text-gray-500 text-xs">(optional)</span>
+                    <span className="text-text-muted text-xs">(optional)</span>
                   </label>
                   <Input
                     value={wizardState.projectDescription}
@@ -377,7 +380,7 @@ export function FirstProjectWizard({
                       updateState({ projectDescription: e.target.value })
                     }
                     placeholder="What will this automation do?"
-                    className="bg-[#1A1A1B] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#00D9FF]"
+                    className="bg-surface-raised border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
                   />
                 </div>
               </div>
@@ -388,11 +391,11 @@ export function FirstProjectWizard({
           {currentStep === 3 && (
             <div className="space-y-6">
               <div className="text-center space-y-2">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-[#00D9FF]/20 to-[#BD00FF]/20 rounded-full border border-[#00D9FF]/30 mb-4">
-                  <Layout className="w-8 h-8 text-[#00D9FF]" />
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-brand-primary/20 to-brand-secondary/20 rounded-full border border-brand-primary/30 mb-4">
+                  <Layout className="w-8 h-8 text-brand-primary" />
                 </div>
                 <h2 className="text-2xl font-bold">Choose a Template</h2>
-                <p className="text-gray-400">
+                <p className="text-text-muted">
                   Start with a template or build from scratch
                 </p>
               </div>
@@ -412,8 +415,8 @@ export function FirstProjectWizard({
                       className={cn(
                         "p-6 rounded-lg border-2 transition-all duration-300 text-left hover:shadow-lg",
                         isSelected
-                          ? "bg-[#00D9FF]/10 border-[#00D9FF] shadow-[0_0_20px_rgba(0,217,255,0.2)]"
-                          : "bg-[#1A1A1B]/50 border-gray-800 hover:border-gray-700"
+                          ? "bg-brand-primary/10 border-brand-primary shadow-[0_0_20px_rgba(0,217,255,0.2)]"
+                          : "bg-surface-raised/50 border-border-subtle hover:border-border-default"
                       )}
                     >
                       <div className="space-y-3">
@@ -421,14 +424,16 @@ export function FirstProjectWizard({
                           className={cn(
                             "inline-flex items-center justify-center w-12 h-12 rounded-lg",
                             isSelected
-                              ? "bg-[#00D9FF]/20 border border-[#00D9FF]/30"
-                              : "bg-gray-800 border border-gray-700"
+                              ? "bg-brand-primary/20 border border-brand-primary/30"
+                              : "bg-surface-raised border border-border-default"
                           )}
                         >
                           <Icon
                             className={cn(
                               "w-6 h-6",
-                              isSelected ? "text-[#00D9FF]" : "text-gray-400"
+                              isSelected
+                                ? "text-brand-primary"
+                                : "text-text-muted"
                             )}
                           />
                         </div>
@@ -436,12 +441,12 @@ export function FirstProjectWizard({
                           <h3 className="font-semibold mb-1">
                             {template.name}
                           </h3>
-                          <p className="text-sm text-gray-400">
+                          <p className="text-sm text-text-muted">
                             {template.description}
                           </p>
                         </div>
                         {isSelected && (
-                          <div className="flex items-center gap-2 text-[#00D9FF] text-sm">
+                          <div className="flex items-center gap-2 text-brand-primary text-sm">
                             <CheckCircle2 className="w-4 h-4" />
                             <span>Selected</span>
                           </div>
@@ -458,17 +463,17 @@ export function FirstProjectWizard({
           {currentStep === 4 && (
             <div className="space-y-6 max-w-2xl mx-auto">
               <div className="text-center space-y-2">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-[#00D9FF]/20 to-[#BD00FF]/20 rounded-full border border-[#00D9FF]/30 mb-4">
-                  <Target className="w-8 h-8 text-[#00D9FF]" />
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-brand-primary/20 to-brand-secondary/20 rounded-full border border-brand-primary/30 mb-4">
+                  <Target className="w-8 h-8 text-brand-primary" />
                 </div>
                 <h2 className="text-2xl font-bold">What Will You Automate?</h2>
-                <p className="text-gray-400">
+                <p className="text-text-muted">
                   Help us customize your experience
                 </p>
               </div>
 
-              <div className="bg-[#1A1A1B]/30 border border-gray-800 rounded-lg p-4 mb-4">
-                <p className="text-sm text-gray-400">
+              <div className="bg-surface-raised/30 border border-border-subtle rounded-lg p-4 mb-4">
+                <p className="text-sm text-text-muted">
                   Understanding your use case helps us provide better guidance,
                   templates, and features tailored to your needs.
                 </p>
@@ -517,8 +522,8 @@ export function FirstProjectWizard({
                       className={cn(
                         "flex items-start gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all duration-300",
                         isSelected
-                          ? "bg-[#00D9FF]/10 border-[#00D9FF] shadow-[0_0_20px_rgba(0,217,255,0.1)]"
-                          : "bg-[#1A1A1B]/50 border-gray-800 hover:border-gray-700"
+                          ? "bg-brand-primary/10 border-brand-primary shadow-[0_0_20px_rgba(0,217,255,0.1)]"
+                          : "bg-surface-raised/50 border-border-subtle hover:border-border-default"
                       )}
                     >
                       <RadioGroupItem value={option.value} className="mt-1" />
@@ -526,13 +531,17 @@ export function FirstProjectWizard({
                         <div
                           className={cn(
                             "p-2 rounded-lg",
-                            isSelected ? "bg-[#00D9FF]/20" : "bg-gray-800"
+                            isSelected
+                              ? "bg-brand-primary/20"
+                              : "bg-surface-raised"
                           )}
                         >
                           <Icon
                             className={cn(
                               "w-5 h-5",
-                              isSelected ? "text-[#00D9FF]" : "text-gray-400"
+                              isSelected
+                                ? "text-brand-primary"
+                                : "text-text-muted"
                             )}
                           />
                         </div>
@@ -540,7 +549,7 @@ export function FirstProjectWizard({
                           <div className="font-semibold mb-1">
                             {option.label}
                           </div>
-                          <div className="text-sm text-gray-400">
+                          <div className="text-sm text-text-muted">
                             {option.description}
                           </div>
                         </div>
@@ -555,38 +564,38 @@ export function FirstProjectWizard({
           {/* Step 5: Ready to Build! */}
           {currentStep === 5 && (
             <div className="space-y-6 text-center">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-[#00FF88]/20 to-[#00D9FF]/20 rounded-full border border-[#00FF88]/30 mb-4">
-                <CheckCircle2 className="w-10 h-10 text-[#00FF88]" />
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-brand-success/20 to-brand-primary/20 rounded-full border border-brand-success/30 mb-4">
+                <CheckCircle2 className="w-10 h-10 text-brand-success" />
               </div>
               <div className="space-y-2">
                 <h2 className="text-3xl font-bold">Ready to Build!</h2>
-                <p className="text-gray-400">
+                <p className="text-text-muted">
                   Your automation project is configured and ready to go
                 </p>
               </div>
 
               {/* Summary */}
-              <div className="bg-[#1A1A1B]/50 border border-gray-800 rounded-lg p-6 max-w-xl mx-auto text-left">
+              <div className="bg-surface-raised/50 border border-border-subtle rounded-lg p-6 max-w-xl mx-auto text-left">
                 <h3 className="font-semibold mb-4 text-center">
                   Project Summary
                 </h3>
                 <div className="space-y-3">
                   <div className="flex justify-between items-start">
-                    <span className="text-gray-400">Name:</span>
+                    <span className="text-text-muted">Name:</span>
                     <span className="font-medium text-right">
                       {wizardState.projectName || "My First Automation"}
                     </span>
                   </div>
                   {wizardState.projectDescription && (
                     <div className="flex justify-between items-start">
-                      <span className="text-gray-400">Description:</span>
+                      <span className="text-text-muted">Description:</span>
                       <span className="font-medium text-right max-w-xs">
                         {wizardState.projectDescription}
                       </span>
                     </div>
                   )}
                   <div className="flex justify-between items-start">
-                    <span className="text-gray-400">Template:</span>
+                    <span className="text-text-muted">Template:</span>
                     <span className="font-medium">
                       {
                         templates.find(
@@ -596,7 +605,7 @@ export function FirstProjectWizard({
                     </span>
                   </div>
                   <div className="flex justify-between items-start">
-                    <span className="text-gray-400">Use Case:</span>
+                    <span className="text-text-muted">Use Case:</span>
                     <span className="font-medium capitalize">
                       {wizardState.useCase}
                     </span>
@@ -605,33 +614,33 @@ export function FirstProjectWizard({
               </div>
 
               {/* Quick Tips */}
-              <div className="bg-gradient-to-r from-[#00D9FF]/10 to-[#BD00FF]/10 border border-[#00D9FF]/30 rounded-lg p-6 max-w-xl mx-auto text-left">
+              <div className="bg-gradient-to-r from-brand-primary/10 to-brand-secondary/10 border border-brand-primary/30 rounded-lg p-6 max-w-xl mx-auto text-left">
                 <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-[#BD00FF]" />
+                  <Sparkles className="w-5 h-5 text-brand-secondary" />
                   Quick Tips for Getting Started
                 </h3>
-                <ul className="space-y-2 text-sm text-gray-300">
+                <ul className="space-y-2 text-sm text-text-secondary">
                   <li className="flex items-start gap-2">
-                    <span className="text-[#00D9FF] mt-1">•</span>
+                    <span className="text-brand-primary mt-1">•</span>
                     <span>
                       Right-click on the canvas to add states to your workflow
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-[#00D9FF] mt-1">•</span>
+                    <span className="text-brand-primary mt-1">•</span>
                     <span>
                       Select a state to configure actions like clicking or
                       typing
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-[#00D9FF] mt-1">•</span>
+                    <span className="text-brand-primary mt-1">•</span>
                     <span>
                       Upload screenshots for image recognition automation
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-[#00D9FF] mt-1">•</span>
+                    <span className="text-brand-primary mt-1">•</span>
                     <span>Save your work frequently and export when ready</span>
                   </li>
                 </ul>
@@ -641,13 +650,13 @@ export function FirstProjectWizard({
         </div>
 
         {/* Footer Navigation */}
-        <div className="flex items-center justify-between pt-4 border-t border-gray-800">
+        <div className="flex items-center justify-between pt-4 border-t border-border-subtle">
           <div>
             {currentStep > 1 && currentStep < TOTAL_STEPS && (
               <Button
                 variant="outline"
                 onClick={handleBack}
-                className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] text-gray-300"
+                className="border-border-default hover:border-brand-primary hover:text-brand-primary text-text-secondary"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
@@ -660,7 +669,7 @@ export function FirstProjectWizard({
               <Button
                 variant="ghost"
                 onClick={handleSkip}
-                className="text-gray-400 hover:text-white"
+                className="text-text-muted hover:text-white"
               >
                 Skip Wizard
               </Button>
@@ -669,7 +678,7 @@ export function FirstProjectWizard({
             {currentStep < TOTAL_STEPS ? (
               <Button
                 onClick={handleNext}
-                className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+                className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
                 disabled={currentStep === 2 && !wizardState.projectName.trim()}
               >
                 {currentStep === 1 ? "Get Started" : "Next"}
@@ -680,14 +689,14 @@ export function FirstProjectWizard({
                 <Button
                   variant="outline"
                   onClick={handleWatchTutorial}
-                  className="border-[#BD00FF] text-[#BD00FF] hover:bg-[#BD00FF]/10"
+                  className="border-brand-secondary text-brand-secondary hover:bg-brand-secondary/10"
                   disabled={createProject.isPending}
                 >
                   Watch Tutorial First
                 </Button>
                 <Button
                   onClick={handleOpenProject}
-                  className="bg-gradient-to-r from-[#00D9FF] to-[#00FF88] hover:opacity-90 text-black font-medium"
+                  className="bg-gradient-to-r from-brand-primary to-brand-success hover:opacity-90 text-black font-medium"
                   disabled={createProject.isPending}
                 >
                   {createProject.isPending ? (

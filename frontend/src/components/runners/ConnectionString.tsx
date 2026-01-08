@@ -78,8 +78,8 @@ export function ConnectionString({
     <div className={className}>
       {/* Connection String Display */}
       <div className="relative">
-        <pre className="bg-[#0A0A0B] border border-gray-700 rounded-lg p-4 text-sm overflow-x-auto max-h-80 overflow-y-auto">
-          <code className="text-gray-300">{connectionString}</code>
+        <pre className="bg-surface-canvas border border-border-default rounded-lg p-4 text-sm overflow-x-auto max-h-80 overflow-y-auto">
+          <code className="text-text-muted">{connectionString}</code>
         </pre>
       </div>
 
@@ -87,7 +87,7 @@ export function ConnectionString({
       <div className="flex gap-2 mt-4">
         <Button
           onClick={handleCopy}
-          className="flex-1 bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+          className="flex-1 bg-brand-primary hover:bg-brand-primary/80 text-black"
         >
           {copied ? (
             <>Copied!</>
@@ -103,7 +103,7 @@ export function ConnectionString({
           <Button
             onClick={handleDownload}
             variant="outline"
-            className="border-gray-700 hover:bg-[#1A1A1B]"
+            className="border-border-default hover:bg-surface-raised"
           >
             <Download className="w-4 h-4 mr-2" />
             Download
@@ -115,13 +115,13 @@ export function ConnectionString({
             <DialogTrigger asChild>
               <Button
                 variant="outline"
-                className="border-gray-700 hover:bg-[#1A1A1B]"
+                className="border-border-default hover:bg-surface-raised"
               >
                 <QrCode className="w-4 h-4 mr-2" />
                 QR Code
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-[#1A1A1B] border-gray-800">
+            <DialogContent className="bg-surface-raised border-border-subtle">
               <DialogHeader>
                 <DialogTitle>Scan QR Code</DialogTitle>
                 <DialogDescription>

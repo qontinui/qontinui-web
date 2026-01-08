@@ -43,15 +43,15 @@ export default function ProjectCoveragePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               onClick={() => router.push(`/projects/${projectId}/testing`)}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back
@@ -65,7 +65,7 @@ export default function ProjectCoveragePage() {
               variant="outline"
               size="sm"
               onClick={() => router.push(`/projects/${projectId}/testing`)}
-              className="border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+              className="border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Test Runs
@@ -76,7 +76,7 @@ export default function ProjectCoveragePage() {
               onClick={() =>
                 router.push(`/projects/${projectId}/testing/deficiencies`)
               }
-              className="border-gray-700 hover:border-[#EF4444] hover:text-[#EF4444]"
+              className="border-border-default hover:border-[#EF4444] hover:text-[#EF4444]"
             >
               <AlertTriangle className="w-4 h-4 mr-2" />
               Deficiencies
@@ -89,7 +89,7 @@ export default function ProjectCoveragePage() {
       <main className="p-6 max-w-7xl mx-auto">
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Coverage Analysis</h2>
-          <p className="text-gray-400">
+          <p className="text-text-muted">
             Track test coverage trends and identify gaps in your testing
             strategy
           </p>
@@ -97,9 +97,9 @@ export default function ProjectCoveragePage() {
 
         {/* Coverage Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-text-muted">
                 Overall Coverage
               </CardTitle>
             </CardHeader>
@@ -107,7 +107,7 @@ export default function ProjectCoveragePage() {
               <div className="flex items-center gap-3">
                 <div className="flex-1">
                   <div className="text-3xl font-bold text-[#F59E0B]">--</div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-text-muted mt-1">
                     No data available
                   </div>
                 </div>
@@ -116,9 +116,9 @@ export default function ProjectCoveragePage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-text-muted">
                 Passing Tests
               </CardTitle>
             </CardHeader>
@@ -126,7 +126,7 @@ export default function ProjectCoveragePage() {
               <div className="flex items-center gap-3">
                 <div className="flex-1">
                   <div className="text-3xl font-bold text-green-500">--</div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-text-muted mt-1">
                     No data available
                   </div>
                 </div>
@@ -135,9 +135,9 @@ export default function ProjectCoveragePage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-text-muted">
                 Failing Tests
               </CardTitle>
             </CardHeader>
@@ -145,7 +145,7 @@ export default function ProjectCoveragePage() {
               <div className="flex items-center gap-3">
                 <div className="flex-1">
                   <div className="text-3xl font-bold text-red-500">--</div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-text-muted mt-1">
                     No data available
                   </div>
                 </div>

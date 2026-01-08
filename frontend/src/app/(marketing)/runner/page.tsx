@@ -9,27 +9,27 @@ export const metadata = {
 
 export default function RunnerPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-5xl font-bold text-slate-900 mb-6">
+          <h1 className="text-5xl font-bold text-foreground mb-6">
             Qontinui Runner
           </h1>
-          <p className="text-xl text-slate-600 mb-8">
+          <p className="text-xl text-muted-foreground mb-8">
             Desktop application for executing GUI automation workflows
           </p>
           <div className="flex gap-4 justify-center">
             <Link
               href="/runner/download"
-              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold flex items-center gap-2 transition-colors"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-lg font-semibold flex items-center gap-2 transition-colors"
             >
               <Download className="w-5 h-5" />
               Download Now
             </Link>
             <Link
               href="/docs/runner"
-              className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-8 py-3 rounded-lg font-semibold transition-colors"
+              className="bg-muted hover:bg-muted/80 text-foreground px-8 py-3 rounded-lg font-semibold transition-colors"
             >
               Documentation
             </Link>
@@ -45,22 +45,22 @@ export default function RunnerPage() {
           </h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
             <FeatureCard
-              icon={<Play className="w-8 h-8 text-blue-600" />}
+              icon={<Play className="w-8 h-8 text-primary" />}
               title="Easy Execution"
               description="Load automation configs and start execution with a single click"
             />
             <FeatureCard
-              icon={<Monitor className="w-8 h-8 text-green-600" />}
+              icon={<Monitor className="w-8 h-8 text-brand-success" />}
               title="Multi-Monitor Support"
               description="Run automation across multiple monitors with precise targeting"
             />
             <FeatureCard
-              icon={<Settings className="w-8 h-8 text-purple-600" />}
+              icon={<Settings className="w-8 h-8 text-secondary" />}
               title="Real-time Monitoring"
               description="Watch automation progress with live logs and state transitions"
             />
             <FeatureCard
-              icon={<Download className="w-8 h-8 text-orange-600" />}
+              icon={<Download className="w-8 h-8 text-accent" />}
               title="Cross-Platform"
               description="Available for Windows, macOS, and Linux"
             />
@@ -103,16 +103,16 @@ export default function RunnerPage() {
 
       {/* Code Signing Info */}
       <section className="container mx-auto px-4 py-16">
-        <div className="max-w-4xl mx-auto bg-blue-50 border border-blue-200 rounded-lg p-8">
-          <h2 className="text-2xl font-bold mb-4 text-slate-900">
+        <div className="max-w-4xl mx-auto bg-primary/10 border border-primary/30 rounded-lg p-8">
+          <h2 className="text-2xl font-bold mb-4 text-foreground">
             Security & Code Signing
           </h2>
-          <p className="text-slate-700 mb-4">
+          <p className="text-muted-foreground mb-4">
             All Windows installers for Qontinui Runner are digitally signed by
             the{" "}
             <a
               href="https://signpath.io/"
-              className="text-blue-600 hover:underline"
+              className="text-primary hover:underline"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -121,15 +121,15 @@ export default function RunnerPage() {
             , a non-profit organization providing free code signing for open
             source projects.
           </p>
-          <p className="text-slate-700 mb-4">
+          <p className="text-muted-foreground mb-4">
             macOS releases are signed and notarized by Apple using our Developer
             ID certificate to ensure authenticity and security.
           </p>
-          <details className="text-sm text-slate-600">
-            <summary className="cursor-pointer font-semibold hover:text-slate-900">
+          <details className="text-sm text-muted-foreground">
+            <summary className="cursor-pointer font-semibold hover:text-foreground">
               View certificate details
             </summary>
-            <div className="mt-4 bg-white p-4 rounded border border-blue-200">
+            <div className="mt-4 bg-card p-4 rounded border border-border">
               <p className="font-mono text-xs">
                 Subject: CN=SignPath Foundation, O=SignPath Foundation, L=Lewes,
                 S=Delaware, C=US
@@ -142,18 +142,18 @@ export default function RunnerPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="bg-gradient-to-r from-blue-600 to-blue-700 py-16">
+      <section className="bg-primary py-16">
         <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold text-white mb-6">
+          <h2 className="text-3xl font-bold text-primary-foreground mb-6">
             Ready to automate?
           </h2>
-          <p className="text-xl text-blue-100 mb-8">
+          <p className="text-xl text-primary-foreground/80 mb-8">
             Download Qontinui Runner and start executing your automation
             workflows
           </p>
           <Link
             href="/runner/download"
-            className="bg-white hover:bg-slate-100 text-blue-600 px-8 py-3 rounded-lg font-semibold inline-flex items-center gap-2 transition-colors"
+            className="bg-background hover:bg-muted text-primary px-8 py-3 rounded-lg font-semibold inline-flex items-center gap-2 transition-colors"
           >
             <Download className="w-5 h-5" />
             Download for Free
@@ -174,10 +174,10 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <div className="bg-white p-6 rounded-lg border border-slate-200 hover:border-blue-300 transition-colors">
+    <div className="bg-card p-6 rounded-lg border border-border hover:border-primary/50 transition-colors">
       <div className="mb-4">{icon}</div>
-      <h3 className="text-lg font-semibold mb-2 text-slate-900">{title}</h3>
-      <p className="text-slate-600 text-sm">{description}</p>
+      <h3 className="text-lg font-semibold mb-2 text-foreground">{title}</h3>
+      <p className="text-muted-foreground text-sm">{description}</p>
     </div>
   );
 }
@@ -193,12 +193,12 @@ function Step({
 }) {
   return (
     <div className="flex gap-6 items-start">
-      <div className="flex-shrink-0 w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-lg">
+      <div className="flex-shrink-0 w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold text-lg">
         {number}
       </div>
       <div>
-        <h3 className="text-xl font-semibold mb-2 text-slate-900">{title}</h3>
-        <p className="text-slate-600">{description}</p>
+        <h3 className="text-xl font-semibold mb-2 text-foreground">{title}</h3>
+        <p className="text-muted-foreground">{description}</p>
       </div>
     </div>
   );

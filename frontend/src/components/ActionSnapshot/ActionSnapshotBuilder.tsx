@@ -152,7 +152,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
         {/* Header */}
         <div className="border-b p-4">
           <h2 className="text-xl font-semibold">Build Action Snapshot</h2>
-          <p className="text-sm text-gray-600 mt-1">
+          <p className="text-sm text-text-muted mt-1">
             Create a snapshot for state: {stateName} ({stateId})
           </p>
         </div>
@@ -160,13 +160,15 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Current Screenshot Info */}
-          <div className="bg-gray-50 p-4 rounded-lg">
+          <div className="bg-surface-canvas p-4 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
-              <Camera className="w-4 h-4 text-gray-600" />
+              <Camera className="w-4 h-4 text-text-muted" />
               <span className="font-medium">Current Screenshot</span>
             </div>
-            <p className="text-sm text-gray-600">{currentScreenshot.name}</p>
-            <p className="text-xs text-gray-500">ID: {currentScreenshot.id}</p>
+            <p className="text-sm text-text-muted">{currentScreenshot.name}</p>
+            <p className="text-xs text-text-muted">
+              ID: {currentScreenshot.id}
+            </p>
           </div>
 
           {/* Action Type Selection */}
@@ -182,7 +184,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                   className={`flex items-center gap-2 px-3 py-2 rounded border transition-colors ${
                     actionType === type
                       ? "bg-blue-50 border-blue-300 text-blue-700"
-                      : "bg-white border-gray-300 hover:bg-gray-50"
+                      : "bg-white border-border-default hover:bg-surface-raised/80"
                   }`}
                 >
                   {getActionIcon(type)}
@@ -329,7 +331,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
 
                   <div className="grid grid-cols-4 gap-2">
                     <div>
-                      <label className="block text-xs text-gray-600">X</label>
+                      <label className="block text-xs text-text-muted">X</label>
                       <input
                         type="number"
                         value={match.region.x}
@@ -344,7 +346,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600">Y</label>
+                      <label className="block text-xs text-text-muted">Y</label>
                       <input
                         type="number"
                         value={match.region.y}
@@ -359,7 +361,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600">
+                      <label className="block text-xs text-text-muted">
                         Width
                       </label>
                       <input
@@ -376,7 +378,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600">
+                      <label className="block text-xs text-text-muted">
                         Height
                       </label>
                       <input
@@ -395,7 +397,9 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs text-gray-600">Score</label>
+                    <label className="block text-xs text-text-muted">
+                      Score
+                    </label>
                     <input
                       type="number"
                       min="0"
@@ -416,7 +420,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
               ))}
 
               {matches.length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-4">
+                <p className="text-sm text-text-muted text-center py-4">
                   No matches defined. Add matches to define where this action
                   finds elements.
                 </p>
@@ -469,7 +473,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                     <p className="text-sm font-medium">
                       {screenshots.find((s) => s.id === nextScreenshotId)?.name}
                     </p>
-                    <p className="text-xs text-gray-600">
+                    <p className="text-xs text-text-muted">
                       Transition to this screenshot after action
                     </p>
                   </div>
@@ -482,7 +486,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                 </button>
               </div>
             ) : (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-text-muted">
                 No transition - stays on current screenshot
               </p>
             )}
@@ -498,10 +502,10 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                         setNextScreenshotId(screenshot.id);
                         setShowScreenshotSelector(false);
                       }}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b last:border-b-0"
+                      className="w-full text-left px-3 py-2 hover:bg-surface-raised/80 border-b last:border-b-0"
                     >
                       <p className="text-sm font-medium">{screenshot.name}</p>
-                      <p className="text-xs text-gray-500">{screenshot.id}</p>
+                      <p className="text-xs text-text-muted">{screenshot.id}</p>
                     </button>
                   ))}
               </div>
@@ -527,7 +531,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
         <div className="border-t p-4 flex items-center justify-end gap-2">
           <button
             onClick={onCancel}
-            className="px-4 py-2 border rounded hover:bg-gray-50"
+            className="px-4 py-2 border rounded hover:bg-surface-raised/80"
           >
             Cancel
           </button>

@@ -211,15 +211,15 @@ export default function MembersPage() {
   const getRoleBadgeColor = (role: MemberRole) => {
     switch (role) {
       case "owner":
-        return "bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30";
+        return "bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30";
       case "admin":
-        return "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30";
+        return "bg-brand-primary/20 text-brand-primary border-brand-primary/30";
       case "member":
-        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+        return "bg-text-muted/20 text-text-muted border-text-muted/30";
       case "viewer":
-        return "bg-gray-600/20 text-gray-500 border-gray-600/30";
+        return "bg-text-muted/20 text-text-muted border-text-muted/30";
       default:
-        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+        return "bg-text-muted/20 text-text-muted border-text-muted/30";
     }
   };
 
@@ -246,7 +246,7 @@ export default function MembersPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#00D9FF]" />
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
@@ -255,11 +255,11 @@ export default function MembersPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         <div className="p-6 max-w-7xl mx-auto">
           <div className="text-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#00D9FF]" />
-            <p className="text-gray-400">Loading members...</p>
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
+            <p className="text-text-muted">Loading members...</p>
           </div>
         </div>
       </div>
@@ -267,14 +267,14 @@ export default function MembersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <div className="p-6 max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <Button
             variant="ghost"
             onClick={() => router.push(`/organizations/${orgId}`)}
-            className="mb-4 text-gray-400 hover:text-white"
+            className="mb-4 text-text-muted hover:text-white"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Organization
@@ -283,13 +283,13 @@ export default function MembersPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold mb-2">Team Members</h1>
-              <p className="text-gray-400">{organization?.name}</p>
+              <p className="text-text-muted">{organization?.name}</p>
             </div>
 
             {canManageMembers && (
               <Button
                 onClick={() => setInviteDialogOpen(true)}
-                className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+                className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
               >
                 <UserPlus className="w-4 h-4 mr-2" />
                 Invite Member
@@ -299,7 +299,7 @@ export default function MembersPage() {
         </div>
 
         {/* Members List */}
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+        <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
           <CardHeader>
             <CardTitle>Members ({members.length})</CardTitle>
             <CardDescription>
@@ -309,12 +309,12 @@ export default function MembersPage() {
           <CardContent>
             {members.length === 0 ? (
               <div className="text-center py-12">
-                <Mail className="w-12 h-12 mx-auto mb-4 text-gray-600" />
-                <p className="text-gray-400 mb-4">No members yet</p>
+                <Mail className="w-12 h-12 mx-auto mb-4 text-text-muted" />
+                <p className="text-text-muted mb-4">No members yet</p>
                 {canManageMembers && (
                   <Button
                     onClick={() => setInviteDialogOpen(true)}
-                    className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                    className="bg-brand-primary hover:bg-brand-primary/80 text-black"
                   >
                     <UserPlus className="w-4 h-4 mr-2" />
                     Invite First Member
@@ -326,20 +326,20 @@ export default function MembersPage() {
                 {members.map((member) => (
                   <div
                     key={member.id}
-                    className="flex items-center justify-between p-4 rounded-lg bg-[#0A0A0B]/50 hover:bg-[#0A0A0B]/80 transition-colors"
+                    className="flex items-center justify-between p-4 rounded-lg bg-surface-canvas/50 hover:bg-surface-canvas/80 transition-colors"
                   >
                     <div className="flex items-center gap-4 flex-1">
-                      <div className="w-12 h-12 bg-gradient-to-br from-[#00D9FF] to-[#BD00FF] rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0">
+                      <div className="w-12 h-12 bg-gradient-to-br from-brand-primary to-brand-secondary rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0">
                         {(member.name || member.email).charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium">
                           {member.name || "Unknown User"}
                         </p>
-                        <p className="text-sm text-gray-400 truncate">
+                        <p className="text-sm text-text-muted truncate">
                           {member.email}
                         </p>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-text-muted mt-1">
                           Joined {getRelativeTime(member.joined_at)} • Last
                           active {getRelativeTime(member.last_active)}
                         </p>
@@ -360,7 +360,7 @@ export default function MembersPage() {
                             size="sm"
                             variant="outline"
                             onClick={() => handleEditRole(member)}
-                            className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                            className="border-border-default hover:border-brand-primary hover:text-brand-primary"
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -368,7 +368,7 @@ export default function MembersPage() {
                             size="sm"
                             variant="outline"
                             onClick={() => handleRemoveClick(member)}
-                            className="border-gray-700 hover:border-red-500 hover:text-red-400"
+                            className="border-border-default hover:border-red-500 hover:text-red-400"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -384,7 +384,7 @@ export default function MembersPage() {
 
         {/* Invite Dialog */}
         <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
-          <DialogContent className="bg-[#1A1A1B] border-gray-800 text-white">
+          <DialogContent className="bg-surface-raised border-border-subtle text-white">
             <DialogHeader>
               <DialogTitle>Invite Team Member</DialogTitle>
               <DialogDescription>
@@ -401,7 +401,7 @@ export default function MembersPage() {
                   placeholder="member@example.com"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  className="bg-[#0A0A0B] border-gray-800 text-white"
+                  className="bg-surface-canvas border-border-subtle text-white"
                 />
               </div>
 
@@ -411,10 +411,10 @@ export default function MembersPage() {
                   value={inviteRole}
                   onValueChange={(value) => setInviteRole(value as MemberRole)}
                 >
-                  <SelectTrigger className="bg-[#0A0A0B] border-gray-800 text-white">
+                  <SelectTrigger className="bg-surface-canvas border-border-subtle text-white">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#1A1A1B] border-gray-800 text-white">
+                  <SelectContent className="bg-surface-raised border-border-subtle text-white">
                     <SelectItem value="admin">
                       Admin - Full management access
                     </SelectItem>
@@ -433,7 +433,7 @@ export default function MembersPage() {
               <Button
                 variant="outline"
                 onClick={() => setInviteDialogOpen(false)}
-                className="border-gray-700"
+                className="border-border-default"
                 disabled={inviting}
               >
                 Cancel
@@ -441,7 +441,7 @@ export default function MembersPage() {
               <Button
                 onClick={handleInvite}
                 disabled={!inviteEmail || inviting}
-                className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                className="bg-brand-primary hover:bg-brand-primary/80 text-black"
               >
                 {inviting ? (
                   <>
@@ -461,7 +461,7 @@ export default function MembersPage() {
 
         {/* Edit Role Dialog */}
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="bg-[#1A1A1B] border-gray-800 text-white">
+          <DialogContent className="bg-surface-raised border-border-subtle text-white">
             <DialogHeader>
               <DialogTitle>Change Member Role</DialogTitle>
               <DialogDescription>
@@ -475,10 +475,10 @@ export default function MembersPage() {
                 value={editRole}
                 onValueChange={(value) => setEditRole(value as MemberRole)}
               >
-                <SelectTrigger className="bg-[#0A0A0B] border-gray-800 text-white">
+                <SelectTrigger className="bg-surface-canvas border-border-subtle text-white">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#1A1A1B] border-gray-800 text-white">
+                <SelectContent className="bg-surface-raised border-border-subtle text-white">
                   <SelectItem value="admin">
                     Admin - Full management access
                   </SelectItem>
@@ -496,7 +496,7 @@ export default function MembersPage() {
               <Button
                 variant="outline"
                 onClick={() => setEditDialogOpen(false)}
-                className="border-gray-700"
+                className="border-border-default"
                 disabled={updating}
               >
                 Cancel
@@ -504,7 +504,7 @@ export default function MembersPage() {
               <Button
                 onClick={handleUpdateRole}
                 disabled={updating}
-                className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                className="bg-brand-primary hover:bg-brand-primary/80 text-black"
               >
                 {updating ? (
                   <>
@@ -521,10 +521,10 @@ export default function MembersPage() {
 
         {/* Remove Member Dialog */}
         <AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
-          <AlertDialogContent className="bg-[#1A1A1B] border-gray-800 text-white">
+          <AlertDialogContent className="bg-surface-raised border-border-subtle text-white">
             <AlertDialogHeader>
               <AlertDialogTitle>Remove Team Member</AlertDialogTitle>
-              <AlertDialogDescription className="text-gray-400">
+              <AlertDialogDescription className="text-text-muted">
                 Are you sure you want to remove{" "}
                 {removeMemberData?.name || removeMemberData?.email} from this
                 organization? They will lose access to all organization
@@ -533,7 +533,7 @@ export default function MembersPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel
-                className="border-gray-700"
+                className="border-border-default"
                 disabled={removing}
               >
                 Cancel

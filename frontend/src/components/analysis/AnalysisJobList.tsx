@@ -152,7 +152,7 @@ export function AnalysisJobList({
       case "running":
         return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
       default:
-        return <Clock className="h-4 w-4 text-gray-500" />;
+        return <Clock className="h-4 w-4 text-text-muted" />;
     }
   };
 

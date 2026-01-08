@@ -68,10 +68,10 @@ export function ScreenshotImage({
   if (loading) {
     return (
       <div
-        className={`flex items-center justify-center bg-gray-800 ${className}`}
+        className={`flex items-center justify-center bg-surface-raised ${className}`}
       >
         <div className="animate-pulse">
-          <ImageIcon className="w-8 h-8 text-gray-600" />
+          <ImageIcon className="w-8 h-8 text-text-muted" />
         </div>
       </div>
     );
@@ -80,9 +80,9 @@ export function ScreenshotImage({
   if (error && !imageUrl) {
     return (
       <div
-        className={`flex items-center justify-center bg-gray-800 ${className}`}
+        className={`flex items-center justify-center bg-surface-raised ${className}`}
       >
-        <ImageIcon className="w-8 h-8 text-gray-600" />
+        <ImageIcon className="w-8 h-8 text-text-muted" />
       </div>
     );
   }

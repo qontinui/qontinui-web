@@ -435,7 +435,7 @@ export function TutorialOverlay() {
         <Card
           ref={tooltipRef}
           className={`
-            fixed bg-[#1A1A1B]/95 border-gray-800/50 backdrop-blur-xl
+            fixed bg-surface-raised/95 border-border-subtle/50 backdrop-blur-xl
             shadow-2xl transition-all duration-300 ease-out
             ${isAnimating ? "opacity-0 scale-95" : "opacity-100 scale-100"}
           `}
@@ -456,7 +456,7 @@ export function TutorialOverlay() {
                 >
                   {currentStep.title}
                 </h3>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-text-muted">
                   Step {currentTourStep + 1} of {TUTORIAL_STEPS.length}
                 </p>
               </div>
@@ -464,7 +464,7 @@ export function TutorialOverlay() {
                 variant="ghost"
                 size="sm"
                 onClick={handleSkip}
-                className="text-gray-400 hover:text-white -mr-2 -mt-2"
+                className="text-text-muted hover:text-white -mr-2 -mt-2"
                 aria-label="Skip tutorial"
               >
                 <X className="w-4 h-4" />
@@ -474,7 +474,7 @@ export function TutorialOverlay() {
             {/* Description */}
             <p
               id="tutorial-description"
-              className="text-sm text-gray-300 mb-6 leading-relaxed"
+              className="text-sm text-text-secondary mb-6 leading-relaxed"
             >
               {currentStep.description}
             </p>
@@ -489,8 +489,8 @@ export function TutorialOverlay() {
                       h-1 flex-1 rounded-full transition-all duration-300
                       ${
                         index <= currentTourStep
-                          ? "bg-[#00D9FF]"
-                          : "bg-gray-700"
+                          ? "bg-brand-primary"
+                          : "bg-border-default"
                       }
                     `}
                   />
@@ -506,7 +506,7 @@ export function TutorialOverlay() {
                   size="sm"
                   onClick={goToPreviousStep}
                   disabled={isAnimating}
-                  className="flex-1 border-gray-700 hover:border-gray-600 hover:bg-gray-800"
+                  className="flex-1 border-border-default hover:border-border-default hover:bg-surface-raised"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Previous
@@ -521,8 +521,8 @@ export function TutorialOverlay() {
                   flex-1 font-medium
                   ${
                     isLastStep
-                      ? "bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
-                      : "bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                      ? "bg-brand-success hover:bg-brand-success/80 text-black"
+                      : "bg-brand-primary hover:bg-brand-primary/80 text-black"
                   }
                 `}
               >
@@ -544,14 +544,14 @@ export function TutorialOverlay() {
                 size="sm"
                 onClick={handleSkip}
                 disabled={isAnimating}
-                className="text-gray-400 hover:text-white"
+                className="text-text-muted hover:text-white"
               >
                 Skip
               </Button>
             </div>
 
             {/* Hint text */}
-            <p className="text-xs text-gray-500 mt-4 text-center">
+            <p className="text-xs text-text-muted mt-4 text-center">
               Use arrow keys to navigate • ESC to skip
             </p>
           </CardContent>

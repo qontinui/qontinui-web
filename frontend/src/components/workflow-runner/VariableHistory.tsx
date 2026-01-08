@@ -83,7 +83,7 @@ function getChangeTypeInfo(changeType: string): {
     case "updated":
       return {
         icon: <Edit className="w-3 h-3" />,
-        color: "text-[#00D9FF]",
+        color: "text-brand-primary",
         label: "Updated",
       };
     case "deleted":
@@ -95,7 +95,7 @@ function getChangeTypeInfo(changeType: string): {
     default:
       return {
         icon: <Edit className="w-3 h-3" />,
-        color: "text-gray-500",
+        color: "text-text-muted",
         label: "Changed",
       };
   }
@@ -156,19 +156,19 @@ function ChangeItem({ change }: { change: VariableChange }) {
   return (
     <div className="relative pb-8 last:pb-0">
       {/* Timeline line */}
-      <div className="absolute left-4 top-8 bottom-0 w-px bg-gray-700" />
+      <div className="absolute left-4 top-8 bottom-0 w-px bg-surface-raised" />
 
       {/* Change card */}
       <div className="flex gap-4">
         {/* Timeline dot */}
         <div
-          className={`relative flex-shrink-0 w-8 h-8 rounded-full bg-gray-800 border-2 ${changeInfo.color.replace("text-", "border-")} flex items-center justify-center`}
+          className={`relative flex-shrink-0 w-8 h-8 rounded-full bg-surface-raised border-2 ${changeInfo.color.replace("text-", "border-")} flex items-center justify-center`}
         >
           {changeInfo.icon}
         </div>
 
         {/* Change content */}
-        <div className="flex-1 bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+        <div className="flex-1 bg-surface-raised/50 rounded-lg p-4 border border-border-default">
           {/* Header */}
           <div className="flex items-start justify-between mb-3">
             <div className="flex-1">
@@ -189,9 +189,11 @@ function ChangeItem({ change }: { change: VariableChange }) {
                 {change.variable_name}
               </h4>
               {change.action_name && (
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-sm text-text-muted mt-1">
                   by action:{" "}
-                  <span className="text-gray-300">{change.action_name}</span>
+                  <span className="text-text-secondary">
+                    {change.action_name}
+                  </span>
                 </p>
               )}
             </div>
@@ -200,7 +202,7 @@ function ChangeItem({ change }: { change: VariableChange }) {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="flex items-center gap-1 text-xs text-gray-400">
+                    <div className="flex items-center gap-1 text-xs text-text-muted">
                       <Clock className="w-3 h-3" />
                       {formatRelativeTime(change.timestamp)}
                     </div>
@@ -268,7 +270,7 @@ function ChangeItem({ change }: { change: VariableChange }) {
               {/* Old value */}
               <div className="p-3 bg-red-500/10 border border-red-500/30 rounded">
                 <div className="text-xs text-red-400 mb-1">Previous value:</div>
-                <div className="font-mono text-sm text-gray-300">
+                <div className="font-mono text-sm text-text-secondary">
                   {isExpanded || !hasComplexValue ? (
                     <pre className="overflow-x-auto">
                       {formatValue(change.old_value)}
@@ -283,7 +285,7 @@ function ChangeItem({ change }: { change: VariableChange }) {
 
               {/* Arrow */}
               <div className="flex justify-center">
-                <ArrowRight className="w-4 h-4 text-gray-500" />
+                <ArrowRight className="w-4 h-4 text-text-muted" />
               </div>
 
               {/* New value */}
@@ -306,7 +308,7 @@ function ChangeItem({ change }: { change: VariableChange }) {
 
           {/* Change metadata */}
           {change.action_id && (
-            <div className="mt-3 text-xs text-gray-500">
+            <div className="mt-3 text-xs text-text-muted">
               Action ID: {change.action_id}
             </div>
           )}
@@ -342,8 +344,8 @@ export function VariableHistory({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF]" />
-        <span className="ml-3 text-gray-400">Loading change history...</span>
+        <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
+        <span className="ml-3 text-text-muted">Loading change history...</span>
       </div>
     );
   }
@@ -356,7 +358,7 @@ export function VariableHistory({
           <p className="text-red-500 font-medium">
             Failed to load change history
           </p>
-          <p className="text-sm text-gray-400 mt-2">
+          <p className="text-sm text-text-muted mt-2">
             {(error as Error).message}
           </p>
         </div>
@@ -369,12 +371,12 @@ export function VariableHistory({
       {/* Search */}
       <div className="mb-6">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <Input
             placeholder="Search by variable name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 bg-gray-900 border-gray-700"
+            className="pl-10 bg-surface-canvas border-border-default"
           />
         </div>
       </div>
@@ -383,11 +385,11 @@ export function VariableHistory({
       <ScrollArea className="h-[500px]">
         {filteredChanges.length === 0 ? (
           <div className="text-center py-12">
-            <Clock className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-            <h3 className="text-xl font-semibold text-gray-300 mb-2">
+            <Clock className="w-16 h-16 mx-auto text-text-muted mb-4" />
+            <h3 className="text-xl font-semibold text-text-secondary mb-2">
               {searchTerm ? "No matching changes" : "No changes yet"}
             </h3>
-            <p className="text-gray-400">
+            <p className="text-text-muted">
               {searchTerm
                 ? "Try a different search term"
                 : "Variable changes will appear here during workflow execution"}
@@ -404,7 +406,7 @@ export function VariableHistory({
 
       {/* Stats footer */}
       {filteredChanges.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-800 text-sm text-gray-400">
+        <div className="mt-4 pt-4 border-t border-border-subtle text-sm text-text-muted">
           Showing {filteredChanges.length} of {data?.history?.total || 0}{" "}
           changes
         </div>

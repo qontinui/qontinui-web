@@ -24,8 +24,8 @@ export function StatusIndicator({
           animate: true,
         }
       : {
-          dotClass: "bg-gray-500",
-          labelClass: "text-gray-500",
+          dotClass: "bg-text-muted",
+          labelClass: "text-text-muted",
           label: "Disconnected",
           animate: false,
         };

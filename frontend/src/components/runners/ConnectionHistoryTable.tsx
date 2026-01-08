@@ -92,15 +92,15 @@ export function ConnectionHistoryTable() {
       error.message?.includes("proxy") ||
       error.message?.includes("network");
     return (
-      <Card className="bg-[#1A1A1B] border-gray-800 p-12">
+      <Card className="bg-surface-raised border-border-subtle p-12">
         <div className="text-center">
-          <WifiOff className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-          <h3 className="text-xl font-semibold text-gray-300 mb-2">
+          <WifiOff className="w-16 h-16 mx-auto text-text-muted mb-4" />
+          <h3 className="text-xl font-semibold text-text-muted mb-2">
             {isConnectionError
               ? "Unable to Connect to Server"
               : "Failed to Load History"}
           </h3>
-          <p className="text-gray-400 mb-6 max-w-md mx-auto">
+          <p className="text-text-muted mb-6 max-w-md mx-auto">
             {isConnectionError
               ? "The backend server appears to be offline or unreachable. Please ensure the server is running and try again."
               : error.message ||
@@ -109,7 +109,7 @@ export function ConnectionHistoryTable() {
           <Button
             onClick={() => refetch()}
             disabled={isRefetching}
-            className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+            className="bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             {isRefetching ? (
               <>
@@ -131,23 +131,23 @@ export function ConnectionHistoryTable() {
   return (
     <div className="space-y-4">
       {/* Filters and Actions */}
-      <Card className="bg-[#1A1A1B] border-gray-800 p-4">
+      <Card className="bg-surface-raised border-border-subtle p-4">
         <div className="flex flex-col md:flex-row gap-4">
           {/* Search */}
           <div className="flex-1 flex gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
               <Input
                 placeholder="Search by runner name or IP address..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyPress={handleSearchKeyPress}
-                className="pl-10 bg-[#0A0A0B] border-gray-700"
+                className="pl-10 bg-surface-canvas border-border-default"
               />
             </div>
             <Button
               onClick={handleSearch}
-              className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+              className="bg-brand-primary hover:bg-brand-primary/80 text-black"
             >
               Search
             </Button>
@@ -157,7 +157,7 @@ export function ConnectionHistoryTable() {
           <Button
             onClick={handleExport}
             variant="outline"
-            className="border-gray-700"
+            className="border-border-default"
             disabled={!data || data.connections.length === 0}
           >
             <Download className="w-4 h-4 mr-2" />
@@ -167,26 +167,26 @@ export function ConnectionHistoryTable() {
       </Card>
 
       {/* Table */}
-      <Card className="bg-[#1A1A1B] border-gray-800">
+      <Card className="bg-surface-raised border-border-subtle">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="border-gray-800 hover:bg-transparent">
-                <TableHead className="text-gray-400">Runner</TableHead>
-                <TableHead className="text-gray-400">Connected</TableHead>
-                <TableHead className="text-gray-400">Disconnected</TableHead>
-                <TableHead className="text-gray-400">Duration</TableHead>
-                <TableHead className="text-gray-400">IP Address</TableHead>
-                <TableHead className="text-gray-400">Project</TableHead>
-                <TableHead className="text-gray-400">Status</TableHead>
+              <TableRow className="border-border-subtle hover:bg-transparent">
+                <TableHead className="text-text-muted">Runner</TableHead>
+                <TableHead className="text-text-muted">Connected</TableHead>
+                <TableHead className="text-text-muted">Disconnected</TableHead>
+                <TableHead className="text-text-muted">Duration</TableHead>
+                <TableHead className="text-text-muted">IP Address</TableHead>
+                <TableHead className="text-text-muted">Project</TableHead>
+                <TableHead className="text-text-muted">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-12">
-                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-[#00D9FF]" />
-                    <p className="text-gray-400 mt-2">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-brand-primary" />
+                    <p className="text-text-muted mt-2">
                       Loading connection history...
                     </p>
                   </TableCell>
@@ -194,10 +194,12 @@ export function ConnectionHistoryTable() {
               ) : !data || data.connections.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-12">
-                    <Calendar className="w-12 h-12 mx-auto text-gray-600 mb-3" />
-                    <p className="text-gray-400">No connection history found</p>
+                    <Calendar className="w-12 h-12 mx-auto text-text-muted mb-3" />
+                    <p className="text-text-muted">
+                      No connection history found
+                    </p>
                     {params.search && (
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-text-muted mt-1">
                         Try adjusting your search criteria
                       </p>
                     )}
@@ -215,40 +217,40 @@ export function ConnectionHistoryTable() {
                   return (
                     <TableRow
                       key={connection.id}
-                      className="border-gray-800 hover:bg-[#0A0A0B]"
+                      className="border-border-subtle hover:bg-surface-canvas"
                     >
                       <TableCell className="font-medium text-white">
                         {connection.runner_name || "Unknown"}
                       </TableCell>
-                      <TableCell className="text-gray-300">
+                      <TableCell className="text-text-muted">
                         {formatRelativeTime(connection.connected_at)}
                       </TableCell>
-                      <TableCell className="text-gray-300">
+                      <TableCell className="text-text-muted">
                         {connection.disconnected_at
                           ? formatRelativeTime(connection.disconnected_at)
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-gray-300">
+                      <TableCell className="text-text-muted">
                         {duration}
                       </TableCell>
-                      <TableCell className="text-gray-300 font-mono text-xs">
+                      <TableCell className="text-text-muted font-mono text-xs">
                         {connection.ip_address || "Unknown"}
                       </TableCell>
-                      <TableCell className="text-gray-300">
+                      <TableCell className="text-text-muted">
                         {connection.project_name || "-"}
                       </TableCell>
                       <TableCell>
                         {isActive ? (
                           <Badge
                             variant="outline"
-                            className="border-green-500/50 text-green-500"
+                            className="border-brand-success/50 text-brand-success"
                           >
                             Active
                           </Badge>
                         ) : (
                           <Badge
                             variant="outline"
-                            className="border-gray-500/50 text-gray-400"
+                            className="border-border-default text-text-muted"
                           >
                             Disconnected
                           </Badge>
@@ -264,18 +266,18 @@ export function ConnectionHistoryTable() {
 
         {/* Pagination */}
         {data && data.connections.length > 0 && (
-          <div className="border-t border-gray-800 p-4 flex items-center justify-between">
+          <div className="border-t border-border-subtle p-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-text-muted">
                 Showing {offset + 1} to {Math.min(offset + limit, data.total)}{" "}
                 of {data.total} results
               </span>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400">Rows per page:</span>
+                <span className="text-sm text-text-muted">Rows per page:</span>
                 <select
                   value={pageSize}
                   onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                  className="px-2 py-1 bg-[#0A0A0B] border border-gray-700 rounded text-white text-sm"
+                  className="px-2 py-1 bg-surface-canvas border border-border-default rounded text-white text-sm"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -286,7 +288,7 @@ export function ConnectionHistoryTable() {
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-text-muted">
                 Page {currentPage} of {totalPages}
               </span>
               <Button
@@ -294,7 +296,7 @@ export function ConnectionHistoryTable() {
                 size="sm"
                 onClick={handlePrevPage}
                 disabled={offset === 0}
-                className="border-gray-700"
+                className="border-border-default"
               >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
@@ -303,7 +305,7 @@ export function ConnectionHistoryTable() {
                 size="sm"
                 onClick={handleNextPage}
                 disabled={offset + limit >= data.total}
-                className="border-gray-700"
+                className="border-border-default"
               >
                 <ChevronRight className="w-4 h-4" />
               </Button>

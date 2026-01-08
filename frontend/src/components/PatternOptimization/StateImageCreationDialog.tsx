@@ -150,10 +150,10 @@ export function StateImageCreationDialog({
 
         <div className="space-y-4 py-4">
           {/* State Selection */}
-          <Card className="bg-[#27272A]/50 border-gray-700">
+          <Card className="bg-surface-raised/50 border-border-default">
             <CardContent className="p-4 space-y-4">
               <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-[#00D9FF]" />
+                <MapPin className="w-4 h-4 text-brand-primary" />
                 <Label className="text-sm font-medium">Target State</Label>
               </div>
 
@@ -181,7 +181,7 @@ export function StateImageCreationDialog({
                           <SelectItem key={state.id} value={state.id}>
                             {state.name}
                             {state.stateImages?.length > 0 && (
-                              <span className="ml-2 text-xs text-gray-400">
+                              <span className="ml-2 text-xs text-text-muted">
                                 ({state.stateImages.length} images)
                               </span>
                             )}
@@ -213,17 +213,17 @@ export function StateImageCreationDialog({
           </Card>
 
           {/* StateImage Names */}
-          <Card className="bg-[#27272A]/50 border-gray-700">
+          <Card className="bg-surface-raised/50 border-border-default">
             <CardContent className="p-4 space-y-4">
               <div className="flex items-center gap-2">
-                <Info className="w-4 h-4 text-[#00D9FF]" />
+                <Info className="w-4 h-4 text-brand-primary" />
                 <Label className="text-sm font-medium">StateImage Names</Label>
               </div>
 
               <div className="space-y-2">
                 {patterns.map((pattern, idx) => (
                   <div key={pattern.id} className="flex items-center gap-2">
-                    <div className="w-16 h-16 bg-gray-800 rounded border border-gray-700 flex items-center justify-center overflow-hidden">
+                    <div className="w-16 h-16 bg-surface-raised rounded border border-border-default flex items-center justify-center overflow-hidden">
                       {pattern.imageUrl ? (
                         <img
                           src={pattern.imageUrl}
@@ -231,7 +231,7 @@ export function StateImageCreationDialog({
                           className="w-full h-full object-contain"
                         />
                       ) : (
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-text-muted">
                           P{idx + 1}
                         </span>
                       )}
@@ -248,10 +248,10 @@ export function StateImageCreationDialog({
                 ))}
               </div>
 
-              <div className="text-xs text-gray-400">
+              <div className="text-xs text-text-muted">
                 {patterns.length} pattern{patterns.length > 1 ? "s" : ""} will
                 be added using the{" "}
-                <span className="font-medium text-[#00D9FF]">
+                <span className="font-medium text-brand-primary">
                   {strategy.type}
                 </span>{" "}
                 strategy
@@ -260,11 +260,11 @@ export function StateImageCreationDialog({
           </Card>
 
           {/* Search Regions */}
-          <Card className="bg-[#27272A]/50 border-gray-700">
+          <Card className="bg-surface-raised/50 border-border-default">
             <CardContent className="p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Search className="w-4 h-4 text-[#00D9FF]" />
+                  <Search className="w-4 h-4 text-brand-primary" />
                   <Label className="text-sm font-medium">Search Regions</Label>
                 </div>
                 <Checkbox
@@ -277,7 +277,7 @@ export function StateImageCreationDialog({
 
               {includeSearchRegions && (
                 <>
-                  <div className="text-xs text-gray-400">
+                  <div className="text-xs text-text-muted">
                     The bounding boxes you drew will be added as search regions
                     for each StateImage. This limits where the pattern will be
                     searched on the screen.
@@ -328,7 +328,7 @@ export function StateImageCreationDialog({
           </Button>
           <Button
             onClick={handleCreate}
-            className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+            className="bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             Create StateImages
           </Button>

@@ -405,21 +405,21 @@ export default function ComponentLibraryPage() {
 
   return (
     <RequireProject pageName="Component Library">
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         <div className="container mx-auto p-6 space-y-6">
           {/* Header Section */}
           <div className="space-y-4">
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+                <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
                   Component Library
                 </h1>
-                <p className="text-gray-400 text-lg">
+                <p className="text-text-muted text-lg">
                   Create and manage reusable workflow components
                 </p>
                 <div className="flex items-center gap-2 mt-2">
-                  <Package className="w-4 h-4 text-gray-500" />
-                  <p className="text-sm text-gray-500">
+                  <Package className="w-4 h-4 text-text-muted" />
+                  <p className="text-sm text-text-muted">
                     {components.length} custom components •{" "}
                     {BUILT_IN_COMPONENTS.length} built-in
                   </p>
@@ -430,7 +430,7 @@ export default function ComponentLibraryPage() {
               <div className="flex items-center gap-3">
                 <Button
                   onClick={handleCreateComponent}
-                  className="bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] hover:opacity-90 text-white font-medium"
+                  className="bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 text-white font-medium"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   New Component
@@ -438,7 +438,7 @@ export default function ComponentLibraryPage() {
                 <Button
                   variant="outline"
                   onClick={handleImportComponents}
-                  className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+                  className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
                 >
                   <Upload className="w-4 h-4 mr-2" />
                   Import
@@ -446,7 +446,7 @@ export default function ComponentLibraryPage() {
                 <Button
                   variant="outline"
                   onClick={handleExportLibrary}
-                  className="border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF] bg-transparent"
+                  className="border-border-default hover:border-brand-secondary hover:text-brand-secondary bg-transparent"
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Export Library
@@ -454,7 +454,7 @@ export default function ComponentLibraryPage() {
                 <Button
                   variant="outline"
                   onClick={() => router.push("/docs/components")}
-                  className="border-gray-700 hover:border-[#00FF88] hover:text-[#00FF88] bg-transparent"
+                  className="border-border-default hover:border-brand-success hover:text-brand-success bg-transparent"
                 >
                   <BookOpen className="w-4 h-4 mr-2" />
                   Documentation
@@ -464,53 +464,55 @@ export default function ComponentLibraryPage() {
 
             {/* Stats Bar */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-400">Total Components</p>
-                      <p className="text-2xl font-bold text-[#00D9FF]">
+                      <p className="text-sm text-text-muted">
+                        Total Components
+                      </p>
+                      <p className="text-2xl font-bold text-brand-primary">
                         {components.length}
                       </p>
                     </div>
-                    <Layers className="w-8 h-8 text-[#00D9FF]/30" />
+                    <Layers className="w-8 h-8 text-brand-primary/30" />
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-400">Total Usage</p>
-                      <p className="text-2xl font-bold text-[#BD00FF]">
+                      <p className="text-sm text-text-muted">Total Usage</p>
+                      <p className="text-2xl font-bold text-brand-secondary">
                         {components.reduce((sum, c) => sum + c.usageCount, 0)}
                       </p>
                     </div>
-                    <TrendingUp className="w-8 h-8 text-[#BD00FF]/30" />
+                    <TrendingUp className="w-8 h-8 text-brand-secondary/30" />
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-400">Categories</p>
-                      <p className="text-2xl font-bold text-[#00FF88]">
+                      <p className="text-sm text-text-muted">Categories</p>
+                      <p className="text-2xl font-bold text-brand-success">
                         {categoryStats.length}
                       </p>
                     </div>
-                    <FolderTree className="w-8 h-8 text-[#00FF88]/30" />
+                    <FolderTree className="w-8 h-8 text-brand-success/30" />
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-400">Avg Usage</p>
+                      <p className="text-sm text-text-muted">Avg Usage</p>
                       <p className="text-2xl font-bold text-[#FFD700]">
                         {Math.round(
                           components.reduce((sum, c) => sum + c.usageCount, 0) /
@@ -532,10 +534,10 @@ export default function ComponentLibraryPage() {
               setActiveTab(v as "library" | "built-in" | "stats" | "docs")
             }
           >
-            <TabsList className="bg-[#1A1A1B]/50 border border-gray-800/50">
+            <TabsList className="bg-surface-raised/50 border border-border-subtle/50">
               <TabsTrigger
                 value="library"
-                className="data-[state=active]:bg-[#00D9FF]/20"
+                className="data-[state=active]:bg-brand-primary/20"
               >
                 <Package className="w-4 h-4 mr-2" />
                 Component Library
@@ -545,7 +547,7 @@ export default function ComponentLibraryPage() {
               </TabsTrigger>
               <TabsTrigger
                 value="built-in"
-                className="data-[state=active]:bg-[#BD00FF]/20"
+                className="data-[state=active]:bg-brand-secondary/20"
               >
                 <Sparkles className="w-4 h-4 mr-2" />
                 Built-in Components
@@ -555,14 +557,14 @@ export default function ComponentLibraryPage() {
               </TabsTrigger>
               <TabsTrigger
                 value="stats"
-                className="data-[state=active]:bg-[#00FF88]/20"
+                className="data-[state=active]:bg-brand-success/20"
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
                 Usage Statistics
               </TabsTrigger>
               <TabsTrigger
                 value="docs"
-                className="data-[state=active]:bg-[#FFD700]/20"
+                className="data-[state=active]:bg-yellow-500/20"
               >
                 <BookOpen className="w-4 h-4 mr-2" />
                 Documentation
@@ -574,22 +576,22 @@ export default function ComponentLibraryPage() {
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 {/* Left Sidebar - Component Navigator */}
                 <div className="lg:col-span-1 space-y-4">
-                  <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                  <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <Filter className="w-5 h-5 text-[#00D9FF]" />
+                        <Filter className="w-5 h-5 text-brand-primary" />
                         Navigator
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {/* Search */}
                       <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                         <Input
                           placeholder="Search components..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
-                          className="pl-9 bg-[#0A0A0B] border-gray-800"
+                          className="pl-9 bg-surface-canvas border-border-subtle"
                         />
                       </div>
 
@@ -617,7 +619,7 @@ export default function ComponentLibraryPage() {
 
                       {/* Category Filter */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-400">
+                        <Label className="text-sm font-medium text-text-muted">
                           Category
                         </Label>
                         <div className="space-y-1">
@@ -687,14 +689,14 @@ export default function ComponentLibraryPage() {
 
                       {/* Sort Options */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-400">
+                        <Label className="text-sm font-medium text-text-muted">
                           Sort By
                         </Label>
                         <Select
                           value={sortOption}
                           onValueChange={(v) => setSortOption(v as SortOption)}
                         >
-                          <SelectTrigger className="bg-[#0A0A0B] border-gray-800">
+                          <SelectTrigger className="bg-surface-canvas border-border-subtle">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -712,14 +714,14 @@ export default function ComponentLibraryPage() {
 
                       {/* Categories */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-400">
+                        <Label className="text-sm font-medium text-text-muted">
                           By Category
                         </Label>
                         <div className="space-y-1">
                           {categoryStats.map((stat) => (
                             <div
                               key={stat.category}
-                              className="flex items-center justify-between p-2 rounded-md hover:bg-gray-800/30 cursor-pointer"
+                              className="flex items-center justify-between p-2 rounded-md hover:bg-surface-raised/30 cursor-pointer"
                             >
                               <div className="flex items-center gap-2">
                                 <div
@@ -741,7 +743,7 @@ export default function ComponentLibraryPage() {
                       {/* Quick Actions */}
                       <Button
                         onClick={handleCreateComponent}
-                        className="w-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF]"
+                        className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary"
                       >
                         <Plus className="w-4 h-4 mr-2" />
                         Create Component
@@ -752,15 +754,15 @@ export default function ComponentLibraryPage() {
 
                 {/* Main Content - Component Display */}
                 <div className="lg:col-span-3">
-                  <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                  <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                     <CardContent className="p-6">
                       {components.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-20 text-center">
-                          <Package className="w-20 h-20 text-gray-600 mb-4" />
+                          <Package className="w-20 h-20 text-text-muted mb-4" />
                           <h3 className="text-xl font-semibold mb-2">
                             No Components Yet
                           </h3>
-                          <p className="text-gray-400 mb-6 max-w-md">
+                          <p className="text-text-muted mb-6 max-w-md">
                             Get started by creating your first reusable
                             component or import an existing library
                           </p>
@@ -807,10 +809,10 @@ export default function ComponentLibraryPage() {
 
             {/* Built-in Components Tab */}
             <TabsContent value="built-in" className="mt-6">
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-[#BD00FF]" />
+                    <Sparkles className="w-5 h-5 text-brand-secondary" />
                     Built-in Components
                   </CardTitle>
                   <CardDescription>
@@ -824,7 +826,7 @@ export default function ComponentLibraryPage() {
                       return (
                         <Card
                           key={comp.id}
-                          className="bg-[#0A0A0B]/50 border-gray-800 hover:border-gray-700 transition-all"
+                          className="bg-surface-canvas/50 border-border-subtle hover:border-border-default transition-all"
                         >
                           <CardHeader>
                             <div className="flex items-start justify-between gap-2">
@@ -869,7 +871,7 @@ export default function ComponentLibraryPage() {
                             <Badge variant="outline" className="mb-3">
                               {comp.category}
                             </Badge>
-                            <div className="text-xs text-gray-400 bg-gray-900/50 p-2 rounded-md font-mono">
+                            <div className="text-xs text-text-muted bg-surface-canvas/50 p-2 rounded-md font-mono">
                               {comp.example}
                             </div>
                             <Button className="w-full mt-3" variant="outline">
@@ -889,10 +891,10 @@ export default function ComponentLibraryPage() {
             <TabsContent value="stats" className="mt-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Most Used Components */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-[#00FF88]" />
+                      <TrendingUp className="w-5 h-5 text-brand-success" />
                       Most Used Components
                     </CardTitle>
                     <CardDescription>
@@ -904,24 +906,24 @@ export default function ComponentLibraryPage() {
                       {usageStats.slice(0, 10).map((stat, index) => (
                         <div
                           key={stat.componentId}
-                          className="flex items-center gap-3 p-3 rounded-lg bg-[#0A0A0B]/50"
+                          className="flex items-center gap-3 p-3 rounded-lg bg-surface-canvas/50"
                         >
-                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] font-bold">
+                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-r from-brand-primary to-brand-secondary font-bold">
                             {index + 1}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-medium truncate">
                               {stat.componentName}
                             </p>
-                            <p className="text-xs text-gray-400">
+                            <p className="text-xs text-text-muted">
                               {stat.category}
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="font-bold text-[#00FF88]">
+                            <p className="font-bold text-brand-success">
                               {stat.usageCount}
                             </p>
-                            <p className="text-xs text-gray-400">uses</p>
+                            <p className="text-xs text-text-muted">uses</p>
                           </div>
                         </div>
                       ))}
@@ -930,10 +932,10 @@ export default function ComponentLibraryPage() {
                 </Card>
 
                 {/* Components by Category */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <PieChart className="w-5 h-5 text-[#BD00FF]" />
+                      <PieChart className="w-5 h-5 text-brand-secondary" />
                       Components by Category
                     </CardTitle>
                     <CardDescription>
@@ -969,10 +971,10 @@ export default function ComponentLibraryPage() {
                 </Card>
 
                 {/* Recent Activity */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Clock className="w-5 h-5 text-[#FFD700]" />
+                      <Clock className="w-5 h-5 text-yellow-500" />
                       Recent Activity
                     </CardTitle>
                     <CardDescription>Latest component updates</CardDescription>
@@ -989,14 +991,14 @@ export default function ComponentLibraryPage() {
                         .map((comp) => (
                           <div
                             key={comp.id}
-                            className="flex items-start gap-3 p-3 rounded-lg bg-[#0A0A0B]/50"
+                            className="flex items-start gap-3 p-3 rounded-lg bg-surface-canvas/50"
                           >
-                            <Package className="w-5 h-5 text-[#00D9FF] mt-0.5" />
+                            <Package className="w-5 h-5 text-brand-primary mt-0.5" />
                             <div className="flex-1 min-w-0">
                               <p className="font-medium truncate">
                                 {comp.name}
                               </p>
-                              <p className="text-xs text-gray-400">
+                              <p className="text-xs text-text-muted">
                                 Updated{" "}
                                 {new Date(comp.updatedAt).toLocaleDateString()}
                               </p>
@@ -1011,10 +1013,10 @@ export default function ComponentLibraryPage() {
                 </Card>
 
                 {/* Unused Components */}
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+                <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <AlertCircle className="w-5 h-5 text-[#FF6B6B]" />
+                      <AlertCircle className="w-5 h-5 text-red-500" />
                       Unused Components
                     </CardTitle>
                     <CardDescription>
@@ -1025,11 +1027,11 @@ export default function ComponentLibraryPage() {
                     {components.filter((c) => c.usageCount === 0).length ===
                     0 ? (
                       <div className="flex flex-col items-center justify-center py-8 text-center">
-                        <CheckCircle2 className="w-12 h-12 text-[#00FF88] mb-2" />
+                        <CheckCircle2 className="w-12 h-12 text-brand-success mb-2" />
                         <p className="font-medium">
                           All components are in use!
                         </p>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-sm text-text-muted">
                           Great job keeping things tidy
                         </p>
                       </div>
@@ -1040,13 +1042,13 @@ export default function ComponentLibraryPage() {
                           .map((comp) => (
                             <div
                               key={comp.id}
-                              className="flex items-center justify-between p-3 rounded-lg bg-[#0A0A0B]/50"
+                              className="flex items-center justify-between p-3 rounded-lg bg-surface-canvas/50"
                             >
                               <div className="flex items-center gap-3">
-                                <XCircle className="w-5 h-5 text-[#FF6B6B]" />
+                                <XCircle className="w-5 h-5 text-red-500" />
                                 <div>
                                   <p className="font-medium">{comp.name}</p>
-                                  <p className="text-xs text-gray-400">
+                                  <p className="text-xs text-text-muted">
                                     {comp.category}
                                   </p>
                                 </div>
@@ -1065,10 +1067,10 @@ export default function ComponentLibraryPage() {
 
             {/* Documentation Tab */}
             <TabsContent value="docs" className="mt-6">
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <BookOpen className="w-5 h-5 text-[#FFD700]" />
+                    <BookOpen className="w-5 h-5 text-yellow-500" />
                     Component Library Documentation
                   </CardTitle>
                   <CardDescription>
@@ -1079,17 +1081,17 @@ export default function ComponentLibraryPage() {
                   {/* Getting Started */}
                   <div>
                     <h3 className="text-xl font-semibold mb-3 flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-[#00D9FF]" />
+                      <Sparkles className="w-5 h-5 text-brand-primary" />
                       Getting Started
                     </h3>
-                    <p className="text-gray-400 mb-4">
+                    <p className="text-text-muted mb-4">
                       Components are reusable pieces of workflow logic that can
                       be embedded in multiple workflows, similar to functions in
                       programming. They help you maintain consistency and reduce
                       duplication.
                     </p>
-                    <Alert className="bg-[#00D9FF]/10 border-[#00D9FF]/30">
-                      <Info className="w-4 h-4 text-[#00D9FF]" />
+                    <Alert className="bg-brand-primary/10 border-brand-primary/30">
+                      <Info className="w-4 h-4 text-brand-primary" />
                       <AlertDescription>
                         Start by creating simple components and gradually build
                         more complex ones as you become familiar with the
@@ -1103,7 +1105,7 @@ export default function ComponentLibraryPage() {
                   {/* Creating Components */}
                   <div>
                     <h3 className="text-xl font-semibold mb-3 flex items-center gap-2">
-                      <Code className="w-5 h-5 text-[#BD00FF]" />
+                      <Code className="w-5 h-5 text-brand-secondary" />
                       Creating Components
                     </h3>
                     <div className="space-y-3">
@@ -1141,14 +1143,14 @@ export default function ComponentLibraryPage() {
                       ].map((item) => (
                         <div
                           key={item.step}
-                          className="flex items-start gap-3 p-3 rounded-lg bg-[#0A0A0B]/50"
+                          className="flex items-start gap-3 p-3 rounded-lg bg-surface-canvas/50"
                         >
-                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#BD00FF]/20 text-[#BD00FF] font-bold shrink-0">
+                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-secondary/20 text-brand-secondary font-bold shrink-0">
                             {item.step}
                           </div>
                           <div>
                             <p className="font-medium">{item.title}</p>
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-text-muted">
                               {item.description}
                             </p>
                           </div>
@@ -1162,7 +1164,7 @@ export default function ComponentLibraryPage() {
                   {/* Best Practices */}
                   <div>
                     <h3 className="text-xl font-semibold mb-3 flex items-center gap-2">
-                      <Target className="w-5 h-5 text-[#00FF88]" />
+                      <Target className="w-5 h-5 text-brand-success" />
                       Best Practices
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1208,13 +1210,13 @@ export default function ComponentLibraryPage() {
                         return (
                           <div
                             key={practice.title}
-                            className="p-4 rounded-lg bg-[#0A0A0B]/50 border border-gray-800"
+                            className="p-4 rounded-lg bg-surface-canvas/50 border border-border-subtle"
                           >
-                            <Icon className="w-6 h-6 text-[#00FF88] mb-2" />
+                            <Icon className="w-6 h-6 text-brand-success mb-2" />
                             <h4 className="font-medium mb-1">
                               {practice.title}
                             </h4>
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-text-muted">
                               {practice.description}
                             </p>
                           </div>
@@ -1228,7 +1230,7 @@ export default function ComponentLibraryPage() {
                   {/* Parameter Types */}
                   <div>
                     <h3 className="text-xl font-semibold mb-3 flex items-center gap-2">
-                      <Settings className="w-5 h-5 text-[#FFD700]" />
+                      <Settings className="w-5 h-5 text-yellow-500" />
                       Parameter Types Reference
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1266,13 +1268,13 @@ export default function ComponentLibraryPage() {
                       ].map((param) => (
                         <div
                           key={param.type}
-                          className="p-3 rounded-lg bg-[#0A0A0B]/50 border border-gray-800"
+                          className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle"
                         >
                           <Badge variant="outline" className="mb-2">
                             {param.type}
                           </Badge>
                           <p className="text-sm mb-1">{param.description}</p>
-                          <code className="text-xs text-gray-400 font-mono bg-gray-900/50 px-2 py-1 rounded">
+                          <code className="text-xs text-text-muted font-mono bg-surface-canvas/50 px-2 py-1 rounded">
                             {param.example}
                           </code>
                         </div>
@@ -1283,8 +1285,8 @@ export default function ComponentLibraryPage() {
                   <Separator />
 
                   {/* Tips */}
-                  <Alert className="bg-[#00FF88]/10 border-[#00FF88]/30">
-                    <Sparkles className="w-4 h-4 text-[#00FF88]" />
+                  <Alert className="bg-brand-success/10 border-brand-success/30">
+                    <Sparkles className="w-4 h-4 text-brand-success" />
                     <AlertDescription>
                       <strong className="block mb-2">Pro Tips:</strong>
                       <ul className="list-disc list-inside space-y-1 text-sm">
@@ -1358,9 +1360,9 @@ export default function ComponentLibraryPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <div className="border-2 border-dashed border-gray-700 rounded-lg p-8 text-center">
-                  <FileJson className="w-12 h-12 text-gray-500 mx-auto mb-3" />
-                  <p className="text-sm text-gray-400 mb-2">
+                <div className="border-2 border-dashed border-border-default rounded-lg p-8 text-center">
+                  <FileJson className="w-12 h-12 text-text-muted mx-auto mb-3" />
+                  <p className="text-sm text-text-muted mb-2">
                     Drag and drop your JSON file here, or click to browse
                   </p>
                   <Button variant="outline" size="sm">

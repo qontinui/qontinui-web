@@ -268,7 +268,7 @@ export default function IntegrationTestingPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#00D9FF]" />
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
@@ -281,16 +281,16 @@ export default function IntegrationTestingPage() {
 
   return (
     <RequireProject pageName="Integration Testing">
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-sunken to-surface-canvas text-white">
         {/* Header */}
-        <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-4">
               {viewMode !== "list" && selectedRun && (
                 <Button
                   variant="ghost"
                   onClick={goBackToList}
-                  className="text-gray-400 hover:text-white"
+                  className="text-text-muted hover:text-white"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back to List
@@ -338,7 +338,7 @@ export default function IntegrationTestingPage() {
                   variant="outline"
                   size="sm"
                   onClick={toggleViewMode}
-                  className="border-gray-700 hover:border-[#FF6B6B] hover:text-[#FF6B6B]"
+                  className="border-border-default hover:border-[#FF6B6B] hover:text-[#FF6B6B]"
                 >
                   {viewMode === "visual" ? (
                     <>
@@ -361,7 +361,7 @@ export default function IntegrationTestingPage() {
                   size="sm"
                   onClick={fetchRuns}
                   disabled={loading || !projectId}
-                  className="border-gray-700 hover:border-gray-600"
+                  className="border-border-default hover:border-border-subtle"
                   title={
                     !projectId ? "Select a project to view runs" : undefined
                   }
@@ -440,7 +440,7 @@ export default function IntegrationTestingPage() {
               <div>
                 <div className="mb-6">
                   <h2 className="text-xl font-bold mb-2">Test Run History</h2>
-                  <p className="text-gray-400 text-sm">
+                  <p className="text-text-muted text-sm">
                     Previous integration test results using historical execution
                     data.
                   </p>
@@ -448,7 +448,7 @@ export default function IntegrationTestingPage() {
 
                 {loading && runs.length === 0 ? (
                   <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-8 h-8 animate-spin text-[#FF6B6B]" />
+                    <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
                   </div>
                 ) : runs.length === 0 ? (
                   <EmptyState />
@@ -490,13 +490,13 @@ export default function IntegrationTestingPage() {
 
 function EmptyState() {
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <CardContent className="py-12 text-center">
-        <Activity className="w-16 h-16 mx-auto mb-4 text-gray-600" />
+        <Activity className="w-16 h-16 mx-auto mb-4 text-text-muted" />
         <h3 className="text-xl font-medium text-white mb-2">
           No Integration Tests Yet
         </h3>
-        <p className="text-gray-400 mb-4 max-w-md mx-auto">
+        <p className="text-text-muted mb-4 max-w-md mx-auto">
           Select a workflow from the configuration panel and run your first
           integration test. Tests run in mock mode using historical data.
         </p>
@@ -550,7 +550,7 @@ function IntegrationTestRunsList({
         );
       default:
         return (
-          <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+          <Badge className="bg-surface-raised/20 text-text-muted border-border-subtle/30">
             {status}
           </Badge>
         );
@@ -573,7 +573,7 @@ function IntegrationTestRunsList({
       {runs.map((run) => (
         <Card
           key={run.id}
-          className="bg-[#1A1A1B]/50 border-gray-800/50 hover:border-[#FF6B6B]/50 transition-colors cursor-pointer"
+          className="bg-surface-raised/50 border-border-subtle/50 hover:border-[#FF6B6B]/50 transition-colors cursor-pointer"
           onClick={() => onSelectRun(run.id)}
         >
           <CardContent className="py-4">
@@ -586,7 +586,7 @@ function IntegrationTestRunsList({
                     </span>
                     {getStatusBadge(run.status)}
                   </div>
-                  <div className="text-sm text-gray-400">
+                  <div className="text-sm text-text-muted">
                     {formatDate(run.started_at)}
                   </div>
                 </div>
@@ -594,7 +594,7 @@ function IntegrationTestRunsList({
 
               <div className="flex items-center gap-6 text-sm">
                 <div className="text-center">
-                  <div className="text-gray-400">Coverage</div>
+                  <div className="text-text-muted">Coverage</div>
                   <div
                     className={`font-bold ${
                       run.coverage_percentage >= 80
@@ -608,7 +608,7 @@ function IntegrationTestRunsList({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-gray-400">Success</div>
+                  <div className="text-text-muted">Success</div>
                   <div
                     className={`font-bold ${
                       run.success_rate >= 90
@@ -622,13 +622,13 @@ function IntegrationTestRunsList({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-gray-400">Actions</div>
+                  <div className="text-text-muted">Actions</div>
                   <div className="font-bold text-white">
                     {run.total_actions}
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-gray-400">Duration</div>
+                  <div className="text-text-muted">Duration</div>
                   <div className="font-bold text-white">
                     {formatDuration(run.duration_ms)}
                   </div>

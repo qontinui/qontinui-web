@@ -310,7 +310,7 @@ export function ConflictResolutionDialog({
                 "p-2 rounded border-l-2 cursor-pointer",
                 mergeChoices[change.field] === "remote"
                   ? "border-blue-500 bg-blue-500/10"
-                  : "border-gray-500 bg-gray-500/5"
+                  : "border-border-default bg-surface-raised/5"
               )}
               onClick={() =>
                 setMergeChoices((prev) => ({

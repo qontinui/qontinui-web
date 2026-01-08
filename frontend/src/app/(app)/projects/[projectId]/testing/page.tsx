@@ -50,15 +50,15 @@ export default function ProjectTestingDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               onClick={() => router.push("/dashboard")}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Dashboard
@@ -74,7 +74,7 @@ export default function ProjectTestingDashboard() {
               onClick={() =>
                 router.push(`/projects/${projectId}/testing/coverage`)
               }
-              className="border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+              className="border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
             >
               <TrendingUp className="w-4 h-4 mr-2" />
               Coverage
@@ -85,7 +85,7 @@ export default function ProjectTestingDashboard() {
               onClick={() =>
                 router.push(`/projects/${projectId}/testing/deficiencies`)
               }
-              className="border-gray-700 hover:border-[#EF4444] hover:text-[#EF4444]"
+              className="border-border-default hover:border-[#EF4444] hover:text-[#EF4444]"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Deficiencies
@@ -96,7 +96,7 @@ export default function ProjectTestingDashboard() {
               onClick={() =>
                 router.push(`/projects/${projectId}/testing/integration`)
               }
-              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+              className="border-border-default hover:border-brand-primary hover:text-brand-primary"
             >
               <FlaskConical className="w-4 h-4 mr-2" />
               Integration Tests
@@ -110,7 +110,7 @@ export default function ProjectTestingDashboard() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Test Results Overview</h2>
-          <p className="text-gray-400">
+          <p className="text-text-muted">
             View historical test results, coverage trends, and deficiency
             reports
           </p>
@@ -124,7 +124,7 @@ export default function ProjectTestingDashboard() {
             className={
               selectedView === "overview"
                 ? "bg-[#F59E0B] hover:bg-[#F59E0B]/80 text-black"
-                : "border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+                : "border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
             }
           >
             <PlayCircle className="w-4 h-4 mr-2" />
@@ -136,7 +136,7 @@ export default function ProjectTestingDashboard() {
             className={
               selectedView === "live"
                 ? "bg-[#F59E0B] hover:bg-[#F59E0B]/80 text-black"
-                : "border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+                : "border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
             }
           >
             <Activity className="w-4 h-4 mr-2" />
@@ -148,7 +148,7 @@ export default function ProjectTestingDashboard() {
             className={
               selectedView === "trends"
                 ? "bg-[#F59E0B] hover:bg-[#F59E0B]/80 text-black"
-                : "border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+                : "border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
             }
           >
             <TrendingUp className="w-4 h-4 mr-2" />
@@ -160,7 +160,7 @@ export default function ProjectTestingDashboard() {
             className={
               selectedView === "reliability"
                 ? "bg-[#F59E0B] hover:bg-[#F59E0B]/80 text-black"
-                : "border-gray-700 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+                : "border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
             }
           >
             <BarChart3 className="w-4 h-4 mr-2" />

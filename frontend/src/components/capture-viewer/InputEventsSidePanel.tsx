@@ -38,9 +38,9 @@ const EVENT_CONFIG: Record<
   mouse_move: {
     icon: Move,
     label: "Move",
-    color: "text-gray-500",
-    bgColor: "bg-gray-50",
-    borderColor: "border-gray-200",
+    color: "text-text-muted",
+    bgColor: "bg-surface-canvas",
+    borderColor: "border-border-subtle",
   },
   mouse_click: {
     icon: MousePointer2,
@@ -94,9 +94,9 @@ const EVENT_CONFIG: Record<
   key_up: {
     icon: Keyboard,
     label: "Key Up",
-    color: "text-gray-500",
-    bgColor: "bg-gray-50",
-    borderColor: "border-gray-200",
+    color: "text-text-muted",
+    bgColor: "bg-surface-canvas",
+    borderColor: "border-border-subtle",
   },
 };
 
@@ -171,7 +171,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
             {event.key && (
               <div className="text-xs">
                 <span className="font-medium">Key:</span>{" "}
-                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-xs font-mono">
+                <kbd className="px-2 py-1 bg-surface-raised border border-border-default rounded text-xs font-mono">
                   {event.key}
                 </kbd>
               </div>
@@ -182,7 +182,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
                 {event.modifiers.map((mod, idx) => (
                   <kbd
                     key={idx}
-                    className="ml-1 px-2 py-1 bg-gray-100 border border-gray-300 rounded text-xs font-mono"
+                    className="ml-1 px-2 py-1 bg-surface-raised border border-border-default rounded text-xs font-mono"
                   >
                     {mod}
                   </kbd>
@@ -220,7 +220,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
       ref={itemRef}
       className={`relative p-3 border-l-4 rounded-r cursor-pointer transition-all ${
         config.borderColor
-      } ${isActive ? `${config.bgColor} ring-2 ring-blue-500 ring-opacity-50` : "bg-white hover:bg-gray-50"} hover:shadow-md`}
+      } ${isActive ? `${config.bgColor} ring-2 ring-blue-500 ring-opacity-50` : "bg-white hover:bg-surface-raised/80"} hover:shadow-md`}
       onClick={onClick}
     >
       {/* Event Header */}
@@ -231,7 +231,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
             {config.label}
           </span>
         </div>
-        <span className="text-xs font-mono text-gray-500">
+        <span className="text-xs font-mono text-text-muted">
           {formatTime(event.timestamp)}
         </span>
       </div>
@@ -337,7 +337,7 @@ export const InputEventsSidePanel: React.FC<InputEventsSidePanelProps> = ({
           {filterText && (
             <button
               onClick={() => setFilterText("")}
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-text-muted hover:text-text-muted"
             >
               <X className="h-4 w-4" />
             </button>
@@ -379,7 +379,7 @@ export const InputEventsSidePanel: React.FC<InputEventsSidePanelProps> = ({
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-2">
           {filteredEvents.length === 0 ? (
-            <div className="text-center text-gray-500 text-sm py-8">
+            <div className="text-center text-text-muted text-sm py-8">
               {events.length === 0
                 ? "No events recorded"
                 : "No events match your filters"}
@@ -402,8 +402,8 @@ export const InputEventsSidePanel: React.FC<InputEventsSidePanelProps> = ({
       </ScrollArea>
 
       {/* Footer */}
-      <div className="p-3 border-t bg-gray-50">
-        <div className="text-xs text-gray-600">
+      <div className="p-3 border-t bg-surface-canvas">
+        <div className="text-xs text-text-muted">
           <div className="flex items-center gap-2 mb-2">
             <Filter className="h-3 w-3" />
             <span className="font-medium">Legend</span>

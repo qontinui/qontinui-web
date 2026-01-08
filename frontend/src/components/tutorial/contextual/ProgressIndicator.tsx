@@ -77,7 +77,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
               fill="none"
               stroke="currentColor"
               strokeWidth={strokeWidth}
-              className="text-gray-200 dark:text-gray-700"
+              className="text-border-subtle dark:text-surface-raised"
             />
             {/* Progress circle */}
             <motion.circle
@@ -99,12 +99,12 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
           {/* Center text */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span
-              className={`font-semibold text-gray-900 dark:text-gray-100 ${textSizeClasses[size]}`}
+              className={`font-semibold text-text-primary dark:text-text-primary ${textSizeClasses[size]}`}
             >
               {currentStep}/{totalSteps}
             </span>
             {showPercentage && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="text-xs text-text-muted dark:text-text-muted">
                 {percentage}%
               </span>
             )}
@@ -119,7 +119,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
     <div className={`w-full ${className}`}>
       <div className="flex items-center justify-between mb-1">
         <span
-          className={`font-medium text-gray-700 dark:text-gray-300 ${textSizeClasses[size]}`}
+          className={`font-medium text-text-secondary dark:text-text-secondary ${textSizeClasses[size]}`}
         >
           Step {currentStep} of {totalSteps}
         </span>
@@ -132,7 +132,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
         )}
       </div>
       <div
-        className={`w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden ${sizeClasses[size]}`}
+        className={`w-full bg-surface-raised dark:bg-surface-raised rounded-full overflow-hidden ${sizeClasses[size]}`}
         role="progressbar"
         aria-valuenow={percentage}
         aria-valuemin={0}

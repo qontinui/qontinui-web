@@ -20,7 +20,13 @@
  * - Monitor filter (all monitors vs only monitors with elements)
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import type { State, ImageAsset } from "@/contexts/automation-context/types";
 import type { Monitor } from "@/lib/schemas/geometry";
 import type {
@@ -43,6 +49,10 @@ import {
   Radio,
   Eye,
   Layers,
+  PanelLeftClose,
+  PanelLeftOpen,
+  GripVertical,
+  Move,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -126,6 +136,52 @@ export function ActiveStatesCanvas({
 }: ActiveStatesCanvasProps) {
   // Monitor filter state
   const [showOnlyWithElements, setShowOnlyWithElements] = useState(false);
+
+  // Legend collapse and floating/draggable state
+  const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
+  const [isLegendFloating, setIsLegendFloating] = useState(false);
+  const [legendPosition, setLegendPosition] = useState({ x: 16, y: 16 });
+  const legendDragRef = useRef<{
+    startX: number;
+    startY: number;
+    initialX: number;
+    initialY: number;
+  } | null>(null);
+
+  // Legend drag handler for floating mode
+  const handleLegendDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isLegendFloating) return;
+      e.preventDefault();
+      e.stopPropagation();
+      legendDragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        initialX: legendPosition.x,
+        initialY: legendPosition.y,
+      };
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        if (!legendDragRef.current) return;
+        const deltaX = moveEvent.clientX - legendDragRef.current.startX;
+        const deltaY = moveEvent.clientY - legendDragRef.current.startY;
+        setLegendPosition({
+          x: legendDragRef.current.initialX + deltaX,
+          y: legendDragRef.current.initialY + deltaY,
+        });
+      };
+
+      const handleMouseUp = () => {
+        legendDragRef.current = null;
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [isLegendFloating, legendPosition]
+  );
 
   // Normalize activeStateIds to a Set
   const activeStateIdsSet = useMemo(() => {
@@ -689,11 +745,36 @@ export function ActiveStatesCanvas({
       {/* Legend - different for each mode */}
       {mode === "perception" ? (
         /* Perception mode: Active States Legend */
-        <div className="absolute top-4 left-4 z-10 bg-background/95 backdrop-blur-sm rounded-lg p-3 shadow-lg max-w-[280px]">
-          <div className="flex items-center gap-2 mb-2">
+        <div
+          className={cn(
+            "absolute z-10 bg-background/95 backdrop-blur-sm rounded-lg shadow-lg",
+            isLegendFloating ? "border-2" : "",
+            isLegendCollapsed ? "p-2" : "p-3",
+            !isLegendFloating && "max-w-[280px]"
+          )}
+          style={
+            isLegendFloating
+              ? { left: legendPosition.x, top: legendPosition.y }
+              : { left: 16, top: 16 }
+          }
+        >
+          <div
+            className={cn(
+              "flex items-center gap-2",
+              !isLegendCollapsed && "mb-2"
+            )}
+          >
+            {isLegendFloating && (
+              <div
+                className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-muted rounded"
+                onMouseDown={handleLegendDragStart}
+              >
+                <GripVertical className="h-3 w-3 text-muted-foreground" />
+              </div>
+            )}
             <Eye className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Active States</span>
-            {isLiveMode && (
+            {isLiveMode && !isLegendCollapsed && (
               <span className="ml-auto">
                 {connectionState === "connected" ? (
                   <Radio className="h-3 w-3 text-green-500 animate-pulse" />
@@ -705,109 +786,194 @@ export function ActiveStatesCanvas({
                 )}
               </span>
             )}
-          </div>
-
-          {activeStatesInfo.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No active states</p>
-          ) : (
-            <div className="space-y-1.5">
-              {activeStatesInfo.map(({ id, name, color }) => {
-                // Count found images for this state
-                const foundCount = visibleFoundImages.filter(
-                  (img) => img.stateId === id
-                ).length;
-
-                return (
-                  <div key={id} className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-sm flex-shrink-0"
-                      style={{ backgroundColor: color.border }}
-                    />
-                    <span className="text-xs truncate flex-1" title={name}>
-                      {name}
-                    </span>
-                    {foundCount > 0 && (
-                      <span
-                        className="text-xs px-1.5 py-0.5 rounded-full"
-                        style={{
-                          backgroundColor: color.bg,
-                          color: color.border,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {foundCount}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="flex items-center gap-0.5 ml-auto">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                onClick={() => setIsLegendFloating(!isLegendFloating)}
+                title={isLegendFloating ? "Dock panel" : "Float panel"}
+              >
+                <Move className="h-3 w-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                onClick={() => setIsLegendCollapsed(!isLegendCollapsed)}
+                title={isLegendCollapsed ? "Expand" : "Collapse"}
+              >
+                {isLegendCollapsed ? (
+                  <PanelLeftOpen className="h-3 w-3" />
+                ) : (
+                  <PanelLeftClose className="h-3 w-3" />
+                )}
+              </Button>
             </div>
-          )}
-
-          <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
-            {hasFoundImages
-              ? `${visibleFoundImages.length} image(s) found`
-              : "No images found yet"}
           </div>
+
+          {!isLegendCollapsed && (
+            <>
+              {activeStatesInfo.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No active states
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {activeStatesInfo.map(({ id, name, color }) => {
+                    // Count found images for this state
+                    const foundCount = visibleFoundImages.filter(
+                      (img) => img.stateId === id
+                    ).length;
+
+                    return (
+                      <div key={id} className="flex items-center gap-2">
+                        <div
+                          className="w-3 h-3 rounded-sm flex-shrink-0"
+                          style={{ backgroundColor: color.border }}
+                        />
+                        <span className="text-xs truncate flex-1" title={name}>
+                          {name}
+                        </span>
+                        {foundCount > 0 && (
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded-full"
+                            style={{
+                              backgroundColor: color.bg,
+                              color: color.border,
+                              fontWeight: 500,
+                            }}
+                          >
+                            {foundCount}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
+                {hasFoundImages
+                  ? `${visibleFoundImages.length} image(s) found`
+                  : "No images found yet"}
+              </div>
+            </>
+          )}
         </div>
       ) : (
         /* Config mode: Selected States Legend */
-        <div className="absolute top-4 left-4 z-10 bg-background/95 backdrop-blur-sm rounded-lg p-3 shadow-lg max-w-[280px]">
-          <div className="flex items-center gap-2 mb-2">
+        <div
+          className={cn(
+            "absolute z-10 bg-background/95 backdrop-blur-sm rounded-lg shadow-lg",
+            isLegendFloating ? "border-2" : "",
+            isLegendCollapsed ? "p-2" : "p-3",
+            !isLegendFloating && "max-w-[280px]"
+          )}
+          style={
+            isLegendFloating
+              ? { left: legendPosition.x, top: legendPosition.y }
+              : { left: 16, top: 16 }
+          }
+        >
+          <div
+            className={cn(
+              "flex items-center gap-2",
+              !isLegendCollapsed && "mb-2"
+            )}
+          >
+            {isLegendFloating && (
+              <div
+                className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-muted rounded"
+                onMouseDown={handleLegendDragStart}
+              >
+                <GripVertical className="h-3 w-3 text-muted-foreground" />
+              </div>
+            )}
             <Layers className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Selected States</span>
-          </div>
-
-          {activeStatesInfo.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No states selected</p>
-          ) : (
-            <div className="space-y-1.5">
-              {activeStatesInfo.map(({ id, name, color }) => {
-                // Count config images for this state
-                const imageCount = configImages.filter(
-                  (img) => img.stateId === id
-                ).length;
-                const isHighlighted = id === highlightStateId;
-
-                return (
-                  <div
-                    key={id}
-                    className={cn(
-                      "flex items-center gap-2",
-                      isHighlighted && "font-medium"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "w-3 h-3 rounded-sm flex-shrink-0",
-                        isHighlighted && "ring-2 ring-offset-1 ring-current"
-                      )}
-                      style={{ backgroundColor: color.border }}
-                    />
-                    <span className="text-xs truncate flex-1" title={name}>
-                      {name}
-                    </span>
-                    {imageCount > 0 && (
-                      <span
-                        className="text-xs px-1.5 py-0.5 rounded-full"
-                        style={{
-                          backgroundColor: color.bg,
-                          color: color.border,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {imageCount}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="flex items-center gap-0.5 ml-auto">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                onClick={() => setIsLegendFloating(!isLegendFloating)}
+                title={isLegendFloating ? "Dock panel" : "Float panel"}
+              >
+                <Move className="h-3 w-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                onClick={() => setIsLegendCollapsed(!isLegendCollapsed)}
+                title={isLegendCollapsed ? "Expand" : "Collapse"}
+              >
+                {isLegendCollapsed ? (
+                  <PanelLeftOpen className="h-3 w-3" />
+                ) : (
+                  <PanelLeftClose className="h-3 w-3" />
+                )}
+              </Button>
             </div>
-          )}
-
-          <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
-            {configImages.length} image(s) at configured positions
           </div>
+
+          {!isLegendCollapsed && (
+            <>
+              {activeStatesInfo.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No states selected
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {activeStatesInfo.map(({ id, name, color }) => {
+                    // Count config images for this state
+                    const imageCount = configImages.filter(
+                      (img) => img.stateId === id
+                    ).length;
+                    const isHighlighted = id === highlightStateId;
+
+                    return (
+                      <div
+                        key={id}
+                        className={cn(
+                          "flex items-center gap-2",
+                          isHighlighted && "font-medium"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "w-3 h-3 rounded-sm flex-shrink-0",
+                            isHighlighted && "ring-2 ring-offset-1 ring-current"
+                          )}
+                          style={{ backgroundColor: color.border }}
+                        />
+                        <span className="text-xs truncate flex-1" title={name}>
+                          {name}
+                        </span>
+                        {imageCount > 0 && (
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded-full"
+                            style={{
+                              backgroundColor: color.bg,
+                              color: color.border,
+                              fontWeight: 500,
+                            }}
+                          >
+                            {imageCount}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
+                {configImages.length} image(s) at configured positions
+              </div>
+            </>
+          )}
         </div>
       )}
 

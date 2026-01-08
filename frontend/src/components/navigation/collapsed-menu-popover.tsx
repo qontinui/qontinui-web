@@ -116,7 +116,7 @@ export function CollapsedMenuPopover({
       />
 
       <div
-        className="fixed bg-gray-950 border rounded-lg shadow-xl flex items-center gap-1 p-2"
+        className="fixed bg-surface-canvas border rounded-lg shadow-xl flex items-center gap-1 p-2"
         data-popover="true"
         style={{
           top: `${position.top}px`,
@@ -151,7 +151,7 @@ export function CollapsedMenuPopover({
               onClick={() => {
                 onNavigate(child.route);
               }}
-              className="p-2 rounded-lg transition-all duration-200 hover:scale-110 hover:bg-gray-900/50"
+              className="p-2 rounded-lg transition-all duration-200 hover:scale-110 hover:bg-surface-raised/50"
               style={{
                 filter: "drop-shadow(0 0 4px rgba(0,0,0,0.3))",
               }}

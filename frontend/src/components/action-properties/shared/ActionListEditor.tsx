@@ -89,7 +89,7 @@ function SortableActionItem({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center gap-2 p-2 bg-gray-800/50 border border-gray-700 rounded-md group hover:border-gray-600 transition-colors",
+        "flex items-center gap-2 p-2 bg-surface-raised/50 border border-border-default rounded-md group hover:border-border-subtle transition-colors",
         isDragging && "opacity-50 cursor-grabbing"
       )}
     >
@@ -97,7 +97,7 @@ function SortableActionItem({
       <div
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing text-gray-500 group-hover:text-gray-400 touch-none"
+        className="cursor-grab active:cursor-grabbing text-text-muted group-hover:text-text-muted touch-none"
         aria-label="Drag to reorder"
       >
         <GripVertical className="w-4 h-4" />
@@ -117,7 +117,7 @@ function SortableActionItem({
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 w-6 p-0 text-gray-500 hover:text-red-400 hover:bg-red-400/10"
+          className="h-6 w-6 p-0 text-text-muted hover:text-red-400 hover:bg-red-400/10"
           onClick={onRemove}
           title="Remove action"
         >
@@ -219,7 +219,7 @@ export function ActionListEditor({
   return (
     <div className={cn("space-y-3", className)}>
       {label && (
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           {label}
           {required && <span className="text-red-400 ml-1">*</span>}
         </Label>
@@ -235,8 +235,8 @@ export function ActionListEditor({
       >
         <div className="space-y-2">
           {actionIds.length === 0 ? (
-            <div className="p-4 border border-dashed border-gray-600 rounded-md text-center">
-              <p className="text-sm text-gray-500">{emptyText}</p>
+            <div className="p-4 border border-dashed border-border-subtle rounded-md text-center">
+              <p className="text-sm text-text-muted">{emptyText}</p>
             </div>
           ) : (
             <SortableContext
@@ -260,11 +260,11 @@ export function ActionListEditor({
         {/* Drag Overlay - shows a copy of the item being dragged */}
         <DragOverlay>
           {activeItem ? (
-            <div className="flex items-center gap-2 p-2 bg-gray-800 border border-[#00D9FF] rounded-md shadow-lg shadow-[#00D9FF]/20">
-              <div className="text-[#00D9FF]">
+            <div className="flex items-center gap-2 p-2 bg-surface-raised border border-brand-primary rounded-md shadow-lg shadow-brand-primary/20">
+              <div className="text-brand-primary">
                 <GripVertical className="w-4 h-4" />
               </div>
-              <div className="flex-1 font-mono text-sm text-gray-200">
+              <div className="flex-1 font-mono text-sm text-text-default">
                 {activeItem}
               </div>
             </div>
@@ -281,14 +281,14 @@ export function ActionListEditor({
             onChange={(e) => setNewActionId(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Enter action ID to add"
-            className="flex-1 bg-transparent border-gray-700 font-mono text-sm"
+            className="flex-1 bg-transparent border-border-default font-mono text-sm"
           />
           <Button
             variant="outline"
             size="sm"
             onClick={handleAdd}
             disabled={!newActionId.trim()}
-            className="border-gray-700 hover:bg-[#00D9FF]/10 hover:text-[#00D9FF] hover:border-[#00D9FF]"
+            className="border-border-default hover:bg-brand-primary/10 hover:text-brand-primary hover:border-brand-primary"
           >
             <Plus className="w-4 h-4 mr-1" />
             Add
@@ -303,7 +303,7 @@ export function ActionListEditor({
         </p>
       )}
       {maxActions && actionIds.length >= maxActions && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Maximum {maxActions} action{maxActions > 1 ? "s" : ""} reached
         </p>
       )}

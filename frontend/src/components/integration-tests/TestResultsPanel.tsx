@@ -49,7 +49,7 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
       : 0;
 
   return (
-    <Card className="bg-white border border-gray-200">
+    <Card className="bg-white border border-border-subtle">
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <Clock className="w-4 h-4" />
@@ -62,7 +62,7 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
           </div>
         ) : results.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-text-muted">
             <Clock className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">No results yet</p>
             <p className="text-xs mt-1">Run tests to see results</p>
@@ -96,16 +96,16 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
             </div>
 
             {/* Overall Success Rate */}
-            <div className="p-3 bg-gray-50 rounded-lg">
+            <div className="p-3 bg-surface-canvas rounded-lg">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-700 font-medium">
+                <span className="text-sm text-text-secondary font-medium">
                   Overall Success Rate
                 </span>
-                <span className="text-sm font-bold text-gray-900">
+                <span className="text-sm font-bold text-text-primary">
                   {successRate}%
                 </span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div className="w-full bg-border-subtle rounded-full h-2 overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
                     successRate >= 80
@@ -118,7 +118,7 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                 />
               </div>
               <div className="flex items-center justify-between mt-1">
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-text-muted">
                   {stats.successfulSteps}/{stats.totalSteps} steps
                 </span>
               </div>
@@ -126,7 +126,7 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
 
             {/* Individual Workflow Results */}
             <div className="space-y-2">
-              <p className="text-xs text-gray-500 font-medium">
+              <p className="text-xs text-text-muted font-medium">
                 Workflow Results
               </p>
               <div className="max-h-96 overflow-y-auto space-y-2">

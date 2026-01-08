@@ -62,7 +62,7 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
   );
 
   return (
-    <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 flex flex-col overflow-y-auto">
+    <div className="w-64 bg-surface-raised/50 border-r border-border-subtle flex flex-col overflow-y-auto">
       <ScreenshotPicker
         currentScreenshot={
           currentScreenshot
@@ -87,20 +87,20 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
             : null
         }
         additionalInfo={
-          <div className="bg-[#27272A] rounded-lg p-3 border border-gray-700">
-            <h3 className="text-xs font-medium text-gray-300 mb-2">
+          <div className="bg-surface-raised rounded-lg p-3 border border-border-default">
+            <h3 className="text-xs font-medium text-text-secondary mb-2">
               {isCompositeMode ? "Multi-Monitor Mode" : "Instructions"}
             </h3>
             {isCompositeMode ? (
-              <div className="text-xs text-gray-400 space-y-1">
+              <div className="text-xs text-text-muted space-y-1">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1 text-[#00D9FF]">
+                  <div className="flex items-center gap-1 text-brand-primary">
                     <Monitor className="w-3 h-3" />
                     <span>{compositeScreenshots.length} monitors captured</span>
                   </div>
                   <button
                     onClick={onClearAll}
-                    className="text-gray-400 hover:text-red-400 flex items-center gap-1"
+                    className="text-text-muted hover:text-red-400 flex items-center gap-1"
                     title="Clear all screenshots and start fresh"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -113,7 +113,7 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
                 </p>
               </div>
             ) : (
-              <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
+              <ol className="text-xs text-text-muted space-y-1 list-decimal list-inside">
                 <li>Draw a selection box on the image</li>
                 <li>Choose processing mode</li>
                 <li>Click &quot;Extract Image&quot;</li>
@@ -127,14 +127,14 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
 
       {/* Composite Screenshots Thumbnail Strip */}
       {isCompositeMode && compositeScreenshots.length > 1 && (
-        <div className="p-4 border-t border-gray-800">
+        <div className="p-4 border-t border-border-subtle">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-xs font-medium text-gray-300">
+            <h3 className="text-xs font-medium text-text-secondary">
               Monitors ({compositeScreenshots.length})
             </h3>
             <button
               onClick={onClearAll}
-              className="text-xs text-gray-400 hover:text-red-400 flex items-center gap-1"
+              className="text-xs text-text-muted hover:text-red-400 flex items-center gap-1"
               title="Clear all captured screenshots"
             >
               <Trash2 className="w-3 h-3" />
@@ -156,8 +156,8 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
                 }
                 className={`relative flex-shrink-0 w-16 h-12 rounded border-2 overflow-hidden transition-all ${
                   currentScreenshot?.id === screenshot.id
-                    ? "border-[#00D9FF] ring-2 ring-[#00D9FF]/30"
-                    : "border-gray-600 hover:border-gray-500"
+                    ? "border-brand-primary ring-2 ring-brand-primary/30"
+                    : "border-border-default hover:border-border-default"
                 }`}
                 title={`Monitor ${screenshot.monitor.index}`}
               >
@@ -167,7 +167,7 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
                   className="w-full h-full object-cover"
                 />
                 {currentScreenshot?.id === screenshot.id && (
-                  <div className="absolute inset-0 bg-[#00D9FF]/20" />
+                  <div className="absolute inset-0 bg-brand-primary/20" />
                 )}
                 <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[10px] text-white text-center">
                   {screenshot.monitor.index}
@@ -175,7 +175,7 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
               </button>
             ))}
           </div>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-text-muted mt-1">
             Click to preview individual monitors
           </p>
         </div>

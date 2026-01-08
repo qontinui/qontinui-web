@@ -62,16 +62,16 @@ export default function DiscoveriesPage() {
   const pendingCountValue = pendingCount?.count || 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleBackToDashboard}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
@@ -79,7 +79,7 @@ export default function DiscoveriesPage() {
           </div>
           <div className="flex items-center gap-3">
             <Sparkles className="w-6 h-6 text-[#4ECDC4]" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#4ECDC4] to-[#00D9FF] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#4ECDC4] to-brand-primary bg-clip-text text-transparent">
               Discoveries
             </h1>
             {pendingCountValue > 0 && (
@@ -98,7 +98,7 @@ export default function DiscoveriesPage() {
       <main className="p-6 max-w-7xl mx-auto">
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Review Discoveries</h2>
-          <p className="text-gray-400">
+          <p className="text-text-muted">
             Review and approve discoveries detected by your runners during
             automation execution
           </p>
@@ -106,23 +106,26 @@ export default function DiscoveriesPage() {
 
         {/* Project Filter */}
         <div className="flex items-center gap-4 mb-6">
-          <div className="flex items-center gap-2 text-sm text-gray-400">
+          <div className="flex items-center gap-2 text-sm text-text-muted">
             <FolderOpen size={14} />
             <span>Project:</span>
           </div>
           <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="w-[250px] bg-gray-900/50 border-gray-700 text-white">
+            <SelectTrigger className="w-[250px] bg-surface-canvas/50 border-border-default text-white">
               <SelectValue placeholder="Select project" />
             </SelectTrigger>
-            <SelectContent className="bg-[#1A1A1B] border-gray-700">
-              <SelectItem value="all" className="text-white hover:bg-gray-800">
+            <SelectContent className="bg-surface-raised border-border-default">
+              <SelectItem
+                value="all"
+                className="text-white hover:bg-surface-raised"
+              >
                 All Projects
               </SelectItem>
               {projects.map((project) => (
                 <SelectItem
                   key={project.id}
                   value={project.id}
-                  className="text-white hover:bg-gray-800"
+                  className="text-white hover:bg-surface-raised"
                 >
                   {project.name}
                 </SelectItem>
@@ -137,7 +140,7 @@ export default function DiscoveriesPage() {
           onValueChange={(value) => setActiveTab(value as DiscoveryStatus)}
           className="space-y-6"
         >
-          <TabsList className="bg-[#1A1A1B] border border-gray-800">
+          <TabsList className="bg-surface-raised border border-border-subtle">
             <TabsTrigger value="pending" className="gap-2">
               <Clock className="w-4 h-4" />
               Pending
@@ -165,7 +168,7 @@ export default function DiscoveriesPage() {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-semibold">Pending Discoveries</h3>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-text-muted">
                   Review these discoveries and decide whether to accept or
                   reject them
                 </p>
@@ -184,7 +187,7 @@ export default function DiscoveriesPage() {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-semibold">Accepted Discoveries</h3>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-text-muted">
                   Discoveries that have been reviewed and accepted
                 </p>
               </div>
@@ -202,7 +205,7 @@ export default function DiscoveriesPage() {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-semibold">Rejected Discoveries</h3>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-text-muted">
                   Discoveries that have been reviewed and rejected
                 </p>
               </div>

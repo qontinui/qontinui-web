@@ -148,7 +148,7 @@ export function TreeExecutionResults({
         );
       default:
         return (
-          <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+          <Badge className="bg-surface-raised/20 text-text-muted border-border-default/30">
             <Clock className="w-3 h-3 mr-1" />
             Pending
           </Badge>
@@ -159,7 +159,7 @@ export function TreeExecutionResults({
   return (
     <div className="space-y-6">
       {/* Summary Header */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -207,10 +207,10 @@ export function TreeExecutionResults({
 
           {/* Initial and Final States */}
           {(initialStates.length > 0 || finalStates.length > 0) && (
-            <div className="mt-4 pt-4 border-t border-gray-800/50">
+            <div className="mt-4 pt-4 border-t border-border-subtle/50">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <div className="text-xs text-gray-400 mb-2">
+                  <div className="text-xs text-text-muted mb-2">
                     Initial States
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -225,12 +225,14 @@ export function TreeExecutionResults({
                         </Badge>
                       ))
                     ) : (
-                      <span className="text-xs text-gray-500">None</span>
+                      <span className="text-xs text-text-muted">None</span>
                     )}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-400 mb-2">Final States</div>
+                  <div className="text-xs text-text-muted mb-2">
+                    Final States
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {finalStates.length > 0 ? (
                       finalStates.map((state) => (
@@ -243,7 +245,7 @@ export function TreeExecutionResults({
                         </Badge>
                       ))
                     ) : (
-                      <span className="text-xs text-gray-500">None</span>
+                      <span className="text-xs text-text-muted">None</span>
                     )}
                   </div>
                 </div>
@@ -254,7 +256,7 @@ export function TreeExecutionResults({
       </Card>
 
       {/* Steps List */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg text-white flex items-center gap-2">
@@ -269,11 +271,11 @@ export function TreeExecutionResults({
         <CardContent>
           {unifiedSteps.length === 0 ? (
             <div className="py-12 text-center">
-              <Route className="w-12 h-12 mx-auto mb-4 text-gray-600" />
-              <h3 className="text-lg font-medium text-gray-400 mb-2">
+              <Route className="w-12 h-12 mx-auto mb-4 text-text-muted" />
+              <h3 className="text-lg font-medium text-text-muted mb-2">
                 No Execution Steps
               </h3>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-text-muted">
                 {isLive
                   ? "Waiting for execution events..."
                   : "No execution data available."}
@@ -316,7 +318,7 @@ function StatBadge({ icon, label, value, color }: StatBadgeProps) {
     green: "bg-green-500/10 text-green-400 border-green-500/20",
     yellow: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
     red: "bg-red-500/10 text-red-400 border-red-500/20",
-    gray: "bg-gray-500/10 text-gray-400 border-gray-500/20",
+    gray: "bg-surface-raised/10 text-text-muted border-border-default/20",
   };
 
   return (
@@ -325,7 +327,7 @@ function StatBadge({ icon, label, value, color }: StatBadgeProps) {
     >
       <div className="flex-shrink-0">{icon}</div>
       <div>
-        <div className="text-xs text-gray-500">{label}</div>
+        <div className="text-xs text-text-muted">{label}</div>
         <div className="text-lg font-bold">{value}</div>
       </div>
     </div>

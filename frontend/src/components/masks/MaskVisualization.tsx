@@ -168,13 +168,13 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
   return (
     <div className="mask-visualization">
       <div className="mask-header flex justify-between items-center mb-2">
-        <h3 className="text-sm font-semibold text-gray-700">
+        <h3 className="text-sm font-semibold text-text-secondary">
           Mask Visualization
         </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowMask(!showMask)}
-            className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
+            className="px-2 py-1 text-xs bg-surface-raised hover:bg-surface-raised/80 rounded"
           >
             {showMask ? "Hide" : "Show"} Mask
           </button>
@@ -194,13 +194,13 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
         ref={canvasRef}
         width={200}
         height={200}
-        className="border border-gray-300 rounded mb-2"
+        className="border border-border-default rounded mb-2"
       />
 
       <div className="mask-controls">
         {showMask && (
           <div className="mb-2">
-            <label className="text-xs text-gray-600">
+            <label className="text-xs text-text-muted">
               Opacity: {Math.round(maskOpacity * 100)}%
             </label>
             <input
@@ -216,7 +216,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
 
         {!readOnly && (
           <div>
-            <label className="text-xs text-gray-600">Mask Type:</label>
+            <label className="text-xs text-text-muted">Mask Type:</label>
             <select
               value={maskType}
               onChange={(e) =>
@@ -235,7 +235,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
         )}
 
         {(stateImage.hasMask || maskMetadata) && (
-          <div className="mt-2 text-xs text-gray-600">
+          <div className="mt-2 text-xs text-text-muted">
             <div>
               Mask Density:{" "}
               {Math.round(
@@ -257,7 +257,7 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
         )}
 
         {isLoading && (
-          <div className="mt-2 text-xs text-gray-500">Loading mask...</div>
+          <div className="mt-2 text-xs text-text-muted">Loading mask...</div>
         )}
       </div>
     </div>

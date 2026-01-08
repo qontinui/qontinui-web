@@ -63,7 +63,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
 
   if (!workflow) {
     return (
-      <div className={`p-4 text-gray-400 text-sm ${className}`}>
+      <div className={`p-4 text-text-muted text-sm ${className}`}>
         No workflow loaded
       </div>
     );
@@ -129,56 +129,56 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
         <section>
           <div className="flex items-center gap-2 mb-4">
             <FileText className="w-4 h-4 text-blue-400" />
-            <h3 className="text-sm font-semibold text-gray-200">
+            <h3 className="text-sm font-semibold text-text-secondary">
               Workflow Metadata
             </h3>
           </div>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Name</Label>
+              <Label className="text-xs text-text-muted">Name</Label>
               <Input
                 value={workflow.name}
                 onChange={(e) => updateMetadata("name", e.target.value)}
-                className="bg-transparent border-gray-700 text-gray-200"
+                className="bg-transparent border-border-default text-text-secondary"
                 placeholder="My Workflow"
               />
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Version</Label>
+              <Label className="text-xs text-text-muted">Version</Label>
               <Input
                 value={workflow.version}
                 onChange={(e) => updateMetadata("version", e.target.value)}
-                className="bg-transparent border-gray-700 text-gray-200"
+                className="bg-transparent border-border-default text-text-secondary"
                 placeholder="1.0.0"
               />
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Description</Label>
+              <Label className="text-xs text-text-muted">Description</Label>
               <Textarea
                 value={workflow.metadata?.description || ""}
                 onChange={(e) => updateMetadata("description", e.target.value)}
-                className="bg-transparent border-gray-700 text-gray-200 min-h-[80px]"
+                className="bg-transparent border-border-default text-text-secondary min-h-[80px]"
                 placeholder="Describe what this workflow does..."
               />
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Author</Label>
+              <Label className="text-xs text-text-muted">Author</Label>
               <Input
                 value={workflow.metadata?.author || ""}
                 onChange={(e) => updateMetadata("author", e.target.value)}
-                className="bg-transparent border-gray-700 text-gray-200"
+                className="bg-transparent border-border-default text-text-secondary"
                 placeholder="Your name"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-xs text-gray-400">Created</Label>
-                <div className="text-sm text-gray-300">
+                <Label className="text-xs text-text-muted">Created</Label>
+                <div className="text-sm text-text-secondary">
                   {workflow.metadata?.created
                     ? new Date(workflow.metadata.created).toLocaleDateString()
                     : "Unknown"}
@@ -186,8 +186,8 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
               </div>
 
               <div className="space-y-2">
-                <Label className="text-xs text-gray-400">Updated</Label>
-                <div className="text-sm text-gray-300">
+                <Label className="text-xs text-text-muted">Updated</Label>
+                <div className="text-sm text-text-secondary">
                   {workflow.metadata?.updated
                     ? new Date(workflow.metadata.updated).toLocaleDateString()
                     : "Unknown"}
@@ -197,70 +197,72 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
           </div>
         </section>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Settings Section */}
         <section>
           <div className="flex items-center gap-2 mb-4">
             <Settings className="w-4 h-4 text-green-400" />
-            <h3 className="text-sm font-semibold text-gray-200">
+            <h3 className="text-sm font-semibold text-text-secondary">
               Workflow Settings
             </h3>
           </div>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Timeout (ms)</Label>
+              <Label className="text-xs text-text-muted">Timeout (ms)</Label>
               <Input
                 type="number"
                 value={workflow.settings?.timeout || 0}
                 onChange={(e) =>
                   updateSettings("timeout", Number(e.target.value))
                 }
-                className="bg-transparent border-gray-700 text-gray-200"
+                className="bg-transparent border-border-default text-text-secondary"
                 placeholder="0 (no timeout)"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Maximum time for entire workflow execution
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Max Retries</Label>
+              <Label className="text-xs text-text-muted">Max Retries</Label>
               <Input
                 type="number"
                 value={workflow.settings?.maxRetries || 0}
                 onChange={(e) =>
                   updateSettings("maxRetries", Number(e.target.value))
                 }
-                className="bg-transparent border-gray-700 text-gray-200"
+                className="bg-transparent border-border-default text-text-secondary"
                 min="0"
               />
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Retry Delay (ms)</Label>
+              <Label className="text-xs text-text-muted">
+                Retry Delay (ms)
+              </Label>
               <Input
                 type="number"
                 value={workflow.settings?.retryDelay || 1000}
                 onChange={(e) =>
                   updateSettings("retryDelay", Number(e.target.value))
                 }
-                className="bg-transparent border-gray-700 text-gray-200"
+                className="bg-transparent border-border-default text-text-secondary"
                 min="0"
               />
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Log Level</Label>
+              <Label className="text-xs text-text-muted">Log Level</Label>
               <Select
                 value={workflow.settings?.logLevel || "info"}
                 onValueChange={(value) => updateSettings("logLevel", value)}
               >
-                <SelectTrigger className="bg-transparent border-gray-700 text-gray-200">
+                <SelectTrigger className="bg-transparent border-border-default text-text-secondary">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectContent className="bg-surface-raised border-border-default">
                   <SelectItem value="debug">Debug</SelectItem>
                   <SelectItem value="info">Info</SelectItem>
                   <SelectItem value="warning">Warning</SelectItem>
@@ -271,10 +273,10 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label className="text-xs text-gray-400">
+                <Label className="text-xs text-text-muted">
                   Parallel Execution
                 </Label>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-muted">
                   Enable parallel branches
                 </p>
               </div>
@@ -288,13 +290,15 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
           </div>
         </section>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Variables Section */}
         <section>
           <div className="flex items-center gap-2 mb-4">
             <Database className="w-4 h-4 text-purple-400" />
-            <h3 className="text-sm font-semibold text-gray-200">Variables</h3>
+            <h3 className="text-sm font-semibold text-text-secondary">
+              Variables
+            </h3>
           </div>
 
           <div className="space-y-4">
@@ -307,10 +311,10 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                     setNewVarScope(v as "local" | "global" | "process")
                   }
                 >
-                  <SelectTrigger className="w-[120px] bg-transparent border-gray-700 text-gray-200">
+                  <SelectTrigger className="w-[120px] bg-transparent border-border-default text-text-secondary">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#27272A] border-gray-700">
+                  <SelectContent className="bg-surface-raised border-border-default">
                     <SelectItem value="local">Local</SelectItem>
                     <SelectItem value="process">Workflow</SelectItem>
                     <SelectItem value="global">Global</SelectItem>
@@ -320,7 +324,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                   value={newVarName}
                   onChange={(e) => setNewVarName(e.target.value)}
                   placeholder="Variable name"
-                  className="flex-1 bg-transparent border-gray-700 text-gray-200"
+                  className="flex-1 bg-transparent border-border-default text-text-secondary"
                 />
               </div>
               <div className="flex gap-2">
@@ -328,7 +332,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                   value={newVarValue}
                   onChange={(e) => setNewVarValue(e.target.value)}
                   placeholder="Value"
-                  className="flex-1 bg-transparent border-gray-700 text-gray-200"
+                  className="flex-1 bg-transparent border-border-default text-text-secondary"
                 />
                 <Button
                   size="sm"
@@ -350,20 +354,20 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
 
               return (
                 <div key={scope} className="space-y-2">
-                  <Label className="text-xs text-gray-400 capitalize">
+                  <Label className="text-xs text-text-muted capitalize">
                     {scope} Variables
                   </Label>
                   <div className="space-y-1">
                     {Object.entries(variables).map(([name, value]) => (
                       <div
                         key={name}
-                        className="flex items-center justify-between p-2 rounded bg-gray-800/50 border border-gray-700"
+                        className="flex items-center justify-between p-2 rounded bg-surface-raised/50 border border-border-default"
                       >
                         <div className="flex-1">
-                          <div className="text-xs font-mono text-gray-300">
+                          <div className="text-xs font-mono text-text-secondary">
                             {name}
                           </div>
-                          <div className="text-xs text-gray-500 truncate">
+                          <div className="text-xs text-text-muted truncate">
                             {JSON.stringify(value)}
                           </div>
                         </div>
@@ -384,13 +388,13 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
           </div>
         </section>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Tags Section */}
         <section>
           <div className="flex items-center gap-2 mb-4">
             <Tag className="w-4 h-4 text-yellow-400" />
-            <h3 className="text-sm font-semibold text-gray-200">Tags</h3>
+            <h3 className="text-sm font-semibold text-text-secondary">Tags</h3>
           </div>
 
           <div className="space-y-3">
@@ -400,7 +404,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                 onChange={(e) => setNewTag(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addTag()}
                 placeholder="Add tag..."
-                className="flex-1 bg-transparent border-gray-700 text-gray-200"
+                className="flex-1 bg-transparent border-border-default text-text-secondary"
               />
               <Button
                 size="sm"
@@ -418,7 +422,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                   <Badge
                     key={tag}
                     variant="secondary"
-                    className="bg-gray-700 text-gray-200 pr-1"
+                    className="bg-surface-raised text-text-secondary pr-1"
                   >
                     {tag}
                     <Button
@@ -436,7 +440,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
           </div>
         </section>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Graph Execution Features */}
         {workflow.connections &&
@@ -445,7 +449,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
               <section>
                 <div className="flex items-center gap-2 mb-4">
                   <GitBranch className="w-4 h-4 text-orange-400" />
-                  <h3 className="text-sm font-semibold text-gray-200">
+                  <h3 className="text-sm font-semibold text-text-secondary">
                     Graph Execution
                   </h3>
                 </div>
@@ -459,7 +463,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                       >
                         Graph Execution Enabled
                       </Badge>
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-text-muted">
                         {Object.keys(workflow.connections).length} actions with
                         connections
                       </span>
@@ -492,7 +496,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                     </div>
                   </div>
 
-                  <div className="text-xs text-gray-400 space-y-1">
+                  <div className="text-xs text-text-muted space-y-1">
                     <p>
                       <strong>Conditional Branching:</strong> Uses success/error
                       paths to control flow
@@ -505,7 +509,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                 </div>
               </section>
 
-              <Separator className="bg-gray-700" />
+              <Separator className="bg-border-default" />
             </>
           )}
 
@@ -513,43 +517,45 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
         <section>
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-sm font-semibold text-gray-200">Statistics</h3>
+            <h3 className="text-sm font-semibold text-text-secondary">
+              Statistics
+            </h3>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="p-3 rounded bg-gray-800/50 border border-gray-700">
+            <div className="p-3 rounded bg-surface-raised/50 border border-border-default">
               <div className="text-2xl font-bold text-blue-400">
                 {actionCount}
               </div>
-              <div className="text-xs text-gray-400">Actions</div>
+              <div className="text-xs text-text-muted">Actions</div>
             </div>
 
-            <div className="p-3 rounded bg-gray-800/50 border border-gray-700">
+            <div className="p-3 rounded bg-surface-raised/50 border border-border-default">
               <div className="text-2xl font-bold text-green-400">
                 {connectionCount}
               </div>
-              <div className="text-xs text-gray-400">Connections</div>
+              <div className="text-xs text-text-muted">Connections</div>
             </div>
 
-            <div className="p-3 rounded bg-gray-800/50 border border-gray-700">
+            <div className="p-3 rounded bg-surface-raised/50 border border-border-default">
               <div className="text-2xl font-bold text-purple-400">
                 {Object.keys(workflow.variables?.local || {}).length}
               </div>
-              <div className="text-xs text-gray-400">Variables</div>
+              <div className="text-xs text-text-muted">Variables</div>
             </div>
 
-            <div className="p-3 rounded bg-gray-800/50 border border-gray-700">
+            <div className="p-3 rounded bg-surface-raised/50 border border-border-default">
               <div className="text-2xl font-bold text-yellow-400">
                 {workflow.tags?.length || 0}
               </div>
-              <div className="text-xs text-gray-400">Tags</div>
+              <div className="text-xs text-text-muted">Tags</div>
             </div>
           </div>
 
           <div className="mt-4 p-3 rounded bg-blue-900/20 border border-blue-700/30">
             <div className="flex items-start gap-2">
               <Info className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-              <div className="text-xs text-gray-300">
+              <div className="text-xs text-text-secondary">
                 <strong>Estimated execution time:</strong> Varies based on
                 conditions and retries. Run validation for detailed analysis.
               </div>

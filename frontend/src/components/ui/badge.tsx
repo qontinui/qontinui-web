@@ -18,7 +18,17 @@ const badgeVariants = cva(
         outline:
           "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         success:
-          "border-transparent bg-green-500 text-white [a&]:hover:bg-green-600 focus-visible:ring-green-500/20 dark:focus-visible:ring-green-500/40",
+          "border-transparent bg-success text-white [a&]:hover:bg-success/90 focus-visible:ring-success/20 dark:focus-visible:ring-success/40",
+        warning:
+          "border-transparent bg-warning text-white [a&]:hover:bg-warning/90 focus-visible:ring-warning/20 dark:focus-visible:ring-warning/40",
+        info: "border-transparent bg-info text-white [a&]:hover:bg-info/90 focus-visible:ring-info/20 dark:focus-visible:ring-info/40",
+        // Brand variants
+        "brand-primary":
+          "border-transparent bg-brand-primary text-white [a&]:hover:bg-brand-primary/90 focus-visible:ring-brand-primary/20",
+        "brand-secondary":
+          "border-transparent bg-brand-secondary text-white [a&]:hover:bg-brand-secondary/90 focus-visible:ring-brand-secondary/20",
+        "brand-success":
+          "border-transparent bg-brand-success text-white [a&]:hover:bg-brand-success/90 focus-visible:ring-brand-success/20",
       },
     },
     defaultVariants: {

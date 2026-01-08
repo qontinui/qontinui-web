@@ -12,61 +12,78 @@ import type { ActionType } from "@/lib/action-schema/action-types";
 // ============================================================================
 
 /**
+ * CSS Variable references for use in style objects
+ * These resolve at render time when used in React style props
+ */
+export const CSS_VARS = {
+  brandPrimary: "var(--color-brand-primary)",
+  brandSecondary: "var(--color-brand-secondary)",
+  brandSuccess: "var(--color-brand-success)",
+  surfaceCanvas: "var(--color-surface-canvas)",
+  surfaceRaised: "var(--color-surface-raised)",
+  borderSubtle: "var(--color-border-subtle)",
+  borderDefault: "var(--color-border-default)",
+} as const;
+
+/**
  * Base color palette for the canvas
+ * These hex values are fallbacks for programmatic use (color math, etc.)
+ * For actual styling, prefer CSS_VARS or Tailwind classes
  */
 export const COLORS = {
-  // Primary brand colors
-  primary: "#00D9FF",
-  primaryDark: "#00B8D4",
-  primaryLight: "#4DFFFF",
+  // Primary brand colors - mapped to design system CSS variables
+  // Hex values match --brand-primary, --brand-secondary, --brand-success
+  primary: "#4A90D9", // var(--color-brand-primary)
+  primaryDark: "#3A7BC4",
+  primaryLight: "#6AA5E3",
 
   // Secondary colors
-  secondary: "#BD00FF",
-  secondaryDark: "#9D00D4",
-  secondaryLight: "#D44DFF",
+  secondary: "#8B6BB5", // var(--color-brand-secondary)
+  secondaryDark: "#7556A0",
+  secondaryLight: "#A080CA",
 
   // Accent colors
-  accent: "#00FF88",
-  accentDark: "#00D46E",
-  accentLight: "#4DFFA4",
+  accent: "#4DB89D", // var(--color-brand-success)
+  accentDark: "#3DA388",
+  accentLight: "#62CDB2",
 
   // Node category colors
-  find: "#00D9FF", // Cyan
-  mouse: "#00FF88", // Green
-  keyboard: "#BD00FF", // Purple
-  controlFlow: "#FF9D00", // Orange
-  data: "#0088FF", // Blue
-  state: "#FF0080", // Pink
+  find: "#4A90D9", // brand-primary
+  mouse: "#4DB89D", // brand-success
+  keyboard: "#8B6BB5", // brand-secondary
+  controlFlow: "#E5A853", // warning
+  data: "#4A90D9", // brand-primary
+  state: "#E5534B", // error
 
   // Connection type colors
-  main: "#00D9FF", // Cyan - normal flow
-  error: "#FF4444", // Red - error handling
-  success: "#00FF88", // Green - success condition
+  main: "#4A90D9", // brand-primary - normal flow
+  error: "#E5534B", // error - error handling
+  success: "#4DB89D", // brand-success - success condition
 
   // State colors
   idle: "#666666",
-  running: "#00D9FF",
-  successState: "#00FF88",
-  errorState: "#FF4444",
-  warning: "#FFB800",
+  running: "#4A90D9", // brand-primary
+  successState: "#4DB89D", // brand-success
+  errorState: "#E5534B", // error
+  warning: "#E5A853",
 
-  // UI colors
-  background: "#18181B",
-  backgroundLight: "#27272A",
-  border: "#3F3F46",
-  borderLight: "#52525B",
+  // UI colors - mapped to design system tokens
+  background: "#111115", // var(--color-surface-canvas)
+  backgroundLight: "#1E1E22", // var(--color-surface-raised)
+  border: "#2A2A30", // var(--color-border-subtle)
+  borderLight: "#3A3A42", // var(--color-border-default)
   text: "#FAFAFA",
   textMuted: "#A1A1AA",
   textDark: "#71717A",
 
   // Selection colors
-  selection: "#00D9FF",
-  selectionBorder: "#00D9FF",
-  selectionFill: "rgba(0, 217, 255, 0.1)",
+  selection: "#4A90D9", // brand-primary
+  selectionBorder: "#4A90D9", // brand-primary
+  selectionFill: "rgba(74, 144, 217, 0.1)", // brand-primary with alpha
 
   // Grid colors
-  gridDot: "#3F3F46",
-  gridLine: "#27272A",
+  gridDot: "#2A2A30", // border-subtle
+  gridLine: "#1E1E22", // surface-raised
 } as const;
 
 // ============================================================================
@@ -470,13 +487,13 @@ export const HANDLE_CONFIG = {
   /** Show handles on hover only */
   showOnHoverOnly: false,
 
-  /** Handle style */
+  /** Handle style - uses CSS variables for theming */
   style: {
     width: 12,
     height: 12,
     borderRadius: "50%",
-    border: `2px solid ${COLORS.background}`,
-    background: COLORS.primary,
+    border: `2px solid ${CSS_VARS.surfaceCanvas}`,
+    background: CSS_VARS.brandPrimary,
   },
 };
 
@@ -611,11 +628,11 @@ export const CONTROLS_CONFIG = {
   /** Show interactive toggle */
   showInteractive: false,
 
-  /** Button style */
+  /** Button style - uses CSS variables for theming */
   buttonStyle: {
-    backgroundColor: COLORS.backgroundLight,
+    backgroundColor: CSS_VARS.surfaceRaised,
     color: COLORS.text,
-    border: `1px solid ${COLORS.border}`,
+    border: `1px solid ${CSS_VARS.borderSubtle}`,
     borderRadius: 4,
     padding: 8,
   },

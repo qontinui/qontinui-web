@@ -114,37 +114,37 @@ export function SpecialKeysSelector({
         <Button
           variant="outline"
           size="sm"
-          className="h-8 px-2 border-gray-700 hover:bg-gray-800"
+          className="h-8 px-2 border-border-default hover:bg-surface-raised"
         >
           <Keyboard className="w-4 h-4 mr-1" />
           Special Keys
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        className="w-80 max-h-96 overflow-y-auto bg-[#27272A] border-gray-700"
+        className="w-80 max-h-96 overflow-y-auto bg-surface-raised border-border-default"
         align="start"
       >
-        <DropdownMenuLabel className="text-sm font-medium text-gray-300">
+        <DropdownMenuLabel className="text-sm font-medium text-text-default">
           Insert Special Keys
         </DropdownMenuLabel>
-        <DropdownMenuSeparator className="bg-gray-700" />
+        <DropdownMenuSeparator className="bg-border-default" />
 
         {Object.entries(SPECIAL_KEYS).map(([category, keys]) => (
           <div key={category}>
-            <DropdownMenuLabel className="text-xs font-medium text-gray-400 mt-2">
+            <DropdownMenuLabel className="text-xs font-medium text-text-muted mt-2">
               {category}
             </DropdownMenuLabel>
             {keys.map((key) => (
               <DropdownMenuItem
                 key={key.value}
-                className="text-xs hover:bg-gray-800 cursor-pointer"
+                className="text-xs hover:bg-surface-canvas cursor-pointer"
                 onClick={() => insertSpecialKey(key.value)}
               >
                 <span className="font-mono">{key.display}</span>
               </DropdownMenuItem>
             ))}
             {category !== "Terminal/CLI" && (
-              <DropdownMenuSeparator className="bg-gray-700" />
+              <DropdownMenuSeparator className="bg-border-default" />
             )}
           </div>
         ))}
@@ -210,7 +210,7 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
         <Badge
           key={parts.length}
           variant="secondary"
-          className="mx-0.5 px-1 py-0 text-[10px] bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30"
+          className="mx-0.5 px-1 py-0 text-[10px] bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30"
           title={keyName} // Show full name on hover
         >
           {displaySymbol}
@@ -227,7 +227,7 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
         <Badge
           key={parts.length}
           variant="secondary"
-          className="mx-0.5 px-1 py-0 text-[10px] bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30"
+          className="mx-0.5 px-1 py-0 text-[10px] bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30"
           title="Enter"
         >
           ↵
@@ -244,7 +244,7 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
         <Badge
           key={parts.length}
           variant="secondary"
-          className="mx-0.5 px-1 py-0 text-[10px] bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30"
+          className="mx-0.5 px-1 py-0 text-[10px] bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30"
           title="Tab"
         >
           ⇥

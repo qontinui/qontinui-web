@@ -145,7 +145,7 @@ export default function OrganizationSettingsPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#00D9FF]" />
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
@@ -154,11 +154,11 @@ export default function OrganizationSettingsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         <div className="p-6 max-w-7xl mx-auto">
           <div className="text-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#00D9FF]" />
-            <p className="text-gray-400">Loading settings...</p>
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
+            <p className="text-text-muted">Loading settings...</p>
           </div>
         </div>
       </div>
@@ -167,15 +167,15 @@ export default function OrganizationSettingsPage() {
 
   if (!organization) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         <div className="p-6 max-w-7xl mx-auto">
-          <Card className="bg-[#1A1A1B]/50 border-red-500/50 backdrop-blur-sm">
+          <Card className="bg-surface-raised/50 border-red-500/50 backdrop-blur-sm">
             <CardContent className="p-8 text-center">
               <p className="text-red-400 mb-4">Organization not found</p>
               <Button
                 onClick={() => router.push("/organizations")}
                 variant="outline"
-                className="border-gray-700 hover:border-[#00D9FF]"
+                className="border-border-default hover:border-brand-primary"
               >
                 Back to Organizations
               </Button>
@@ -188,18 +188,18 @@ export default function OrganizationSettingsPage() {
 
   if (!isOwner) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         <div className="p-6 max-w-7xl mx-auto">
           <Button
             variant="ghost"
             onClick={() => router.push(`/organizations/${orgId}`)}
-            className="mb-4 text-gray-400 hover:text-white"
+            className="mb-4 text-text-muted hover:text-white"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Organization
           </Button>
 
-          <Card className="bg-[#1A1A1B]/50 border-yellow-500/50 backdrop-blur-sm">
+          <Card className="bg-surface-raised/50 border-yellow-500/50 backdrop-blur-sm">
             <CardContent className="p-8 text-center">
               <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-yellow-500" />
               <p className="text-yellow-400 mb-4">
@@ -208,7 +208,7 @@ export default function OrganizationSettingsPage() {
               <Button
                 onClick={() => router.push(`/organizations/${orgId}`)}
                 variant="outline"
-                className="border-gray-700 hover:border-[#00D9FF]"
+                className="border-border-default hover:border-brand-primary"
               >
                 Back to Organization
               </Button>
@@ -220,25 +220,25 @@ export default function OrganizationSettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <div className="p-6 max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <Button
             variant="ghost"
             onClick={() => router.push(`/organizations/${orgId}`)}
-            className="mb-4 text-gray-400 hover:text-white"
+            className="mb-4 text-text-muted hover:text-white"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Organization
           </Button>
 
           <h1 className="text-3xl font-bold mb-2">Organization Settings</h1>
-          <p className="text-gray-400">{organization.name}</p>
+          <p className="text-text-muted">{organization.name}</p>
         </div>
 
         {/* General Settings */}
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm mb-6">
+        <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm mb-6">
           <CardHeader>
             <CardTitle>General Information</CardTitle>
             <CardDescription>
@@ -253,7 +253,7 @@ export default function OrganizationSettingsPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Enter organization name"
-                className="bg-[#0A0A0B] border-gray-800 text-white"
+                className="bg-surface-canvas border-border-subtle text-white"
               />
             </div>
 
@@ -265,7 +265,7 @@ export default function OrganizationSettingsPage() {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Enter organization description"
                 rows={4}
-                className="bg-[#0A0A0B] border-gray-800 text-white resize-none"
+                className="bg-surface-canvas border-border-subtle text-white resize-none"
               />
             </div>
 
@@ -277,14 +277,14 @@ export default function OrganizationSettingsPage() {
                   setDescription(organization.description || "");
                 }}
                 disabled={!hasChanges || saving}
-                className="border-gray-700"
+                className="border-border-default"
               >
                 Reset
               </Button>
               <Button
                 onClick={handleSave}
                 disabled={!hasChanges || !name.trim() || saving}
-                className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                className="bg-brand-primary hover:bg-brand-primary/80 text-black"
               >
                 {saving ? (
                   <>
@@ -303,17 +303,17 @@ export default function OrganizationSettingsPage() {
         </Card>
 
         {/* Organization Info */}
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm mb-6">
+        <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm mb-6">
           <CardHeader>
             <CardTitle>Organization Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between py-2 border-b border-gray-800">
-              <span className="text-gray-400">Organization ID</span>
+            <div className="flex justify-between py-2 border-b border-border-subtle">
+              <span className="text-text-muted">Organization ID</span>
               <span className="font-mono text-sm">{organization.id}</span>
             </div>
-            <div className="flex justify-between py-2 border-b border-gray-800">
-              <span className="text-gray-400">Created</span>
+            <div className="flex justify-between py-2 border-b border-border-subtle">
+              <span className="text-text-muted">Created</span>
               <span>
                 {new Date(organization.created_at).toLocaleDateString("en-US", {
                   year: "numeric",
@@ -322,8 +322,8 @@ export default function OrganizationSettingsPage() {
                 })}
               </span>
             </div>
-            <div className="flex justify-between py-2 border-b border-gray-800">
-              <span className="text-gray-400">Last Updated</span>
+            <div className="flex justify-between py-2 border-b border-border-subtle">
+              <span className="text-text-muted">Last Updated</span>
               <span>
                 {new Date(organization.updated_at).toLocaleDateString("en-US", {
                   year: "numeric",
@@ -333,14 +333,14 @@ export default function OrganizationSettingsPage() {
               </span>
             </div>
             <div className="flex justify-between py-2">
-              <span className="text-gray-400">Total Members</span>
+              <span className="text-text-muted">Total Members</span>
               <span>{organization.member_count}</span>
             </div>
           </CardContent>
         </Card>
 
         {/* Danger Zone */}
-        <Card className="bg-[#1A1A1B]/50 border-red-500/50 backdrop-blur-sm">
+        <Card className="bg-surface-raised/50 border-red-500/50 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="text-red-400">Danger Zone</CardTitle>
             <CardDescription>
@@ -354,7 +354,7 @@ export default function OrganizationSettingsPage() {
                   <h4 className="font-semibold text-red-400 mb-1">
                     Delete Organization
                   </h4>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-text-muted">
                     Permanently delete this organization and all associated
                     data. This action cannot be undone.
                   </p>
@@ -374,12 +374,12 @@ export default function OrganizationSettingsPage() {
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent className="bg-[#1A1A1B] border-red-500/50 text-white">
+          <AlertDialogContent className="bg-surface-raised border-red-500/50 text-white">
             <AlertDialogHeader>
               <AlertDialogTitle className="text-red-400">
                 Delete Organization
               </AlertDialogTitle>
-              <AlertDialogDescription className="text-gray-400">
+              <AlertDialogDescription className="text-text-muted">
                 This action cannot be undone. This will permanently delete the
                 organization
                 <span className="font-semibold text-white">
@@ -392,7 +392,7 @@ export default function OrganizationSettingsPage() {
             </AlertDialogHeader>
 
             <div className="my-4">
-              <Label htmlFor="delete-confirm" className="text-gray-400">
+              <Label htmlFor="delete-confirm" className="text-text-muted">
                 Type{" "}
                 <span className="font-semibold text-white">
                   {organization.name}
@@ -404,13 +404,13 @@ export default function OrganizationSettingsPage() {
                 value={deleteConfirmation}
                 onChange={(e) => setDeleteConfirmation(e.target.value)}
                 placeholder="Enter organization name"
-                className="bg-[#0A0A0B] border-gray-800 text-white mt-2"
+                className="bg-surface-canvas border-border-subtle text-white mt-2"
               />
             </div>
 
             <AlertDialogFooter>
               <AlertDialogCancel
-                className="border-gray-700"
+                className="border-border-default"
                 disabled={deleting}
                 onClick={() => setDeleteConfirmation("")}
               >
@@ -439,16 +439,19 @@ export default function OrganizationSettingsPage() {
 
         {/* Leave Organization Dialog */}
         <AlertDialog open={leaveDialogOpen} onOpenChange={setLeaveDialogOpen}>
-          <AlertDialogContent className="bg-[#1A1A1B] border-gray-800 text-white">
+          <AlertDialogContent className="bg-surface-raised border-border-subtle text-white">
             <AlertDialogHeader>
               <AlertDialogTitle>Leave Organization</AlertDialogTitle>
-              <AlertDialogDescription className="text-gray-400">
+              <AlertDialogDescription className="text-text-muted">
                 Are you sure you want to leave this organization? You will lose
                 access to all organization resources.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel className="border-gray-700" disabled={leaving}>
+              <AlertDialogCancel
+                className="border-border-default"
+                disabled={leaving}
+              >
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction

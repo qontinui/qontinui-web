@@ -65,7 +65,7 @@ export function SnapshotMultiSelector({
           )}
         </div>
         {selectedSnapshots.length > 0 && (
-          <div className="text-xs text-gray-600 mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+          <div className="text-xs text-text-muted mt-2 p-2 bg-blue-50 rounded border border-blue-200">
             <div className="font-medium text-blue-900">
               {selectedSnapshots.length} snapshot
               {selectedSnapshots.length > 1 ? "s" : ""} selected
@@ -78,7 +78,7 @@ export function SnapshotMultiSelector({
       </CardHeader>
       <CardContent>
         {loading && (
-          <div className="flex items-center justify-center py-8 text-gray-500">
+          <div className="flex items-center justify-center py-8 text-text-muted">
             <Loader2 className="w-5 h-5 animate-spin mr-2" />
             <span className="text-sm">Loading snapshots...</span>
           </div>
@@ -91,7 +91,7 @@ export function SnapshotMultiSelector({
         )}
 
         {!loading && !error && snapshots.length === 0 && (
-          <div className="text-center py-8 text-gray-500 text-sm">
+          <div className="text-center py-8 text-text-muted text-sm">
             <Database className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p>No snapshots found</p>
             <p className="text-xs mt-1">Import a snapshot to begin</p>
@@ -113,7 +113,7 @@ export function SnapshotMultiSelector({
                     ${
                       isSelected
                         ? "bg-blue-50 border-blue-300 ring-1 ring-blue-300"
-                        : "bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                        : "bg-white border-border-subtle hover:border-border-default hover:bg-surface-raised/80"
                     }
                   `}
                   onClick={() => handleToggle(snapshot)}
@@ -129,14 +129,14 @@ export function SnapshotMultiSelector({
                         <div className="text-sm font-medium truncate">
                           {snapshot.run_id}
                         </div>
-                        <div className="text-xs text-gray-500 whitespace-nowrap">
+                        <div className="text-xs text-text-muted whitespace-nowrap">
                           {formatDistanceToNow(new Date(snapshot.start_time), {
                             addSuffix: true,
                           })}
                         </div>
                       </div>
 
-                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-600">
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-text-muted">
                         <span>
                           {snapshot.total_actions} action
                           {snapshot.total_actions !== 1 ? "s" : ""}
@@ -153,7 +153,7 @@ export function SnapshotMultiSelector({
                       </div>
 
                       {snapshot.duration_seconds !== null && (
-                        <div className="mt-1 text-xs text-gray-500">
+                        <div className="mt-1 text-xs text-text-muted">
                           Duration: {Math.round(snapshot.duration_seconds)}s
                         </div>
                       )}
@@ -163,7 +163,7 @@ export function SnapshotMultiSelector({
                           {snapshot.tags.map((tag) => (
                             <span
                               key={tag}
-                              className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs"
+                              className="px-2 py-0.5 bg-surface-raised text-text-secondary rounded text-xs"
                             >
                               {tag}
                             </span>

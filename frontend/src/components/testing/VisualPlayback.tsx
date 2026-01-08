@@ -148,7 +148,7 @@ export function VisualPlayback({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-bold text-white">Visual Playback</h2>
-          <Badge className="bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30">
+          <Badge className="bg-brand-primary/20 text-brand-primary border-brand-primary/30">
             {run.steps.length} Steps
           </Badge>
         </div>
@@ -157,7 +157,7 @@ export function VisualPlayback({
             variant="outline"
             size="sm"
             onClick={onToggleVisualMode}
-            className="border-gray-700 hover:border-gray-600"
+            className="border-border-default hover:border-border-default"
           >
             <FileText className="w-4 h-4 mr-2" />
             View Details
@@ -169,11 +169,11 @@ export function VisualPlayback({
         {/* Main Canvas Area */}
         <div className="lg:col-span-2 space-y-4">
           {/* Screenshot Canvas */}
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50 overflow-hidden">
+          <Card className="bg-surface-raised/50 border-border-subtle/50 overflow-hidden">
             <CardContent className="p-0">
               <div
                 ref={canvasRef}
-                className="relative aspect-video bg-gray-900 flex items-center justify-center"
+                className="relative aspect-video bg-surface-canvas flex items-center justify-center"
               >
                 {currentFrame?.screenshot_url ? (
                   <ScreenshotWithOverlay
@@ -208,9 +208,9 @@ export function VisualPlayback({
         {/* Side Panel */}
         <div className="space-y-4">
           {/* Current Step Details */}
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-gray-400">
+              <CardTitle className="text-sm text-text-muted">
                 Current Step
               </CardTitle>
             </CardHeader>
@@ -218,15 +218,15 @@ export function VisualPlayback({
               {currentStep ? (
                 <StepDetails step={currentStep} nameMap={nameMap} />
               ) : (
-                <div className="text-sm text-gray-500">No step selected</div>
+                <div className="text-sm text-text-muted">No step selected</div>
               )}
             </CardContent>
           </Card>
 
           {/* Active States */}
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-gray-400 flex items-center gap-2">
+              <CardTitle className="text-sm text-text-muted flex items-center gap-2">
                 <Layers className="w-4 h-4" />
                 Active States
               </CardTitle>
@@ -244,7 +244,7 @@ export function VisualPlayback({
                     </Badge>
                   ))
                 ) : (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-text-muted">
                     No active states
                   </span>
                 )}
@@ -253,9 +253,11 @@ export function VisualPlayback({
           </Card>
 
           {/* Timeline */}
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+          <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-gray-400">Timeline</CardTitle>
+              <CardTitle className="text-sm text-text-muted">
+                Timeline
+              </CardTitle>
             </CardHeader>
             <CardContent className="max-h-64 overflow-y-auto">
               <ActionTimeline
@@ -323,14 +325,14 @@ function HighlightBox({ region }: { region: HighlightRegion }) {
         top: `${region.y}px`,
         width: `${region.width}px`,
         height: `${region.height}px`,
-        borderColor: region.color || "#00D9FF",
+        borderColor: region.color || "var(--color-brand-primary)",
       }}
     >
       {region.label && (
         <div
           className="absolute -top-6 left-0 px-1 py-0.5 text-xs font-medium rounded whitespace-nowrap"
           style={{
-            backgroundColor: region.color || "#00D9FF",
+            backgroundColor: region.color || "var(--color-brand-primary)",
             color: "black",
           }}
         >
@@ -353,8 +355,8 @@ function ActionAnimationOverlay({ animation }: { animation: ActionAnimation }) {
             transform: "translate(-50%, -50%)",
           }}
         >
-          <div className="w-8 h-8 rounded-full bg-[#00D9FF]/50 animate-ping" />
-          <div className="absolute inset-0 w-8 h-8 rounded-full bg-[#00D9FF] animate-pulse" />
+          <div className="w-8 h-8 rounded-full bg-brand-primary/50 animate-ping" />
+          <div className="absolute inset-0 w-8 h-8 rounded-full bg-brand-primary animate-pulse" />
         </div>
       );
 
@@ -381,7 +383,7 @@ function ActionAnimationOverlay({ animation }: { animation: ActionAnimation }) {
             y1={animation.start_position.y}
             x2={animation.end_position.x}
             y2={animation.end_position.y}
-            stroke="#00D9FF"
+            stroke="var(--color-brand-primary)"
             strokeWidth="3"
             strokeDasharray="8,4"
             className="animate-pulse"
@@ -390,7 +392,7 @@ function ActionAnimationOverlay({ animation }: { animation: ActionAnimation }) {
             cx={animation.start_position.x}
             cy={animation.start_position.y}
             r="6"
-            fill="#00D9FF"
+            fill="var(--color-brand-primary)"
           />
           <circle
             cx={animation.end_position.x}
@@ -410,7 +412,7 @@ function ActionAnimationOverlay({ animation }: { animation: ActionAnimation }) {
             top: `${animation.start_position?.y ?? 0}px`,
           }}
         >
-          <div className="flex flex-col items-center text-[#00D9FF] animate-bounce">
+          <div className="flex flex-col items-center text-brand-primary animate-bounce">
             <div className="w-6 h-10 border-2 border-current rounded-full flex justify-center pt-2">
               <div className="w-1.5 h-3 bg-current rounded-full animate-scroll" />
             </div>
@@ -431,7 +433,7 @@ function ScreenshotPlaceholder({ step }: ScreenshotPlaceholderProps) {
   const getPlaceholderContent = () => {
     if (!step) {
       return {
-        icon: <ImageIcon className="w-16 h-16 text-gray-600" />,
+        icon: <ImageIcon className="w-16 h-16 text-text-muted" />,
         title: "No Screenshot Available",
         description: "Select a step to view its visual representation",
       };
@@ -473,7 +475,7 @@ function ScreenshotPlaceholder({ step }: ScreenshotPlaceholderProps) {
     <div className="flex flex-col items-center justify-center text-center p-8">
       {content.icon}
       <h3 className="text-lg font-medium text-white mt-4">{content.title}</h3>
-      <p className="text-sm text-gray-400 mt-1">{content.description}</p>
+      <p className="text-sm text-text-muted mt-1">{content.description}</p>
     </div>
   );
 }
@@ -546,7 +548,7 @@ function StepDetails({
         {getStatusBadge()}
       </div>
 
-      <div className="text-xs text-gray-400">
+      <div className="text-xs text-text-muted">
         Duration:{" "}
         {step.duration_ms === 0 ? "0ms (virtual)" : `${step.duration_ms}ms`}
       </div>
@@ -554,8 +556,8 @@ function StepDetails({
       {/* Step-specific details */}
       {step.type === "action" && step.pattern_name && (
         <div className="text-xs">
-          <span className="text-gray-500">Pattern:</span>{" "}
-          <span className="text-[#00D9FF]">
+          <span className="text-text-muted">Pattern:</span>{" "}
+          <span className="text-brand-primary">
             {resolveName(step.pattern_name, nameMap)}
           </span>
         </div>
@@ -563,11 +565,11 @@ function StepDetails({
 
       {step.type === "action" && step.match_location && (
         <div className="text-xs">
-          <span className="text-gray-500">Location:</span>{" "}
+          <span className="text-text-muted">Location:</span>{" "}
           <span className="text-white font-mono">
             ({step.match_location.x}, {step.match_location.y})
           </span>
-          <span className="text-gray-500 ml-2">Score:</span>{" "}
+          <span className="text-text-muted ml-2">Score:</span>{" "}
           <span className="text-white">
             {(step.match_location.score * 100).toFixed(1)}%
           </span>
@@ -613,7 +615,7 @@ function getActionIcon(step: ActionStep): React.ReactNode {
     case "find":
       return <Eye className="w-16 h-16 text-blue-400" />;
     default:
-      return <AlertCircle className="w-16 h-16 text-gray-400" />;
+      return <AlertCircle className="w-16 h-16 text-text-muted" />;
   }
 }
 

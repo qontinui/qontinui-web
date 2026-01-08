@@ -58,7 +58,7 @@ const TestRegionSelector: React.FC = () => {
             {selectedRegion.width} × {selectedRegion.height}
           </div>
         ) : (
-          <div className="p-3 bg-gray-100 rounded">
+          <div className="p-3 bg-surface-raised rounded">
             No region selected. Click and drag on the image below to select a
             region.
           </div>

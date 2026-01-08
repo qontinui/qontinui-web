@@ -237,7 +237,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
 
       default:
         return (
-          <div className="text-xs text-gray-400">
+          <div className="text-xs text-text-muted">
             Quick edit not available for {action.type}. Use the full properties
             panel.
           </div>
@@ -249,7 +249,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
     <Popover open={open} onOpenChange={onOpenChange}>
       {trigger && <PopoverTrigger asChild>{trigger}</PopoverTrigger>}
       <PopoverContent
-        className="w-80 bg-[#1e1e1e] border-gray-700"
+        className="w-80 bg-surface-canvas border-border-default"
         side="right"
         align="start"
         {...(position && {
@@ -264,7 +264,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h4 className="text-sm font-semibold text-gray-200">
+              <h4 className="text-sm font-semibold text-text-secondary">
                 Quick Edit
               </h4>
               <Badge variant="secondary" className="text-xs mt-1">
@@ -283,7 +283,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           <div className="py-2">{renderQuickEditFields()}</div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2 pt-2 border-t border-gray-700">
+          <div className="flex justify-end gap-2 pt-2 border-t border-border-default">
             <Button
               size="sm"
               variant="outline"
@@ -304,10 +304,12 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           </div>
 
           {/* Keyboard shortcuts hint */}
-          <div className="text-xs text-gray-500 text-center pt-1 border-t border-gray-800">
-            Press <kbd className="px-1 py-0.5 bg-gray-800 rounded">Enter</kbd>{" "}
-            to save, <kbd className="px-1 py-0.5 bg-gray-800 rounded">Esc</kbd>{" "}
-            to cancel
+          <div className="text-xs text-text-muted text-center pt-1 border-t border-border-subtle">
+            Press{" "}
+            <kbd className="px-1 py-0.5 bg-surface-raised rounded">Enter</kbd>{" "}
+            to save,{" "}
+            <kbd className="px-1 py-0.5 bg-surface-raised rounded">Esc</kbd> to
+            cancel
           </div>
         </div>
       </PopoverContent>

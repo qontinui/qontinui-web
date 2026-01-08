@@ -5,12 +5,12 @@ import {
   FolderOpen,
   ImageIcon,
   Camera,
-  Monitor,
   Loader2,
-  Check,
 } from "lucide-react";
 import { ScreenshotSelector } from "@/components/screenshot-selector";
 import { toast } from "sonner";
+import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
+import { MonitorSelector } from "@/components/monitor-selector";
 
 export interface ScreenshotInfo {
   id: string;
@@ -75,27 +75,6 @@ function saveMonitorPrefs(monitors: number[], delay: number): void {
   }
 }
 
-/**
- * Get position label based on monitor X coordinate relative to others
- */
-function getPositionLabel(
-  monitor: MonitorInfo,
-  allMonitors: MonitorInfo[]
-): string {
-  if (allMonitors.length === 1) return "";
-
-  const sorted = [...allMonitors].sort((a, b) => a.x - b.x);
-  const idx = sorted.findIndex((m) => m.index === monitor.index);
-
-  if (sorted.length === 2) {
-    return idx === 0 ? "Left" : "Right";
-  }
-
-  if (idx === 0) return "Left";
-  if (idx === sorted.length - 1) return "Right";
-  return "Center";
-}
-
 interface ScreenshotPickerProps {
   currentScreenshot: ScreenshotInfo | null;
   onUploadScreenshot: (file: File) => void;
@@ -138,8 +117,20 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
 
   const [isCapturing, setIsCapturing] = useState(false);
   const [showMonitorMenu, setShowMonitorMenu] = useState(false);
-  const [availableMonitors, setAvailableMonitors] = useState<MonitorInfo[]>([]);
   const [countdown, setCountdown] = useState<number | null>(null);
+
+  // Use runner monitors hook to get monitor configuration from runner (port 9876)
+  const { monitors: runnerMonitors, isRunnerConnected } = useRunnerMonitors();
+
+  // Convert runner monitors to component's MonitorInfo format
+  const availableMonitors: MonitorInfo[] = runnerMonitors.map((m) => ({
+    index: m.index,
+    x: m.x,
+    y: m.y,
+    width: m.width,
+    height: m.height,
+    is_primary: m.is_primary,
+  }));
 
   // Load saved preferences from localStorage
   const savedPrefs = loadMonitorPrefs();
@@ -204,7 +195,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
     }
   };
 
-  const handleOpenMonitorMenu = async () => {
+  const handleOpenMonitorMenu = () => {
     // Calculate position for fixed dropdown
     if (captureButtonRef.current) {
       const rect = captureButtonRef.current.getBoundingClientRect();
@@ -214,77 +205,22 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
       });
     }
     setShowMonitorMenu(true);
-    try {
-      const apiUrl =
-        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
-      const response = await fetch(`${apiUrl}/api/capture/screenshot/monitors`);
-      if (response.ok) {
-        const data = await response.json();
-        const monitors = (data.monitors || []).map((m: MonitorInfo) => ({
-          ...m,
-          x: m.x ?? 0,
-          y: m.y ?? 0,
-        }));
-        // Sort by x position (left to right)
-        const sortedMonitors = [...monitors].sort(
-          (a: MonitorInfo, b: MonitorInfo) => a.x - b.x
-        );
-        setAvailableMonitors(sortedMonitors);
+  };
 
-        // Validate saved monitor selections against available monitors
-        const availableIndices = sortedMonitors.map(
-          (m: MonitorInfo) => m.index
-        );
-        const validSavedMonitors = selectedMonitors.filter((idx) =>
-          availableIndices.includes(idx)
-        );
-
-        if (validSavedMonitors.length > 0) {
-          // Use validated saved monitors
-          if (validSavedMonitors.length !== selectedMonitors.length) {
-            // Some saved monitors no longer exist, update state
-            setSelectedMonitors(validSavedMonitors);
-          }
-        } else {
-          // No valid saved monitors, default to primary or first
-          const primaryMonitor = sortedMonitors.find(
-            (m: MonitorInfo) => m.is_primary
-          );
-          if (primaryMonitor) {
-            setSelectedMonitors([primaryMonitor.index]);
-          } else if (sortedMonitors.length > 0) {
-            setSelectedMonitors([sortedMonitors[0].index]);
-          }
-        }
+  // Handler for MonitorSelector changes - saves to localStorage
+  const handleMonitorSelectionChange = (newSelection: number[]) => {
+    // Ensure at least one monitor is selected
+    if (newSelection.length === 0 && runnerMonitors.length > 0) {
+      const primaryMonitor = runnerMonitors.find((m) => m.is_primary);
+      const firstMonitor = runnerMonitors[0];
+      if (primaryMonitor) {
+        setSelectedMonitors([primaryMonitor.index]);
+      } else if (firstMonitor) {
+        setSelectedMonitors([firstMonitor.index]);
       }
-    } catch (error) {
-      console.error("Failed to fetch monitors:", error);
-      // Default to single monitor if API fails
-      setAvailableMonitors([
-        { index: 0, x: 0, y: 0, width: 1920, height: 1080, is_primary: true },
-      ]);
-      if (selectedMonitors.length === 0) {
-        setSelectedMonitors([0]);
-      }
+    } else {
+      setSelectedMonitors(newSelection);
     }
-  };
-
-  const handleMonitorClick = (index: number) => {
-    setSelectedMonitors((prev) => {
-      if (prev.includes(index)) {
-        // Don't allow deselecting if it's the only one selected
-        if (prev.length > 1) {
-          return prev.filter((i) => i !== index);
-        }
-        return prev;
-      } else {
-        return [...prev, index].sort((a, b) => a - b);
-      }
-    });
-  };
-
-  const handleSelectAllMonitors = () => {
-    setSelectedMonitors(availableMonitors.map((m) => m.index));
   };
 
   const handleCaptureFromScreen = async () => {
@@ -308,10 +244,11 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         setCountdown(null);
       }
 
+      // Capture from all selected monitors using qontinui-api directly
+      // (Runner returns file paths, but we need base64 data for the frontend)
       const apiUrl =
         process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
 
-      // Capture from all selected monitors
       console.log(
         "[ScreenshotPicker] Starting capture for monitors:",
         selectedMonitors
@@ -322,19 +259,27 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
 
       for (const monitorIndex of selectedMonitors) {
         console.log("[ScreenshotPicker] Capturing monitor:", monitorIndex);
-        const monitorParam = `&monitor=${monitorIndex}`;
+
         const response = await fetch(
-          `${apiUrl}/api/capture/screenshot/current?quality=95${monitorParam}`
+          `${apiUrl}/api/capture/screenshot/current?monitor=${monitorIndex}&quality=95`
         );
 
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(
-            errorText || `Failed to capture screenshot: ${response.statusText}`
+            errorText ||
+              `Failed to capture screenshot from monitor ${monitorIndex}`
           );
         }
 
         const data = await response.json();
+
+        if (!data.screenshot_base64) {
+          throw new Error(
+            `No screenshot data returned for monitor ${monitorIndex}`
+          );
+        }
+
         console.log(
           "[ScreenshotPicker] Received screenshot data for monitor:",
           monitorIndex,
@@ -425,19 +370,19 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
   return (
     <div className={className}>
       {/* Screenshot Selection Buttons */}
-      <div className="p-4 border-b border-gray-800">
+      <div className="p-4 border-b border-border-subtle">
         <h2 className="font-semibold text-white mb-3">Screenshot</h2>
         <div className="space-y-2">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="w-full px-3 py-2 bg-[#00D9FF] text-black rounded-md hover:bg-[#00D9FF]/90 text-sm flex items-center justify-center gap-2 font-medium"
+            className="w-full px-3 py-2 bg-brand-primary text-black rounded-md hover:bg-brand-primary/90 text-sm flex items-center justify-center gap-2 font-medium"
           >
             <Upload className="w-4 h-4" />
             Upload Image
           </button>
           <button
             onClick={() => screenshotSelectorTriggerRef.current?.click()}
-            className="w-full px-3 py-2 bg-[#00FF88] text-black rounded-md hover:bg-[#00FF88]/90 text-sm flex items-center justify-center gap-2 font-medium"
+            className="w-full px-3 py-2 bg-brand-success text-black rounded-md hover:bg-brand-success/90 text-sm flex items-center justify-center gap-2 font-medium"
           >
             <FolderOpen className="w-4 h-4" />
             From Project
@@ -450,7 +395,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                 ref={captureButtonRef}
                 onClick={handleOpenMonitorMenu}
                 disabled={isCapturing}
-                className="w-full px-3 py-2 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 text-sm flex items-center justify-center gap-2 font-medium disabled:opacity-50"
+                className="w-full px-3 py-2 bg-brand-secondary text-white rounded-md hover:bg-brand-secondary/90 text-sm flex items-center justify-center gap-2 font-medium disabled:opacity-50"
               >
                 {isCapturing ? (
                   <>
@@ -470,12 +415,12 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
               {showMonitorMenu && menuPosition && (
                 <div
                   ref={monitorMenuRef}
-                  className="fixed bg-[#27272A] rounded-lg shadow-lg z-50 border border-gray-700 p-3"
+                  className="fixed bg-surface-raised rounded-lg shadow-lg z-50 border border-border-default p-3"
                   style={{ top: menuPosition.top, left: menuPosition.left }}
                 >
                   {/* Delay buttons */}
                   <div className="mb-3">
-                    <label className="text-xs text-gray-400 block mb-2">
+                    <label className="text-xs text-text-muted block mb-2">
                       Capture Delay
                     </label>
                     <div className="flex gap-1">
@@ -485,8 +430,8 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                           onClick={() => setCaptureDelay(delay)}
                           className={`flex-1 px-2 py-1.5 text-xs rounded transition-colors ${
                             captureDelay === delay
-                              ? "bg-[#BD00FF] text-white"
-                              : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                              ? "bg-brand-secondary text-white"
+                              : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"
                           }`}
                         >
                           {delay}s
@@ -495,94 +440,24 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                     </div>
                   </div>
 
-                  {/* Monitor selection */}
+                  {/* Monitor selection - using shared MonitorSelector component */}
                   <div className="mb-3">
-                    <label className="text-xs text-gray-400 block mb-2">
-                      Select Monitors
-                    </label>
-                    {availableMonitors.length === 0 ? (
-                      <div className="flex items-center justify-center gap-2 py-4 text-sm text-gray-400">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading monitors...
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        {availableMonitors.map((monitor) => {
-                          const isSelected = selectedMonitors.includes(
-                            monitor.index
-                          );
-                          const position = getPositionLabel(
-                            monitor,
-                            availableMonitors
-                          );
-
-                          return (
-                            <button
-                              key={monitor.index}
-                              onClick={() => handleMonitorClick(monitor.index)}
-                              className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-all min-w-[80px] ${
-                                isSelected
-                                  ? "bg-[#BD00FF]/20 border-[#BD00FF] text-[#BD00FF] ring-2 ring-[#BD00FF]/30"
-                                  : "bg-gray-800 border-gray-600 text-gray-300 hover:border-[#BD00FF]/50 hover:bg-gray-700"
-                              }`}
-                            >
-                              <div className="flex items-center gap-1">
-                                <Monitor className="w-4 h-4" />
-                                <span className="font-medium text-sm">
-                                  #{monitor.index}
-                                </span>
-                                {isSelected && (
-                                  <Check className="w-3 h-3 text-[#BD00FF]" />
-                                )}
-                              </div>
-                              <div className="text-xs text-gray-400 space-y-0.5 text-center">
-                                {monitor.is_primary && (
-                                  <div className="text-[#00FF88] font-medium">
-                                    Primary
-                                  </div>
-                                )}
-                                {position && <div>{position}</div>}
-                                <div>
-                                  {monitor.width}×{monitor.height}
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-
-                        {/* All button */}
-                        {availableMonitors.length > 1 && (
-                          <button
-                            onClick={handleSelectAllMonitors}
-                            className={`flex flex-col items-center justify-center gap-1 p-2 rounded-lg border transition-all min-w-[80px] ${
-                              selectedMonitors.length ===
-                              availableMonitors.length
-                                ? "bg-[#BD00FF]/20 border-[#BD00FF] text-[#BD00FF] ring-2 ring-[#BD00FF]/30"
-                                : "bg-gray-800 border-gray-600 text-gray-300 hover:border-[#BD00FF]/50 hover:bg-gray-700"
-                            }`}
-                          >
-                            <div className="flex items-center gap-1">
-                              <Monitor className="w-4 h-4" />
-                              <span className="font-medium text-sm">All</span>
-                              {selectedMonitors.length ===
-                                availableMonitors.length && (
-                                <Check className="w-3 h-3 text-[#BD00FF]" />
-                              )}
-                            </div>
-                            <div className="text-xs text-gray-400">
-                              {availableMonitors.length} monitors
-                            </div>
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    <MonitorSelector
+                      monitors={selectedMonitors}
+                      onChange={handleMonitorSelectionChange}
+                      runnerMonitors={runnerMonitors}
+                      isRunnerConnected={isRunnerConnected}
+                      label="Select Monitors"
+                      showLabel={true}
+                      showConnectionStatus={true}
+                    />
                   </div>
 
                   {/* Capture button */}
                   <button
                     onClick={handleCaptureFromScreen}
                     disabled={selectedMonitors.length === 0}
-                    className="w-full px-3 py-2 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="w-full px-3 py-2 bg-brand-secondary text-white rounded-md hover:bg-brand-secondary/90 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     <Camera className="w-4 h-4" />
                     Capture{" "}
@@ -610,7 +485,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
       <div className="p-4">
         {currentScreenshot ? (
           <div className="space-y-4">
-            <div className="p-3 border border-[#00D9FF] bg-[#00D9FF]/10 rounded-lg">
+            <div className="p-3 border border-brand-primary bg-brand-primary/10 rounded-lg">
               <div className="flex justify-between items-start mb-2">
                 <div className="flex-1 min-w-0">
                   <div
@@ -622,19 +497,19 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                 </div>
                 <button
                   onClick={onClearScreenshot}
-                  className="ml-2 p-1 hover:bg-[#00D9FF]/20 rounded transition-colors flex-shrink-0"
+                  className="ml-2 p-1 hover:bg-brand-primary/20 rounded transition-colors flex-shrink-0"
                   title="Clear screenshot"
                 >
-                  <X className="w-4 h-4 text-gray-400" />
+                  <X className="w-4 h-4 text-text-muted" />
                 </button>
               </div>
               {showRegionInfo && regionDimensions ? (
-                <div className="text-xs text-[#00FF88] mt-1">
+                <div className="text-xs text-brand-success mt-1">
                   Region: {Math.round(regionDimensions.width)}×
                   {Math.round(regionDimensions.height)}
                 </div>
               ) : showRegionInfo ? (
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-muted mt-1">
                   Select a region on the image
                 </div>
               ) : null}
@@ -644,9 +519,9 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
           </div>
         ) : (
           <div className="text-center py-8">
-            <ImageIcon className="w-12 h-12 mx-auto mb-2 text-gray-600" />
-            <p className="text-sm text-gray-400">No screenshot loaded</p>
-            <p className="text-xs text-gray-500 mt-1">
+            <ImageIcon className="w-12 h-12 mx-auto mb-2 text-text-muted/50" />
+            <p className="text-sm text-text-muted">No screenshot loaded</p>
+            <p className="text-xs text-text-muted/80 mt-1">
               Upload or select from project
             </p>
           </div>

@@ -57,7 +57,7 @@ export function ExpressionEditor({
   return (
     <div className={cn("space-y-2", className)}>
       {label && (
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           {label}
           {required && <span className="text-red-400 ml-1">*</span>}
         </Label>
@@ -67,16 +67,16 @@ export function ExpressionEditor({
         value={value}
         onChange={handleChange}
         placeholder={placeholder}
-        className="bg-transparent border-gray-700 font-mono text-sm resize-y"
+        className="bg-transparent border-border-default font-mono text-sm resize-y"
         style={{
           minHeight: `${minRows * 1.5}rem`,
         }}
       />
 
-      {helperText && <p className="text-xs text-gray-500">{helperText}</p>}
+      {helperText && <p className="text-xs text-text-muted">{helperText}</p>}
 
       {!helperText && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           JavaScript expression. You can use variables, operators, and
           functions.
         </p>

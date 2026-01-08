@@ -328,17 +328,17 @@ export const ProcessTestRunner: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-surface-canvas">
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <TestTube2 className="w-6 h-6 text-purple-600" />
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">
+              <h2 className="text-xl font-semibold text-text-primary">
                 Process Test Runner
               </h2>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-text-muted">
                 Run workflows as integration tests with real pattern matching
               </p>
             </div>
@@ -361,13 +361,13 @@ export const ProcessTestRunner: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              <Settings className="w-4 h-4 text-gray-500" />
+              <Settings className="w-4 h-4 text-text-muted" />
               <select
                 value={mockMode}
                 onChange={(e) =>
                   setMockMode(e.target.value as "hybrid" | "full_mock")
                 }
-                className="px-3 py-1.5 border rounded-lg text-sm text-gray-900 bg-white"
+                className="px-3 py-1.5 border rounded-lg text-sm text-text-primary bg-white"
                 disabled={isExecuting}
               >
                 <option value="hybrid">Hybrid (Real Pattern Matching)</option>
@@ -381,7 +381,7 @@ export const ProcessTestRunner: React.FC = () => {
       {/* Process Selection */}
       <div className="bg-white border-b px-6 py-3">
         <div className="flex items-center gap-4">
-          <Layers className="w-4 h-4 text-gray-500" />
+          <Layers className="w-4 h-4 text-text-muted" />
 
           <select
             value={selectedCategory}
@@ -389,7 +389,7 @@ export const ProcessTestRunner: React.FC = () => {
               setSelectedCategory(e.target.value);
               setSelectedProcess("");
             }}
-            className="px-3 py-1.5 border rounded-lg text-sm text-gray-900 bg-white"
+            className="px-3 py-1.5 border rounded-lg text-sm text-text-primary bg-white"
             disabled={isExecuting}
           >
             <option value="">All Categories</option>
@@ -407,7 +407,7 @@ export const ProcessTestRunner: React.FC = () => {
           <select
             value={selectedProcess}
             onChange={(e) => setSelectedProcess(e.target.value)}
-            className="px-3 py-1.5 border rounded-lg text-sm flex-1 text-gray-900 bg-white"
+            className="px-3 py-1.5 border rounded-lg text-sm flex-1 text-text-primary bg-white"
             disabled={isExecuting}
           >
             <option value="">Select a process to test</option>
@@ -429,7 +429,7 @@ export const ProcessTestRunner: React.FC = () => {
                 className={`px-4 py-1.5 rounded-lg flex items-center gap-2 text-sm font-medium ${
                   selectedProcess && apiConnected
                     ? "bg-purple-600 text-white hover:bg-purple-700"
-                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                    : "bg-surface-raised text-text-muted cursor-not-allowed"
                 }`}
               >
                 <Play className="w-4 h-4" />
@@ -453,14 +453,14 @@ export const ProcessTestRunner: React.FC = () => {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin text-purple-600" />
-                <span className="font-medium text-sm text-gray-900">
+                <span className="font-medium text-sm text-text-primary">
                   Testing: {activeRun.processName}
                 </span>
-                <span className="text-xs text-gray-600">
+                <span className="text-xs text-text-muted">
                   ({activeRun.categoryName})
                 </span>
               </div>
-              <span className="text-sm font-mono text-gray-700">
+              <span className="text-sm font-mono text-text-secondary">
                 {activeRun.currentAction} / {activeRun.totalActions} actions
               </span>
             </div>
@@ -482,8 +482,8 @@ export const ProcessTestRunner: React.FC = () => {
         <div className="w-1/3 border-r bg-white overflow-y-auto">
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-gray-900">Test History</h3>
-              <label className="flex items-center gap-2 text-sm text-gray-700">
+              <h3 className="font-medium text-text-primary">Test History</h3>
+              <label className="flex items-center gap-2 text-sm text-text-secondary">
                 <input
                   type="checkbox"
                   checked={showOnlyFailed}
@@ -502,15 +502,15 @@ export const ProcessTestRunner: React.FC = () => {
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
                     selectedHistoryRun?.sessionId === run.sessionId
                       ? "bg-purple-50 border-purple-300"
-                      : "hover:bg-gray-50 border-gray-200"
+                      : "hover:bg-surface-raised/80 border-border-subtle"
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h4 className="font-medium text-sm text-gray-900">
+                      <h4 className="font-medium text-sm text-text-primary">
                         {run.processName}
                       </h4>
-                      <p className="text-xs text-gray-600 mt-1">
+                      <p className="text-xs text-text-muted mt-1">
                         {run.categoryName}
                       </p>
                       <div className="flex items-center gap-2 mt-2">
@@ -525,21 +525,21 @@ export const ProcessTestRunner: React.FC = () => {
                             : "0%"}{" "}
                           success
                         </span>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-text-muted">
                           {run.startTime.toLocaleTimeString()}
                         </span>
                       </div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-gray-400 mt-1" />
+                    <ChevronRight className="w-4 h-4 text-text-muted mt-1" />
                   </div>
                 </button>
               ))}
 
               {filteredHistory.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-text-muted">
                   <TestTube2 className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p className="text-sm text-gray-500">No test runs yet</p>
-                  <p className="text-xs mt-1 text-gray-400">
+                  <p className="text-sm text-text-muted">No test runs yet</p>
+                  <p className="text-xs mt-1 text-text-muted">
                     Select a process and click Run Test
                   </p>
                 </div>
@@ -555,13 +555,13 @@ export const ProcessTestRunner: React.FC = () => {
               {(selectedHistoryRun || activeRun) && (
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-gray-900">
+                    <h3 className="text-lg font-semibold text-text-primary">
                       {(selectedHistoryRun || activeRun)!.processName}
                     </h3>
                     {selectedHistoryRun && (
                       <button
                         onClick={() => exportResults(selectedHistoryRun)}
-                        className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2 text-sm"
+                        className="px-3 py-1 bg-surface-raised text-text-secondary rounded-lg hover:bg-surface-raised flex items-center gap-2 text-sm"
                       >
                         <Download className="w-4 h-4" />
                         Export Results
@@ -570,9 +570,9 @@ export const ProcessTestRunner: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div className="bg-gray-50 p-3 rounded-lg">
-                      <div className="text-xs text-gray-600 mb-1">Status</div>
-                      <div className="flex items-center gap-2 text-gray-900">
+                    <div className="bg-surface-canvas p-3 rounded-lg">
+                      <div className="text-xs text-text-muted mb-1">Status</div>
+                      <div className="flex items-center gap-2 text-text-primary">
                         {(selectedHistoryRun || activeRun)!.status ===
                         "completed" ? (
                           <CheckCircle className="w-5 h-5 text-green-500" />
@@ -588,20 +588,22 @@ export const ProcessTestRunner: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="bg-gray-50 p-3 rounded-lg">
-                      <div className="text-xs text-gray-600 mb-1">
+                    <div className="bg-surface-canvas p-3 rounded-lg">
+                      <div className="text-xs text-text-muted mb-1">
                         Success Rate
                       </div>
-                      <div className="font-medium text-gray-900">
+                      <div className="font-medium text-text-primary">
                         {(selectedHistoryRun || activeRun)!.successRate
                           ? `${(selectedHistoryRun || activeRun)!.successRate!.toFixed(1)}%`
                           : "Calculating..."}
                       </div>
                     </div>
 
-                    <div className="bg-gray-50 p-3 rounded-lg">
-                      <div className="text-xs text-gray-600 mb-1">Duration</div>
-                      <div className="font-medium text-gray-900">
+                    <div className="bg-surface-canvas p-3 rounded-lg">
+                      <div className="text-xs text-text-muted mb-1">
+                        Duration
+                      </div>
+                      <div className="font-medium text-text-primary">
                         {(selectedHistoryRun || activeRun)!.endTime
                           ? `${((selectedHistoryRun || activeRun)!.endTime!.getTime() - (selectedHistoryRun || activeRun)!.startTime.getTime()) / 1000}s`
                           : "Running..."}
@@ -611,7 +613,7 @@ export const ProcessTestRunner: React.FC = () => {
 
                   {/* Action Results */}
                   <div className="space-y-2">
-                    <h4 className="font-medium text-sm mb-2 text-gray-900">
+                    <h4 className="font-medium text-sm mb-2 text-text-primary">
                       Action Results
                     </h4>
                     {(selectedHistoryRun || activeRun)!.results.map(
@@ -631,7 +633,7 @@ export const ProcessTestRunner: React.FC = () => {
                             </div>
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-medium text-sm capitalize text-gray-900">
+                                <span className="font-medium text-sm capitalize text-text-primary">
                                   {r.actionType}
                                 </span>
                                 {r.success ? (
@@ -641,11 +643,11 @@ export const ProcessTestRunner: React.FC = () => {
                                 )}
                               </div>
                               {r.message && (
-                                <div className="text-xs text-gray-700 mt-1">
+                                <div className="text-xs text-text-secondary mt-1">
                                   {r.message}
                                 </div>
                               )}
-                              <div className="text-xs text-gray-500 mt-1">
+                              <div className="text-xs text-text-muted mt-1">
                                 Duration: {r.duration}ms
                               </div>
                             </div>
@@ -656,7 +658,7 @@ export const ProcessTestRunner: React.FC = () => {
 
                     {(selectedHistoryRun || activeRun)!.results.length ===
                       0 && (
-                      <div className="text-center py-4 text-gray-500 text-sm">
+                      <div className="text-center py-4 text-text-muted text-sm">
                         No actions executed yet
                       </div>
                     )}
@@ -667,11 +669,11 @@ export const ProcessTestRunner: React.FC = () => {
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <FileText className="w-12 h-12 mx-auto mb-3 opacity-50 text-gray-400" />
-                <p className="text-sm text-gray-500">
+                <FileText className="w-12 h-12 mx-auto mb-3 opacity-50 text-text-muted" />
+                <p className="text-sm text-text-muted">
                   Select a test run to view results
                 </p>
-                <p className="text-xs mt-1 text-gray-400">
+                <p className="text-xs mt-1 text-text-muted">
                   or start a new test from the dropdown above
                 </p>
               </div>

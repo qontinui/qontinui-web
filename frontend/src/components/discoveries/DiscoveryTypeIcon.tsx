@@ -24,11 +24,11 @@ const discoveryTypeConfig: Record<
 > = {
   new_element: {
     icon: Plus,
-    color: "#00FF88",
+    color: "hsl(var(--brand-success))",
   },
   new_transition: {
     icon: ArrowRightLeft,
-    color: "#00D9FF",
+    color: "hsl(var(--brand-primary))",
   },
   timing_update: {
     icon: Clock,

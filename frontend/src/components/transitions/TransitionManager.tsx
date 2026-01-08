@@ -147,11 +147,11 @@ export function TransitionManager() {
   );
 
   return (
-    <div className="h-screen flex flex-col bg-[#1A1A1B] text-white">
+    <div className="h-screen flex flex-col bg-surface-canvas text-white">
       {/* Top Toolbar */}
-      <div className="flex-shrink-0 border-b border-gray-700 bg-[#27272A] p-4">
+      <div className="flex-shrink-0 border-b border-border-default bg-surface-raised p-4">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-bold text-[#00D9FF]">
+          <h1 className="text-xl font-bold text-brand-primary">
             Transition Manager
           </h1>
           <div className="flex items-center gap-2">
@@ -163,7 +163,7 @@ export function TransitionManager() {
             <Button
               variant="outline"
               onClick={() => operations.handleExport(transitions)}
-              className="border-gray-700"
+              className="border-border-default"
             >
               <Download className="w-4 h-4 mr-2" />
               Export
@@ -194,31 +194,31 @@ export function TransitionManager() {
           onValueChange={(v) => setViewMode(v as ViewMode)}
           className="mt-4"
         >
-          <TabsList className="bg-[#1A1A1B]">
+          <TabsList className="bg-surface-canvas">
             <TabsTrigger
               value="list"
-              className="data-[state=active]:bg-[#27272A]"
+              className="data-[state=active]:bg-surface-raised"
             >
               <List className="w-4 h-4 mr-2" />
               List
             </TabsTrigger>
             <TabsTrigger
               value="matrix"
-              className="data-[state=active]:bg-[#27272A]"
+              className="data-[state=active]:bg-surface-raised"
             >
               <Grid3x3 className="w-4 h-4 mr-2" />
               Matrix
             </TabsTrigger>
             <TabsTrigger
               value="graph"
-              className="data-[state=active]:bg-[#27272A]"
+              className="data-[state=active]:bg-surface-raised"
             >
               <Network className="w-4 h-4 mr-2" />
               Graph
             </TabsTrigger>
             <TabsTrigger
               value="statistics"
-              className="data-[state=active]:bg-[#27272A]"
+              className="data-[state=active]:bg-surface-raised"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Statistics
@@ -240,7 +240,7 @@ export function TransitionManager() {
           />
 
           {/* Main View */}
-          <Card className="flex-1 border-gray-700 bg-[#27272A] overflow-hidden">
+          <Card className="flex-1 border-border-default bg-surface-raised overflow-hidden">
             <CardContent className="p-4 h-full">
               {viewMode === "list" && (
                 <TransitionListView
@@ -304,9 +304,9 @@ export function TransitionManager() {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="bg-[#27272A] border-gray-700">
+        <AlertDialogContent className="bg-surface-raised border-border-default">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-[#FF4444]">
+            <AlertDialogTitle className="text-error">
               Delete Transition
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -315,7 +315,7 @@ export function TransitionManager() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-gray-700">
+            <AlertDialogCancel className="border-border-default">
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction

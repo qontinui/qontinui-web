@@ -133,7 +133,7 @@ export function WorkflowStepList({
 }: WorkflowStepListProps) {
   if (!workflow || !workflow.actions || workflow.actions.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
+      <div className="text-center py-8 text-text-muted">
         No actions in workflow
       </div>
     );
@@ -156,8 +156,8 @@ export function WorkflowStepList({
                 "flex items-start gap-3",
                 "border",
                 isActive
-                  ? "bg-[#00D9FF]/10 border-[#00D9FF]/50 text-[#00D9FF]"
-                  : "bg-[#1A1A1B]/30 border-gray-800 text-gray-400 hover:bg-[#1A1A1B]/50 hover:border-gray-700"
+                  ? "bg-brand-primary/10 border-brand-primary/50 text-brand-primary"
+                  : "bg-[#1A1A1B]/30 border-border-subtle text-text-muted hover:bg-[#1A1A1B]/50 hover:border-border-default"
               )}
             >
               <div className="flex-shrink-0 mt-0.5">
@@ -165,8 +165,8 @@ export function WorkflowStepList({
                   className={cn(
                     "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
                     isActive
-                      ? "bg-[#00D9FF] text-black"
-                      : "bg-gray-800 text-gray-500"
+                      ? "bg-brand-primary text-black"
+                      : "bg-surface-raised text-text-muted"
                   )}
                 >
                   {index + 1}
@@ -186,7 +186,7 @@ export function WorkflowStepList({
 
               {isActive && (
                 <div className="flex-shrink-0">
-                  <div className="w-2 h-2 rounded-full bg-[#00D9FF] animate-pulse" />
+                  <div className="w-2 h-2 rounded-full bg-brand-primary animate-pulse" />
                 </div>
               )}
             </button>

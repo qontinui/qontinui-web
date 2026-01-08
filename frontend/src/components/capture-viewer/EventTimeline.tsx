@@ -19,7 +19,7 @@ export interface EventTimelineProps {
 }
 
 const EVENT_COLORS: Record<InputEventType, string> = {
-  mouse_move: "bg-gray-400",
+  mouse_move: "bg-text-muted",
   mouse_click: "bg-blue-500",
   mouse_down: "bg-blue-400",
   mouse_up: "bg-blue-300",
@@ -27,7 +27,7 @@ const EVENT_COLORS: Record<InputEventType, string> = {
   mouse_drag: "bg-purple-500",
   key_press: "bg-green-500",
   key_down: "bg-green-400",
-  key_up: "bg-gray-400",
+  key_up: "bg-text-muted",
 };
 
 const EVENT_ICONS: Record<
@@ -150,7 +150,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
             return (
               <div key={type} className="flex items-center gap-1 text-xs">
                 <div className={`w-2 h-2 rounded-full ${color}`} />
-                <span className="text-gray-600">{label}</span>
+                <span className="text-text-muted">{label}</span>
               </div>
             );
           })}
@@ -160,7 +160,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
       {/* Timeline */}
       <div
         ref={timelineRef}
-        className="relative h-20 bg-gray-100 rounded-lg border border-gray-200 cursor-pointer overflow-hidden"
+        className="relative h-20 bg-surface-raised rounded-lg border border-border-subtle cursor-pointer overflow-hidden"
         onClick={handleTimelineClick}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
@@ -174,10 +174,10 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
             return (
               <div
                 key={i}
-                className="flex-1 border-l border-gray-300 relative"
+                className="flex-1 border-l border-border-default relative"
                 style={{ flexBasis: "10%" }}
               >
-                <span className="absolute -bottom-5 left-0 text-xs text-gray-500 transform -translate-x-1/2">
+                <span className="absolute -bottom-5 left-0 text-xs text-text-muted transform -translate-x-1/2">
                   {formatTime(time).split(".")[0]}
                 </span>
               </div>
@@ -215,7 +215,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
                       {EVENT_LABELS[event.eventType]}
                     </div>
                     <div className="text-xs">{formatTime(event.timestamp)}</div>
-                    <div className="text-xs text-gray-300">
+                    <div className="text-xs text-text-secondary">
                       {getEventDescription(event)}
                     </div>
                   </div>
@@ -245,7 +245,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
       </div>
 
       {/* Stats */}
-      <div className="flex items-center justify-between text-sm text-gray-600">
+      <div className="flex items-center justify-between text-sm text-text-muted">
         <div className="flex gap-4">
           <span>
             <span className="font-medium">{events.length}</span> events
@@ -273,13 +273,13 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
             scrolls
           </span>
         </div>
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-text-muted">
           Click on timeline or markers to seek
         </div>
       </div>
 
       {/* Event density visualization */}
-      <div className="relative h-8 bg-gray-50 rounded border border-gray-200 overflow-hidden">
+      <div className="relative h-8 bg-surface-canvas rounded border border-border-subtle overflow-hidden">
         <div className="absolute inset-0 flex items-end justify-around px-1">
           {Object.entries(eventClusters).map(([key, clusterEvents]) => {
             const firstEvent = clusterEvents[0];
@@ -304,7 +304,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
           })}
         </div>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-xs text-gray-500">Event Density</span>
+          <span className="text-xs text-text-muted">Event Density</span>
         </div>
       </div>
     </div>

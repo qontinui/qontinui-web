@@ -27,14 +27,14 @@ export function DurationOverride({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           Find Duration Override (ms)
         </Label>
         {timeout !== undefined && timeout !== null ? (
           <Button
             variant="ghost"
             size="sm"
-            className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+            className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
             onClick={() => {
               const { timeout: _timeout, ...rest } = action.config as Record<
                 string,
@@ -47,7 +47,9 @@ export function DurationOverride({
             <X className="w-3 h-3" />
           </Button>
         ) : (
-          <span className="text-xs text-gray-500">(using project default)</span>
+          <span className="text-xs text-text-muted">
+            (using project default)
+          </span>
         )}
       </div>
       {timeout !== undefined && timeout !== null && (
@@ -60,10 +62,10 @@ export function DurationOverride({
             onChange={(e) =>
               updateConfig("timeout", Number.parseInt(e.target.value) || 0)
             }
-            className="bg-transparent border-gray-700"
+            className="bg-transparent border-border-default"
             placeholder="Duration in milliseconds"
           />
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-text-muted">
             How long to search for the image before timing out
           </div>
         </div>
@@ -72,7 +74,7 @@ export function DurationOverride({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+          className="w-full h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
           onClick={() => updateConfig("timeout", 3000)}
         >
           <Plus className="w-3 h-3 mr-1" />

@@ -41,12 +41,12 @@ export function ImageUploadProgress({
       aria-live="polite"
       aria-label="Image upload progress"
     >
-      <Card className="bg-[#27272A] border-gray-700 shadow-2xl">
+      <Card className="bg-surface-raised border-border-default shadow-2xl">
         <CardHeader className="pb-3">
-          <CardTitle className="text-[#00D9FF] text-base flex items-center gap-2">
+          <CardTitle className="text-brand-primary text-base flex items-center gap-2">
             <ImageIcon className="w-4 h-4" />
             Uploading Images
-            <span className="text-xs text-gray-400 font-normal ml-auto">
+            <span className="text-xs text-text-muted font-normal ml-auto">
               {uploads.length} {uploads.length === 1 ? "file" : "files"}
             </span>
           </CardTitle>
@@ -65,21 +65,21 @@ export function ImageUploadProgress({
               <div className="flex items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <p
-                    className="text-sm text-gray-200 truncate"
+                    className="text-sm text-text-secondary truncate"
                     title={upload.name}
                   >
                     {upload.name}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-xs text-gray-400 font-mono tabular-nums">
+                  <span className="text-xs text-text-muted font-mono tabular-nums">
                     {Math.round(upload.progress)}%
                   </span>
                   {onCancel && upload.progress < 100 && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-5 w-5 p-0 text-gray-400 hover:text-red-400 hover:bg-red-900/20"
+                      className="h-5 w-5 p-0 text-text-muted hover:text-red-400 hover:bg-red-900/20"
                       onClick={() => onCancel(upload.name)}
                       aria-label={`Cancel uploading ${upload.name}`}
                     >

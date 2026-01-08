@@ -43,8 +43,8 @@ export function TransitionGraphView({
         label: state.name,
       },
       style: {
-        background: state.initial ? COLORS.primary : "#27272A",
-        border: `2px solid ${state.initial ? COLORS.primary : "#666"}`,
+        background: state.initial ? COLORS.primary : "#1E1E22",
+        border: `2px solid ${state.initial ? COLORS.primary : "#3A3A42"}`,
         color: "white",
         borderRadius: "8px",
         padding: "10px",
@@ -83,20 +83,20 @@ export function TransitionGraphView({
   }, [transitions, states, setNodes, setEdges]);
 
   return (
-    <div className="h-full w-full bg-[#1A1A1B] rounded-lg overflow-hidden">
+    <div className="h-full w-full bg-surface-canvas rounded-lg overflow-hidden">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         fitView
         attributionPosition="bottom-left"
       >
-        <Background color="#333" gap={16} />
-        <Controls className="bg-[#27272A] border-gray-700" />
+        <Background color="#2A2A30" gap={16} />
+        <Controls className="bg-surface-raised border-border-default" />
         <MiniMap
-          className="bg-[#27272A] border border-gray-700"
+          className="bg-surface-raised border border-border-default"
           nodeColor={(node) => {
             const state = states.find((s) => s.id === node.id);
-            return state?.initial ? COLORS.primary : "#666";
+            return state?.initial ? COLORS.primary : "#3A3A42";
           }}
         />
       </ReactFlow>

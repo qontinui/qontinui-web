@@ -193,8 +193,8 @@ export function ItemMetadataPanel({
         <span
           className={
             currentViewMode === "sequential"
-              ? "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/30"
-              : "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/30"
+              ? "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-primary/10 text-brand-primary border border-brand-primary/30"
+              : "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-success/10 text-brand-success border border-brand-success/30"
           }
         >
           {isLinear ? "Sequential Workflow" : "Graph Workflow"}
@@ -206,9 +206,9 @@ export function ItemMetadataPanel({
 
       {/* Sharing Info */}
       {(currentPermission || collaboratorCount) && (
-        <div className="mb-4 p-3 bg-gray-900/50 border border-gray-800 rounded-lg">
+        <div className="mb-4 p-3 bg-surface-canvas/50 border border-border-subtle rounded-lg">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm text-gray-400">
+            <div className="flex items-center gap-2 text-sm text-text-muted">
               <Users className="h-4 w-4" />
               <span>
                 {collaboratorCount !== undefined && collaboratorCount > 0
@@ -221,7 +221,7 @@ export function ItemMetadataPanel({
                 variant="ghost"
                 size="sm"
                 onClick={onOpenShare}
-                className="text-xs text-gray-400 hover:text-white h-auto py-1 px-2"
+                className="text-xs text-text-muted hover:text-white h-auto py-1 px-2"
               >
                 Manage
               </Button>
@@ -234,7 +234,7 @@ export function ItemMetadataPanel({
       <div className="mb-4">
         <Label
           htmlFor="item-name"
-          className="text-sm font-medium text-gray-300 mb-1.5"
+          className="text-sm font-medium text-text-muted mb-1.5"
         >
           Name
         </Label>
@@ -245,14 +245,14 @@ export function ItemMetadataPanel({
             onChange={(e) => setTempName(e.target.value)}
             onKeyDown={handleKeyDown}
             data-tutorial-id="workflow-name-input"
-            className="bg-gray-900 border-gray-700 text-white"
+            className="bg-surface-canvas border-border-default text-white"
             placeholder="Enter name..."
             autoFocus
           />
         ) : (
           <div
             onClick={() => setIsEditing(true)}
-            className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors"
+            className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors"
           >
             <span className="text-white">{item.name}</span>
           </div>
@@ -263,7 +263,7 @@ export function ItemMetadataPanel({
       <div className="mb-4">
         <Label
           htmlFor="item-description"
-          className="text-sm font-medium text-gray-300 mb-1.5"
+          className="text-sm font-medium text-text-muted mb-1.5"
         >
           Description
         </Label>
@@ -273,15 +273,15 @@ export function ItemMetadataPanel({
             value={tempDescription}
             onChange={(e) => setTempDescription(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="bg-gray-900 border-gray-700 text-white min-h-[80px]"
+            className="bg-surface-canvas border-border-default text-white min-h-[80px]"
             placeholder="Enter description..."
           />
         ) : (
           <div
             onClick={() => setIsEditing(true)}
-            className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors min-h-[80px]"
+            className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors min-h-[80px]"
           >
-            <span className="text-gray-400 text-sm">
+            <span className="text-text-muted text-sm">
               {item.description || "No description"}
             </span>
           </div>
@@ -292,13 +292,13 @@ export function ItemMetadataPanel({
       <div className="mb-4">
         <Label
           htmlFor="item-category"
-          className="text-sm font-medium text-gray-300 mb-1.5"
+          className="text-sm font-medium text-text-muted mb-1.5"
         >
           Category
         </Label>
         {isEditing ? (
           <Select value={tempCategory} onValueChange={setTempCategory}>
-            <SelectTrigger className="bg-gray-900 border-gray-700 text-white">
+            <SelectTrigger className="bg-surface-canvas border-border-default text-white">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -312,7 +312,7 @@ export function ItemMetadataPanel({
         ) : (
           <div
             onClick={() => setIsEditing(true)}
-            className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors"
+            className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors"
           >
             <span className="text-white">{item.category || "Main"}</span>
           </div>
@@ -323,7 +323,7 @@ export function ItemMetadataPanel({
       <div className="mb-4">
         <Label
           htmlFor="item-viewMode"
-          className="text-sm font-medium text-gray-300 mb-1.5"
+          className="text-sm font-medium text-text-muted mb-1.5"
         >
           Preferred Editor
         </Label>
@@ -332,7 +332,7 @@ export function ItemMetadataPanel({
             value={tempViewMode}
             onValueChange={(v) => setTempViewMode(v as BuilderMode)}
           >
-            <SelectTrigger className="bg-gray-900 border-gray-700 text-white">
+            <SelectTrigger className="bg-surface-canvas border-border-default text-white">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -343,7 +343,7 @@ export function ItemMetadataPanel({
         ) : (
           <div
             onClick={() => setIsEditing(true)}
-            className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors"
+            className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors"
           >
             <span className="text-white">
               {currentViewMode === "sequential"
@@ -368,7 +368,7 @@ export function ItemMetadataPanel({
           <Button
             onClick={handleCancel}
             variant="outline"
-            className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+            className="flex-1 border-border-default text-text-muted hover:bg-surface-raised"
           >
             <X className="w-4 h-4 mr-2" />
             Cancel
@@ -378,15 +378,15 @@ export function ItemMetadataPanel({
 
       {/* Initial States Section - Only for Main category workflows */}
       {isMainCategory && (
-        <div className="mt-6 pt-6 border-t border-gray-800">
+        <div className="mt-6 pt-6 border-t border-border-subtle">
           <Collapsible
             open={initialStatesOpen}
             onOpenChange={setInitialStatesOpen}
           >
-            <CollapsibleTrigger className="w-full flex items-center justify-between py-2 hover:bg-gray-900/50 rounded-md px-2 transition-colors">
+            <CollapsibleTrigger className="w-full flex items-center justify-between py-2 hover:bg-surface-canvas/50 rounded-md px-2 transition-colors">
               <div className="flex items-center gap-2">
-                <Play className="h-4 w-4 text-[#00FF88]" />
-                <span className="text-sm font-medium text-gray-300">
+                <Play className="h-4 w-4 text-brand-success" />
+                <span className="text-sm font-medium text-text-muted">
                   Initial States
                 </span>
                 {initialStateIds.length > 0 ? (
@@ -394,22 +394,22 @@ export function ItemMetadataPanel({
                     {initialStateIds.length} custom
                   </span>
                 ) : (
-                  <span className="text-xs text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded">
+                  <span className="text-xs text-text-muted bg-text-muted/10 px-1.5 py-0.5 rounded">
                     {states.filter((s) => s.initial).length} defaults
                   </span>
                 )}
               </div>
               <ChevronDown
-                className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                className={`h-4 w-4 text-text-muted transition-transform duration-200 ${
                   initialStatesOpen ? "rotate-180" : ""
                 }`}
               />
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-2">
-              <div className="bg-gray-900/30 border border-gray-800 rounded-lg p-3">
+              <div className="bg-surface-canvas/30 border border-border-subtle rounded-lg p-3">
                 {/* Inheritance indicator */}
                 {initialStateIds.length === 0 ? (
-                  <div className="flex items-center gap-2 text-xs text-gray-400 mb-3 p-2 bg-gray-800/50 rounded">
+                  <div className="flex items-center gap-2 text-xs text-text-muted mb-3 p-2 bg-surface-raised/50 rounded">
                     <Play className="h-3 w-3" />
                     <span>
                       Using {states.filter((s) => s.initial).length} default
@@ -445,7 +445,7 @@ export function ItemMetadataPanel({
                   </div>
                 )}
 
-                <p className="text-xs text-gray-500 mb-3">
+                <p className="text-xs text-text-muted mb-3">
                   Select which states should be active when this workflow
                   starts. States marked as &quot;Initial&quot; in the State
                   Machine are used by default.
@@ -467,7 +467,7 @@ export function ItemMetadataPanel({
                       return (
                         <label
                           key={state.id}
-                          className="flex items-center gap-2 p-2 rounded hover:bg-gray-800/50 cursor-pointer transition-colors"
+                          className="flex items-center gap-2 p-2 rounded hover:bg-surface-raised/50 cursor-pointer transition-colors"
                         >
                           <Checkbox
                             checked={isSelected}
@@ -477,18 +477,18 @@ export function ItemMetadataPanel({
                                 checked === true
                               )
                             }
-                            className="border-gray-600 data-[state=checked]:bg-[#00FF88] data-[state=checked]:border-[#00FF88]"
+                            className="border-border-default data-[state=checked]:bg-brand-success data-[state=checked]:border-brand-success"
                           />
-                          <span className="text-sm text-gray-300 flex-1">
+                          <span className="text-sm text-text-muted flex-1">
                             {state.name}
                           </span>
                           {isDefaultInitial && (
-                            <span className="text-xs text-gray-500 bg-gray-700/50 px-1.5 py-0.5 rounded">
+                            <span className="text-xs text-text-muted bg-surface-raised/50 px-1.5 py-0.5 rounded">
                               default
                             </span>
                           )}
                           {state.description && (
-                            <span className="text-xs text-gray-500 truncate max-w-[100px]">
+                            <span className="text-xs text-text-muted truncate max-w-[100px]">
                               {state.description}
                             </span>
                           )}
@@ -504,20 +504,20 @@ export function ItemMetadataPanel({
       )}
 
       {/* Workflow Expectations Section */}
-      <div className="mt-6 pt-6 border-t border-gray-800">
+      <div className="mt-6 pt-6 border-t border-border-subtle">
         <Collapsible open={expectationsOpen} onOpenChange={setExpectationsOpen}>
-          <CollapsibleTrigger className="w-full flex items-center justify-between py-2 hover:bg-gray-900/50 rounded-md px-2 transition-colors">
-            <span className="text-sm font-medium text-gray-300">
+          <CollapsibleTrigger className="w-full flex items-center justify-between py-2 hover:bg-surface-canvas/50 rounded-md px-2 transition-colors">
+            <span className="text-sm font-medium text-text-muted">
               Workflow Expectations
             </span>
             <ChevronDown
-              className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+              className={`h-4 w-4 text-text-muted transition-transform duration-200 ${
                 expectationsOpen ? "rotate-180" : ""
               }`}
             />
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2">
-            <div className="bg-gray-900/30 border border-gray-800 rounded-lg overflow-hidden">
+            <div className="bg-surface-canvas/30 border border-border-subtle rounded-lg overflow-hidden">
               <ExpectationsPanel
                 expectations={item.expectations}
                 onChange={handleExpectationsChange}
@@ -530,8 +530,8 @@ export function ItemMetadataPanel({
       </div>
 
       {/* Metadata Info */}
-      <div className="mt-6 pt-6 border-t border-gray-800">
-        <div className="text-xs text-gray-500 space-y-1">
+      <div className="mt-6 pt-6 border-t border-border-subtle">
+        <div className="text-xs text-text-muted space-y-1">
           <div>
             <span className="font-medium">ID:</span> {item.id}
           </div>

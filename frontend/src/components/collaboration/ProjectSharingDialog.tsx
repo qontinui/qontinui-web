@@ -81,7 +81,7 @@ const permissionIcons = {
 };
 
 const permissionColors = {
-  view: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  view: "bg-gray-500/10 text-text-muted border-gray-500/20",
   comment: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   edit: "bg-green-500/10 text-green-500 border-green-500/20",
   admin: "bg-purple-500/10 text-purple-500 border-purple-500/20",

@@ -179,10 +179,10 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
   if (!image) {
     return (
       <div
-        className={`${className} bg-gray-800 flex items-center justify-center`}
+        className={`${className} bg-surface-raised flex items-center justify-center`}
         style={style}
       >
-        <span className="text-gray-500 text-xs">No image</span>
+        <span className="text-text-muted text-xs">No image</span>
       </div>
     );
   }
@@ -190,10 +190,10 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
   if (isLoading) {
     return (
       <div
-        className={`${className} bg-gray-800 flex items-center justify-center`}
+        className={`${className} bg-surface-raised flex items-center justify-center`}
         style={style}
       >
-        <span className="text-gray-500 text-xs">Loading...</span>
+        <span className="text-text-muted text-xs">Loading...</span>
       </div>
     );
   }

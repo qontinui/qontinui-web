@@ -82,7 +82,7 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
 
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
           </div>
         ) : impact ? (
           <div className="space-y-4">
@@ -123,7 +123,7 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
                   <Info className="h-4 w-4 text-blue-500" />
                   Recommendations
                 </div>
-                <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                <ul className="list-disc list-inside space-y-1 text-sm text-text-muted">
                   {impact.recommendations.map((rec, index) => (
                     <li key={index}>{rec}</li>
                   ))}

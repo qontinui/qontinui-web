@@ -43,23 +43,23 @@ export default function RunnersPage() {
   const activeConnectionCount = activeConnections?.length || 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-raised to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleBackToDashboard}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
             </Button>
           </div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               Runner Management
             </h1>
             {activeConnectionCount > 0 && (
@@ -78,7 +78,7 @@ export default function RunnersPage() {
       <main className="p-6 max-w-7xl mx-auto">
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Manage Desktop Runners</h2>
-          <p className="text-gray-400">
+          <p className="text-text-muted">
             Create tokens, monitor connections, and view connection history for
             your desktop runners
           </p>
@@ -90,7 +90,7 @@ export default function RunnersPage() {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="bg-[#1A1A1B] border border-gray-800">
+          <TabsList className="bg-surface-raised border border-border-subtle">
             <TabsTrigger value="active" className="gap-2">
               <Monitor className="w-4 h-4" />
               Active Connections
@@ -114,7 +114,7 @@ export default function RunnersPage() {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-semibold">Active Connections</h3>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-text-muted">
                   Real-time view of currently connected runners
                 </p>
               </div>
@@ -127,7 +127,7 @@ export default function RunnersPage() {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-semibold">Connection History</h3>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-text-muted">
                   View and search past runner connections
                 </p>
               </div>

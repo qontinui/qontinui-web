@@ -121,12 +121,12 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
   }, [explanation, workflow]);
 
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
+    <div className="h-full flex flex-col bg-white dark:bg-surface-canvas">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle dark:border-border-default">
         <div className="flex items-center gap-2">
           <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          <h3 className="font-semibold text-gray-900 dark:text-white">
+          <h3 className="font-semibold text-text-primary dark:text-white">
             Workflow Explanation
           </h3>
         </div>
@@ -134,7 +134,7 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
           <button
             onClick={loadExplanation}
             disabled={loading}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors disabled:opacity-50"
+            className="p-2 hover:bg-surface-raised dark:hover:bg-surface-raised rounded transition-colors disabled:opacity-50"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -142,7 +142,7 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
           {explanation && (
             <button
               onClick={handleCopy}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+              className="p-2 hover:bg-surface-raised dark:hover:bg-surface-raised rounded transition-colors"
               title="Copy explanation"
             >
               <Copy className="w-4 h-4" />
@@ -157,7 +157,7 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
               <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm text-text-muted dark:text-text-muted">
                 Analyzing workflow...
               </p>
             </div>
@@ -176,7 +176,7 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
           <>
             {/* Summary */}
             <div>
-              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              <h4 className="text-sm font-semibold text-text-secondary dark:text-text-secondary mb-2">
                 Summary
               </h4>
               <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
@@ -188,11 +188,11 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
 
             {/* Flow Description */}
             <div>
-              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              <h4 className="text-sm font-semibold text-text-secondary dark:text-text-secondary mb-2">
                 Workflow Flow
               </h4>
-              <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <p className="text-sm text-gray-700 dark:text-gray-300">
+              <div className="p-4 bg-surface-canvas dark:bg-surface-raised rounded-lg">
+                <p className="text-sm text-text-secondary dark:text-text-secondary">
                   {explanation.flowDescription}
                 </p>
               </div>
@@ -200,7 +200,7 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
 
             {/* Step-by-Step */}
             <div>
-              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+              <h4 className="text-sm font-semibold text-text-secondary dark:text-text-secondary mb-3">
                 Step-by-Step Breakdown
               </h4>
               <div className="space-y-3">
@@ -212,7 +212,7 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
                   return (
                     <div
                       key={step.actionId}
-                      className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border-l-4 border-purple-500"
+                      className="p-4 bg-surface-canvas dark:bg-surface-raised rounded-lg border-l-4 border-purple-500"
                     >
                       <div className="flex items-start gap-3">
                         <div className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-semibold">
@@ -220,17 +220,17 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
-                            <h5 className="font-medium text-sm text-gray-900 dark:text-white">
+                            <h5 className="font-medium text-sm text-text-primary dark:text-white">
                               {action?.name || action?.type}
                             </h5>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                            <span className="text-xs text-text-muted dark:text-text-muted">
                               ({action?.type})
                             </span>
                           </div>
-                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
+                          <p className="text-sm text-text-secondary dark:text-text-secondary mb-2">
                             {step.explanation}
                           </p>
-                          <p className="text-xs text-gray-600 dark:text-gray-400 italic">
+                          <p className="text-xs text-text-muted dark:text-text-muted italic">
                             Purpose: {step.purpose}
                           </p>
                         </div>
@@ -245,7 +245,7 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
             {explanation.potentialIssues &&
               explanation.potentialIssues.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold text-text-secondary dark:text-text-secondary mb-3 flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-yellow-500" />
                     Potential Issues
                   </h4>
@@ -268,7 +268,7 @@ ${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
             {explanation.recommendations &&
               explanation.recommendations.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold text-text-secondary dark:text-text-secondary mb-3 flex items-center gap-2">
                     <Lightbulb className="w-4 h-4 text-green-500" />
                     Recommendations
                   </h4>

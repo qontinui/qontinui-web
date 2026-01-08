@@ -83,31 +83,31 @@ export function SearchStrategyOverride({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="text-xs text-gray-400">Search Strategy</Label>
+        <Label className="text-xs text-text-muted">Search Strategy</Label>
         {currentStrategy !== undefined ? (
           <Button
             variant="ghost"
             size="sm"
-            className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+            className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
             onClick={handleRemoveStrategy}
             title="Remove override (use default: FIRST)"
           >
             <X className="w-3 h-3" />
           </Button>
         ) : (
-          <span className="text-xs text-gray-500">(default: FIRST)</span>
+          <span className="text-xs text-text-muted">(default: FIRST)</span>
         )}
       </div>
       {currentStrategy !== undefined ? (
         <Select value={currentStrategy} onValueChange={handleStrategyChange}>
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="FIRST">
               <div className="flex flex-col">
                 <span>FIRST</span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-text-muted">
                   Return first match found
                 </span>
               </div>
@@ -115,7 +115,7 @@ export function SearchStrategyOverride({
             <SelectItem value="BEST">
               <div className="flex flex-col">
                 <span>BEST</span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-text-muted">
                   Return highest confidence match
                 </span>
               </div>
@@ -123,7 +123,7 @@ export function SearchStrategyOverride({
             <SelectItem value="ALL">
               <div className="flex flex-col">
                 <span>ALL</span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-text-muted">
                   Return all matches found
                 </span>
               </div>
@@ -131,7 +131,7 @@ export function SearchStrategyOverride({
             <SelectItem value="EACH">
               <div className="flex flex-col">
                 <span>EACH</span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-text-muted">
                   Return one match per image
                 </span>
               </div>
@@ -142,7 +142,7 @@ export function SearchStrategyOverride({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+          className="w-full h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
           onClick={() => handleStrategyChange("FIRST")}
         >
           <Plus className="w-3 h-3 mr-1" />
@@ -150,7 +150,7 @@ export function SearchStrategyOverride({
         </Button>
       )}
       {currentStrategy && (
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-text-muted mt-1">
           {currentStrategy === "FIRST" &&
             "Searches patterns in parallel, returns immediately on first match."}
           {currentStrategy === "BEST" &&

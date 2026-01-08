@@ -4,6 +4,7 @@ This module re-exports shared schemas from qontinui-schemas and adds
 backend-specific schemas (with UUID conversion, ORM integration, etc.).
 """
 
+from enum import Enum
 from typing import Any
 from uuid import UUID
 
@@ -38,8 +39,11 @@ __all__ = [
     "ExtractionSessionDetail",
     "AnnotationUpdate",
     "ExtractionAnnotationResponse",
+    "ImportMode",
     "StateImportRequest",
     "ImportResult",
+    "StateMachineUpdate",
+    "VisionResults",
 ]
 
 
@@ -52,6 +56,10 @@ class ExtractionConfig(BaseModel):
     max_depth: int = 5
     max_pages: int = 100
     auth_cookies: dict[str, str] = Field(default_factory=dict)
+    use_comprehensive_extraction: bool = Field(
+        default=False,
+        description="Enable comprehensive extraction pipeline that captures ALL visible elements",
+    )
 
 
 class ExtractionSessionCreate(BaseModel):
@@ -79,6 +87,7 @@ class ExtractionSessionResponse(BaseModel):
     status: str
     stats: dict[str, Any]
     error_message: str | None
+    state_machine: dict[str, Any] | None = None  # Pre-built state machine from runner
     created_at: IsoDatetime
     started_at: IsoDatetime | None
     completed_at: IsoDatetime | None
@@ -101,6 +110,21 @@ class ExtractionSessionDetail(ExtractionSessionResponse):
     annotations: list["ExtractionAnnotationResponse"] = Field(default_factory=list)
 
 
+class VisionResults(BaseModel):
+    """Vision extraction results from the runner."""
+
+    extraction_id: str | None = None
+    duration_ms: float | None = None
+    techniques_run: list[str] = Field(default_factory=list)
+    edge_results: list[dict[str, Any]] = Field(default_factory=list)
+    sam3_results: list[dict[str, Any]] = Field(default_factory=list)
+    ocr_results: list[dict[str, Any]] = Field(default_factory=list)
+    merged_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    edge_overlay: str | None = None  # Base64 encoded
+    sam3_overlay: str | None = None  # Base64 encoded
+    ocr_overlay: str | None = None  # Base64 encoded
+
+
 class AnnotationUpdate(BaseModel):
     """Request schema for updating annotations."""
 
@@ -110,6 +134,7 @@ class AnnotationUpdate(BaseModel):
     viewport_height: int = 1080
     elements: list[ElementAnnotation] = Field(default_factory=list)
     states: list[StateAnnotation] = Field(default_factory=list)
+    vision_results: VisionResults | None = None
 
 
 class ExtractionAnnotationResponse(BaseModel):
@@ -123,6 +148,7 @@ class ExtractionAnnotationResponse(BaseModel):
     viewport_height: int
     elements: list[dict[str, Any]]
     states: list[dict[str, Any]]
+    vision_results: dict[str, Any] | None = None
     created_at: IsoDatetime
     updated_at: IsoDatetime
 
@@ -137,11 +163,24 @@ class ExtractionAnnotationResponse(BaseModel):
         return v
 
 
+class ImportMode(str, Enum):
+    """Mode for importing extraction results."""
+
+    LEGACY = "legacy"  # Old behavior: import states as-is from annotations
+    STATE_MACHINE = (
+        "state_machine"  # New: build state machine from co-occurrence clustering
+    )
+
+
 class StateImportRequest(BaseModel):
     """Request schema for importing states to state structure."""
 
     state_ids: list[str] = Field(default_factory=list)  # Empty = all states
     target_workflow_id: str | None = None
+    import_mode: ImportMode = Field(
+        default=ImportMode.STATE_MACHINE,
+        description="Import mode: 'state_machine' for co-occurrence clustering (recommended), 'legacy' for raw state import",
+    )
 
 
 class ImportResult(BaseModel):
@@ -150,3 +189,21 @@ class ImportResult(BaseModel):
     imported_states: int
     imported_transitions: int
     workflow_id: str | None
+    import_mode: str | None = None
+
+
+class StateMachineUpdate(BaseModel):
+    """Request schema for uploading a pre-built state machine from the runner.
+
+    The runner builds the state machine using qontinui's build_state_machine_from_extraction()
+    and sends it here. The web backend just stores it without needing qontinui.
+    """
+
+    states: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="States in workflow format with stateImages, searchRegions, fixed flags, etc.",
+    )
+    transitions: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Transitions derived from navigation actions",
+    )

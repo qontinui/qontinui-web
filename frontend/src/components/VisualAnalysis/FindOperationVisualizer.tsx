@@ -275,7 +275,7 @@ export const FindOperationVisualizer: React.FC<
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-surface-canvas">
       {/* Header */}
       <div className="bg-white border-b px-4 py-3">
         <div className="flex items-center justify-between">
@@ -283,7 +283,7 @@ export const FindOperationVisualizer: React.FC<
             <Search className="w-5 h-5 text-blue-600" />
             <div>
               <h3 className="font-semibold">Find Operation Visualizer</h3>
-              <p className="text-xs text-gray-600">
+              <p className="text-xs text-text-muted">
                 {apiConnected
                   ? "Using real Qontinui pattern matching"
                   : "API not connected"}
@@ -294,7 +294,7 @@ export const FindOperationVisualizer: React.FC<
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowControls(!showControls)}
-              className="p-2 hover:bg-gray-100 rounded-lg"
+              className="p-2 hover:bg-surface-raised rounded-lg"
             >
               {showControls ? (
                 <ChevronUp className="w-4 h-4" />
@@ -311,7 +311,7 @@ export const FindOperationVisualizer: React.FC<
         <div className="bg-white border-b px-4 py-3 space-y-3">
           {/* Similarity Slider */}
           <div className="flex items-center gap-4">
-            <Sliders className="w-4 h-4 text-gray-500" />
+            <Sliders className="w-4 h-4 text-text-muted" />
             <label className="text-sm font-medium">Similarity:</label>
             <input
               type="range"
@@ -334,7 +334,7 @@ export const FindOperationVisualizer: React.FC<
               disabled={!stateImage || !apiConnected || isSearching}
               className={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium ${
                 !stateImage || !apiConnected || isSearching
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  ? "bg-surface-raised text-text-muted cursor-not-allowed"
                   : "bg-blue-600 text-white hover:bg-blue-700"
               }`}
             >
@@ -354,21 +354,21 @@ export const FindOperationVisualizer: React.FC<
             <div className="flex items-center gap-1 border-l pl-2">
               <button
                 onClick={handleZoomOut}
-                className="p-2 hover:bg-gray-100 rounded-lg"
+                className="p-2 hover:bg-surface-raised rounded-lg"
                 title="Zoom Out"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
               <button
                 onClick={handleFitToScreen}
-                className="p-2 hover:bg-gray-100 rounded-lg"
+                className="p-2 hover:bg-surface-raised rounded-lg"
                 title="Fit to Screen"
               >
                 <Maximize2 className="w-4 h-4" />
               </button>
               <button
                 onClick={handleZoomIn}
-                className="p-2 hover:bg-gray-100 rounded-lg"
+                className="p-2 hover:bg-surface-raised rounded-lg"
                 title="Zoom In"
               >
                 <ZoomIn className="w-4 h-4" />
@@ -411,7 +411,7 @@ export const FindOperationVisualizer: React.FC<
             {matches.length > 0 && (
               <button
                 onClick={exportResults}
-                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-2 text-sm"
+                className="px-3 py-2 bg-surface-raised hover:bg-surface-raised/80 rounded-lg flex items-center gap-2 text-sm"
               >
                 <Download className="w-4 h-4" />
                 Export
@@ -423,7 +423,7 @@ export const FindOperationVisualizer: React.FC<
           {matches.length > 0 && (
             <div className="flex items-center gap-6 text-sm">
               <div className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-gray-500" />
+                <Target className="w-4 h-4 text-text-muted" />
                 <span>
                   Matches: <strong>{matches.length}</strong>
                 </span>
@@ -453,7 +453,7 @@ export const FindOperationVisualizer: React.FC<
         <div className="relative">
           <canvas
             ref={canvasRef}
-            className="border border-gray-300 shadow-lg"
+            className="border border-border-default shadow-lg"
             style={{ cursor: "crosshair" }}
             onClick={(e) => {
               const rect = canvasRef.current?.getBoundingClientRect();
@@ -523,7 +523,7 @@ export const FindOperationVisualizer: React.FC<
                   className={`p-2 rounded-lg border text-xs transition-colors ${
                     selectedMatch === match
                       ? "bg-blue-50 border-blue-300"
-                      : "hover:bg-gray-50 border-gray-200"
+                      : "hover:bg-surface-raised/80 border-border-subtle"
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
@@ -540,7 +540,7 @@ export const FindOperationVisualizer: React.FC<
                       {(match.score * 100).toFixed(1)}%
                     </span>
                   </div>
-                  <div className="text-gray-600">
+                  <div className="text-text-muted">
                     ({match.region.x}, {match.region.y})
                   </div>
                 </button>

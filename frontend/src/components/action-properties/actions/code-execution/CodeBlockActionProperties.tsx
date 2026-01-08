@@ -115,17 +115,17 @@ export function CodeBlockActionProperties({
     <>
       {/* Code Source Selection */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400 flex items-center gap-2">
+        <Label className="text-xs text-text-muted flex items-center gap-2">
           Code Source
           <span title="Choose between inline code or external Python file">
             <Info className="w-3 h-3" />
           </span>
         </Label>
         <Select value={codeSource} onValueChange={handleCodeSourceChange}>
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="inline">
               <div className="flex items-center gap-2">
                 <Code className="w-4 h-4" />
@@ -145,8 +145,8 @@ export function CodeBlockActionProperties({
       {/* Inline Code Editor */}
       {codeSource === "inline" && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Python Code</Label>
-          <div className="border border-gray-700 rounded overflow-hidden">
+          <Label className="text-xs text-text-muted">Python Code</Label>
+          <div className="border border-border-default rounded overflow-hidden">
             <Editor
               height="200px"
               defaultLanguage="python"
@@ -165,7 +165,7 @@ export function CodeBlockActionProperties({
               }}
             />
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Available variables: action_result, context, variables
           </p>
         </div>
@@ -174,14 +174,14 @@ export function CodeBlockActionProperties({
       {/* File Path Selection */}
       {codeSource === "file" && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Python File</Label>
+          <Label className="text-xs text-text-muted">Python File</Label>
           <div className="flex items-center gap-2">
             <Input
               type="text"
               value={config.filePath || ""}
               onChange={(e) => updateConfig("filePath", e.target.value)}
               placeholder="scripts/my_script.py"
-              className="bg-transparent border-gray-700 flex-1"
+              className="bg-transparent border-border-default flex-1"
               readOnly={showFileBrowser}
             />
             <Button
@@ -196,7 +196,7 @@ export function CodeBlockActionProperties({
 
           {/* File Browser */}
           {showFileBrowser && (
-            <div className="mt-3 p-3 border border-gray-700 rounded bg-[#1E1E1E]">
+            <div className="mt-3 p-3 border border-border-default rounded bg-surface-canvas">
               <PythonFileBrowser
                 selectedPath={config.filePath}
                 onSelectFile={handleFileSelect}
@@ -211,7 +211,7 @@ export function CodeBlockActionProperties({
 
           {/* Function Name */}
           <div className="space-y-2 mt-3">
-            <Label className="text-xs text-gray-400 flex items-center gap-2">
+            <Label className="text-xs text-text-muted flex items-center gap-2">
               Function Name (Optional)
               <span title="Leave empty to execute entire file">
                 <Info className="w-3 h-3" />
@@ -222,20 +222,20 @@ export function CodeBlockActionProperties({
               value={config.functionName || ""}
               onChange={(e) => updateConfig("functionName", e.target.value)}
               placeholder="my_function"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               If specified, calls this function with inputs as kwargs
             </p>
           </div>
         </div>
       )}
 
-      <Separator className="bg-gray-700" />
+      <Separator className="bg-border-default" />
 
       {/* Input Mappings */}
       <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
-        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300">
+        <CollapsibleTrigger className="flex items-center gap-2 text-xs text-text-muted hover:text-text-default">
           {showAdvanced ? (
             <ChevronDown className="w-4 h-4" />
           ) : (
@@ -246,7 +246,7 @@ export function CodeBlockActionProperties({
         <CollapsibleContent className="space-y-4 mt-3">
           {/* Inputs */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Input Mappings</Label>
+            <Label className="text-xs text-text-muted">Input Mappings</Label>
             <div className="space-y-2">
               {config.inputs &&
                 Object.entries(config.inputs).map(([key, value]) => (
@@ -271,28 +271,28 @@ export function CodeBlockActionProperties({
                 value={inputKey}
                 onChange={(e) => setInputKey(e.target.value)}
                 placeholder="Variable name"
-                className="bg-transparent border-gray-700 flex-1"
+                className="bg-transparent border-border-default flex-1"
               />
-              <span className="text-gray-500">=</span>
+              <span className="text-text-muted">=</span>
               <Input
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 placeholder="Workflow variable"
-                className="bg-transparent border-gray-700 flex-1"
+                className="bg-transparent border-border-default flex-1"
               />
               <Button variant="outline" size="icon" onClick={handleAddInput}>
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Map workflow variables to Python variable names
             </p>
           </div>
 
           {/* Output Variable */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Output Variable</Label>
+            <Label className="text-xs text-text-muted">Output Variable</Label>
             <Input
               type="text"
               value={
@@ -302,16 +302,16 @@ export function CodeBlockActionProperties({
               }
               onChange={(e) => handleOutputVariableChange(e.target.value)}
               placeholder="result (or: price, success, message)"
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Single variable or comma-separated for multiple outputs
             </p>
           </div>
 
           {/* Include Previous Result */}
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">
+            <Label className="text-xs text-text-muted">
               Include Previous Result
             </Label>
             <Switch
@@ -324,21 +324,21 @@ export function CodeBlockActionProperties({
 
           {/* Timeout */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Timeout (seconds)</Label>
+            <Label className="text-xs text-text-muted">Timeout (seconds)</Label>
             <Input
               type="number"
               min="1"
               max="60"
               value={config.timeout || 30}
               onChange={(e) => updateConfig("timeout", Number(e.target.value))}
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
-            <p className="text-xs text-gray-500">Max: 60 seconds</p>
+            <p className="text-xs text-text-muted">Max: 60 seconds</p>
           </div>
 
           {/* Debug Mode */}
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">Debug Mode</Label>
+            <Label className="text-xs text-text-muted">Debug Mode</Label>
             <Switch
               checked={config.debug || false}
               onCheckedChange={(checked) => updateConfig("debug", checked)}
@@ -347,18 +347,18 @@ export function CodeBlockActionProperties({
 
           {/* Description */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Description</Label>
+            <Label className="text-xs text-text-muted">Description</Label>
             <Textarea
               value={config.description || ""}
               onChange={(e) => updateConfig("description", e.target.value)}
               placeholder="Describe what this code does..."
-              className="bg-transparent border-gray-700 min-h-[60px]"
+              className="bg-transparent border-border-default min-h-[60px]"
             />
           </div>
         </CollapsibleContent>
       </Collapsible>
 
-      <Separator className="bg-gray-700" />
+      <Separator className="bg-border-default" />
 
       {/* Timing Properties */}
       <TimingProperties action={action} updateConfig={updateConfig} />

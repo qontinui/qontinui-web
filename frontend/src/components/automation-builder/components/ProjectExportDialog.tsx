@@ -537,10 +537,10 @@ export function ProjectExportDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[500px] bg-gray-950 border-gray-800">
+        <DialogContent className="sm:max-w-[500px] bg-surface-canvas border-border-subtle">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5 text-[#00D9FF]" />
+              <Upload className="w-5 h-5 text-brand-primary" />
               Export & Load to Runner
             </DialogTitle>
             <DialogDescription>
@@ -558,7 +558,7 @@ export function ProjectExportDialog({
                 value={exportName}
                 onChange={(e) => setExportName(e.target.value)}
                 placeholder="Enter project name"
-                className="bg-gray-900 border-gray-700"
+                className="bg-surface-canvas border-border-default"
               />
             </div>
 
@@ -570,37 +570,37 @@ export function ProjectExportDialog({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Add a description for this export..."
-                className="bg-gray-900 border-gray-700 min-h-[80px]"
+                className="bg-surface-canvas border-border-default min-h-[80px]"
               />
             </div>
 
             {/* Export Summary */}
-            <div className="bg-gray-900 rounded-lg p-4 space-y-2">
-              <h4 className="text-sm font-medium text-gray-300">
+            <div className="bg-surface-canvas rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium text-text-muted">
                 Export Summary
               </h4>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="flex justify-between text-gray-400">
+                <div className="flex justify-between text-text-muted">
                   <span>Workflows:</span>
                   <span className="text-white">{workflows.length}</span>
                 </div>
-                <div className="flex justify-between text-gray-400">
+                <div className="flex justify-between text-text-muted">
                   <span>States:</span>
                   <span className="text-white">{states.length}</span>
                 </div>
-                <div className="flex justify-between text-gray-400">
+                <div className="flex justify-between text-text-muted">
                   <span>Transitions:</span>
                   <span className="text-white">{transitions.length}</span>
                 </div>
-                <div className="flex justify-between text-gray-400">
+                <div className="flex justify-between text-text-muted">
                   <span>Images:</span>
                   <span className="text-white">{images.length}</span>
                 </div>
-                <div className="flex justify-between text-gray-400">
+                <div className="flex justify-between text-text-muted">
                   <span>Screenshots:</span>
                   <span className="text-white">{screenshots.length}</span>
                 </div>
-                <div className="flex justify-between text-gray-400">
+                <div className="flex justify-between text-text-muted">
                   <span>Categories:</span>
                   <span className="text-white">{categories.length}</span>
                 </div>
@@ -725,8 +725,8 @@ export function ProjectExportDialog({
                     : ragStatus === "failed"
                       ? "bg-red-950/30 border-red-700"
                       : ragStatus === "skipped"
-                        ? "bg-gray-900 border-gray-700"
-                        : "bg-[#00D9FF]/10 border-[#00D9FF]/30"
+                        ? "bg-surface-canvas border-border-default"
+                        : "bg-brand-primary/10 border-brand-primary/30"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -738,8 +738,8 @@ export function ProjectExportDialog({
                           : ragStatus === "failed"
                             ? "text-red-400"
                             : ragStatus === "skipped"
-                              ? "text-gray-400"
-                              : "text-[#00D9FF]"
+                              ? "text-text-muted"
+                              : "text-brand-primary"
                       }`}
                     />
                     <span className="font-medium text-white text-sm">
@@ -747,12 +747,12 @@ export function ProjectExportDialog({
                     </span>
                   </div>
                   {ragStatus === "checking" && (
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-text-muted">
                       Checking runner...
                     </span>
                   )}
                   {ragStatus === "processing" && (
-                    <Loader2 className="w-4 h-4 animate-spin text-[#00D9FF]" />
+                    <Loader2 className="w-4 h-4 animate-spin text-brand-primary" />
                   )}
                   {ragStatus === "completed" && (
                     <CheckCircle2 className="w-4 h-4 text-green-400" />
@@ -761,7 +761,7 @@ export function ProjectExportDialog({
                     <AlertCircle className="w-4 h-4 text-red-400" />
                   )}
                   {ragStatus === "skipped" && (
-                    <span className="text-xs text-gray-500">Skipped</span>
+                    <span className="text-xs text-text-muted">Skipped</span>
                   )}
                 </div>
 
@@ -772,7 +772,7 @@ export function ProjectExportDialog({
                       value={ragProgress.percent || 0}
                       className="h-2"
                     />
-                    <div className="flex justify-between text-xs text-gray-400">
+                    <div className="flex justify-between text-xs text-text-muted">
                       <span>
                         {ragProgress.currentElement || "Processing elements..."}
                       </span>
@@ -794,7 +794,7 @@ export function ProjectExportDialog({
 
                 {/* Skipped message */}
                 {ragStatus === "skipped" && (
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-text-muted">
                     RAG processing was skipped. Start qontinui-runner to enable
                     semantic search.
                   </p>
@@ -852,7 +852,7 @@ export function ProjectExportDialog({
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="border-gray-700"
+              className="border-border-default"
               disabled={ragStatus === "processing" || ragStatus === "checking"}
             >
               {ragStatus === "completed" ||
@@ -867,7 +867,7 @@ export function ProjectExportDialog({
                   variant="outline"
                   onClick={() => handleExport(false)}
                   disabled={isExporting || !exportName.trim()}
-                  className="border-gray-600 hover:bg-gray-800"
+                  className="border-border-default hover:bg-surface-raised"
                 >
                   {isExporting ? (
                     <>
@@ -884,7 +884,7 @@ export function ProjectExportDialog({
                 <Button
                   onClick={() => handleExport(true)}
                   disabled={isExporting || !exportName.trim()}
-                  className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                  className="bg-brand-primary hover:bg-brand-primary/80 text-black"
                 >
                   {isExporting ? (
                     <>

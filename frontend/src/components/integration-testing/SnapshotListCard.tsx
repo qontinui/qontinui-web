@@ -60,10 +60,10 @@ export function SnapshotListCard({
 
       {loading && snapshots.length === 0 ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          <Loader2 className="w-6 h-6 animate-spin text-text-muted" />
         </div>
       ) : snapshots.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-text-muted">
           <p>No snapshots available</p>
           <p className="text-sm mt-1">Import a snapshot to get started</p>
         </div>
@@ -77,7 +77,7 @@ export function SnapshotListCard({
                 ${
                   selectedSnapshotId === snapshot.id
                     ? "border-blue-500 bg-blue-50"
-                    : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                    : "border-border-subtle hover:border-border-default hover:bg-surface-raised/80"
                 }
               `}
               onClick={() => onSelect?.(snapshot)}
@@ -93,7 +93,7 @@ export function SnapshotListCard({
                     )}
                   </div>
 
-                  <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600">
+                  <div className="flex items-center space-x-4 mt-2 text-sm text-text-muted">
                     <span className="flex items-center space-x-1">
                       {snapshot.successful_actions ===
                       snapshot.total_actions ? (
@@ -123,12 +123,12 @@ export function SnapshotListCard({
                   )}
 
                   {snapshot.notes && (
-                    <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                    <p className="text-sm text-text-muted mt-2 line-clamp-2">
                       {snapshot.notes}
                     </p>
                   )}
 
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-text-muted mt-2">
                     {formatDistanceToNow(new Date(snapshot.start_time), {
                       addSuffix: true,
                     })}

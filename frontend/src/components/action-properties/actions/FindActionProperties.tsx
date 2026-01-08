@@ -42,7 +42,7 @@ export function FindActionProperties({
     return (
       <>
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">
+          <Label className="text-xs text-text-muted">
             Images (use state filter to narrow down)
           </Label>
           <ImageSelector
@@ -85,7 +85,7 @@ export function FindActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           Images (multi-select enabled)
         </Label>
         {Boolean((action.config as Record<string, unknown>).removedImage) && (

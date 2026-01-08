@@ -93,9 +93,9 @@ export function LoopActionProperties({
 
       {/* Loop Type Selector */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Loop Type</Label>
+        <Label className="text-xs text-text-muted">Loop Type</Label>
         <Select value={loopType} onValueChange={handleLoopTypeChange}>
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -110,7 +110,7 @@ export function LoopActionProperties({
             </SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           {loopType === "FOR" && "Execute actions a fixed number of times"}
           {loopType === "WHILE" &&
             "Execute actions while a condition remains true"}
@@ -123,7 +123,7 @@ export function LoopActionProperties({
       {loopType === "FOR" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">
+            <Label className="text-xs text-text-muted">
               Number of Iterations
             </Label>
             <Input
@@ -133,9 +133,9 @@ export function LoopActionProperties({
               onChange={(e) =>
                 updateConfig("iterations", Number.parseInt(e.target.value) || 1)
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               How many times to repeat the loop
             </p>
           </div>
@@ -149,7 +149,7 @@ export function LoopActionProperties({
             placeholder="i"
             required={false}
           />
-          <p className="text-xs text-gray-500 -mt-2">
+          <p className="text-xs text-text-muted -mt-2">
             Variable to store the current iteration number (0-based)
           </p>
         </>
@@ -158,8 +158,8 @@ export function LoopActionProperties({
       {/* WHILE Loop Configuration */}
       {loopType === "WHILE" && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Loop Condition</Label>
-          <div className="p-3 bg-gray-800/50 rounded-md border border-gray-700">
+          <Label className="text-xs text-text-muted">Loop Condition</Label>
+          <div className="p-3 bg-surface-raised/50 rounded-md border border-border-default">
             <ConditionEditor
               condition={config.condition}
               onChange={(condition) => updateConfig("condition", condition)}
@@ -168,7 +168,7 @@ export function LoopActionProperties({
               images={images.map((img) => ({ id: img.id, name: img.name }))}
             />
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Loop continues while this condition evaluates to true
           </p>
         </div>
@@ -178,7 +178,7 @@ export function LoopActionProperties({
       {loopType === "FOREACH" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Collection Type</Label>
+            <Label className="text-xs text-text-muted">Collection Type</Label>
             <Select
               value={config.collection?.type || "variable"}
               onValueChange={(type) =>
@@ -189,7 +189,7 @@ export function LoopActionProperties({
                 })
               }
             >
-              <SelectTrigger className="bg-transparent border-gray-700">
+              <SelectTrigger className="bg-transparent border-border-default">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -220,7 +220,7 @@ export function LoopActionProperties({
           {config.collection?.type === "range" && (
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-2">
-                <Label className="text-xs text-gray-500">Start</Label>
+                <Label className="text-xs text-text-muted">Start</Label>
                 <Input
                   type="number"
                   value={config.collection.start ?? 0}
@@ -230,11 +230,11 @@ export function LoopActionProperties({
                       start: Number.parseInt(e.target.value) || 0,
                     })
                   }
-                  className="bg-transparent border-gray-700"
+                  className="bg-transparent border-border-default"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs text-gray-500">End</Label>
+                <Label className="text-xs text-text-muted">End</Label>
                 <Input
                   type="number"
                   value={config.collection.end ?? 10}
@@ -244,11 +244,11 @@ export function LoopActionProperties({
                       end: Number.parseInt(e.target.value) || 10,
                     })
                   }
-                  className="bg-transparent border-gray-700"
+                  className="bg-transparent border-border-default"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs text-gray-500">Step</Label>
+                <Label className="text-xs text-text-muted">Step</Label>
                 <Input
                   type="number"
                   value={config.collection.step ?? 1}
@@ -258,7 +258,7 @@ export function LoopActionProperties({
                       step: Number.parseInt(e.target.value) || 1,
                     })
                   }
-                  className="bg-transparent border-gray-700"
+                  className="bg-transparent border-border-default"
                 />
               </div>
             </div>
@@ -283,7 +283,7 @@ export function LoopActionProperties({
             placeholder="item"
             required={false}
           />
-          <p className="text-xs text-gray-500 -mt-2">
+          <p className="text-xs text-text-muted -mt-2">
             Variable to store the current item in each iteration
           </p>
         </>
@@ -303,19 +303,19 @@ export function LoopActionProperties({
             minActions={0}
           />
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Actions to execute in each iteration of the loop
         </p>
       </div>
 
       {/* Safety Settings */}
-      <div className="space-y-3 p-3 bg-gray-800/30 border border-gray-700 rounded-md">
-        <Label className="text-xs text-gray-400 font-medium">
+      <div className="space-y-3 p-3 bg-surface-raised/30 border border-border-default rounded-md">
+        <Label className="text-xs text-text-muted font-medium">
           Safety Settings
         </Label>
 
         <div className="space-y-2">
-          <Label className="text-xs text-gray-500">Max Iterations</Label>
+          <Label className="text-xs text-text-muted">Max Iterations</Label>
           <Input
             type="number"
             min="1"
@@ -326,9 +326,9 @@ export function LoopActionProperties({
                 Number.parseInt(e.target.value) || 1000
               )
             }
-            className="bg-transparent border-gray-700"
+            className="bg-transparent border-border-default"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Safety limit to prevent infinite loops (default: 1000)
           </p>
         </div>
@@ -341,20 +341,20 @@ export function LoopActionProperties({
           />
           <label
             htmlFor="breakOnError"
-            className="text-xs text-gray-400 cursor-pointer select-none"
+            className="text-xs text-text-muted cursor-pointer select-none"
           >
             Break loop on error
           </label>
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           If enabled, the loop will stop if any action throws an error
         </p>
       </div>
 
       {/* Usage Tips */}
-      <div className="p-3 bg-gray-800/30 border border-gray-700 rounded-md">
-        <p className="text-xs text-gray-400 font-medium mb-2">Tips:</p>
-        <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
+      <div className="p-3 bg-surface-raised/30 border border-border-default rounded-md">
+        <p className="text-xs text-text-muted font-medium mb-2">Tips:</p>
+        <ul className="text-xs text-text-muted space-y-1 list-disc list-inside">
           <li>Use BREAK action inside loop to exit early</li>
           <li>Use CONTINUE action to skip to next iteration</li>
           <li>Iterator variable is accessible within loop body actions</li>

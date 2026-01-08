@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useExtractions, useDeleteExtraction } from "@/hooks/use-extractions";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import {
   ExternalLink,
   FileSearch,
   AlertCircle,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
@@ -33,15 +35,15 @@ export default function ExtractionsPage() {
   const getStatusColor = (status: ExtractionSession["status"]) => {
     switch (status) {
       case "completed":
-        return "bg-[#00FF88]/20 text-[#00FF88] border-[#00FF88]/30";
+        return "bg-brand-success/20 text-brand-success border-brand-success/30";
       case "running":
-        return "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30";
+        return "bg-brand-primary/20 text-brand-primary border-brand-primary/30";
       case "pending":
         return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
       case "failed":
         return "bg-red-500/20 text-red-400 border-red-500/30";
       default:
-        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+        return "bg-surface-raised/20 text-text-muted border-border-subtle/30";
     }
   };
 
@@ -94,12 +96,12 @@ export default function ExtractionsPage() {
 
   if (!projectId) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         <main className="p-6 max-w-7xl mx-auto">
-          <Card className="bg-[#1A1A1B]/50 border-yellow-500/30 backdrop-blur-sm">
+          <Card className="bg-surface-raised/50 border-yellow-500/30 backdrop-blur-sm">
             <CardContent className="p-6 flex items-center gap-3">
               <AlertCircle className="w-5 h-5 text-yellow-500" />
-              <p className="text-gray-300">
+              <p className="text-text-secondary">
                 Please select a project from the sidebar to view extractions.
               </p>
             </CardContent>
@@ -111,9 +113,9 @@ export default function ExtractionsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         <main className="p-6 max-w-7xl mx-auto">
-          <div className="text-center py-8 text-gray-400">
+          <div className="text-center py-8 text-text-muted">
             Loading extractions...
           </div>
         </main>
@@ -122,30 +124,44 @@ export default function ExtractionsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <main className="p-6 max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-3xl font-bold">Web Extractions</h1>
+            <Link
+              href={`/automation-builder/web-extraction?project=${projectId}`}
+            >
+              <Button className="bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:border-brand-primary/50">
+                <Plus className="w-4 h-4 mr-2" />
+                New Extraction
+              </Button>
+            </Link>
           </div>
-          <p className="text-gray-400">
+          <p className="text-text-muted">
             View and manage UI extractions from web pages
           </p>
         </div>
 
         {/* Info Box */}
-        <Card className="bg-[#1A1A1B]/50 border-[#00D9FF]/30 backdrop-blur-sm mb-6">
+        <Card className="bg-surface-raised/50 border-brand-primary/30 backdrop-blur-sm mb-6">
           <CardContent className="p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-[#00D9FF] flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-gray-300">
+            <AlertCircle className="w-5 h-5 text-brand-primary flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-text-secondary">
               <p className="font-medium mb-1">
-                Web extractions are created from the Qontinui Runner
+                Create extractions from the Web Extraction page or Runner
               </p>
-              <p className="text-gray-400">
-                Open the Qontinui Runner desktop application to browse websites
-                and extract UI elements and states. Extractions will appear here
-                automatically.
+              <p className="text-text-muted">
+                Use the{" "}
+                <Link
+                  href={`/automation-builder/web-extraction?project=${projectId}`}
+                  className="text-brand-primary hover:underline"
+                >
+                  Web Extraction page
+                </Link>{" "}
+                to configure and start extractions, or use the Qontinui Runner
+                desktop application to browse websites and extract UI elements.
               </p>
             </div>
           </CardContent>
@@ -153,18 +169,26 @@ export default function ExtractionsPage() {
 
         {/* Extractions List */}
         {extractions.length === 0 ? (
-          <Card className="bg-[#1A1A1B]/30 border-gray-800/50 border-dashed backdrop-blur-sm">
+          <Card className="bg-surface-raised/30 border-border-subtle/50 border-dashed backdrop-blur-sm">
             <CardContent className="p-12 text-center">
-              <div className="w-16 h-16 bg-[#00D9FF]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <FileSearch className="w-8 h-8 text-[#00D9FF]" />
+              <div className="w-16 h-16 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FileSearch className="w-8 h-8 text-brand-primary" />
               </div>
-              <h4 className="text-xl font-semibold mb-2 text-gray-300">
+              <h4 className="text-xl font-semibold mb-2 text-text-secondary">
                 No extractions yet
               </h4>
-              <p className="text-gray-500 mb-6">
-                Start by opening the Qontinui Runner and browsing to a website
-                you want to extract UI elements from
+              <p className="text-text-muted mb-6">
+                Start a new extraction to discover UI elements and states from
+                web pages
               </p>
+              <Link
+                href={`/automation-builder/web-extraction?project=${projectId}`}
+              >
+                <Button className="bg-brand-primary hover:bg-brand-primary/90 text-black">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Start New Extraction
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         ) : (
@@ -172,14 +196,14 @@ export default function ExtractionsPage() {
             {extractions.map((extraction) => (
               <Card
                 key={extraction.id}
-                className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm hover:border-[#00D9FF]/30 hover:shadow-[0_0_20px_rgba(0,217,255,0.05)] transition-all duration-300"
+                className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-primary/30 hover:shadow-[0_0_20px_rgba(0,217,255,0.05)] transition-all duration-300"
               >
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between gap-4">
                     {/* Main Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-3">
-                        <Globe className="w-5 h-5 text-[#00D9FF] flex-shrink-0" />
+                        <Globe className="w-5 h-5 text-brand-primary flex-shrink-0" />
                         <h3 className="font-semibold text-lg truncate">
                           {formatUrls(extraction.source_urls)}
                         </h3>
@@ -191,7 +215,7 @@ export default function ExtractionsPage() {
                       {/* Stats */}
                       <div className="flex items-center gap-6 mb-3 text-sm">
                         {extraction.stats?.pages_extracted !== undefined && (
-                          <div className="text-gray-400">
+                          <div className="text-text-muted">
                             <span className="font-medium text-white">
                               {extraction.stats.pages_extracted}
                             </span>{" "}
@@ -199,7 +223,7 @@ export default function ExtractionsPage() {
                           </div>
                         )}
                         {extraction.stats?.elements_found !== undefined && (
-                          <div className="text-gray-400">
+                          <div className="text-text-muted">
                             <span className="font-medium text-white">
                               {extraction.stats.elements_found}
                             </span>{" "}
@@ -207,7 +231,7 @@ export default function ExtractionsPage() {
                           </div>
                         )}
                         {extraction.stats?.states_found !== undefined && (
-                          <div className="text-gray-400">
+                          <div className="text-text-muted">
                             <span className="font-medium text-white">
                               {extraction.stats.states_found}
                             </span>{" "}
@@ -217,7 +241,7 @@ export default function ExtractionsPage() {
                       </div>
 
                       {/* Metadata */}
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                      <div className="flex items-center gap-4 text-xs text-text-muted">
                         <div className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           <span>
@@ -244,7 +268,7 @@ export default function ExtractionsPage() {
                       <Button
                         size="sm"
                         onClick={() => handleViewExtraction(extraction.id)}
-                        className="bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30 hover:border-[#00D9FF]/50"
+                        className="bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:border-brand-primary/50"
                       >
                         <ExternalLink className="w-4 h-4 mr-1" />
                         View
@@ -253,7 +277,7 @@ export default function ExtractionsPage() {
                         size="sm"
                         variant="outline"
                         onClick={() => handleDeleteExtraction(extraction)}
-                        className="border-gray-700 hover:border-red-500 hover:text-red-400 bg-transparent"
+                        className="border-border-default hover:border-red-500 hover:text-red-400 bg-transparent"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>

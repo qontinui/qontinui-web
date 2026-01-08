@@ -45,7 +45,7 @@ export function TypeActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Text Source</Label>
+        <Label className="text-xs text-text-muted">Text Source</Label>
         <Select
           value={config.textSource ? "stateString" : "manual"}
           onValueChange={(value) => {
@@ -75,10 +75,10 @@ export function TypeActionProperties({
             }
           }}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="stateString">State String</SelectItem>
             <SelectItem value="manual">Manual Text</SelectItem>
           </SelectContent>
@@ -88,7 +88,7 @@ export function TypeActionProperties({
       {config.textSource ? (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Select State</Label>
+            <Label className="text-xs text-text-muted">Select State</Label>
             <Select
               value={config.textSource.stateId || "none"}
               onValueChange={(value) => {
@@ -103,10 +103,10 @@ export function TypeActionProperties({
                 }
               }}
             >
-              <SelectTrigger className="bg-transparent border-gray-700">
+              <SelectTrigger className="bg-transparent border-border-default">
                 <SelectValue placeholder="Select a state" />
               </SelectTrigger>
-              <SelectContent className="bg-[#27272A] border-gray-700">
+              <SelectContent className="bg-surface-raised border-border-default">
                 {(states as State[]).filter(
                   (s) => s.strings && s.strings.length > 0
                 ).length === 0 ? (
@@ -141,7 +141,7 @@ export function TypeActionProperties({
                 selectedState.strings.length === 0
               ) {
                 return (
-                  <div className="text-xs text-gray-500 p-2 bg-gray-800/50 rounded">
+                  <div className="text-xs text-text-muted p-2 bg-surface-raised/50 rounded">
                     No strings defined in this state
                   </div>
                 );
@@ -149,10 +149,10 @@ export function TypeActionProperties({
 
               return (
                 <div className="space-y-2">
-                  <Label className="text-xs text-gray-400">
+                  <Label className="text-xs text-text-muted">
                     Select Strings
                   </Label>
-                  <div className="space-y-2 max-h-48 overflow-y-auto p-2 bg-gray-800/50 rounded border border-gray-700">
+                  <div className="space-y-2 max-h-48 overflow-y-auto p-2 bg-surface-raised/50 rounded border border-border-default">
                     {selectedState.strings.map(
                       (str: StateString, index: number) => (
                         <div
@@ -183,11 +183,11 @@ export function TypeActionProperties({
                           <div className="flex-1">
                             <Label
                               htmlFor={`string-${str.id}`}
-                              className="text-xs text-gray-400"
+                              className="text-xs text-text-muted"
                             >
                               {index + 1}. {str.name || "Unnamed"}
                             </Label>
-                            <div className="text-xs text-gray-500 font-mono mt-1 break-all">
+                            <div className="text-xs text-text-muted font-mono mt-1 break-all">
                               &quot;
                               <SpecialKeyDisplay text={str.value} />
                               &quot;
@@ -204,7 +204,7 @@ export function TypeActionProperties({
       ) : (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">Text to Type</Label>
+            <Label className="text-xs text-text-muted">Text to Type</Label>
             <SpecialKeysSelector
               onInsertKey={(newText) => updateConfig("text", newText)}
               textAreaRef={textAreaRef}
@@ -214,14 +214,14 @@ export function TypeActionProperties({
             ref={textAreaRef}
             value={config.text || ""}
             onChange={(e) => updateConfig("text", e.target.value)}
-            className="bg-transparent border-gray-700 font-mono text-sm"
+            className="bg-transparent border-border-default font-mono text-sm"
             placeholder="Enter text to type..."
             rows={4}
           />
           {config.text && (
-            <div className="p-2 bg-gray-800/50 rounded-md border border-gray-700">
-              <div className="text-xs text-gray-500 mb-1">Preview:</div>
-              <div className="text-sm font-mono text-gray-300 break-all">
+            <div className="p-2 bg-surface-raised/50 rounded-md border border-border-default">
+              <div className="text-xs text-text-muted mb-1">Preview:</div>
+              <div className="text-sm font-mono text-text-default break-all">
                 <SpecialKeyDisplay text={config.text} />
               </div>
             </div>
@@ -230,7 +230,7 @@ export function TypeActionProperties({
       )}
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Typing Delay (ms)</Label>
+        <Label className="text-xs text-text-muted">Typing Delay (ms)</Label>
         <Input
           type="number"
           min="0"
@@ -238,7 +238,7 @@ export function TypeActionProperties({
           onChange={(e) =>
             updateConfig("typeDelay", Number.parseInt(e.target.value))
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
       </div>
 
@@ -248,7 +248,7 @@ export function TypeActionProperties({
           checked={config.clearBefore || false}
           onCheckedChange={(checked) => updateConfig("clearBefore", checked)}
         />
-        <Label htmlFor="clear_before" className="text-xs text-gray-400">
+        <Label htmlFor="clear_before" className="text-xs text-text-muted">
           Clear before typing
         </Label>
       </div>
@@ -261,7 +261,7 @@ export function TypeActionProperties({
             updateConfig("pressEnter", checked);
           }}
         />
-        <Label htmlFor="press_enter" className="text-xs text-gray-400">
+        <Label htmlFor="press_enter" className="text-xs text-text-muted">
           Press Enter after typing
         </Label>
       </div>

@@ -150,7 +150,7 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
               {!showHint ? (
                 <button
                   onClick={() => setShowHint(true)}
-                  className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-text-secondary transition-colors"
                 >
                   <Lightbulb className="w-3.5 h-3.5" />
                   <span>Show hint</span>
@@ -179,7 +179,7 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
               setIsVisible(false);
               onDismiss();
             }}
-            className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            className="flex-shrink-0 text-text-muted hover:text-text-secondary transition-colors"
             aria-label="Dismiss"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

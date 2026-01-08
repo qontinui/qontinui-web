@@ -327,7 +327,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
             <Info className="h-4 w-4" />
             <AlertDescription className="text-sm">
               Filtering by states: {stateFilter.join(", ")}
-              <span className="ml-2 text-gray-500">
+              <span className="ml-2 text-text-muted">
                 (Showing screenshots that have all selected states)
               </span>
             </AlertDescription>
@@ -340,14 +340,14 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
             <h3 className="font-semibold text-sm mb-3">Snapshot Runs</h3>
 
             {snapshotsLoading && (
-              <div className="flex items-center justify-center py-8 text-gray-500">
+              <div className="flex items-center justify-center py-8 text-text-muted">
                 <Loader2 className="w-5 h-5 animate-spin mr-2" />
                 <span className="text-sm">Loading...</span>
               </div>
             )}
 
             {!snapshotsLoading && snapshots.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-text-muted">
                 <Database className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p className="text-sm">No snapshots found</p>
                 <p className="text-xs mt-1">Import snapshots first</p>
@@ -372,19 +372,19 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                           ${
                             selectedSnapshot?.id === snapshot.id
                               ? "bg-blue-50 border-blue-300 ring-1 ring-blue-300"
-                              : "bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                              : "bg-white border-border-subtle hover:border-border-default hover:bg-surface-raised/80"
                           }
                         `}
                       >
                         <div className="text-sm font-medium truncate">
                           {snapshot.run_id.substring(0, 12)}...
                         </div>
-                        <div className="text-xs text-gray-500 mt-1">
+                        <div className="text-xs text-text-muted mt-1">
                           {formatDistanceToNow(new Date(snapshot.start_time), {
                             addSuffix: true,
                           })}
                         </div>
-                        <div className="flex items-center gap-2 mt-2 text-xs text-gray-600">
+                        <div className="flex items-center gap-2 mt-2 text-xs text-text-secondary">
                           <span>{snapshot.total_screenshots} screenshots</span>
                           <span>•</span>
                           <span>{snapshot.total_actions} actions</span>
@@ -392,7 +392,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
 
                         {/* Thumbnail Previews */}
                         {isLoadingThumbs && (
-                          <div className="mt-2 flex items-center gap-1 text-xs text-gray-400">
+                          <div className="mt-2 flex items-center gap-1 text-xs text-text-muted">
                             <Loader2 className="w-3 h-3 animate-spin" />
                             <span>Loading previews...</span>
                           </div>
@@ -405,7 +405,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                                 <TooltipProvider key={idx}>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <div className="aspect-video bg-gray-100 rounded overflow-hidden border border-gray-200">
+                                      <div className="aspect-video bg-surface-raised rounded overflow-hidden border border-border-subtle">
                                         <img
                                           src={thumb.url}
                                           alt={`Thumbnail ${idx + 1}`}
@@ -420,7 +420,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                                           Action {thumb.action_number}
                                         </div>
                                         {thumb.active_states.length > 0 && (
-                                          <div className="text-gray-600">
+                                          <div className="text-text-secondary">
                                             States:{" "}
                                             {thumb.active_states.join(", ")}
                                           </div>
@@ -432,7 +432,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                               ))}
                             </div>
                             {thumbnails.total_screenshots > 4 && (
-                              <div className="text-xs text-gray-500 text-center">
+                              <div className="text-xs text-text-muted text-center">
                                 +{thumbnails.total_screenshots - 4} more
                               </div>
                             )}
@@ -449,7 +449,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
           {/* Right: Screenshot Selection */}
           <div className="col-span-2">
             {!selectedSnapshot && (
-              <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="flex items-center justify-center h-full text-text-muted">
                 <div className="text-center">
                   <ImageIcon className="w-16 h-16 mx-auto mb-3 opacity-50" />
                   <p className="text-sm">
@@ -525,7 +525,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                   {/* Active States Chips */}
                   {uniqueStates.length > 0 && (
                     <div className="space-y-1">
-                      <div className="text-xs font-medium text-gray-600">
+                      <div className="text-xs font-medium text-text-secondary">
                         Active States in This Run:
                       </div>
                       <div className="flex flex-wrap gap-1">
@@ -560,7 +560,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
 
                   {/* Search */}
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-text-muted" />
                     <Input
                       placeholder="Search by filename or state..."
                       value={searchQuery}
@@ -580,12 +580,12 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                 {/* Screenshot grid */}
                 {loading && (
                   <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                    <Loader2 className="w-8 h-8 animate-spin text-text-muted" />
                   </div>
                 )}
 
                 {!loading && filteredScreenshots.length === 0 && (
-                  <div className="text-center py-12 text-gray-500">
+                  <div className="text-center py-12 text-text-muted">
                     <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
                     <p className="text-sm">No screenshots found</p>
                   </div>
@@ -608,12 +608,12 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                               ${
                                 isSelected
                                   ? "border-blue-500 ring-2 ring-blue-200"
-                                  : "border-gray-200 hover:border-gray-300"
+                                  : "border-border-subtle hover:border-border-default"
                               }
                             `}
                           >
                             {/* Screenshot image */}
-                            <div className="aspect-video bg-gray-100 flex items-center justify-center overflow-hidden">
+                            <div className="aspect-video bg-surface-raised flex items-center justify-center overflow-hidden">
                               <img
                                 src={screenshot.url}
                                 alt={screenshot.path}
@@ -682,7 +682,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
 
         {/* Footer actions */}
         <div className="flex justify-between items-center pt-4 border-t">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-text-secondary">
             {selectedScreenshots.size} screenshot
             {selectedScreenshots.size !== 1 ? "s" : ""} selected
           </p>

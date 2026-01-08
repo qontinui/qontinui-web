@@ -45,12 +45,14 @@ export const VisualizationModeSelector: React.FC<
   ];
 
   return (
-    <Card className="bg-white border border-gray-200">
+    <Card className="bg-white border border-border-subtle">
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <Eye className="w-4 h-4" />
           Visualization
-          <span className="text-xs font-normal text-gray-500">(optional)</span>
+          <span className="text-xs font-normal text-text-muted">
+            (optional)
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -66,7 +68,7 @@ export const VisualizationModeSelector: React.FC<
               className={`relative flex items-start gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
                 mode === vizMode.value
                   ? "bg-blue-50 border-blue-300 shadow-sm"
-                  : "bg-white border-gray-200 hover:bg-gray-50"
+                  : "bg-white border-border-subtle hover:bg-surface-raised/80"
               } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
               onClick={() => !disabled && onModeChange(vizMode.value)}
             >
@@ -87,7 +89,7 @@ export const VisualizationModeSelector: React.FC<
                     className={`p-1.5 rounded ${
                       mode === vizMode.value
                         ? "bg-blue-100 text-blue-600"
-                        : "bg-gray-100 text-gray-600"
+                        : "bg-surface-raised text-text-muted"
                     }`}
                   >
                     {vizMode.icon}
@@ -101,7 +103,7 @@ export const VisualizationModeSelector: React.FC<
                     )}
                   </div>
                 </Label>
-                <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                <p className="text-xs text-text-muted mt-1 leading-relaxed">
                   {vizMode.description}
                 </p>
               </div>
@@ -111,7 +113,7 @@ export const VisualizationModeSelector: React.FC<
 
         {/* Info Note */}
         <div className="mt-4 pt-3 border-t">
-          <p className="text-xs text-gray-500 leading-relaxed">
+          <p className="text-xs text-text-muted leading-relaxed">
             Visualization mode affects execution speed. &quot;None&quot; is
             fastest for quick feedback, while visual modes help with debugging
             and understanding test behavior.

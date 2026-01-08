@@ -238,7 +238,7 @@ export function SuccessCriteriaEditor({
 
       {/* Criteria Type Selection */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Criteria Type</Label>
+        <Label className="text-xs text-text-muted">Criteria Type</Label>
         <Select value={currentCriteria.type} onValueChange={handleTypeChange}>
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Select criteria type" />
@@ -252,7 +252,7 @@ export function SuccessCriteriaEditor({
             <SelectItem value="custom">Custom Expression</SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           {getTypeDescription(currentCriteria.type)}
         </p>
       </div>
@@ -260,7 +260,7 @@ export function SuccessCriteriaEditor({
       {/* Type-Specific Inputs */}
       {isMinMatchesCriteria(currentCriteria) && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Minimum Matches</Label>
+          <Label className="text-xs text-text-muted">Minimum Matches</Label>
           <Input
             type="number"
             min="1"
@@ -269,7 +269,7 @@ export function SuccessCriteriaEditor({
             placeholder="Enter minimum number of matches"
             className="w-full"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Workflow succeeds if at least this many pattern matches are found
           </p>
         </div>
@@ -277,7 +277,7 @@ export function SuccessCriteriaEditor({
 
       {isMaxFailuresCriteria(currentCriteria) && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Maximum Failures</Label>
+          <Label className="text-xs text-text-muted">Maximum Failures</Label>
           <Input
             type="number"
             min="0"
@@ -286,7 +286,7 @@ export function SuccessCriteriaEditor({
             placeholder="Enter maximum allowed failures"
             className="w-full"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Workflow succeeds if failures do not exceed this number
           </p>
         </div>
@@ -294,7 +294,7 @@ export function SuccessCriteriaEditor({
 
       {isCheckpointPassedCriteria(currentCriteria) && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Checkpoint Name</Label>
+          <Label className="text-xs text-text-muted">Checkpoint Name</Label>
           {availableCheckpoints.length > 0 ? (
             <Select
               value={currentCriteria.checkpoint_name || ""}
@@ -320,7 +320,7 @@ export function SuccessCriteriaEditor({
               className="w-full"
             />
           )}
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Workflow must reach this checkpoint to be considered successful
           </p>
         </div>
@@ -328,11 +328,11 @@ export function SuccessCriteriaEditor({
 
       {isRequiredStatesCriteria(currentCriteria) && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Required States</Label>
+          <Label className="text-xs text-text-muted">Required States</Label>
 
           {/* State Tags Display */}
           {currentCriteria.required_states.length > 0 && (
-            <div className="flex flex-wrap gap-2 p-3 bg-gray-800/50 rounded-md border border-gray-700">
+            <div className="flex flex-wrap gap-2 p-3 bg-surface-raised/50 rounded-md border border-border-default">
               {currentCriteria.required_states.map((state) => (
                 <Badge
                   key={state}
@@ -342,7 +342,7 @@ export function SuccessCriteriaEditor({
                   <span>{state}</span>
                   <button
                     onClick={() => handleRemoveState(state)}
-                    className="ml-1 hover:bg-gray-700 rounded p-0.5"
+                    className="ml-1 hover:bg-surface-raised rounded p-0.5"
                     title="Remove state"
                   >
                     <X className="w-3 h-3" />
@@ -411,7 +411,7 @@ export function SuccessCriteriaEditor({
               </>
             )}
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             All listed states must be discovered during workflow execution
           </p>
         </div>
@@ -419,7 +419,7 @@ export function SuccessCriteriaEditor({
 
       {isCustomCriteria(currentCriteria) && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">
+          <Label className="text-xs text-text-muted">
             Custom Python Expression
           </Label>
           <Textarea
@@ -428,7 +428,7 @@ export function SuccessCriteriaEditor({
             placeholder="Enter Python expression (e.g., len(matches) > 5 and failures == 0)"
             className="font-mono text-sm min-h-24"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Python expression evaluated in workflow context. Available
             variables: matches, failures, states, checkpoints
           </p>
@@ -437,22 +437,24 @@ export function SuccessCriteriaEditor({
 
       {/* Description Field (for all types) */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Description (Optional)</Label>
+        <Label className="text-xs text-text-muted">
+          Description (Optional)
+        </Label>
         <Textarea
           value={currentCriteria.description || ""}
           onChange={(e) => handleDescriptionChange(e.target.value)}
           placeholder="Add a description for this success criteria"
           className="min-h-16"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Helpful context about why this criteria was chosen
         </p>
       </div>
 
       {/* Usage Tips */}
-      <div className="p-3 bg-gray-800/30 border border-gray-700 rounded-md">
-        <p className="text-xs text-gray-400 font-medium mb-2">Tips:</p>
-        <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
+      <div className="p-3 bg-surface-raised/30 border border-border-default rounded-md">
+        <p className="text-xs text-text-muted font-medium mb-2">Tips:</p>
+        <ul className="text-xs text-text-muted space-y-1 list-disc list-inside">
           <li>Success criteria validate workflow execution results</li>
           <li>Use min_matches for state discovery workflows</li>
           <li>Use checkpoints to validate multi-step workflows</li>

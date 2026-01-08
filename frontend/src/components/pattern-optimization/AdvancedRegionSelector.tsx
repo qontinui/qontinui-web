@@ -694,11 +694,11 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   }, []); // No dependencies - uses refs
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-surface-canvas">
       {/* Toolbar */}
       <div className="bg-white border-b p-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="text-sm text-gray-600 px-2">
+          <div className="text-sm text-text-muted px-2">
             <span className="font-medium">Left Click:</span> Select/Draw Region
             • <span className="font-medium">Right Click:</span> Pan
           </div>
@@ -707,24 +707,24 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setZoom(Math.min(zoom * 1.2, 5))}
-            className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+            className="p-2 text-text-muted hover:bg-surface-raised rounded"
             title="Zoom in"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
-          <span className="text-sm text-gray-600 font-mono min-w-[60px] text-center">
+          <span className="text-sm text-text-muted font-mono min-w-[60px] text-center">
             {(zoom * 100).toFixed(0)}%
           </span>
           <button
             onClick={() => setZoom(Math.max(zoom * 0.8, 0.1))}
-            className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+            className="p-2 text-text-muted hover:bg-surface-raised rounded"
             title="Zoom out"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
           <button
             onClick={resetView}
-            className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+            className="p-2 text-text-muted hover:bg-surface-raised rounded"
             title="Reset view"
           >
             <Maximize2 className="w-4 h-4" />
@@ -732,7 +732,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
         </div>
 
         {currentRegion && (
-          <div className="text-xs text-gray-600">
+          <div className="text-xs text-text-muted">
             Position: ({Math.round(currentRegion.x)},{" "}
             {Math.round(currentRegion.y)}) | Size:{" "}
             {Math.round(currentRegion.width)} ×{" "}
@@ -755,7 +755,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
             className="w-full h-full"
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-400">
+          <div className="flex items-center justify-center h-full text-text-muted">
             Loading image...
           </div>
         )}

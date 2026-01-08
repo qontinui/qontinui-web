@@ -63,7 +63,7 @@ export function Timeline({
               ${
                 index === currentIndex
                   ? "bg-blue-100 ring-2 ring-blue-500"
-                  : "bg-gray-100 hover:bg-gray-200"
+                  : "bg-surface-raised hover:bg-surface-raised"
               }
               ${!action.success && "ring-2 ring-red-500"}
               min-w-[60px]
@@ -81,7 +81,7 @@ export function Timeline({
       </div>
 
       {/* Progress Bar */}
-      <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
+      <div className="relative h-2 bg-surface-raised rounded-full overflow-hidden">
         <div
           className="absolute h-full bg-blue-500 transition-all duration-300"
           style={{
@@ -126,7 +126,7 @@ export function Timeline({
           <SkipForward className="w-4 h-4" />
         </Button>
 
-        <span className="text-sm text-gray-600 ml-4">
+        <span className="text-sm text-text-muted ml-4">
           {currentIndex + 1} / {actions.length}
         </span>
       </div>

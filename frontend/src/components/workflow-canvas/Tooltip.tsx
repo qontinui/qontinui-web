@@ -213,7 +213,7 @@ export function Tooltip({
           }}
         >
           <div
-            className="bg-gray-900 text-gray-100 text-sm rounded-lg shadow-xl border border-gray-700 px-3 py-2 max-w-xs"
+            className="bg-surface-canvas text-text-secondary text-sm rounded-lg shadow-xl border border-border-default px-3 py-2 max-w-xs"
             style={{
               animation: "tooltipFadeIn 150ms ease-out",
             }}
@@ -268,7 +268,7 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
           <div className="font-semibold text-white truncate">
             {data.actionName}
           </div>
-          <div className="text-xs text-gray-400">{data.actionType}</div>
+          <div className="text-xs text-text-muted">{data.actionType}</div>
         </div>
         {data.executionState && (
           <div
@@ -286,15 +286,16 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
 
       {/* Stats */}
       {(data.inputCount !== undefined || data.outputCount !== undefined) && (
-        <div className="flex gap-4 text-xs text-gray-400">
+        <div className="flex gap-4 text-xs text-text-muted">
           {data.inputCount !== undefined && (
             <div>
-              <span className="text-gray-500">Inputs:</span> {data.inputCount}
+              <span className="text-text-muted">Inputs:</span> {data.inputCount}
             </div>
           )}
           {data.outputCount !== undefined && (
             <div>
-              <span className="text-gray-500">Outputs:</span> {data.outputCount}
+              <span className="text-text-muted">Outputs:</span>{" "}
+              {data.outputCount}
             </div>
           )}
         </div>
@@ -302,8 +303,8 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
 
       {/* Execution Duration */}
       {data.executionDuration !== undefined && (
-        <div className="text-xs text-gray-400">
-          <span className="text-gray-500">Duration:</span>{" "}
+        <div className="text-xs text-text-muted">
+          <span className="text-text-muted">Duration:</span>{" "}
           {data.executionDuration}ms
         </div>
       )}
@@ -317,14 +318,14 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
 
       {/* Disabled State */}
       {data.disabled && (
-        <div className="text-xs text-gray-500 italic">
+        <div className="text-xs text-text-muted italic">
           This node is disabled
         </div>
       )}
 
       {/* Category Badge */}
-      <div className="pt-1 border-t border-gray-700">
-        <span className="inline-block text-xs px-2 py-1 bg-gray-800 rounded text-gray-400">
+      <div className="pt-1 border-t border-border-default">
+        <span className="inline-block text-xs px-2 py-1 bg-surface-raised rounded text-text-muted">
           {data.category}
         </span>
       </div>
@@ -367,19 +368,19 @@ export function HandleTooltip({ data }: { data: HandleTooltipData }) {
       </div>
 
       {/* Output Index */}
-      <div className="text-xs text-gray-400">
-        <span className="text-gray-500">Output:</span> #{data.outputIndex}
+      <div className="text-xs text-text-muted">
+        <span className="text-text-muted">Output:</span> #{data.outputIndex}
       </div>
 
       {/* Connected Count */}
-      <div className="text-xs text-gray-400">
-        <span className="text-gray-500">Connections:</span>{" "}
+      <div className="text-xs text-text-muted">
+        <span className="text-text-muted">Connections:</span>{" "}
         {data.connectedCount}
       </div>
 
       {/* Description */}
       {data.description && (
-        <div className="text-xs text-gray-300 pt-1 border-t border-gray-700">
+        <div className="text-xs text-text-secondary pt-1 border-t border-border-default">
           {data.description}
         </div>
       )}
@@ -412,13 +413,13 @@ export function EdgeTooltip({ data }: { data: EdgeTooltipData }) {
     <div className="space-y-2">
       {/* Connection Flow */}
       <div className="text-sm">
-        <div className="text-gray-400 text-xs mb-1">Connection:</div>
+        <div className="text-text-muted text-xs mb-1">Connection:</div>
         <div className="flex items-center gap-2">
           <span className="text-white font-medium truncate max-w-[100px]">
             {data.sourceNode}
           </span>
           <svg
-            className="w-4 h-4 text-gray-500 flex-shrink-0"
+            className="w-4 h-4 text-text-muted flex-shrink-0"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -449,15 +450,15 @@ export function EdgeTooltip({ data }: { data: EdgeTooltipData }) {
 
       {/* Execution Stats */}
       {data.executionCount !== undefined && (
-        <div className="text-xs text-gray-400">
-          <span className="text-gray-500">Executed:</span> {data.executionCount}{" "}
-          times
+        <div className="text-xs text-text-muted">
+          <span className="text-text-muted">Executed:</span>{" "}
+          {data.executionCount} times
         </div>
       )}
 
       {data.lastExecuted && (
-        <div className="text-xs text-gray-400">
-          <span className="text-gray-500">Last run:</span>{" "}
+        <div className="text-xs text-text-muted">
+          <span className="text-text-muted">Last run:</span>{" "}
           {data.lastExecuted.toLocaleTimeString()}
         </div>
       )}
@@ -483,7 +484,7 @@ export function ShortcutTooltip({
       content={
         <div className="flex items-center justify-between gap-4">
           <span>{description}</span>
-          <span className="text-xs px-2 py-1 bg-gray-800 rounded font-mono text-gray-400">
+          <span className="text-xs px-2 py-1 bg-surface-raised rounded font-mono text-text-muted">
             {shortcut}
           </span>
         </div>
@@ -599,7 +600,7 @@ export function TooltipContainer() {
         top: `${state.position.y}px`,
       }}
     >
-      <div className="bg-gray-900 text-gray-100 text-sm rounded-lg shadow-xl border border-gray-700 px-3 py-2 max-w-xs">
+      <div className="bg-surface-canvas text-text-secondary text-sm rounded-lg shadow-xl border border-border-default px-3 py-2 max-w-xs">
         {state.content}
       </div>
     </div>

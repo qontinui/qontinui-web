@@ -52,9 +52,11 @@ export function TransitionEdge({
     isIncoming ||
     ("type" in transition && transition.type === "IncomingTransition");
 
-  // Edge colors
-  const normalColor = isIncomingTransition ? "#00FF88" : "#BD00FF"; // Green for incoming, Magenta for outgoing
-  const selectedColor = "#00D9FF"; // Cyan when selected
+  // Edge colors - using CSS variables for design system consistency
+  const normalColor = isIncomingTransition
+    ? "var(--brand-success)"
+    : "var(--brand-secondary)"; // Green for incoming, Magenta for outgoing
+  const selectedColor = "var(--brand-primary)"; // Cyan when selected
 
   // Check if this is an outgoing transition's target edge (the dotted purple ones)
   const isOutgoingTargetEdge = !isIncomingTransition && id.includes("-target-");

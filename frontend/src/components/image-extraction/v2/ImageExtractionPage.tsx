@@ -366,10 +366,10 @@ export const ImageExtractionPage: React.FC = () => {
   // Show loading state while hydrating
   if (!isHydrated) {
     return (
-      <div className="h-full flex flex-col bg-[#0A0A0B]">
-        <div className="bg-[#27272A] border-b border-gray-800 px-6 py-4">
+      <div className="h-full flex flex-col bg-surface-canvas">
+        <div className="bg-surface-raised border-b border-border-subtle px-6 py-4">
           <h1 className="text-2xl font-bold text-white">Image Extraction</h1>
-          <p className="text-gray-400 mt-1">
+          <p className="text-text-muted mt-1">
             Extract images from screenshots with optional border and background
             removal
           </p>
@@ -387,11 +387,11 @@ export const ImageExtractionPage: React.FC = () => {
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#0A0A0B]">
+    <div className="h-full flex flex-col bg-surface-canvas">
       {/* Header */}
-      <div className="bg-[#27272A] border-b border-gray-800 px-6 py-4">
+      <div className="bg-surface-raised border-b border-border-subtle px-6 py-4">
         <h1 className="text-2xl font-bold text-white">Image Extraction</h1>
-        <p className="text-gray-400 mt-1">
+        <p className="text-text-muted mt-1">
           Extract images from screenshots with optional border and background
           removal
         </p>

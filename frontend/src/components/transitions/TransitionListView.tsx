@@ -120,9 +120,9 @@ export function TransitionListView({
       return <AlertTriangle className="w-4 h-4 text-yellow-400" />;
     }
     if (transition.workflows.length > 0) {
-      return <Zap className="w-4 h-4 text-[#00D9FF]" />;
+      return <Zap className="w-4 h-4 text-brand-primary" />;
     }
-    return <ArrowRight className="w-4 h-4 text-gray-400" />;
+    return <ArrowRight className="w-4 h-4 text-text-muted" />;
   };
 
   return (
@@ -133,7 +133,7 @@ export function TransitionListView({
           value={sortBy}
           onValueChange={(v) => setSortBy(v as typeof sortBy)}
         >
-          <SelectTrigger className="w-[150px] bg-transparent border-gray-700">
+          <SelectTrigger className="w-[150px] bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -148,7 +148,7 @@ export function TransitionListView({
           value={groupBy}
           onValueChange={(v) => setGroupBy(v as typeof groupBy)}
         >
-          <SelectTrigger className="w-[150px] bg-transparent border-gray-700">
+          <SelectTrigger className="w-[150px] bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -168,8 +168,8 @@ export function TransitionListView({
               <div key={groupName}>
                 {groupBy !== "none" && (
                   <div className="flex items-center gap-2 mb-2">
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-300">
+                    <ChevronDown className="w-4 h-4 text-text-muted" />
+                    <span className="text-sm font-medium text-text-secondary">
                       {groupName} ({groupTransitions.length})
                     </span>
                   </div>
@@ -178,7 +178,7 @@ export function TransitionListView({
                   {groupTransitions.map((transition) => (
                     <Card
                       key={transition.id}
-                      className="border-gray-700 bg-[#27272A] hover:border-[#00D9FF] transition-colors cursor-pointer"
+                      className="border-border-default bg-surface-raised hover:border-brand-primary transition-colors cursor-pointer"
                       onClick={() => onTransitionClick(transition)}
                     >
                       <CardContent className="p-3">
@@ -212,7 +212,7 @@ export function TransitionListView({
                               </div>
                             ) : (
                               <div className="flex items-center gap-2 text-sm">
-                                <span className="text-gray-400">Entry:</span>
+                                <span className="text-text-muted">Entry:</span>
                                 <span className="font-medium">
                                   {states.find(
                                     (s) => s.id === transition.toState
@@ -236,13 +236,13 @@ export function TransitionListView({
                                   : "Incoming"}
                               </Badge>
                               {transition.workflows.length > 0 && (
-                                <Badge className="text-xs bg-[#00D9FF]/20 text-[#00D9FF]">
+                                <Badge className="text-xs bg-brand-primary/20 text-brand-primary">
                                   {transition.workflows.length} workflow
                                   {transition.workflows.length !== 1 ? "s" : ""}
                                 </Badge>
                               )}
                               {transition.timeout && (
-                                <span className="text-xs text-gray-400 flex items-center gap-1">
+                                <span className="text-xs text-text-muted flex items-center gap-1">
                                   <Clock className="w-3 h-3" />
                                   {transition.timeout}ms
                                 </span>

@@ -48,10 +48,10 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
   return (
     <>
-      <div className="p-4 border-b bg-gray-50">
+      <div className="p-4 border-b bg-surface-raised">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-lg font-semibold text-text-primary">
               Location Properties
             </h3>
             {showSaved && (
@@ -63,10 +63,10 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
           </div>
           <button
             onClick={() => onDelete(location.id)}
-            className="p-1 hover:bg-gray-200 rounded"
+            className="p-1 hover:bg-surface-raised/80 rounded"
             title="Delete location"
           >
-            <X className="w-4 h-4 text-gray-700" />
+            <X className="w-4 h-4 text-text-secondary" />
           </button>
         </div>
       </div>
@@ -74,26 +74,26 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
       <div className="p-4 space-y-4">
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-text-secondary mb-1">
             Name
           </label>
           <input
             type="text"
             value={location.name}
             onChange={handleNameChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
           />
         </div>
 
         {/* Coordinates */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-text-secondary mb-1">
             Position
           </label>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label
-                className={`block text-xs ${location.referenceImageId && location.referenceImageId !== "pending" ? "text-gray-400" : "text-gray-500"}`}
+                className={`block text-xs ${location.referenceImageId && location.referenceImageId !== "pending" ? "text-text-muted" : "text-text-muted"}`}
               >
                 X
               </label>
@@ -109,17 +109,17 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                     location.referenceImageId !== "pending"
                   )
                 }
-                className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
+                className={`w-full px-2 py-1 border border-border-default rounded text-sm ${
                   location.referenceImageId &&
                   location.referenceImageId !== "pending"
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "text-gray-900"
+                    ? "bg-surface-raised text-text-muted cursor-not-allowed"
+                    : "text-text-primary"
                 }`}
               />
             </div>
             <div>
               <label
-                className={`block text-xs ${location.referenceImageId && location.referenceImageId !== "pending" ? "text-gray-400" : "text-gray-500"}`}
+                className={`block text-xs ${location.referenceImageId && location.referenceImageId !== "pending" ? "text-text-muted" : "text-text-muted"}`}
               >
                 Y
               </label>
@@ -135,11 +135,11 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                     location.referenceImageId !== "pending"
                   )
                 }
-                className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
+                className={`w-full px-2 py-1 border border-border-default rounded text-sm ${
                   location.referenceImageId &&
                   location.referenceImageId !== "pending"
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "text-gray-900"
+                    ? "bg-surface-raised text-text-muted cursor-not-allowed"
+                    : "text-text-primary"
                 }`}
               />
             </div>
@@ -148,7 +148,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
         {/* Relative Positioning Checkbox - Always Visible */}
         <div className="space-y-2">
-          <label className="flex items-center space-x-2 cursor-pointer p-2 bg-gray-50 rounded hover:bg-gray-100">
+          <label className="flex items-center space-x-2 cursor-pointer p-2 bg-surface-raised rounded hover:bg-surface-raised/80">
             <input
               type="checkbox"
               checked={!!location.referenceImageId}
@@ -176,7 +176,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
               }}
               className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
             />
-            <span className="text-sm text-gray-700 font-medium">
+            <span className="text-sm text-text-secondary font-medium">
               Relative positioning
             </span>
           </label>
@@ -185,7 +185,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
             <div className="pl-6 space-y-2">
               {/* Associated State - Only when relative is checked */}
               <div>
-                <label className="block text-xs text-gray-500 mb-1">
+                <label className="block text-xs text-text-muted mb-1">
                   Associated State
                 </label>
                 <select
@@ -207,7 +207,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                     onUpdate(updatedLocation);
                     showSavedIndicator();
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                  className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
                 >
                   <option value="">Select a state</option>
                   {states.map((state) => (
@@ -223,7 +223,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                 (states.find((s) => s.id === location.referenceStateId)
                   ?.stateImages?.length ?? 0) > 0 && (
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">
+                    <label className="block text-xs text-text-muted mb-1">
                       Reference Image
                     </label>
                     <select
@@ -241,7 +241,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                         onUpdate(updatedLocation);
                         showSavedIndicator();
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-gray-900"
+                      className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-text-primary"
                     >
                       <option value="">Select an image</option>
                       {states
@@ -257,16 +257,16 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
               {/* Location in Region for Relative */}
               <details className="group" open>
-                <summary className="flex items-center justify-between cursor-pointer text-sm text-gray-700 hover:text-gray-900 list-none py-1 px-2 bg-gray-50 rounded">
+                <summary className="flex items-center justify-between cursor-pointer text-sm text-text-secondary hover:text-text-primary list-none py-1 px-2 bg-surface-raised rounded">
                   <span className="font-medium">Location in Region</span>
-                  <span className="text-gray-400 group-open:rotate-90 transition-transform">
+                  <span className="text-text-muted group-open:rotate-90 transition-transform">
                     ▶
                   </span>
                 </summary>
                 <div className="mt-2 pl-2 border-l-2 border-blue-300 space-y-3">
                   {/* Position Enum */}
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">
+                    <label className="block text-xs text-text-muted mb-1">
                       Position
                     </label>
                     <select
@@ -298,7 +298,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                         onUpdate(updatedLocation);
                         showSavedIndicator();
                       }}
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                      className="w-full px-2 py-1 border border-border-default rounded text-sm text-text-primary"
                     >
                       <option value="TOP_LEFT">Top Left</option>
                       <option value="TOP_CENTER">Top Center</option>
@@ -314,12 +314,12 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
                   {/* Percent of Width/Height */}
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">
+                    <label className="block text-xs text-text-muted mb-1">
                       Percent of Width/Height
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs text-gray-400">
+                        <label className="block text-xs text-text-muted">
                           W%
                         </label>
                         <input
@@ -337,11 +337,11 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                             onUpdate(updatedLocation);
                             showSavedIndicator();
                           }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                          className="w-full px-2 py-1 border border-border-default rounded text-sm text-text-primary"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400">
+                        <label className="block text-xs text-text-muted">
                           H%
                         </label>
                         <input
@@ -359,23 +359,25 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                             onUpdate(updatedLocation);
                             showSavedIndicator();
                           }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                          className="w-full px-2 py-1 border border-border-default rounded text-sm text-text-primary"
                         />
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-text-muted mt-1">
                       0.0 = left/top, 0.5 = center, 1.0 = right/bottom
                     </p>
                   </div>
 
                   {/* Pixel Offsets */}
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">
+                    <label className="block text-xs text-text-muted mb-1">
                       Offsets (pixels)
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs text-gray-400">X</label>
+                        <label className="block text-xs text-text-muted">
+                          X
+                        </label>
                         <input
                           type="number"
                           value={location.offsetX || 0}
@@ -388,11 +390,13 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                             onUpdate(updatedLocation);
                             showSavedIndicator();
                           }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                          className="w-full px-2 py-1 border border-border-default rounded text-sm text-text-primary"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400">Y</label>
+                        <label className="block text-xs text-text-muted">
+                          Y
+                        </label>
                         <input
                           type="number"
                           value={location.offsetY || 0}
@@ -405,7 +409,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                             onUpdate(updatedLocation);
                             showSavedIndicator();
                           }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                          className="w-full px-2 py-1 border border-border-default rounded text-sm text-text-primary"
                         />
                       </div>
                     </div>
@@ -418,7 +422,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
         {/* Anchor Checkbox - Independent */}
         <div className="space-y-2">
-          <label className="flex items-center space-x-2 cursor-pointer p-2 bg-gray-50 rounded hover:bg-gray-100">
+          <label className="flex items-center space-x-2 cursor-pointer p-2 bg-surface-raised rounded hover:bg-surface-raised/80">
             <input
               type="checkbox"
               checked={location.anchor || false}
@@ -436,14 +440,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
               }}
               className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
             />
-            <span className="text-sm text-gray-700 font-medium">
+            <span className="text-sm text-text-secondary font-medium">
               Anchor (for region definition)
             </span>
           </label>
 
           {location.anchor && (
             <div className="pl-6">
-              <label className="block text-xs text-gray-500 mb-1">
+              <label className="block text-xs text-text-muted mb-1">
                 Anchor Position
               </label>
               <select
@@ -457,7 +461,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                   onUpdate(updatedLocation);
                   showSavedIndicator();
                 }}
-                className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                className="w-full px-2 py-1 border border-border-default rounded text-sm text-text-primary"
               >
                 <option value="TOP_LEFT">Top Left</option>
                 <option value="TOP_CENTER">Top Center</option>
@@ -469,7 +473,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                 <option value="BOTTOM_CENTER">Bottom Center</option>
                 <option value="BOTTOM_RIGHT">Bottom Right</option>
               </select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-text-muted mt-1">
                 Specifies which point of a region this location represents
               </p>
             </div>
@@ -478,7 +482,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
         {/* Save to State - Always Visible */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-text-secondary mb-1">
             Save to State
           </label>
           <select
@@ -489,7 +493,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
               onUpdate(updatedLocation);
               showSavedIndicator();
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
           >
             <option value="">Select state</option>
             {states.map((state) => (

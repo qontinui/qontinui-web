@@ -259,16 +259,16 @@ export function AlignmentTools({
   if (nodeIds.length < 2) return null;
 
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-2">
+    <div className="bg-surface-raised border border-border-default rounded-lg shadow-xl p-2">
       {/* Alignment Tools */}
       <div className="mb-2">
-        <div className="text-xs text-gray-400 font-semibold mb-2 px-2">
+        <div className="text-xs text-text-muted font-semibold mb-2 px-2">
           Align
         </div>
         <div className="grid grid-cols-3 gap-1">
           <button
             onClick={() => handleAlign("left")}
-            className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+            className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Left (Ctrl+Shift+L)"
           >
             <svg
@@ -287,7 +287,7 @@ export function AlignmentTools({
           </button>
           <button
             onClick={() => handleAlign("center-horizontal")}
-            className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+            className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Center Horizontal"
           >
             <svg
@@ -306,7 +306,7 @@ export function AlignmentTools({
           </button>
           <button
             onClick={() => handleAlign("right")}
-            className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+            className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Right (Ctrl+Shift+R)"
           >
             <svg
@@ -325,7 +325,7 @@ export function AlignmentTools({
           </button>
           <button
             onClick={() => handleAlign("top")}
-            className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+            className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Top (Ctrl+Shift+T)"
           >
             <svg
@@ -344,7 +344,7 @@ export function AlignmentTools({
           </button>
           <button
             onClick={() => handleAlign("center-vertical")}
-            className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+            className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Center Vertical"
           >
             <svg
@@ -363,7 +363,7 @@ export function AlignmentTools({
           </button>
           <button
             onClick={() => handleAlign("bottom")}
-            className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+            className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Bottom (Ctrl+Shift+B)"
           >
             <svg
@@ -386,13 +386,13 @@ export function AlignmentTools({
       {/* Distribution Tools */}
       {nodeIds.length >= 3 && (
         <div>
-          <div className="text-xs text-gray-400 font-semibold mb-2 px-2">
+          <div className="text-xs text-text-muted font-semibold mb-2 px-2">
             Distribute
           </div>
           <div className="grid grid-cols-3 gap-1">
             <button
               onClick={() => handleDistribute("horizontal")}
-              className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+              className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
               title="Distribute Horizontally (Ctrl+Shift+H)"
             >
               <svg
@@ -411,7 +411,7 @@ export function AlignmentTools({
             </button>
             <button
               onClick={() => handleDistribute("vertical")}
-              className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+              className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
               title="Distribute Vertically (Ctrl+Shift+V)"
             >
               <svg
@@ -430,7 +430,7 @@ export function AlignmentTools({
             </button>
             <button
               onClick={() => handleDistribute("even")}
-              className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+              className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
               title="Distribute Evenly"
             >
               <svg

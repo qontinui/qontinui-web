@@ -190,23 +190,23 @@ export function ActionEditor({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white">
+            <Button className="bg-brand-secondary hover:bg-brand-secondary/80 text-white">
               <Plus className="w-4 h-4 mr-2" />
               Add Action
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="bg-[#27272A] border-gray-700">
+          <DropdownMenuContent className="bg-surface-raised border-border-default">
             {Object.entries(ACTION_GROUPS).map(([groupName, actions]) => (
               <DropdownMenuSub key={groupName}>
-                <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
+                <DropdownMenuSubTrigger className="hover:bg-surface-raised-hover focus:bg-surface-raised-hover">
                   {groupName}
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
+                <DropdownMenuSubContent className="bg-surface-raised border-border-default">
                   {actions.map(({ type, label }) => (
                     <DropdownMenuItem
                       key={type}
                       onClick={() => addAction(type)}
-                      className="hover:bg-gray-700 focus:bg-gray-700"
+                      className="hover:bg-surface-raised-hover focus:bg-surface-raised-hover"
                     >
                       {label}
                     </DropdownMenuItem>
@@ -220,7 +220,7 @@ export function ActionEditor({
 
       <div className="space-y-2">
         {process.actions.length === 0 ? (
-          <div className="text-center py-12 text-gray-500 border-2 border-dashed border-gray-700 rounded-lg">
+          <div className="text-center py-12 text-text-muted border-2 border-dashed border-border-default rounded-lg">
             <Plus className="w-8 h-8 mx-auto mb-2 opacity-50" />
             <p>No actions yet</p>
             <p className="text-sm">Add an action to get started</p>
@@ -235,17 +235,17 @@ export function ActionEditor({
                 onDragStart={() => handleDragStart(index)}
                 onDragOver={(e) => handleDragOver(e, index)}
                 onDragEnd={handleDragEnd}
-                className={`cursor-move transition-all hover:border-[#BD00FF]/50 ${
+                className={`cursor-move transition-all hover:border-brand-secondary/50 ${
                   selectedAction?.id === action.id
-                    ? "border-[#BD00FF] bg-[#BD00FF]/10"
-                    : "border-gray-700 bg-[#27272A]"
+                    ? "border-brand-secondary bg-brand-secondary/10"
+                    : "border-border-default bg-surface-raised"
                 } ${draggedIndex === index ? "opacity-50" : ""}`}
                 onClick={() => onSelectAction(action)}
               >
                 <CardContent className="p-3">
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2">
-                      <GripVertical className="w-4 h-4 text-gray-400 cursor-grab active:cursor-grabbing" />
+                      <GripVertical className="w-4 h-4 text-text-muted cursor-grab active:cursor-grabbing" />
                       <Badge
                         className={`${actionType?.color} text-white text-xs`}
                       >
@@ -270,7 +270,7 @@ export function ActionEditor({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-gray-400 hover:text-[#00D9FF]"
+                        className="h-6 w-6 p-0 text-text-muted hover:text-brand-primary"
                         onClick={(e) => {
                           e.stopPropagation();
                           duplicateAction(action);
@@ -281,7 +281,7 @@ export function ActionEditor({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
+                        className="h-6 w-6 p-0 text-text-muted hover:text-red-400"
                         onClick={(e) => {
                           e.stopPropagation();
                           deleteAction(action.id);
@@ -498,7 +498,7 @@ function renderActionSummary(
             );
           }
           return (
-            <span key={index} className="text-gray-400">
+            <span key={index} className="text-text-muted">
               {part}
             </span>
           );
@@ -507,7 +507,7 @@ function renderActionSummary(
     );
   }
 
-  return <p className="text-xs text-gray-400 mt-1">{summary}</p>;
+  return <p className="text-xs text-text-muted mt-1">{summary}</p>;
 }
 
 function getActionSummary(

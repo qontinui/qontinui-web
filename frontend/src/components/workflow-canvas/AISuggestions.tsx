@@ -146,16 +146,16 @@ export function AISuggestions({
 
   const containerClass =
     position === "floating"
-      ? "fixed bottom-4 right-4 w-96 max-h-[600px] bg-white dark:bg-gray-900 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700"
-      : "w-full h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700";
+      ? "fixed bottom-4 right-4 w-96 max-h-[600px] bg-white dark:bg-surface-canvas rounded-lg shadow-2xl border border-border-default dark:border-border-default"
+      : "w-full h-full bg-white dark:bg-surface-canvas border-l border-border-default dark:border-border-default";
 
   return (
     <div className={containerClass}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-default dark:border-border-default">
         <div className="flex items-center gap-2">
           <Lightbulb className="w-5 h-5 text-yellow-500" />
-          <h3 className="font-semibold text-gray-900 dark:text-white">
+          <h3 className="font-semibold text-text-primary dark:text-white">
             AI Suggestions
           </h3>
           {suggestions.length > 0 && (
@@ -167,7 +167,7 @@ export function AISuggestions({
         {onClose && (
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+            className="p-1 hover:bg-surface-raised dark:hover:bg-surface-raised rounded transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -181,8 +181,8 @@ export function AISuggestions({
       >
         {loading ? (
           <div className="p-8 text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-200 border-t-purple-600 mb-4" />
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-border-default border-t-purple-600 mb-4" />
+            <p className="text-sm text-text-muted dark:text-text-muted">
               Analyzing workflow...
             </p>
           </div>
@@ -199,10 +199,10 @@ export function AISuggestions({
         ) : suggestions.length === 0 ? (
           <div className="p-8 text-center">
             <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-            <h4 className="font-medium text-gray-900 dark:text-white mb-2">
+            <h4 className="font-medium text-text-primary dark:text-white mb-2">
               Looking Good!
             </h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-text-muted dark:text-text-muted">
               No suggestions at the moment. Your workflow looks solid.
             </p>
           </div>
@@ -210,7 +210,7 @@ export function AISuggestions({
           <div className="p-4 space-y-6">
             {sortedTypes.map((type) => (
               <div key={type}>
-                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                <h4 className="text-xs font-semibold text-text-muted dark:text-text-muted uppercase tracking-wider mb-3">
                   {type.replace("_", " ")}
                 </h4>
                 <div className="space-y-3">
@@ -225,7 +225,7 @@ export function AISuggestions({
                         className={`border rounded-lg transition-all ${
                           isApplied
                             ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20"
-                            : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+                            : "border-border-default dark:border-border-default bg-surface-raised dark:bg-surface-raised"
                         }`}
                       >
                         <div className="p-3">
@@ -237,7 +237,7 @@ export function AISuggestions({
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2 mb-1">
-                                <h5 className="font-medium text-sm text-gray-900 dark:text-white">
+                                <h5 className="font-medium text-sm text-text-primary dark:text-white">
                                   {suggestion.title}
                                 </h5>
                                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -247,32 +247,32 @@ export function AISuggestions({
                                         ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
                                         : suggestion.impact === "medium"
                                           ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
-                                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
+                                          : "bg-surface-raised dark:bg-surface-raised text-text-muted dark:text-text-muted"
                                     }`}
                                   >
                                     {suggestion.impact}
                                   </span>
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  <span className="text-xs text-text-muted dark:text-text-muted">
                                     {Math.round(suggestion.confidence * 100)}%
                                   </span>
                                 </div>
                               </div>
-                              <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                              <p className="text-xs text-text-muted dark:text-text-muted mb-3">
                                 {suggestion.description}
                               </p>
 
                               {isExpanded && suggestion.actions && (
-                                <div className="mb-3 p-2 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700">
-                                  <h6 className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                <div className="mb-3 p-2 bg-white dark:bg-surface-canvas rounded border border-border-default dark:border-border-default">
+                                  <h6 className="text-xs font-medium text-text-secondary dark:text-text-secondary mb-2">
                                     Changes:
                                   </h6>
                                   <ul className="space-y-1">
                                     {suggestion.actions.map((action, i) => (
                                       <li
                                         key={i}
-                                        className="text-xs text-gray-600 dark:text-gray-400 flex items-start gap-2"
+                                        className="text-xs text-text-muted dark:text-text-muted flex items-start gap-2"
                                       >
-                                        <span className="text-gray-400 dark:text-gray-600">
+                                        <span className="text-text-muted dark:text-text-muted">
                                           •
                                         </span>
                                         <span>
@@ -302,7 +302,7 @@ export function AISuggestions({
                                       onClick={() =>
                                         toggleExpanded(suggestion.id)
                                       }
-                                      className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs font-medium rounded transition-colors flex items-center gap-1"
+                                      className="px-3 py-1.5 bg-surface-raised dark:bg-surface-raised hover:bg-surface-raised/80 dark:hover:bg-surface-raised text-text-secondary dark:text-text-secondary text-xs font-medium rounded transition-colors flex items-center gap-1"
                                     >
                                       <Info className="w-3 h-3" />
                                       {isExpanded ? "Less" : "More"}
@@ -311,7 +311,7 @@ export function AISuggestions({
                                       onClick={() =>
                                         handleDismiss(suggestion.id)
                                       }
-                                      className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                                      className="p-1.5 hover:bg-surface-raised dark:hover:bg-surface-raised rounded transition-colors"
                                       title="Dismiss"
                                     >
                                       <X className="w-3 h-3" />

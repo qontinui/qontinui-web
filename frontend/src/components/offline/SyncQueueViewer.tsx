@@ -93,7 +93,7 @@ export function SyncQueueViewer() {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="rounded-lg shadow-lg px-4 py-2 bg-white dark:bg-gray-800 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+          className="rounded-lg shadow-lg px-4 py-2 bg-white dark:bg-surface-raised text-sm font-medium hover:bg-surface-raised/80 dark:hover:bg-surface-raised/80 flex items-center gap-2"
         >
           <RefreshCw className="w-4 h-4" />
           Sync Queue ({stats.total})
@@ -102,9 +102,9 @@ export function SyncQueueViewer() {
 
       {/* Queue viewer */}
       {isOpen && (
-        <div className="rounded-lg shadow-xl bg-white dark:bg-gray-800 w-96 max-h-96 overflow-hidden flex flex-col">
+        <div className="rounded-lg shadow-xl bg-white dark:bg-surface-raised w-96 max-h-96 overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
+          <div className="px-4 py-3 border-b dark:border-border-default flex items-center justify-between">
             <h3 className="font-semibold">Sync Queue</h3>
             <div className="flex items-center gap-2">
               <button
@@ -116,7 +116,7 @@ export function SyncQueueViewer() {
               </button>
               <button
                 onClick={handleClearCompleted}
-                className="text-sm text-gray-600 dark:text-gray-400 hover:underline"
+                className="text-sm text-text-muted dark:text-text-muted hover:underline"
               >
                 Clear Completed
               </button>
@@ -127,33 +127,33 @@ export function SyncQueueViewer() {
           </div>
 
           {/* Stats */}
-          <div className="px-4 py-2 border-b dark:border-gray-700 grid grid-cols-5 gap-2 text-xs">
+          <div className="px-4 py-2 border-b dark:border-border-default grid grid-cols-5 gap-2 text-xs">
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">
+              <div className="font-semibold text-text-muted dark:text-text-muted">
                 Pending
               </div>
               <div className="text-lg">{stats.pending}</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">
+              <div className="font-semibold text-text-muted dark:text-text-muted">
                 Syncing
               </div>
               <div className="text-lg">{stats.syncing}</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">
+              <div className="font-semibold text-text-muted dark:text-text-muted">
                 Done
               </div>
               <div className="text-lg">{stats.completed}</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">
+              <div className="font-semibold text-text-muted dark:text-text-muted">
                 Failed
               </div>
               <div className="text-lg">{stats.failed}</div>
             </div>
             <div className="text-center">
-              <div className="font-semibold text-gray-500 dark:text-gray-400">
+              <div className="font-semibold text-text-muted dark:text-text-muted">
                 Cancelled
               </div>
               <div className="text-lg">{stats.cancelled}</div>
@@ -163,11 +163,11 @@ export function SyncQueueViewer() {
           {/* Items list */}
           <div className="flex-1 overflow-y-auto">
             {items.length === 0 ? (
-              <div className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+              <div className="px-4 py-8 text-center text-text-muted dark:text-text-muted">
                 No items in queue
               </div>
             ) : (
-              <div className="divide-y dark:divide-gray-700">
+              <div className="divide-y dark:divide-border-subtle">
                 {items.map((item) => (
                   <div key={item.id} className="px-4 py-3">
                     <div className="flex items-start justify-between gap-2">
@@ -185,7 +185,7 @@ export function SyncQueueViewer() {
                             <Loader className="w-4 h-4 text-blue-600 flex-shrink-0 animate-spin" />
                           )}
                           {item.status === "pending" && (
-                            <Clock className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                            <Clock className="w-4 h-4 text-text-muted flex-shrink-0" />
                           )}
 
                           {/* Type */}
@@ -203,7 +203,7 @@ export function SyncQueueViewer() {
 
                         {/* Retry info */}
                         {item.status === "failed" && item.retryCount > 0 && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          <p className="text-xs text-text-muted dark:text-text-muted mt-1">
                             Retry {item.retryCount}/{item.maxRetries}
                             {item.nextRetryAt &&
                               ` - Next: ${new Date(item.nextRetryAt).toLocaleTimeString()}`}
@@ -211,7 +211,7 @@ export function SyncQueueViewer() {
                         )}
 
                         {/* Timestamp */}
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        <p className="text-xs text-text-muted dark:text-text-muted mt-1">
                           {new Date(item.createdAt).toLocaleString()}
                         </p>
                       </div>
@@ -221,7 +221,7 @@ export function SyncQueueViewer() {
                         {item.status === "failed" && (
                           <button
                             onClick={() => handleRetry(item.id)}
-                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                            className="p-1 hover:bg-surface-raised dark:hover:bg-surface-raised/80 rounded"
                             title="Retry"
                           >
                             <RotateCcw className="w-4 h-4" />
@@ -232,7 +232,7 @@ export function SyncQueueViewer() {
                           item.status === "failed") && (
                           <button
                             onClick={() => handleCancel(item.id)}
-                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                            className="p-1 hover:bg-surface-raised dark:hover:bg-surface-raised/80 rounded"
                             title="Cancel"
                           >
                             <X className="w-4 h-4" />

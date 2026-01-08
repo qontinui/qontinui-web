@@ -160,7 +160,7 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
           {/* Search and Controls */}
           <div className="flex items-center gap-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-muted" />
               <Input
                 placeholder="Search screenshots..."
                 value={searchTerm}
@@ -179,11 +179,13 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
           <ScrollArea className="h-[400px] border rounded-lg">
             {loading ? (
               <div className="flex items-center justify-center h-full">
-                <p className="text-gray-500">Loading project screenshots...</p>
+                <p className="text-text-muted">
+                  Loading project screenshots...
+                </p>
               </div>
             ) : filteredScreenshots.length === 0 ? (
               <div className="flex items-center justify-center h-full">
-                <p className="text-gray-500">No screenshots found</p>
+                <p className="text-text-muted">No screenshots found</p>
               </div>
             ) : (
               <div className="p-4 space-y-2">
@@ -197,7 +199,7 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
                       className={`cursor-pointer transition-colors ${
                         isSelected
                           ? "border-blue-500 bg-blue-50"
-                          : "hover:bg-gray-50"
+                          : "hover:bg-surface-canvas"
                       }`}
                       onClick={() =>
                         !isDuplicate && handleToggleSelect(screenshot.id)
@@ -208,16 +210,16 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
                           {/* Checkbox */}
                           <div className="flex-shrink-0">
                             {isDuplicate ? (
-                              <CheckCircle className="h-5 w-5 text-gray-400" />
+                              <CheckCircle className="h-5 w-5 text-text-muted" />
                             ) : isSelected ? (
                               <CheckCircle className="h-5 w-5 text-blue-500" />
                             ) : (
-                              <Circle className="h-5 w-5 text-gray-400" />
+                              <Circle className="h-5 w-5 text-text-muted" />
                             )}
                           </div>
 
                           {/* Thumbnail */}
-                          <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
+                          <div className="w-16 h-16 bg-surface-raised rounded flex items-center justify-center flex-shrink-0">
                             {screenshot.thumbnailUrl ? (
                               <img
                                 src={`http://localhost:8000${screenshot.thumbnailUrl}`}
@@ -225,7 +227,7 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
                                 className="w-full h-full object-cover rounded"
                               />
                             ) : (
-                              <Image className="h-8 w-8 text-gray-400" />
+                              <Image className="h-8 w-8 text-text-muted" />
                             )}
                           </div>
 
@@ -234,7 +236,7 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
                             <p className="font-medium truncate">
                               {screenshot.name}
                             </p>
-                            <p className="text-sm text-gray-500">
+                            <p className="text-sm text-text-muted">
                               {formatFileSize(screenshot.size)} •{" "}
                               {formatDate(screenshot.createdAt)}
                             </p>
@@ -254,13 +256,13 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
           </ScrollArea>
 
           {/* Selection Summary */}
-          <div className="flex items-center justify-between text-sm text-gray-600">
+          <div className="flex items-center justify-between text-sm text-text-secondary">
             <span>
               {selectedIds.size} screenshot{selectedIds.size !== 1 ? "s" : ""}{" "}
               selected
             </span>
             {currentHashes.length > 0 && (
-              <span className="text-gray-500">
+              <span className="text-text-muted">
                 {currentHashes.length} already loaded
               </span>
             )}

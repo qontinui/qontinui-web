@@ -209,7 +209,7 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
             <div>
               <Label className="text-xs">Frequency</Label>
               <div className="flex items-center gap-2">
-                <div className="flex-1 bg-gray-200 rounded-full h-2">
+                <div className="flex-1 bg-surface-raised rounded-full h-2">
                   <div
                     className="bg-green-500 h-2 rounded-full"
                     style={{ width: `${(stateImage.frequency ?? 0) * 100}%` }}
@@ -234,14 +234,16 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
                 {belongsToStates.map((state) => (
                   <div
                     key={state.id}
-                    className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                    className="flex items-center justify-between p-2 bg-surface-canvas rounded"
                   >
                     <div>
                       <p className="text-sm font-medium">{state.name}</p>
-                      <p className="text-xs text-gray-600">ID: {state.id}</p>
+                      <p className="text-xs text-text-secondary">
+                        ID: {state.id}
+                      </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-gray-500 mb-1">Confidence</p>
+                      <p className="text-xs text-text-muted mb-1">Confidence</p>
                       <Badge
                         variant={
                           state.confidence > 0.8 ? "default" : "secondary"
@@ -254,7 +256,9 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-500">Not assigned to any state</p>
+              <p className="text-sm text-text-muted">
+                Not assigned to any state
+              </p>
             )}
           </CardContent>
         </Card>
@@ -275,7 +279,7 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
                     {isPresent ? (
                       <CheckCircle className="h-4 w-4 text-green-500" />
                     ) : (
-                      <XCircle className="h-4 w-4 text-gray-400" />
+                      <XCircle className="h-4 w-4 text-text-muted" />
                     )}
                     <span className="text-sm truncate flex-1">
                       {screenshot.name}
@@ -343,7 +347,7 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">Metadata</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-xs text-gray-600">
+          <CardContent className="space-y-2 text-xs text-text-secondary">
             <div className="flex justify-between">
               <span>ID:</span>
               <span className="font-mono">

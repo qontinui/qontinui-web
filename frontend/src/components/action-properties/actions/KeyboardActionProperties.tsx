@@ -23,21 +23,21 @@ export function KeyboardActionProperties({
     <>
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">Key</Label>
+          <Label className="text-xs text-text-muted">Key</Label>
           <SpecialKeysSelector
             onInsertKey={(key) => updateConfig("key", key)}
           />
         </div>
         {key && (
-          <div className="p-2 bg-gray-800/50 rounded-md border border-gray-700">
-            <div className="text-xs text-gray-500 mb-1">Selected key:</div>
-            <div className="text-sm font-mono text-gray-300">
+          <div className="p-2 bg-surface-raised/50 rounded-md border border-border-default">
+            <div className="text-xs text-text-muted mb-1">Selected key:</div>
+            <div className="text-sm font-mono text-text-default">
               <SpecialKeyDisplay text={key} />
             </div>
           </div>
         )}
         {!key && (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Select a key from the dropdown above
           </p>
         )}

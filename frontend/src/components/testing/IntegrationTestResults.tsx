@@ -138,7 +138,7 @@ export function IntegrationTestResults({
         );
       default:
         return (
-          <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+          <Badge className="bg-surface-raised/20 text-text-muted border-border-subtle">
             <Info className="w-3 h-3 mr-1" />
             {run.status}
           </Badge>
@@ -170,17 +170,17 @@ export function IntegrationTestResults({
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as "steps" | "insights")}
       >
-        <TabsList className="bg-[#1A1A1B]/50 border border-gray-800/50">
+        <TabsList className="bg-surface-raised/50 border border-border-subtle/50">
           <TabsTrigger
             value="steps"
-            className="data-[state=active]:bg-[#00D9FF]/20 data-[state=active]:text-[#00D9FF]"
+            className="data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary"
           >
             <Route className="w-4 h-4 mr-2" />
             Execution Steps ({unifiedSteps.length})
           </TabsTrigger>
           <TabsTrigger
             value="insights"
-            className="data-[state=active]:bg-[#00D9FF]/20 data-[state=active]:text-[#00D9FF]"
+            className="data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary"
           >
             <Shield className="w-4 h-4 mr-2" />
             Insights
@@ -240,7 +240,7 @@ function SummaryHeader({
   nameMap,
 }: SummaryHeaderProps) {
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -254,7 +254,7 @@ function SummaryHeader({
               variant="outline"
               size="sm"
               onClick={onToggleVisualMode}
-              className="border-[#00D9FF]/30 text-[#00D9FF] hover:bg-[#00D9FF]/10"
+              className="border-brand-primary/30 text-brand-primary hover:bg-brand-primary/10"
             >
               <Activity className="w-4 h-4 mr-2" />
               Visual Playback
@@ -317,10 +317,10 @@ function SummaryHeader({
         </div>
 
         {/* Initial and Final States */}
-        <div className="mt-4 pt-4 border-t border-gray-800/50">
+        <div className="mt-4 pt-4 border-t border-border-subtle/50">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <div className="text-xs text-gray-400 mb-2">Initial States</div>
+              <div className="text-xs text-text-muted mb-2">Initial States</div>
               <div className="flex flex-wrap gap-1">
                 {run.initial_states.length > 0 ? (
                   run.initial_states.map((state: string) => (
@@ -333,12 +333,12 @@ function SummaryHeader({
                     </Badge>
                   ))
                 ) : (
-                  <span className="text-xs text-gray-500">None</span>
+                  <span className="text-xs text-text-muted">None</span>
                 )}
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-400 mb-2">Final States</div>
+              <div className="text-xs text-text-muted mb-2">Final States</div>
               <div className="flex flex-wrap gap-1">
                 {run.final_states.length > 0 ? (
                   run.final_states.map((state: string) => (
@@ -351,7 +351,7 @@ function SummaryHeader({
                     </Badge>
                   ))
                 ) : (
-                  <span className="text-xs text-gray-500">None</span>
+                  <span className="text-xs text-text-muted">None</span>
                 )}
               </div>
             </div>
@@ -380,7 +380,7 @@ function StatBadge({ icon, label, value, color }: StatBadgeProps) {
     green: "bg-green-500/10 text-green-400 border-green-500/20",
     yellow: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
     red: "bg-red-500/10 text-red-400 border-red-500/20",
-    gray: "bg-gray-500/10 text-gray-400 border-gray-500/20",
+    gray: "bg-surface-raised/10 text-text-muted border-border-subtle",
   };
 
   return (
@@ -389,7 +389,7 @@ function StatBadge({ icon, label, value, color }: StatBadgeProps) {
     >
       <div className="flex-shrink-0">{icon}</div>
       <div>
-        <div className="text-xs text-gray-500">{label}</div>
+        <div className="text-xs text-text-muted">{label}</div>
         <div className="text-lg font-bold">{value}</div>
       </div>
     </div>
@@ -415,13 +415,13 @@ function ExecutionStepsPanel({
 }: ExecutionStepsPanelProps) {
   if (steps.length === 0) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="py-12 text-center">
-          <Route className="w-12 h-12 mx-auto mb-4 text-gray-600" />
-          <h3 className="text-lg font-medium text-gray-400 mb-2">
+          <Route className="w-12 h-12 mx-auto mb-4 text-text-muted" />
+          <h3 className="text-lg font-medium text-text-muted mb-2">
             No Execution Steps
           </h3>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-text-muted">
             This integration test has no recorded execution steps.
           </p>
         </CardContent>
@@ -469,13 +469,13 @@ function InsightsPanel({
 
   if (!hasInsights) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="py-12 text-center">
           <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-green-500" />
-          <h3 className="text-lg font-medium text-gray-400 mb-2">
+          <h3 className="text-lg font-medium text-text-muted mb-2">
             No Issues Detected
           </h3>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-text-muted">
             The integration test completed without any reliability concerns or
             coverage gaps.
           </p>
@@ -577,10 +577,10 @@ function InsightSection({
   };
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger asChild>
-          <CardHeader className="cursor-pointer hover:bg-gray-800/20 transition-colors">
+          <CardHeader className="cursor-pointer hover:bg-surface-raised/20 transition-colors">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={colorClasses[color]}>{icon}</div>
@@ -626,7 +626,7 @@ function ReliabilityInsightCard({
     high: "border-l-red-500 bg-red-500/5",
     medium: "border-l-yellow-500 bg-yellow-500/5",
     low: "border-l-blue-500 bg-blue-500/5",
-    info: "border-l-gray-500 bg-gray-500/5",
+    info: "border-l-border-default bg-surface-raised/5",
   };
 
   return (
@@ -642,19 +642,19 @@ function ReliabilityInsightCard({
               ? "border-red-500/30 text-red-400"
               : insight.severity === "medium"
                 ? "border-yellow-500/30 text-yellow-400"
-                : "border-gray-500/30 text-gray-400"
+                : "border-border-subtle text-text-muted"
           }`}
         >
           {insight.severity}
         </Badge>
       </div>
-      <p className="text-sm text-gray-400 mb-3">{insight.description}</p>
+      <p className="text-sm text-text-muted mb-3">{insight.description}</p>
       <div className="flex flex-wrap gap-2 mb-3">
         {insight.affected_patterns.map((pattern) => (
           <Badge
             key={pattern}
             variant="outline"
-            className="text-xs border-gray-700"
+            className="text-xs border-border-default"
           >
             {resolveName(pattern, nameMap)}
           </Badge>
@@ -662,13 +662,13 @@ function ReliabilityInsightCard({
       </div>
       {insight.metric_value !== undefined &&
         insight.metric_threshold !== undefined && (
-          <div className="text-xs text-gray-500 mb-2">
+          <div className="text-xs text-text-muted mb-2">
             Value: {insight.metric_value.toFixed(1)}% (threshold:{" "}
             {insight.metric_threshold}%)
           </div>
         )}
-      <div className="bg-gray-800/30 rounded p-2">
-        <div className="text-xs text-gray-400 font-medium mb-1">
+      <div className="bg-surface-raised/30 rounded p-2">
+        <div className="text-xs text-text-muted font-medium mb-1">
           Recommendation
         </div>
         <div className="text-sm text-white">{insight.recommendation}</div>
@@ -709,7 +709,7 @@ function StochasticityWarningCard({
               ? resolveName(warning.pattern_name, nameMap)
               : warning.action_type || "Unknown Pattern"}
           </h4>
-          <div className="text-xs text-gray-500 mt-1">
+          <div className="text-xs text-text-muted mt-1">
             {warningTypeLabels[warning.warning_type] || warning.warning_type}
           </div>
         </div>
@@ -720,10 +720,10 @@ function StochasticityWarningCard({
           {(warning.historical_failure_rate * 100).toFixed(1)}% failure rate
         </Badge>
       </div>
-      <p className="text-sm text-gray-400 mb-3">{warning.description}</p>
+      <p className="text-sm text-text-muted mb-3">{warning.description}</p>
       {warning.sample_failures.length > 0 && (
         <div className="mb-3">
-          <div className="text-xs text-gray-500 mb-1">Sample Failures</div>
+          <div className="text-xs text-text-muted mb-1">Sample Failures</div>
           <div className="space-y-1">
             {warning.sample_failures.slice(0, 3).map((failure, index) => (
               <div
@@ -736,8 +736,8 @@ function StochasticityWarningCard({
           </div>
         </div>
       )}
-      <div className="bg-gray-800/30 rounded p-2">
-        <div className="text-xs text-gray-400 font-medium mb-1">
+      <div className="bg-surface-raised/30 rounded p-2">
+        <div className="text-xs text-text-muted font-medium mb-1">
           Recommendation
         </div>
         <div className="text-sm text-white">{warning.recommendation}</div>
@@ -778,7 +778,7 @@ function CoverageGapCard({
           {gap.severity}
         </Badge>
       </div>
-      <p className="text-sm text-gray-400 mb-3">{gap.description}</p>
+      <p className="text-sm text-text-muted mb-3">{gap.description}</p>
       {gap.affected_states.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
           {gap.affected_states.map((state) => (
@@ -792,8 +792,8 @@ function CoverageGapCard({
           ))}
         </div>
       )}
-      <div className="bg-gray-800/30 rounded p-2">
-        <div className="text-xs text-gray-400 font-medium mb-1">
+      <div className="bg-surface-raised/30 rounded p-2">
+        <div className="text-xs text-text-muted font-medium mb-1">
           Recommendation
         </div>
         <div className="text-sm text-white">{gap.recommendation}</div>

@@ -138,7 +138,7 @@ export function TryItButton({
       <div className="space-y-6">
         {/* Component would be rendered here based on config.type */}
         <div className="text-center py-12">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">
             {config.type === "upload-screenshots" && "Upload Your Screenshots"}
             {config.type === "identify-element" && "Identify the Element"}
             {config.type === "create-action" && "Create an Action"}
@@ -150,20 +150,20 @@ export function TryItButton({
             {config.type === "custom" && "Complete This Exercise"}
           </h3>
 
-          <p className="text-gray-600 dark:text-gray-400 mb-8">
+          <p className="text-text-muted mb-8">
             Interactive component for:{" "}
-            <code className="bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-sm">
+            <code className="bg-surface-raised px-2 py-1 rounded text-sm">
               {config.component}
             </code>
           </p>
 
           {/* Show preloaded data if available */}
           {Object.keys(preloadedData).length > 0 && (
-            <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 mb-8 text-left text-sm">
-              <p className="font-semibold text-gray-900 dark:text-white mb-2">
+            <div className="bg-surface-canvas rounded-lg p-4 mb-8 text-left text-sm">
+              <p className="font-semibold text-text-primary mb-2">
                 Preloaded Data:
               </p>
-              <pre className="text-xs text-gray-600 dark:text-gray-400 overflow-auto">
+              <pre className="text-xs text-text-muted overflow-auto">
                 {JSON.stringify(preloadedData, null, 2)}
               </pre>
             </div>
@@ -261,7 +261,7 @@ export function TryItButton({
       <Dialog open={isTryItOpen} onOpenChange={setIsTryItOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-gray-900 dark:text-white">
+            <DialogTitle className="text-2xl font-bold text-text-primary">
               {config.type === "upload-screenshots" &&
                 "Upload Your Screenshots"}
               {config.type === "identify-element" && "Identify the Element"}

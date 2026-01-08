@@ -292,13 +292,13 @@ export function GraphWorkflowBuilder() {
       <div className="flex h-full" data-tutorial-id="graph-builder-container">
         {/* Left Panel - Workflow List */}
         <div
-          className="w-64 border-r border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto flex-shrink-0"
+          className="w-64 border-r border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto flex-shrink-0"
           data-tutorial-id="workflow-list"
         >
           <div className="space-y-4">
             <Button
               onClick={handleCreateWorkflow}
-              className="w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black font-medium"
+              className="w-full bg-brand-success hover:bg-brand-success/80 text-black font-medium"
               data-tutorial-id="create-workflow"
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -306,12 +306,12 @@ export function GraphWorkflowBuilder() {
             </Button>
 
             <div className="space-y-2">
-              <div className="text-xs font-medium text-gray-400 px-2 mb-2">
+              <div className="text-xs font-medium text-text-muted px-2 mb-2">
                 WORKFLOWS ({workflowList.length})
               </div>
 
               {workflowList.length === 0 ? (
-                <div className="text-sm text-gray-500 text-center py-8">
+                <div className="text-sm text-text-muted text-center py-8">
                   <GitBranch className="w-8 h-8 mx-auto mb-2 opacity-50" />
                   <p>No workflows yet</p>
                   <p className="text-xs">Create one to get started</p>
@@ -322,18 +322,18 @@ export function GraphWorkflowBuilder() {
                     key={workflow.id}
                     className={`p-3 rounded-md cursor-pointer transition-colors ${
                       selectedWorkflow?.id === workflow.id
-                        ? "bg-[#00FF88]/20 border border-[#00FF88]"
-                        : "bg-gray-800/50 hover:bg-gray-800 border border-transparent"
+                        ? "bg-brand-success/20 border border-brand-success"
+                        : "bg-surface-raised/50 hover:bg-surface-raised border border-transparent"
                     }`}
                     onClick={() => {
                       setSelectedWorkflow(workflow);
                       setSelectedAction(null);
                     }}
                   >
-                    <div className="font-medium text-sm text-gray-200">
+                    <div className="font-medium text-sm text-text-secondary">
                       {workflow.name}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-text-muted mt-1">
                       {workflow.actions.length} actions
                     </div>
 
@@ -362,7 +362,7 @@ export function GraphWorkflowBuilder() {
           {selectedWorkflow ? (
             <>
               {/* Toolbar */}
-              <div className="border-b border-gray-800 bg-[#27272A]/50 p-4 flex items-center justify-between">
+              <div className="border-b border-border-subtle bg-surface-raised/50 p-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   {isEditingName ? (
                     <div className="flex items-center gap-2">
@@ -373,13 +373,13 @@ export function GraphWorkflowBuilder() {
                           if (e.key === "Enter") handleRenameWorkflow();
                           if (e.key === "Escape") setIsEditingName(false);
                         }}
-                        className="text-lg font-bold bg-transparent border-gray-700 focus:border-[#00FF88] h-8"
+                        className="text-lg font-bold bg-transparent border-border-default focus:border-brand-success h-8"
                         autoFocus
                       />
                       <Button
                         size="sm"
                         onClick={handleRenameWorkflow}
-                        className="bg-[#00FF88] text-black"
+                        className="bg-brand-success text-black"
                       >
                         Save
                       </Button>
@@ -393,7 +393,7 @@ export function GraphWorkflowBuilder() {
                     </div>
                   ) : (
                     <h2
-                      className="text-lg font-bold text-[#00FF88] cursor-pointer hover:underline"
+                      className="text-lg font-bold text-brand-success cursor-pointer hover:underline"
                       onClick={() => {
                         setTempName(selectedWorkflow.name);
                         setIsEditingName(true);
@@ -403,7 +403,7 @@ export function GraphWorkflowBuilder() {
                     </h2>
                   )}
 
-                  <div className="text-sm text-gray-400">
+                  <div className="text-sm text-text-muted">
                     {selectedWorkflow.actions.length} actions •{" "}
                     {Object.keys(selectedWorkflow.connections || {}).length}{" "}
                     connections
@@ -415,7 +415,7 @@ export function GraphWorkflowBuilder() {
                     variant="outline"
                     size="sm"
                     onClick={handleImportWorkflow}
-                    className="border-gray-700 hover:border-[#00FF88] hover:text-[#00FF88]"
+                    className="border-border-default hover:border-brand-success hover:text-brand-success"
                     data-tutorial-id="import-workflow"
                   >
                     <Upload className="w-4 h-4 mr-2" />
@@ -425,7 +425,7 @@ export function GraphWorkflowBuilder() {
                     variant="outline"
                     size="sm"
                     onClick={handleExportWorkflow}
-                    className="border-gray-700 hover:border-[#00FF88] hover:text-[#00FF88]"
+                    className="border-border-default hover:border-brand-success hover:text-brand-success"
                     data-tutorial-id="export-workflow"
                   >
                     <Download className="w-4 h-4 mr-2" />
@@ -474,7 +474,7 @@ export function GraphWorkflowBuilder() {
               </div>
             </>
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-500">
+            <div className="flex items-center justify-center h-full text-text-muted">
               <div className="text-center">
                 <GitBranch className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p className="text-lg">Select a workflow to edit</p>
@@ -486,7 +486,7 @@ export function GraphWorkflowBuilder() {
 
         {/* Right Panel - Action Properties */}
         <div
-          className="w-96 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto flex-shrink-0"
+          className="w-96 border-l border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto flex-shrink-0"
           data-tutorial-id="graph-properties"
         >
           {selectedAction ? (
@@ -501,7 +501,7 @@ export function GraphWorkflowBuilder() {
               }
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-500">
+            <div className="flex items-center justify-center h-full text-text-muted">
               <div className="text-center">
                 <List className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p className="text-sm">Select a node to edit</p>

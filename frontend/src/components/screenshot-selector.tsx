@@ -160,7 +160,7 @@ export function ScreenshotSelector({
         {trigger || (
           <Button
             variant="outline"
-            className="w-full justify-start border-gray-700 bg-transparent hover:bg-gray-800"
+            className="w-full justify-start border-border-default bg-transparent hover:bg-surface-raised"
           >
             <Camera className="w-4 h-4 mr-2" />
             {selectedScreenshot
@@ -187,7 +187,7 @@ export function ScreenshotSelector({
             <div className="mb-4">
               <Label
                 htmlFor="screenshot-upload"
-                className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-[#00D9FF] text-black font-medium rounded hover:bg-[#00D9FF]/80 transition-colors"
+                className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-brand-primary text-black font-medium rounded hover:bg-brand-primary/80 transition-colors"
               >
                 <Upload className="w-4 h-4" />
                 Upload Screenshot
@@ -205,7 +205,7 @@ export function ScreenshotSelector({
 
           <ScrollArea className="flex-1">
             {screenshots.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+              <div className="flex flex-col items-center justify-center h-64 text-text-muted">
                 <Camera className="w-16 h-16 mb-4 opacity-50" />
                 <p className="text-lg">No screenshots uploaded yet</p>
                 <p className="text-sm">Upload a screenshot to get started</p>
@@ -220,14 +220,14 @@ export function ScreenshotSelector({
                       "group relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all hover:scale-105",
                       multiSelect
                         ? tempSelectedScreenshots.includes(screenshot.id)
-                          ? "border-[#00D9FF] ring-2 ring-[#00D9FF]/50"
-                          : "border-gray-700 hover:border-gray-600"
+                          ? "border-brand-primary ring-2 ring-brand-primary/50"
+                          : "border-border-default hover:border-border-subtle"
                         : selectedScreenshot === screenshot.id
-                          ? "border-[#00D9FF] ring-2 ring-[#00D9FF]/50"
-                          : "border-gray-700 hover:border-gray-600"
+                          ? "border-brand-primary ring-2 ring-brand-primary/50"
+                          : "border-border-default hover:border-border-subtle"
                     )}
                   >
-                    <div className="aspect-video bg-gray-900">
+                    <div className="aspect-video bg-surface-canvas">
                       <img
                         src={screenshot.url}
                         alt={screenshot.name}
@@ -238,7 +238,7 @@ export function ScreenshotSelector({
                     {(multiSelect
                       ? tempSelectedScreenshots.includes(screenshot.id)
                       : selectedScreenshot === screenshot.id) && (
-                      <div className="absolute top-2 right-2 bg-[#00D9FF] text-black rounded-full p-1">
+                      <div className="absolute top-2 right-2 bg-brand-primary text-black rounded-full p-1">
                         <Check className="w-4 h-4" />
                       </div>
                     )}
@@ -256,7 +256,7 @@ export function ScreenshotSelector({
                       <p className="text-xs text-white truncate">
                         {screenshot.name}
                       </p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-text-muted">
                         {new Date(screenshot.uploadedAt).toLocaleDateString()}
                       </p>
                     </div>
@@ -273,7 +273,7 @@ export function ScreenshotSelector({
               </Button>
               <Button
                 onClick={handleConfirmSelection}
-                className="bg-[#00D9FF] text-black hover:bg-[#00D9FF]/80"
+                className="bg-brand-primary text-black hover:bg-brand-primary/80"
               >
                 Add {tempSelectedScreenshots.length} Screenshot
                 {tempSelectedScreenshots.length !== 1 ? "s" : ""}

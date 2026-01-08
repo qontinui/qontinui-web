@@ -585,15 +585,15 @@ export function EnhancedImageLibrary() {
   const getSourceColor = (source: string) => {
     switch (source) {
       case "uploaded":
-        return "#00FF88";
+        return "var(--color-brand-success)";
       case "pattern_optimization":
-        return "#00D9FF";
+        return "var(--color-brand-primary)";
       case "image_extraction":
-        return "#BD00FF";
+        return "var(--color-brand-secondary)";
       case "state_discovery":
         return "#FFB800";
       default:
-        return "#6B7280";
+        return "var(--color-text-muted)";
     }
   };
 
@@ -679,23 +679,23 @@ export function EnhancedImageLibrary() {
   // ============================================================================
 
   return (
-    <div className="h-full flex flex-col bg-[#18181B]">
+    <div className="h-full flex flex-col bg-surface-canvas">
       {/* Upload Progress */}
       <ImageUploadProgress uploads={uploadingFiles} />
 
       {/* Top Toolbar */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-800">
+      <div className="flex items-center justify-between p-4 border-b border-border-subtle">
         <div className="flex items-center gap-4">
           <h2 className="text-2xl font-bold">Image Library</h2>
           <div className="flex items-center gap-2">
             <Badge
               variant="outline"
-              className="bg-[#27272A]/50 border-gray-700"
+              className="bg-surface-raised/50 border-border-default"
             >
               {filteredImages.length} images
             </Badge>
             {selectedImageIds.size > 0 && (
-              <Badge className="bg-[#00FF88] text-black">
+              <Badge className="bg-brand-success text-black">
                 {selectedImageIds.size} selected
               </Badge>
             )}
@@ -705,14 +705,14 @@ export function EnhancedImageLibrary() {
         <div className="flex items-center gap-2">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
             <Input
               placeholder="Search images..."
               value={currentFilter.query || ""}
               onChange={(e) =>
                 setCurrentFilter({ ...currentFilter, query: e.target.value })
               }
-              className="pl-10 w-64 bg-transparent border-gray-700 focus:border-[#00FF88]"
+              className="pl-10 w-64 bg-transparent border-border-default focus:border-brand-success"
             />
             {currentFilter.query && (
               <Button
@@ -729,12 +729,14 @@ export function EnhancedImageLibrary() {
           </div>
 
           {/* View Controls */}
-          <div className="flex items-center gap-1 bg-[#27272A] rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-surface-raised rounded-lg p-1">
             <Button
               variant={viewMode === "grid" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("grid")}
-              className={cn(viewMode === "grid" && "bg-[#00FF88] text-black")}
+              className={cn(
+                viewMode === "grid" && "bg-brand-success text-black"
+              )}
             >
               <Grid3x3 className="w-4 h-4" />
             </Button>
@@ -742,7 +744,9 @@ export function EnhancedImageLibrary() {
               variant={viewMode === "list" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("list")}
-              className={cn(viewMode === "list" && "bg-[#00FF88] text-black")}
+              className={cn(
+                viewMode === "list" && "bg-brand-success text-black"
+              )}
             >
               <List className="w-4 h-4" />
             </Button>
@@ -751,7 +755,7 @@ export function EnhancedImageLibrary() {
               size="sm"
               onClick={() => setViewMode("slideshow")}
               className={cn(
-                viewMode === "slideshow" && "bg-[#00FF88] text-black"
+                viewMode === "slideshow" && "bg-brand-success text-black"
               )}
             >
               <Play className="w-4 h-4" />
@@ -760,8 +764,8 @@ export function EnhancedImageLibrary() {
 
           {/* Grid Size Slider */}
           {viewMode === "grid" && (
-            <div className="flex items-center gap-2 bg-[#27272A] rounded-lg px-3 py-2">
-              <Minus className="w-3 h-3 text-gray-400" />
+            <div className="flex items-center gap-2 bg-surface-raised rounded-lg px-3 py-2">
+              <Minus className="w-3 h-3 text-text-muted" />
               <Slider
                 value={[
                   gridSize === "small" ? 0 : gridSize === "medium" ? 50 : 100,
@@ -777,7 +781,7 @@ export function EnhancedImageLibrary() {
                 step={1}
                 className="w-24"
               />
-              <Plus className="w-3 h-3 text-gray-400" />
+              <Plus className="w-3 h-3 text-text-muted" />
             </div>
           )}
 
@@ -787,8 +791,8 @@ export function EnhancedImageLibrary() {
             size="sm"
             onClick={() => setShowFilters(!showFilters)}
             className={cn(
-              showFilters && "bg-[#00FF88] text-black",
-              "border-gray-700"
+              showFilters && "bg-brand-success text-black",
+              "border-border-default"
             )}
           >
             <Filter className="w-4 h-4 mr-2" />
@@ -798,7 +802,7 @@ export function EnhancedImageLibrary() {
           {/* Upload */}
           <Button
             onClick={() => fileInputRef.current?.click()}
-            className="bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+            className="bg-brand-success hover:bg-brand-success/80 text-black"
           >
             <Upload className="w-4 h-4 mr-2" />
             Upload
@@ -807,7 +811,7 @@ export function EnhancedImageLibrary() {
       </div>
 
       {/* Monitor Selection Panel */}
-      <div className="p-4 bg-gray-800/50 border-b border-gray-700">
+      <div className="p-4 bg-surface-raised/50 border-b border-border-default">
         <MonitorSelector
           monitors={uploadMonitors}
           onChange={setUploadMonitors}
@@ -823,7 +827,7 @@ export function EnhancedImageLibrary() {
 
       {/* Bulk Operations Toolbar */}
       {selectedImageIds.size > 0 && (
-        <div className="flex items-center justify-between p-3 bg-[#00FF88]/10 border-b border-[#00FF88]/20">
+        <div className="flex items-center justify-between p-3 bg-brand-success/10 border-b border-brand-success/20">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">
               {selectedImageIds.size} selected
@@ -832,7 +836,11 @@ export function EnhancedImageLibrary() {
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="border-gray-700">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-border-default"
+                >
                   <Move className="w-4 h-4 mr-2" />
                   Move to Folder
                 </Button>
@@ -857,14 +865,22 @@ export function EnhancedImageLibrary() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="outline" size="sm" className="border-gray-700">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-border-default"
+            >
               <Tag className="w-4 h-4 mr-2" />
               Add Tags
             </Button>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="border-gray-700">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-border-default"
+                >
                   <Package className="w-4 h-4 mr-2" />
                   Add to Collection
                 </Button>
@@ -881,7 +897,11 @@ export function EnhancedImageLibrary() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="outline" size="sm" className="border-gray-700">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-border-default"
+            >
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
@@ -915,13 +935,13 @@ export function EnhancedImageLibrary() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Folders & Collections */}
-        <div className="w-64 border-r border-gray-800 flex flex-col">
+        <div className="w-64 border-r border-border-subtle flex flex-col">
           <Tabs
             value={activeTab}
             onValueChange={(v) => setActiveTab(v as "library" | "collections")}
             className="flex-1 flex flex-col"
           >
-            <TabsList className="grid w-full grid-cols-2 bg-[#27272A] m-2">
+            <TabsList className="grid w-full grid-cols-2 bg-surface-raised m-2">
               <TabsTrigger value="library">Library</TabsTrigger>
               <TabsTrigger value="collections">Collections</TabsTrigger>
             </TabsList>
@@ -999,7 +1019,7 @@ export function EnhancedImageLibrary() {
 
         {/* Right Sidebar - Image Details */}
         {selectedImage && (
-          <div className="w-80 border-l border-gray-800 flex flex-col">
+          <div className="w-80 border-l border-border-subtle flex flex-col">
             <ImageDetailsPanel
               image={selectedImage}
               usageDetails={imageUsageDetails}
@@ -1053,11 +1073,11 @@ interface FilterPanelProps {
 
 function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
   return (
-    <div className="p-4 bg-[#27272A]/50 border-b border-gray-800">
+    <div className="p-4 bg-surface-raised/50 border-b border-border-subtle">
       <div className="grid grid-cols-4 gap-4">
         {/* Source Filter */}
         <div>
-          <label className="text-xs text-gray-400 mb-2 block">Source</label>
+          <label className="text-xs text-text-muted mb-2 block">Source</label>
           <div className="flex flex-wrap gap-1">
             {(
               [
@@ -1073,8 +1093,8 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
                 className={cn(
                   "cursor-pointer transition-all",
                   filter.sources?.includes(source)
-                    ? "bg-[#00FF88] text-black border-[#00FF88]"
-                    : "border-gray-700 hover:border-gray-600"
+                    ? "bg-brand-success text-black border-brand-success"
+                    : "border-border-default hover:border-border-subtle"
                 )}
                 onClick={() => {
                   const sources = filter.sources || [];
@@ -1095,7 +1115,7 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
 
         {/* Usage Filter */}
         <div>
-          <label className="text-xs text-gray-400 mb-2 block">Usage</label>
+          <label className="text-xs text-text-muted mb-2 block">Usage</label>
           <div className="flex gap-1">
             {(["all", "used", "unused"] as const).map((usage) => (
               <Badge
@@ -1104,8 +1124,8 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
                 className={cn(
                   "cursor-pointer transition-all",
                   filter.usageFilter === usage
-                    ? "bg-[#00FF88] text-black border-[#00FF88]"
-                    : "border-gray-700 hover:border-gray-600"
+                    ? "bg-brand-success text-black border-brand-success"
+                    : "border-border-default hover:border-border-subtle"
                 )}
                 onClick={() =>
                   onFilterChange({ ...filter, usageFilter: usage })
@@ -1123,7 +1143,7 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
             variant="outline"
             size="sm"
             onClick={() => onFilterChange({})}
-            className="border-gray-700"
+            className="border-border-default"
           >
             <XCircle className="w-4 h-4 mr-2" />
             Clear All
@@ -1167,12 +1187,12 @@ function FolderTreeSidebar({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-3 border-b border-gray-800">
+      <div className="p-3 border-b border-border-subtle">
         <Button
           variant="outline"
           size="sm"
           onClick={() => setShowNewFolder(!showNewFolder)}
-          className="w-full border-gray-700"
+          className="w-full border-border-default"
         >
           <FolderPlus className="w-4 h-4 mr-2" />
           New Folder
@@ -1185,13 +1205,13 @@ function FolderTreeSidebar({
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
-              className="text-sm bg-transparent border-gray-700"
+              className="text-sm bg-transparent border-border-default"
               autoFocus
             />
             <Button
               size="sm"
               onClick={handleCreateFolder}
-              className="bg-[#00FF88] text-black"
+              className="bg-brand-success text-black"
             >
               <Check className="w-4 h-4" />
             </Button>
@@ -1206,8 +1226,8 @@ function FolderTreeSidebar({
             className={cn(
               "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors mb-1",
               selectedFolderId === null
-                ? "bg-[#00FF88]/20 text-[#00FF88]"
-                : "hover:bg-[#27272A]"
+                ? "bg-brand-success/20 text-brand-success"
+                : "hover:bg-surface-raised"
             )}
             onClick={() => onSelectFolder(null)}
           >
@@ -1267,8 +1287,8 @@ function FolderTreeNode({
         className={cn(
           "flex items-center gap-2 px-3 py-2 rounded-lg transition-colors group",
           selectedFolderId === folder.id
-            ? "bg-[#00FF88]/20 text-[#00FF88]"
-            : "hover:bg-[#27272A]"
+            ? "bg-brand-success/20 text-brand-success"
+            : "hover:bg-surface-raised"
         )}
       >
         {folder.children.length > 0 && (
@@ -1303,13 +1323,16 @@ function FolderTreeNode({
                 }
               }}
               onBlur={handleSaveEdit}
-              className="text-sm h-6 bg-transparent border-gray-700"
+              className="text-sm h-6 bg-transparent border-border-default"
               autoFocus
             />
           ) : (
             <>
               <span className="text-sm font-medium flex-1">{folder.name}</span>
-              <Badge variant="outline" className="text-xs border-gray-700">
+              <Badge
+                variant="outline"
+                className="text-xs border-border-default"
+              >
                 {folder.totalImageCount}
               </Badge>
             </>
@@ -1395,12 +1418,12 @@ function CollectionsSidebar({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-3 border-b border-gray-800">
+      <div className="p-3 border-b border-border-subtle">
         <Button
           variant="outline"
           size="sm"
           onClick={() => setShowNewCollection(!showNewCollection)}
-          className="w-full border-gray-700"
+          className="w-full border-border-default"
         >
           <Plus className="w-4 h-4 mr-2" />
           New Collection
@@ -1413,13 +1436,13 @@ function CollectionsSidebar({
               value={newCollectionName}
               onChange={(e) => setNewCollectionName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              className="text-sm bg-transparent border-gray-700"
+              className="text-sm bg-transparent border-border-default"
               autoFocus
             />
             <Button
               size="sm"
               onClick={handleCreate}
-              className="bg-[#00FF88] text-black"
+              className="bg-brand-success text-black"
             >
               <Check className="w-4 h-4" />
             </Button>
@@ -1432,7 +1455,7 @@ function CollectionsSidebar({
           {collections.map((collection) => (
             <Card
               key={collection.id}
-              className="border-gray-700 bg-[#27272A] hover:border-gray-600 transition-colors cursor-pointer"
+              className="border-border-default bg-surface-raised hover:border-border-subtle transition-colors cursor-pointer"
             >
               <CardContent className="p-3">
                 <div className="flex items-start justify-between mb-2">
@@ -1462,7 +1485,7 @@ function CollectionsSidebar({
                     return (
                       <div
                         key={imageId}
-                        className="aspect-square bg-gray-800 rounded overflow-hidden"
+                        className="aspect-square bg-surface-canvas rounded overflow-hidden"
                       >
                         {image && (
                           <LazyImage
@@ -1476,7 +1499,7 @@ function CollectionsSidebar({
                   })}
                 </div>
 
-                <div className="text-xs text-gray-400">
+                <div className="text-xs text-text-muted">
                   {collection.imageIds.length} image
                   {collection.imageIds.length !== 1 && "s"}
                 </div>
@@ -1546,7 +1569,9 @@ function ImageGrid({
       <div
         className={cn(
           "flex-1 flex items-center justify-center border-2 border-dashed m-4 rounded-lg transition-colors",
-          dragActive ? "border-[#00FF88] bg-[#00FF88]/10" : "border-gray-700"
+          dragActive
+            ? "border-brand-success bg-brand-success/10"
+            : "border-border-default"
         )}
         onDragEnter={onDrag}
         onDragLeave={onDrag}
@@ -1557,11 +1582,11 @@ function ImageGrid({
           <Upload
             className={cn(
               "w-16 h-16 mx-auto mb-4",
-              dragActive ? "text-[#00FF88]" : "text-gray-500"
+              dragActive ? "text-brand-success" : "text-text-muted"
             )}
           />
           <p className="text-lg mb-2">No images found</p>
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-text-muted">
             Drag & drop images here or click Upload to add images
           </p>
         </div>
@@ -1576,9 +1601,9 @@ function ImageGrid({
           <Card
             key={image.id}
             className={cn(
-              "border-gray-700 bg-[#27272A] transition-all group cursor-pointer relative",
-              selectedImageId === image.id && "ring-2 ring-[#00FF88]",
-              selectedImageIds.has(image.id) && "ring-2 ring-blue-500"
+              "border-border-default bg-surface-raised transition-all group cursor-pointer relative",
+              selectedImageId === image.id && "ring-2 ring-brand-success",
+              selectedImageIds.has(image.id) && "ring-2 ring-brand-primary"
             )}
             onClick={() => onSelectImage(image.id)}
           >
@@ -1589,12 +1614,12 @@ function ImageGrid({
                   checked={selectedImageIds.has(image.id)}
                   onCheckedChange={() => onToggleSelection(image.id)}
                   onClick={(e) => e.stopPropagation()}
-                  className="bg-black/50 border-gray-500"
+                  className="bg-black/50 border-border-subtle"
                 />
               </div>
 
               {/* Image Preview */}
-              <div className="aspect-square bg-gray-800 rounded overflow-hidden relative mb-2">
+              <div className="aspect-square bg-surface-canvas rounded overflow-hidden relative mb-2">
                 <LazyImage
                   src={getImageUrl(image, "thumb")}
                   alt={image.name}
@@ -1640,7 +1665,7 @@ function ImageGrid({
                     {image.name}
                   </h4>
 
-                  <div className="flex items-center justify-between text-xs text-gray-400">
+                  <div className="flex items-center justify-between text-xs text-text-muted">
                     <span>{formatFileSize(image.size)}</span>
                   </div>
 
@@ -1650,8 +1675,8 @@ function ImageGrid({
                       className={cn(
                         "text-xs px-1 py-0 h-4",
                         image.usageCount > 0
-                          ? "bg-[#00FF88] text-black"
-                          : "bg-gray-700 text-gray-300"
+                          ? "bg-brand-success text-black"
+                          : "bg-surface-raised text-text-muted"
                       )}
                     >
                       {image.usageCount}x
@@ -1709,8 +1734,8 @@ function ImageList({
     <ScrollArea className="flex-1">
       <div className="p-4">
         <table className="w-full">
-          <thead className="border-b border-gray-800">
-            <tr className="text-left text-sm text-gray-400">
+          <thead className="border-b border-border-subtle">
+            <tr className="text-left text-sm text-text-muted">
               <th className="pb-2 w-8"></th>
               <th className="pb-2 w-12"></th>
               <th className="pb-2">Name</th>
@@ -1726,8 +1751,8 @@ function ImageList({
               <tr
                 key={image.id}
                 className={cn(
-                  "border-b border-gray-800 hover:bg-[#27272A] cursor-pointer transition-colors",
-                  selectedImageId === image.id && "bg-[#00FF88]/10"
+                  "border-b border-border-subtle hover:bg-surface-raised cursor-pointer transition-colors",
+                  selectedImageId === image.id && "bg-brand-success/10"
                 )}
                 onClick={() => onSelectImage(image.id)}
               >
@@ -1739,7 +1764,7 @@ function ImageList({
                   />
                 </td>
                 <td className="py-2">
-                  <div className="w-10 h-10 bg-gray-800 rounded overflow-hidden">
+                  <div className="w-10 h-10 bg-surface-canvas rounded overflow-hidden">
                     <LazyImage
                       src={getImageUrl(image, "thumb")}
                       alt={image.name}
@@ -1759,7 +1784,7 @@ function ImageList({
                     {getSourceLabel(image.source)}
                   </Badge>
                 </td>
-                <td className="py-2 text-sm text-gray-400">
+                <td className="py-2 text-sm text-text-muted">
                   {formatFileSize(image.size)}
                 </td>
                 <td className="py-2">
@@ -1770,7 +1795,7 @@ function ImageList({
                     {image.usageCount}x
                   </Badge>
                 </td>
-                <td className="py-2 text-sm text-gray-400">
+                <td className="py-2 text-sm text-text-muted">
                   {image.createdAt.toLocaleDateString()}
                 </td>
                 <td className="py-2">
@@ -1830,7 +1855,7 @@ function ImageDetailsPanel({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-800">
+      <div className="flex items-center justify-between p-4 border-b border-border-subtle">
         <h3 className="font-bold">Image Details</h3>
         <Button
           variant="ghost"
@@ -1845,7 +1870,7 @@ function ImageDetailsPanel({
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {/* Preview */}
-          <div className="aspect-square bg-gray-800 rounded-lg overflow-hidden">
+          <div className="aspect-square bg-surface-canvas rounded-lg overflow-hidden">
             <LazyImage
               src={getImageUrl(image, "original")}
               alt={image.name}
@@ -1861,7 +1886,7 @@ function ImageDetailsPanel({
           {/* Metadata */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400 flex items-center gap-2">
+              <span className="text-text-muted flex items-center gap-2">
                 <HardDrive className="w-4 h-4" />
                 Size
               </span>
@@ -1869,7 +1894,7 @@ function ImageDetailsPanel({
             </div>
 
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400 flex items-center gap-2">
+              <span className="text-text-muted flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
                 Uploaded
               </span>
@@ -1877,7 +1902,7 @@ function ImageDetailsPanel({
             </div>
 
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400 flex items-center gap-2">
+              <span className="text-text-muted flex items-center gap-2">
                 <Package className="w-4 h-4" />
                 Source
               </span>
@@ -1892,7 +1917,7 @@ function ImageDetailsPanel({
             </div>
 
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400 flex items-center gap-2">
+              <span className="text-text-muted flex items-center gap-2">
                 <Link2 className="w-4 h-4" />
                 Usage
               </span>
@@ -1902,7 +1927,7 @@ function ImageDetailsPanel({
             </div>
           </div>
 
-          <Separator className="bg-gray-800" />
+          <Separator className="bg-border-subtle" />
 
           {/* Usage Details */}
           {usageDetails.length > 0 && (
@@ -1913,16 +1938,19 @@ function ImageDetailsPanel({
               </h5>
               <div className="space-y-1">
                 {usageDetails.map((usage, idx) => (
-                  <div key={idx} className="text-sm p-2 bg-[#27272A] rounded">
+                  <div
+                    key={idx}
+                    className="text-sm p-2 bg-surface-raised rounded"
+                  >
                     {usage.stateName && (
                       <div className="flex items-center gap-2">
-                        <Eye className="w-3 h-3 text-gray-400" />
+                        <Eye className="w-3 h-3 text-text-muted" />
                         <span>State: {usage.stateName}</span>
                       </div>
                     )}
                     {usage.workflowName && (
                       <div className="flex items-center gap-2">
-                        <Link2 className="w-3 h-3 text-gray-400" />
+                        <Link2 className="w-3 h-3 text-text-muted" />
                         <span>Workflow: {usage.workflowName}</span>
                       </div>
                     )}
@@ -1937,7 +1965,7 @@ function ImageDetailsPanel({
             <Button
               variant="outline"
               size="sm"
-              className="w-full border-gray-700"
+              className="w-full border-border-default"
               onClick={onEditMask}
             >
               <Edit className="w-4 h-4 mr-2" />
@@ -1947,7 +1975,7 @@ function ImageDetailsPanel({
             <Button
               variant="outline"
               size="sm"
-              className="w-full border-gray-700"
+              className="w-full border-border-default"
             >
               <Download className="w-4 h-4 mr-2" />
               Download

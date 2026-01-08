@@ -65,7 +65,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
   );
 
   return (
-    <div className="flex-1 h-full bg-[#0A0A0B]">
+    <div className="flex-1 h-full bg-surface-canvas">
       {isCompositeMode && compositeScreenshots.length > 0 ? (
         <CompositeScreenshotCanvas
           screenshots={compositeDisplayScreenshots}
@@ -88,7 +88,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
           onViewportChange={onViewportChange}
         />
       ) : (
-        <div className="flex items-center justify-center h-full text-gray-500">
+        <div className="flex items-center justify-center h-full text-text-muted">
           <div className="text-center">
             <ImageIcon className="w-12 h-12 mx-auto mb-2" />
             <p className="text-sm">Upload or select a screenshot to begin</p>

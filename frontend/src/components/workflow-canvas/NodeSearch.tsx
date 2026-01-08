@@ -234,7 +234,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
     <div className={cn("node-search", className)}>
       {/* Search Input */}
       <div className="node-search__input-wrapper">
-        <Search className="node-search__search-icon h-5 w-5 text-gray-400" />
+        <Search className="node-search__search-icon h-5 w-5 text-text-muted" />
         <input
           ref={inputRef}
           type="text"
@@ -261,13 +261,13 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
         <div className="node-search__history-dropdown">
           <div className="node-search__history-header">
             <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-gray-400" />
-              <span className="text-sm font-medium text-gray-700">
+              <Clock className="h-4 w-4 text-text-muted" />
+              <span className="text-sm font-medium text-text-secondary">
                 Recent Searches
               </span>
             </div>
             <button
-              className="text-xs text-gray-500 hover:text-gray-700"
+              className="text-xs text-text-muted hover:text-text-secondary"
               onClick={clearHistory}
             >
               Clear
@@ -280,7 +280,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
                 className="node-search__history-item"
                 onClick={() => handleHistorySelect(entry.query)}
               >
-                <Search className="h-3 w-3 text-gray-400" />
+                <Search className="h-3 w-3 text-text-muted" />
                 <span>{entry.query}</span>
               </button>
             ))}
@@ -293,11 +293,11 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
         {results.length > 0 ? (
           <>
             <div className="node-search__results-header">
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-text-muted">
                 {results.length} result{results.length !== 1 ? "s" : ""}
               </span>
               {query && (
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-text-muted">
                   for &quot;{query}&quot;
                 </span>
               )}
@@ -326,10 +326,10 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
           </>
         ) : (
           <div className="node-search__empty">
-            <Search className="h-12 w-12 text-gray-300" />
-            <p className="text-gray-500">No nodes found</p>
+            <Search className="h-12 w-12 text-text-secondary" />
+            <p className="text-text-muted">No nodes found</p>
             {query && (
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-text-muted">
                 Try a different search term
               </p>
             )}

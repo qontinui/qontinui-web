@@ -45,21 +45,21 @@ export function TimingProperties({
       {/* Pause Before Begin Override */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">
+          <Label className="text-xs text-text-muted">
             Pause Before Begin Override (ms)
           </Label>
           {pauseBeforeBegin !== undefined ? (
             <Button
               variant="ghost"
               size="sm"
-              className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+              className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
               onClick={() => updateBase("pauseBeforeBegin", undefined)}
               title="Remove override (use default 0ms)"
             >
               <X className="w-3 h-3" />
             </Button>
           ) : (
-            <span className="text-xs text-gray-500">(default: 0ms)</span>
+            <span className="text-xs text-text-muted">(default: 0ms)</span>
           )}
         </div>
         {pauseBeforeBegin !== undefined ? (
@@ -70,13 +70,13 @@ export function TimingProperties({
             onChange={(e) =>
               updateBase("pauseBeforeBegin", Number.parseInt(e.target.value))
             }
-            className="bg-transparent border-gray-700"
+            className="bg-transparent border-border-default"
           />
         ) : (
           <Button
             variant="ghost"
             size="sm"
-            className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+            className="w-full h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
             onClick={() => updateBase("pauseBeforeBegin", 0)}
           >
             <Plus className="w-3 h-3 mr-1" />
@@ -88,21 +88,21 @@ export function TimingProperties({
       {/* Pause After End Override */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">
+          <Label className="text-xs text-text-muted">
             Pause After End Override (ms)
           </Label>
           {pauseAfterEnd !== undefined ? (
             <Button
               variant="ghost"
               size="sm"
-              className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+              className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
               onClick={() => updateBase("pauseAfterEnd", undefined)}
               title="Remove override (use default 0ms)"
             >
               <X className="w-3 h-3" />
             </Button>
           ) : (
-            <span className="text-xs text-gray-500">(default: 0ms)</span>
+            <span className="text-xs text-text-muted">(default: 0ms)</span>
           )}
         </div>
         {pauseAfterEnd !== undefined ? (
@@ -113,13 +113,13 @@ export function TimingProperties({
             onChange={(e) =>
               updateBase("pauseAfterEnd", Number.parseInt(e.target.value))
             }
-            className="bg-transparent border-gray-700"
+            className="bg-transparent border-border-default"
           />
         ) : (
           <Button
             variant="ghost"
             size="sm"
-            className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+            className="w-full h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
             onClick={() => updateBase("pauseAfterEnd", 0)}
           >
             <Plus className="w-3 h-3 mr-1" />

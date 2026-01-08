@@ -31,7 +31,7 @@ export const ExtractionSettingsPanel: React.FC<
   onExtract,
 }) => {
   return (
-    <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 p-4">
+    <div className="w-64 bg-surface-raised/50 border-r border-border-subtle p-4">
       <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
         <Scissors className="w-4 h-4" />
         Extraction Settings
@@ -40,7 +40,7 @@ export const ExtractionSettingsPanel: React.FC<
       <div className="space-y-4">
         {/* Processing Mode */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-text-secondary mb-2">
             Processing Mode
           </label>
           <div className="space-y-2">
@@ -51,7 +51,9 @@ export const ExtractionSettingsPanel: React.FC<
                 onChange={() => onProcessingModeChange("none")}
                 className="mr-2"
               />
-              <span className="text-sm text-gray-300">None (Full Region)</span>
+              <span className="text-sm text-text-secondary">
+                None (Full Region)
+              </span>
             </label>
             <label className="flex items-center">
               <input
@@ -60,7 +62,7 @@ export const ExtractionSettingsPanel: React.FC<
                 onChange={() => onProcessingModeChange("border")}
                 className="mr-2"
               />
-              <span className="text-sm text-gray-300">Remove Border</span>
+              <span className="text-sm text-text-secondary">Remove Border</span>
             </label>
             <label className="flex items-center">
               <input
@@ -69,10 +71,12 @@ export const ExtractionSettingsPanel: React.FC<
                 onChange={() => onProcessingModeChange("background")}
                 className="mr-2"
               />
-              <span className="text-sm text-gray-300">Remove Background</span>
+              <span className="text-sm text-text-secondary">
+                Remove Background
+              </span>
             </label>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
+          <p className="text-xs text-text-muted mt-2">
             {processingMode === "none" && "Extract the entire selected region"}
             {processingMode === "border" &&
               "Crop out border pixels matching edge color"}
@@ -85,10 +89,10 @@ export const ExtractionSettingsPanel: React.FC<
         {processingMode !== "none" && (
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="text-sm font-medium text-gray-300">
+              <label className="text-sm font-medium text-text-secondary">
                 Color Tolerance
               </label>
-              <span className="text-sm font-mono bg-[#0A0A0B] px-2 py-1 rounded text-gray-300">
+              <span className="text-sm font-mono bg-surface-canvas px-2 py-1 rounded text-text-secondary">
                 {tolerance}
               </span>
             </div>
@@ -100,11 +104,11 @@ export const ExtractionSettingsPanel: React.FC<
               onChange={(e) => onToleranceChange(Number(e.target.value))}
               className="w-full"
             />
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
+            <div className="flex justify-between text-xs text-text-muted mt-1">
               <span>Strict</span>
               <span>Loose</span>
             </div>
-            <p className="text-xs text-gray-400 mt-2">
+            <p className="text-xs text-text-muted mt-2">
               How similar colors must be to be considered border/background
             </p>
           </div>
@@ -117,8 +121,8 @@ export const ExtractionSettingsPanel: React.FC<
             disabled={!canExtract}
             className={`w-full py-2.5 rounded-md font-medium transition-colors ${
               canExtract
-                ? "bg-[#00FF88] hover:bg-[#00FF88]/90 text-black"
-                : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                ? "bg-brand-success hover:bg-brand-success/90 text-black"
+                : "bg-surface-raised text-text-muted cursor-not-allowed"
             }`}
           >
             Extract Image

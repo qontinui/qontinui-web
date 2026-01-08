@@ -49,7 +49,7 @@ export function SnapshotSelector({ value, onChange }: SnapshotSelectorProps) {
             <SelectItem key={snapshot.id} value={snapshot.run_id}>
               <div className="flex items-center justify-between w-full">
                 <span>{snapshot.run_id}</span>
-                <span className="text-xs text-gray-500 ml-4">
+                <span className="text-xs text-text-muted ml-4">
                   {snapshot.total_actions} actions
                 </span>
               </div>
@@ -59,7 +59,7 @@ export function SnapshotSelector({ value, onChange }: SnapshotSelectorProps) {
       </Select>
 
       {value && (
-        <div className="text-sm text-gray-600 mt-2">
+        <div className="text-sm text-text-muted mt-2">
           <p>
             {value.successful_actions}/{value.total_actions} actions •{" "}
             {value.total_screenshots} screenshots • {value.patterns_count}{" "}

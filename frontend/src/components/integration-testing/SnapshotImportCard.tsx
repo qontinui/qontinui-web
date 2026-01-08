@@ -101,7 +101,7 @@ export function SnapshotImportCard({
         <h3 className="text-lg font-semibold">Import Snapshot</h3>
       </div>
 
-      <p className="text-sm text-gray-400 mb-4">
+      <p className="text-sm text-text-muted mb-4">
         Import a recorded snapshot directory to make it available for
         integration testing.
       </p>
@@ -109,7 +109,7 @@ export function SnapshotImportCard({
       <div className="space-y-4">
         {/* Directory Path */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1.5">
+          <label className="block text-sm font-medium text-text-secondary mb-1.5">
             Snapshot Directory *
           </label>
           <div className="flex space-x-2">
@@ -131,14 +131,14 @@ export function SnapshotImportCard({
               <FolderOpen className="w-4 h-4" />
             </Button>
           </div>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-text-muted mt-1">
             Absolute path to the snapshot directory
           </p>
         </div>
 
         {/* Tags */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1.5">
+          <label className="block text-sm font-medium text-text-secondary mb-1.5">
             Tags (optional)
           </label>
           <Input
@@ -148,14 +148,14 @@ export function SnapshotImportCard({
             placeholder="login, authentication, stable"
             disabled={importing}
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-text-muted mt-1">
             Comma-separated tags for categorization
           </p>
         </div>
 
         {/* Notes */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1.5">
+          <label className="block text-sm font-medium text-text-secondary mb-1.5">
             Notes (optional)
           </label>
           <Textarea

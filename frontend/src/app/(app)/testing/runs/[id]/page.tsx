@@ -42,20 +42,20 @@ export default function TestRunDetailPage() {
 
   return (
     <RequireProject pageName="Test Run Details">
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
         {/* Header */}
-        <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
                 onClick={() => router.push("/testing/runs")}
-                className="text-gray-400 hover:text-white"
+                className="text-text-muted hover:text-white"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 All Runs
               </Button>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
                 Test Run Details
               </h1>
             </div>

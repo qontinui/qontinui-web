@@ -22,18 +22,18 @@ export function ActionDetails({ action }: ActionDetailsProps) {
 
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <dt className="text-gray-500">Type</dt>
+          <dt className="text-text-muted">Type</dt>
           <dd className="font-medium">{action.action_type}</dd>
         </div>
 
         <div>
-          <dt className="text-gray-500">Duration</dt>
+          <dt className="text-text-muted">Duration</dt>
           <dd className="font-medium">{Math.round(action.duration_ms)}ms</dd>
         </div>
 
         {action.action_location && (
           <div>
-            <dt className="text-gray-500">Location</dt>
+            <dt className="text-text-muted">Location</dt>
             <dd className="font-medium">
               ({action.action_location[0]}, {action.action_location[1]})
             </dd>
@@ -42,7 +42,7 @@ export function ActionDetails({ action }: ActionDetailsProps) {
 
         {action.action_region && (
           <div>
-            <dt className="text-gray-500">Region</dt>
+            <dt className="text-text-muted">Region</dt>
             <dd className="font-medium font-mono text-xs">
               ({action.action_region.x}, {action.action_region.y}){" "}
               {action.action_region.w}×{action.action_region.h}
@@ -52,7 +52,7 @@ export function ActionDetails({ action }: ActionDetailsProps) {
 
         {action.text && (
           <div className="col-span-2">
-            <dt className="text-gray-500">Text</dt>
+            <dt className="text-text-muted">Text</dt>
             <dd className="font-medium font-mono">{action.text}</dd>
           </div>
         )}
@@ -60,11 +60,11 @@ export function ActionDetails({ action }: ActionDetailsProps) {
         {action.action_type === "SCROLL" && extendedAction.direction && (
           <>
             <div>
-              <dt className="text-gray-500">Direction</dt>
+              <dt className="text-text-muted">Direction</dt>
               <dd className="font-medium">{extendedAction.direction}</dd>
             </div>
             <div>
-              <dt className="text-gray-500">Amount</dt>
+              <dt className="text-text-muted">Amount</dt>
               <dd className="font-medium">
                 {extendedAction.amount || 1}{" "}
                 {(extendedAction.amount || 1) === 1 ? "unit" : "units"}
@@ -75,7 +75,7 @@ export function ActionDetails({ action }: ActionDetailsProps) {
 
         {action.action_type === "VANISH" && (
           <div>
-            <dt className="text-gray-500">Timeout</dt>
+            <dt className="text-text-muted">Timeout</dt>
             <dd className="font-medium">
               {action.duration_ms >= 1000
                 ? `${(action.duration_ms / 1000).toFixed(1)}s`
@@ -87,14 +87,16 @@ export function ActionDetails({ action }: ActionDetailsProps) {
         {(action.action_type === "DEFINE" || action.action_type === "VANISH") &&
           extendedAction.state_name && (
             <div className="col-span-2">
-              <dt className="text-gray-500">State Name</dt>
+              <dt className="text-text-muted">State Name</dt>
               <dd className="font-medium">{extendedAction.state_name}</dd>
             </div>
           )}
 
         {action.matches && action.matches.length > 0 && (
           <div className="col-span-2">
-            <dt className="text-gray-500">Matches ({action.matches.length})</dt>
+            <dt className="text-text-muted">
+              Matches ({action.matches.length})
+            </dt>
             <dd className="space-y-1 mt-1">
               {action.matches.map((match, i) => (
                 <div key={i} className="text-xs font-mono">
@@ -107,7 +109,7 @@ export function ActionDetails({ action }: ActionDetailsProps) {
         )}
 
         <div className="col-span-2">
-          <dt className="text-gray-500">
+          <dt className="text-text-muted">
             Active States ({action.active_states.length})
           </dt>
           <dd className="flex flex-wrap gap-1 mt-1">

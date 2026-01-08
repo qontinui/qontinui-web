@@ -214,14 +214,17 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
 
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="p-2 bg-gray-100 border-b text-sm text-gray-700">
+      <div className="p-2 bg-surface-raised border-b text-sm text-text-secondary">
         <p className="font-medium">Draw a rectangle around the UI element</p>
-        <p className="text-xs text-gray-600 mt-1">
+        <p className="text-xs text-text-muted mt-1">
           Click and drag to select the region
         </p>
       </div>
 
-      <div ref={containerRef} className="flex-1 bg-gray-50 p-4 overflow-hidden">
+      <div
+        ref={containerRef}
+        className="flex-1 bg-surface-canvas p-4 overflow-hidden"
+      >
         {imageData ? (
           <canvas
             ref={canvasRef}
@@ -233,14 +236,14 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
             style={{ maxWidth: "100%", maxHeight: "100%" }}
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-400">
+          <div className="flex items-center justify-center h-full text-text-muted">
             Loading image...
           </div>
         )}
       </div>
 
       {currentRegion && (
-        <div className="p-2 bg-gray-100 border-t text-xs text-gray-700">
+        <div className="p-2 bg-surface-raised border-t text-xs text-text-secondary">
           <div className="flex justify-between">
             <span>
               Position: ({Math.round(currentRegion.x)},{" "}

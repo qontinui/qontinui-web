@@ -138,7 +138,7 @@ export function OfflineIndicator() {
       {isOnline && hasPending && !isSyncing && (
         <button
           onClick={() => syncProcessor.processQueue()}
-          className="flex-shrink-0 px-3 py-1 rounded bg-white dark:bg-gray-800 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700"
+          className="flex-shrink-0 px-3 py-1 rounded bg-white dark:bg-surface-raised text-sm font-medium hover:bg-surface-canvas dark:hover:bg-surface-raised"
         >
           Sync Now
         </button>

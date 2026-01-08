@@ -75,7 +75,7 @@ export function QontinuiHeaderTitle({
       >
         {children}
       </h1>
-      {subtitle && <p className="text-gray-400 text-sm mt-1">{subtitle}</p>}
+      {subtitle && <p className="text-text-muted text-sm mt-1">{subtitle}</p>}
     </div>
   );
 }
@@ -223,7 +223,7 @@ export function QontinuiSection({
             <h2 className="text-lg font-semibold text-white">{title}</h2>
           )}
           {description && (
-            <p className="text-sm text-gray-400">{description}</p>
+            <p className="text-sm text-text-muted">{description}</p>
           )}
         </div>
       )}

@@ -97,16 +97,16 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleBackToDashboard}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
@@ -117,13 +117,13 @@ export default function ProfilePage() {
               variant="outline"
               size="sm"
               onClick={() => router.push("/connect-runner")}
-              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
               title="Connect Desktop Runner"
             >
               <Cable className="w-4 h-4 mr-2" />
               Connect Runner
             </Button>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               My Profile
             </h1>
           </div>
@@ -139,7 +139,7 @@ export default function ProfilePage() {
               <h2 className="text-3xl font-bold mb-2">
                 {user.full_name || user.username}
               </h2>
-              <p className="text-gray-400">@{user.username}</p>
+              <p className="text-text-muted">@{user.username}</p>
             </div>
             <div className="flex items-center gap-2">
               {user.is_superuser && (
@@ -149,14 +149,14 @@ export default function ProfilePage() {
                 </Badge>
               )}
               {user.is_beta && (
-                <Badge className="bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30">
+                <Badge className="bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30">
                   <Shield className="w-3 h-3 mr-1" />
                   Beta User
                 </Badge>
               )}
             </div>
           </div>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-text-muted">
             Member since{" "}
             {new Date(user.created_at).toLocaleDateString("en-US", {
               month: "long",
@@ -168,7 +168,9 @@ export default function ProfilePage() {
 
         {loading ? (
           <div className="text-center py-12">
-            <div className="text-lg text-gray-400">Loading profile data...</div>
+            <div className="text-lg text-text-muted">
+              Loading profile data...
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

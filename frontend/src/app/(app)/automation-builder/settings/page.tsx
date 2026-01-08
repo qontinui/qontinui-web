@@ -118,7 +118,7 @@ export default function SettingsPage() {
             </Button>
             <Button
               size="sm"
-              className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+              className="bg-brand-primary hover:bg-brand-primary/80 text-black"
               onClick={handleSave}
             >
               <Save className="w-4 h-4 mr-2" />

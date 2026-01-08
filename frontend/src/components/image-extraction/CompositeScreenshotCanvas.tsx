@@ -786,7 +786,7 @@ export const CompositeScreenshotCanvas: React.FC<
 
   if (screenshots.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500">
+      <div className="flex items-center justify-center h-full text-text-muted">
         <div className="text-center">
           <p className="text-sm">No screenshots captured</p>
           <p className="text-xs mt-1">Capture screens to view composite</p>
@@ -811,21 +811,21 @@ export const CompositeScreenshotCanvas: React.FC<
       <div className="absolute top-4 right-4 flex gap-2 z-10">
         <button
           onClick={() => setZoom((z) => Math.min(10, z * 1.2))}
-          className="p-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+          className="p-2 bg-surface-raised rounded-lg hover:bg-surface-canvas transition-colors"
           title="Zoom In"
         >
           <ZoomIn className="w-4 h-4 text-white" />
         </button>
         <button
           onClick={() => setZoom((z) => Math.max(0.1, z / 1.2))}
-          className="p-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+          className="p-2 bg-surface-raised rounded-lg hover:bg-surface-canvas transition-colors"
           title="Zoom Out"
         >
           <ZoomOut className="w-4 h-4 text-white" />
         </button>
         <button
           onClick={fitToView}
-          className="p-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+          className="p-2 bg-surface-raised rounded-lg hover:bg-surface-canvas transition-colors"
           title="Fit to View"
         >
           <Maximize2 className="w-4 h-4 text-white" />
@@ -833,7 +833,7 @@ export const CompositeScreenshotCanvas: React.FC<
       </div>
 
       {/* Info overlay */}
-      <div className="absolute bottom-4 left-4 bg-gray-800/80 rounded-lg px-3 py-2 text-xs text-gray-300">
+      <div className="absolute bottom-4 left-4 bg-surface-raised/80 rounded-lg px-3 py-2 text-xs text-text-secondary">
         <div>Monitors: {screenshots.length}</div>
         {compositeBounds && (
           <div>
@@ -842,7 +842,7 @@ export const CompositeScreenshotCanvas: React.FC<
         )}
         <div data-zoom-value={zoom}>Zoom: {Math.round(zoom * 100)}%</div>
         {currentRegion && currentRegion.width > 0 && (
-          <div className="text-[#00D9FF]">
+          <div className="text-brand-primary">
             Region: {Math.round(currentRegion.width)} ×{" "}
             {Math.round(currentRegion.height)}px
           </div>

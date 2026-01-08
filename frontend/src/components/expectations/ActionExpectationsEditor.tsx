@@ -39,10 +39,10 @@ export function ActionExpectationsEditor({
   };
 
   return (
-    <Card className="border-gray-700 bg-[#27272A]/50 p-4">
+    <Card className="border-border-default bg-surface-raised/50 p-4">
       <div className="space-y-4">
         {/* Header */}
-        <div className="flex items-center gap-2 text-[#00D9FF]">
+        <div className="flex items-center gap-2 text-brand-primary">
           <Camera className="w-4 h-4" />
           <h4 className="text-sm font-medium">Action Expectations</h4>
         </div>
@@ -50,8 +50,10 @@ export function ActionExpectationsEditor({
         {/* Terminal on Failure */}
         <div className="flex items-center justify-between">
           <div className="space-y-0.5 flex-1 pr-2">
-            <Label className="text-xs text-gray-400">Terminal on Failure</Label>
-            <p className="text-xs text-gray-500">
+            <Label className="text-xs text-text-muted">
+              Terminal on Failure
+            </Label>
+            <p className="text-xs text-text-muted">
               Stop workflow if this action fails
             </p>
           </div>
@@ -66,8 +68,10 @@ export function ActionExpectationsEditor({
         {/* Checkpoint on Failure */}
         <div className="flex items-center justify-between">
           <div className="space-y-0.5 flex-1 pr-2">
-            <Label className="text-xs text-gray-400">Capture on Failure</Label>
-            <p className="text-xs text-gray-500">
+            <Label className="text-xs text-text-muted">
+              Capture on Failure
+            </Label>
+            <p className="text-xs text-text-muted">
               Capture checkpoint when action fails
             </p>
           </div>
@@ -83,10 +87,10 @@ export function ActionExpectationsEditor({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5 flex-1 pr-2">
-              <Label className="text-xs text-gray-400">
+              <Label className="text-xs text-text-muted">
                 Capture After Action
               </Label>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Capture checkpoint after action completes
               </p>
             </div>
@@ -100,23 +104,23 @@ export function ActionExpectationsEditor({
 
           {/* Checkpoint Name (only shown if capture_checkpoint_after is true) */}
           {current.capture_checkpoint_after && (
-            <div className="space-y-2 pl-4 border-l-2 border-gray-700">
-              <Label className="text-xs text-gray-400">Checkpoint Name</Label>
+            <div className="space-y-2 pl-4 border-l-2 border-border-default">
+              <Label className="text-xs text-text-muted">Checkpoint Name</Label>
               <Input
                 type="text"
                 placeholder="Enter checkpoint name"
                 value={current.checkpoint_name || ""}
                 onChange={(e) => updateField("checkpoint_name", e.target.value)}
-                className="bg-transparent border-gray-700 text-sm"
+                className="bg-transparent border-border-default text-sm"
               />
             </div>
           )}
         </div>
 
         {/* Retry Configuration */}
-        <div className="pt-3 border-t border-gray-700 space-y-3">
+        <div className="pt-3 border-t border-border-default space-y-3">
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Max Retries</Label>
+            <Label className="text-xs text-text-muted">Max Retries</Label>
             <Input
               type="number"
               min="0"
@@ -129,15 +133,15 @@ export function ActionExpectationsEditor({
                   e.target.value ? parseInt(e.target.value) : undefined
                 )
               }
-              className="bg-transparent border-gray-700 text-sm"
+              className="bg-transparent border-border-default text-sm"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Number of times to retry on failure
             </p>
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Retry Delay (ms)</Label>
+            <Label className="text-xs text-text-muted">Retry Delay (ms)</Label>
             <Input
               type="number"
               min="0"
@@ -150,17 +154,17 @@ export function ActionExpectationsEditor({
                   e.target.value ? parseInt(e.target.value) : undefined
                 )
               }
-              className="bg-transparent border-gray-700 text-sm"
+              className="bg-transparent border-border-default text-sm"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Delay between retry attempts
             </p>
           </div>
         </div>
 
         {/* Max Duration */}
-        <div className="space-y-2 pt-3 border-t border-gray-700">
-          <Label className="text-xs text-gray-400">Max Duration (ms)</Label>
+        <div className="space-y-2 pt-3 border-t border-border-default">
+          <Label className="text-xs text-text-muted">Max Duration (ms)</Label>
           <Input
             type="number"
             min="0"
@@ -173,16 +177,18 @@ export function ActionExpectationsEditor({
                 e.target.value ? parseInt(e.target.value) : undefined
               )
             }
-            className="bg-transparent border-gray-700 text-sm"
+            className="bg-transparent border-border-default text-sm"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Override global max action duration
           </p>
         </div>
 
         {/* Expected State After */}
-        <div className="space-y-2 pt-3 border-t border-gray-700">
-          <Label className="text-xs text-gray-400">Expected State After</Label>
+        <div className="space-y-2 pt-3 border-t border-border-default">
+          <Label className="text-xs text-text-muted">
+            Expected State After
+          </Label>
           <Input
             type="text"
             placeholder="State name"
@@ -190,9 +196,9 @@ export function ActionExpectationsEditor({
             onChange={(e) =>
               updateField("expected_state_after", e.target.value)
             }
-            className="bg-transparent border-gray-700 text-sm"
+            className="bg-transparent border-border-default text-sm"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             State that should be active after this action
           </p>
         </div>

@@ -103,9 +103,9 @@ export function CoverageSummaryCard({
 
   if (isGraphLoading || isTrendsLoading) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">Loading coverage summary...</div>
+          <div className="text-text-muted">Loading coverage summary...</div>
         </CardContent>
       </Card>
     );
@@ -113,7 +113,7 @@ export function CoverageSummaryCard({
 
   if (graphError) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardContent className="p-12 text-center">
           <div className="text-red-400">
             Error loading coverage summary: {graphError.message}
@@ -125,19 +125,19 @@ export function CoverageSummaryCard({
 
   if (!metrics) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle>Coverage Summary</CardTitle>
         </CardHeader>
         <CardContent className="p-12 text-center">
-          <div className="text-gray-400">No coverage data available</div>
+          <div className="text-text-muted">No coverage data available</div>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Coverage Summary</CardTitle>
@@ -159,7 +159,7 @@ export function CoverageSummaryCard({
               </div>
             )}
             {trend.direction === "stable" && (
-              <div className="flex items-center gap-1 text-gray-500">
+              <div className="flex items-center gap-1 text-text-muted">
                 <Minus className="w-4 h-4" />
                 <span className="text-xs font-medium">Stable</span>
               </div>
@@ -170,68 +170,68 @@ export function CoverageSummaryCard({
       <CardContent>
         <div className="grid grid-cols-2 gap-4">
           {/* State Coverage */}
-          <div className="p-4 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-2">State Coverage</div>
+          <div className="p-4 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-2">State Coverage</div>
             <div className="flex items-baseline gap-2">
-              <div className="text-3xl font-bold text-[#00D9FF]">
+              <div className="text-3xl font-bold text-brand-primary">
                 {metrics.stateCoverage.toFixed(1)}%
               </div>
             </div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-text-muted mt-1">
               {metrics.coveredStates} / {metrics.totalStates} states
             </div>
-            <div className="mt-3 h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div className="mt-3 h-2 bg-surface-raised rounded-full overflow-hidden">
               <div
-                className="h-full bg-[#00D9FF] transition-all duration-300"
+                className="h-full bg-brand-primary transition-all duration-300"
                 style={{ width: `${metrics.stateCoverage}%` }}
               />
             </div>
           </div>
 
           {/* Transition Coverage */}
-          <div className="p-4 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-2">
+          <div className="p-4 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-2">
               Transition Coverage
             </div>
             <div className="flex items-baseline gap-2">
-              <div className="text-3xl font-bold text-[#BD00FF]">
+              <div className="text-3xl font-bold text-brand-secondary">
                 {metrics.transitionCoverage.toFixed(1)}%
               </div>
             </div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-text-muted mt-1">
               {metrics.coveredTransitions} / {metrics.totalTransitions}{" "}
               transitions
             </div>
-            <div className="mt-3 h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div className="mt-3 h-2 bg-surface-raised rounded-full overflow-hidden">
               <div
-                className="h-full bg-[#BD00FF] transition-all duration-300"
+                className="h-full bg-brand-secondary transition-all duration-300"
                 style={{ width: `${metrics.transitionCoverage}%` }}
               />
             </div>
           </div>
 
           {/* Unique Paths */}
-          <div className="p-4 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-2">Unique Paths</div>
+          <div className="p-4 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-2">Unique Paths</div>
             <div className="flex items-baseline gap-2">
-              <div className="text-3xl font-bold text-[#00FF88]">
+              <div className="text-3xl font-bold text-brand-success">
                 {metrics.uniquePaths}
               </div>
             </div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-text-muted mt-1">
               Distinct state transitions
             </div>
           </div>
 
           {/* Total Executions */}
-          <div className="p-4 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-2">Total Executions</div>
+          <div className="p-4 bg-surface-canvas/50 rounded-lg">
+            <div className="text-sm text-text-muted mb-2">Total Executions</div>
             <div className="flex items-baseline gap-2">
               <div className="text-3xl font-bold text-[#FFB800]">
                 {metrics.totalExecutions}
               </div>
             </div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-text-muted mt-1">
               Transition attempts
             </div>
           </div>
@@ -240,7 +240,7 @@ export function CoverageSummaryCard({
         {/* Sparkline */}
         {sparklineData.length > 0 && (
           <div className="mt-6">
-            <div className="text-sm text-gray-400 mb-2">Coverage Trend</div>
+            <div className="text-sm text-text-muted mb-2">Coverage Trend</div>
             <div className="h-16 flex items-end gap-1">
               {sparklineData.map((value, index) => {
                 const height = (value / 100) * 100;
@@ -249,7 +249,7 @@ export function CoverageSummaryCard({
                   <div
                     key={index}
                     className={`flex-1 rounded-t transition-all duration-300 ${
-                      isLatest ? "bg-[#00D9FF]" : "bg-[#00D9FF]/40"
+                      isLatest ? "bg-brand-primary" : "bg-brand-primary/40"
                     }`}
                     style={{ height: `${height}%` }}
                     title={`${value.toFixed(1)}%`}
@@ -257,7 +257,7 @@ export function CoverageSummaryCard({
                 );
               })}
             </div>
-            <div className="flex justify-between text-xs text-gray-500 mt-2">
+            <div className="flex justify-between text-xs text-text-muted mt-2">
               <span>10 runs ago</span>
               <span>Latest</span>
             </div>

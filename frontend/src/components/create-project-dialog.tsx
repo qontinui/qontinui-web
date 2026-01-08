@@ -68,10 +68,10 @@ export function CreateProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="bg-[#1A1A1B] border-gray-800 text-white">
+      <DialogContent className="bg-surface-overlay border-border-subtle text-white">
         <DialogHeader>
           <DialogTitle>Create New Project</DialogTitle>
-          <DialogDescription className="text-gray-400">
+          <DialogDescription className="text-text-muted">
             Give your automation project a name
           </DialogDescription>
         </DialogHeader>
@@ -88,7 +88,7 @@ export function CreateProjectDialog({
                   setError(null);
                 }}
                 placeholder="My Automation Project"
-                className="bg-[#0F0F10] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#00D9FF]"
+                className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
                 autoFocus
                 disabled={isLoading}
               />
@@ -98,14 +98,14 @@ export function CreateProjectDialog({
             <div className="space-y-2">
               <Label htmlFor="project-description">
                 Description{" "}
-                <span className="text-gray-500 font-normal">(optional)</span>
+                <span className="text-text-muted font-normal">(optional)</span>
               </Label>
               <Input
                 id="project-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="What does this automation do?"
-                className="bg-[#0F0F10] border-gray-700 text-white placeholder:text-gray-500 focus:border-[#00D9FF]"
+                className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
                 disabled={isLoading}
               />
             </div>
@@ -116,7 +116,7 @@ export function CreateProjectDialog({
               type="button"
               variant="outline"
               onClick={() => handleOpenChange(false)}
-              className="border-gray-700 bg-transparent hover:bg-gray-800"
+              className="border-border-default bg-transparent hover:bg-surface-raised"
               disabled={isLoading}
             >
               Cancel
@@ -124,7 +124,7 @@ export function CreateProjectDialog({
             <Button
               type="submit"
               disabled={isLoading || !name.trim()}
-              className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+              className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
             >
               {isLoading ? (
                 <>

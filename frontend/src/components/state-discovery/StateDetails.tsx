@@ -80,7 +80,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
 
   if (!state) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400">
+      <div className="h-full flex items-center justify-center text-text-muted">
         <div className="text-center">
           <Info className="mx-auto h-12 w-12 mb-2" />
           <p>Select a state to view details</p>
@@ -124,7 +124,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
             <div className="flex items-center justify-between">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="text-sm text-gray-600 flex items-center gap-1 cursor-help">
+                  <span className="text-sm text-text-secondary flex items-center gap-1 cursor-help">
                     Confidence Score
                     <HelpCircle className="h-3 w-3" />
                   </span>
@@ -152,23 +152,23 @@ const StateDetails: React.FC<StateDetailsProps> = ({
 
             {/* State ID */}
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">ID</span>
+              <span className="text-sm text-text-secondary">ID</span>
               <span className="text-xs font-mono">{state.id}</span>
             </div>
 
             {/* Statistics */}
             <div className="grid grid-cols-2 gap-2 pt-2">
-              <div className="text-center p-2 bg-gray-50 rounded">
+              <div className="text-center p-2 bg-surface-canvas rounded">
                 <p className="text-lg font-semibold">
                   {state.stateImageIds?.length || 0}
                 </p>
-                <p className="text-xs text-gray-600">StateImages</p>
+                <p className="text-xs text-text-muted">StateImages</p>
               </div>
-              <div className="text-center p-2 bg-gray-50 rounded">
+              <div className="text-center p-2 bg-surface-canvas rounded">
                 <p className="text-lg font-semibold">
                   {state.screenshotIds?.length || 0}
                 </p>
-                <p className="text-xs text-gray-600">Screenshots</p>
+                <p className="text-xs text-text-muted">Screenshots</p>
               </div>
             </div>
           </CardContent>
@@ -183,7 +183,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
             >
               <ImageIcon className="mr-1 h-4 w-4" />
               <span>StateImages</span>
-              <span className="ml-1 text-gray-600">
+              <span className="ml-1 text-text-secondary">
                 ({stateImageObjects.length})
               </span>
             </TabsTrigger>
@@ -193,7 +193,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
             >
               <Camera className="mr-1 h-4 w-4" />
               <span>Screenshots</span>
-              <span className="ml-1 text-gray-600">
+              <span className="ml-1 text-text-secondary">
                 ({state.screenshotIds?.length || 0})
               </span>
             </TabsTrigger>
@@ -224,7 +224,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
                     {stateImageObjects.map((stateImage) => (
                       <div
                         key={stateImage.id}
-                        className="p-2 border rounded hover:bg-gray-50 cursor-pointer"
+                        className="p-2 border rounded hover:bg-surface-raised/80 cursor-pointer"
                         onClick={() =>
                           onHighlightStateImages?.([stateImage.id])
                         }
@@ -252,11 +252,11 @@ const StateDetails: React.FC<StateDetailsProps> = ({
                                 {stateImage.x},{stateImage.y}
                               </Badge>
                             </div>
-                            <div className="text-xs text-gray-600 mt-1">
+                            <div className="text-xs text-text-secondary mt-1">
                               Size: {stateImage.x2 - stateImage.x + 1} ×{" "}
                               {stateImage.y2 - stateImage.y + 1}
                             </div>
-                            <div className="text-xs text-gray-500 mt-1">
+                            <div className="text-xs text-text-muted mt-1">
                               Frequency:{" "}
                               {((stateImage.frequency ?? 0) * 100).toFixed(1)}%
                             </div>
@@ -284,16 +284,16 @@ const StateDetails: React.FC<StateDetailsProps> = ({
                     {(state.screenshotIds || []).map((screenshotId, index) => (
                       <div
                         key={screenshotId}
-                        className="p-3 border rounded hover:bg-gray-50 cursor-pointer transition-colors"
+                        className="p-3 border rounded hover:bg-surface-raised/80 cursor-pointer transition-colors"
                         onClick={() => handleScreenshotClick(screenshotId)}
                       >
                         <div className="flex items-center">
-                          <Camera className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
+                          <Camera className="h-4 w-4 mr-2 text-text-muted flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium">
                               Screenshot {index + 1}
                             </p>
-                            <p className="text-xs text-gray-600 font-mono break-all">
+                            <p className="text-xs text-text-secondary font-mono break-all">
                               {screenshotId}
                             </p>
                           </div>
@@ -310,7 +310,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
         {/* Info Message */}
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+            <div className="flex items-center gap-2 text-sm text-text-secondary">
               <div className="w-4 h-4 bg-yellow-500 border border-yellow-600 rounded-sm"></div>
               <span>StateImages in this state are highlighted in yellow</span>
             </div>

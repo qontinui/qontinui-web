@@ -46,7 +46,7 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
     result.historicalResultIds && result.historicalResultIds.length > 0;
 
   return (
-    <Card className="bg-white border border-gray-200 h-full flex flex-col">
+    <Card className="bg-white border border-border-subtle h-full flex flex-col">
       <CardHeader className="pb-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -67,7 +67,7 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
                 )}
                 {result.workflowName}
               </CardTitle>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-text-muted mt-0.5">
                 Test completed in {formatDuration(result.duration)}
               </p>
             </div>
@@ -96,7 +96,7 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
                 : "bg-red-50 border-red-200"
             }`}
           >
-            <p className="text-xs text-gray-600 font-medium">Status</p>
+            <p className="text-xs text-text-muted font-medium">Status</p>
             <p
               className={`text-lg font-bold ${
                 result.passed ? "text-green-700" : "text-red-700"
@@ -106,17 +106,17 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
             </p>
           </div>
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-xs text-gray-600 font-medium">Success Rate</p>
+            <p className="text-xs text-text-muted font-medium">Success Rate</p>
             <p className="text-lg font-bold text-blue-700">{successRate}%</p>
           </div>
-          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-            <p className="text-xs text-gray-600 font-medium">Steps</p>
-            <p className="text-lg font-bold text-gray-700">
+          <div className="p-3 bg-surface-canvas border border-border-subtle rounded-lg">
+            <p className="text-xs text-text-muted font-medium">Steps</p>
+            <p className="text-lg font-bold text-text-secondary">
               {result.successfulSteps}/{result.totalSteps}
             </p>
           </div>
           <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
-            <p className="text-xs text-gray-600 font-medium">Duration</p>
+            <p className="text-xs text-text-muted font-medium">Duration</p>
             <p className="text-lg font-bold text-purple-700">
               {formatDuration(result.duration)}
             </p>
@@ -124,7 +124,7 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
         </div>
 
         {/* Progress Bar */}
-        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+        <div className="w-full bg-border-subtle rounded-full h-2 overflow-hidden">
           <div
             className={`h-full rounded-full transition-all ${
               successRate >= 80
@@ -153,10 +153,10 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
         {/* Step Results Timeline */}
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-700">
+            <h3 className="text-sm font-semibold text-text-secondary">
               Step-by-Step Results
             </h3>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-text-muted">
               {result.stepResults?.length || 0} steps executed
             </span>
           </div>
@@ -173,7 +173,7 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
                 ))}
               </div>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="flex items-center justify-center h-full text-text-muted">
                 <div className="text-center">
                   <Activity className="w-12 h-12 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">No step details available</p>
@@ -218,7 +218,7 @@ const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({
     <div
       className={`p-3 rounded-lg border transition-all ${
         step.success
-          ? "bg-white border-gray-200 hover:border-green-300"
+          ? "bg-white border-border-subtle hover:border-green-300"
           : "bg-red-50 border-red-200 hover:border-red-300"
       }`}
     >
@@ -246,17 +246,17 @@ const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span
-                className={`${step.success ? "text-gray-500" : "text-red-500"}`}
+                className={`${step.success ? "text-text-muted" : "text-red-500"}`}
               >
                 {getActionTypeIcon(step.actionType)}
               </span>
-              <span className="font-medium text-sm text-gray-900 truncate">
+              <span className="font-medium text-sm text-text-primary truncate">
                 {step.actionName}
               </span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <Timer className="w-3 h-3 text-gray-400" />
-              <span className="text-xs text-gray-500 font-mono">
+              <Timer className="w-3 h-3 text-text-muted" />
+              <span className="text-xs text-text-muted font-mono">
                 {formatDuration(step.duration)}
               </span>
             </div>
@@ -273,9 +273,9 @@ const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({
               {step.actionType.toUpperCase()}
             </span>
             {step.patternName && (
-              <span className="text-gray-500 truncate">
+              <span className="text-text-muted truncate">
                 Pattern:{" "}
-                <span className="text-gray-700">{step.patternName}</span>
+                <span className="text-text-secondary">{step.patternName}</span>
               </span>
             )}
           </div>
@@ -283,7 +283,7 @@ const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({
           {/* Message */}
           <p
             className={`mt-2 text-xs ${
-              step.success ? "text-gray-600" : "text-red-600"
+              step.success ? "text-text-muted" : "text-red-600"
             }`}
           >
             {step.message}

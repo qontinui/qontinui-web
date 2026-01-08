@@ -98,7 +98,7 @@ export function SidebarFlyout({
   const flyoutContent = (
     <div
       ref={flyoutRef}
-      className="fixed bg-[#0A0A0B] border-r border-gray-800/50 shadow-2xl flex flex-col animate-in slide-in-from-left-2 duration-200"
+      className="fixed bg-[#0A0A0B] border-r border-border-subtle/50 shadow-2xl flex flex-col animate-in slide-in-from-left-2 duration-200"
       style={{
         top: headerHeight,
         left: "256px", // sidebar width (w-64)
@@ -109,7 +109,7 @@ export function SidebarFlyout({
     >
       {/* Header */}
       <div
-        className="h-12 border-b border-gray-800/50 flex items-center justify-between px-4"
+        className="h-12 border-b border-border-subtle/50 flex items-center justify-between px-4"
         style={{
           background: `linear-gradient(135deg, ${parentColor}10 0%, transparent 100%)`,
         }}
@@ -119,11 +119,13 @@ export function SidebarFlyout({
             className="w-1 h-6 rounded-full"
             style={{ backgroundColor: parentColor }}
           />
-          <h2 className="text-lg font-semibold text-gray-100">{parentLabel}</h2>
+          <h2 className="text-lg font-semibold text-text-primary">
+            {parentLabel}
+          </h2>
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 rounded-lg hover:bg-gray-800 transition-colors text-gray-400 hover:text-gray-200"
+          className="p-1.5 rounded-lg hover:bg-surface-raised transition-colors text-text-muted hover:text-text-secondary"
         >
           <X size={18} />
         </button>
@@ -143,7 +145,7 @@ export function SidebarFlyout({
               }}
               className={cn(
                 "w-full p-3 rounded-lg flex items-start gap-3 transition-all duration-200 text-left group animate-in fade-in slide-in-from-left-2",
-                isActive ? "bg-gray-800/80" : "hover:bg-gray-800/50"
+                isActive ? "bg-surface-raised/80" : "hover:bg-surface-raised/50"
               )}
               style={{
                 animationDelay: `${index * 30}ms`,
@@ -155,8 +157,8 @@ export function SidebarFlyout({
                 className={cn(
                   "flex-shrink-0 p-2 rounded-lg transition-all duration-200",
                   isActive
-                    ? "bg-gray-700/50"
-                    : "bg-gray-800/50 group-hover:bg-gray-700/50"
+                    ? "bg-surface-raised/50"
+                    : "bg-surface-raised/50 group-hover:bg-surface-raised/50"
                 )}
                 style={{
                   color: child.color || parentColor,
@@ -172,8 +174,8 @@ export function SidebarFlyout({
                     className={cn(
                       "font-medium truncate",
                       isActive
-                        ? "text-gray-100"
-                        : "text-gray-300 group-hover:text-gray-100"
+                        ? "text-text-primary"
+                        : "text-text-secondary group-hover:text-text-primary"
                     )}
                   >
                     {child.label}
@@ -190,7 +192,7 @@ export function SidebarFlyout({
                   )}
                 </div>
                 {child.description && (
-                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 group-hover:text-gray-400 transition-colors">
+                  <p className="text-xs text-text-muted mt-0.5 line-clamp-2 group-hover:text-text-muted transition-colors">
                     {child.description}
                   </p>
                 )}

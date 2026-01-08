@@ -58,7 +58,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
     if (isStepCurrent(index)) {
       return <PlayCircle className="w-5 h-5 text-blue-500" />;
     }
-    return <Circle className="w-5 h-5 text-gray-400 dark:text-gray-600" />;
+    return <Circle className="w-5 h-5 text-text-muted dark:text-text-muted" />;
   };
 
   const panelPosition = position === "left" ? "left-0" : "right-0";
@@ -80,17 +80,17 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: collapseDirection * 100, opacity: 0 }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="h-full w-80 bg-white dark:bg-gray-800 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col"
+            className="h-full w-80 bg-white dark:bg-surface-raised shadow-2xl border-l border-border-subtle dark:border-border-default flex flex-col"
           >
             {/* Header */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="p-4 border-b border-border-subtle dark:border-border-default">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                <h2 className="text-lg font-semibold text-text-primary dark:text-white">
                   Tutorial Progress
                 </h2>
                 <button
                   onClick={() => setIsCollapsed(true)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  className="text-text-muted hover:text-text-muted dark:hover:text-text-secondary transition-colors"
                   aria-label="Collapse panel"
                 >
                   {position === "left" ? (
@@ -104,14 +104,14 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
               {/* Progress bar */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">
+                  <span className="text-text-muted dark:text-text-muted">
                     {completedCount} of {totalSteps} completed
                   </span>
                   <span className="font-semibold text-blue-600 dark:text-blue-400">
                     {progressPercentage}%
                   </span>
                 </div>
-                <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div className="w-full h-2 bg-surface-raised dark:bg-border-default rounded-full overflow-hidden">
                   <motion.div
                     className="h-full bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-400 dark:to-blue-500"
                     initial={{ width: 0 }}
@@ -141,7 +141,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                           ? "bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700"
                           : isCompleted
                             ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
-                            : "bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600"
+                            : "bg-surface-canvas dark:bg-border-default/50 border-border-subtle dark:border-border-default"
                       }
                       ${isClickable ? "hover:shadow-md cursor-pointer" : "cursor-default"}
                     `}
@@ -154,7 +154,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                          <span className="text-xs font-medium text-text-muted dark:text-text-muted">
                             Step {index + 1}
                           </span>
                           {isCurrent && (
@@ -169,7 +169,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                               ? "text-blue-900 dark:text-blue-100"
                               : isCompleted
                                 ? "text-green-900 dark:text-green-100"
-                                : "text-gray-700 dark:text-gray-300"
+                                : "text-text-secondary dark:text-text-secondary"
                           }`}
                         >
                           {step.title}
@@ -182,8 +182,8 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+            <div className="p-4 border-t border-border-subtle dark:border-border-default">
+              <p className="text-xs text-text-muted dark:text-text-muted text-center">
                 Click on any step to jump to it
               </p>
             </div>
@@ -198,17 +198,17 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
             onClick={() => setIsCollapsed(false)}
             className={`
               absolute top-1/2 ${togglePosition} -translate-y-1/2
-              bg-white dark:bg-gray-800 shadow-lg rounded-full p-3
-              border border-gray-200 dark:border-gray-700
+              bg-white dark:bg-surface-raised shadow-lg rounded-full p-3
+              border border-border-subtle dark:border-border-default
               hover:shadow-xl transition-shadow
             `}
             aria-label="Expand panel"
           >
             <div className="relative">
               {position === "left" ? (
-                <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <ChevronRight className="w-5 h-5 text-text-muted dark:text-text-muted" />
               ) : (
-                <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <ChevronLeft className="w-5 h-5 text-text-muted dark:text-text-muted" />
               )}
 
               {/* Progress indicator on collapsed button */}
@@ -221,7 +221,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2"
-                    className="text-gray-200 dark:text-gray-700"
+                    className="text-border-subtle dark:text-border-default"
                   />
                   <circle
                     cx="12"

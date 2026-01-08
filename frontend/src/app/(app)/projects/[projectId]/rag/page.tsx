@@ -34,7 +34,7 @@ export default function RAGDashboardPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF] mx-auto mb-2" />
+          <Loader2 className="w-8 h-8 animate-spin text-brand-primary mx-auto mb-2" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
@@ -46,20 +46,20 @@ export default function RAGDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               onClick={() => router.push("/dashboard")}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Dashboard
             </Button>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               Visual Index
             </h1>
           </div>
@@ -77,24 +77,24 @@ export default function RAGDashboardPage() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
-          <TabsList className="bg-gray-900/50 border border-gray-800">
+          <TabsList className="bg-surface-canvas/50 border border-border-subtle">
             <TabsTrigger
               value="elements"
-              className="data-[state=active]:bg-[#00D9FF]/20 data-[state=active]:text-[#00D9FF]"
+              className="data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary"
             >
               <Database className="w-4 h-4 mr-2" />
               Indexed Elements
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="data-[state=active]:bg-[#00D9FF]/20 data-[state=active]:text-[#00D9FF]"
+              className="data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary"
             >
               <History className="w-4 h-4 mr-2" />
               Processing History
             </TabsTrigger>
             <TabsTrigger
               value="search"
-              className="data-[state=active]:bg-[#00D9FF]/20 data-[state=active]:text-[#00D9FF]"
+              className="data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary"
             >
               <Search className="w-4 h-4 mr-2" />
               Semantic Search

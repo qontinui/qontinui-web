@@ -45,9 +45,9 @@ export function TransitionDetailsPanel({
 
   if (!localTransition) {
     return (
-      <Card className="border-gray-700 bg-[#27272A] h-full">
+      <Card className="border-border-default bg-surface-raised h-full">
         <CardContent className="flex items-center justify-center h-full">
-          <div className="text-center text-gray-400">
+          <div className="text-center text-text-muted">
             <Edit className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p>Select a transition to edit</p>
           </div>
@@ -61,10 +61,10 @@ export function TransitionDetailsPanel({
   };
 
   return (
-    <Card className="border-gray-700 bg-[#27272A] h-full flex flex-col">
+    <Card className="border-border-default bg-surface-raised h-full flex flex-col">
       <CardHeader className="flex-shrink-0">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm text-[#00D9FF]">
+          <CardTitle className="text-sm text-brand-primary">
             Transition Editor
           </CardTitle>
           <Button
@@ -82,7 +82,7 @@ export function TransitionDetailsPanel({
         {/* Basic Info */}
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-gray-400">Type</Label>
+            <Label className="text-xs text-text-muted">Type</Label>
             <Badge
               variant="outline"
               style={{
@@ -108,7 +108,7 @@ export function TransitionDetailsPanel({
                     setLocalTransition({ ...localTransition, fromState: value })
                   }
                 >
-                  <SelectTrigger className="bg-transparent border-gray-700">
+                  <SelectTrigger className="bg-transparent border-border-default">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -145,7 +145,7 @@ export function TransitionDetailsPanel({
                   setLocalTransition({ ...localTransition, toState: value })
                 }
               >
-                <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectTrigger className="bg-transparent border-border-default">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -160,7 +160,7 @@ export function TransitionDetailsPanel({
           )}
         </div>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Configuration */}
         <div className="space-y-3">
@@ -177,7 +177,7 @@ export function TransitionDetailsPanel({
                   timeout: parseInt(e.target.value) || 0,
                 })
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
 
@@ -192,7 +192,7 @@ export function TransitionDetailsPanel({
                   retryCount: parseInt(e.target.value) || 0,
                 })
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
 
@@ -204,7 +204,7 @@ export function TransitionDetailsPanel({
                 return (
                   <div
                     key={workflowId}
-                    className="flex items-center justify-between p-2 bg-gray-800 rounded"
+                    className="flex items-center justify-between p-2 bg-surface-raised rounded"
                   >
                     <div className="flex items-center gap-2">
                       <Badge className="text-xs">{index + 1}</Badge>
@@ -239,7 +239,7 @@ export function TransitionDetailsPanel({
                   })
                 }
               >
-                <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectTrigger className="bg-transparent border-border-default">
                   <SelectValue placeholder="Add workflow..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -261,7 +261,7 @@ export function TransitionDetailsPanel({
         <div className="flex gap-2">
           <Button
             onClick={handleSave}
-            className="flex-1 bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+            className="flex-1 bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             <Save className="w-4 h-4 mr-2" />
             Save

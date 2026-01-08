@@ -264,7 +264,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
           <AlertCircle className="w-5 h-5 text-yellow-500" />
           <div>
             <p className="font-medium text-yellow-400">No project selected</p>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-text-muted">
               Select a project to enable RAG export
             </p>
           </div>
@@ -276,11 +276,11 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
   return (
     <div className="space-y-6">
       {/* Status Card */}
-      <Card className="bg-[#1A1A1B] border-gray-800">
+      <Card className="bg-surface-canvas border-border-subtle">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Brain className="w-6 h-6 text-[#00D9FF]" />
+              <Brain className="w-6 h-6 text-brand-primary" />
               <div>
                 <CardTitle>RAG Export</CardTitle>
                 <CardDescription>
@@ -291,7 +291,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
             {exportStatus && (
               <Badge
                 variant="outline"
-                className="border-[#00D9FF]/50 text-[#00D9FF]"
+                className="border-brand-primary/50 text-brand-primary"
               >
                 v{exportStatus.metadata.version}
               </Badge>
@@ -300,45 +300,45 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoadingStatus ? (
-            <div className="flex items-center gap-2 text-gray-400">
+            <div className="flex items-center gap-2 text-text-muted">
               <Loader2 className="w-4 h-4 animate-spin" />
               Loading project stats...
             </div>
           ) : exportStatus ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-[#0A0A0B] rounded-lg p-3 border border-gray-700">
+              <div className="bg-surface-canvas rounded-lg p-3 border border-border-default">
                 <p className="text-2xl font-bold text-white">
                   {exportStatus.stats.element_count}
                 </p>
-                <p className="text-sm text-gray-400">Elements</p>
+                <p className="text-sm text-text-muted">Elements</p>
               </div>
-              <div className="bg-[#0A0A0B] rounded-lg p-3 border border-gray-700">
+              <div className="bg-surface-canvas rounded-lg p-3 border border-border-default">
                 <p className="text-2xl font-bold text-white">
                   {exportStatus.stats.state_count}
                 </p>
-                <p className="text-sm text-gray-400">States</p>
+                <p className="text-sm text-text-muted">States</p>
               </div>
-              <div className="bg-[#0A0A0B] rounded-lg p-3 border border-gray-700">
+              <div className="bg-surface-canvas rounded-lg p-3 border border-border-default">
                 <p className="text-2xl font-bold text-white">
                   {exportStatus.stats.workflow_count}
                 </p>
-                <p className="text-sm text-gray-400">Workflows</p>
+                <p className="text-sm text-text-muted">Workflows</p>
               </div>
-              <div className="bg-[#0A0A0B] rounded-lg p-3 border border-gray-700">
+              <div className="bg-surface-canvas rounded-lg p-3 border border-border-default">
                 <p className="text-2xl font-bold text-white">
                   {exportStatus.stats.transition_count}
                 </p>
-                <p className="text-sm text-gray-400">Transitions</p>
+                <p className="text-sm text-text-muted">Transitions</p>
               </div>
             </div>
           ) : (
-            <p className="text-gray-400">Unable to load project stats</p>
+            <p className="text-text-muted">Unable to load project stats</p>
           )}
         </CardContent>
       </Card>
 
       {/* Export Options */}
-      <Card className="bg-[#1A1A1B] border-gray-800">
+      <Card className="bg-surface-canvas border-border-subtle">
         <CardHeader>
           <CardTitle className="text-lg">Export Options</CardTitle>
           <CardDescription>
@@ -349,7 +349,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <Label>Include OCR Text</Label>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-text-muted">
                 Include extracted text from elements for text search
               </p>
             </div>
@@ -364,7 +364,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <Label>Include Screenshots</Label>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-text-muted">
                 Include full screenshot references (increases file size)
               </p>
             </div>
@@ -379,7 +379,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
             />
           </div>
 
-          <Separator className="bg-gray-700" />
+          <Separator className="bg-border-default" />
 
           <div className="space-y-2">
             <Label>Embedding Model</Label>
@@ -389,7 +389,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                 setOptions((prev) => ({ ...prev, embedding_model: value }))
               }
             >
-              <SelectTrigger className="bg-[#0A0A0B] border-gray-700">
+              <SelectTrigger className="bg-surface-canvas border-border-default">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -404,7 +404,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Model used for text embeddings in the runner
             </p>
           </div>
@@ -412,10 +412,10 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
       </Card>
 
       {/* Transfer to Runner */}
-      <Card className="bg-[#1A1A1B] border-gray-800">
+      <Card className="bg-surface-canvas border-border-subtle">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <Monitor className="w-5 h-5 text-[#00D9FF]" />
+            <Monitor className="w-5 h-5 text-brand-primary" />
             <div>
               <CardTitle className="text-lg">Transfer to Runner</CardTitle>
               <CardDescription>
@@ -426,7 +426,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           {connectionsLoading ? (
-            <div className="flex items-center gap-2 text-gray-400">
+            <div className="flex items-center gap-2 text-text-muted">
               <Loader2 className="w-4 h-4 animate-spin" />
               Checking for connected runners...
             </div>
@@ -438,7 +438,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                   value={selectedRunnerId || undefined}
                   onValueChange={setSelectedRunnerId}
                 >
-                  <SelectTrigger className="bg-[#0A0A0B] border-gray-700">
+                  <SelectTrigger className="bg-surface-canvas border-border-default">
                     <SelectValue placeholder="Choose a runner..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -448,7 +448,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                           <div className="w-2 h-2 bg-green-500 rounded-full" />
                           {conn.runner_name}
                           {conn.project_name && (
-                            <span className="text-gray-500">
+                            <span className="text-text-muted">
                               ({conn.project_name})
                             </span>
                           )}
@@ -462,7 +462,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
               <Button
                 onClick={handleTransferToRunner}
                 disabled={isTransferring || !selectedRunnerId}
-                className="w-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] hover:opacity-90 text-white"
+                className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 text-white"
               >
                 {isTransferring ? (
                   <>
@@ -478,21 +478,21 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
               </Button>
             </>
           ) : (
-            <div className="bg-[#0A0A0B] rounded-lg p-4 border border-gray-700">
+            <div className="bg-surface-canvas rounded-lg p-4 border border-border-default">
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-yellow-500 mt-0.5" />
                 <div>
                   <p className="font-medium text-yellow-400">
                     No runners connected
                   </p>
-                  <p className="text-sm text-gray-400 mt-1">
+                  <p className="text-sm text-text-muted mt-1">
                     Download and connect the Qontinui Runner to transfer configs
                     directly.
                   </p>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="mt-3 border-gray-600"
+                    className="mt-3 border-border-default"
                     onClick={() => (window.location.href = "/connect-runner")}
                   >
                     <Monitor className="w-4 h-4 mr-2" />
@@ -506,7 +506,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
           {(isExporting || isTransferring) && exportProgress > 0 && (
             <div className="space-y-2">
               <Progress value={exportProgress} className="h-2" />
-              <p className="text-sm text-gray-400 text-center">
+              <p className="text-sm text-text-muted text-center">
                 {isTransferring ? "Transferring" : "Exporting"}...{" "}
                 {exportProgress}%
               </p>
@@ -515,10 +515,10 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
 
           {/* Embedding Progress */}
           {embeddingProgress && (
-            <div className="bg-[#0A0A0B] rounded-lg p-4 border border-gray-700 space-y-3">
+            <div className="bg-surface-canvas rounded-lg p-4 border border-border-default space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Brain className="w-4 h-4 text-[#00D9FF]" />
+                  <Brain className="w-4 h-4 text-brand-primary" />
                   <span className="font-medium text-white">
                     Generating Embeddings
                   </span>
@@ -530,7 +530,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                       ? "border-green-500/50 text-green-400"
                       : embeddingProgress.status === "failed"
                         ? "border-red-500/50 text-red-400"
-                        : "border-[#00D9FF]/50 text-[#00D9FF]"
+                        : "border-brand-primary/50 text-brand-primary"
                   }
                 >
                   {embeddingProgress.status}
@@ -544,16 +544,16 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                     className="h-2"
                   />
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-400">
+                    <span className="text-text-muted">
                       {embeddingProgress.message}
                     </span>
-                    <span className="text-gray-500">
+                    <span className="text-text-muted">
                       {embeddingProgress.percent || 0}%
                     </span>
                   </div>
                   {embeddingProgress.elements_processed !== undefined &&
                     embeddingProgress.total_elements !== undefined && (
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-text-muted">
                         {embeddingProgress.elements_processed} /{" "}
                         {embeddingProgress.total_elements} elements
                       </p>
@@ -580,10 +580,10 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
       </Card>
 
       {/* Download Export */}
-      <Card className="bg-[#1A1A1B] border-gray-800">
+      <Card className="bg-surface-canvas border-border-subtle">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <Database className="w-5 h-5 text-[#00D9FF]" />
+            <Database className="w-5 h-5 text-brand-primary" />
             <div>
               <CardTitle className="text-lg">Download Export</CardTitle>
               <CardDescription>
@@ -597,7 +597,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
             onClick={handleDownloadExport}
             disabled={isExporting}
             variant="outline"
-            className="w-full border-gray-600"
+            className="w-full border-border-default"
           >
             {isExporting ? (
               <>
@@ -639,11 +639,11 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                   ? "Export Successful"
                   : "Export Failed"}
               </p>
-              <p className="text-sm text-gray-400 mt-1">
+              <p className="text-sm text-text-muted mt-1">
                 {lastExportResult.message}
               </p>
               {lastExportResult.elementCount !== undefined && (
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-text-muted mt-1">
                   {lastExportResult.elementCount} elements
                   {lastExportResult.exportSize &&
                     ` | ${formatBytes(lastExportResult.exportSize)}`}

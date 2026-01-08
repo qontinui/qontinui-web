@@ -20,6 +20,19 @@ const buttonVariants = cva(
         ghost:
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // Brand variants - Qontinui specific
+        "brand-primary":
+          "bg-brand-primary text-white shadow-xs hover:bg-brand-primary/90 focus-visible:ring-brand-primary/20",
+        "brand-secondary":
+          "bg-brand-secondary text-white shadow-xs hover:bg-brand-secondary/90 focus-visible:ring-brand-secondary/20",
+        "brand-success":
+          "bg-brand-success text-white shadow-xs hover:bg-brand-success/90 focus-visible:ring-brand-success/20",
+        // Semantic variants
+        success:
+          "bg-success text-white shadow-xs hover:bg-success/90 focus-visible:ring-success/20",
+        warning:
+          "bg-warning text-white shadow-xs hover:bg-warning/90 focus-visible:ring-warning/20",
+        info: "bg-info text-white shadow-xs hover:bg-info/90 focus-visible:ring-info/20",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

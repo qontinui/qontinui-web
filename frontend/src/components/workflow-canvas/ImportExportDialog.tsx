@@ -96,7 +96,7 @@ export function ExportDialog({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-gray-950 border border-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+      <div className="bg-surface-canvas border border-border-subtle rounded-lg shadow-xl w-full max-w-md p-6">
         <h2 className="text-2xl font-bold mb-4 text-white">Export Workflow</h2>
 
         {error && (
@@ -108,13 +108,13 @@ export function ExportDialog({
         <div className="space-y-4">
           {/* Format Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text-secondary mb-2">
               Format
             </label>
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value as ExportFormat)}
-              className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF]"
+              className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
             >
               <option value="json">JSON (Workflow Data)</option>
               <option value="png">PNG (Image)</option>
@@ -125,14 +125,14 @@ export function ExportDialog({
 
           {/* Filename */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text-secondary mb-2">
               Filename
             </label>
             <input
               type="text"
               value={filename}
               onChange={(e) => setFilename(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF] placeholder:text-gray-500"
+              className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary placeholder:text-text-muted"
               placeholder="workflow-name"
             />
           </div>
@@ -140,7 +140,7 @@ export function ExportDialog({
           {/* Quality (for PNG) */}
           {format === "png" && (
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Quality: {Math.round(quality * 100)}%
               </label>
               <input
@@ -150,7 +150,7 @@ export function ExportDialog({
                 step="0.05"
                 value={quality}
                 onChange={(e) => setQuality(parseFloat(e.target.value))}
-                className="w-full accent-[#00D9FF]"
+                className="w-full accent-brand-primary"
               />
             </div>
           )}
@@ -158,7 +158,7 @@ export function ExportDialog({
           {/* Background (for images) */}
           {(format === "png" || format === "svg") && (
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Background
               </label>
               <select
@@ -168,7 +168,7 @@ export function ExportDialog({
                     e.target.value as "transparent" | "white" | "grid"
                   )
                 }
-                className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF]"
+                className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
               >
                 <option value="white">White</option>
                 <option value="transparent">Transparent</option>
@@ -185,11 +185,11 @@ export function ExportDialog({
                 id="includeMetadata"
                 checked={includeMetadata}
                 onChange={(e) => setIncludeMetadata(e.target.checked)}
-                className="mr-2 accent-[#00D9FF]"
+                className="mr-2 accent-brand-primary"
               />
               <label
                 htmlFor="includeMetadata"
-                className="text-sm text-gray-300"
+                className="text-sm text-text-secondary"
               >
                 Include metadata
               </label>
@@ -201,14 +201,14 @@ export function ExportDialog({
         <div className="flex justify-end space-x-3 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-700 text-gray-300 rounded-md hover:bg-gray-800"
+            className="px-4 py-2 border border-border-default text-text-secondary rounded-md hover:bg-surface-raised"
             disabled={exporting}
           >
             Cancel
           </button>
           <button
             onClick={handleExport}
-            className="px-4 py-2 bg-[#00D9FF] text-black rounded-md hover:bg-[#00D9FF]/80 disabled:opacity-50"
+            className="px-4 py-2 bg-brand-primary text-black rounded-md hover:bg-brand-primary/80 disabled:opacity-50"
             disabled={exporting}
           >
             {exporting ? "Exporting..." : "Export"}
@@ -329,31 +329,31 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-gray-950 border border-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+      <div className="bg-surface-canvas border border-border-subtle rounded-lg shadow-xl w-full max-w-md p-6">
         <h2 className="text-2xl font-bold mb-4 text-white">Import Workflow</h2>
 
         <div className="space-y-4">
           {/* Import Method Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text-secondary mb-2">
               Import From
             </label>
             <div className="flex space-x-2">
               <button
                 onClick={() => setImportMethod("file")}
-                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "file" ? "bg-[#00D9FF] text-black" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "file" ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
               >
                 File
               </button>
               <button
                 onClick={() => setImportMethod("url")}
-                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "url" ? "bg-[#00D9FF] text-black" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "url" ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
               >
                 URL
               </button>
               <button
                 onClick={() => setImportMethod("clipboard")}
-                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "clipboard" ? "bg-[#00D9FF] text-black" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "clipboard" ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
               >
                 Clipboard
               </button>
@@ -363,14 +363,14 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
           {/* URL Input */}
           {importMethod === "url" && (
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Workflow URL
               </label>
               <input
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF] placeholder:text-gray-500"
+                className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary placeholder:text-text-muted"
                 placeholder="https://example.com/workflow.json"
               />
             </div>
@@ -412,7 +412,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
         <div className="flex justify-end space-x-3 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-700 text-gray-300 rounded-md hover:bg-gray-800"
+            className="px-4 py-2 border border-border-default text-text-secondary rounded-md hover:bg-surface-raised"
             disabled={loading}
           >
             Cancel
@@ -423,7 +423,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
               else if (importMethod === "url") handleUrlImport();
               else handleClipboardImport();
             }}
-            className="px-4 py-2 bg-[#00D9FF] text-black rounded-md hover:bg-[#00D9FF]/80 disabled:opacity-50"
+            className="px-4 py-2 bg-brand-primary text-black rounded-md hover:bg-brand-primary/80 disabled:opacity-50"
             disabled={loading || (importMethod === "url" && !url)}
           >
             {loading ? "Importing..." : "Import"}
@@ -477,8 +477,8 @@ export function TemplateDialog({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-gray-950 border border-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b border-gray-800">
+      <div className="bg-surface-canvas border border-border-subtle rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="p-6 border-b border-border-subtle">
           <h2 className="text-2xl font-bold mb-4 text-white">
             Choose a Template
           </h2>
@@ -489,7 +489,7 @@ export function TemplateDialog({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search templates..."
-            className="w-full bg-gray-900 border border-gray-700 text-white rounded-md px-3 py-2 mb-4 focus:border-[#00D9FF] focus:ring-1 focus:ring-[#00D9FF] placeholder:text-gray-500"
+            className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 mb-4 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary placeholder:text-text-muted"
           />
 
           {/* Category Filter */}
@@ -498,7 +498,7 @@ export function TemplateDialog({
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
-                className={`px-4 py-2 rounded-md whitespace-nowrap text-sm font-medium ${selectedCategory === category ? "bg-[#00D9FF] text-black" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
+                className={`px-4 py-2 rounded-md whitespace-nowrap text-sm font-medium ${selectedCategory === category ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
               >
                 {category.charAt(0).toUpperCase() + category.slice(1)}
               </button>
@@ -513,26 +513,26 @@ export function TemplateDialog({
               <div
                 key={template.id}
                 onClick={() => handleSelectTemplate(template)}
-                className="border border-gray-700 bg-gray-900 rounded-lg p-4 hover:border-[#00D9FF] hover:shadow-md cursor-pointer transition"
+                className="border border-border-default bg-surface-canvas rounded-lg p-4 hover:border-brand-primary hover:shadow-md cursor-pointer transition"
               >
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold text-lg text-white">
                     {template.name}
                   </h3>
                   {template.builtin && (
-                    <span className="text-xs bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/50 px-2 py-1 rounded">
+                    <span className="text-xs bg-brand-primary/20 text-brand-primary border border-brand-primary/50 px-2 py-1 rounded">
                       Built-in
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-400 mb-3">
+                <p className="text-sm text-text-muted mb-3">
                   {template.description}
                 </p>
                 <div className="flex flex-wrap gap-1">
                   {template.tags.slice(0, 3).map((tag) => (
                     <span
                       key={tag}
-                      className="text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded"
+                      className="text-xs bg-surface-raised text-text-muted px-2 py-1 rounded"
                     >
                       {tag}
                     </span>
@@ -543,17 +543,17 @@ export function TemplateDialog({
           </div>
 
           {templates.length === 0 && (
-            <div className="text-center text-gray-500 py-12">
+            <div className="text-center text-text-muted py-12">
               <p>No templates found</p>
             </div>
           )}
         </div>
 
         {/* Actions */}
-        <div className="p-6 border-t border-gray-800 flex justify-end">
+        <div className="p-6 border-t border-border-subtle flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-700 text-gray-300 rounded-md hover:bg-gray-800"
+            className="px-4 py-2 border border-border-default text-text-secondary rounded-md hover:bg-surface-raised"
           >
             Cancel
           </button>

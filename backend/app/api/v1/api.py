@@ -38,6 +38,7 @@ from app.api.v1.endpoints import (
     project_files,
     project_images,
     project_screenshots,
+    project_sync,
     projects,
     public,
     rag_builder,
@@ -51,6 +52,7 @@ from app.api.v1.endpoints import (
     settings,
     snapshots,
     state_discovery,
+    task_runs,
 )
 from app.api.v1.endpoints import testing as testing_pkg
 from app.api.v1.endpoints import (
@@ -70,6 +72,7 @@ api_router.include_router(public.router, prefix="/public", tags=["public"])
 api_router.include_router(auth_pkg.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
+api_router.include_router(project_sync.router, tags=["project-sync"])
 api_router.include_router(
     project_files.router, prefix="/projects", tags=["project-files"]
 )
@@ -165,3 +168,5 @@ api_router.include_router(execution.router, prefix="/execution", tags=["executio
 api_router.include_router(
     discoveries.router, prefix="/discoveries", tags=["discoveries"]
 )
+# Unified task runs - the single endpoint for all task types
+api_router.include_router(task_runs.router, prefix="/task-runs", tags=["task-runs"])

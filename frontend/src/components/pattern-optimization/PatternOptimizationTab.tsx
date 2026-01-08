@@ -130,18 +130,18 @@ export const PatternOptimizationTab: React.FC = () => {
               <div
                 key={pattern.id}
                 onClick={() => setSelectedPattern(pattern)}
-                className={`p-2 border rounded cursor-pointer hover:bg-gray-50 ${
+                className={`p-2 border rounded cursor-pointer hover:bg-surface-raised ${
                   selectedPattern?.id === pattern.id
                     ? "border-blue-500 bg-blue-50"
-                    : "border-gray-200"
+                    : "border-border-subtle"
                 }`}
               >
                 <div className="font-medium text-sm">{pattern.name}</div>
-                <div className="text-xs text-gray-600">
+                <div className="text-xs text-text-muted">
                   {pattern.width}x{pattern.height} • Density:{" "}
                   {Math.round(pattern.maskDensity * 100)}%
                 </div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-text-muted">
                   Matches: {pattern.matchCount} • Success:{" "}
                   {Math.round(pattern.successRate * 100)}%
                 </div>
@@ -170,7 +170,7 @@ export const PatternOptimizationTab: React.FC = () => {
             </select>
 
             <div className="mb-2">
-              <label className="text-xs text-gray-600 block mb-1">
+              <label className="text-xs text-text-muted block mb-1">
                 Screenshot
               </label>
               <ScreenshotSelector
@@ -188,7 +188,7 @@ export const PatternOptimizationTab: React.FC = () => {
               className="w-full text-sm border rounded px-2 py-1 mb-2"
             />
             <div className="mb-2">
-              <label className="text-xs text-gray-600">
+              <label className="text-xs text-text-muted">
                 Similarity: {(similarityThreshold * 100).toFixed(0)}%
               </label>
               <input
@@ -223,7 +223,7 @@ export const PatternOptimizationTab: React.FC = () => {
                   <h2 className="text-lg font-semibold">
                     {selectedPattern.name}
                   </h2>
-                  <div className="text-sm text-gray-600 mt-1">
+                  <div className="text-sm text-text-muted mt-1">
                     ID: {selectedPattern.id}
                   </div>
                 </div>
@@ -243,33 +243,33 @@ export const PatternOptimizationTab: React.FC = () => {
                   </h3>
                   <div className="space-y-1 text-sm">
                     <div>
-                      <span className="text-gray-600">Dimensions:</span>{" "}
+                      <span className="text-text-muted">Dimensions:</span>{" "}
                       {selectedPattern.width}x{selectedPattern.height}
                     </div>
                     <div>
-                      <span className="text-gray-600">Mask Type:</span>{" "}
+                      <span className="text-text-muted">Mask Type:</span>{" "}
                       {selectedPattern.maskType}
                     </div>
                     <div>
-                      <span className="text-gray-600">Mask Density:</span>{" "}
+                      <span className="text-text-muted">Mask Density:</span>{" "}
                       {Math.round(selectedPattern.maskDensity * 100)}%
                     </div>
                     <div>
-                      <span className="text-gray-600">Active Pixels:</span>{" "}
+                      <span className="text-text-muted">Active Pixels:</span>{" "}
                       {selectedPattern.activePixels.toLocaleString()}
                     </div>
                     <div>
-                      <span className="text-gray-600">Total Pixels:</span>{" "}
+                      <span className="text-text-muted">Total Pixels:</span>{" "}
                       {selectedPattern.totalPixels.toLocaleString()}
                     </div>
                     <div>
-                      <span className="text-gray-600">
+                      <span className="text-text-muted">
                         Similarity Threshold:
                       </span>{" "}
                       {Math.round(selectedPattern.similarityThreshold * 100)}%
                     </div>
                     <div>
-                      <span className="text-gray-600">Use Color:</span>{" "}
+                      <span className="text-text-muted">Use Color:</span>{" "}
                       {selectedPattern.useColor ? "Yes" : "No"}
                     </div>
                   </div>
@@ -279,23 +279,23 @@ export const PatternOptimizationTab: React.FC = () => {
                   </h3>
                   <div className="space-y-1 text-sm">
                     <div>
-                      <span className="text-gray-600">Match Count:</span>{" "}
+                      <span className="text-text-muted">Match Count:</span>{" "}
                       {selectedPattern.matchCount}
                     </div>
                     <div>
-                      <span className="text-gray-600">Success Rate:</span>{" "}
+                      <span className="text-text-muted">Success Rate:</span>{" "}
                       {Math.round(selectedPattern.successRate * 100)}%
                     </div>
                     <div>
-                      <span className="text-gray-600">Avg Match Time:</span>{" "}
+                      <span className="text-text-muted">Avg Match Time:</span>{" "}
                       {selectedPattern.avgMatchTime.toFixed(2)}ms
                     </div>
                     <div>
-                      <span className="text-gray-600">Variations:</span>{" "}
+                      <span className="text-text-muted">Variations:</span>{" "}
                       {selectedPattern.variationCount}
                     </div>
                     <div>
-                      <span className="text-gray-600">Optimizations:</span>{" "}
+                      <span className="text-text-muted">Optimizations:</span>{" "}
                       {selectedPattern.optimizationCount}
                     </div>
                   </div>
@@ -307,7 +307,7 @@ export const PatternOptimizationTab: React.FC = () => {
                         {selectedPattern.tags.map((tag, i) => (
                           <span
                             key={i}
-                            className="px-2 py-1 bg-gray-100 text-xs rounded"
+                            className="px-2 py-1 bg-surface-raised text-xs rounded"
                           >
                             {tag}
                           </span>
@@ -319,9 +319,9 @@ export const PatternOptimizationTab: React.FC = () => {
 
                 <div>
                   <h3 className="text-sm font-semibold mb-2">Mask Preview</h3>
-                  <div className="border border-gray-200 rounded p-2">
+                  <div className="border border-border-default rounded p-2">
                     {/* In production, would show actual mask visualization */}
-                    <div className="h-64 bg-gray-100 flex items-center justify-center text-gray-500">
+                    <div className="h-64 bg-surface-raised flex items-center justify-center text-text-muted">
                       Mask Visualization
                     </div>
                   </div>
@@ -330,8 +330,8 @@ export const PatternOptimizationTab: React.FC = () => {
                     <h4 className="text-xs font-semibold mb-1">
                       Optimization History
                     </h4>
-                    <div className="h-24 bg-gray-50 border border-gray-200 rounded p-2 overflow-y-auto">
-                      <div className="text-xs text-gray-600">
+                    <div className="h-24 bg-surface-canvas border border-border-subtle rounded p-2 overflow-y-auto">
+                      <div className="text-xs text-text-muted">
                         {selectedPattern.optimizationCount > 0
                           ? `${selectedPattern.optimizationCount} optimization(s) performed`
                           : "No optimizations yet"}
@@ -342,7 +342,7 @@ export const PatternOptimizationTab: React.FC = () => {
               </div>
             </>
           ) : (
-            <div className="h-full flex items-center justify-center text-gray-500">
+            <div className="h-full flex items-center justify-center text-text-muted">
               Select a pattern to view details
             </div>
           )}

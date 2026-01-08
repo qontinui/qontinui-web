@@ -210,7 +210,7 @@ export function ExecutionControls({
         <CardContent className="space-y-3">
           {/* Category Filter */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-600">Category</Label>
+            <Label className="text-xs text-text-muted">Category</Label>
             <Select
               value={selectedCategory || "all"}
               onValueChange={(value) => {
@@ -235,7 +235,7 @@ export function ExecutionControls({
 
           {/* Process Selection */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-600">Process</Label>
+            <Label className="text-xs text-text-muted">Process</Label>
             <Select
               value={selectedProcessId}
               onValueChange={(value) => {
@@ -351,7 +351,7 @@ export function ExecutionControls({
               )}
 
             {loadingStartScreenshot && (
-              <div className="p-2 bg-gray-50 rounded border text-xs text-gray-600 text-center">
+              <div className="p-2 bg-surface-canvas rounded border text-xs text-text-muted text-center">
                 Loading initial states from snapshot...
               </div>
             )}
@@ -380,8 +380,8 @@ export function ExecutionControls({
 
             {/* Process default states info */}
             {useProcessDefaults && selectedProcess.initialStateIds && (
-              <div className="p-2 bg-gray-50 rounded border text-xs">
-                <div className="text-gray-600 mb-1">
+              <div className="p-2 bg-surface-canvas rounded border text-xs">
+                <div className="text-text-muted mb-1">
                   Default states from process:
                 </div>
                 <div className="flex flex-wrap gap-1">
@@ -403,10 +403,10 @@ export function ExecutionControls({
             {/* Custom state selection */}
             {!useProcessDefaults && (
               <div className="space-y-2">
-                <Label className="text-xs text-gray-600">Select States</Label>
+                <Label className="text-xs text-text-muted">Select States</Label>
                 <div className="space-y-2 max-h-48 overflow-y-auto border rounded p-2">
                   {states.length === 0 ? (
-                    <p className="text-xs text-gray-500 text-center py-4">
+                    <p className="text-xs text-text-muted text-center py-4">
                       No states defined yet
                     </p>
                   ) : (
@@ -497,22 +497,22 @@ export function ExecutionControls({
               {selectedSnapshots.map((snapshot, index) => (
                 <div
                   key={snapshot.id}
-                  className="p-2 bg-gray-50 rounded border"
+                  className="p-2 bg-surface-canvas rounded border"
                 >
                   <div className="font-medium mb-1">Snapshot {index + 1}</div>
                   <div className="space-y-0.5">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Run ID:</span>
+                      <span className="text-text-muted">Run ID:</span>
                       <span className="font-mono text-xs">
                         {snapshot.run_id.slice(0, 8)}...
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Actions:</span>
+                      <span className="text-text-muted">Actions:</span>
                       <span>{snapshot.total_actions}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Screenshots:</span>
+                      <span className="text-text-muted">Screenshots:</span>
                       <span>{snapshot.total_screenshots}</span>
                     </div>
                   </div>

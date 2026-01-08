@@ -147,7 +147,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
 
       if (!action) {
         return (
-          <div className="p-4 text-gray-400 text-sm">
+          <div className="p-4 text-text-muted text-sm">
             Action not found: {nodeId}
           </div>
         );
@@ -161,7 +161,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
 
       if (!PropertyComponent) {
         return (
-          <div className="p-4 text-gray-400 text-sm">
+          <div className="p-4 text-text-muted text-sm">
             No property editor for action type: {action.type}
           </div>
         );
@@ -173,7 +173,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
           onValueChange={setActiveTab}
           className="flex-1 flex flex-col"
         >
-          <TabsList className="w-full justify-start border-b border-gray-700 rounded-none bg-transparent p-0">
+          <TabsList className="w-full justify-start border-b border-border-default rounded-none bg-transparent p-0">
             <TabsTrigger value="properties" className="rounded-none">
               <Settings className="w-3 h-3 mr-1.5" />
               Properties
@@ -192,10 +192,12 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
               {/* Action Type Header */}
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-200">
+                  <h3 className="text-sm font-semibold text-text-secondary">
                     {action.type}
                   </h3>
-                  <p className="text-xs text-gray-500 font-mono">{action.id}</p>
+                  <p className="text-xs text-text-muted font-mono">
+                    {action.id}
+                  </p>
                 </div>
                 <Badge variant="secondary" className="text-xs">
                   {actionConfigRegistry.getDisplayName(
@@ -204,7 +206,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
                 </Badge>
               </div>
 
-              <Separator className="bg-gray-700" />
+              <Separator className="bg-surface-raised" />
 
               {/* Property Editor */}
               <PropertyEditorWrapper
@@ -250,7 +252,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
         <Button
           size="sm"
           onClick={toggleOpen}
-          className="bg-gray-800 hover:bg-gray-700 border border-gray-700"
+          className="bg-surface-raised hover:bg-surface-raised/80 border border-border-default"
         >
           {effectivePosition === "right" ? (
             <ChevronLeft className="w-4 h-4" />
@@ -280,7 +282,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
   return (
     <div
       ref={panelRef}
-      className={`bg-[#1e1e1e] flex flex-col ${
+      className={`bg-surface-canvas flex flex-col ${
         effectivePosition === "right"
           ? "fixed right-0 top-0"
           : effectivePosition === "bottom"
@@ -308,9 +310,11 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-default">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-gray-200">Properties</h2>
+          <h2 className="text-sm font-semibold text-text-secondary">
+            Properties
+          </h2>
           {hasUnsavedChanges && (
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-yellow-400" />
@@ -367,7 +371,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
 
       {/* Footer - Unsaved Changes Warning */}
       {hasUnsavedChanges && (
-        <div className="px-4 py-3 border-t border-gray-700 bg-yellow-900/20">
+        <div className="px-4 py-3 border-t border-border-default bg-yellow-900/20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs text-yellow-200">
               <AlertCircle className="w-4 h-4" />

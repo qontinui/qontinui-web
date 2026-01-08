@@ -13,9 +13,9 @@ interface StorageBreakdownProps {
 }
 
 const COLORS = {
-  avatars: "#00D9FF",
-  images: "#BD00FF",
-  screenshots: "#00FF88",
+  avatars: "var(--color-brand-primary)",
+  images: "var(--color-brand-secondary)",
+  screenshots: "var(--color-brand-success)",
   exports: "#FFB800",
 };
 
@@ -38,10 +38,10 @@ export function StorageBreakdown({ data }: StorageBreakdownProps) {
   const totalStorage = Object.values(data).reduce((acc, val) => acc + val, 0);
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
       <CardHeader>
         <CardTitle className="text-lg">Storage Breakdown</CardTitle>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-text-muted">
           Total: {formatBytes(totalStorage)}
         </p>
       </CardHeader>
@@ -68,8 +68,8 @@ export function StorageBreakdown({ data }: StorageBreakdownProps) {
                 </Pie>
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#1A1A1B",
-                    border: "1px solid #333",
+                    backgroundColor: "hsl(var(--surface-raised))",
+                    border: "1px solid hsl(var(--border-subtle))",
                     borderRadius: "8px",
                     color: "#fff",
                   }}
@@ -86,7 +86,7 @@ export function StorageBreakdown({ data }: StorageBreakdownProps) {
                     style={{ backgroundColor: item.color }}
                   />
                   <div className="flex-1">
-                    <p className="text-sm text-gray-400">{item.name}</p>
+                    <p className="text-sm text-text-muted">{item.name}</p>
                     <p className="text-sm font-semibold">
                       {formatBytes(item.value)}
                     </p>
@@ -96,7 +96,7 @@ export function StorageBreakdown({ data }: StorageBreakdownProps) {
             </div>
           </>
         ) : (
-          <div className="h-64 flex items-center justify-center text-gray-500">
+          <div className="h-64 flex items-center justify-center text-text-muted">
             No storage data available
           </div>
         )}

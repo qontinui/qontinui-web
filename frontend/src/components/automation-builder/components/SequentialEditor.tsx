@@ -180,19 +180,19 @@ export function SequentialEditor({
             <Button
               size="sm"
               data-tutorial-id="add-action-button"
-              className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white"
+              className="bg-brand-secondary hover:bg-brand-secondary/80 text-white"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Action
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="bg-[#27272A] border-gray-700">
+          <DropdownMenuContent className="bg-surface-raised border-border-default">
             {Object.entries(ACTION_GROUPS).map(([groupName, actions]) => (
               <DropdownMenuSub key={groupName}>
-                <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
+                <DropdownMenuSubTrigger className="hover:bg-surface-raised focus:bg-surface-raised">
                   {groupName}
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
+                <DropdownMenuSubContent className="bg-surface-raised border-border-default">
                   {actions.map((actionTemplate) => (
                     <DropdownMenuItem
                       key={`${actionTemplate.type}-${"preset" in actionTemplate ? actionTemplate.preset : "default"}`}
@@ -205,7 +205,7 @@ export function SequentialEditor({
                             : undefined
                         )
                       }
-                      className="hover:bg-gray-700 focus:bg-gray-700"
+                      className="hover:bg-surface-raised focus:bg-surface-raised"
                     >
                       {actionTemplate.label}
                     </DropdownMenuItem>
@@ -220,7 +220,7 @@ export function SequentialEditor({
       {/* Timeline Container */}
       <div className="w-full max-w-3xl space-y-1">
         {actions.length === 0 ? (
-          <div className="text-center py-12 text-gray-500 border-2 border-dashed border-gray-700 rounded-lg">
+          <div className="text-center py-12 text-text-muted border-2 border-dashed border-border-default rounded-lg">
             <Plus className="w-8 h-8 mx-auto mb-2 opacity-50" />
             <p>No actions yet</p>
             <p className="text-sm">Add an action to get started</p>
@@ -246,20 +246,20 @@ export function SequentialEditor({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-5 w-8 p-0 text-gray-500 hover:text-[#BD00FF] hover:bg-[#BD00FF]/10 rounded"
+                            className="h-5 w-8 p-0 text-text-muted hover:text-brand-secondary hover:bg-brand-secondary/10 rounded"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Plus className="w-3 h-3" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent className="bg-[#27272A] border-gray-700">
+                        <DropdownMenuContent className="bg-surface-raised border-border-default">
                           {Object.entries(ACTION_GROUPS).map(
                             ([groupName, actions]) => (
                               <DropdownMenuSub key={groupName}>
-                                <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
+                                <DropdownMenuSubTrigger className="hover:bg-surface-raised focus:bg-surface-raised">
                                   {groupName}
                                 </DropdownMenuSubTrigger>
-                                <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
+                                <DropdownMenuSubContent className="bg-surface-raised border-border-default">
                                   {actions.map((actionTemplate) => (
                                     <DropdownMenuItem
                                       key={`${actionTemplate.type}-${"preset" in actionTemplate ? actionTemplate.preset : "default"}`}
@@ -272,7 +272,7 @@ export function SequentialEditor({
                                             : undefined
                                         )
                                       }
-                                      className="hover:bg-gray-700 focus:bg-gray-700"
+                                      className="hover:bg-surface-raised focus:bg-surface-raised"
                                     >
                                       {actionTemplate.label}
                                     </DropdownMenuItem>
@@ -285,7 +285,7 @@ export function SequentialEditor({
                       </DropdownMenu>
                     </div>
                     <div className="absolute inset-0 flex items-center pointer-events-none">
-                      <div className="w-full border-t border-gray-800" />
+                      <div className="w-full border-t border-border-subtle" />
                     </div>
                   </div>
 
@@ -295,10 +295,10 @@ export function SequentialEditor({
                     onDragStart={() => handleDragStart(index)}
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDragEnd={handleDragEnd}
-                    className={`cursor-move transition-all hover:border-[#BD00FF]/50 ${
+                    className={`cursor-move transition-all hover:border-brand-secondary/50 ${
                       selectedAction?.id === action.id
-                        ? "border-[#BD00FF] bg-[#BD00FF]/10"
-                        : "border-gray-700 bg-[#27272A]"
+                        ? "border-brand-secondary bg-brand-secondary/10"
+                        : "border-border-default bg-surface-raised"
                     } ${draggedIndex === index ? "opacity-50" : ""}`}
                     onClick={() => onSelectAction(action)}
                   >
@@ -306,9 +306,9 @@ export function SequentialEditor({
                       <div className="flex items-center gap-2">
                         {/* Drag Handle & Number */}
                         <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <GripVertical className="w-3.5 h-3.5 text-gray-500 cursor-grab active:cursor-grabbing" />
+                          <GripVertical className="w-3.5 h-3.5 text-text-muted cursor-grab active:cursor-grabbing" />
                           <Badge
-                            className={`${actionType?.color ?? "bg-gray-500"} text-white text-xs px-1.5 py-0 h-5 min-w-[1.5rem] flex items-center justify-center`}
+                            className={`${actionType?.color ?? "bg-surface-raised"} text-white text-xs px-1.5 py-0 h-5 min-w-[1.5rem] flex items-center justify-center`}
                           >
                             {index + 1}
                           </Badge>
@@ -330,7 +330,7 @@ export function SequentialEditor({
                                 </Badge>
                               )}
                           </div>
-                          <div className="text-xs text-gray-400 truncate">
+                          <div className="text-xs text-text-muted truncate">
                             {getActionSummary(
                               action,
                               states,
@@ -345,7 +345,7 @@ export function SequentialEditor({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 w-6 p-0 text-gray-500 hover:text-[#00D9FF] hover:bg-[#00D9FF]/10"
+                            className="h-6 w-6 p-0 text-text-muted hover:text-brand-primary hover:bg-brand-primary/10"
                             onClick={(e) => {
                               e.stopPropagation();
                               duplicateAction(action);
@@ -356,7 +356,7 @@ export function SequentialEditor({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 w-6 p-0 text-gray-500 hover:text-red-400 hover:bg-red-400/10"
+                            className="h-6 w-6 p-0 text-text-muted hover:text-red-400 hover:bg-red-400/10"
                             onClick={(e) => {
                               e.stopPropagation();
                               deleteAction(action.id);
@@ -385,20 +385,20 @@ export function SequentialEditor({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-5 w-8 p-0 text-gray-500 hover:text-[#BD00FF] hover:bg-[#BD00FF]/10 rounded"
+                      className="h-5 w-8 p-0 text-text-muted hover:text-brand-secondary hover:bg-brand-secondary/10 rounded"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Plus className="w-3 h-3" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent className="bg-[#27272A] border-gray-700">
+                  <DropdownMenuContent className="bg-surface-raised border-border-default">
                     {Object.entries(ACTION_GROUPS).map(
                       ([groupName, actions]) => (
                         <DropdownMenuSub key={groupName}>
-                          <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
+                          <DropdownMenuSubTrigger className="hover:bg-surface-raised focus:bg-surface-raised">
                             {groupName}
                           </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
+                          <DropdownMenuSubContent className="bg-surface-raised border-border-default">
                             {actions.map((actionTemplate) => (
                               <DropdownMenuItem
                                 key={`${actionTemplate.type}-${"preset" in actionTemplate ? actionTemplate.preset : "default"}`}
@@ -411,7 +411,7 @@ export function SequentialEditor({
                                       : undefined
                                   )
                                 }
-                                className="hover:bg-gray-700 focus:bg-gray-700"
+                                className="hover:bg-surface-raised focus:bg-surface-raised"
                               >
                                 {actionTemplate.label}
                               </DropdownMenuItem>
@@ -424,7 +424,7 @@ export function SequentialEditor({
                 </DropdownMenu>
               </div>
               <div className="absolute inset-0 flex items-center pointer-events-none">
-                <div className="w-full border-t border-gray-800" />
+                <div className="w-full border-t border-border-subtle" />
               </div>
             </div>
           </>

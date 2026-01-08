@@ -43,7 +43,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
 
   if (!workflow) {
     return (
-      <div className={`p-4 text-gray-400 text-sm ${className}`}>
+      <div className={`p-4 text-text-muted text-sm ${className}`}>
         No workflow loaded
       </div>
     );
@@ -55,7 +55,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
 
   if (!sourceAction || !targetAction) {
     return (
-      <div className={`p-4 text-gray-400 text-sm ${className}`}>
+      <div className={`p-4 text-text-muted text-sm ${className}`}>
         Connection not found
       </div>
     );
@@ -82,7 +82,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
 
   if (!connection) {
     return (
-      <div className={`p-4 text-gray-400 text-sm ${className}`}>
+      <div className={`p-4 text-text-muted text-sm ${className}`}>
         Connection details not found
       </div>
     );
@@ -118,7 +118,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link2 className={`w-4 h-4 text-${color}-400`} />
-            <h3 className="text-sm font-semibold text-gray-200">
+            <h3 className="text-sm font-semibold text-text-secondary">
               Connection Properties
             </h3>
           </div>
@@ -133,19 +133,19 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
           </Button>
         </div>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Connection Flow */}
         <section>
-          <h4 className="text-xs font-semibold text-gray-400 mb-3">Flow</h4>
+          <h4 className="text-xs font-semibold text-text-muted mb-3">Flow</h4>
           <div className="space-y-3">
-            <div className="flex items-center gap-2 p-3 rounded bg-gray-800/50 border border-gray-700">
+            <div className="flex items-center gap-2 p-3 rounded bg-surface-raised/50 border border-border-default">
               <div className="flex-1">
-                <div className="text-xs text-gray-400 mb-1">Source</div>
-                <div className="text-sm font-medium text-gray-200">
+                <div className="text-xs text-text-muted mb-1">Source</div>
+                <div className="text-sm font-medium text-text-secondary">
                   {sourceAction.type}
                 </div>
-                <div className="text-xs text-gray-500 font-mono">
+                <div className="text-xs text-text-muted font-mono">
                   {sourceId}
                 </div>
               </div>
@@ -155,13 +155,13 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
               <ArrowRight className={`w-5 h-5 text-${color}-400`} />
             </div>
 
-            <div className="flex items-center gap-2 p-3 rounded bg-gray-800/50 border border-gray-700">
+            <div className="flex items-center gap-2 p-3 rounded bg-surface-raised/50 border border-border-default">
               <div className="flex-1">
-                <div className="text-xs text-gray-400 mb-1">Target</div>
-                <div className="text-sm font-medium text-gray-200">
+                <div className="text-xs text-text-muted mb-1">Target</div>
+                <div className="text-sm font-medium text-text-secondary">
                   {targetAction.type}
                 </div>
-                <div className="text-xs text-gray-500 font-mono">
+                <div className="text-xs text-text-muted font-mono">
                   {targetId}
                 </div>
               </div>
@@ -169,28 +169,28 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
           </div>
         </section>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Connection Type */}
         <section>
-          <h4 className="text-xs font-semibold text-gray-400 mb-3">
+          <h4 className="text-xs font-semibold text-text-muted mb-3">
             Connection Type
           </h4>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Type</Label>
+              <Label className="text-xs text-text-muted">Type</Label>
               <Select value={connection.type} disabled>
-                <SelectTrigger className="bg-transparent border-gray-700 text-gray-200">
+                <SelectTrigger className="bg-transparent border-border-default text-text-secondary">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectContent className="bg-surface-raised border-border-default">
                   <SelectItem value="main">Main Flow</SelectItem>
                   <SelectItem value="error">Error Handler</SelectItem>
                   <SelectItem value="success">Success Path</SelectItem>
                   <SelectItem value="parallel">Parallel Branch</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Connection type is determined by the source action&apos;s output
               </p>
             </div>
@@ -202,32 +202,34 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
               >
                 {connection.type.toUpperCase()}
               </Badge>
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-text-muted">
                 Output {outputIndex} → Input {connection.index}
               </span>
             </div>
           </div>
         </section>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Metadata */}
         <section>
-          <h4 className="text-xs font-semibold text-gray-400 mb-3">Metadata</h4>
+          <h4 className="text-xs font-semibold text-text-muted mb-3">
+            Metadata
+          </h4>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Label</Label>
+              <Label className="text-xs text-text-muted">Label</Label>
               <Input
                 placeholder="Connection label (optional)"
-                className="bg-transparent border-gray-700 text-gray-200"
+                className="bg-transparent border-border-default text-text-secondary"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Custom label for this connection (not yet implemented)
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Color</Label>
+              <Label className="text-xs text-text-muted">Color</Label>
               <div className="flex gap-2">
                 {["blue", "green", "red", "purple", "yellow", "gray"].map(
                   (c) => (
@@ -235,7 +237,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
                       key={c}
                       className={`w-8 h-8 rounded border-2 ${
                         c === color ? "border-white" : "border-transparent"
-                      } bg-${c}-500 hover:border-gray-400`}
+                      } bg-${c}-500 hover:border-text-muted`}
                       onClick={() => console.log("Set color:", c)}
                     />
                   )
@@ -245,11 +247,11 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
           </div>
         </section>
 
-        <Separator className="bg-gray-700" />
+        <Separator className="bg-border-default" />
 
         {/* Validation */}
         <section>
-          <h4 className="text-xs font-semibold text-gray-400 mb-3">
+          <h4 className="text-xs font-semibold text-text-muted mb-3">
             Validation
           </h4>
           <div className="space-y-3">
@@ -260,7 +262,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
                   <div className="text-xs font-medium text-green-200">
                     Valid Connection
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">
+                  <div className="text-xs text-text-muted mt-1">
                     This connection is properly configured and ready for
                     execution.
                   </div>
@@ -273,7 +275,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
               <div className="p-3 rounded bg-blue-900/20 border border-blue-700/30">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-                  <div className="text-xs text-gray-300">
+                  <div className="text-xs text-text-secondary">
                     <strong>Conditional Flow:</strong> This connection is part
                     of an IF branch. Output {outputIndex} represents the{" "}
                     {outputIndex === "0" ? "TRUE" : "FALSE"} path.
@@ -286,7 +288,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
 
         {/* Info */}
         <div className="p-3 rounded bg-blue-900/20 border border-blue-700/30">
-          <div className="text-xs text-gray-300">
+          <div className="text-xs text-text-secondary">
             <strong>About Connections:</strong> Connections define the execution
             flow between actions. Each connection has a type that determines
             when it executes: main (normal flow), error (on failure), success

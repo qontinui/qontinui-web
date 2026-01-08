@@ -109,6 +109,28 @@ export interface LoadConfigResponse {
   error?: string;
 }
 
+/**
+ * Request for POST /capture-screenshot endpoint
+ */
+export interface CaptureScreenshotRequest {
+  monitor?: number;
+  delay_seconds?: number;
+  task_id?: string;
+  step_index?: number;
+}
+
+/**
+ * Response from POST /capture-screenshot endpoint
+ */
+export interface CaptureScreenshotResponse {
+  success: boolean;
+  screenshot_base64?: string;
+  width?: number;
+  height?: number;
+  screenshot_path?: string;
+  error?: string;
+}
+
 class RunnerClient {
   private baseUrl: string;
 
@@ -231,6 +253,69 @@ class RunnerClient {
     }
 
     return response.json();
+  }
+
+  /**
+   * Capture a screenshot from the specified monitor
+   * Uses the runner's /capture-screenshot endpoint which internally calls qontinui-api
+   */
+  async captureScreenshot(
+    request: CaptureScreenshotRequest = {}
+  ): Promise<CaptureScreenshotResponse> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    try {
+      const response = await fetch(`${this.baseUrl}/capture-screenshot`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `Failed to capture screenshot: ${response.status} - ${errorText}`,
+        };
+      }
+
+      const data = await response.json();
+      // Handle nested response format from runner API
+      if (data.data) {
+        return {
+          success: data.success ?? true,
+          screenshot_base64: data.data.screenshot_base64,
+          width: data.data.width,
+          height: data.data.height,
+          screenshot_path: data.data.screenshot_path,
+          error: data.error,
+        };
+      }
+      return {
+        success: data.success ?? true,
+        screenshot_base64: data.screenshot_base64,
+        width: data.width,
+        height: data.height,
+        screenshot_path: data.screenshot_path,
+        error: data.error,
+      };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to capture screenshot",
+      };
+    }
   }
 
   /**

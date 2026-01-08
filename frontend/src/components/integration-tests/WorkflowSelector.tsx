@@ -38,7 +38,7 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
   const noneSelected = selectedIds.length === 0;
 
   return (
-    <Card className="bg-white border border-gray-200">
+    <Card className="bg-white border border-border-subtle">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -69,7 +69,7 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
       </CardHeader>
       <CardContent className="space-y-2">
         {workflows.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-text-muted">
             <WorkflowIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">No workflows available</p>
             <p className="text-xs mt-1">
@@ -83,10 +83,10 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
               return (
                 <div
                   key={workflow.id}
-                  className={`flex items-center gap-3 p-2 rounded-lg border transition-colors cursor-pointer hover:bg-gray-50 ${
+                  className={`flex items-center gap-3 p-2 rounded-lg border transition-colors cursor-pointer hover:bg-surface-raised/80 ${
                     isSelected
                       ? "bg-blue-50 border-blue-200"
-                      : "bg-white border-gray-200"
+                      : "bg-white border-border-subtle"
                   } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
                   onClick={() => handleToggleWorkflow(workflow.id)}
                 >
@@ -101,25 +101,25 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
                       {isSelected ? (
                         <CheckSquare className="w-4 h-4 text-blue-600 flex-shrink-0" />
                       ) : (
-                        <Square className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <Square className="w-4 h-4 text-text-muted flex-shrink-0" />
                       )}
                       <span className="text-sm font-medium truncate">
                         {workflow.name}
                       </span>
                     </div>
                     {workflow.description && (
-                      <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      <p className="text-xs text-text-muted mt-0.5 truncate">
                         {workflow.description}
                       </p>
                     )}
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-text-muted">
                         {workflow.actions?.length || 0} actions
                       </span>
                       {workflow.category && (
                         <>
-                          <span className="text-xs text-gray-300">•</span>
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-text-secondary">•</span>
+                          <span className="text-xs text-text-muted">
                             {workflow.category}
                           </span>
                         </>
@@ -133,7 +133,7 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
         )}
         {workflows.length > 0 && (
           <div className="pt-2 border-t mt-3">
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-text-muted">
               {selectedIds.length} of {workflows.length} selected
             </div>
           </div>

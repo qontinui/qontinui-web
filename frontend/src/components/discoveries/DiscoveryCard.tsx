@@ -79,7 +79,7 @@ export function DiscoveryCard({
     <>
       <Card
         className={cn(
-          "bg-[#1A1A1B] border-gray-800 hover:border-gray-700 transition-all duration-200",
+          "bg-surface-raised border-border-subtle hover:border-border-default transition-all duration-200",
           !isPending && "opacity-75"
         )}
       >
@@ -105,7 +105,7 @@ export function DiscoveryCard({
                 {discovery.title}
               </CardTitle>
               {discovery.description && (
-                <CardDescription className="mt-1 text-gray-400 line-clamp-2">
+                <CardDescription className="mt-1 text-text-muted line-clamp-2">
                   {discovery.description}
                 </CardDescription>
               )}
@@ -125,26 +125,26 @@ export function DiscoveryCard({
         <CardContent className="space-y-4">
           {/* Metadata */}
           <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="flex items-center gap-2 text-gray-400">
+            <div className="flex items-center gap-2 text-text-muted">
               <Server size={14} />
               <span className="truncate">
                 {discovery.runner_name || "Unknown Runner"}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-gray-400">
+            <div className="flex items-center gap-2 text-text-muted">
               <FolderOpen size={14} />
               <span className="truncate">
                 {discovery.config_name || "Unknown Config"}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-gray-400">
+            <div className="flex items-center gap-2 text-text-muted">
               <Eye size={14} />
               <span>
                 {discovery.runs_observed}{" "}
                 {discovery.runs_observed === 1 ? "run" : "runs"}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-gray-400">
+            <div className="flex items-center gap-2 text-text-muted">
               <Calendar size={14} />
               <span className="truncate">
                 {formatDate(discovery.created_at)}
@@ -154,7 +154,7 @@ export function DiscoveryCard({
 
           {/* Evidence summary */}
           {discovery.evidence && (
-            <div className="text-xs text-gray-500 bg-gray-900/50 rounded-lg p-3">
+            <div className="text-xs text-text-muted bg-surface-canvas/50 rounded-lg p-3">
               <div className="flex justify-between">
                 <span>
                   First seen: {formatDate(discovery.evidence.first_seen)}
@@ -168,7 +168,7 @@ export function DiscoveryCard({
 
           {/* User notes (if reviewed) */}
           {discovery.user_notes && (
-            <div className="text-sm text-gray-400 italic bg-gray-900/50 rounded-lg p-3 border-l-2 border-gray-600">
+            <div className="text-sm text-text-muted italic bg-surface-canvas/50 rounded-lg p-3 border-l-2 border-border-default">
               {discovery.user_notes}
             </div>
           )}

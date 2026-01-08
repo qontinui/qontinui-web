@@ -107,13 +107,13 @@ export function UnifiedStepCard({
       case "camera":
         return <ImageIcon {...iconProps} className="w-5 h-5 text-pink-400" />;
       case "clock":
-        return <Clock {...iconProps} className="w-5 h-5 text-gray-400" />;
+        return <Clock {...iconProps} className="w-5 h-5 text-text-muted" />;
       case "layers":
         return <Layers {...iconProps} className="w-5 h-5 text-purple-400" />;
       case "arrow-right":
         return <ArrowRight {...iconProps} className="w-5 h-5 text-cyan-400" />;
       default:
-        return <Play {...iconProps} className="w-5 h-5 text-gray-400" />;
+        return <Play {...iconProps} className="w-5 h-5 text-text-muted" />;
     }
   };
 
@@ -142,14 +142,14 @@ export function UnifiedStepCard({
         );
       case "pending":
         return (
-          <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+          <Badge className="bg-surface-raised/20 text-text-muted border-border-default/30">
             <Clock className="w-3 h-3 mr-1" />
             Pending
           </Badge>
         );
       default:
         return (
-          <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+          <Badge className="bg-surface-raised/20 text-text-muted border-border-default/30">
             <Info className="w-3 h-3 mr-1" />
             Info
           </Badge>
@@ -194,15 +194,15 @@ export function UnifiedStepCard({
 
   return (
     <Card
-      className={`bg-[#1A1A1B]/50 border-gray-800/50 transition-all ${
+      className={`bg-surface-raised/50 border-border-subtle/50 transition-all ${
         isCurrent
-          ? "ring-2 ring-[#00D9FF]/50 shadow-lg shadow-[#00D9FF]/10"
+          ? "ring-2 ring-brand-primary/50 shadow-lg shadow-brand-primary/10"
           : ""
       }`}
     >
       <Collapsible open={expanded} onOpenChange={toggle}>
         <CollapsibleTrigger asChild>
-          <CardContent className="p-4 cursor-pointer hover:bg-gray-800/20 transition-colors">
+          <CardContent className="p-4 cursor-pointer hover:bg-surface-raised/20 transition-colors">
             <div className="flex items-start gap-3">
               {/* Step icon */}
               <div className="flex-shrink-0 mt-0.5">{getStepIcon()}</div>
@@ -219,7 +219,7 @@ export function UnifiedStepCard({
                     </span>
                     {getStatusBadge()}
                     {isCurrent && (
-                      <Badge className="bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30 text-xs">
+                      <Badge className="bg-brand-primary/20 text-brand-primary border-brand-primary/30 text-xs">
                         Current
                       </Badge>
                     )}
@@ -233,14 +233,14 @@ export function UnifiedStepCard({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 flex items-center gap-1">
+                    <span className="text-xs text-text-muted flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {formatDuration(step.durationMs)}
                     </span>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0 hover:bg-gray-700/50"
+                      className="h-6 w-6 p-0 hover:bg-surface-raised/50"
                     >
                       {expanded ? (
                         <ChevronDown className="w-4 h-4" />
@@ -252,7 +252,7 @@ export function UnifiedStepCard({
                 </div>
 
                 {/* Quick preview */}
-                <div className="mt-2 text-xs text-gray-400">
+                <div className="mt-2 text-xs text-text-muted">
                   {getQuickPreview()}
                 </div>
               </div>
@@ -261,7 +261,7 @@ export function UnifiedStepCard({
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <div className="px-4 pb-4 pt-0 border-t border-gray-800/50">
+          <div className="px-4 pb-4 pt-0 border-t border-border-subtle/50">
             <div className="pt-4">
               <StepDetails step={step} nameMap={nameMap} />
             </div>
@@ -288,30 +288,30 @@ function StepDetails({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {step.actionType && (
           <div>
-            <div className="text-xs text-gray-400 mb-1">Action Type</div>
-            <Badge className="bg-gray-700/50 text-white">
+            <div className="text-xs text-text-muted mb-1">Action Type</div>
+            <Badge className="bg-border-default/50 text-white">
               {step.actionType.toUpperCase()}
             </Badge>
           </div>
         )}
         {step.nodeType && (
           <div>
-            <div className="text-xs text-gray-400 mb-1">Node Type</div>
+            <div className="text-xs text-text-muted mb-1">Node Type</div>
             <Badge variant="outline" className="text-xs">
               {step.nodeType}
             </Badge>
           </div>
         )}
         <div>
-          <div className="text-xs text-gray-400 mb-1">Duration</div>
+          <div className="text-xs text-text-muted mb-1">Duration</div>
           <span className="text-sm text-white">
             {formatDuration(step.durationMs)}
           </span>
         </div>
         {step.nodeId && (
           <div>
-            <div className="text-xs text-gray-400 mb-1">Node ID</div>
-            <span className="text-xs text-gray-500 font-mono truncate">
+            <div className="text-xs text-text-muted mb-1">Node ID</div>
+            <span className="text-xs text-text-muted font-mono truncate">
               {step.nodeId}
             </span>
           </div>
@@ -320,8 +320,8 @@ function StepDetails({
 
       {/* State Context */}
       {step.stateContext && (
-        <div className="bg-gray-800/30 rounded-lg p-3">
-          <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+        <div className="bg-surface-raised/30 rounded-lg p-3">
+          <div className="text-xs text-text-muted mb-2 flex items-center gap-1">
             <Layers className="w-3 h-3" />
             State Context
           </div>
@@ -329,7 +329,7 @@ function StepDetails({
             {step.stateContext.activeBefore &&
               step.stateContext.activeBefore.length > 0 && (
                 <div>
-                  <div className="text-xs text-gray-500 mb-1">Before</div>
+                  <div className="text-xs text-text-muted mb-1">Before</div>
                   <div className="flex flex-wrap gap-1">
                     {step.stateContext.activeBefore.map((state) => (
                       <Badge
@@ -346,7 +346,7 @@ function StepDetails({
             {step.stateContext.activeAfter &&
               step.stateContext.activeAfter.length > 0 && (
                 <div>
-                  <div className="text-xs text-gray-500 mb-1">After</div>
+                  <div className="text-xs text-text-muted mb-1">After</div>
                   <div className="flex flex-wrap gap-1">
                     {step.stateContext.activeAfter.map((state) => (
                       <Badge
@@ -372,23 +372,23 @@ function StepDetails({
 
       {/* Match Location */}
       {step.matchLocation && (
-        <div className="bg-gray-800/30 rounded-lg p-3">
-          <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+        <div className="bg-surface-raised/30 rounded-lg p-3">
+          <div className="text-xs text-text-muted mb-2 flex items-center gap-1">
             <Target className="w-3 h-3" />
             Match Location
           </div>
           <div className="grid grid-cols-4 gap-2 text-sm">
             <div>
-              <span className="text-gray-500">X:</span>{" "}
+              <span className="text-text-muted">X:</span>{" "}
               <span className="text-white">{step.matchLocation.x}</span>
             </div>
             <div>
-              <span className="text-gray-500">Y:</span>{" "}
+              <span className="text-text-muted">Y:</span>{" "}
               <span className="text-white">{step.matchLocation.y}</span>
             </div>
             {step.matchLocation.width && step.matchLocation.height && (
               <div>
-                <span className="text-gray-500">Size:</span>{" "}
+                <span className="text-text-muted">Size:</span>{" "}
                 <span className="text-white">
                   {step.matchLocation.width}x{step.matchLocation.height}
                 </span>
@@ -396,7 +396,7 @@ function StepDetails({
             )}
             {step.matchLocation.confidence !== undefined && (
               <div>
-                <span className="text-gray-500">Confidence:</span>{" "}
+                <span className="text-text-muted">Confidence:</span>{" "}
                 <span className="text-white">
                   {(step.matchLocation.confidence * 100).toFixed(1)}%
                 </span>
@@ -408,14 +408,14 @@ function StepDetails({
 
       {/* Input Data */}
       {step.inputData && (
-        <div className="bg-gray-800/30 rounded-lg p-3">
-          <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+        <div className="bg-surface-raised/30 rounded-lg p-3">
+          <div className="text-xs text-text-muted mb-2 flex items-center gap-1">
             <Keyboard className="w-3 h-3" />
             Input Data
           </div>
           {step.inputData.text && (
             <div className="text-sm">
-              <span className="text-gray-500">Text:</span>{" "}
+              <span className="text-text-muted">Text:</span>{" "}
               <span className="text-white font-mono">
                 &quot;{step.inputData.text}&quot;
               </span>
@@ -423,7 +423,7 @@ function StepDetails({
           )}
           {step.inputData.from && step.inputData.to && (
             <div className="text-sm">
-              <span className="text-gray-500">Drag:</span>{" "}
+              <span className="text-text-muted">Drag:</span>{" "}
               <span className="text-white font-mono">
                 ({step.inputData.from.x}, {step.inputData.from.y}) to (
                 {step.inputData.to.x}, {step.inputData.to.y})
@@ -446,8 +446,8 @@ function StepDetails({
 
       {/* Screenshot */}
       {step.screenshotUrl && (
-        <div className="bg-gray-800/30 rounded-lg p-3">
-          <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+        <div className="bg-surface-raised/30 rounded-lg p-3">
+          <div className="text-xs text-text-muted mb-2 flex items-center gap-1">
             <Camera className="w-3 h-3" />
             Screenshot
           </div>
@@ -455,7 +455,7 @@ function StepDetails({
             href={step.screenshotUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-[#00D9FF] hover:underline"
+            className="text-sm text-brand-primary hover:underline"
           >
             View Screenshot
           </a>
@@ -465,10 +465,10 @@ function StepDetails({
       {/* Debug: Show metadata if available */}
       {step.metadata && Object.keys(step.metadata).length > 0 && (
         <details className="text-xs">
-          <summary className="text-gray-500 cursor-pointer hover:text-gray-400">
+          <summary className="text-text-muted cursor-pointer hover:text-text-muted">
             Raw Metadata
           </summary>
-          <pre className="mt-2 p-2 bg-gray-900/50 rounded text-gray-400 overflow-auto max-h-48">
+          <pre className="mt-2 p-2 bg-surface-canvas/50 rounded text-text-muted overflow-auto max-h-48">
             {JSON.stringify(step.metadata, null, 2)}
           </pre>
         </details>

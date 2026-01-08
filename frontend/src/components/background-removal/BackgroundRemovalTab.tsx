@@ -171,15 +171,15 @@ export const BackgroundRemovalTab: React.FC = () => {
   const selectedScreenshot = selectedScreenshots[selectedScreenshotIndex];
 
   return (
-    <div className="h-full flex flex-col bg-[#18181B]">
+    <div className="h-full flex flex-col bg-surface-canvas">
       {/* Header */}
-      <div className="bg-[#1A1A1C] border-b border-gray-700 px-6 py-4">
+      <div className="bg-surface-raised border-b border-border-default px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">
               Background Removal
             </h1>
-            <p className="text-gray-400 mt-1">
+            <p className="text-text-muted mt-1">
               Remove dynamic backgrounds from screenshots for robust State
               Discovery
             </p>
@@ -196,9 +196,9 @@ export const BackgroundRemovalTab: React.FC = () => {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Configuration */}
-        <div className="w-80 bg-[#1A1A1C] border-r border-gray-700 flex flex-col overflow-hidden">
+        <div className="w-80 bg-surface-raised border-r border-border-default flex flex-col overflow-hidden">
           {/* Screenshot Selection Section */}
-          <div className="p-4 border-b border-gray-700">
+          <div className="p-4 border-b border-border-default">
             <h2 className="font-semibold text-white mb-3">Screenshots</h2>
             <ScreenshotSelector
               selectedScreenshot=""
@@ -214,7 +214,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 </Button>
               }
             />
-            <p className="text-xs text-gray-400 mt-2">
+            <p className="text-xs text-text-muted mt-2">
               {selectedScreenshots.length} screenshot(s) selected
             </p>
           </div>
@@ -222,7 +222,7 @@ export const BackgroundRemovalTab: React.FC = () => {
           {/* Configuration Section */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {/* Presets */}
-            <Card className="bg-[#27272A] border-gray-700">
+            <Card className="bg-surface-raised border-border-default">
               <CardHeader className="py-3">
                 <CardTitle className="text-sm text-white">Presets</CardTitle>
               </CardHeader>
@@ -235,7 +235,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                       className={`w-full justify-start ${
                         activePreset === preset
                           ? "bg-blue-600 text-white hover:bg-blue-700"
-                          : "bg-[#18181B] text-gray-300 border-gray-600 hover:bg-[#27272A] hover:text-white"
+                          : "bg-surface-canvas text-text-secondary border-border-default hover:bg-surface-raised hover:text-white"
                       }`}
                       size="sm"
                       onClick={() => handlePresetChange(preset)}
@@ -248,7 +248,7 @@ export const BackgroundRemovalTab: React.FC = () => {
             </Card>
 
             {/* Detection Strategies */}
-            <Card className="bg-[#27272A] border-gray-700">
+            <Card className="bg-surface-raised border-border-default">
               <CardHeader className="py-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm text-white">
                   Detection Strategies
@@ -257,7 +257,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="h-6 text-xs text-gray-300 hover:text-white hover:bg-[#18181B]"
+                  className="h-6 text-xs text-text-secondary hover:text-white hover:bg-surface-canvas"
                 >
                   <Settings className="w-3 h-3 mr-1" />
                   {showAdvanced ? "Simple" : "Advanced"}
@@ -266,7 +266,7 @@ export const BackgroundRemovalTab: React.FC = () => {
               <CardContent className="space-y-3">
                 {/* Temporal Variance */}
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm text-gray-300">
+                  <Label className="text-sm text-text-muted">
                     Temporal Variance
                   </Label>
                   <Switch
@@ -279,7 +279,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 {showAdvanced && config.useTemporalVariance && (
                   <div className="ml-4 space-y-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-gray-400">
+                      <Label className="text-xs text-text-muted">
                         Threshold: {config.varianceThreshold.toFixed(1)}
                       </Label>
                       <Slider
@@ -301,7 +301,9 @@ export const BackgroundRemovalTab: React.FC = () => {
 
                 {/* Edge Density */}
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm text-gray-300">Edge Density</Label>
+                  <Label className="text-sm text-text-muted">
+                    Edge Density
+                  </Label>
                   <Switch
                     checked={config.useEdgeDensity}
                     onCheckedChange={(checked) =>
@@ -312,7 +314,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 {showAdvanced && config.useEdgeDensity && (
                   <div className="ml-4 space-y-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-gray-400">
+                      <Label className="text-xs text-text-muted">
                         Threshold: {config.edgeDensityThreshold.toFixed(2)}
                       </Label>
                       <Slider
@@ -337,7 +339,7 @@ export const BackgroundRemovalTab: React.FC = () => {
 
                 {/* Uniformity */}
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm text-gray-300">Uniformity</Label>
+                  <Label className="text-sm text-text-muted">Uniformity</Label>
                   <Switch
                     checked={config.useUniformity}
                     onCheckedChange={(checked) =>
@@ -348,7 +350,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 {showAdvanced && config.useUniformity && (
                   <div className="ml-4 space-y-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-gray-400">
+                      <Label className="text-xs text-text-muted">
                         Threshold: {config.uniformityThreshold.toFixed(1)}
                       </Label>
                       <Slider
@@ -372,7 +374,7 @@ export const BackgroundRemovalTab: React.FC = () => {
 
             {/* Post-Processing */}
             {showAdvanced && (
-              <Card className="bg-[#27272A] border-gray-700">
+              <Card className="bg-surface-raised border-border-default">
                 <CardHeader className="py-3">
                   <CardTitle className="text-sm text-white">
                     Post-Processing
@@ -380,7 +382,9 @@ export const BackgroundRemovalTab: React.FC = () => {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm text-gray-300">Morphology</Label>
+                    <Label className="text-sm text-text-muted">
+                      Morphology
+                    </Label>
                     <Switch
                       checked={config.applyMorphology}
                       onCheckedChange={(checked) =>
@@ -390,7 +394,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                   </div>
                   {config.applyMorphology && (
                     <div className="space-y-2">
-                      <Label className="text-xs text-gray-400">
+                      <Label className="text-xs text-text-muted">
                         Min Region Size: {config.minForegroundRegionSize}px
                       </Label>
                       <Slider
@@ -414,7 +418,7 @@ export const BackgroundRemovalTab: React.FC = () => {
 
             {/* Process Button */}
             <Button
-              className="w-full bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-green-600 hover:bg-green-700 text-white disabled:bg-surface-raised disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleRemoveBackground}
               disabled={selectedScreenshots.length < 2 || isProcessing}
             >
@@ -439,26 +443,26 @@ export const BackgroundRemovalTab: React.FC = () => {
         </div>
 
         {/* Center Panel - Preview */}
-        <div className="flex-1 flex flex-col p-4 overflow-hidden bg-[#18181B]">
+        <div className="flex-1 flex flex-col p-4 overflow-hidden bg-surface-canvas">
           <Tabs defaultValue="original" className="flex-1 flex flex-col">
-            <TabsList className="bg-[#27272A] border-gray-700">
+            <TabsList className="bg-surface-raised border-border-default">
               <TabsTrigger
                 value="original"
-                className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-300"
+                className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-text-secondary"
               >
                 Original
               </TabsTrigger>
               <TabsTrigger
                 value="processed"
                 disabled={!result}
-                className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-300"
+                className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-text-secondary"
               >
                 Processed
               </TabsTrigger>
               <TabsTrigger
                 value="comparison"
                 disabled={!result}
-                className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-300"
+                className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-text-secondary"
               >
                 Comparison
               </TabsTrigger>
@@ -475,14 +479,14 @@ export const BackgroundRemovalTab: React.FC = () => {
                         className={`px-3 py-1 rounded text-sm ${
                           index === selectedScreenshotIndex
                             ? "bg-blue-600 text-white"
-                            : "bg-[#27272A] text-gray-300 hover:bg-[#3A3A3D] border border-gray-600"
+                            : "bg-surface-raised text-text-secondary hover:bg-zinc-700 border border-border-default"
                         }`}
                       >
                         {screenshot.name}
                       </button>
                     ))}
                   </div>
-                  <div className="flex-1 border border-gray-700 rounded bg-[#27272A] overflow-auto">
+                  <div className="flex-1 border border-border-default rounded bg-surface-raised overflow-auto">
                     <img
                       src={selectedScreenshot.url}
                       alt={selectedScreenshot.name}
@@ -491,7 +495,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-500">
+                <div className="h-full flex items-center justify-center text-text-muted">
                   <div className="text-center">
                     <Camera className="w-12 h-12 mx-auto mb-2" />
                     <p>Select screenshots to preview</p>
@@ -504,7 +508,7 @@ export const BackgroundRemovalTab: React.FC = () => {
               {result ? (
                 <div className="h-full flex flex-col">
                   <div
-                    className="flex-1 border border-gray-700 rounded overflow-auto p-4"
+                    className="flex-1 border border-border-default rounded overflow-auto p-4"
                     style={{
                       backgroundImage: `
                         linear-gradient(45deg, #3A3A3D 25%, transparent 25%),
@@ -514,7 +518,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                       `,
                       backgroundSize: "20px 20px",
                       backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
-                      backgroundColor: "#27272A",
+                      backgroundColor: "hsl(var(--surface-raised))",
                     }}
                   >
                     <img
@@ -525,7 +529,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-500">
+                <div className="h-full flex items-center justify-center text-text-muted">
                   <p>Process screenshots to see results</p>
                 </div>
               )}
@@ -534,8 +538,8 @@ export const BackgroundRemovalTab: React.FC = () => {
             <TabsContent value="comparison" className="flex-1 mt-4">
               {result ? (
                 <div className="h-full grid grid-cols-2 gap-4">
-                  <div className="border border-gray-700 rounded bg-[#27272A] overflow-auto">
-                    <div className="p-2 bg-[#1A1A1C] font-semibold text-sm text-white border-b border-gray-700">
+                  <div className="border border-border-default rounded bg-surface-raised overflow-auto">
+                    <div className="p-2 bg-surface-raised font-semibold text-sm text-white border-b border-border-default">
                       Original
                     </div>
                     <img
@@ -545,7 +549,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                     />
                   </div>
                   <div
-                    className="border border-gray-700 rounded overflow-auto"
+                    className="border border-border-default rounded overflow-auto"
                     style={{
                       backgroundImage: `
                         linear-gradient(45deg, #3A3A3D 25%, transparent 25%),
@@ -555,10 +559,10 @@ export const BackgroundRemovalTab: React.FC = () => {
                       `,
                       backgroundSize: "20px 20px",
                       backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
-                      backgroundColor: "#27272A",
+                      backgroundColor: "hsl(var(--surface-raised))",
                     }}
                   >
-                    <div className="p-2 bg-[#1A1A1C] font-semibold text-sm text-white border-b border-gray-700">
+                    <div className="p-2 bg-surface-raised font-semibold text-sm text-white border-b border-border-default">
                       Processed
                     </div>
                     <img
@@ -569,7 +573,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-500">
+                <div className="h-full flex items-center justify-center text-text-muted">
                   <p>Process screenshots to compare</p>
                 </div>
               )}
@@ -578,8 +582,8 @@ export const BackgroundRemovalTab: React.FC = () => {
         </div>
 
         {/* Right Panel - Statistics & Actions */}
-        <div className="w-80 bg-[#1A1A1C] border-l border-gray-700 flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-gray-700">
+        <div className="w-80 bg-surface-raised border-l border-border-default flex flex-col overflow-hidden">
+          <div className="p-4 border-b border-border-default">
             <h2 className="font-semibold text-white">Results</h2>
           </div>
 
@@ -587,7 +591,7 @@ export const BackgroundRemovalTab: React.FC = () => {
             {result ? (
               <>
                 {/* Statistics */}
-                <Card className="bg-[#27272A] border-gray-700">
+                <Card className="bg-surface-raised border-border-default">
                   <CardHeader className="py-3">
                     <CardTitle className="text-sm text-white">
                       Statistics
@@ -595,26 +599,26 @@ export const BackgroundRemovalTab: React.FC = () => {
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Screenshots:</span>
+                      <span className="text-text-muted">Screenshots:</span>
                       <span className="font-medium text-white">
                         {result.statistics.numScreenshots}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Image Size:</span>
+                      <span className="text-text-muted">Image Size:</span>
                       <span className="font-medium text-white">
                         {result.statistics.imageSize[0]}×
                         {result.statistics.imageSize[1]}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Foreground:</span>
-                      <span className="font-medium text-green-400">
+                      <span className="text-text-muted">Foreground:</span>
+                      <span className="font-medium text-brand-success">
                         {result.statistics.foregroundPercentage.toFixed(1)}%
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Background:</span>
+                      <span className="text-text-muted">Background:</span>
                       <span className="font-medium text-red-400">
                         {result.statistics.backgroundPercentage.toFixed(1)}%
                       </span>
@@ -623,7 +627,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 </Card>
 
                 {/* Actions */}
-                <Card className="bg-[#27272A] border-gray-700">
+                <Card className="bg-surface-raised border-border-default">
                   <CardHeader className="py-3">
                     <CardTitle className="text-sm text-white">
                       Actions
@@ -632,7 +636,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                   <CardContent className="space-y-2">
                     <Button
                       variant="outline"
-                      className="w-full bg-[#18181B] text-gray-300 border-gray-600 hover:bg-[#3A3A3D] hover:text-white"
+                      className="w-full bg-surface-canvas text-text-secondary border-border-default hover:bg-zinc-700 hover:text-white"
                       onClick={handleDownloadResults}
                     >
                       <Download className="w-4 h-4 mr-2" />
@@ -640,7 +644,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                     </Button>
                     <Button
                       variant="outline"
-                      className="w-full bg-[#18181B] text-gray-300 border-gray-600 opacity-50"
+                      className="w-full bg-surface-canvas text-text-secondary border-border-default opacity-50"
                       disabled
                     >
                       <Eye className="w-4 h-4 mr-2" />
@@ -659,7 +663,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 </Alert>
               </>
             ) : (
-              <div className="text-center text-gray-500 py-12">
+              <div className="text-center text-text-muted py-12">
                 <p className="text-sm">No results yet</p>
                 <p className="text-xs mt-2">
                   Process screenshots to see statistics

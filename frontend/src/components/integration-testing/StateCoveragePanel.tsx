@@ -113,8 +113,8 @@ export function StateCoveragePanel({
   if (!workflowId || snapshotRunIds.length === 0) {
     return (
       <Card className="p-8">
-        <div className="text-center text-gray-500">
-          <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+        <div className="text-center text-text-muted">
+          <AlertCircle className="w-12 h-12 mx-auto mb-4 text-text-muted" />
           <p className="text-lg font-medium">
             No process or snapshots selected
           </p>
@@ -132,7 +132,7 @@ export function StateCoveragePanel({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">State Coverage Analysis</h2>
-          <p className="text-sm text-gray-600 mt-1">
+          <p className="text-sm text-text-muted mt-1">
             Analyzing {snapshotRunIds.length} snapshot run(s) for {workflowName}
           </p>
         </div>
@@ -173,10 +173,10 @@ export function StateCoveragePanel({
         <Card className="p-12">
           <div className="text-center">
             <RefreshCw className="w-12 h-12 mx-auto mb-4 text-blue-600 animate-spin" />
-            <p className="text-lg font-medium text-gray-900">
+            <p className="text-lg font-medium text-text-primary">
               Analyzing coverage...
             </p>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-text-muted mt-1">
               Processing {snapshotRunIds.length} snapshot run(s)
             </p>
           </div>
@@ -226,7 +226,7 @@ export function StateCoveragePanel({
                       >
                         {coverage.overall_coverage_percentage.toFixed(0)}%
                       </div>
-                      <div className="text-xs text-gray-600">Coverage</div>
+                      <div className="text-xs text-text-muted">Coverage</div>
                     </div>
                   </div>
                 </div>
@@ -237,10 +237,10 @@ export function StateCoveragePanel({
             <Card className="p-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">
+                  <div className="text-2xl font-bold text-text-primary">
                     {coverage.covered_states}/{coverage.total_states}
                   </div>
-                  <div className="text-sm text-gray-600">States Covered</div>
+                  <div className="text-sm text-text-muted">States Covered</div>
                 </div>
                 <CheckCircle2 className="w-8 h-8 text-green-500" />
               </div>
@@ -254,10 +254,10 @@ export function StateCoveragePanel({
             <Card className="p-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">
+                  <div className="text-2xl font-bold text-text-primary">
                     {coverage.covered_transitions}/{coverage.total_transitions}
                   </div>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-text-muted">
                     Transitions Covered
                   </div>
                 </div>
@@ -273,10 +273,10 @@ export function StateCoveragePanel({
             <Card className="p-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">
+                  <div className="text-2xl font-bold text-text-primary">
                     {coverage.coverage_gaps.length}
                   </div>
-                  <div className="text-sm text-gray-600">Coverage Gaps</div>
+                  <div className="text-sm text-text-muted">Coverage Gaps</div>
                 </div>
                 <AlertTriangle className="w-8 h-8 text-yellow-500" />
               </div>
@@ -330,7 +330,9 @@ export function StateCoveragePanel({
                       {coverage.recommendations.map((rec, index) => (
                         <li key={index} className="flex items-start gap-2">
                           <CheckCircle2 className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                          <span className="text-sm text-gray-700">{rec}</span>
+                          <span className="text-sm text-text-secondary">
+                            {rec}
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -365,21 +367,21 @@ export function StateCoveragePanel({
                               >
                                 {gap.severity}
                               </span>
-                              <span className="text-xs text-gray-600 font-mono">
+                              <span className="text-xs text-text-muted font-mono">
                                 {gap.gap_type}
                               </span>
                             </div>
-                            <p className="text-sm font-medium text-gray-900 mb-1">
+                            <p className="text-sm font-medium text-text-primary mb-1">
                               {gap.description}
                             </p>
-                            <p className="text-sm text-gray-700 italic">
+                            <p className="text-sm text-text-secondary italic">
                               {gap.recommendation}
                             </p>
                             <div className="mt-2 flex flex-wrap gap-1">
                               {gap.affected_states.map((state) => (
                                 <span
                                   key={state}
-                                  className="px-2 py-0.5 bg-white rounded text-xs font-mono border border-gray-300"
+                                  className="px-2 py-0.5 bg-white rounded text-xs font-mono border border-border-default"
                                 >
                                   {state}
                                 </span>
@@ -392,7 +394,7 @@ export function StateCoveragePanel({
                   </div>
                 ) : (
                   <Card className="p-8">
-                    <div className="text-center text-gray-500">
+                    <div className="text-center text-text-muted">
                       <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-green-500" />
                       <p className="text-lg font-medium">
                         No coverage gaps found

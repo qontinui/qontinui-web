@@ -57,7 +57,7 @@ export function LazyImage({
       {!isLoaded && !hasError && (
         <div
           className={cn(
-            "absolute inset-0 bg-gray-800 animate-pulse",
+            "absolute inset-0 bg-surface-raised animate-pulse",
             placeholderClassName
           )}
         />
@@ -65,8 +65,8 @@ export function LazyImage({
 
       {/* Error state */}
       {hasError && (
-        <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
-          <span className="text-xs text-gray-500">Failed to load</span>
+        <div className="absolute inset-0 bg-surface-raised flex items-center justify-center">
+          <span className="text-xs text-text-muted">Failed to load</span>
         </div>
       )}
 

@@ -59,7 +59,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
       case "low":
         return "bg-blue-500/20 text-blue-400 border-blue-500/30";
       default:
-        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+        return "bg-surface-raised/20 text-text-muted border-border-default/30";
     }
   };
 
@@ -72,15 +72,15 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
       case "resolved":
         return "bg-green-500/20 text-green-400 border-green-500/30";
       case "wont_fix":
-        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+        return "bg-surface-raised/20 text-text-muted border-border-default/30";
       default:
-        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+        return "bg-surface-raised/20 text-text-muted border-border-default/30";
     }
   };
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div className="rounded-lg bg-[#0A0A0B]/50 border border-gray-800/30 hover:border-gray-700/50 transition-colors">
+      <div className="rounded-lg bg-surface-canvas/50 border border-border-subtle/30 hover:border-border-default/50 transition-colors">
         {/* Header */}
         <CollapsibleTrigger asChild>
           <div className="flex items-start gap-4 p-4 cursor-pointer">
@@ -107,16 +107,16 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
                     {deficiency.status.replace("_", " ")}
                   </Badge>
                   {isOpen ? (
-                    <ChevronUp className="w-4 h-4 text-gray-400" />
+                    <ChevronUp className="w-4 h-4 text-text-muted" />
                   ) : (
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                    <ChevronDown className="w-4 h-4 text-text-muted" />
                   )}
                 </div>
               </div>
-              <p className="text-sm text-gray-400 mb-2">
+              <p className="text-sm text-text-muted mb-2">
                 {deficiency.description}
               </p>
-              <div className="flex items-center gap-4 text-xs text-gray-500">
+              <div className="flex items-center gap-4 text-xs text-text-muted">
                 <span>State: {deficiency.state_name}</span>
                 {deficiency.transition_from && deficiency.transition_to && (
                   <span>
@@ -135,17 +135,17 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
 
         {/* Expanded Content */}
         <CollapsibleContent>
-          <div className="border-t border-gray-800/30 p-4 space-y-4">
+          <div className="border-t border-border-subtle/30 p-4 space-y-4">
             {/* Status Update */}
             <div className="flex items-center gap-4">
-              <label className="text-sm text-gray-400">Update Status:</label>
+              <label className="text-sm text-text-muted">Update Status:</label>
               <Select
                 value={deficiency.status}
                 onValueChange={(value) =>
                   handleStatusChange(value as Deficiency["status"])
                 }
               >
-                <SelectTrigger className="w-[180px] bg-[#1A1A1B] border-gray-700">
+                <SelectTrigger className="w-[180px] bg-surface-raised border-border-default">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -160,7 +160,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
             {/* Expected vs Actual */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-300">
+                <h4 className="text-sm font-medium text-text-muted">
                   Expected Behavior
                 </h4>
                 <div className="p-3 bg-green-500/10 border border-green-500/30 rounded text-sm">
@@ -168,7 +168,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
                 </div>
               </div>
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-300">
+                <h4 className="text-sm font-medium text-text-muted">
                   Actual Behavior
                 </h4>
                 <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-sm">
@@ -181,10 +181,10 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
             {deficiency.reproduction_steps &&
               deficiency.reproduction_steps.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-gray-300">
+                  <h4 className="text-sm font-medium text-text-muted">
                     Reproduction Steps
                   </h4>
-                  <ol className="list-decimal list-inside space-y-1 text-sm text-gray-400">
+                  <ol className="list-decimal list-inside space-y-1 text-sm text-text-muted">
                     {deficiency.reproduction_steps.map((step, index) => (
                       <li key={index}>{step}</li>
                     ))}
@@ -195,7 +195,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
             {/* Error Message */}
             {deficiency.error_message && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-300">
+                <h4 className="text-sm font-medium text-text-muted">
                   Error Message
                 </h4>
                 <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-sm font-mono text-red-400">
@@ -207,7 +207,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
             {/* Screenshot */}
             {deficiency.screenshot_url && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-300">
+                <h4 className="text-sm font-medium text-text-muted">
                   Screenshot
                 </h4>
                 <div className="relative inline-block">
@@ -216,12 +216,12 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
                     alt="Deficiency screenshot"
                     width={600}
                     height={400}
-                    className="rounded border border-gray-700"
+                    className="rounded border border-border-default"
                   />
                   <Button
                     size="sm"
                     variant="outline"
-                    className="absolute top-2 right-2 border-gray-700 hover:border-[#00D9FF]"
+                    className="absolute top-2 right-2 border-border-default hover:border-brand-primary"
                     onClick={() =>
                       window.open(deficiency.screenshot_url!, "_blank")
                     }
@@ -233,7 +233,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
             )}
 
             {/* Additional Info */}
-            <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-800/30">
+            <div className="flex items-center justify-between text-xs text-text-muted pt-2 border-t border-border-subtle/30">
               <div className="flex items-center gap-4">
                 {deficiency.assigned_to && (
                   <span>Assigned to: {deficiency.assigned_to}</span>

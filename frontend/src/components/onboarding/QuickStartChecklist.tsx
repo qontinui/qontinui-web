@@ -102,7 +102,12 @@ const ConfettiCelebration: React.FC<{ show: boolean }> = ({ show }) => {
 
   React.useEffect(() => {
     if (show) {
-      const colors = ["#00D9FF", "#BD00FF", "#00FF88"];
+      // Using CSS variable values for confetti colors (brand-primary, brand-secondary, brand-success)
+      const colors = [
+        "hsl(var(--brand-primary))",
+        "hsl(var(--brand-secondary))",
+        "hsl(var(--brand-success))",
+      ];
       const newParticles = Array.from({ length: 30 }, (_, i) => ({
         id: i,
         left: Math.random() * 100,

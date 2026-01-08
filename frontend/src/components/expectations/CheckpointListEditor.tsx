@@ -124,14 +124,14 @@ export function CheckpointListEditor({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-2 text-[#00D9FF]">
+      <div className="flex items-center gap-2 text-brand-primary">
         <Flag className="w-4 h-4" />
         <h3 className="text-sm font-medium">Checkpoints</h3>
       </div>
 
       {/* Add New Checkpoint */}
-      <Card className="p-4 border-gray-700 bg-[#27272A]/50 space-y-3">
-        <Label className="text-xs text-gray-400">Add Checkpoint</Label>
+      <Card className="p-4 border-border-default bg-surface-raised/50 space-y-3">
+        <Label className="text-xs text-text-muted">Add Checkpoint</Label>
         <div className="flex gap-2">
           <Input
             type="text"
@@ -144,13 +144,13 @@ export function CheckpointListEditor({
                 addCheckpoint();
               }
             }}
-            className="bg-transparent border-gray-700 text-sm flex-1"
+            className="bg-transparent border-border-default text-sm flex-1"
           />
           <Button
             size="sm"
             onClick={addCheckpoint}
             disabled={!newCheckpointName.trim() || !!current[newCheckpointName]}
-            className="bg-[#00D9FF] hover:bg-[#00B8D4] text-black"
+            className="bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             <Plus className="w-4 h-4" />
           </Button>
@@ -159,7 +159,7 @@ export function CheckpointListEditor({
 
       {/* Checkpoint List */}
       {checkpointNames.length === 0 ? (
-        <div className="text-center py-8 text-gray-500 text-sm">
+        <div className="text-center py-8 text-text-muted text-sm">
           <Flag className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p>No checkpoints defined</p>
           <p className="text-xs">
@@ -176,20 +176,20 @@ export function CheckpointListEditor({
 
             return (
               <Collapsible key={name} open={isExpanded}>
-                <Card className="border-gray-700 bg-[#27272A]/50">
+                <Card className="border-border-default bg-surface-raised/50">
                   <CollapsibleTrigger
                     onClick={() => toggleExpanded(name)}
                     className="w-full"
                   >
-                    <div className="p-4 flex items-center justify-between hover:bg-gray-800/30 transition-colors">
+                    <div className="p-4 flex items-center justify-between hover:bg-surface-raised/30 transition-colors">
                       <div className="flex items-center gap-3">
                         {isExpanded ? (
-                          <ChevronDown className="w-4 h-4 text-gray-400" />
+                          <ChevronDown className="w-4 h-4 text-text-muted" />
                         ) : (
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
+                          <ChevronRight className="w-4 h-4 text-text-muted" />
                         )}
-                        <Flag className="w-4 h-4 text-[#00D9FF]" />
-                        <span className="text-sm font-medium text-gray-200">
+                        <Flag className="w-4 h-4 text-brand-primary" />
+                        <span className="text-sm font-medium text-text-secondary">
                           {name}
                         </span>
                         {checkpoint.screenshot_required && (
@@ -225,10 +225,10 @@ export function CheckpointListEditor({
                   </CollapsibleTrigger>
 
                   <CollapsibleContent>
-                    <div className="px-4 pb-4 space-y-4 border-t border-gray-700 pt-4">
+                    <div className="px-4 pb-4 space-y-4 border-t border-border-default pt-4">
                       {/* Description */}
                       <div className="space-y-2">
-                        <Label className="text-xs text-gray-400">
+                        <Label className="text-xs text-text-muted">
                           Description
                         </Label>
                         <Textarea
@@ -239,17 +239,17 @@ export function CheckpointListEditor({
                             })
                           }
                           placeholder="What does this checkpoint validate?"
-                          className="bg-transparent border-gray-700 text-sm min-h-16"
+                          className="bg-transparent border-border-default text-sm min-h-16"
                         />
                       </div>
 
                       {/* Screenshot Required */}
                       <div className="flex items-center justify-between">
                         <div className="space-y-0.5">
-                          <Label className="text-xs text-gray-400">
+                          <Label className="text-xs text-text-muted">
                             Screenshot Required
                           </Label>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-text-muted">
                             Capture screenshot at this checkpoint
                           </p>
                         </div>
@@ -266,7 +266,7 @@ export function CheckpointListEditor({
                       {/* Timing Configuration */}
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-2">
-                          <Label className="text-xs text-gray-400">
+                          <Label className="text-xs text-text-muted">
                             Max Wait (ms)
                           </Label>
                           <Input
@@ -279,11 +279,11 @@ export function CheckpointListEditor({
                                 max_wait_ms: parseInt(e.target.value),
                               })
                             }
-                            className="bg-transparent border-gray-700 text-sm"
+                            className="bg-transparent border-border-default text-sm"
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-xs text-gray-400">
+                          <Label className="text-xs text-text-muted">
                             Retry Interval (ms)
                           </Label>
                           <Input
@@ -296,7 +296,7 @@ export function CheckpointListEditor({
                                 retry_interval_ms: parseInt(e.target.value),
                               })
                             }
-                            className="bg-transparent border-gray-700 text-sm"
+                            className="bg-transparent border-border-default text-sm"
                           />
                         </div>
                       </div>
@@ -304,7 +304,7 @@ export function CheckpointListEditor({
                       {/* Claude Review Instructions */}
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <Label className="text-xs text-gray-400">
+                          <Label className="text-xs text-text-muted">
                             Claude Review Instructions
                           </Label>
                           <Button
@@ -333,7 +333,7 @@ export function CheckpointListEditor({
                                         )
                                       }
                                       placeholder="Instruction for Claude to review the checkpoint..."
-                                      className="bg-transparent border-gray-700 text-sm min-h-20"
+                                      className="bg-transparent border-border-default text-sm min-h-20"
                                     />
                                     <Button
                                       size="sm"
@@ -350,7 +350,7 @@ export function CheckpointListEditor({
                               )}
                             </div>
                           )}
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-text-muted">
                           Natural language instructions for Claude to review the
                           checkpoint screenshot
                         </p>

@@ -69,7 +69,7 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
   }
 
   return (
-    <Card className="bg-gray-900/50 border-gray-800">
+    <Card className="bg-surface-canvas/50 border-border-subtle">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-white">Processing History</CardTitle>
@@ -77,10 +77,10 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
             value={statusFilter ?? "all"}
             onValueChange={handleStatusChange}
           >
-            <SelectTrigger className="w-48 bg-gray-800 border-gray-700">
+            <SelectTrigger className="w-48 bg-surface-raised border-border-default">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
-            <SelectContent className="bg-gray-800 border-gray-700">
+            <SelectContent className="bg-surface-raised border-border-default">
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="in_progress">In Progress</SelectItem>
@@ -95,14 +95,14 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
         {isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full bg-gray-800" />
+              <Skeleton key={i} className="h-12 w-full bg-surface-raised" />
             ))}
           </div>
         ) : !data?.items.length ? (
           <div className="text-center py-12">
-            <History className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <p className="text-gray-400 text-lg">No processing history</p>
-            <p className="text-gray-500 text-sm mt-1">
+            <History className="w-12 h-12 text-text-muted mx-auto mb-4" />
+            <p className="text-text-muted text-lg">No processing history</p>
+            <p className="text-text-muted text-sm mt-1">
               Run RAG pre-processing from the runner to see history here
             </p>
           </div>
@@ -110,46 +110,46 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
           <>
             <Table>
               <TableHeader>
-                <TableRow className="border-gray-800">
-                  <TableHead className="text-gray-400">Status</TableHead>
-                  <TableHead className="text-gray-400">Progress</TableHead>
-                  <TableHead className="text-gray-400">Duration</TableHead>
-                  <TableHead className="text-gray-400">Started</TableHead>
-                  <TableHead className="text-gray-400">Error</TableHead>
+                <TableRow className="border-border-subtle">
+                  <TableHead className="text-text-muted">Status</TableHead>
+                  <TableHead className="text-text-muted">Progress</TableHead>
+                  <TableHead className="text-text-muted">Duration</TableHead>
+                  <TableHead className="text-text-muted">Started</TableHead>
+                  <TableHead className="text-text-muted">Error</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.items.map((job: JobItem) => (
-                  <TableRow key={job.id} className="border-gray-800">
+                  <TableRow key={job.id} className="border-border-subtle">
                     <TableCell>
                       <JobStatusBadge status={job.status} />
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="w-24 h-2 bg-surface-raised rounded-full overflow-hidden">
                           <div
                             className={`h-full transition-all ${
                               job.status === "completed"
-                                ? "bg-[#00FF88]"
+                                ? "bg-brand-success"
                                 : job.status === "failed"
                                   ? "bg-red-500"
-                                  : "bg-[#00D9FF]"
+                                  : "bg-brand-primary"
                             }`}
                             style={{ width: `${job.progress_percent}%` }}
                           />
                         </div>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-text-muted">
                           {job.processed_patterns}/{job.total_patterns}
                         </span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="text-gray-300">
+                      <span className="text-text-default">
                         {formatDuration(job)}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span className="text-gray-400 text-sm">
+                      <span className="text-text-muted text-sm">
                         {job.started_at
                           ? new Date(job.started_at).toLocaleString()
                           : "-"}
@@ -161,7 +161,7 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
                           {job.error_message}
                         </span>
                       ) : (
-                        <span className="text-gray-500">-</span>
+                        <span className="text-text-muted">-</span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -170,8 +170,8 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
             </Table>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-800">
-              <p className="text-sm text-gray-400">
+            <div className="flex items-center justify-between mt-4 pt-4 border-t border-border-subtle">
+              <p className="text-sm text-text-muted">
                 Showing {(page - 1) * limit + 1} -{" "}
                 {Math.min(page * limit, data.total)} of {data.total}
               </p>
@@ -181,11 +181,11 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
                   size="sm"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="border-gray-700"
+                  className="border-border-default"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <span className="text-sm text-gray-400">
+                <span className="text-sm text-text-muted">
                   Page {page} of {Math.ceil(data.total / limit)}
                 </span>
                 <Button
@@ -193,7 +193,7 @@ export function RAGJobsList({ projectId }: RAGJobsListProps) {
                   size="sm"
                   onClick={() => setPage((p) => p + 1)}
                   disabled={!data.has_more}
-                  className="border-gray-700"
+                  className="border-border-default"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </Button>

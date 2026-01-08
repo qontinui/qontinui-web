@@ -378,15 +378,15 @@ export function ImagesManager() {
   const getSourceColor = (source: string) => {
     switch (source) {
       case "uploaded":
-        return "#00FF88";
+        return "hsl(var(--brand-success))";
       case "pattern_optimization":
-        return "#00D9FF";
+        return "hsl(var(--brand-primary))";
       case "image_extraction":
-        return "#BD00FF";
+        return "hsl(var(--brand-secondary))";
       case "state_discovery":
-        return "#FFB800";
+        return "hsl(var(--brand-warning))";
       default:
-        return "#6B7280";
+        return "hsl(var(--text-muted))";
     }
   };
 
@@ -402,21 +402,21 @@ export function ImagesManager() {
           {/* Stats - moved next to title */}
           {images.length > 0 && (
             <div className="flex gap-3">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
-                <span className="text-xs text-gray-400">Total Images:</span>
-                <span className="text-sm font-bold text-[#00FF88]">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-raised/50 border border-border-default rounded-lg">
+                <span className="text-xs text-text-muted">Total Images:</span>
+                <span className="text-sm font-bold text-brand-success">
                   {images.length}
                 </span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
-                <span className="text-xs text-gray-400">Total Usage:</span>
-                <span className="text-sm font-bold text-[#00D9FF]">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-raised/50 border border-border-default rounded-lg">
+                <span className="text-xs text-text-muted">Total Usage:</span>
+                <span className="text-sm font-bold text-brand-primary">
                   {images.reduce((acc, img) => acc + img.usageCount, 0)}
                 </span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
-                <span className="text-xs text-gray-400">Total Size:</span>
-                <span className="text-sm font-bold text-[#BD00FF]">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-raised/50 border border-border-default rounded-lg">
+                <span className="text-xs text-text-muted">Total Size:</span>
+                <span className="text-sm font-bold text-brand-secondary">
                   {formatFileSize(
                     images.reduce((acc, img) => acc + img.size, 0)
                   )}
@@ -428,12 +428,12 @@ export function ImagesManager() {
 
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
             <Input
               placeholder="Search images..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-64 bg-transparent border-gray-700 focus:border-[#00FF88]"
+              className="pl-10 w-64 bg-transparent border-border-default focus:border-brand-success"
             />
             {searchQuery && (
               <Button
@@ -448,7 +448,7 @@ export function ImagesManager() {
           </div>
           <Button
             onClick={() => fileInputRef.current?.click()}
-            className="bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+            className="bg-brand-success hover:bg-brand-success/80 text-black"
           >
             <Upload className="w-4 h-4 mr-2" />
             Upload Images
@@ -463,8 +463,8 @@ export function ImagesManager() {
             variant={activeFilter === null ? "default" : "outline"}
             className={`cursor-pointer transition-all ${
               activeFilter === null
-                ? "bg-[#00FF88] text-black border-[#00FF88]"
-                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+                ? "bg-brand-success text-black border-brand-success"
+                : "bg-transparent border-border-default text-text-muted hover:border-border-subtle"
             }`}
             onClick={() => setActiveFilter(null)}
           >
@@ -474,8 +474,8 @@ export function ImagesManager() {
             variant={activeFilter === "uploaded" ? "default" : "outline"}
             className={`cursor-pointer transition-all ${
               activeFilter === "uploaded"
-                ? "bg-[#00FF88] text-black border-[#00FF88]"
-                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+                ? "bg-brand-success text-black border-brand-success"
+                : "bg-transparent border-border-default text-text-muted hover:border-border-subtle"
             }`}
             onClick={() => setActiveFilter("uploaded")}
           >
@@ -487,8 +487,8 @@ export function ImagesManager() {
             }
             className={`cursor-pointer transition-all ${
               activeFilter === "pattern_optimization"
-                ? "bg-[#00D9FF] text-black border-[#00D9FF]"
-                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+                ? "bg-brand-primary text-black border-brand-primary"
+                : "bg-transparent border-border-default text-text-muted hover:border-border-subtle"
             }`}
             onClick={() => setActiveFilter("pattern_optimization")}
           >
@@ -500,8 +500,8 @@ export function ImagesManager() {
             }
             className={`cursor-pointer transition-all ${
               activeFilter === "image_extraction"
-                ? "bg-[#BD00FF] text-black border-[#BD00FF]"
-                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+                ? "bg-brand-secondary text-black border-brand-secondary"
+                : "bg-transparent border-border-default text-text-muted hover:border-border-subtle"
             }`}
             onClick={() => setActiveFilter("image_extraction")}
           >
@@ -511,8 +511,8 @@ export function ImagesManager() {
             variant={activeFilter === "state_discovery" ? "default" : "outline"}
             className={`cursor-pointer transition-all ${
               activeFilter === "state_discovery"
-                ? "bg-[#FFB800] text-black border-[#FFB800]"
-                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+                ? "bg-brand-warning text-black border-brand-warning"
+                : "bg-transparent border-border-default text-text-muted hover:border-border-subtle"
             }`}
             onClick={() => setActiveFilter("state_discovery")}
           >
@@ -525,8 +525,8 @@ export function ImagesManager() {
       <Card
         className={`border-2 border-dashed transition-colors ${
           dragActive
-            ? "border-[#00FF88] bg-[#00FF88]/10"
-            : "border-gray-700 bg-[#27272A]/50 hover:border-gray-600"
+            ? "border-brand-success bg-brand-success/10"
+            : "border-border-default bg-surface-raised/50 hover:border-border-subtle"
         }`}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
@@ -536,15 +536,15 @@ export function ImagesManager() {
         <CardContent className="p-12">
           <div className="text-center">
             <Upload
-              className={`w-12 h-12 mx-auto mb-4 ${dragActive ? "text-[#00FF88]" : "text-gray-500"}`}
+              className={`w-12 h-12 mx-auto mb-4 ${dragActive ? "text-brand-success" : "text-text-muted"}`}
             />
             <p className="text-lg mb-2">Drag & drop images here</p>
-            <p className="text-sm text-gray-400 mb-4">
+            <p className="text-sm text-text-muted mb-4">
               or click to browse files
             </p>
             <Button
               variant="outline"
-              className="border-gray-600 bg-transparent hover:border-[#00FF88] hover:text-[#00FF88]"
+              className="border-border-subtle bg-transparent hover:border-brand-success hover:text-brand-success"
               onClick={() => fileInputRef.current?.click()}
             >
               Choose Files
@@ -564,7 +564,7 @@ export function ImagesManager() {
 
       {/* Image Gallery */}
       {filteredImages.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-text-muted">
           {searchQuery ? (
             <>
               <Search className="w-16 h-16 mx-auto mb-4 opacity-50" />
@@ -586,12 +586,12 @@ export function ImagesManager() {
           {filteredImages.map((image) => (
             <Card
               key={image.id}
-              className="border-gray-700 bg-[#27272A] hover:border-gray-600 transition-colors group"
+              className="border-border-default bg-surface-raised hover:border-border-subtle transition-colors group"
             >
               <CardContent className="p-1">
                 <div className="space-y-1">
                   {/* Image Preview - reduced by 50% */}
-                  <div className="aspect-square bg-gray-800 rounded overflow-hidden relative w-20 h-20">
+                  <div className="aspect-square bg-surface-canvas rounded overflow-hidden relative w-20 h-20">
                     <img
                       src={image.url || "/placeholder.svg"}
                       alt={image.name}
@@ -628,7 +628,7 @@ export function ImagesManager() {
                       {image.name}
                     </h4>
 
-                    <div className="flex items-center justify-between text-[8px] text-gray-400">
+                    <div className="flex items-center justify-between text-[8px] text-text-muted">
                       <span>{formatFileSize(image.size)}</span>
                     </div>
 
@@ -637,8 +637,8 @@ export function ImagesManager() {
                         variant={image.usageCount > 0 ? "default" : "secondary"}
                         className={`text-[8px] px-0.5 py-0 h-3 ${
                           image.usageCount > 0
-                            ? "bg-[#00FF88] text-black"
-                            : "bg-gray-700 text-gray-300"
+                            ? "bg-brand-success text-black"
+                            : "bg-surface-raised text-text-muted"
                         }`}
                       >
                         {image.usageCount}x

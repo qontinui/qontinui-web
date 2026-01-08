@@ -70,17 +70,17 @@ const CONTEXT_CATEGORIES = [
   "other",
 ] as const;
 
-// Helper to generate context category colors
+// Helper to generate context category colors using CSS variables
 function getCategoryColor(category: string | null | undefined): string {
   switch (category) {
     case "architecture":
-      return "#00D9FF";
+      return "hsl(var(--brand-primary))";
     case "debugging":
       return "#FF6B6B";
     case "philosophy":
-      return "#BD00FF";
+      return "hsl(var(--brand-secondary))";
     case "domain":
-      return "#00FF88";
+      return "hsl(var(--brand-success))";
     case "workflow":
       return "#FFB800";
     case "testing":
@@ -330,7 +330,7 @@ export function ContextsManager() {
             placeholder="e.g., Error Handling Guidelines"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="bg-transparent border-gray-700 focus:border-[#00D9FF]"
+            className="bg-transparent border-border-default focus:border-brand-primary"
           />
         </div>
 
@@ -346,7 +346,7 @@ export function ContextsManager() {
               })
             }
           >
-            <SelectTrigger className="bg-transparent border-gray-700 focus:border-[#00D9FF]">
+            <SelectTrigger className="bg-transparent border-border-default focus:border-brand-primary">
               <SelectValue placeholder="Select a category" />
             </SelectTrigger>
             <SelectContent>
@@ -368,7 +368,7 @@ export function ContextsManager() {
             placeholder="e.g., react, typescript, best-practices"
             value={formData.tags}
             onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-            className="bg-transparent border-gray-700 focus:border-[#00D9FF]"
+            className="bg-transparent border-border-default focus:border-brand-primary"
           />
         </div>
 
@@ -382,7 +382,7 @@ export function ContextsManager() {
             onChange={(e) =>
               setFormData({ ...formData, content: e.target.value })
             }
-            className="bg-transparent border-gray-700 focus:border-[#00D9FF] min-h-[200px] font-mono text-sm"
+            className="bg-transparent border-border-default focus:border-brand-primary min-h-[200px] font-mono text-sm"
           />
         </div>
 
@@ -401,7 +401,7 @@ export function ContextsManager() {
               ) : (
                 <ChevronRight className="w-4 h-4" />
               )}
-              <Sparkles className="w-4 h-4 text-[#00D9FF]" />
+              <Sparkles className="w-4 h-4 text-brand-primary" />
               <span>Auto-Include Rules</span>
               {!showAutoIncludeSection &&
                 countAutoIncludeRules({
@@ -439,7 +439,7 @@ export function ContextsManager() {
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-4 pt-4">
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-text-muted">
               Define rules for automatically including this context in AI
               prompts.
             </p>
@@ -456,9 +456,9 @@ export function ContextsManager() {
                 onChange={(e) =>
                   setFormData({ ...formData, taskMentions: e.target.value })
                 }
-                className="bg-transparent border-gray-700 focus:border-[#00D9FF]"
+                className="bg-transparent border-border-default focus:border-brand-primary"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Include when task prompt contains these keywords
                 (case-insensitive)
               </p>
@@ -476,9 +476,9 @@ export function ContextsManager() {
                 onChange={(e) =>
                   setFormData({ ...formData, actionTypes: e.target.value })
                 }
-                className="bg-transparent border-gray-700 focus:border-[#00D9FF]"
+                className="bg-transparent border-border-default focus:border-brand-primary"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Include when loaded config contains these action types
               </p>
             </div>
@@ -495,9 +495,9 @@ export function ContextsManager() {
                 onChange={(e) =>
                   setFormData({ ...formData, errorPatterns: e.target.value })
                 }
-                className="bg-transparent border-gray-700 focus:border-[#00D9FF]"
+                className="bg-transparent border-border-default focus:border-brand-primary"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Include when recent logs match these patterns
               </p>
             </div>
@@ -514,9 +514,9 @@ export function ContextsManager() {
                 onChange={(e) =>
                   setFormData({ ...formData, filePatterns: e.target.value })
                 }
-                className="bg-transparent border-gray-700 focus:border-[#00D9FF]"
+                className="bg-transparent border-border-default focus:border-brand-primary"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-muted">
                 Include when working on files matching these patterns
               </p>
             </div>
@@ -528,13 +528,13 @@ export function ContextsManager() {
         <Button
           variant="outline"
           onClick={isEdit ? handleCloseEdit : handleCloseCreate}
-          className="border-gray-700"
+          className="border-border-default"
         >
           Cancel
         </Button>
         <Button
           onClick={handleSave}
-          className="bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+          className="bg-brand-success hover:bg-brand-success/80 text-black"
         >
           {isEdit ? "Save Changes" : "Create Context"}
         </Button>
@@ -552,17 +552,17 @@ export function ContextsManager() {
           {/* Stats */}
           {contexts.length > 0 && (
             <div className="flex gap-3">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
-                <span className="text-xs text-gray-400">Total Contexts:</span>
-                <span className="text-sm font-bold text-[#00FF88]">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-raised/50 border border-border-default rounded-lg">
+                <span className="text-xs text-text-muted">Total Contexts:</span>
+                <span className="text-sm font-bold text-brand-success">
                   {contexts.length}
                 </span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
-                <span className="text-xs text-gray-400">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-raised/50 border border-border-default rounded-lg">
+                <span className="text-xs text-text-muted">
                   With Auto-Include:
                 </span>
-                <span className="text-sm font-bold text-[#00D9FF]">
+                <span className="text-sm font-bold text-brand-primary">
                   {
                     contexts.filter(
                       (c) => countAutoIncludeRules(c.autoInclude) > 0
@@ -577,12 +577,12 @@ export function ContextsManager() {
         <div className="flex items-center gap-3">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
             <Input
               placeholder="Search contexts..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-64 bg-transparent border-gray-700 focus:border-[#00FF88]"
+              className="pl-10 w-64 bg-transparent border-border-default focus:border-brand-success"
             />
             {searchQuery && (
               <Button
@@ -599,7 +599,7 @@ export function ContextsManager() {
           {/* Create Button */}
           <Button
             onClick={handleOpenCreate}
-            className="bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+            className="bg-brand-success hover:bg-brand-success/80 text-black"
           >
             <Plus className="w-4 h-4 mr-2" />
             New Context
@@ -614,8 +614,8 @@ export function ContextsManager() {
             variant={categoryFilter === "all" ? "default" : "outline"}
             className={`cursor-pointer transition-all ${
               categoryFilter === "all"
-                ? "bg-[#00FF88] text-black border-[#00FF88]"
-                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+                ? "bg-brand-success text-black border-brand-success"
+                : "bg-transparent border-border-default text-text-muted hover:border-border-subtle"
             }`}
             onClick={() => setCategoryFilter("all")}
           >
@@ -628,7 +628,7 @@ export function ContextsManager() {
               className={`cursor-pointer transition-all ${
                 categoryFilter === cat
                   ? "text-black"
-                  : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+                  : "bg-transparent border-border-default text-text-muted hover:border-border-subtle"
               }`}
               style={
                 categoryFilter === cat
@@ -651,8 +651,8 @@ export function ContextsManager() {
               }
               className={`cursor-pointer transition-all ${
                 categoryFilter === "uncategorized"
-                  ? "bg-gray-500 text-black border-gray-500"
-                  : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+                  ? "bg-surface-raised text-text-primary border-border-default"
+                  : "bg-transparent border-border-default text-text-muted hover:border-border-subtle"
               }`}
               onClick={() => setCategoryFilter("uncategorized")}
             >
@@ -664,7 +664,7 @@ export function ContextsManager() {
 
       {/* Empty State */}
       {contexts.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-text-muted">
           <BookOpen className="w-16 h-16 mx-auto mb-4 opacity-50" />
           <p className="text-lg">No contexts created</p>
           <p className="text-sm mb-4">
@@ -672,14 +672,14 @@ export function ContextsManager() {
           </p>
           <Button
             onClick={handleOpenCreate}
-            className="bg-[#00FF88] hover:bg-[#00FF88]/80 text-black"
+            className="bg-brand-success hover:bg-brand-success/80 text-black"
           >
             <Plus className="w-4 h-4 mr-2" />
             Create First Context
           </Button>
         </div>
       ) : filteredContexts.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-text-muted">
           <Filter className="w-16 h-16 mx-auto mb-4 opacity-50" />
           <p className="text-lg">No contexts found</p>
           <p className="text-sm">Try adjusting your search or filter</p>
@@ -690,7 +690,7 @@ export function ContextsManager() {
           {filteredContexts.map((context) => (
             <Card
               key={context.id}
-              className="border-gray-700 bg-[#27272A] hover:border-gray-600 transition-colors group"
+              className="border-border-default bg-surface-raised hover:border-border-subtle transition-colors group"
             >
               <CardContent className="p-4">
                 <div className="space-y-3">
@@ -716,7 +716,7 @@ export function ContextsManager() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-8 p-0 text-gray-400 hover:text-[#00D9FF]"
+                        className="h-8 w-8 p-0 text-text-muted hover:text-brand-primary"
                         onClick={() => handleOpenEdit(context)}
                         title="Edit Context"
                       >
@@ -725,7 +725,7 @@ export function ContextsManager() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-8 p-0 text-gray-400 hover:text-red-400"
+                        className="h-8 w-8 p-0 text-text-muted hover:text-red-400"
                         onClick={() => setContextToDelete(context)}
                         title="Delete Context"
                       >
@@ -735,8 +735,8 @@ export function ContextsManager() {
                   </div>
 
                   {/* Content Preview */}
-                  <div className="bg-gray-800/50 rounded p-2">
-                    <p className="text-sm text-gray-400 font-mono whitespace-pre-wrap line-clamp-4">
+                  <div className="bg-surface-canvas/50 rounded p-2">
+                    <p className="text-sm text-text-muted font-mono whitespace-pre-wrap line-clamp-4">
                       {truncateContent(context.content)}
                     </p>
                   </div>
@@ -748,7 +748,7 @@ export function ContextsManager() {
                         <Badge
                           key={tag}
                           variant="outline"
-                          className="text-xs border-gray-600 text-gray-400"
+                          className="text-xs border-border-subtle text-text-muted"
                         >
                           <Tag className="w-2.5 h-2.5 mr-1" />
                           {tag}
@@ -757,7 +757,7 @@ export function ContextsManager() {
                       {context.tags.length > 5 && (
                         <Badge
                           variant="outline"
-                          className="text-xs border-gray-600 text-gray-400"
+                          className="text-xs border-border-subtle text-text-muted"
                         >
                           +{context.tags.length - 5} more
                         </Badge>
@@ -767,9 +767,9 @@ export function ContextsManager() {
 
                   {/* Auto-Include Indicators */}
                   {countAutoIncludeRules(context.autoInclude) > 0 && (
-                    <div className="flex items-center gap-2 pt-2 border-t border-gray-700">
-                      <Sparkles className="w-3.5 h-3.5 text-[#00D9FF]" />
-                      <span className="text-xs text-gray-400">
+                    <div className="flex items-center gap-2 pt-2 border-t border-border-default">
+                      <Sparkles className="w-3.5 h-3.5 text-brand-primary" />
+                      <span className="text-xs text-text-muted">
                         {countAutoIncludeRules(context.autoInclude)}{" "}
                         auto-include rule
                         {countAutoIncludeRules(context.autoInclude) > 1
@@ -809,7 +809,7 @@ export function ContextsManager() {
                   )}
 
                   {/* Footer with dates */}
-                  <div className="flex items-center justify-between text-xs text-gray-500 pt-2">
+                  <div className="flex items-center justify-between text-xs text-text-muted pt-2">
                     <span>
                       Created:{" "}
                       {new Date(context.createdAt).toLocaleDateString()}

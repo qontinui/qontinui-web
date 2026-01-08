@@ -30,7 +30,7 @@ export const PatternEditor: React.FC<PatternEditorProps> = ({
         size="sm"
         variant="outline"
         onClick={() => setShowMaskEditor(true)}
-        className="border-gray-700 hover:border-[#BD00FF]"
+        className="border-border-default hover:border-brand-secondary"
       >
         <Edit className="w-3 h-3 mr-1" />
         Edit Mask

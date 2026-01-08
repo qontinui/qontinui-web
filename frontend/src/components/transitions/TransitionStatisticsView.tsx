@@ -98,49 +98,49 @@ export function TransitionStatisticsView({
     <div className="h-full overflow-y-auto space-y-4 p-4">
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border-gray-700 bg-[#27272A]">
+        <Card className="border-border-default bg-surface-raised">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs text-gray-400">
+            <CardTitle className="text-xs text-text-muted">
               Total Transitions
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-[#00D9FF]">
+            <div className="text-2xl font-bold text-brand-primary">
               {stats.total}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-gray-700 bg-[#27272A]">
+        <Card className="border-border-default bg-surface-raised">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs text-gray-400">
+            <CardTitle className="text-xs text-text-muted">
               Avg per State
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-[#00FF88]">
+            <div className="text-2xl font-bold text-brand-success">
               {stats.avgTransitions}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-gray-700 bg-[#27272A]">
+        <Card className="border-border-default bg-surface-raised">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs text-gray-400">Coverage</CardTitle>
+            <CardTitle className="text-xs text-text-muted">Coverage</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-[#BD00FF]">
+            <div className="text-2xl font-bold text-brand-secondary">
               {stats.coverage}%
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-gray-700 bg-[#27272A]">
+        <Card className="border-border-default bg-surface-raised">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs text-gray-400">Issues</CardTitle>
+            <CardTitle className="text-xs text-text-muted">Issues</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-[#FF4444]">
+            <div className="text-2xl font-bold text-error">
               {stats.circular + stats.orphaned + stats.deadEnd}
             </div>
           </CardContent>
@@ -149,7 +149,7 @@ export function TransitionStatisticsView({
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="border-gray-700 bg-[#27272A]">
+        <Card className="border-border-default bg-surface-raised">
           <CardHeader>
             <CardTitle className="text-sm">Transition Types</CardTitle>
           </CardHeader>
@@ -172,8 +172,8 @@ export function TransitionStatisticsView({
                 </Pie>
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#27272A",
-                    border: "1px solid #666",
+                    backgroundColor: "#1E1E22",
+                    border: "1px solid #3A3A42",
                     borderRadius: "8px",
                   }}
                 />
@@ -183,24 +183,24 @@ export function TransitionStatisticsView({
           </CardContent>
         </Card>
 
-        <Card className="border-gray-700 bg-[#27272A]">
+        <Card className="border-border-default bg-surface-raised">
           <CardHeader>
             <CardTitle className="text-sm">Most Connected States</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={stats.mostConnected}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#2A2A30" />
                 <XAxis
                   dataKey="name"
-                  stroke="#666"
+                  stroke="#3A3A42"
                   style={{ fontSize: "12px" }}
                 />
-                <YAxis stroke="#666" style={{ fontSize: "12px" }} />
+                <YAxis stroke="#3A3A42" style={{ fontSize: "12px" }} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#27272A",
-                    border: "1px solid #666",
+                    backgroundColor: "#1E1E22",
+                    border: "1px solid #3A3A42",
                     borderRadius: "8px",
                   }}
                 />

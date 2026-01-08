@@ -64,6 +64,17 @@ const nextConfig = {
       // fallback rewrites are checked after both pages/public files
       // and dynamic routes
       fallback: [
+        // Exclude paths that have custom API route handlers requiring cookie auth
+        // These routes read HttpOnly cookies and forward to backend with Bearer token
+        // Without exclusion, the fallback rewrite would proxy without auth headers
+        {
+          source: '/api/v1/ai-tasks',
+          destination: '/api/v1/ai-tasks', // No rewrite - use API route handler
+        },
+        {
+          source: '/api/v1/ai-tasks/:path*',
+          destination: '/api/v1/ai-tasks/:path*', // No rewrite - use API route handlers
+        },
         {
           source: '/api/:path*',
           destination: `${BACKEND_URL}/api/:path*`, // Proxy to Backend (uses env var in production)

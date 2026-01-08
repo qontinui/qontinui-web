@@ -659,7 +659,7 @@ export default function WorkflowAnalyticsPage() {
 
   return (
     <RequireProject pageName="Workflow Analytics">
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white p-6">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white p-6">
         <div className="max-w-[1800px] mx-auto space-y-6">
           {/* Header */}
           <div className="flex items-start justify-between">
@@ -668,21 +668,21 @@ export default function WorkflowAnalyticsPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => router.push("/automation-builder")}
-                className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+                className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
                   Workflow Analytics
                 </h1>
-                <p className="text-gray-400">
+                <p className="text-text-muted">
                   Monitor execution, performance, and usage metrics
                 </p>
                 <div className="flex items-center gap-2 mt-1">
-                  <Calendar className="h-4 w-4 text-gray-500" />
-                  <p className="text-sm text-gray-500">
+                  <Calendar className="h-4 w-4 text-text-muted" />
+                  <p className="text-sm text-text-muted">
                     {timeRange.start.toLocaleDateString()} -{" "}
                     {timeRange.end.toLocaleDateString()}
                   </p>
@@ -697,7 +697,7 @@ export default function WorkflowAnalyticsPage() {
                   handleTimeRangeChange(v as TimeRangePreset)
                 }
               >
-                <SelectTrigger className="w-[180px] bg-[#1A1A1B] border-gray-700">
+                <SelectTrigger className="w-[180px] bg-surface-raised border-border-default">
                   <Calendar className="h-4 w-4 mr-2" />
                   <SelectValue />
                 </SelectTrigger>
@@ -715,7 +715,7 @@ export default function WorkflowAnalyticsPage() {
                 variant="outline"
                 size="icon"
                 onClick={handleRefresh}
-                className="border-gray-700 hover:border-[#00D9FF] bg-[#1A1A1B]"
+                className="border-border-default hover:border-brand-primary bg-surface-raised"
               >
                 <RefreshCw className="h-4 w-4" />
               </Button>
@@ -723,7 +723,7 @@ export default function WorkflowAnalyticsPage() {
               <Button
                 variant="outline"
                 onClick={handleExport}
-                className="border-gray-700 hover:border-[#BD00FF] bg-[#1A1A1B]"
+                className="border-border-default hover:border-brand-secondary bg-surface-raised"
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export Report
@@ -732,7 +732,7 @@ export default function WorkflowAnalyticsPage() {
               <Button
                 variant="outline"
                 onClick={handleExportCSV}
-                className="border-gray-700 hover:border-[#00FF88] bg-[#1A1A1B]"
+                className="border-border-default hover:border-brand-success bg-surface-raised"
               >
                 <FileDown className="h-4 w-4 mr-2" />
                 Export CSV
@@ -741,7 +741,7 @@ export default function WorkflowAnalyticsPage() {
           </div>
 
           {/* Filters */}
-          <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
             <CardContent className="pt-6">
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
@@ -758,7 +758,7 @@ export default function WorkflowAnalyticsPage() {
                       onChange={(e) =>
                         setFilters({ ...filters, searchQuery: e.target.value })
                       }
-                      className="pl-9 bg-[#0A0A0B] border-gray-700"
+                      className="pl-9 bg-surface-canvas border-border-default"
                     />
                   </div>
                 </div>
@@ -772,7 +772,7 @@ export default function WorkflowAnalyticsPage() {
                     })
                   }
                 >
-                  <SelectTrigger className="w-[150px] bg-[#0A0A0B] border-gray-700">
+                  <SelectTrigger className="w-[150px] bg-surface-canvas border-border-default">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -787,7 +787,7 @@ export default function WorkflowAnalyticsPage() {
                     variant="ghost"
                     size="sm"
                     onClick={handleClearFilters}
-                    className="text-[#00D9FF] hover:text-[#00D9FF]/80"
+                    className="text-brand-primary hover:text-brand-primary/80"
                   >
                     <X className="h-4 w-4 mr-2" />
                     Clear Filters
@@ -804,7 +804,7 @@ export default function WorkflowAnalyticsPage() {
               value={formatNumber(aggregatedStats.totalExecutions)}
               icon={<Activity className="h-4 w-4" />}
               description="All workflow runs"
-              color="#00D9FF"
+              color="var(--color-brand-primary)"
             />
             <MetricCard
               title="Average Success Rate"
@@ -818,14 +818,14 @@ export default function WorkflowAnalyticsPage() {
                     ? "warning"
                     : "error"
               }
-              color="#00FF88"
+              color="var(--color-brand-success)"
             />
             <MetricCard
               title="Average Duration"
               value={formatDuration(aggregatedStats.avgDuration)}
               icon={<Clock className="h-4 w-4" />}
               description="Average execution time"
-              color="#BD00FF"
+              color="var(--color-brand-secondary)"
             />
             <MetricCard
               title="Total Errors"
@@ -871,7 +871,7 @@ export default function WorkflowAnalyticsPage() {
 
           {/* Main Content */}
           <Tabs defaultValue="dashboard" className="space-y-6">
-            <TabsList className="bg-[#1A1A1B] border-gray-800">
+            <TabsList className="bg-surface-raised border-border-subtle">
               <TabsTrigger value="dashboard">
                 <BarChart3 className="h-4 w-4 mr-2" />
                 Dashboard
@@ -914,7 +914,7 @@ export default function WorkflowAnalyticsPage() {
             {/* Top Workflows Tab */}
             <TabsContent value="top-workflows" className="space-y-6">
               <Tabs defaultValue="most-executed">
-                <TabsList className="bg-[#1A1A1B] border-gray-800">
+                <TabsList className="bg-surface-raised border-border-subtle">
                   <TabsTrigger value="most-executed">Most Executed</TabsTrigger>
                   <TabsTrigger value="slowest">Slowest</TabsTrigger>
                   <TabsTrigger value="highest-error">
@@ -927,7 +927,7 @@ export default function WorkflowAnalyticsPage() {
 
                 {/* Most Executed */}
                 <TabsContent value="most-executed">
-                  <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+                  <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardHeader>
                       <CardTitle>Most Executed Workflows</CardTitle>
                       <CardDescription>
@@ -939,13 +939,13 @@ export default function WorkflowAnalyticsPage() {
                         {topWorkflows.mostExecuted.map((metric, index) => (
                           <div
                             key={metric.workflowId}
-                            className="flex items-center justify-between p-4 rounded-lg border border-gray-800 hover:border-gray-700 transition-colors cursor-pointer"
+                            className="flex items-center justify-between p-4 rounded-lg border border-border-subtle hover:border-border-default transition-colors cursor-pointer"
                             onClick={() =>
                               setSelectedWorkflow(metric.workflowId)
                             }
                           >
                             <div className="flex items-center gap-4 flex-1">
-                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#00D9FF]/20 text-[#00D9FF] font-bold">
+                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-primary/20 text-brand-primary font-bold">
                                 {index + 1}
                               </div>
                               <div className="flex-1">
@@ -961,7 +961,7 @@ export default function WorkflowAnalyticsPage() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className="text-2xl font-bold text-[#00D9FF]">
+                              <p className="text-2xl font-bold text-brand-primary">
                                 {formatNumber(metric.totalExecutions)}
                               </p>
                               <p className="text-xs text-muted-foreground">
@@ -978,7 +978,7 @@ export default function WorkflowAnalyticsPage() {
 
                 {/* Slowest */}
                 <TabsContent value="slowest">
-                  <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+                  <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardHeader>
                       <CardTitle>Slowest Workflows</CardTitle>
                       <CardDescription>
@@ -990,13 +990,13 @@ export default function WorkflowAnalyticsPage() {
                         {topWorkflows.slowest.map((metric, index) => (
                           <div
                             key={metric.workflowId}
-                            className="flex items-center justify-between p-4 rounded-lg border border-gray-800 hover:border-gray-700 transition-colors cursor-pointer"
+                            className="flex items-center justify-between p-4 rounded-lg border border-border-subtle hover:border-border-default transition-colors cursor-pointer"
                             onClick={() =>
                               setSelectedWorkflow(metric.workflowId)
                             }
                           >
                             <div className="flex items-center gap-4 flex-1">
-                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#BD00FF]/20 text-[#BD00FF] font-bold">
+                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-secondary/20 text-brand-secondary font-bold">
                                 {index + 1}
                               </div>
                               <div className="flex-1">
@@ -1014,7 +1014,7 @@ export default function WorkflowAnalyticsPage() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className="text-2xl font-bold text-[#BD00FF]">
+                              <p className="text-2xl font-bold text-brand-secondary">
                                 {formatDuration(metric.avgDuration)}
                               </p>
                               <p className="text-xs text-muted-foreground">
@@ -1031,7 +1031,7 @@ export default function WorkflowAnalyticsPage() {
 
                 {/* Highest Error Rate */}
                 <TabsContent value="highest-error">
-                  <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+                  <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <AlertTriangle className="h-5 w-5 text-red-500" />
@@ -1105,7 +1105,7 @@ export default function WorkflowAnalyticsPage() {
 
                 {/* Recently Failed */}
                 <TabsContent value="recently-failed">
-                  <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+                  <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardHeader>
                       <CardTitle>Recently Failed Executions</CardTitle>
                       <CardDescription>
@@ -1170,7 +1170,7 @@ export default function WorkflowAnalyticsPage() {
 
             {/* Executions Tab */}
             <TabsContent value="executions">
-              <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+              <Card className="bg-surface-raised/50 border-border-subtle/50">
                 <CardHeader>
                   <CardTitle>Execution Log</CardTitle>
                   <CardDescription>
@@ -1203,7 +1203,7 @@ export default function WorkflowAnalyticsPage() {
                   />
                 </>
               ) : (
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+                <Card className="bg-surface-raised/50 border-border-subtle/50">
                   <CardContent className="flex flex-col items-center justify-center py-16">
                     <Info className="h-16 w-16 text-muted-foreground mb-4" />
                     <h3 className="text-xl font-semibold mb-2">
@@ -1232,7 +1232,7 @@ export default function WorkflowAnalyticsPage() {
             {/* Comparison Tab */}
             {comparisonWorkflows.length > 0 && (
               <TabsContent value="comparison">
-                <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+                <Card className="bg-surface-raised/50 border-border-subtle/50">
                   <CardHeader>
                     <CardTitle>Workflow Comparison</CardTitle>
                     <CardDescription>
@@ -1257,7 +1257,7 @@ export default function WorkflowAnalyticsPage() {
 
           {/* Execution Details Modal Placeholder */}
           {selectedExecution && (
-            <Alert className="fixed bottom-4 right-4 w-96 bg-[#1A1A1B] border-gray-700">
+            <Alert className="fixed bottom-4 right-4 w-96 bg-surface-raised border-border-default">
               <Activity className="h-4 w-4" />
               <AlertTitle className="flex items-center justify-between">
                 Execution Details

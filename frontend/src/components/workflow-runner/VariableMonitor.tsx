@@ -153,7 +153,7 @@ function VariableRow({ variable }: { variable: WorkflowVariable }) {
 
   return (
     <>
-      <TableRow className="hover:bg-gray-800/50 transition-colors">
+      <TableRow className="hover:bg-surface-raised/50 transition-colors">
         {/* Expand button for complex values */}
         <TableCell className="w-8">
           {isComplex && (
@@ -179,7 +179,7 @@ function VariableRow({ variable }: { variable: WorkflowVariable }) {
 
         {/* Variable value */}
         <TableCell className="max-w-md">
-          <div className="font-mono text-sm text-gray-300 truncate">
+          <div className="font-mono text-sm text-text-secondary truncate">
             {formatVariableValue(variable.value, 80)}
           </div>
         </TableCell>
@@ -196,10 +196,12 @@ function VariableRow({ variable }: { variable: WorkflowVariable }) {
         </TableCell>
 
         {/* Type */}
-        <TableCell className="text-sm text-gray-400">{variable.type}</TableCell>
+        <TableCell className="text-sm text-text-muted">
+          {variable.type}
+        </TableCell>
 
         {/* Last updated */}
-        <TableCell className="text-sm text-gray-400">
+        <TableCell className="text-sm text-text-muted">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>
@@ -235,8 +237,8 @@ function VariableRow({ variable }: { variable: WorkflowVariable }) {
       {/* Expanded JSON view */}
       {isExpanded && isComplex && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-gray-900/50 p-4">
-            <pre className="text-xs text-gray-300 overflow-x-auto">
+          <TableCell colSpan={7} className="bg-surface-canvas/50 p-4">
+            <pre className="text-xs text-text-secondary overflow-x-auto">
               {JSON.stringify(variable.value, null, 2)}
             </pre>
           </TableCell>
@@ -329,10 +331,10 @@ export function VariableMonitor({
 
   if (isLoading) {
     return (
-      <Card className="bg-[#1A1A1B] border-gray-800 p-8">
+      <Card className="bg-surface-raised border-border-subtle p-8">
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF]" />
-          <span className="ml-3 text-gray-400">Loading variables...</span>
+          <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
+          <span className="ml-3 text-text-muted">Loading variables...</span>
         </div>
       </Card>
     );
@@ -340,12 +342,12 @@ export function VariableMonitor({
 
   if (error) {
     return (
-      <Card className="bg-[#1A1A1B] border-gray-800 p-8">
+      <Card className="bg-surface-raised border-border-subtle p-8">
         <div className="flex items-center justify-center py-12 text-center">
           <AlertCircle className="w-8 h-8 text-red-500 mr-3" />
           <div>
             <p className="text-red-500 font-medium">Failed to load variables</p>
-            <p className="text-sm text-gray-400 mt-2">
+            <p className="text-sm text-text-muted mt-2">
               {(error as Error).message}
             </p>
             <Button
@@ -363,15 +365,15 @@ export function VariableMonitor({
   }
 
   return (
-    <Card className="bg-[#1A1A1B] border-gray-800">
+    <Card className="bg-surface-raised border-border-subtle">
       {/* Header */}
-      <div className="flex items-center justify-between p-6 border-b border-gray-800">
+      <div className="flex items-center justify-between p-6 border-b border-border-subtle">
         <div>
           <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <Database className="w-5 h-5 text-[#00D9FF]" />
+            <Database className="w-5 h-5 text-brand-primary" />
             Variable Monitor
           </h2>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-text-muted mt-1">
             Real-time tracking of workflow variables
           </p>
         </div>
@@ -443,11 +445,11 @@ export function VariableMonitor({
         }
         className="flex-1"
       >
-        <div className="border-b border-gray-800 px-6">
+        <div className="border-b border-border-subtle px-6">
           <TabsList className="bg-transparent p-0 h-auto gap-1">
             <TabsTrigger
               value="current"
-              className="data-[state=active]:bg-[#00D9FF]/10 data-[state=active]:text-[#00D9FF] rounded-t-md"
+              className="data-[state=active]:bg-brand-primary/10 data-[state=active]:text-brand-primary rounded-t-md"
             >
               Current Values
               <Badge variant="secondary" className="ml-2">
@@ -456,7 +458,7 @@ export function VariableMonitor({
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="data-[state=active]:bg-[#00D9FF]/10 data-[state=active]:text-[#00D9FF] rounded-t-md"
+              className="data-[state=active]:bg-brand-primary/10 data-[state=active]:text-brand-primary rounded-t-md"
             >
               Change History
               <Badge variant="secondary" className="ml-2">
@@ -465,7 +467,7 @@ export function VariableMonitor({
             </TabsTrigger>
             <TabsTrigger
               value="global"
-              className="data-[state=active]:bg-[#00D9FF]/10 data-[state=active]:text-[#00D9FF] rounded-t-md"
+              className="data-[state=active]:bg-brand-primary/10 data-[state=active]:text-brand-primary rounded-t-md"
             >
               Global Variables
               <Badge variant="secondary" className="ml-2">
@@ -480,12 +482,12 @@ export function VariableMonitor({
           {/* Search and filters */}
           <div className="flex items-center gap-4 mb-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
               <Input
                 placeholder="Search variables..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-gray-900 border-gray-700"
+                className="pl-10 bg-surface-canvas border-border-default"
               />
             </div>
 
@@ -511,11 +513,11 @@ export function VariableMonitor({
           <ScrollArea className="h-[500px]">
             {filteredVariables.length === 0 ? (
               <div className="text-center py-12">
-                <Database className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-                <h3 className="text-xl font-semibold text-gray-300 mb-2">
+                <Database className="w-16 h-16 mx-auto text-text-muted mb-4" />
+                <h3 className="text-xl font-semibold text-text-secondary mb-2">
                   {searchTerm ? "No matching variables" : "No variables"}
                 </h3>
-                <p className="text-gray-400">
+                <p className="text-text-muted">
                   {searchTerm
                     ? "Try a different search term"
                     : "Variables will appear here during workflow execution"}
@@ -560,11 +562,11 @@ export function VariableMonitor({
           <ScrollArea className="h-[500px]">
             {globalVariables.length === 0 ? (
               <div className="text-center py-12">
-                <Globe className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-                <h3 className="text-xl font-semibold text-gray-300 mb-2">
+                <Globe className="w-16 h-16 mx-auto text-text-muted mb-4" />
+                <h3 className="text-xl font-semibold text-text-secondary mb-2">
                   No global variables
                 </h3>
-                <p className="text-gray-400">
+                <p className="text-text-muted">
                   Global variables are shared across all workflow executions
                 </p>
               </div>

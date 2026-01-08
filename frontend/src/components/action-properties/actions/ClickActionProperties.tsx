@@ -166,12 +166,12 @@ export function ClickActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Target</Label>
+        <Label className="text-xs text-text-muted">Target</Label>
         <Select value={targetType} onValueChange={handleTargetTypeChange}>
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="lastFindResult">Last Find Result</SelectItem>
             <SelectItem value="currentPosition">Current Position</SelectItem>
             <SelectItem value="coordinates">Coordinates</SelectItem>
@@ -182,8 +182,8 @@ export function ClickActionProperties({
 
       {targetType === "image" && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Select Images</Label>
-          <div className="text-xs text-gray-500 mb-2">
+          <Label className="text-xs text-text-muted">Select Images</Label>
+          <div className="text-xs text-text-muted mb-2">
             This will FIND the selected image(s) and CLICK the best match found.
             Use the state filter to narrow down images.
           </div>
@@ -202,7 +202,7 @@ export function ClickActionProperties({
       {targetType === "coordinates" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">X Coordinate</Label>
+            <Label className="text-xs text-text-muted">X Coordinate</Label>
             <Input
               type="number"
               value={currentCoords.x}
@@ -212,11 +212,11 @@ export function ClickActionProperties({
                   Number.parseInt(e.target.value) || 0
                 )
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Y Coordinate</Label>
+            <Label className="text-xs text-text-muted">Y Coordinate</Label>
             <Input
               type="number"
               value={currentCoords.y}
@@ -226,22 +226,22 @@ export function ClickActionProperties({
                   Number.parseInt(e.target.value) || 0
                 )
               }
-              className="bg-transparent border-gray-700"
+              className="bg-transparent border-border-default"
             />
           </div>
         </>
       )}
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Mouse Button</Label>
+        <Label className="text-xs text-text-muted">Mouse Button</Label>
         <Select
           value={action.config.mouseButton as string}
           onValueChange={(value) => updateConfig("mouseButton", value)}
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="bg-[#27272A] border-gray-700">
+          <SelectContent className="bg-surface-raised border-border-default">
             <SelectItem value="LEFT">Left Click</SelectItem>
             <SelectItem value="RIGHT">Right Click</SelectItem>
             <SelectItem value="MIDDLE">Middle Click</SelectItem>
@@ -250,7 +250,7 @@ export function ClickActionProperties({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Number of Clicks</Label>
+        <Label className="text-xs text-text-muted">Number of Clicks</Label>
         <Input
           type="number"
           min="1"
@@ -258,12 +258,12 @@ export function ClickActionProperties({
           onChange={(e) =>
             updateConfig("numberOfClicks", Number.parseInt(e.target.value))
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Hold Duration (ms)</Label>
+        <Label className="text-xs text-text-muted">Hold Duration (ms)</Label>
         <Input
           type="number"
           min="0"
@@ -271,7 +271,7 @@ export function ClickActionProperties({
           onChange={(e) =>
             updateConfig("hold_duration", Number.parseInt(e.target.value))
           }
-          className="bg-transparent border-gray-700"
+          className="bg-transparent border-border-default"
         />
       </div>
 

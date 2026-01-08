@@ -49,23 +49,23 @@ export default function ConnectRunnerPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleBackToDashboard}
-              className="text-gray-400 hover:text-white"
+              className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
             </Button>
           </div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               Connect Runner
             </h1>
           </div>
@@ -80,14 +80,14 @@ export default function ConnectRunnerPage() {
               <h2 className="text-3xl font-bold mb-2">
                 Connect Desktop Runner
               </h2>
-              <p className="text-gray-400">
+              <p className="text-text-muted">
                 Download and log into the Qontinui Runner app to connect your
                 desktop for automation
               </p>
             </div>
             <div className="flex gap-3">
               <Link href="/runners">
-                <Button variant="outline" className="border-gray-700">
+                <Button variant="outline" className="border-border-default">
                   <Settings className="w-4 h-4 mr-2" />
                   Manage Runners
                 </Button>
@@ -124,15 +124,15 @@ export default function ConnectRunnerPage() {
                   </span>
                 </div>
                 {activeConnections && activeConnections.length > 0 ? (
-                  <div className="text-sm text-gray-400 mt-1">
+                  <div className="text-sm text-text-muted mt-1">
                     {activeConnections.map((conn) => (
                       <div key={conn.id} className="flex items-center gap-2">
                         <Monitor className="w-3 h-3" />
                         <span className="text-white">{conn.runner_name}</span>
                         {conn.project_name && (
                           <>
-                            <span className="text-gray-500">-</span>
-                            <span className="text-[#00D9FF]">
+                            <span className="text-text-muted">-</span>
+                            <span className="text-brand-primary">
                               {conn.project_name}
                             </span>
                           </>
@@ -141,7 +141,7 @@ export default function ConnectRunnerPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className="text-sm text-text-muted mt-1">
                     Follow the steps below to connect your desktop runner
                   </p>
                 )}
@@ -165,13 +165,13 @@ export default function ConnectRunnerPage() {
           <AutomationStreamingCard context="connect-runner" />
 
           {/* How to Connect - Step by Step */}
-          <Card className="bg-[#1A1A1B] border-gray-800 p-6">
+          <Card className="bg-surface-raised border-border-subtle p-6">
             <h3 className="text-xl font-semibold mb-6">How to Connect</h3>
             <div className="space-y-6">
               {/* Step 1: Download */}
               <div className="flex gap-4">
                 <div className="flex-shrink-0">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-brand-primary to-brand-secondary flex items-center justify-center text-black font-bold">
                     1
                   </div>
                 </div>
@@ -179,13 +179,13 @@ export default function ConnectRunnerPage() {
                   <h4 className="font-semibold text-lg mb-2">
                     Download Qontinui Runner
                   </h4>
-                  <p className="text-gray-400 mb-3">
+                  <p className="text-text-muted mb-3">
                     Download and install the desktop runner app for your
                     operating system.
                   </p>
                   <Button
                     onClick={handleDownloadRunner}
-                    className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+                    className="bg-brand-primary hover:bg-brand-primary/80 text-black"
                   >
                     <Download className="w-4 h-4 mr-2" />
                     Download Runner
@@ -196,7 +196,7 @@ export default function ConnectRunnerPage() {
               {/* Step 2: Login */}
               <div className="flex gap-4">
                 <div className="flex-shrink-0">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-brand-primary to-brand-secondary flex items-center justify-center text-black font-bold">
                     2
                   </div>
                 </div>
@@ -204,7 +204,7 @@ export default function ConnectRunnerPage() {
                   <h4 className="font-semibold text-lg mb-2">
                     Log in with your Qontinui account
                   </h4>
-                  <p className="text-gray-400">
+                  <p className="text-text-muted">
                     Open the runner app and log in using the same email and
                     password you use for this website. The runner will
                     automatically register with your account.
@@ -215,7 +215,7 @@ export default function ConnectRunnerPage() {
               {/* Step 3: Select Project */}
               <div className="flex gap-4">
                 <div className="flex-shrink-0">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-brand-primary to-brand-secondary flex items-center justify-center text-black font-bold">
                     3
                   </div>
                 </div>
@@ -223,7 +223,7 @@ export default function ConnectRunnerPage() {
                   <h4 className="font-semibold text-lg mb-2">
                     Select a project in the runner
                   </h4>
-                  <p className="text-gray-400">
+                  <p className="text-text-muted">
                     Choose which project to work with from the runner app. Your
                     projects will be synced automatically after login.
                   </p>
@@ -233,7 +233,7 @@ export default function ConnectRunnerPage() {
               {/* Step 4: Ready */}
               <div className="flex gap-4">
                 <div className="flex-shrink-0">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] flex items-center justify-center text-black font-bold">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-brand-primary to-brand-secondary flex items-center justify-center text-black font-bold">
                     4
                   </div>
                 </div>
@@ -241,7 +241,7 @@ export default function ConnectRunnerPage() {
                   <h4 className="font-semibold text-lg mb-2">
                     Start automating!
                   </h4>
-                  <p className="text-gray-400">
+                  <p className="text-text-muted">
                     Once connected, you can send workflow configurations
                     directly from the web app to your runner for immediate
                     execution. Use the &quot;Send to Runner&quot; option in the
@@ -255,11 +255,11 @@ export default function ConnectRunnerPage() {
 
           {/* All Connected Runners */}
           {activeConnections && activeConnections.length > 0 && (
-            <Card className="bg-[#1A1A1B] border-gray-800 p-6">
+            <Card className="bg-surface-raised border-border-subtle p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-semibold">Connected Runners</h3>
                 <Link href="/runners">
-                  <Button variant="ghost" size="sm" className="text-gray-400">
+                  <Button variant="ghost" size="sm" className="text-text-muted">
                     View All
                     <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
                   </Button>
@@ -269,16 +269,16 @@ export default function ConnectRunnerPage() {
                 {activeConnections.map((conn) => (
                   <div
                     key={conn.id}
-                    className="flex items-center justify-between bg-[#0A0A0B] border border-gray-700 rounded-lg p-4"
+                    className="flex items-center justify-between bg-surface-canvas border border-border-default rounded-lg p-4"
                   >
                     <div className="flex items-center gap-3">
                       <div className="relative">
-                        <Monitor className="w-5 h-5 text-gray-400" />
+                        <Monitor className="w-5 h-5 text-text-muted" />
                         <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full" />
                       </div>
                       <div>
                         <div className="font-medium">{conn.runner_name}</div>
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm text-text-muted">
                           {conn.project_name || "No project selected"}
                         </div>
                       </div>

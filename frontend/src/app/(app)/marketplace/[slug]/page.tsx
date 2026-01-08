@@ -120,8 +120,8 @@ export default function PackageDetailsPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading package details...</p>
+          <div className="w-16 h-16 border-4 border-brand-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-text-muted">Loading package details...</p>
         </div>
       </div>
     );
@@ -131,11 +131,11 @@ export default function PackageDetailsPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Package className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-300 mb-2">
+          <Package className="w-16 h-16 text-text-muted mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-text-secondary mb-2">
             Package not found
           </h2>
-          <p className="text-gray-500 mb-6">
+          <p className="text-text-muted mb-6">
             The package you&apos;re looking for doesn&apos;t exist.
           </p>
           <Button onClick={handleBack} variant="outline">
@@ -154,12 +154,12 @@ export default function PackageDetailsPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="border-b border-gray-800/50 bg-gradient-to-b from-cyan-500/5 via-purple-500/5 to-transparent">
+      <div className="border-b border-border-subtle bg-gradient-to-b from-brand-primary/5 via-brand-secondary/5 to-transparent">
         <div className="container mx-auto px-6 py-6">
           <Button
             variant="ghost"
             onClick={handleBack}
-            className="mb-4 text-gray-400 hover:text-gray-300"
+            className="mb-4 text-text-muted hover:text-text-secondary"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Marketplace
@@ -169,15 +169,17 @@ export default function PackageDetailsPage() {
             {/* Package Info */}
             <div className="flex-1">
               <div className="flex items-start gap-3 mb-3">
-                <h1 className="text-3xl font-bold text-gray-100">{pkg.name}</h1>
+                <h1 className="text-3xl font-bold text-text-primary">
+                  {pkg.name}
+                </h1>
                 {pkg.verified && (
                   <div title="Verified by staff">
-                    <Shield className="w-6 h-6 text-cyan-500 flex-shrink-0 mt-1" />
+                    <Shield className="w-6 h-6 text-brand-primary flex-shrink-0 mt-1" />
                   </div>
                 )}
               </div>
 
-              <p className="text-lg text-gray-400 mb-4">{pkg.description}</p>
+              <p className="text-lg text-text-muted mb-4">{pkg.description}</p>
 
               {/* Tags */}
               <div className="flex flex-wrap gap-2 mb-4">
@@ -185,7 +187,7 @@ export default function PackageDetailsPage() {
                   {getCategoryLabel(pkg.category)}
                 </Badge>
                 {pkg.featured && (
-                  <Badge className="bg-gradient-to-r from-cyan-500 to-purple-500 text-white">
+                  <Badge className="bg-gradient-to-r from-brand-primary to-brand-secondary text-white">
                     Featured
                   </Badge>
                 )}
@@ -197,14 +199,14 @@ export default function PackageDetailsPage() {
               </div>
 
               {/* Author */}
-              <div className="flex items-center gap-2 text-gray-400">
+              <div className="flex items-center gap-2 text-text-muted">
                 <User className="w-4 h-4" />
                 <span>by</span>
-                <span className="font-medium text-gray-300">
+                <span className="font-medium text-text-secondary">
                   {pkg.author.username}
                 </span>
                 {pkg.author.verified && (
-                  <Shield className="w-3 h-3 text-cyan-500" />
+                  <Shield className="w-3 h-3 text-brand-primary" />
                 )}
               </div>
             </div>
@@ -215,7 +217,7 @@ export default function PackageDetailsPage() {
                 size="lg"
                 onClick={handleInstallClick}
                 disabled={pkg.deprecated || hasSecurityIssues}
-                className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 w-full lg:w-auto"
+                className="bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-brand-primary/90 hover:to-brand-secondary/90 w-full lg:w-auto"
               >
                 <Download className="w-5 h-5 mr-2" />
                 Install Package
@@ -254,7 +256,7 @@ export default function PackageDetailsPage() {
               value={selectedTab}
               onValueChange={(v) => setSelectedTab(v as typeof selectedTab)}
             >
-              <TabsList className="bg-gray-900/50 w-full">
+              <TabsList className="bg-surface-raised/50 w-full">
                 <TabsTrigger value="readme" className="flex-1">
                   <FileText className="w-4 h-4 mr-2" />
                   README
@@ -274,7 +276,7 @@ export default function PackageDetailsPage() {
               </TabsList>
 
               <TabsContent value="readme" className="mt-6">
-                <Card className="bg-gray-900/30 border-gray-800">
+                <Card className="bg-surface-raised/30 border-border-subtle">
                   <CardContent className="p-6">
                     {pkg.latest_version.readme ? (
                       <div className="prose prose-invert prose-cyan max-w-none">
@@ -283,7 +285,7 @@ export default function PackageDetailsPage() {
                         </ReactMarkdown>
                       </div>
                     ) : (
-                      <div className="text-center py-12 text-gray-500">
+                      <div className="text-center py-12 text-text-muted">
                         No README provided for this package.
                       </div>
                     )}
@@ -301,7 +303,7 @@ export default function PackageDetailsPage() {
               </TabsContent>
 
               <TabsContent value="versions" className="mt-6">
-                <Card className="bg-gray-900/30 border-gray-800">
+                <Card className="bg-surface-raised/30 border-border-subtle">
                   <CardHeader>
                     <CardTitle>Version History</CardTitle>
                     <CardDescription>
@@ -313,18 +315,18 @@ export default function PackageDetailsPage() {
                       {pkg.versions.map((version) => (
                         <div
                           key={version.id}
-                          className="flex items-start justify-between p-4 bg-gray-900/50 rounded-lg border border-gray-800"
+                          className="flex items-start justify-between p-4 bg-surface-raised/50 rounded-lg border border-border-subtle"
                         >
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono font-semibold text-gray-300">
+                              <span className="font-mono font-semibold text-text-secondary">
                                 v{version.version}
                               </span>
                               {version.id === pkg.latest_version.id && (
                                 <Badge variant="secondary">Latest</Badge>
                               )}
                             </div>
-                            <div className="text-sm text-gray-500">
+                            <div className="text-sm text-text-muted">
                               Released{" "}
                               {formatDistanceToNow(
                                 new Date(version.created_at),
@@ -332,12 +334,12 @@ export default function PackageDetailsPage() {
                               )}
                             </div>
                             {version.changelog && (
-                              <p className="text-sm text-gray-400 mt-2">
+                              <p className="text-sm text-text-muted mt-2">
                                 {version.changelog}
                               </p>
                             )}
                           </div>
-                          <div className="text-sm text-gray-500">
+                          <div className="text-sm text-text-muted">
                             {formatDownloads(version.downloads)} downloads
                           </div>
                         </div>
@@ -348,7 +350,7 @@ export default function PackageDetailsPage() {
               </TabsContent>
 
               <TabsContent value="dependencies" className="mt-6">
-                <Card className="bg-gray-900/30 border-gray-800">
+                <Card className="bg-surface-raised/30 border-border-subtle">
                   <CardHeader>
                     <CardTitle>Dependencies</CardTitle>
                     <CardDescription>
@@ -361,11 +363,11 @@ export default function PackageDetailsPage() {
                         {pkg.latest_version.dependencies.map((dep, index) => (
                           <div
                             key={index}
-                            className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg border border-gray-800"
+                            className="flex items-center justify-between p-3 bg-surface-raised/50 rounded-lg border border-border-subtle"
                           >
                             <div className="flex items-center gap-2">
-                              <Package className="w-4 h-4 text-gray-500" />
-                              <span className="font-medium text-gray-300">
+                              <Package className="w-4 h-4 text-text-muted" />
+                              <span className="font-medium text-text-secondary">
                                 {dep.package_name}
                               </span>
                             </div>
@@ -383,7 +385,7 @@ export default function PackageDetailsPage() {
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-gray-500">
+                      <div className="text-center py-8 text-text-muted">
                         No dependencies required
                       </div>
                     )}
@@ -393,7 +395,7 @@ export default function PackageDetailsPage() {
             </Tabs>
 
             {/* Ratings & Reviews */}
-            <Card className="bg-gray-900/30 border-gray-800">
+            <Card className="bg-surface-raised/30 border-border-subtle">
               <CardHeader>
                 <CardTitle>Ratings & Reviews</CardTitle>
               </CardHeader>
@@ -413,47 +415,47 @@ export default function PackageDetailsPage() {
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Stats */}
-            <Card className="bg-gray-900/30 border-gray-800">
+            <Card className="bg-surface-raised/30 border-border-subtle">
               <CardHeader>
                 <CardTitle className="text-base">Statistics</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400">
+                  <div className="flex items-center gap-2 text-text-muted">
                     <Download className="w-4 h-4" />
                     <span className="text-sm">Downloads</span>
                   </div>
-                  <span className="font-semibold text-gray-200">
+                  <span className="font-semibold text-text-secondary">
                     {formatDownloads(pkg.total_downloads)}
                   </span>
                 </div>
-                <Separator className="bg-gray-800" />
+                <Separator className="bg-border-subtle" />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400">
+                  <div className="flex items-center gap-2 text-text-muted">
                     <Star className="w-4 h-4" />
                     <span className="text-sm">Rating</span>
                   </div>
-                  <span className="font-semibold text-gray-200">
+                  <span className="font-semibold text-text-secondary">
                     {formatRating(pkg.average_rating)} ({pkg.rating_count})
                   </span>
                 </div>
-                <Separator className="bg-gray-800" />
+                <Separator className="bg-border-subtle" />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400">
+                  <div className="flex items-center gap-2 text-text-muted">
                     <GitBranch className="w-4 h-4" />
                     <span className="text-sm">Version</span>
                   </div>
-                  <span className="font-mono text-sm font-semibold text-gray-200">
+                  <span className="font-mono text-sm font-semibold text-text-secondary">
                     v{pkg.latest_version.version}
                   </span>
                 </div>
-                <Separator className="bg-gray-800" />
+                <Separator className="bg-border-subtle" />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400">
+                  <div className="flex items-center gap-2 text-text-muted">
                     <Calendar className="w-4 h-4" />
                     <span className="text-sm">Updated</span>
                   </div>
-                  <span className="text-sm text-gray-200">
+                  <span className="text-sm text-text-secondary">
                     {formatDistanceToNow(new Date(pkg.updated_at), {
                       addSuffix: true,
                     })}
@@ -463,7 +465,7 @@ export default function PackageDetailsPage() {
             </Card>
 
             {/* License */}
-            <Card className="bg-gray-900/30 border-gray-800">
+            <Card className="bg-surface-raised/30 border-border-subtle">
               <CardHeader>
                 <CardTitle className="text-base">License</CardTitle>
               </CardHeader>
@@ -478,7 +480,7 @@ export default function PackageDetailsPage() {
             {(pkg.repository_url ||
               pkg.homepage_url ||
               pkg.documentation_url) && (
-              <Card className="bg-gray-900/30 border-gray-800">
+              <Card className="bg-surface-raised/30 border-border-subtle">
                 <CardHeader>
                   <CardTitle className="text-base">Links</CardTitle>
                 </CardHeader>
@@ -488,7 +490,7 @@ export default function PackageDetailsPage() {
                       href={pkg.repository_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-sm text-cyan-500 hover:text-cyan-400"
+                      className="flex items-center gap-2 text-sm text-brand-primary hover:text-brand-primary/80"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Repository
@@ -499,7 +501,7 @@ export default function PackageDetailsPage() {
                       href={pkg.homepage_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-sm text-cyan-500 hover:text-cyan-400"
+                      className="flex items-center gap-2 text-sm text-brand-primary hover:text-brand-primary/80"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Homepage
@@ -510,7 +512,7 @@ export default function PackageDetailsPage() {
                       href={pkg.documentation_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-sm text-cyan-500 hover:text-cyan-400"
+                      className="flex items-center gap-2 text-sm text-brand-primary hover:text-brand-primary/80"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Documentation
@@ -524,9 +526,9 @@ export default function PackageDetailsPage() {
             {pkg.latest_version.security_scan.scanned && (
               <Card
                 className={cn(
-                  "border-gray-800",
+                  "border-border-subtle",
                   pkg.latest_version.security_scan.passed
-                    ? "bg-green-950/20 border-green-500/50"
+                    ? "bg-brand-success/10 border-brand-success/50"
                     : "bg-red-950/20 border-red-500/50"
                 )}
               >
@@ -534,7 +536,7 @@ export default function PackageDetailsPage() {
                   <CardTitle className="text-base flex items-center gap-2">
                     {pkg.latest_version.security_scan.passed ? (
                       <>
-                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                        <CheckCircle2 className="w-4 h-4 text-brand-success" />
                         Security Scan Passed
                       </>
                     ) : (
@@ -554,7 +556,7 @@ export default function PackageDetailsPage() {
                             <Badge variant="destructive" className="mr-2">
                               {issue.severity}
                             </Badge>
-                            <span className="text-gray-400">
+                            <span className="text-text-muted">
                               {issue.description}
                             </span>
                           </div>

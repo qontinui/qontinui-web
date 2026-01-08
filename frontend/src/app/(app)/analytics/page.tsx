@@ -25,7 +25,7 @@ const MetricCard = dynamicImport(
     })),
   {
     loading: () => (
-      <div className="h-32 bg-gray-800/50 rounded-lg animate-pulse" />
+      <div className="h-32 bg-surface-raised/50 rounded-lg animate-pulse" />
     ),
   }
 );
@@ -37,7 +37,7 @@ const UsageChart = dynamicImport(
     })),
   {
     loading: () => (
-      <div className="h-64 bg-gray-800/50 rounded-lg animate-pulse" />
+      <div className="h-64 bg-surface-raised/50 rounded-lg animate-pulse" />
     ),
   }
 );
@@ -49,7 +49,7 @@ const StorageBreakdown = dynamicImport(
     })),
   {
     loading: () => (
-      <div className="h-64 bg-gray-800/50 rounded-lg animate-pulse" />
+      <div className="h-64 bg-surface-raised/50 rounded-lg animate-pulse" />
     ),
   }
 );
@@ -61,7 +61,7 @@ const ActivityTimeline = dynamicImport(
     })),
   {
     loading: () => (
-      <div className="h-96 bg-gray-800/50 rounded-lg animate-pulse" />
+      <div className="h-96 bg-surface-raised/50 rounded-lg animate-pulse" />
     ),
   }
 );
@@ -251,21 +251,21 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Button
               variant="outline"
               size="sm"
               onClick={() => router.push("/dashboard")}
-              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
             </Button>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               Analytics Dashboard
             </h1>
           </div>
@@ -273,7 +273,7 @@ export default function AnalyticsPage() {
             <p className="text-sm font-medium">
               {user.full_name || user.username}
             </p>
-            <p className="text-xs text-gray-400">{user.email}</p>
+            <p className="text-xs text-text-muted">{user.email}</p>
           </div>
         </div>
       </header>
@@ -281,7 +281,7 @@ export default function AnalyticsPage() {
       {/* Main Content */}
       <main className="p-6 max-w-7xl mx-auto">
         {loading ? (
-          <div className="text-center py-12 text-gray-400">
+          <div className="text-center py-12 text-text-muted">
             Loading analytics...
           </div>
         ) : (
@@ -294,14 +294,14 @@ export default function AnalyticsPage() {
                 icon={Activity}
                 trend="up"
                 trendValue="+12%"
-                gradientFrom="#00D9FF"
+                gradientFrom="var(--color-brand-primary)"
                 gradientTo="#0099FF"
               />
               <MetricCard
                 title="Total Projects"
                 value={usageSummary.total_projects}
                 icon={FolderOpen}
-                gradientFrom="#BD00FF"
+                gradientFrom="var(--color-brand-secondary)"
                 gradientTo="#8B00CC"
               />
               <MetricCard
@@ -310,7 +310,7 @@ export default function AnalyticsPage() {
                 icon={HardDrive}
                 trend="up"
                 trendValue="+5%"
-                gradientFrom="#00FF88"
+                gradientFrom="var(--color-brand-success)"
                 gradientTo="#00CC6A"
               />
               <MetricCard

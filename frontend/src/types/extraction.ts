@@ -160,6 +160,49 @@ export interface ExtractionStats {
   screenshot_extraction_id?: string | null;
 }
 
+/** Vision extraction results from runner */
+export interface VisionResults {
+  /** Extraction ID */
+  extraction_id?: string;
+  /** Processing duration in milliseconds */
+  duration_ms?: number;
+  /** List of techniques that were run */
+  techniques_run?: string[];
+  /** Edge detection results */
+  edge_results?: Array<{
+    id: string;
+    bbox: { x: number; y: number; width: number; height: number };
+    contour_area: number;
+    vertex_count: number;
+    aspect_ratio: number;
+    contour_points?: number[][];
+  }>;
+  /** SAM3 segmentation results */
+  sam3_results?: Array<{
+    id: string;
+    bbox: { x: number; y: number; width: number; height: number };
+    mask_area: number;
+    stability_score: number;
+    predicted_iou: number;
+  }>;
+  /** OCR results */
+  ocr_results?: Array<{
+    id: string;
+    text: string;
+    bbox: { x: number; y: number; width: number; height: number };
+    confidence: number;
+    language: string;
+  }>;
+  /** Merged candidate elements */
+  merged_candidates?: Array<Record<string, unknown>>;
+  /** Base64 encoded edge detection overlay */
+  edge_overlay?: string | null;
+  /** Base64 encoded SAM3 segmentation overlay */
+  sam3_overlay?: string | null;
+  /** Base64 encoded OCR overlay */
+  ocr_overlay?: string | null;
+}
+
 export interface ExtractionAnnotation {
   /** Unique identifier */
   id: string;
@@ -177,6 +220,8 @@ export interface ExtractionAnnotation {
   elements?: ElementAnnotation[];
   /** States discovered on this page */
   states?: StateAnnotation[];
+  /** Vision extraction results (Edge, SAM3, OCR) from runner */
+  vision_results?: VisionResults | null;
   /** When this annotation was created */
   created_at?: string | null;
   /** When this annotation was last updated */
@@ -198,6 +243,64 @@ export interface ExtractionSessionConfig {
   auth_cookies?: Record<string, any> | null;
 }
 
+/** Pre-built state machine from runner (co-occurrence clustering result) */
+export interface StateMachine {
+  /** States with stateImages, searchRegions, fixed flags */
+  states: StateMachineState[];
+  /** Transitions derived from navigation actions */
+  transitions: StateMachineTransition[];
+}
+
+/** State in the state machine (workflow format) */
+export interface StateMachineState {
+  id: string;
+  name: string;
+  description: string;
+  stateImages: StateMachineStateImage[];
+  regions: never[]; // Always empty for extraction
+  locations: never[]; // Always empty for extraction
+  strings: never[]; // Always empty for extraction
+  position: { x: number; y: number };
+  initial?: boolean;
+  isFinal?: boolean;
+}
+
+/** StateImage in the state machine */
+export interface StateMachineStateImage {
+  id: string;
+  name: string;
+  patterns: StateMachinePattern[];
+  shared: boolean;
+  searchRegions: BoundingBox[];
+  /** Direct bounding box for the element (from interactive element extraction) */
+  bbox?: BoundingBox;
+  /** Screenshot ID where this image was detected (for filtering annotations) */
+  screenshotId?: string;
+  /** Source URL where this image was detected */
+  sourceUrl?: string;
+  /** Why this element was extracted (debugging) - e.g., 'interactive_tag:button', 'leaf_text:span' */
+  extractionCategory?: string;
+}
+
+/** Pattern in a StateImage */
+export interface StateMachinePattern {
+  id: string;
+  name?: string;
+  searchRegions: BoundingBox[];
+  fixed: boolean;
+}
+
+/** Transition in the state machine */
+export interface StateMachineTransition {
+  id: string;
+  type: string;
+  fromState?: string;
+  toState?: string;
+  workflows: string[];
+  timeout: number;
+  retryCount: number;
+}
+
 export interface ExtractionSession {
   /** Unique identifier for the session */
   id: string;
@@ -213,6 +316,8 @@ export interface ExtractionSession {
   stats: ExtractionStats | Record<string, any>;
   /** Error message if extraction failed */
   error_message?: string | null;
+  /** Pre-built state machine from runner */
+  state_machine?: StateMachine | null;
   /** When the session was created */
   created_at: string | string;
   /** When extraction started */
@@ -238,6 +343,8 @@ export interface ExtractionSessionDetail {
   stats: ExtractionStats | Record<string, any>;
   /** Error message if extraction failed */
   error_message?: string | null;
+  /** Pre-built state machine from runner */
+  state_machine?: StateMachine | null;
   /** When the session was created */
   created_at: string | string;
   /** When extraction started */
@@ -266,4 +373,145 @@ export interface ImportResult {
   imported_transitions: number;
   /** ID of the workflow states were added to */
   workflow_id?: string | null;
+}
+
+// =============================================================================
+// Playwright State Collector Types
+// =============================================================================
+
+export enum PlaywrightRiskLevel {
+  SAFE = "safe",
+  CAUTION = "caution",
+  DANGEROUS = "dangerous",
+  BLOCKED = "blocked",
+}
+
+export enum PlaywrightExtractionStatus {
+  PENDING = "pending",
+  RUNNING = "running",
+  COMPLETED = "completed",
+  FAILED = "failed",
+}
+
+export interface PlaywrightSafetyConfig {
+  /** Keywords that indicate dangerous actions */
+  dangerous_keywords: string[];
+  /** Keywords that indicate safe navigation */
+  safe_keywords: string[];
+  /** CSS selectors to always block */
+  blocked_selectors: string[];
+  /** CSS selectors that are always safe */
+  safe_selectors: string[];
+  /** Maximum risk level to auto-click */
+  max_risk_level: PlaywrightRiskLevel;
+  /** Dry run mode - identify but don't click */
+  dry_run: boolean;
+}
+
+export interface PlaywrightExtractionRequest {
+  /** Starting URL to extract from */
+  url: string;
+  /** How many clicks deep to explore */
+  max_depth: number;
+  /** Maximum elements to extract per page */
+  max_elements_per_page: number;
+  /** Maximum risk level to auto-click */
+  max_risk_level: "safe" | "caution";
+  /** If true, identify elements without clicking */
+  dry_run: boolean;
+  /** Additional dangerous keywords to block */
+  additional_blocked_keywords: string[];
+  /** Additional safe keywords to allow */
+  additional_safe_keywords: string[];
+  /** Additional CSS selectors to block */
+  blocked_selectors: string[];
+  /** Verify extracted images are detectable */
+  verify_extractions: boolean;
+  /** Minimum similarity for verification */
+  verification_threshold: number;
+}
+
+export interface PlaywrightExtractedClickable {
+  /** Unique element ID */
+  element_id: string;
+  /** CSS selector */
+  selector: string;
+  /** HTML tag name */
+  tag_name: string;
+  /** Text content */
+  text: string | null;
+  /** ARIA label */
+  aria_label: string | null;
+  /** Bounding box */
+  bounding_box: BoundingBox;
+  /** Risk level for this element */
+  risk_level: string;
+  /** Reason for risk classification */
+  risk_reason: string;
+  /** Whether the element was clicked */
+  was_clicked: boolean;
+  /** Whether pattern matching verified this element */
+  is_verified: boolean;
+  /** Pattern matching confidence score */
+  match_confidence: number;
+  /** Base64 encoded screenshot of the element */
+  screenshot_base64?: string | null;
+  /** Error message if extraction failed */
+  error?: string | null;
+}
+
+export interface PlaywrightSkippedElement {
+  /** CSS selector */
+  selector: string;
+  /** Text content */
+  text: string | null;
+  /** Risk level */
+  risk: string;
+  /** Reason for skipping */
+  reason: string;
+  /** URL where element was found */
+  url: string;
+}
+
+export interface PlaywrightExtractionMetrics {
+  /** Total elements found */
+  total_found: number;
+  /** Elements that were clicked */
+  clicked: number;
+  /** Elements skipped due to safety rules */
+  skipped_dangerous: number;
+  /** Pages visited during extraction */
+  pages_visited: number;
+  /** Number of errors encountered */
+  errors: number;
+  /** Elements verified by pattern matching */
+  verified?: number;
+  /** Elements that failed verification */
+  failed?: number;
+  /** Average pattern matching confidence */
+  avg_confidence?: number;
+  /** Verification success rate */
+  verification_rate?: number;
+}
+
+export interface PlaywrightExtractionJob {
+  /** Job ID */
+  job_id: string;
+  /** Current status */
+  status: PlaywrightExtractionStatus;
+  /** Progress information */
+  progress: {
+    stage: string;
+    percent: number;
+  } | null;
+  /** Result when completed */
+  result: {
+    clickables: PlaywrightExtractedClickable[];
+    skipped_dangerous: PlaywrightSkippedElement[];
+    metrics: PlaywrightExtractionMetrics;
+    pages_visited: string[];
+    errors: string[];
+  } | null;
+  /** Error message if failed */
+  error: string | null;
 }

@@ -144,10 +144,10 @@ export function AIActionSearch({
   );
 
   return (
-    <div className="w-full max-w-2xl bg-white dark:bg-gray-900 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700">
+    <div className="w-full max-w-2xl bg-white dark:bg-surface-canvas rounded-lg shadow-2xl border border-border-subtle dark:border-border-default">
       {/* Search Input */}
       <div className="relative">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted">
           {loading ? (
             <Loader2 className="w-5 h-5 animate-spin" />
           ) : (
@@ -161,7 +161,7 @@ export function AIActionSearch({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="w-full pl-12 pr-12 py-4 text-lg bg-transparent border-b border-gray-200 dark:border-gray-700 focus:outline-none focus:border-purple-500 text-gray-900 dark:text-white"
+          className="w-full pl-12 pr-12 py-4 text-lg bg-transparent border-b border-border-subtle dark:border-border-default focus:outline-none focus:border-purple-500 text-text-primary dark:text-white"
         />
         {(query || onClose) && (
           <button
@@ -174,9 +174,9 @@ export function AIActionSearch({
                 inputRef.current?.focus();
               }
             }}
-            className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+            className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-surface-raised dark:hover:bg-surface-raised rounded transition-colors"
           >
-            <X className="w-5 h-5 text-gray-400" />
+            <X className="w-5 h-5 text-text-muted" />
           </button>
         )}
       </div>
@@ -201,11 +201,11 @@ export function AIActionSearch({
                   className={`w-full px-4 py-3 text-left flex items-center gap-4 transition-colors ${
                     isSelected
                       ? "bg-purple-50 dark:bg-purple-900/20"
-                      : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                      : "hover:bg-surface-raised/80 dark:hover:bg-surface-raised"
                   }`}
                 >
                   {/* Confidence Bar */}
-                  <div className="w-1 h-12 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+                  <div className="w-1 h-12 rounded-full overflow-hidden bg-surface-raised dark:bg-border-default">
                     <div
                       className={`w-full transition-all ${
                         confidence >= 0.9
@@ -221,18 +221,18 @@ export function AIActionSearch({
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-medium text-gray-900 dark:text-white truncate">
+                      <h4 className="font-medium text-text-primary dark:text-white truncate">
                         {result.name}
                       </h4>
-                      <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded">
+                      <span className="px-2 py-0.5 text-xs font-medium bg-surface-raised dark:bg-surface-raised text-text-muted dark:text-text-muted rounded">
                         {result.category}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                    <p className="text-sm text-text-muted dark:text-text-muted line-clamp-2">
                       {result.description}
                     </p>
                     {result.confidence && (
-                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-500">
+                      <div className="mt-1 text-xs text-text-muted dark:text-text-muted">
                         {Math.round(result.confidence * 100)}% match
                       </div>
                     )}
@@ -243,7 +243,7 @@ export function AIActionSearch({
                     className={`p-2 rounded-lg transition-colors ${
                       isSelected
                         ? "bg-purple-600 text-white"
-                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+                        : "bg-surface-raised dark:bg-surface-raised text-text-muted dark:text-text-muted"
                     }`}
                   >
                     <Plus className="w-5 h-5" />
@@ -253,7 +253,7 @@ export function AIActionSearch({
             })}
           </div>
         ) : query.trim() && !loading ? (
-          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+          <div className="p-8 text-center text-text-muted dark:text-text-muted">
             <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p className="text-sm">
               No actions found matching &quot;{query}&quot;
@@ -261,7 +261,7 @@ export function AIActionSearch({
             <p className="text-xs mt-2">Try a different search term</p>
           </div>
         ) : !query.trim() ? (
-          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+          <div className="p-8 text-center text-text-muted dark:text-text-muted">
             <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p className="text-sm font-medium mb-2">AI-Powered Action Search</p>
             <p className="text-xs">
@@ -274,7 +274,7 @@ export function AIActionSearch({
 
       {/* Footer with hints */}
       {results.length > 0 && (
-        <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+        <div className="px-4 py-2 border-t border-border-subtle dark:border-border-default flex items-center justify-between text-xs text-text-muted dark:text-text-muted">
           <span>Use ↑↓ to navigate</span>
           <span>Press Enter to add</span>
           <span>Esc to close</span>

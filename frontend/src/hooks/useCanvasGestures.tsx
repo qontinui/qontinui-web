@@ -314,29 +314,29 @@ export function GestureHints() {
   if (!showHints) return null;
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[1000] bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-3 max-w-md">
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[1000] bg-surface-raised border border-border-default rounded-lg shadow-xl p-3 max-w-md">
       <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2 text-xs text-gray-300">
+        <div className="space-y-2 text-xs text-text-secondary">
           <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">
+            <kbd className="px-2 py-1 bg-surface-canvas border border-border-default rounded font-mono">
               Space
             </kbd>
             <span>+ Drag to pan</span>
           </div>
           <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">
+            <kbd className="px-2 py-1 bg-surface-canvas border border-border-default rounded font-mono">
               Ctrl
             </kbd>
             <span>+ Scroll to zoom</span>
           </div>
           <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">
+            <kbd className="px-2 py-1 bg-surface-canvas border border-border-default rounded font-mono">
               Shift
             </kbd>
             <span>+ Drag to constrain axis</span>
           </div>
           <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">
+            <kbd className="px-2 py-1 bg-surface-canvas border border-border-default rounded font-mono">
               Alt
             </kbd>
             <span>+ Drag to duplicate</span>
@@ -344,7 +344,7 @@ export function GestureHints() {
         </div>
         <button
           onClick={() => setShowHints(false)}
-          className="text-gray-400 hover:text-white transition-colors"
+          className="text-text-muted hover:text-white transition-colors"
         >
           <svg
             className="w-4 h-4"

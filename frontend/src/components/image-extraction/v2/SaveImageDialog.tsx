@@ -124,7 +124,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
       <div
-        className="bg-[#27272A] border border-gray-700 rounded-lg p-6 w-[450px] max-w-full max-h-[90vh] overflow-y-auto"
+        className="bg-surface-raised border border-border-default rounded-lg p-6 w-[450px] max-w-full max-h-[90vh] overflow-y-auto"
         onKeyDown={handleKeyDown}
       >
         <h3 className="text-lg font-semibold text-white mb-4">
@@ -134,7 +134,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
         <div className="space-y-4">
           {/* Image Name - always required */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-text-secondary mb-1">
               Image Name
             </label>
             <input
@@ -142,17 +142,17 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
               value={saveDialog.imageName}
               onChange={(e) => onUpdateDialog({ imageName: e.target.value })}
               placeholder="Enter a name for the image"
-              className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
+              className="w-full px-3 py-2 bg-surface-canvas border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary text-white"
             />
           </div>
 
           {/* Save Mode Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text-secondary mb-2">
               Save As
             </label>
             <div className="space-y-2">
-              <label className="flex items-start p-3 bg-[#0A0A0B] border border-gray-700 rounded-md cursor-pointer hover:border-gray-600 transition-colors">
+              <label className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
                 <input
                   type="radio"
                   checked={saveDialog.mode === "createStateImage"}
@@ -161,18 +161,18 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-[#00FF88]" />
+                    <Plus className="w-4 h-4 text-brand-success" />
                     <span className="text-sm font-medium text-white">
                       Create StateImage
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-text-muted mt-1">
                     Create a new StateImage and add it to a state
                   </p>
                 </div>
               </label>
 
-              <label className="flex items-start p-3 bg-[#0A0A0B] border border-gray-700 rounded-md cursor-pointer hover:border-gray-600 transition-colors">
+              <label className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
                 <input
                   type="radio"
                   checked={saveDialog.mode === "addPattern"}
@@ -181,18 +181,18 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-[#BD00FF]" />
+                    <Layers className="w-4 h-4 text-brand-secondary" />
                     <span className="text-sm font-medium text-white">
                       Add Pattern to StateImage
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-text-muted mt-1">
                     Add as a pattern variation to an existing StateImage
                   </p>
                 </div>
               </label>
 
-              <label className="flex items-start p-3 bg-[#0A0A0B] border border-gray-700 rounded-md cursor-pointer hover:border-gray-600 transition-colors">
+              <label className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
                 <input
                   type="radio"
                   checked={saveDialog.mode === "libraryOnly"}
@@ -201,12 +201,12 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <Library className="w-4 h-4 text-[#00D9FF]" />
+                    <Library className="w-4 h-4 text-brand-primary" />
                     <span className="text-sm font-medium text-white">
                       Save to Library Only
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-text-muted mt-1">
                     Save to the image library without creating a StateImage
                   </p>
                 </div>
@@ -218,7 +218,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
           {saveDialog.mode === "createStateImage" && (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
+                <label className="block text-sm font-medium text-text-secondary mb-1">
                   Add to State
                 </label>
                 <select
@@ -226,7 +226,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                   onChange={(e) =>
                     onUpdateDialog({ selectedStateId: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
+                  className="w-full px-3 py-2 bg-surface-canvas border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary text-white"
                 >
                   <option value="">Select a state...</option>
                   <option value="new">Create New State</option>
@@ -240,7 +240,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
 
               {saveDialog.selectedStateId === "new" && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-text-secondary mb-1">
                     New State Name
                   </label>
                   <input
@@ -250,7 +250,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                       onUpdateDialog({ newStateName: e.target.value })
                     }
                     placeholder="Enter name for the new state"
-                    className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
+                    className="w-full px-3 py-2 bg-surface-canvas border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary text-white"
                   />
                 </div>
               )}
@@ -259,7 +259,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
 
           {saveDialog.mode === "addPattern" && (
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-text-secondary mb-1">
                 Add Pattern to StateImage
               </label>
               <select
@@ -267,7 +267,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                 onChange={(e) =>
                   onUpdateDialog({ selectedStateImageId: e.target.value })
                 }
-                className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
+                className="w-full px-3 py-2 bg-surface-canvas border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary text-white"
               >
                 <option value="">Select a StateImage...</option>
                 {allStateImages.map((ctx) => {
@@ -298,11 +298,11 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                 onChange={(e) =>
                   onUpdateDialog({ fixedLocation: e.target.checked })
                 }
-                className="h-4 w-4 text-[#00D9FF] focus:ring-[#00D9FF] border-gray-700 rounded"
+                className="h-4 w-4 text-brand-primary focus:ring-brand-primary border-border-default rounded"
               />
               <label
                 htmlFor="fixed-location"
-                className="ml-2 block text-sm text-gray-300"
+                className="ml-2 block text-sm text-text-secondary"
               >
                 Fixed location (saves extraction region as search region)
               </label>
@@ -311,7 +311,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
 
           {/* Mask info */}
           {extractedResult.mask && (
-            <div className="text-sm text-[#00D9FF] bg-[#00D9FF]/10 border border-[#00D9FF] p-2 rounded">
+            <div className="text-sm text-brand-primary bg-brand-primary/10 border border-brand-primary p-2 rounded">
               Mask will be saved with the image
             </div>
           )}
@@ -320,14 +320,14 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
         <div className="flex justify-end gap-2 mt-6">
           <button
             onClick={handleCancel}
-            className="px-4 py-2 text-sm text-gray-300 bg-gray-700 rounded-md hover:bg-gray-600"
+            className="px-4 py-2 text-sm text-text-secondary bg-surface-raised rounded-md hover:bg-surface-raised/80"
           >
             Cancel
           </button>
           <button
             onClick={onSave}
             disabled={!canSave}
-            className="px-4 py-2 text-sm text-black bg-[#00FF88] rounded-md hover:bg-[#00FF88]/90 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm text-black bg-brand-success rounded-md hover:bg-brand-success/90 disabled:bg-surface-raised disabled:text-text-muted disabled:cursor-not-allowed"
           >
             {saveDialog.mode === "libraryOnly"
               ? "Save to Library"

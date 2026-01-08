@@ -55,7 +55,7 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
   };
 
   return (
-    <Card className="bg-white border border-gray-200">
+    <Card className="bg-white border border-border-default">
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           {getStatusIcon()}
@@ -64,7 +64,7 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
       </CardHeader>
       <CardContent className="space-y-4">
         {!execution ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-text-muted">
             <Play className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">No test running</p>
             <p className="text-xs mt-1">
@@ -76,10 +76,10 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
             {/* Current Workflow */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500 font-medium">
+                <span className="text-xs text-text-muted font-medium">
                   Current Workflow
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-text-muted">
                   {completedWorkflows + 1} of {totalWorkflows}
                 </span>
               </div>
@@ -106,10 +106,10 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
               execution.totalActions && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 font-medium">
+                    <span className="text-xs text-text-muted font-medium">
                       Current Action
                     </span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-text-muted">
                       Action {execution.currentAction} of{" "}
                       {execution.totalActions}
                     </span>
@@ -122,10 +122,10 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
             {totalWorkflows > 1 && (
               <div className="pt-3 border-t space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500 font-medium">
+                  <span className="text-xs text-text-muted font-medium">
                     Overall Progress
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-text-muted">
                     {getOverallProgress()}%
                   </span>
                 </div>

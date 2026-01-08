@@ -76,7 +76,7 @@ export function ActionTimeline({
 
   if (steps.length === 0) {
     return (
-      <div className={cn("text-center text-gray-500 py-4", className)}>
+      <div className={cn("text-center text-text-muted py-4", className)}>
         No steps to display
       </div>
     );
@@ -132,7 +132,7 @@ function HorizontalTimeline({
     <div
       ref={containerRef}
       className={cn(
-        "flex items-center gap-1 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent pb-2",
+        "flex items-center gap-1 overflow-x-auto scrollbar-thin scrollbar-thumb-border-default scrollbar-track-transparent pb-2",
         className
       )}
     >
@@ -156,7 +156,7 @@ function HorizontalTimeline({
               <div
                 className={cn(
                   "w-4 h-0.5 mx-0.5 transition-colors",
-                  isPast ? "bg-[#00D9FF]/50" : "bg-gray-700"
+                  isPast ? "bg-brand-primary/50" : "bg-border-default"
                 )}
               />
             )}
@@ -179,7 +179,7 @@ function VerticalTimeline({
     <div
       ref={containerRef}
       className={cn(
-        "flex flex-col gap-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent max-h-96",
+        "flex flex-col gap-1 overflow-y-auto scrollbar-thin scrollbar-thumb-border-default scrollbar-track-transparent max-h-96",
         className
       )}
     >
@@ -203,7 +203,7 @@ function VerticalTimeline({
               <div
                 className={cn(
                   "w-0.5 h-2 transition-colors",
-                  isPast ? "bg-[#00D9FF]/50" : "bg-gray-700"
+                  isPast ? "bg-brand-primary/50" : "bg-border-default"
                 )}
               />
             )}
@@ -245,14 +245,16 @@ const TimelineItem = ({
       onClick={onClick}
       className={cn(
         "relative flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all",
-        "hover:scale-110 focus:outline-none focus:ring-2 focus:ring-[#00D9FF]/50",
-        isActive && "ring-2 ring-[#00D9FF] ring-offset-2 ring-offset-[#1A1A1B]",
+        "hover:scale-110 focus:outline-none focus:ring-2 focus:ring-brand-primary/50",
+        isActive &&
+          "ring-2 ring-brand-primary ring-offset-2 ring-offset-surface-raised",
         isPast &&
           isSuccess &&
           "bg-green-500/20 border-green-500 text-green-400",
         isPast && !isSuccess && "bg-red-500/20 border-red-500 text-red-400",
-        isActive && "bg-[#00D9FF]/20 border-[#00D9FF] text-[#00D9FF] scale-110",
-        isFuture && "bg-gray-800/50 border-gray-600 text-gray-500"
+        isActive &&
+          "bg-brand-primary/20 border-brand-primary text-brand-primary scale-110",
+        isFuture && "bg-surface-raised/50 border-border-subtle text-text-muted"
       )}
       title={getStepTitle(step, index)}
     >
@@ -261,9 +263,9 @@ const TimelineItem = ({
       {isPast && (
         <span className="absolute -top-1 -right-1">
           {isSuccess ? (
-            <CheckCircle2 className="w-3 h-3 text-green-400 bg-[#1A1A1B] rounded-full" />
+            <CheckCircle2 className="w-3 h-3 text-green-400 bg-surface-raised rounded-full" />
           ) : (
-            <XCircle className="w-3 h-3 text-red-400 bg-[#1A1A1B] rounded-full" />
+            <XCircle className="w-3 h-3 text-red-400 bg-surface-raised rounded-full" />
           )}
         </span>
       )}
@@ -289,8 +291,8 @@ const TimelineItemVertical = ({
       onClick={onClick}
       className={cn(
         "relative flex items-center gap-3 w-full px-3 py-2 rounded-lg transition-all",
-        "hover:bg-gray-800/50 focus:outline-none focus:ring-2 focus:ring-[#00D9FF]/50",
-        isActive && "bg-[#00D9FF]/10 ring-1 ring-[#00D9FF]",
+        "hover:bg-surface-raised/50 focus:outline-none focus:ring-2 focus:ring-brand-primary/50",
+        isActive && "bg-brand-primary/10 ring-1 ring-brand-primary",
         isPast && isSuccess && "bg-green-500/5",
         isPast && !isSuccess && "bg-red-500/5"
       )}
@@ -303,8 +305,10 @@ const TimelineItemVertical = ({
             isSuccess &&
             "bg-green-500/20 border-green-500 text-green-400",
           isPast && !isSuccess && "bg-red-500/20 border-red-500 text-red-400",
-          isActive && "bg-[#00D9FF]/20 border-[#00D9FF] text-[#00D9FF]",
-          isFuture && "bg-gray-800/50 border-gray-600 text-gray-500"
+          isActive &&
+            "bg-brand-primary/20 border-brand-primary text-brand-primary",
+          isFuture &&
+            "bg-surface-raised/50 border-border-subtle text-text-muted"
         )}
       >
         <Icon className="w-4 h-4" />
@@ -316,13 +320,13 @@ const TimelineItemVertical = ({
           className={cn(
             "text-sm font-medium",
             isActive && "text-white",
-            isPast && "text-gray-400",
-            isFuture && "text-gray-500"
+            isPast && "text-text-muted",
+            isFuture && "text-text-muted"
           )}
         >
           {getStepLabel(step)}
         </div>
-        <div className="text-xs text-gray-500">Step {index + 1}</div>
+        <div className="text-xs text-text-muted">Step {index + 1}</div>
       </div>
 
       {/* Status indicator */}

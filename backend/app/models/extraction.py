@@ -35,6 +35,10 @@ class ExtractionSession(Base):
     # Statistics
     stats = Column(JSON, nullable=False, default=dict)
 
+    # Pre-built state machine (computed by runner using qontinui library)
+    # Contains: {"states": [...], "transitions": [...]} in final workflow format
+    state_machine = Column(JSON, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
@@ -74,6 +78,9 @@ class ExtractionAnnotation(Base):
     # Annotations (can be edited in web UI)
     elements = Column(JSON, nullable=False, default=list)
     states = Column(JSON, nullable=False, default=list)
+
+    # Vision extraction results (Edge, SAM3, OCR)
+    vision_results = Column(JSON, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

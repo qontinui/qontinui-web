@@ -66,7 +66,7 @@ export function ComparisonSelector({
   };
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
       <CardHeader>
         <CardTitle className="text-xl flex items-center gap-2">
           <GitCompare className="w-5 h-5" />
@@ -76,9 +76,9 @@ export function ComparisonSelector({
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-sm text-gray-400">Baseline Run</label>
+            <label className="text-sm text-text-muted">Baseline Run</label>
             <Select value={run1Id} onValueChange={setRun1Id}>
-              <SelectTrigger className="bg-[#0A0A0B]/50 border-gray-700">
+              <SelectTrigger className="bg-surface-canvas/50 border-border-default">
                 <SelectValue placeholder="Select baseline run" />
               </SelectTrigger>
               <SelectContent>
@@ -94,9 +94,9 @@ export function ComparisonSelector({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm text-gray-400">Comparison Run</label>
+            <label className="text-sm text-text-muted">Comparison Run</label>
             <Select value={run2Id} onValueChange={setRun2Id}>
-              <SelectTrigger className="bg-[#0A0A0B]/50 border-gray-700">
+              <SelectTrigger className="bg-surface-canvas/50 border-border-default">
                 <SelectValue placeholder="Select comparison run" />
               </SelectTrigger>
               <SelectContent>
@@ -116,7 +116,7 @@ export function ComparisonSelector({
           <Button
             onClick={handleCompare}
             disabled={!run1Id || !run2Id || run1Id === run2Id}
-            className="bg-[#00D9FF] text-black hover:bg-[#00B8D4]"
+            className="bg-brand-primary text-black hover:bg-brand-primary/80"
           >
             <GitCompare className="w-4 h-4 mr-2" />
             Compare Runs
@@ -127,7 +127,7 @@ export function ComparisonSelector({
               <Button
                 onClick={() => handleQuickComparison("previous")}
                 variant="outline"
-                className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                className="border-border-default hover:border-brand-primary hover:text-brand-primary"
               >
                 Compare with Previous
               </Button>
@@ -136,7 +136,7 @@ export function ComparisonSelector({
                 <Button
                   onClick={() => handleQuickComparison("baseline")}
                   variant="outline"
-                  className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                  className="border-border-default hover:border-brand-primary hover:text-brand-primary"
                 >
                   Compare with Baseline
                 </Button>

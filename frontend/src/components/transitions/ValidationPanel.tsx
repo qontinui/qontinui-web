@@ -40,7 +40,7 @@ export function ValidationPanel({
   }
 
   return (
-    <Card className="border-gray-700 bg-[#27272A]">
+    <Card className="border-border-default bg-surface-raised">
       <CardHeader className="cursor-pointer" onClick={() => setIsOpen(!isOpen)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -71,7 +71,7 @@ export function ValidationPanel({
                   return (
                     <button
                       key={id}
-                      className="text-xs text-gray-400 hover:text-white block w-full text-left"
+                      className="text-xs text-text-muted hover:text-white block w-full text-left"
                       onClick={() => onIssueClick("circular", id)}
                     >
                       {transition?.type === "OutgoingTransition"
@@ -103,7 +103,7 @@ export function ValidationPanel({
                 {validation.brokenStateReferences.map((id) => (
                   <button
                     key={id}
-                    className="text-xs text-gray-400 hover:text-white block"
+                    className="text-xs text-text-muted hover:text-white block"
                     onClick={() => onIssueClick("broken", id)}
                   >
                     Transition {id.slice(0, 8)}...
@@ -127,7 +127,7 @@ export function ValidationPanel({
                   return (
                     <button
                       key={id}
-                      className="text-xs text-gray-400 hover:text-white block"
+                      className="text-xs text-text-muted hover:text-white block"
                       onClick={() => onIssueClick("unreachable", id)}
                     >
                       {state?.name || "Unknown"}
@@ -150,7 +150,7 @@ export function ValidationPanel({
                   return (
                     <button
                       key={id}
-                      className="text-xs text-gray-400 hover:text-white block"
+                      className="text-xs text-text-muted hover:text-white block"
                       onClick={() => onIssueClick("deadend", id)}
                     >
                       {state?.name || "Unknown"}

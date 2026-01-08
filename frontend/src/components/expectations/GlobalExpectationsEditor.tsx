@@ -43,19 +43,21 @@ export function GlobalExpectationsEditor({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-2 text-[#00D9FF]">
+      <div className="flex items-center gap-2 text-brand-primary">
         <Settings className="w-4 h-4" />
         <h3 className="text-sm font-medium">Global Expectations</h3>
       </div>
 
       {/* Error Detection */}
-      <Card className="p-4 border-gray-700 bg-[#27272A]/50 space-y-4">
-        <h4 className="text-xs font-medium text-gray-300">Error Detection</h4>
+      <Card className="p-4 border-border-default bg-surface-raised/50 space-y-4">
+        <h4 className="text-xs font-medium text-text-secondary">
+          Error Detection
+        </h4>
 
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <Label className="text-xs text-gray-400">No Console Errors</Label>
-            <p className="text-xs text-gray-500">
+            <Label className="text-xs text-text-muted">No Console Errors</Label>
+            <p className="text-xs text-text-muted">
               Fail if console errors are detected
             </p>
           </div>
@@ -69,8 +71,8 @@ export function GlobalExpectationsEditor({
 
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <Label className="text-xs text-gray-400">No Network Errors</Label>
-            <p className="text-xs text-gray-500">
+            <Label className="text-xs text-text-muted">No Network Errors</Label>
+            <p className="text-xs text-text-muted">
               Fail if network errors are detected
             </p>
           </div>
@@ -84,11 +86,13 @@ export function GlobalExpectationsEditor({
       </Card>
 
       {/* Timing Limits */}
-      <Card className="p-4 border-gray-700 bg-[#27272A]/50 space-y-4">
-        <h4 className="text-xs font-medium text-gray-300">Timing Limits</h4>
+      <Card className="p-4 border-border-default bg-surface-raised/50 space-y-4">
+        <h4 className="text-xs font-medium text-text-secondary">
+          Timing Limits
+        </h4>
 
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">
+          <Label className="text-xs text-text-muted">
             Max Action Duration (ms)
           </Label>
           <Input
@@ -103,15 +107,15 @@ export function GlobalExpectationsEditor({
                 e.target.value ? parseInt(e.target.value) : undefined
               )
             }
-            className="bg-transparent border-gray-700 text-sm"
+            className="bg-transparent border-border-default text-sm"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Maximum time allowed for a single action (default: 10000ms)
           </p>
         </div>
 
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">
+          <Label className="text-xs text-text-muted">
             Max Total Duration (ms)
           </Label>
           <Input
@@ -126,24 +130,26 @@ export function GlobalExpectationsEditor({
                 e.target.value ? parseInt(e.target.value) : undefined
               )
             }
-            className="bg-transparent border-gray-700 text-sm"
+            className="bg-transparent border-border-default text-sm"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Maximum total workflow execution time (default: 300000ms / 5min)
           </p>
         </div>
       </Card>
 
       {/* Pattern Matching */}
-      <Card className="p-4 border-gray-700 bg-[#27272A]/50 space-y-4">
-        <h4 className="text-xs font-medium text-gray-300">Pattern Matching</h4>
+      <Card className="p-4 border-border-default bg-surface-raised/50 space-y-4">
+        <h4 className="text-xs font-medium text-text-secondary">
+          Pattern Matching
+        </h4>
 
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <Label className="text-xs text-gray-400">
+            <Label className="text-xs text-text-muted">
               Allow Partial Matches
             </Label>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Accept matches below confidence threshold
             </p>
           </div>
@@ -157,10 +163,10 @@ export function GlobalExpectationsEditor({
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400">
+            <Label className="text-xs text-text-muted">
               Minimum Confidence Threshold
             </Label>
-            <span className="text-xs text-gray-300 font-mono">
+            <span className="text-xs text-text-secondary font-mono">
               {(current.min_confidence_threshold ?? 0.8).toFixed(2)}
             </span>
           </div>
@@ -174,7 +180,7 @@ export function GlobalExpectationsEditor({
             }
             className="w-full"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             Minimum confidence threshold for pattern matching (0.0 - 1.0)
           </p>
         </div>

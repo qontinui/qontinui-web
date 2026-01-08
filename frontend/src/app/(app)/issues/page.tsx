@@ -71,7 +71,7 @@ function IssueCard({
   };
 
   return (
-    <Card className="bg-gray-800/50 border-gray-700/50 hover:border-gray-600 transition-colors">
+    <Card className="bg-surface-raised/50 border-border-default/50 hover:border-border-default transition-colors">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
@@ -98,12 +98,12 @@ function IssueCard({
             </h3>
 
             {issue.description && (
-              <p className="text-sm text-gray-400 mb-2 line-clamp-2">
+              <p className="text-sm text-text-muted mb-2 line-clamp-2">
                 {issue.description}
               </p>
             )}
 
-            <div className="flex items-center gap-4 text-xs text-gray-500">
+            <div className="flex items-center gap-4 text-xs text-text-muted">
               {issue.file && (
                 <span className="truncate max-w-[200px]" title={issue.file}>
                   {issue.file}
@@ -144,7 +144,7 @@ function IssueCard({
                 size="sm"
                 variant="ghost"
                 onClick={() => onStatusChange(issue.id, "skipped")}
-                className="text-gray-400 hover:text-gray-300"
+                className="text-text-muted hover:text-text-secondary"
               >
                 <XCircle className="w-3 h-3" />
               </Button>
@@ -169,9 +169,12 @@ function StatsCards({ projectId }: { projectId?: string }) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         {[...Array(4)].map((_, i) => (
-          <Card key={i} className="bg-gray-800/50 border-gray-700/50">
+          <Card
+            key={i}
+            className="bg-surface-raised/50 border-border-default/50"
+          >
             <CardContent className="p-4">
-              <div className="h-16 animate-pulse bg-gray-700/50 rounded" />
+              <div className="h-16 animate-pulse bg-border-default/50 rounded" />
             </CardContent>
           </Card>
         ))}
@@ -185,11 +188,11 @@ function StatsCards({ projectId }: { projectId?: string }) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-      <Card className="bg-gray-800/50 border-gray-700/50">
+      <Card className="bg-surface-raised/50 border-border-default/50">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Total Issues</p>
+              <p className="text-sm text-text-muted">Total Issues</p>
               <p className="text-2xl font-bold text-white">{stats.total}</p>
             </div>
             <Bug className="w-8 h-8 text-blue-400" />
@@ -197,11 +200,11 @@ function StatsCards({ projectId }: { projectId?: string }) {
         </CardContent>
       </Card>
 
-      <Card className="bg-gray-800/50 border-gray-700/50">
+      <Card className="bg-surface-raised/50 border-border-default/50">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Unresolved</p>
+              <p className="text-sm text-text-muted">Unresolved</p>
               <p className="text-2xl font-bold text-yellow-400">{unresolved}</p>
             </div>
             <AlertTriangle className="w-8 h-8 text-yellow-400" />
@@ -209,11 +212,11 @@ function StatsCards({ projectId }: { projectId?: string }) {
         </CardContent>
       </Card>
 
-      <Card className="bg-gray-800/50 border-gray-700/50">
+      <Card className="bg-surface-raised/50 border-border-default/50">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Critical</p>
+              <p className="text-sm text-text-muted">Critical</p>
               <p className="text-2xl font-bold text-red-400">{critical}</p>
             </div>
             <AlertTriangle className="w-8 h-8 text-red-400" />
@@ -221,11 +224,11 @@ function StatsCards({ projectId }: { projectId?: string }) {
         </CardContent>
       </Card>
 
-      <Card className="bg-gray-800/50 border-gray-700/50">
+      <Card className="bg-surface-raised/50 border-border-default/50">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Resolved Today</p>
+              <p className="text-sm text-text-muted">Resolved Today</p>
               <p className="text-2xl font-bold text-green-400">
                 {stats.resolved_today}
               </p>
@@ -306,12 +309,12 @@ export default function IssuesPage() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
-      <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               Detected Issues
             </h1>
           </div>
@@ -319,7 +322,7 @@ export default function IssuesPage() {
             variant="outline"
             size="sm"
             onClick={() => refetch()}
-            className="border-gray-700"
+            className="border-border-default"
           >
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
@@ -333,12 +336,12 @@ export default function IssuesPage() {
         <StatsCards projectId={filters.project_id} />
 
         {/* Filters */}
-        <Card className="bg-gray-800/50 border-gray-700/50 mb-6">
+        <Card className="bg-surface-raised/50 border-border-default/50 mb-6">
           <CardContent className="p-4">
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-gray-400" />
-                <span className="text-sm text-gray-400">Filters:</span>
+                <Filter className="w-4 h-4 text-text-muted" />
+                <span className="text-sm text-text-muted">Filters:</span>
               </div>
 
               <Select
@@ -350,7 +353,7 @@ export default function IssuesPage() {
                   }))
                 }
               >
-                <SelectTrigger className="w-[200px] bg-gray-900 border-gray-700">
+                <SelectTrigger className="w-[200px] bg-surface-canvas border-border-default">
                   <SelectValue placeholder="All Projects" />
                 </SelectTrigger>
                 <SelectContent>
@@ -373,7 +376,7 @@ export default function IssuesPage() {
                   }))
                 }
               >
-                <SelectTrigger className="w-[150px] bg-gray-900 border-gray-700">
+                <SelectTrigger className="w-[150px] bg-surface-canvas border-border-default">
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -395,7 +398,7 @@ export default function IssuesPage() {
                   }))
                 }
               >
-                <SelectTrigger className="w-[150px] bg-gray-900 border-gray-700">
+                <SelectTrigger className="w-[150px] bg-surface-canvas border-border-default">
                   <SelectValue placeholder="All Severity" />
                 </SelectTrigger>
                 <SelectContent>
@@ -414,21 +417,24 @@ export default function IssuesPage() {
         {isLoading ? (
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
-              <Card key={i} className="bg-gray-800/50 border-gray-700/50">
+              <Card
+                key={i}
+                className="bg-surface-raised/50 border-border-default/50"
+              >
                 <CardContent className="p-4">
-                  <div className="h-20 animate-pulse bg-gray-700/50 rounded" />
+                  <div className="h-20 animate-pulse bg-border-default/50 rounded" />
                 </CardContent>
               </Card>
             ))}
           </div>
         ) : sortedIssues.length === 0 ? (
-          <Card className="bg-gray-800/50 border-gray-700/50">
+          <Card className="bg-surface-raised/50 border-border-default/50">
             <CardContent className="p-8 text-center">
-              <Bug className="w-12 h-12 mx-auto text-gray-600 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-400 mb-2">
+              <Bug className="w-12 h-12 mx-auto text-text-muted mb-4" />
+              <h3 className="text-lg font-semibold text-text-muted mb-2">
                 No Issues Found
               </h3>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-text-muted">
                 Issues detected during AI-assisted automation will appear here.
               </p>
             </CardContent>
@@ -447,7 +453,7 @@ export default function IssuesPage() {
 
         {/* Total count */}
         {issuesData && issuesData.total > 0 && (
-          <p className="text-sm text-gray-500 mt-4 text-center">
+          <p className="text-sm text-text-muted mt-4 text-center">
             Showing {sortedIssues.length} of {issuesData.total} issues
           </p>
         )}

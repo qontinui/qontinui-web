@@ -45,14 +45,16 @@ export function ClaudeReviewEditor({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Eye className="w-4 h-4 text-purple-400" />
-          <Label className="text-sm text-gray-300">Claude Review Notes</Label>
+          <Eye className="w-4 h-4 text-brand-secondary" />
+          <Label className="text-sm text-text-secondary">
+            Claude Review Notes
+          </Label>
         </div>
         <Button
           variant="ghost"
           size="sm"
           onClick={addNote}
-          className="h-7 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+          className="h-7 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
         >
           <Plus className="w-3 h-3 mr-1" />
           Add Note
@@ -60,11 +62,11 @@ export function ClaudeReviewEditor({
       </div>
 
       {notes.length === 0 ? (
-        <div className="p-4 bg-gray-800/30 border border-gray-700 rounded-md">
-          <p className="text-sm text-gray-500 text-center">
+        <div className="p-4 bg-surface-raised/30 border border-border-default rounded-md">
+          <p className="text-sm text-text-muted text-center">
             No Claude review notes defined
           </p>
-          <p className="text-xs text-gray-600 text-center mt-1">
+          <p className="text-xs text-text-muted text-center mt-1">
             Add notes describing what Claude should visually verify
           </p>
         </div>
@@ -73,14 +75,14 @@ export function ClaudeReviewEditor({
           {notes.map((note, index) => (
             <div key={index} className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-gray-500">
+                <Label className="text-xs text-text-muted">
                   Note {index + 1}
                 </Label>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => deleteNote(index)}
-                  className="h-6 w-6 p-0 text-gray-500 hover:text-red-400 hover:bg-red-500/10"
+                  className="h-6 w-6 p-0 text-text-muted hover:text-red-400 hover:bg-red-500/10"
                 >
                   <Trash2 className="w-3 h-3" />
                 </Button>
@@ -89,7 +91,7 @@ export function ClaudeReviewEditor({
                 value={note}
                 onChange={(e) => updateNote(index, e.target.value)}
                 placeholder="Describe what Claude should look for..."
-                className="bg-transparent border-gray-700 min-h-[80px] resize-none"
+                className="bg-transparent border-border-default min-h-[80px] resize-none"
                 rows={3}
               />
             </div>
@@ -112,21 +114,21 @@ export function ClaudeReviewEditor({
 
       {/* Example Notes */}
       {notes.length === 0 && (
-        <div className="p-3 bg-gray-800/30 border border-gray-700 rounded-md">
-          <p className="text-xs text-gray-400 font-medium mb-2">
+        <div className="p-3 bg-surface-raised/30 border border-border-default rounded-md">
+          <p className="text-xs text-text-muted font-medium mb-2">
             Example notes:
           </p>
-          <ul className="text-xs text-gray-500 space-y-1">
-            <li className="pl-2 border-l-2 border-gray-700">
+          <ul className="text-xs text-text-muted space-y-1">
+            <li className="pl-2 border-l-2 border-border-default">
               Check that runner names are unique
             </li>
-            <li className="pl-2 border-l-2 border-gray-700">
+            <li className="pl-2 border-l-2 border-border-default">
               Verify no error banners visible
             </li>
-            <li className="pl-2 border-l-2 border-gray-700">
+            <li className="pl-2 border-l-2 border-border-default">
               Confirm all buttons are properly labeled
             </li>
-            <li className="pl-2 border-l-2 border-gray-700">
+            <li className="pl-2 border-l-2 border-border-default">
               Ensure navigation menu is displayed correctly
             </li>
           </ul>

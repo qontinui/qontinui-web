@@ -136,12 +136,12 @@ export function ZoomControls({
     <div
       className={`fixed z-[1000] flex flex-col gap-2 ${positionStyles[position]} ${className}`}
     >
-      <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+      <div className="bg-surface-raised border border-border-default rounded-lg shadow-xl overflow-hidden">
         {/* Zoom In */}
         <button
           onClick={handleZoomIn}
           disabled={!canZoomIn}
-          className="w-10 h-10 flex items-center justify-center text-white hover:bg-gray-700 disabled:text-gray-600 disabled:cursor-not-allowed transition-colors border-b border-gray-700"
+          className="w-10 h-10 flex items-center justify-center text-white hover:bg-surface-raised/80 disabled:text-text-muted disabled:cursor-not-allowed transition-colors border-b border-border-default"
           title="Zoom In (+)"
         >
           <svg
@@ -163,7 +163,7 @@ export function ZoomControls({
         {showPercentage && (
           <button
             onClick={handleResetZoom}
-            className="w-10 h-10 flex items-center justify-center text-xs text-gray-300 hover:bg-gray-700 transition-colors border-b border-gray-700"
+            className="w-10 h-10 flex items-center justify-center text-xs text-text-secondary hover:bg-surface-raised/80 transition-colors border-b border-border-default"
             title="Reset Zoom (0)"
           >
             {zoomPercentage}%
@@ -174,7 +174,7 @@ export function ZoomControls({
         <button
           onClick={handleZoomOut}
           disabled={!canZoomOut}
-          className="w-10 h-10 flex items-center justify-center text-white hover:bg-gray-700 disabled:text-gray-600 disabled:cursor-not-allowed transition-colors border-b border-gray-700"
+          className="w-10 h-10 flex items-center justify-center text-white hover:bg-surface-raised/80 disabled:text-text-muted disabled:cursor-not-allowed transition-colors border-b border-border-default"
           title="Zoom Out (-)"
         >
           <svg
@@ -195,7 +195,7 @@ export function ZoomControls({
         {/* Fit View */}
         <button
           onClick={handleFitView}
-          className="w-10 h-10 flex items-center justify-center text-white hover:bg-gray-700 transition-colors border-b border-gray-700"
+          className="w-10 h-10 flex items-center justify-center text-white hover:bg-surface-raised/80 transition-colors border-b border-border-default"
           title="Fit View (Ctrl+F)"
         >
           <svg
@@ -216,7 +216,7 @@ export function ZoomControls({
         {/* Zoom to Selection */}
         <button
           onClick={handleZoomToSelection}
-          className="w-10 h-10 flex items-center justify-center text-white hover:bg-gray-700 transition-colors"
+          className="w-10 h-10 flex items-center justify-center text-white hover:bg-surface-raised/80 transition-colors"
           title="Zoom to Selection"
         >
           <svg
@@ -237,7 +237,7 @@ export function ZoomControls({
 
       {/* Zoom limits indicator */}
       {(zoom <= ZOOM_CONFIG.min || zoom >= ZOOM_CONFIG.max) && (
-        <div className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-400">
+        <div className="bg-surface-raised border border-border-default rounded px-2 py-1 text-xs text-text-muted">
           {zoom <= ZOOM_CONFIG.min && "Min zoom"}
           {zoom >= ZOOM_CONFIG.max && "Max zoom"}
         </div>

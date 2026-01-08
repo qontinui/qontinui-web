@@ -130,16 +130,18 @@ export function ConnectionDrawing({
           top: `${state.currentPosition.y - 20}px`,
         }}
       >
-        <div className="bg-gray-900 text-white text-xs px-3 py-2 rounded-lg shadow-xl border border-gray-700">
+        <div className="bg-surface-canvas text-white text-xs px-3 py-2 rounded-lg shadow-xl border border-border-default">
           <div className="font-semibold" style={{ color }}>
             {state.outputType.charAt(0).toUpperCase() +
               state.outputType.slice(1)}{" "}
             Connection
           </div>
-          <div className="text-gray-400 mt-1">
+          <div className="text-text-muted mt-1">
             {isValid ? "Drag to target handle" : "No valid targets"}
           </div>
-          <div className="text-gray-500 text-xs mt-1">Press Esc to cancel</div>
+          <div className="text-text-muted text-xs mt-1">
+            Press Esc to cancel
+          </div>
         </div>
       </div>
     </>

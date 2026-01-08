@@ -42,8 +42,8 @@ export function TransitionNode({
   // Determine color based on transition type
   const color =
     isIncoming || transition.type === "IncomingTransition"
-      ? "#00FF88" // Green for incoming
-      : "#BD00FF"; // Magenta for outgoing
+      ? "var(--brand-success)" // Green for incoming
+      : "var(--brand-secondary)"; // Magenta for outgoing
 
   return (
     <>
@@ -106,7 +106,7 @@ export function TransitionNode({
         {/* Show workflow indicator if has workflows */}
         {transition.workflows && transition.workflows.length > 0 && (
           <div className="absolute -top-2 -right-2">
-            <div className="bg-[#00D9FF] rounded-full p-1">
+            <div className="bg-brand-primary rounded-full p-1">
               <Zap className="w-3 h-3 text-black" />
             </div>
           </div>
@@ -115,7 +115,7 @@ export function TransitionNode({
         {/* Show stays visible indicator (only for outgoing transitions) */}
         {transition.staysVisible && !isIncoming && (
           <div className="absolute -bottom-2 -right-2">
-            <div className="bg-[#00FF88] rounded-full w-2 h-2" />
+            <div className="bg-brand-success rounded-full w-2 h-2" />
           </div>
         )}
       </div>

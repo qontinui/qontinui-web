@@ -35,12 +35,12 @@ export function CoverageVisualizationDemo({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle>Coverage Visualization Demo</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-gray-400 mb-4">
+          <p className="text-text-muted mb-4">
             Explore different ways to visualize test coverage for your workflow.
             Each view provides unique insights into testing completeness and
             quality.
@@ -53,8 +53,8 @@ export function CoverageVisualizationDemo({
               onClick={() => setSelectedView("summary")}
               className={
                 selectedView === "summary"
-                  ? "bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
-                  : "border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                  ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
+                  : "border-border-default hover:border-brand-primary hover:text-brand-primary"
               }
             >
               <BarChart3 className="w-4 h-4 mr-2" />
@@ -65,8 +65,8 @@ export function CoverageVisualizationDemo({
               onClick={() => setSelectedView("heatmap")}
               className={
                 selectedView === "heatmap"
-                  ? "bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
-                  : "border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                  ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
+                  : "border-border-default hover:border-brand-primary hover:text-brand-primary"
               }
             >
               <Map className="w-4 h-4 mr-2" />
@@ -77,8 +77,8 @@ export function CoverageVisualizationDemo({
               onClick={() => setSelectedView("graph")}
               className={
                 selectedView === "graph"
-                  ? "bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
-                  : "border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                  ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
+                  : "border-border-default hover:border-brand-primary hover:text-brand-primary"
               }
             >
               <Network className="w-4 h-4 mr-2" />
@@ -91,11 +91,11 @@ export function CoverageVisualizationDemo({
       {/* Visualization Content */}
       {selectedView === "summary" && (
         <div className="space-y-4">
-          <div className="p-4 bg-[#1A1A1B]/30 border border-gray-800/50 rounded-lg">
-            <h3 className="text-sm font-medium text-gray-300 mb-2">
+          <div className="p-4 bg-surface-raised/30 border border-border-subtle/50 rounded-lg">
+            <h3 className="text-sm font-medium text-text-secondary mb-2">
               About Summary View
             </h3>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-text-muted">
               The summary card provides a high-level overview of coverage
               metrics including state coverage, transition coverage, unique
               paths, and total executions. It also shows a trend indicator and a
@@ -108,15 +108,15 @@ export function CoverageVisualizationDemo({
 
       {selectedView === "heatmap" && (
         <div className="space-y-4">
-          <div className="p-4 bg-[#1A1A1B]/30 border border-gray-800/50 rounded-lg">
-            <h3 className="text-sm font-medium text-gray-300 mb-2">
+          <div className="p-4 bg-surface-raised/30 border border-border-subtle/50 rounded-lg">
+            <h3 className="text-sm font-medium text-text-secondary mb-2">
               About Heat Map View
             </h3>
-            <p className="text-xs text-gray-400 mb-2">
+            <p className="text-xs text-text-muted mb-2">
               The heat map visualization uses color coding to show the status of
               each state:
             </p>
-            <ul className="text-xs text-gray-400 space-y-1 ml-4">
+            <ul className="text-xs text-text-muted space-y-1 ml-4">
               <li>
                 <span className="text-green-500 font-medium">Green</span> -
                 Passing states (90%+ success rate)
@@ -130,11 +130,11 @@ export function CoverageVisualizationDemo({
                 states (&lt;70% success rate)
               </li>
               <li>
-                <span className="text-gray-500 font-medium">Gray</span> -
+                <span className="text-text-muted font-medium">Gray</span> -
                 Untested states (no visits yet)
               </li>
             </ul>
-            <p className="text-xs text-gray-400 mt-2">
+            <p className="text-xs text-text-muted mt-2">
               Click on any state to view detailed execution statistics.
             </p>
           </div>
@@ -144,11 +144,11 @@ export function CoverageVisualizationDemo({
 
       {selectedView === "graph" && (
         <div className="space-y-4">
-          <div className="p-4 bg-[#1A1A1B]/30 border border-gray-800/50 rounded-lg">
-            <h3 className="text-sm font-medium text-gray-300 mb-2">
+          <div className="p-4 bg-surface-raised/30 border border-border-subtle/50 rounded-lg">
+            <h3 className="text-sm font-medium text-text-secondary mb-2">
               About Graph View
             </h3>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-text-muted">
               The traditional state graph visualization focuses on success rates
               rather than coverage status. All states are shown with color
               gradients based on their success rates, making it easier to
@@ -163,16 +163,16 @@ export function CoverageVisualizationDemo({
       )}
 
       {/* Alternative: Tabbed Layout */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle>Alternative: Tabbed Layout</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-gray-400 mb-4">
+          <p className="text-text-muted mb-4">
             You can also use tabs to organize multiple visualizations:
           </p>
           <Tabs defaultValue="summary" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 bg-[#0A0A0B]/50">
+            <TabsList className="grid w-full grid-cols-3 bg-surface-canvas/50">
               <TabsTrigger value="summary">Summary</TabsTrigger>
               <TabsTrigger value="heatmap">Heat Map</TabsTrigger>
               <TabsTrigger value="graph">Graph</TabsTrigger>

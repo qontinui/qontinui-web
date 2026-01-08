@@ -481,7 +481,7 @@ export function AutomationBuilder() {
       // Warn if workflow has branching
       if (!isLinearWorkflow(selectedItem)) {
         return (
-          <div className="flex items-center justify-center h-full text-gray-500">
+          <div className="flex items-center justify-center h-full text-text-muted">
             <div className="text-center">
               <p className="text-lg">This workflow has branching logic</p>
               <p className="text-sm">Switch to graph mode to edit</p>
@@ -544,12 +544,12 @@ export function AutomationBuilder() {
     >
       {/* Left Panel - Library */}
       <div
-        className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-r border-gray-800 bg-[#27272A]/50 overflow-hidden flex flex-col"
+        className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-r border-border-subtle bg-surface-raised/50 overflow-hidden flex flex-col"
         data-tutorial-id="action-library"
       >
         {/* Mode Selector */}
         <div
-          className="p-4 border-b border-gray-800"
+          className="p-4 border-b border-border-subtle"
           data-tutorial-id="mode-selector"
         >
           <BuilderModeSelector mode={mode} onModeChange={setMode} />
@@ -599,7 +599,7 @@ export function AutomationBuilder() {
           mode === "graph"
             ? "w-[20rem] xl:w-[22rem] 2xl:w-[24rem]"
             : "w-[22rem] xl:w-[26rem] 2xl:w-[30rem]"
-        } flex-shrink-0 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto`}
+        } flex-shrink-0 border-l border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto`}
         data-tutorial-id="properties-panel"
       >
         {selectedItem && !selectedAction ? (

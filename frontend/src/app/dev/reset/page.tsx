@@ -141,7 +141,7 @@ export default function DevResetPage() {
     <div className="min-h-screen bg-[#0A0A0B] text-white p-8">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-bold mb-2 text-[#00D9FF]">Dev Reset</h1>
-        <p className="text-gray-400 mb-8">
+        <p className="text-text-muted mb-8">
           Browser state cleared for debugging
         </p>
 
@@ -181,7 +181,7 @@ export default function DevResetPage() {
                 </button>
                 <button
                   onClick={() => router.push("/dashboard")}
-                  className="px-4 py-2 bg-gray-700 text-white font-medium rounded-lg hover:bg-gray-600 transition-colors"
+                  className="px-4 py-2 bg-surface-raised text-white font-medium rounded-lg hover:bg-surface-raised/80 transition-colors"
                 >
                   Go to Dashboard
                 </button>
@@ -192,7 +192,7 @@ export default function DevResetPage() {
             {debugInfo && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-lg font-semibold mb-2 text-gray-300">
+                  <h2 className="text-lg font-semibold mb-2 text-text-secondary">
                     Cleared at: {debugInfo.timestamp}
                   </h2>
                 </div>
@@ -203,16 +203,16 @@ export default function DevResetPage() {
                     localStorage (was{" "}
                     {Object.keys(debugInfo.localStorage).length} items)
                   </h3>
-                  <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-48 overflow-y-auto">
+                  <div className="bg-surface-canvas rounded-lg p-4 overflow-x-auto max-h-48 overflow-y-auto">
                     {Object.keys(debugInfo.localStorage).length === 0 ? (
-                      <span className="text-gray-500">Empty</span>
+                      <span className="text-text-muted">Empty</span>
                     ) : (
-                      <pre className="text-xs text-gray-300">
+                      <pre className="text-xs text-text-secondary">
                         {Object.entries(debugInfo.localStorage).map(
                           ([key, value]) => (
                             <div key={key} className="mb-1">
                               <span className="text-[#00D9FF]">{key}:</span>{" "}
-                              <span className="text-gray-400">
+                              <span className="text-text-muted">
                                 {value.length > 100
                                   ? value.substring(0, 100) + "..."
                                   : value}
@@ -231,16 +231,16 @@ export default function DevResetPage() {
                     sessionStorage (was{" "}
                     {Object.keys(debugInfo.sessionStorage).length} items)
                   </h3>
-                  <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-32 overflow-y-auto">
+                  <div className="bg-surface-canvas rounded-lg p-4 overflow-x-auto max-h-32 overflow-y-auto">
                     {Object.keys(debugInfo.sessionStorage).length === 0 ? (
-                      <span className="text-gray-500">Empty</span>
+                      <span className="text-text-muted">Empty</span>
                     ) : (
-                      <pre className="text-xs text-gray-300">
+                      <pre className="text-xs text-text-secondary">
                         {Object.entries(debugInfo.sessionStorage).map(
                           ([key, value]) => (
                             <div key={key} className="mb-1">
                               <span className="text-[#00D9FF]">{key}:</span>{" "}
-                              <span className="text-gray-400">
+                              <span className="text-text-muted">
                                 {value.length > 100
                                   ? value.substring(0, 100) + "..."
                                   : value}
@@ -258,13 +258,13 @@ export default function DevResetPage() {
                   <h3 className="text-md font-medium mb-2 text-[#BD00FF]">
                     Cookies (was {debugInfo.cookies.length} accessible)
                   </h3>
-                  <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-32 overflow-y-auto">
+                  <div className="bg-surface-canvas rounded-lg p-4 overflow-x-auto max-h-32 overflow-y-auto">
                     {debugInfo.cookies.length === 0 ? (
-                      <span className="text-gray-500">
+                      <span className="text-text-muted">
                         No accessible cookies (HttpOnly cookies not visible)
                       </span>
                     ) : (
-                      <pre className="text-xs text-gray-300">
+                      <pre className="text-xs text-text-secondary">
                         {debugInfo.cookies.map((cookie, i) => (
                           <div key={i} className="mb-1">
                             {cookie}
@@ -273,18 +273,18 @@ export default function DevResetPage() {
                       </pre>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-text-muted mt-2">
                     Note: HttpOnly cookies (auth tokens) are cleared via logout
                     endpoint
                   </p>
                 </div>
 
                 {/* What was cleared */}
-                <div className="bg-gray-800/50 rounded-lg p-4">
+                <div className="bg-surface-raised/50 rounded-lg p-4">
                   <h3 className="text-md font-medium mb-2 text-white">
                     Actions Taken:
                   </h3>
-                  <ul className="text-sm text-gray-400 space-y-1">
+                  <ul className="text-sm text-text-muted space-y-1">
                     <li>✓ localStorage.clear()</li>
                     <li>✓ sessionStorage.clear()</li>
                     <li>

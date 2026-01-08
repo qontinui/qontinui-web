@@ -127,7 +127,7 @@ export function AutomationStreamingCard({
 
   if (loading) {
     return (
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+      <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
         <CardHeader>
           <CardTitle className="text-xl">Automation Streaming</CardTitle>
           <CardDescription>Loading...</CardDescription>
@@ -155,12 +155,12 @@ export function AutomationStreamingCard({
   const isFreeUser = settings.sessions_limit !== null;
 
   return (
-    <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <Wifi className="w-5 h-5 text-[#00D9FF]" />
+              <Wifi className="w-5 h-5 text-brand-primary" />
               <CardTitle className="text-xl">Automation Streaming</CardTitle>
             </div>
             <CardDescription>
@@ -170,7 +170,7 @@ export function AutomationStreamingCard({
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Label htmlFor="streaming-toggle" className="text-gray-400">
+            <Label htmlFor="streaming-toggle" className="text-text-muted">
               {settings.enabled ? "Enabled" : "Disabled"}
             </Label>
             <Switch
@@ -185,9 +185,9 @@ export function AutomationStreamingCard({
       <CardContent className="space-y-4">
         {settings.enabled && (
           <>
-            <Alert className="bg-[#00D9FF]/10 border-[#00D9FF]/30">
-              <Info className="w-4 h-4 text-[#00D9FF]" />
-              <AlertDescription className="text-gray-300">
+            <Alert className="bg-brand-primary/10 border-brand-primary/30">
+              <Info className="w-4 h-4 text-brand-primary" />
+              <AlertDescription className="text-text-secondary">
                 WebSocket streaming sends automation logs, screenshots, and
                 events to the web interface for real-time monitoring and
                 integration testing.
@@ -197,21 +197,21 @@ export function AutomationStreamingCard({
             {isFreeUser && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Session Usage</span>
+                  <span className="text-text-muted">Session Usage</span>
                   <span className="font-medium text-white">
                     {settings.sessions_used} / {settings.sessions_limit}{" "}
                     sessions
                   </span>
                 </div>
                 <Progress value={usagePercentage} className="h-2" />
-                <div className="flex items-center justify-between text-xs text-gray-500">
+                <div className="flex items-center justify-between text-xs text-text-muted">
                   <span>Free tier limit</span>
                   {resetDate && <span>Resets on {resetDate}</span>}
                 </div>
                 {settings.sessions_used >= (settings.sessions_limit || 0) && (
                   <Alert className="bg-yellow-500/10 border-yellow-500/30">
                     <Info className="w-4 h-4 text-yellow-500" />
-                    <AlertDescription className="text-gray-300">
+                    <AlertDescription className="text-text-secondary">
                       You&apos;ve reached your monthly streaming limit. Upgrade
                       to a paid plan for unlimited sessions.
                     </AlertDescription>
@@ -222,10 +222,10 @@ export function AutomationStreamingCard({
 
             {!isFreeUser && (
               <div className="text-center py-4">
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-text-muted">
                   Unlimited streaming sessions available
                 </div>
-                <div className="text-xs text-gray-500 mt-1">
+                <div className="text-xs text-text-muted mt-1">
                   {settings.sessions_used} sessions used this month
                 </div>
               </div>
@@ -234,7 +234,7 @@ export function AutomationStreamingCard({
         )}
 
         {!settings.enabled && (
-          <div className="text-sm text-gray-400 py-2">
+          <div className="text-sm text-text-muted py-2">
             Enable streaming to send automation data to the web interface for
             real-time monitoring and integration testing.
           </div>

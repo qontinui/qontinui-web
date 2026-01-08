@@ -26,14 +26,14 @@ export function SimilarityThresholdOverride({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="text-xs text-gray-400">
+        <Label className="text-xs text-text-muted">
           Similarity Threshold Override
         </Label>
         {similarity !== undefined && similarity !== null ? (
           <Button
             variant="ghost"
             size="sm"
-            className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+            className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
             onClick={() => {
               const { similarity: _similarity, ...rest } =
                 action.config as Record<string, unknown>;
@@ -44,7 +44,9 @@ export function SimilarityThresholdOverride({
             <X className="w-3 h-3" />
           </Button>
         ) : (
-          <span className="text-xs text-gray-500">(using project default)</span>
+          <span className="text-xs text-text-muted">
+            (using project default)
+          </span>
         )}
       </div>
       {similarity !== undefined && similarity !== null && (
@@ -62,9 +64,9 @@ export function SimilarityThresholdOverride({
             }}
             className="w-full"
           />
-          <div className="flex justify-between text-xs text-gray-500">
+          <div className="flex justify-between text-xs text-text-muted">
             <span>70%</span>
-            <span className="text-gray-400">
+            <span className="text-text-muted">
               {((similarity as number) * 100).toFixed(0)}%
             </span>
             <span>100%</span>
@@ -75,7 +77,7 @@ export function SimilarityThresholdOverride({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+          className="w-full h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
           onClick={() => updateConfig("similarity", 0.85)}
         >
           <Plus className="w-3 h-3 mr-1" />

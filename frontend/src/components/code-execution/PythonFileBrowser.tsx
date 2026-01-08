@@ -215,7 +215,7 @@ function TreeNode({
         <div
           className={cn(
             "flex items-center gap-2 py-1.5 px-2 cursor-pointer rounded transition-colors",
-            "hover:bg-gray-100 dark:hover:bg-gray-800",
+            "hover:bg-surface-raised dark:hover:bg-surface-raised",
             "focus:outline-none focus:ring-2 focus:ring-blue-500"
           )}
           style={{ paddingLeft }}
@@ -226,16 +226,16 @@ function TreeNode({
           aria-expanded={isExpanded}
         >
           {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
+            <ChevronDown className="w-4 h-4 text-text-muted flex-shrink-0" />
           ) : (
-            <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
+            <ChevronRight className="w-4 h-4 text-text-muted flex-shrink-0" />
           )}
           {isExpanded ? (
             <FolderOpen className="w-4 h-4 text-blue-500 flex-shrink-0" />
           ) : (
             <Folder className="w-4 h-4 text-blue-500 flex-shrink-0" />
           )}
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <span className="text-sm font-medium text-text-secondary dark:text-text-secondary">
             {node.name}
           </span>
           {node.children && (
@@ -267,7 +267,7 @@ function TreeNode({
     <div
       className={cn(
         "flex items-center gap-2 py-1.5 px-2 cursor-pointer rounded transition-colors",
-        "hover:bg-gray-100 dark:hover:bg-gray-800",
+        "hover:bg-surface-raised dark:hover:bg-surface-raised",
         "focus:outline-none focus:ring-2 focus:ring-blue-500",
         isSelected &&
           "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700"
@@ -282,7 +282,7 @@ function TreeNode({
       <FileCode className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-900 dark:text-gray-100 truncate">
+          <span className="text-sm text-text-primary dark:text-text-primary truncate">
             {node.name}
           </span>
           {node.file?.isValid === false && (
@@ -296,7 +296,7 @@ function TreeNode({
           )}
         </div>
         {showMetadata && node.file && (
-          <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
+          <div className="flex items-center gap-3 mt-0.5 text-xs text-text-muted">
             <span>{formatFileSize(node.file.size)}</span>
             <span>{formatDate(node.file.lastModified)}</span>
           </div>
@@ -341,7 +341,7 @@ export function PythonFileBrowser({
       {/* Search and Refresh */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
           <Input
             type="text"
             placeholder="Search Python files..."
@@ -366,7 +366,7 @@ export function PythonFileBrowser({
 
       {/* File Count */}
       {!error && (
-        <div className="flex items-center justify-between text-xs text-gray-500">
+        <div className="flex items-center justify-between text-xs text-text-muted">
           <span>
             {filteredFiles.length} file{filteredFiles.length !== 1 ? "s" : ""}{" "}
             found
@@ -403,8 +403,8 @@ export function PythonFileBrowser({
       {/* Loading State */}
       {isLoading && (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-          <span className="ml-2 text-sm text-gray-500">Loading files...</span>
+          <Loader2 className="w-6 h-6 animate-spin text-text-muted" />
+          <span className="ml-2 text-sm text-text-muted">Loading files...</span>
         </div>
       )}
 
@@ -414,13 +414,13 @@ export function PythonFileBrowser({
           <div className="p-2">
             {fileTree.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <FileCode className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <FileCode className="w-12 h-12 text-text-secondary dark:text-text-muted mb-3" />
+                <p className="text-sm font-medium text-text-secondary dark:text-text-secondary">
                   {searchQuery
                     ? "No files match your search"
                     : "No Python files found"}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-text-muted mt-1">
                   {searchQuery
                     ? "Try a different search term"
                     : "Add .py files to your project directory"}
@@ -446,7 +446,7 @@ export function PythonFileBrowser({
 
       {/* Help Text */}
       {!error && !isLoading && files.length > 0 && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           Select a Python file to use in your code execution action. Files are
           relative to your project root.
         </p>

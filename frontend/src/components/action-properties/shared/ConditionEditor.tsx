@@ -108,12 +108,12 @@ export function ConditionEditor({
   return (
     <div className={cn("space-y-3", className)}>
       <div className="flex items-center justify-between">
-        {label && <Label className="text-xs text-gray-400">{label}</Label>}
+        {label && <Label className="text-xs text-text-muted">{label}</Label>}
         {allowEmpty && condition && (
           <button
             type="button"
             onClick={handleClear}
-            className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+            className="text-xs text-text-muted hover:text-red-400 transition-colors"
           >
             Clear condition
           </button>
@@ -122,14 +122,14 @@ export function ConditionEditor({
 
       {/* Condition Type Selector */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-500">Condition Type</Label>
+        <Label className="text-xs text-text-muted">Condition Type</Label>
         <Select
           value={localCondition.type}
           onValueChange={(value) =>
             handleTypeChange(value as ConditionConfig["type"])
           }
         >
-          <SelectTrigger className="bg-transparent border-gray-700">
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -155,7 +155,7 @@ export function ConditionEditor({
           />
 
           <div className="space-y-2">
-            <Label className="text-xs text-gray-500">Operator</Label>
+            <Label className="text-xs text-text-muted">Operator</Label>
             <Select
               value={localCondition.operator || "=="}
               onValueChange={(value) =>
@@ -164,7 +164,7 @@ export function ConditionEditor({
                 })
               }
             >
-              <SelectTrigger className="bg-transparent border-gray-700">
+              <SelectTrigger className="bg-transparent border-border-default">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -181,7 +181,7 @@ export function ConditionEditor({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs text-gray-500">Expected Value</Label>
+            <Label className="text-xs text-text-muted">Expected Value</Label>
             <Input
               type="text"
               value={localCondition.expectedValue?.toString() || ""}
@@ -189,9 +189,9 @@ export function ConditionEditor({
                 updateCondition({ expectedValue: e.target.value })
               }
               placeholder="value"
-              className="bg-transparent border-gray-700 font-mono text-sm"
+              className="bg-transparent border-border-default font-mono text-sm"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Enter the value to compare against. Numbers and booleans will be
               automatically converted.
             </p>
@@ -215,12 +215,12 @@ export function ConditionEditor({
       {(localCondition.type === "image_exists" ||
         localCondition.type === "image_vanished") && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-500">Image</Label>
+          <Label className="text-xs text-text-muted">Image</Label>
           <Select
             value={localCondition.imageId || ""}
             onValueChange={(value) => updateCondition({ imageId: value })}
           >
-            <SelectTrigger className="bg-transparent border-gray-700">
+            <SelectTrigger className="bg-transparent border-border-default">
               <SelectValue placeholder="Select an image" />
             </SelectTrigger>
             <SelectContent>
@@ -237,7 +237,7 @@ export function ConditionEditor({
               )}
             </SelectContent>
           </Select>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             {localCondition.type === "image_exists"
               ? "Condition is true when the image is found on screen"
               : "Condition is true when the image is no longer visible on screen"}
@@ -249,21 +249,23 @@ export function ConditionEditor({
       {localCondition.type === "text_exists" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-500">Text to Find</Label>
+            <Label className="text-xs text-text-muted">Text to Find</Label>
             <Input
               type="text"
               value={localCondition.text || ""}
               onChange={(e) => updateCondition({ text: e.target.value })}
               placeholder="Enter text to search for"
-              className="bg-transparent border-gray-700 font-mono text-sm"
+              className="bg-transparent border-border-default font-mono text-sm"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-text-muted">
               Condition is true when this text is found on screen
             </p>
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs text-gray-500">Operator (Optional)</Label>
+            <Label className="text-xs text-text-muted">
+              Operator (Optional)
+            </Label>
             <Select
               value={localCondition.operator || "contains"}
               onValueChange={(value) =>
@@ -272,7 +274,7 @@ export function ConditionEditor({
                 })
               }
             >
-              <SelectTrigger className="bg-transparent border-gray-700">
+              <SelectTrigger className="bg-transparent border-border-default">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

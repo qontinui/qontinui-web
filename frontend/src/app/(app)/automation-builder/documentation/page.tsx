@@ -434,8 +434,8 @@ function DocumentationNavigator({
           }}
           className={cn(
             "w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors",
-            isSelected && "bg-[#00D9FF]/20 text-[#00D9FF] font-medium",
-            !isSelected && "hover:bg-gray-800/50 text-gray-300"
+            isSelected && "bg-brand-primary/20 text-brand-primary font-medium",
+            !isSelected && "hover:bg-surface-raised/50 text-text-muted"
           )}
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
         >
@@ -469,24 +469,24 @@ function DocumentationNavigator({
   };
 
   return (
-    <div className="flex flex-col h-full border-r border-gray-800/50 bg-[#1A1A1B]/30">
+    <div className="flex flex-col h-full border-r border-border-subtle/50 bg-surface-raised/30">
       {/* Header */}
-      <div className="p-4 border-b border-gray-800/50 space-y-3">
+      <div className="p-4 border-b border-border-subtle/50 space-y-3">
         <div className="flex items-center gap-2">
-          <BookOpen className="size-5 text-[#00D9FF]" />
+          <BookOpen className="size-5 text-brand-primary" />
           <h3 className="font-semibold">Documentation</h3>
         </div>
 
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-text-muted" />
           <Input
             placeholder="Search docs..."
             value={filter.searchQuery}
             onChange={(e) =>
               onFilterChange({ ...filter, searchQuery: e.target.value })
             }
-            className="pl-8 h-9 bg-gray-900/50 border-gray-700"
+            className="pl-8 h-9 bg-surface-canvas/50 border-border-default"
           />
         </div>
 
@@ -501,7 +501,7 @@ function DocumentationNavigator({
               })
             }
           >
-            <SelectTrigger className="h-9 bg-gray-900/50 border-gray-700">
+            <SelectTrigger className="h-9 bg-surface-canvas/50 border-border-default">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -521,11 +521,11 @@ function DocumentationNavigator({
       </ScrollArea>
 
       {/* Footer */}
-      <div className="p-2 border-t border-gray-800/50">
+      <div className="p-2 border-t border-border-subtle/50">
         <Button
           variant="outline"
           size="sm"
-          className="w-full border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+          className="w-full border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
           onClick={() => tree[0] && onSelectNode(tree[0])}
         >
           <Plus className="size-4 mr-2" />
@@ -554,25 +554,25 @@ function DocumentationDashboard({
     <div className="p-8 max-w-5xl mx-auto space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
           Documentation Dashboard
         </h1>
-        <p className="text-gray-400 mt-2">
+        <p className="text-text-muted mt-2">
           Manage and maintain your workflow documentation
         </p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle/50">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-[#00D9FF]/20 flex items-center justify-center">
-                <FileText className="size-6 text-[#00D9FF]" />
+              <div className="w-12 h-12 rounded-lg bg-brand-primary/20 flex items-center justify-center">
+                <FileText className="size-6 text-brand-primary" />
               </div>
               <div>
-                <p className="text-sm text-gray-400">Total Documents</p>
-                <p className="text-2xl font-bold text-[#00D9FF]">
+                <p className="text-sm text-text-muted">Total Documents</p>
+                <p className="text-2xl font-bold text-brand-primary">
                   {stats.documented}
                 </p>
               </div>
@@ -580,15 +580,15 @@ function DocumentationDashboard({
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle/50">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-[#00FF88]/20 flex items-center justify-center">
-                <BarChart3 className="size-6 text-[#00FF88]" />
+              <div className="w-12 h-12 rounded-lg bg-brand-success/20 flex items-center justify-center">
+                <BarChart3 className="size-6 text-brand-success" />
               </div>
               <div>
-                <p className="text-sm text-gray-400">Coverage</p>
-                <p className="text-2xl font-bold text-[#00FF88]">
+                <p className="text-sm text-text-muted">Coverage</p>
+                <p className="text-2xl font-bold text-brand-success">
                   {stats.coverage.toFixed(1)}%
                 </p>
               </div>
@@ -596,15 +596,15 @@ function DocumentationDashboard({
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle/50">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-[#BD00FF]/20 flex items-center justify-center">
-                <Clock className="size-6 text-[#BD00FF]" />
+              <div className="w-12 h-12 rounded-lg bg-brand-secondary/20 flex items-center justify-center">
+                <Clock className="size-6 text-brand-secondary" />
               </div>
               <div>
-                <p className="text-sm text-gray-400">Recently Updated</p>
-                <p className="text-2xl font-bold text-[#BD00FF]">
+                <p className="text-sm text-text-muted">Recently Updated</p>
+                <p className="text-2xl font-bold text-brand-secondary">
                   {stats.recentlyUpdated}
                 </p>
               </div>
@@ -612,15 +612,15 @@ function DocumentationDashboard({
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle/50">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-[#FFD700]/20 flex items-center justify-center">
-                <TrendingUp className="size-6 text-[#FFD700]" />
+              <div className="w-12 h-12 rounded-lg bg-brand-warning/20 flex items-center justify-center">
+                <TrendingUp className="size-6 text-brand-warning" />
               </div>
               <div>
-                <p className="text-sm text-gray-400">Health Score</p>
-                <p className="text-2xl font-bold text-[#FFD700]">
+                <p className="text-sm text-text-muted">Health Score</p>
+                <p className="text-2xl font-bold text-brand-warning">
                   {stats.healthScore}
                 </p>
               </div>
@@ -630,7 +630,7 @@ function DocumentationDashboard({
       </div>
 
       {/* Coverage Progress */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle>Documentation Coverage</CardTitle>
           <CardDescription>
@@ -645,7 +645,7 @@ function DocumentationDashboard({
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Undocumented Workflows */}
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle/50">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -661,7 +661,7 @@ function DocumentationDashboard({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-[#00D9FF] text-[#00D9FF] hover:bg-[#00D9FF]/20"
+                  className="border-brand-primary text-brand-primary hover:bg-brand-primary/20"
                 >
                   <Sparkles className="size-4 mr-2" />
                   Generate All
@@ -675,14 +675,14 @@ function DocumentationDashboard({
                 {undocumentedWorkflows.slice(0, 10).map((workflow) => (
                   <div
                     key={workflow.id}
-                    className="flex items-center justify-between p-3 rounded-lg border border-gray-800/50 hover:border-gray-700 transition-colors cursor-pointer"
+                    className="flex items-center justify-between p-3 rounded-lg border border-border-subtle/50 hover:border-border-default transition-colors cursor-pointer"
                     onClick={() => onSelectWorkflow(workflow)}
                   >
                     <div className="flex items-center gap-3">
-                      <FileCode className="size-4 text-gray-500" />
+                      <FileCode className="size-4 text-text-muted" />
                       <div>
                         <p className="text-sm font-medium">{workflow.name}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-text-muted">
                           {workflow.category}
                         </p>
                       </div>
@@ -698,10 +698,10 @@ function DocumentationDashboard({
         </Card>
 
         {/* Most Viewed */}
-        <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+        <Card className="bg-surface-raised/50 border-border-subtle/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Eye className="size-5 text-[#00D9FF]" />
+              <Eye className="size-5 text-brand-primary" />
               Most Viewed
             </CardTitle>
             <CardDescription>Popular documentation pages</CardDescription>
@@ -711,20 +711,20 @@ function DocumentationDashboard({
               {stats.mostViewed.map((name, idx) => (
                 <div
                   key={name}
-                  className="flex items-center justify-between p-3 rounded-lg border border-gray-800/50 hover:border-gray-700 transition-colors cursor-pointer"
+                  className="flex items-center justify-between p-3 rounded-lg border border-border-subtle/50 hover:border-border-default transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#00D9FF]/20 text-[#00D9FF] font-bold text-sm">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-primary/20 text-brand-primary font-bold text-sm">
                       {idx + 1}
                     </div>
                     <div>
                       <p className="text-sm font-medium">{name}</p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-text-muted">
                         {[329, 552, 418, 267, 385][idx] || 200} views
                       </p>
                     </div>
                   </div>
-                  <ExternalLink className="size-4 text-gray-500" />
+                  <ExternalLink className="size-4 text-text-muted" />
                 </div>
               ))}
             </div>
@@ -733,7 +733,7 @@ function DocumentationDashboard({
       </div>
 
       {/* Quick Links */}
-      <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
+      <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
           <CardDescription>Common documentation tasks</CardDescription>
@@ -742,28 +742,28 @@ function DocumentationDashboard({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Button
               variant="outline"
-              className="h-auto flex-col gap-2 p-4 border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              className="h-auto flex-col gap-2 p-4 border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
             >
               <Sparkles className="size-6" />
               <span className="text-xs">Auto-Generate</span>
             </Button>
             <Button
               variant="outline"
-              className="h-auto flex-col gap-2 p-4 border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF] bg-transparent"
+              className="h-auto flex-col gap-2 p-4 border-border-default hover:border-brand-secondary hover:text-brand-secondary bg-transparent"
             >
               <Download className="size-6" />
               <span className="text-xs">Export All</span>
             </Button>
             <Button
               variant="outline"
-              className="h-auto flex-col gap-2 p-4 border-gray-700 hover:border-[#00FF88] hover:text-[#00FF88] bg-transparent"
+              className="h-auto flex-col gap-2 p-4 border-border-default hover:border-brand-success hover:text-brand-success bg-transparent"
             >
               <Upload className="size-6" />
               <span className="text-xs">Import Docs</span>
             </Button>
             <Button
               variant="outline"
-              className="h-auto flex-col gap-2 p-4 border-gray-700 hover:border-[#FFD700] hover:text-[#FFD700] bg-transparent"
+              className="h-auto flex-col gap-2 p-4 border-border-default hover:border-brand-warning hover:text-brand-warning bg-transparent"
             >
               <Settings className="size-6" />
               <span className="text-xs">Templates</span>
@@ -793,11 +793,11 @@ function WorkflowInfoPanel({
   const documentation = docService.getDocumentation(workflow.id);
 
   return (
-    <div className="flex flex-col h-full border-l border-gray-800/50 bg-[#1A1A1B]/30">
+    <div className="flex flex-col h-full border-l border-border-subtle/50 bg-surface-raised/30">
       {/* Header */}
-      <div className="p-4 border-b border-gray-800/50">
+      <div className="p-4 border-b border-border-subtle/50">
         <h3 className="font-semibold flex items-center gap-2">
-          <Info className="size-5 text-[#BD00FF]" />
+          <Info className="size-5 text-brand-secondary" />
           Workflow Info
         </h3>
       </div>
@@ -806,31 +806,31 @@ function WorkflowInfoPanel({
         <div className="p-4 space-y-6">
           {/* Quick Stats */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-gray-400 uppercase">
+            <h4 className="text-sm font-semibold text-text-muted uppercase">
               Quick Stats
             </h4>
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800/50">
-                <p className="text-xs text-gray-500">Actions</p>
-                <p className="text-lg font-bold text-[#00D9FF]">
+              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
+                <p className="text-xs text-text-muted">Actions</p>
+                <p className="text-lg font-bold text-brand-primary">
                   {stats.actionCount}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800/50">
-                <p className="text-xs text-gray-500">Complexity</p>
-                <p className="text-lg font-bold text-[#BD00FF]">
+              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
+                <p className="text-xs text-text-muted">Complexity</p>
+                <p className="text-lg font-bold text-brand-secondary">
                   {stats.complexity}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800/50">
-                <p className="text-xs text-gray-500">Dependencies</p>
-                <p className="text-lg font-bold text-[#FFD700]">
+              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
+                <p className="text-xs text-text-muted">Dependencies</p>
+                <p className="text-lg font-bold text-brand-warning">
                   {stats.dependencies}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800/50">
-                <p className="text-xs text-gray-500">Test Coverage</p>
-                <p className="text-lg font-bold text-[#00FF88]">
+              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
+                <p className="text-xs text-text-muted">Test Coverage</p>
+                <p className="text-lg font-bold text-brand-success">
                   {stats.testCoverage}%
                 </p>
               </div>
@@ -839,14 +839,14 @@ function WorkflowInfoPanel({
 
           {/* Metrics */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-gray-400 uppercase">
+            <h4 className="text-sm font-semibold text-text-muted uppercase">
               Performance
             </h4>
             {stats.lastRun && (
-              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800/50">
+              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-gray-500">Last Run</span>
-                  <Clock className="size-3 text-gray-500" />
+                  <span className="text-xs text-text-muted">Last Run</span>
+                  <Clock className="size-3 text-text-muted" />
                 </div>
                 <p className="text-sm font-medium">
                   {new Date(stats.lastRun).toLocaleDateString()}
@@ -854,19 +854,18 @@ function WorkflowInfoPanel({
               </div>
             )}
             {stats.successRate && (
-              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800/50">
+              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-gray-500">Success Rate</span>
+                  <span className="text-xs text-text-muted">Success Rate</span>
                   <span
-                    className="text-sm font-bold"
-                    style={{
-                      color:
-                        stats.successRate >= 95
-                          ? "#00FF88"
-                          : stats.successRate >= 85
-                            ? "#FFD700"
-                            : "#FF6B6B",
-                    }}
+                    className={cn(
+                      "text-sm font-bold",
+                      stats.successRate >= 95
+                        ? "text-brand-success"
+                        : stats.successRate >= 85
+                          ? "text-brand-warning"
+                          : "text-status-error"
+                    )}
                   >
                     {stats.successRate.toFixed(1)}%
                   </span>
@@ -879,7 +878,7 @@ function WorkflowInfoPanel({
           {/* Tags */}
           {workflow.tags && workflow.tags.length > 0 && (
             <div className="space-y-3">
-              <h4 className="text-sm font-semibold text-gray-400 uppercase">
+              <h4 className="text-sm font-semibold text-text-muted uppercase">
                 Tags
               </h4>
               <div className="flex flex-wrap gap-2">
@@ -887,7 +886,7 @@ function WorkflowInfoPanel({
                   <Badge
                     key={tag}
                     variant="outline"
-                    className="bg-gray-900/50 border-gray-700 text-gray-300"
+                    className="bg-surface-canvas/50 border-border-default text-text-muted"
                   >
                     <Tags className="size-3 mr-1" />
                     {tag}
@@ -900,19 +899,19 @@ function WorkflowInfoPanel({
           {/* Recent Changes */}
           {documentation && (
             <div className="space-y-3">
-              <h4 className="text-sm font-semibold text-gray-400 uppercase">
+              <h4 className="text-sm font-semibold text-text-muted uppercase">
                 Documentation
               </h4>
-              <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-800/50">
+              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
                 <div className="flex items-center gap-2 mb-1">
-                  <CheckCircle2 className="size-4 text-green-500" />
+                  <CheckCircle2 className="size-4 text-brand-success" />
                   <span className="text-sm font-medium">Documented</span>
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-muted">
                   Last updated:{" "}
                   {new Date(documentation.updated).toLocaleDateString()}
                 </p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-muted">
                   Version: {documentation.version}
                 </p>
               </div>
@@ -921,14 +920,14 @@ function WorkflowInfoPanel({
 
           {/* Quick Actions */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-gray-400 uppercase">
+            <h4 className="text-sm font-semibold text-text-muted uppercase">
               Quick Actions
             </h4>
             <div className="space-y-2">
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full justify-start border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+                className="w-full justify-start border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
                 onClick={onEdit}
               >
                 <Edit className="size-4 mr-2" />
@@ -937,7 +936,7 @@ function WorkflowInfoPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full justify-start border-gray-700 hover:border-[#00FF88] hover:text-[#00FF88] bg-transparent"
+                className="w-full justify-start border-border-default hover:border-brand-success hover:text-brand-success bg-transparent"
                 onClick={onRun}
               >
                 <PlayCircle className="size-4 mr-2" />
@@ -946,7 +945,7 @@ function WorkflowInfoPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full justify-start border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF] bg-transparent"
+                className="w-full justify-start border-border-default hover:border-brand-secondary hover:text-brand-secondary bg-transparent"
                 onClick={onViewTests}
               >
                 <TestTube className="size-4 mr-2" />
@@ -955,7 +954,7 @@ function WorkflowInfoPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full justify-start border-gray-700 hover:border-[#FFD700] hover:text-[#FFD700] bg-transparent"
+                className="w-full justify-start border-border-default hover:border-brand-warning hover:text-brand-warning bg-transparent"
                 onClick={onViewMetrics}
               >
                 <BarChart3 className="size-4 mr-2" />
@@ -966,23 +965,27 @@ function WorkflowInfoPanel({
 
           {/* Related Documentation */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-gray-400 uppercase">
+            <h4 className="text-sm font-semibold text-text-muted uppercase">
               Related Docs
             </h4>
             <div className="space-y-2">
-              <button className="w-full text-left p-2 rounded hover:bg-gray-800/50 transition-colors">
-                <p className="text-sm text-[#00D9FF]">Getting Started Guide</p>
-                <p className="text-xs text-gray-500">
+              <button className="w-full text-left p-2 rounded hover:bg-surface-raised/50 transition-colors">
+                <p className="text-sm text-brand-primary">
+                  Getting Started Guide
+                </p>
+                <p className="text-xs text-text-muted">
                   Introduction to this workflow
                 </p>
               </button>
-              <button className="w-full text-left p-2 rounded hover:bg-gray-800/50 transition-colors">
-                <p className="text-sm text-[#00D9FF]">API Documentation</p>
-                <p className="text-xs text-gray-500">Related endpoints</p>
+              <button className="w-full text-left p-2 rounded hover:bg-surface-raised/50 transition-colors">
+                <p className="text-sm text-brand-primary">API Documentation</p>
+                <p className="text-xs text-text-muted">Related endpoints</p>
               </button>
-              <button className="w-full text-left p-2 rounded hover:bg-gray-800/50 transition-colors">
-                <p className="text-sm text-[#00D9FF]">Troubleshooting</p>
-                <p className="text-xs text-gray-500">Common issues and fixes</p>
+              <button className="w-full text-left p-2 rounded hover:bg-surface-raised/50 transition-colors">
+                <p className="text-sm text-brand-primary">Troubleshooting</p>
+                <p className="text-xs text-text-muted">
+                  Common issues and fixes
+                </p>
               </button>
             </div>
           </div>
@@ -1102,14 +1105,14 @@ export default function DocumentationPage() {
 
   return (
     <RequireProject pageName="Documentation">
-      <div className="flex flex-col h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      <div className="flex flex-col h-screen bg-surface-canvas text-white">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800/50 bg-[#1A1A1B]/50 backdrop-blur-sm">
+        <div className="flex items-center justify-between p-4 border-b border-border-subtle/50 bg-surface-raised/50 backdrop-blur-sm">
           <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               Project Documentation
             </h1>
-            <p className="text-sm text-gray-400 mt-1">
+            <p className="text-sm text-text-muted mt-1">
               Document your workflows and automation project
             </p>
           </div>
@@ -1118,7 +1121,7 @@ export default function DocumentationPage() {
             <Button
               size="sm"
               variant="outline"
-              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
               onClick={() => setMode("edit")}
             >
               <Plus className="size-4 mr-2" />
@@ -1127,7 +1130,7 @@ export default function DocumentationPage() {
             <Button
               size="sm"
               variant="outline"
-              className="border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF] bg-transparent"
+              className="border-border-default hover:border-brand-secondary hover:text-brand-secondary bg-transparent"
               onClick={handleGenerateAll}
             >
               <Sparkles className="size-4 mr-2" />
@@ -1136,7 +1139,7 @@ export default function DocumentationPage() {
             <Button
               size="sm"
               variant="outline"
-              className="border-gray-700 hover:border-[#00FF88] hover:text-[#00FF88] bg-transparent"
+              className="border-border-default hover:border-brand-success hover:text-brand-success bg-transparent"
               onClick={handleExportAll}
             >
               <Download className="size-4 mr-2" />
@@ -1145,7 +1148,7 @@ export default function DocumentationPage() {
             <Button
               size="sm"
               variant="outline"
-              className="border-gray-700 hover:border-[#FFD700] hover:text-[#FFD700] bg-transparent"
+              className="border-border-default hover:border-brand-warning hover:text-brand-warning bg-transparent"
               onClick={handleImport}
             >
               <Upload className="size-4 mr-2" />
@@ -1190,7 +1193,7 @@ export default function DocumentationPage() {
             {selectedWorkflow && (
               <>
                 {/* Tabs */}
-                <div className="flex items-center gap-4 px-4 py-3 border-b border-gray-800/50 bg-[#1A1A1B]/30">
+                <div className="flex items-center gap-4 px-4 py-3 border-b border-border-subtle/50 bg-surface-raised/30">
                   <Button
                     size="sm"
                     variant={mode === "view" ? "default" : "ghost"}
@@ -1272,11 +1275,11 @@ export default function DocumentationPage() {
                   {mode === "view" && !selectedDocumentation && (
                     <div className="flex items-center justify-center h-full">
                       <div className="text-center p-8 max-w-md">
-                        <FileText className="size-16 mx-auto mb-4 text-gray-600" />
+                        <FileText className="size-16 mx-auto mb-4 text-text-muted" />
                         <h3 className="text-xl font-semibold mb-2">
                           No Documentation Yet
                         </h3>
-                        <p className="text-gray-400 mb-6">
+                        <p className="text-text-muted mb-6">
                           This workflow doesn&apos;t have documentation yet.
                           Create documentation to help others understand how it
                           works.
@@ -1284,7 +1287,7 @@ export default function DocumentationPage() {
                         <div className="flex gap-3 justify-center">
                           <Button
                             onClick={() => setMode("edit")}
-                            className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                            className="bg-brand-primary hover:bg-brand-primary/80 text-black"
                           >
                             <Edit className="size-4 mr-2" />
                             Create Documentation
@@ -1292,7 +1295,7 @@ export default function DocumentationPage() {
                           <Button
                             variant="outline"
                             onClick={handleGenerateAuto}
-                            className="border-[#BD00FF] text-[#BD00FF] hover:bg-[#BD00FF]/20"
+                            className="border-brand-secondary text-brand-secondary hover:bg-brand-secondary/20"
                           >
                             <Sparkles className="size-4 mr-2" />
                             Auto-Generate
@@ -1339,7 +1342,7 @@ export default function DocumentationPage() {
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <AlertDialogContent className="bg-[#1A1A1B] border-gray-800">
+          <AlertDialogContent className="bg-surface-raised border-border-subtle">
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Documentation</AlertDialogTitle>
               <AlertDialogDescription>
@@ -1348,7 +1351,7 @@ export default function DocumentationPage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel className="bg-transparent border-gray-700">
+              <AlertDialogCancel className="bg-transparent border-border-default">
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction

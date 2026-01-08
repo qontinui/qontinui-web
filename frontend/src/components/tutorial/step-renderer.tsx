@@ -40,7 +40,7 @@ export function StepRenderer({ currentTutorial, onTryIt }: StepRendererProps) {
   if (!step) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">No step content available</p>
+        <p className="text-text-muted">No step content available</p>
       </div>
     );
   }
@@ -59,7 +59,7 @@ export function StepRenderer({ currentTutorial, onTryIt }: StepRendererProps) {
       </div>
 
       {/* Step Content */}
-      <div className="text-gray-700 dark:text-gray-300 leading-relaxed space-y-4">
+      <div className="text-text-secondary leading-relaxed space-y-4">
         <p className="text-lg whitespace-pre-wrap">{step.content}</p>
       </div>
 
@@ -87,12 +87,10 @@ export function StepRenderer({ currentTutorial, onTryIt }: StepRendererProps) {
       {/* Additional Details */}
       {step.details && (
         <div className="space-y-3">
-          <h3 className="font-semibold text-gray-900 dark:text-white">
-            More Details
-          </h3>
-          <Card className="border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
+          <h3 className="font-semibold text-text-primary">More Details</h3>
+          <Card className="border-border-subtle bg-surface-canvas">
             <CardContent className="p-4">
-              <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+              <p className="text-text-secondary whitespace-pre-wrap">
                 {step.details}
               </p>
             </CardContent>
@@ -103,16 +101,16 @@ export function StepRenderer({ currentTutorial, onTryIt }: StepRendererProps) {
       {/* Keyboard Shortcuts */}
       {step.shortcuts && step.shortcuts.length > 0 && (
         <div className="space-y-3">
-          <h3 className="font-semibold text-gray-900 dark:text-white">
+          <h3 className="font-semibold text-text-primary">
             Keyboard Shortcuts
           </h3>
           <div className="grid grid-cols-1 gap-2">
             {step.shortcuts.map((shortcut, idx) => (
               <div
                 key={idx}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
+                className="flex items-center gap-2 px-3 py-2 bg-surface-raised rounded-lg border border-border-subtle"
               >
-                <code className="text-sm font-mono font-semibold text-gray-900 dark:text-white">
+                <code className="text-sm font-mono font-semibold text-text-primary">
                   {shortcut}
                 </code>
               </div>
@@ -167,7 +165,7 @@ function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
   };
 
   return (
-    <Card className="border-gray-700 bg-slate-900 overflow-hidden">
+    <Card className="border-border-default bg-slate-900 overflow-hidden">
       <CardContent className="p-0">
         <div className="relative inline-block w-full">
           {/* Image */}
@@ -202,14 +200,14 @@ function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
                     <div
                       className={`absolute inset-0 rounded-full border-2 ${
                         isHovered
-                          ? "border-[#00D9FF] bg-[#00D9FF]/20"
-                          : "border-[#BD00FF] bg-[#BD00FF]/10"
+                          ? "border-brand-primary bg-brand-primary/20"
+                          : "border-brand-secondary bg-brand-secondary/10"
                       } transition-all duration-200`}
                     />
                     {/* Center dot */}
                     <div
                       className={`absolute top-1/2 left-1/2 w-2 h-2 rounded-full transform -translate-x-1/2 -translate-y-1/2 ${
-                        isHovered ? "bg-[#00D9FF]" : "bg-[#BD00FF]"
+                        isHovered ? "bg-brand-primary" : "bg-brand-secondary"
                       } transition-all duration-200`}
                     />
                   </div>
@@ -217,7 +215,7 @@ function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
                   {/* Annotation Tooltip */}
                   {isHovered && (
                     <div
-                      className="absolute z-10 px-3 py-2 bg-slate-950 border border-[#00D9FF] rounded-lg shadow-lg text-sm text-white whitespace-nowrap pointer-events-none"
+                      className="absolute z-10 px-3 py-2 bg-slate-950 border border-brand-primary rounded-lg shadow-lg text-sm text-white whitespace-nowrap pointer-events-none"
                       style={{
                         left: `${Math.min(x + 16, imageSize.width - 150)}px`,
                         top: `${Math.max(y - 36, 10)}px`,
@@ -226,7 +224,7 @@ function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
                       {annotation.text}
                       {/* Arrow pointing to pin */}
                       <div
-                        className="absolute w-2 h-2 bg-slate-950 border-r border-t border-[#00D9FF] transform rotate-45"
+                        className="absolute w-2 h-2 bg-slate-950 border-r border-t border-brand-primary transform rotate-45"
                         style={{
                           left: "-4px",
                           bottom: "4px",
@@ -254,10 +252,12 @@ interface ConfigPreviewProps {
 
 function ConfigPreview({ config }: ConfigPreviewProps) {
   return (
-    <Card className="border-gray-700 bg-slate-900">
+    <Card className="border-border-default bg-slate-900">
       <CardContent className="p-4">
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-gray-300">Configuration</h3>
+          <h3 className="text-sm font-semibold text-text-muted">
+            Configuration
+          </h3>
           <div className="rounded-lg bg-slate-950 p-4 overflow-x-auto">
             <pre className="text-sm text-slate-100 font-mono whitespace-pre-wrap break-words">
               {JSON.stringify(config, null, 2)}
@@ -299,7 +299,7 @@ function TryItButton({ config, onTryIt }: TryItButtonProps) {
     <Button
       onClick={handleClick}
       disabled={isLoading}
-      className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-semibold px-6 py-2 h-auto transition-all duration-200"
+      className="bg-brand-primary hover:bg-brand-primary/80 text-black font-semibold px-6 py-2 h-auto transition-all duration-200"
     >
       {isLoading ? (
         <span className="flex items-center gap-2">

@@ -111,7 +111,7 @@ export function BaseNode({
         ${getSelectionStyles()}
         ${compact ? "compact" : ""}
         ${className}
-        relative rounded-lg bg-white border-2 border-gray-300
+        relative rounded-lg bg-white border-2 border-border-default
         shadow-md hover:shadow-lg transition-all duration-200
         min-w-[180px] max-w-[280px]
         cursor-pointer
@@ -141,7 +141,7 @@ export function BaseNode({
         className={`
         node-header
         px-3 py-2
-        border-b border-gray-200
+        border-b border-border-subtle
         flex items-center gap-2
         ${categoryColor}
       `}
@@ -153,11 +153,11 @@ export function BaseNode({
 
         {/* Type and Name */}
         <div className="flex-1 min-w-0">
-          <div className="node-type text-xs font-semibold text-gray-700 uppercase tracking-wide">
+          <div className="node-type text-xs font-semibold text-text-secondary uppercase tracking-wide">
             {action.type.replace(/_/g, " ")}
           </div>
           {action.name && !compact && (
-            <div className="node-name text-xs text-gray-600 truncate">
+            <div className="node-name text-xs text-text-muted truncate">
               {action.name}
             </div>
           )}
@@ -176,7 +176,7 @@ export function BaseNode({
               <div className="w-2 h-2 rounded-full bg-red-500" />
             )}
             {executionState === "skipped" && (
-              <div className="w-2 h-2 rounded-full bg-gray-400" />
+              <div className="w-2 h-2 rounded-full bg-text-muted" />
             )}
           </div>
         )}
@@ -190,7 +190,9 @@ export function BaseNode({
         ${compact ? "py-1" : "py-2"}
       `}
       >
-        <div className="node-summary text-sm text-gray-700">{summary}</div>
+        <div className="node-summary text-sm text-text-secondary">
+          {summary}
+        </div>
 
         {/* Error Message */}
         {error && (
@@ -265,7 +267,7 @@ export function MultiOutputNode({
               <span
                 className={`
                   px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap
-                  ${output.color || "bg-gray-100 text-gray-700"}
+                  ${output.color || "bg-surface-raised text-text-secondary"}
                 `}
               >
                 {output.label}
