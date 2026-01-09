@@ -416,7 +416,7 @@ export class AutoSaveService {
       const currentHash = this.currentHash;
 
       return savedHash !== currentHash;
-    } catch (error) {
+    } catch (_error) {
       return false; // Error checking, assume no conflict
     }
   }

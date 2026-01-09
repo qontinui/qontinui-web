@@ -330,7 +330,7 @@ class ApiClient {
           try {
             const data = JSON.parse(xhr.responseText);
             resolve(data);
-          } catch (error) {
+          } catch (_error) {
             reject(new Error("Failed to parse upload response"));
           }
         } else {
@@ -696,7 +696,7 @@ class ApiClient {
           try {
             const data = JSON.parse(xhr.responseText);
             resolve(data);
-          } catch (error) {
+          } catch (_error) {
             reject(new Error("Failed to parse upload response"));
           }
         } else {

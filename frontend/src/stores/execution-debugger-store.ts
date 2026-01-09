@@ -404,7 +404,7 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
 
     deleteVariable: (name: string) => {
       set((state) => {
-        const { [name]: deleted, ...rest } = state.context.variables;
+        const { [name]: _deleted, ...rest } = state.context.variables;
         return {
           context: {
             ...state.context,

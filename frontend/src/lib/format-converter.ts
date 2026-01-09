@@ -130,7 +130,7 @@ function topologicalSort(
 
     if (action) {
       // Remove position property
-      const { position, ...actionWithoutPosition } = action;
+      const { position: _position, ...actionWithoutPosition } = action;
       sorted.push(actionWithoutPosition);
     }
 
@@ -152,7 +152,7 @@ function topologicalSort(
       (a) => (a as WorkflowAction).id === action.id
     );
     if (!sortedAction) {
-      const { position, ...actionWithoutPosition } = action;
+      const { position: _position, ...actionWithoutPosition } = action;
       sorted.push(actionWithoutPosition);
     }
   });
