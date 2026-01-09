@@ -1084,13 +1084,66 @@ export default function DocumentationPage() {
   };
 
   const handleExportAll = () => {
-    // Implement export all functionality
-    console.log("Exporting all documentation...");
+    // Export all documentation as JSON
+    const exportData: Record<string, { documentation: WorkflowDocumentation; workflowName: string }> = {};
+    workflows.forEach((wf) => {
+      const doc = docService.getDocumentation(wf.id);
+      if (doc) {
+        exportData[wf.id] = {
+          documentation: doc,
+          workflowName: wf.name,
+        };
+      }
+    });
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `documentation-export-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleImport = () => {
-    // Implement import functionality
-    console.log("Importing documentation...");
+    // Create file input and trigger click
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const importData = JSON.parse(text) as Record<string, { documentation: WorkflowDocumentation; workflowName: string }>;
+
+        // Import each documentation entry
+        let importedCount = 0;
+        Object.entries(importData).forEach(([workflowId, data]) => {
+          // Check if workflow exists in current project
+          const workflow = workflows.find(wf => wf.id === workflowId || wf.name === data.workflowName);
+          if (workflow) {
+            const existing = docService.getDocumentation(workflow.id);
+            if (existing) {
+              docService.updateDocumentation(workflow.id, data.documentation.content, "Imported from file");
+            } else {
+              docService.createDocumentation(workflow.id, data.documentation.content, {
+                format: data.documentation.format,
+                tags: data.documentation.tags,
+              });
+            }
+            importedCount++;
+          }
+        });
+
+        alert(`Successfully imported ${importedCount} documentation entries.`);
+        window.location.reload();
+      } catch (err) {
+        alert(`Failed to import documentation: ${err instanceof Error ? err.message : "Unknown error"}`);
+      }
+    };
+    input.click();
   };
 
   const handleGenerateAll = () => {
