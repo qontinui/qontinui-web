@@ -3,9 +3,10 @@ export class ApiConfig {
   // Use empty string to make relative URLs that go through Next.js proxy
   static readonly API_BASE_URL = "";
 
-  // Qontinui automation API (pattern matching, state discovery, etc.)
-  static readonly QONTINUI_API_URL =
-    process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+  // Runner URL for local automation (pattern matching, state discovery, extraction)
+  // The runner provides a unified API that calls the qontinui library via IPC
+  static readonly RUNNER_URL =
+    process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
 
   // Auth endpoints (fastapi-users JWT routes)
   static readonly AUTH_LOGIN = `${ApiConfig.API_BASE_URL}/api/v1/auth/jwt/login`;
@@ -23,10 +24,18 @@ export class ApiConfig {
   }
 
   /**
-   * Get the qontinui API URL for integration testing
-   * This points to the qontinui-api service that handles mock execution
+   * Get the runner URL for local automation
+   * The runner provides pattern matching, extraction, and automation via qontinui library
+   */
+  static getRunnerUrl(): string {
+    return ApiConfig.RUNNER_URL;
+  }
+
+  /**
+   * Alias for getBaseUrl() - returns the API URL
+   * @deprecated Use getBaseUrl() instead
    */
   static getApiUrl(): string {
-    return ApiConfig.QONTINUI_API_URL;
+    return ApiConfig.API_BASE_URL;
   }
 }

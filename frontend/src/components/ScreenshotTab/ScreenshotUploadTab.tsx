@@ -384,7 +384,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     setShowMonitorMenu(true);
     try {
       const apiUrl =
-        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+        process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
       const response = await fetch(`${apiUrl}/api/capture/screenshot/monitors`);
       if (response.ok) {
         const data = await response.json();
@@ -413,7 +413,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     setIsCapturing(true);
     try {
       const apiUrl =
-        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+        process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
       const monitorParam =
         monitorIndex !== null ? `&monitor=${monitorIndex}` : "";
       const response = await fetch(
@@ -506,7 +506,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
         description:
           error instanceof Error
             ? error.message
-            : "Make sure qontinui-api is running on port 8001",
+            : "Make sure the runner is running on port 9876",
       });
     } finally {
       setIsCapturing(false);

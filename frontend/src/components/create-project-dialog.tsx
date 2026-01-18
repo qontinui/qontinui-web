@@ -76,7 +76,12 @@ export function CreateProjectDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit}>
+        <form
+          onSubmit={handleSubmit}
+          data-awas-action="create_project"
+          data-awas-element="create-project-form"
+          data-awas-trigger="submit"
+        >
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="project-name">Project Name</Label>
@@ -91,6 +96,8 @@ export function CreateProjectDialog({
                 className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
                 autoFocus
                 disabled={isLoading}
+                data-awas-element="project-name-input"
+                data-awas-param-name={name}
               />
               {error && <p className="text-sm text-red-400">{error}</p>}
             </div>
@@ -107,6 +114,8 @@ export function CreateProjectDialog({
                 placeholder="What does this automation do?"
                 className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
                 disabled={isLoading}
+                data-awas-element="project-description-input"
+                data-awas-param-description={description}
               />
             </div>
           </div>
@@ -125,6 +134,9 @@ export function CreateProjectDialog({
               type="submit"
               disabled={isLoading || !name.trim()}
               className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
+              data-awas-action="create_project"
+              data-awas-element="submit-create-project"
+              data-awas-trigger="click"
             >
               {isLoading ? (
                 <>

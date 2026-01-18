@@ -14,8 +14,6 @@ export const extractionKeys = {
   all: ["extractions"] as const,
   lists: () => [...extractionKeys.all, "list"] as const,
   list: (projectId: string) => [...extractionKeys.lists(), projectId] as const,
-  details: () => [...extractionKeys.all, "detail"] as const,
-  detail: (id: string) => [...extractionKeys.details(), id] as const,
 };
 
 /**
@@ -39,21 +37,6 @@ export function useExtractions(projectId: string, enabled = true) {
 }
 
 /**
- * Hook to fetch a single extraction by ID
- */
-export function useExtraction(id: string, enabled = true) {
-  return useQuery({
-    queryKey: extractionKeys.detail(id),
-    queryFn: async () => {
-      const data = await extractionService.getExtraction(id);
-      return data;
-    },
-    enabled: enabled && !!id,
-    placeholderData: (previousData) => previousData,
-  });
-}
-
-/**
  * Hook to create a new extraction
  */
 export function useCreateExtraction() {
@@ -70,17 +53,11 @@ export function useCreateExtraction() {
       const result = await extractionService.createExtraction(projectId, data);
       return result;
     },
-    onSuccess: (newExtraction, { projectId }) => {
+    onSuccess: (_newExtraction, { projectId }) => {
       // Invalidate and refetch extractions list for this project
       queryClient.invalidateQueries({
         queryKey: extractionKeys.list(projectId),
       });
-
-      // Set the new extraction in cache
-      queryClient.setQueryData(
-        extractionKeys.detail(newExtraction.id),
-        newExtraction
-      );
     },
   });
 }

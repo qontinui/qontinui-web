@@ -3,14 +3,11 @@
  *
  * Client for vision extraction (SAM3, Edge Detection, OCR).
  *
- * Uses qontinui-api backend (port 8001) by default for server-side processing.
- * Can optionally fall back to runner (port 9876) for local GPU processing.
+ * Uses the runner (port 9876) which calls the qontinui library via IPC.
  */
 
-// API endpoint URLs
-const QONTINUI_API_URL =
-  process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
-const RUNNER_URL = "http://localhost:9876";
+const RUNNER_URL =
+  process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
 
 export interface BoundingBox {
   x: number;
@@ -91,35 +88,19 @@ export interface VisionExtractionRequest {
   iou_threshold?: number;
 }
 
-export type VisionEndpoint = "api" | "runner";
-
 export class VisionExtractionService {
-  private preferredEndpoint: VisionEndpoint = "api";
+  private runnerUrl: string;
 
-  constructor(preferredEndpoint: VisionEndpoint = "api") {
-    this.preferredEndpoint = preferredEndpoint;
+  constructor(runnerUrl: string = RUNNER_URL) {
+    this.runnerUrl = runnerUrl;
   }
 
   /**
-   * Set preferred endpoint for vision extraction
+   * Check if the runner is available
    */
-  setPreferredEndpoint(endpoint: VisionEndpoint): void {
-    this.preferredEndpoint = endpoint;
-  }
-
-  /**
-   * Get current preferred endpoint
-   */
-  getPreferredEndpoint(): VisionEndpoint {
-    return this.preferredEndpoint;
-  }
-
-  /**
-   * Check if qontinui-api is available
-   */
-  async checkApiHealth(): Promise<boolean> {
+  async checkHealth(): Promise<boolean> {
     try {
-      const response = await fetch(`${QONTINUI_API_URL}/health`, {
+      const response = await fetch(`${this.runnerUrl}/health`, {
         method: "GET",
         signal: AbortSignal.timeout(5000),
       });
@@ -130,24 +111,7 @@ export class VisionExtractionService {
   }
 
   /**
-   * Check if runner is available
-   */
-  async checkRunnerHealth(): Promise<boolean> {
-    try {
-      const response = await fetch(`${RUNNER_URL}/health`, {
-        method: "GET",
-        signal: AbortSignal.timeout(5000),
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Run vision extraction on a screenshot.
-   *
-   * Tries qontinui-api first (server-side), then falls back to runner (local GPU).
+   * Run vision extraction on a screenshot via the runner.
    */
   async extract(
     request: VisionExtractionRequest
@@ -167,41 +131,7 @@ export class VisionExtractionService {
       iou_threshold: request.iou_threshold ?? 0.5,
     };
 
-    // Try preferred endpoint first
-    const endpoints: VisionEndpoint[] =
-      this.preferredEndpoint === "api" ? ["api", "runner"] : ["runner", "api"];
-
-    let lastError: Error | null = null;
-
-    for (const endpoint of endpoints) {
-      try {
-        if (endpoint === "api") {
-          return await this.extractViaApi(requestBody);
-        } else {
-          return await this.extractViaRunner(requestBody);
-        }
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        console.warn(
-          `Vision extraction via ${endpoint} failed:`,
-          lastError.message
-        );
-        // Continue to next endpoint
-      }
-    }
-
-    throw (
-      lastError || new Error("Vision extraction failed: no endpoints available")
-    );
-  }
-
-  /**
-   * Extract via qontinui-api backend (port 8001)
-   */
-  private async extractViaApi(
-    requestBody: Record<string, unknown>
-  ): Promise<VisionExtractionResponse> {
-    const url = `${QONTINUI_API_URL}/vision-extraction/extract`;
+    const url = `${this.runnerUrl}/vision-extraction/extract`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -214,49 +144,7 @@ export class VisionExtractionService {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        `API vision extraction failed: ${JSON.stringify(errorData)}`
-      );
-    }
-
-    // qontinui-api returns VisionExtractionResponse directly
-    const data = await response.json();
-
-    return {
-      screenshot_id: data.screenshot_id || "",
-      image_width: data.image_width,
-      image_height: data.image_height,
-      edge_results: data.edge_results || [],
-      sam3_results: data.sam3_results || [],
-      ocr_results: data.ocr_results || [],
-      merged_candidates: data.merged_candidates || [],
-      edge_overlay: data.edge_overlay || null,
-      sam3_overlay: data.sam3_overlay || null,
-      ocr_overlay: data.ocr_overlay || null,
-      techniques_run: data.techniques_run || [],
-      processing_time_ms: data.processing_time_ms || 0,
-    };
-  }
-
-  /**
-   * Extract via runner (port 9876)
-   */
-  private async extractViaRunner(
-    requestBody: Record<string, unknown>
-  ): Promise<VisionExtractionResponse> {
-    const url = `${RUNNER_URL}/vision-extraction/extract`;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        `Runner vision extraction failed: ${JSON.stringify(errorData)}`
+        `Vision extraction failed: ${JSON.stringify(errorData)}`
       );
     }
 

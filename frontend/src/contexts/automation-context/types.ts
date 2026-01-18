@@ -173,7 +173,16 @@ export interface StateImage {
   monitors?: number[]; // Monitor indices where this image should be searched
   // RAG Find multi-pattern mode (precedence level 2: between project default and action override)
   ragMultiPatternMode?: "all" | "combined"; // How to search when StateImage has >1 pattern: "all" = search each pattern separately, "combined" = search using combined vector
-  searchMode?: "default" | "rag" | "template"; // Search mode for this image
+  searchMode?: "default" | "rag" | "template" | "accessibility"; // Search mode for this image
+  // Accessibility selector for ref-based element targeting
+  accessibilitySelector?: {
+    ref?: string; // Direct ref reference (@e1, @e2, etc.)
+    role?: string | string[]; // Match by ARIA/UIA role
+    name?: string; // Exact name match
+    nameContains?: string; // Partial name match
+    automationId?: string; // Match by automation/test ID
+    isInteractive?: boolean; // Filter by interactivity
+  };
   // RAG embeddings
   imageEmbedding?: number[];
   textEmbedding?: number[];

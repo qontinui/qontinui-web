@@ -37,6 +37,7 @@ import {
   Target,
   Sparkles,
   ArrowRightLeft,
+  Accessibility,
 } from "lucide-react";
 import { ImageSelector } from "@/components/image-selector";
 import { ImageStatsDisplay } from "@/components/image-stats-display";
@@ -295,7 +296,7 @@ export function StatePropertiesPanel({
           defaultValue="images"
           className="flex-1 flex flex-col min-h-0 rounded-lg bg-surface-raised overflow-hidden"
         >
-          <TabsList className="grid w-full grid-cols-5 h-10 bg-surface-raised/80 p-1 rounded-none">
+          <TabsList className="grid w-full grid-cols-6 h-10 bg-surface-raised/80 p-1 rounded-none">
             <TabsTrigger
               value="images"
               className="text-xs flex items-center justify-center data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary data-[state=active]:border data-[state=active]:border-brand-primary/50 data-[state=inactive]:text-text-muted transition-all"
@@ -319,6 +320,12 @@ export function StatePropertiesPanel({
               className="text-xs flex items-center justify-center data-[state=active]:bg-[#FFD700]/20 data-[state=active]:text-[#FFD700] data-[state=active]:border data-[state=active]:border-[#FFD700]/50 data-[state=inactive]:text-text-muted transition-all"
             >
               <Type className="w-4 h-4" />
+            </TabsTrigger>
+            <TabsTrigger
+              value="accessibility"
+              className="text-xs flex items-center justify-center data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-500 data-[state=active]:border data-[state=active]:border-purple-500/50 data-[state=inactive]:text-text-muted transition-all"
+            >
+              <Accessibility className="w-4 h-4" />
             </TabsTrigger>
             <TabsTrigger
               value="transitions"
@@ -1205,46 +1212,157 @@ export function StatePropertiesPanel({
                                 </div>
                               </div>
 
-                              {/* Search Mode (only show if 2+ patterns) */}
-                              {(stateImage.patterns || []).length >= 2 && (
-                                <div className="space-y-1 pb-2 border-b border-border-default">
-                                  <Label className="text-xs text-text-secondary">
-                                    Pattern Search Mode
-                                  </Label>
-                                  <Select
-                                    value={stateImage.searchMode || "default"}
-                                    onValueChange={(value) =>
-                                      updateStateImage(index, {
-                                        searchMode: value as
-                                          | "default"
-                                          | "rag"
-                                          | "template",
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger className="bg-surface-canvas border-border-subtle text-xs h-8">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent className="bg-surface-raised border-border-default">
-                                      <SelectItem value="default">
-                                        Default search mode
-                                      </SelectItem>
-                                      <SelectItem value="rag">
-                                        RAG search mode
-                                      </SelectItem>
-                                      <SelectItem value="template">
-                                        Template search mode
-                                      </SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  <p className="text-xs text-text-muted italic">
-                                    {(stateImage.searchMode as string) === "rag"
-                                      ? "RAG search mode enabled"
-                                      : (stateImage.searchMode as string) ===
-                                          "template"
-                                        ? "Template search mode enabled"
-                                        : "Using default search mode"}
-                                  </p>
+                              {/* Search Mode */}
+                              <div className="space-y-1 pb-2 border-b border-border-default">
+                                <Label className="text-xs text-text-secondary">
+                                  Search Mode
+                                </Label>
+                                <Select
+                                  value={stateImage.searchMode || "default"}
+                                  onValueChange={(value) =>
+                                    updateStateImage(index, {
+                                      searchMode: value as
+                                        | "default"
+                                        | "rag"
+                                        | "template"
+                                        | "accessibility",
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="bg-surface-canvas border-border-subtle text-xs h-8">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-surface-raised border-border-default">
+                                    <SelectItem value="default">
+                                      Default (Image Pattern)
+                                    </SelectItem>
+                                    <SelectItem value="rag">
+                                      RAG (Vector Search)
+                                    </SelectItem>
+                                    <SelectItem value="template">
+                                      Template Matching
+                                    </SelectItem>
+                                    <SelectItem value="accessibility">
+                                      Accessibility (Ref-based)
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <p className="text-xs text-text-muted italic">
+                                  {stateImage.searchMode === "accessibility"
+                                    ? "Using accessibility ref for element targeting"
+                                    : stateImage.searchMode === "rag"
+                                      ? "Using vector similarity search"
+                                      : stateImage.searchMode === "template"
+                                        ? "Using template matching"
+                                        : "Using default image pattern matching"}
+                                </p>
+                              </div>
+
+                              {/* Accessibility Selector (only show if accessibility mode) */}
+                              {stateImage.searchMode === "accessibility" && (
+                                <div className="space-y-2 pb-2 border-b border-purple-500/30 bg-purple-500/5 p-2 rounded">
+                                  <div className="flex items-center gap-2">
+                                    <Accessibility className="w-3 h-3 text-purple-500" />
+                                    <Label className="text-xs text-purple-400">
+                                      Accessibility Selector
+                                    </Label>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <div className="space-y-1">
+                                      <Label className="text-xs text-text-muted">
+                                        Ref (e.g., @e1, @e2)
+                                      </Label>
+                                      <Input
+                                        placeholder="@e1"
+                                        value={stateImage.accessibilitySelector?.ref || ""}
+                                        onChange={(e) =>
+                                          updateStateImage(index, {
+                                            accessibilitySelector: {
+                                              ...stateImage.accessibilitySelector,
+                                              ref: e.target.value || undefined,
+                                            },
+                                          })
+                                        }
+                                        className="h-7 text-xs bg-surface-canvas font-mono"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs text-text-muted">
+                                        Role (e.g., button, textbox)
+                                      </Label>
+                                      <Input
+                                        placeholder="button"
+                                        value={
+                                          Array.isArray(stateImage.accessibilitySelector?.role)
+                                            ? stateImage.accessibilitySelector.role.join(", ")
+                                            : stateImage.accessibilitySelector?.role || ""
+                                        }
+                                        onChange={(e) =>
+                                          updateStateImage(index, {
+                                            accessibilitySelector: {
+                                              ...stateImage.accessibilitySelector,
+                                              role: e.target.value || undefined,
+                                            },
+                                          })
+                                        }
+                                        className="h-7 text-xs bg-surface-canvas"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs text-text-muted">
+                                        Name (exact match)
+                                      </Label>
+                                      <Input
+                                        placeholder="Submit"
+                                        value={stateImage.accessibilitySelector?.name || ""}
+                                        onChange={(e) =>
+                                          updateStateImage(index, {
+                                            accessibilitySelector: {
+                                              ...stateImage.accessibilitySelector,
+                                              name: e.target.value || undefined,
+                                            },
+                                          })
+                                        }
+                                        className="h-7 text-xs bg-surface-canvas"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs text-text-muted">
+                                        Name Contains
+                                      </Label>
+                                      <Input
+                                        placeholder="Log"
+                                        value={stateImage.accessibilitySelector?.nameContains || ""}
+                                        onChange={(e) =>
+                                          updateStateImage(index, {
+                                            accessibilitySelector: {
+                                              ...stateImage.accessibilitySelector,
+                                              nameContains: e.target.value || undefined,
+                                            },
+                                          })
+                                        }
+                                        className="h-7 text-xs bg-surface-canvas"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs text-text-muted">
+                                        Automation ID (data-testid)
+                                      </Label>
+                                      <Input
+                                        placeholder="submit-button"
+                                        value={stateImage.accessibilitySelector?.automationId || ""}
+                                        onChange={(e) =>
+                                          updateStateImage(index, {
+                                            accessibilitySelector: {
+                                              ...stateImage.accessibilitySelector,
+                                              automationId: e.target.value || undefined,
+                                            },
+                                          })
+                                        }
+                                        className="h-7 text-xs bg-surface-canvas"
+                                      />
+                                    </div>
+                                  </div>
                                 </div>
                               )}
 
@@ -1968,6 +2086,94 @@ export function StatePropertiesPanel({
                 })}
               </div>
             )}
+          </TabsContent>
+
+          {/* Accessibility Tab */}
+          <TabsContent
+            value="accessibility"
+            className="flex-1 flex flex-col min-h-0 p-4"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-xs text-purple-500">
+                Accessibility Selectors
+              </Label>
+              <Badge className="bg-purple-500/20 text-purple-500 text-xs px-2 border border-purple-500/30">
+                {state.stateImages?.filter(img => img.accessibilitySelector).length || 0}
+              </Badge>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto scrollbar-dark pr-2">
+              <div className="p-3 bg-surface-raised/50 border border-purple-500/30 rounded-lg space-y-3">
+                <div className="flex items-center gap-2">
+                  <Accessibility className="w-4 h-4 text-purple-500" />
+                  <span className="text-sm font-medium">AI-Optimized Element Selection</span>
+                </div>
+                <p className="text-xs text-text-muted">
+                  Use accessibility selectors for ref-based element targeting (@e1, @e2, etc.).
+                  Configure selectors per StateImage in the Images tab, or capture the accessibility
+                  tree from a connected browser.
+                </p>
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="p-2 bg-surface-canvas/50 rounded border border-border-subtle">
+                    <div className="text-xs font-medium text-purple-400">Total StateImages</div>
+                    <div className="text-lg font-semibold">{state.stateImages?.length || 0}</div>
+                  </div>
+                  <div className="p-2 bg-surface-canvas/50 rounded border border-border-subtle">
+                    <div className="text-xs font-medium text-purple-400">With Accessibility</div>
+                    <div className="text-lg font-semibold">
+                      {state.stateImages?.filter(img => img.searchMode === "accessibility").length || 0}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* List StateImages with accessibility search mode */}
+              {state.stateImages?.filter(img => img.searchMode === "accessibility").length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-xs text-text-secondary">
+                    StateImages using Accessibility Mode
+                  </Label>
+                  {state.stateImages
+                    .filter(img => img.searchMode === "accessibility")
+                    .map((img) => (
+                      <div
+                        key={img.id}
+                        className="p-2 bg-surface-canvas/50 rounded border border-purple-500/20 flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Accessibility className="w-3 h-3 text-purple-400" />
+                          <span className="text-sm">{img.name}</span>
+                        </div>
+                        {img.accessibilitySelector?.ref && (
+                          <Badge variant="outline" className="text-xs font-mono">
+                            {img.accessibilitySelector.ref}
+                          </Badge>
+                        )}
+                        {img.accessibilitySelector?.role && (
+                          <Badge variant="outline" className="text-xs">
+                            {Array.isArray(img.accessibilitySelector.role)
+                              ? img.accessibilitySelector.role.join(", ")
+                              : img.accessibilitySelector.role}
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {/* Instructions for no accessibility configured */}
+              {state.stateImages?.filter(img => img.searchMode === "accessibility").length === 0 && (
+                <div className="p-4 border border-dashed border-purple-500/30 rounded-lg text-center">
+                  <Accessibility className="w-8 h-8 text-purple-500/50 mx-auto mb-2" />
+                  <p className="text-sm text-text-muted">
+                    No StateImages configured for accessibility mode.
+                  </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    Set &quot;Search Mode&quot; to &quot;Accessibility&quot; on a StateImage in the Images tab.
+                  </p>
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           {/* Transitions Tab */}

@@ -238,8 +238,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
   const handleOpenMonitorMenu = async () => {
     setShowMonitorMenu(true);
     try {
+      // Use the runner API for screenshot capture
       const apiUrl =
-        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+        process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
       const response = await fetch(`${apiUrl}/api/capture/screenshot/monitors`);
       if (response.ok) {
         const data = await response.json();
@@ -258,8 +259,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     setIsCapturing(true);
 
     try {
+      // Use the runner API for screenshot capture
       const apiUrl =
-        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+        process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
       const monitorParam =
         monitorIndex !== null ? `&monitor=${monitorIndex}` : "";
       const response = await fetch(
@@ -298,7 +300,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       const errorMessage =
         error instanceof Error
           ? error.message
-          : "Make sure qontinui-api is running on port 8001";
+          : "Make sure the runner is running on port 9876";
       toast.error("Failed to capture screenshot", {
         description: errorMessage,
       });

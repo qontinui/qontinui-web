@@ -156,13 +156,18 @@ export default function PricingPage() {
         </p>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+      <div
+        className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto"
+        data-awas-action="get_subscription"
+        data-awas-element="pricing-tiers-grid"
+      >
         {tiers.map((tier) => (
           <Card
             key={tier.name}
             className={`relative ${
               tier.popular ? "border-primary shadow-lg scale-105" : ""
             }`}
+            data-awas-element={`pricing-tier-${tier.tier}`}
           >
             {tier.popular && (
               <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-3 py-1 text-sm rounded-bl rounded-tr">
@@ -193,6 +198,8 @@ export default function PricingPage() {
                 disabled={isButtonDisabled(tier)}
                 onClick={() => tier.tier !== "free" && handleUpgrade(tier.tier)}
                 variant={tier.popular ? "default" : "outline"}
+                data-awas-element={`upgrade-to-${tier.tier}-button`}
+                data-awas-trigger="click"
               >
                 {getButtonText(tier)}
               </Button>

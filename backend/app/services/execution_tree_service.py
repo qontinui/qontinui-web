@@ -18,6 +18,7 @@ from qontinui_schemas.events import NodeStatus as SchemaNodeStatus
 from qontinui_schemas.events import NodeType as SchemaNodeType
 from qontinui_schemas.events import (
     PathElement,
+    StateContext,
     TreeEventListResponse,
     TreeEventResponse,
 )
@@ -327,7 +328,7 @@ class ExecutionTreeService:
                 (n.duration or 0) * 1000 for n in root_nodes if n.duration is not None
             )
             if total_ms > 0:
-                duration_ms = total_ms
+                duration_ms = int(total_ms)
 
         # Extract initial states and state name map from workflow metadata
         initial_state_ids: list[str] = []
@@ -382,11 +383,11 @@ class ExecutionTreeService:
 
             # Build metadata
             metadata = SchemaNodeMetadata(
-                action_type=action_type_str,
-                state_context={
-                    "active_before": [action.from_state] if action.from_state else [],
-                    "active_after": [action.to_state] if action.to_state else [],
-                },
+                config={"action_type": action_type_str},
+                state_context=StateContext(
+                    active_before=[action.from_state] if action.from_state else [],
+                    active_after=[action.to_state] if action.to_state else [],
+                ),
             )
 
             # Calculate timestamps

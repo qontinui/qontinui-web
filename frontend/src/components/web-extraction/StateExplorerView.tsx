@@ -2,18 +2,16 @@
  * State Explorer View Component
  *
  * State-centric view of extraction results:
- * 1. State list (Discovery Archive) - Cyan theme
- * 2. State images (Signatures) - Purple theme
- * 3. Main canvas (Visual Feed) - Green theme with floating HUD
- * 4. Screenshot history (Temporal Strip) - Cyan theme
+ * 1. States - List of discovered states
+ * 2. State Images - Visual signatures for selected state
+ * 3. Image Locations - Screenshot with bounding box overlays
+ * 4. Screenshots - Available screenshots for the state
  */
 
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,11 +21,23 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
-  Search,
-  Maximize2,
+  MapPin,
+  Layers,
+  Monitor,
+  Copy,
 } from "lucide-react";
+import { toast } from "sonner";
 import { runnerClient } from "@/lib/runner-client";
 import { getStateImageBoundingBox } from "./utils/bbox-utils";
+import {
+  ExplorerPanel,
+  ExplorerPanelHeader,
+  ExplorerPanelContent,
+  ExplorerPanelList,
+  ExplorerPanelItem,
+  ExplorerPanelThumbnail,
+  ExplorerPanelEmptyState,
+} from "@/components/qontinui/ExplorerPanel";
 import type {
   ExtractionAnnotation,
   StateMachineState,
@@ -104,21 +114,45 @@ export function StateExplorerView({
       .filter((item): item is ImageWithBbox => item !== null);
   }, [selectedState]);
 
-  // Get unique screenshot IDs for the selected state's images
+  // Get ALL screenshot IDs from annotations (not just for selected state)
+  const allScreenshotIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const annotation of annotations) {
+      if (annotation.screenshot_id) {
+        ids.add(annotation.screenshot_id);
+      }
+    }
+    return Array.from(ids).sort();
+  }, [annotations]);
+
+  // Get screenshot IDs where the selected state appears (for highlighting)
   const stateScreenshotIds = useMemo(() => {
-    if (!selectedState) return [];
+    if (!selectedState) return allScreenshotIds;
+
+    // Check if state has screensFound array (from new image-matching algorithm)
+    const screensFound = (selectedState as StateMachineState & { screensFound?: string[] }).screensFound;
+    if (screensFound && screensFound.length > 0) {
+      return screensFound;
+    }
+
+    // Fallback: get from stateImages
     const ids = new Set<string>();
     for (const img of selectedState.stateImages) {
-      if (img.screenshotId) {
+      // Check for screensFound on image (new format)
+      const imgScreensFound = (img as StateMachineStateImage & { screensFound?: string[] }).screensFound;
+      if (imgScreensFound) {
+        imgScreensFound.forEach(id => ids.add(id));
+      } else if (img.screenshotId) {
         ids.add(img.screenshotId);
       }
     }
-    // If no screenshotIds found, use first annotation
-    if (ids.size === 0 && annotations.length > 0 && annotations[0]) {
-      ids.add(annotations[0].screenshot_id);
+
+    // If still no IDs found, return all
+    if (ids.size === 0) {
+      return allScreenshotIds;
     }
-    return Array.from(ids);
-  }, [selectedState, annotations]);
+    return Array.from(ids).sort();
+  }, [selectedState, allScreenshotIds]);
 
   // Auto-select first state
   useEffect(() => {
@@ -133,6 +167,7 @@ export function StateExplorerView({
   // Auto-select first screenshot when state changes
   useEffect(() => {
     if (stateScreenshotIds.length > 0) {
+      // Select first screenshot for this state
       setSelectedScreenshotId(stateScreenshotIds[0] || null);
       // Reset zoom/pan when state changes
       setZoom(1);
@@ -225,7 +260,7 @@ export function StateExplorerView({
 
     img.onload = () => {
       // Calculate display size to fill container width
-      const availableWidth = containerWidth - 32; // padding (p-4 + p-4)
+      const availableWidth = containerWidth - 32;
       const aspectRatio = img.naturalWidth / img.naturalHeight;
 
       const displayWidth = availableWidth;
@@ -249,24 +284,37 @@ export function StateExplorerView({
       // Draw image
       ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
 
-      // Filter images to only those visible on this screenshot
+      // Filter images to only those that appear on this specific screenshot
+      // Uses screensFound array from new image-matching algorithm, or falls back to screenshotId
       const imagesOnThisScreenshot = imagesWithBboxes.filter(
         ({ stateImage }) => {
+          // Check for screensFound array (new format from image-matching)
+          const screensFound = (stateImage as StateMachineStateImage & { screensFound?: string[] }).screensFound;
+          if (screensFound && screensFound.length > 0) {
+            return screensFound.includes(selectedScreenshotId!);
+          }
+          // Fallback: check screenshotId (source screenshot)
           if (stateImage.screenshotId) {
             return stateImage.screenshotId === selectedScreenshotId;
           }
-          // If no screenshotId, show on all screenshots
+          // No info - assume it appears on all screenshots (legacy behavior)
           return true;
         }
       );
 
-      // Neon Colors (Matching v0 elements)
-      const defaultStroke = "#00D9FF";
-      const defaultFill = "rgba(0, 217, 255, 0.1)";
-      const highlightStroke = "#00FF88"; // Green for highlights
-      const highlightFill = "rgba(0, 255, 136, 0.25)";
+      // Use theme colors
+      const defaultStroke = "#4A90D9";
+      const defaultFill = "rgba(74, 144, 217, 0.05)";
+      const highlightStroke = "#4DB89D";
+      const highlightFill = "rgba(77, 184, 157, 0.25)";
 
-      // Draw bounding boxes for all images
+      // Determine which images to draw:
+      // - If hovering a specific image, only show that image's box prominently
+      // - If not hovering, show all boxes faintly for overview
+      const hasHoveredImage = hoveredImageId && imagesOnThisScreenshot.some(
+        ({ stateImage }) => stateImage.id === hoveredImageId
+      );
+
       for (const { stateImage, bbox } of imagesOnThisScreenshot) {
         const x = bbox.x * scaleX;
         const y = bbox.y * scaleY;
@@ -274,16 +322,19 @@ export function StateExplorerView({
         const height = bbox.height * scaleY;
         const isHovered = stateImage.id === hoveredImageId;
 
-        // Fill
+        // When hovering a specific image, only draw that one
+        // When not hovering anything, draw all with faint styling
+        if (hasHoveredImage && !isHovered) {
+          continue; // Skip non-hovered images when one is being hovered
+        }
+
         ctx.fillStyle = isHovered ? highlightFill : defaultFill;
         ctx.fillRect(x, y, width, height);
 
-        // Stroke
         ctx.strokeStyle = isHovered ? highlightStroke : defaultStroke;
-        ctx.lineWidth = (isHovered ? 3 : 2) / zoom;
+        ctx.lineWidth = (isHovered ? 3 : 1) / zoom;
         ctx.strokeRect(x, y, width, height);
 
-        // Halo effect on hover
         if (isHovered) {
           ctx.shadowBlur = 15;
           ctx.shadowColor = highlightStroke;
@@ -343,88 +394,126 @@ export function StateExplorerView({
     setIsDragging(false);
   }, []);
 
+  const handleCopyImage = useCallback(async () => {
+    if (!canvasRef.current) return;
+
+    try {
+      canvasRef.current.toBlob(async (blob) => {
+        if (!blob) {
+          toast.error("Failed to create image.");
+          return;
+        }
+
+        try {
+          // Use the Clipboard API to write the blob
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              [blob.type]: blob
+            })
+          ]);
+          toast.success("Image copied to clipboard");
+        } catch (err) {
+          console.error("Clipboard write failed:", err);
+          toast.error("Failed to copy to clipboard");
+        }
+      }, "image/png");
+    } catch (err) {
+      console.error("Canvas export failed:", err);
+      toast.error("Failed to capture image");
+    }
+  }, []);
+
   return (
-    <div className="flex gap-4 h-full min-h-0">
-      <style>{`
-        [data-radix-scroll-area-viewport] {
-          scrollbar-width: none !important;
-          -ms-overflow-style: none !important;
-        }
-        [data-radix-scroll-area-viewport]::-webkit-scrollbar {
-          display: none !important;
-        }
-      `}</style>
-      {/* Panel 1: States List (Cyan) - 16.6% (col-span-2) */}
-      <Card className="w-[16.6%] shrink-0 bg-surface-raised/60 border-brand-primary/30 backdrop-blur-sm overflow-hidden flex flex-col h-full">
-        <div className="p-4 border-b border-brand-primary/20">
-          <div className="flex items-center gap-2 mb-3">
-            <Search className="w-5 h-5 text-brand-primary" />
-            <h3 className="text-brand-primary font-mono font-semibold">
-              Discovery Archive
-            </h3>
-          </div>
+    <div className="flex gap-4 min-h-0 flex-1 h-full overflow-hidden">
+      {/* Panel 1: States List */}
+      <ExplorerPanel accent="primary" width="w-[16%]" className="shrink-0">
+        <ExplorerPanelHeader title="States" icon={Layers} accent="primary">
+          <Badge
+            variant="outline"
+            className="ml-auto text-[10px] border-brand-primary/30 text-brand-primary"
+          >
+            {filteredStates.length}
+          </Badge>
+        </ExplorerPanelHeader>
+
+        <div className="px-3 pt-3 pb-2 border-b border-brand-primary/10 shrink-0">
           <Input
-            placeholder="Filter archive..."
+            placeholder="Filter states..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-surface-canvas border-brand-primary/30 text-white font-mono text-xs focus:border-brand-primary focus:ring-brand-primary/30 placeholder:opacity-30"
+            className="bg-surface-canvas border-border-subtle text-white font-mono text-xs h-8 focus:border-brand-primary focus:ring-brand-primary/30 placeholder:text-text-muted/50"
           />
         </div>
 
-        <ScrollArea className="flex-1">
-          <div className="p-3 space-y-2">
-            {filteredStates.map((state) => {
-              const isSelected = state.id === selectedStateId;
-              return (
-                <button
+        <ExplorerPanelContent scrollable padding="sm">
+          <ExplorerPanelList>
+            {filteredStates.length === 0 ? (
+              <ExplorerPanelEmptyState message="No states found" icon={Layers} />
+            ) : (
+              filteredStates.map((state) => (
+                <ExplorerPanelItem
                   key={state.id}
+                  selected={state.id === selectedStateId}
+                  accent="primary"
                   onClick={() => setSelectedStateId(state.id)}
-                  className={`
-                      w-full p-4 rounded-lg border text-left transition-all
-                      ${
-                        isSelected
-                          ? "border-brand-primary bg-brand-primary/20 shadow-[0_0_20px_rgba(0,217,255,0.3)]"
-                          : "border-brand-primary/10 bg-surface-canvas/50 hover:border-brand-primary/50 hover:bg-brand-primary/5"
-                      }
-                    `}
+                  className="overflow-hidden"
                 >
-                  <div className="font-semibold text-white text-sm mb-2 truncate">
+                  <div
+                    className="font-semibold text-white text-xs mb-1 truncate w-full"
+                    title={state.name}
+                  >
                     {state.name}
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-text-muted font-mono truncate max-w-[120px]">
-                      {state.description || "No metadata"}
+                  <div className="flex items-center justify-between gap-1 w-full min-w-0">
+                    <span
+                      className="text-[9px] text-text-muted font-mono truncate flex-1 min-w-0"
+                      title={state.description || "No description"}
+                    >
+                      {state.description || "No description"}
                     </span>
-                    <Badge className="bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30 text-[10px] scale-90 origin-right">
-                      {state.stateImages.length} SIGS
+                    <Badge className="bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30 text-[9px] px-1.5 shrink-0">
+                      {state.stateImages.length}
                     </Badge>
                   </div>
-                </button>
-              );
-            })}
-          </div>
-        </ScrollArea>
-      </Card>
+                </ExplorerPanelItem>
+              ))
+            )}
+          </ExplorerPanelList>
+        </ExplorerPanelContent>
+      </ExplorerPanel>
 
-      {/* Panel 2: Elements Grid (Purple) - 11% (approx 66% of col-span-2) */}
-      <Card className="w-[11%] shrink-0 min-w-0 bg-surface-raised/60 border-brand-secondary/30 backdrop-blur-sm overflow-hidden flex flex-col h-full">
-        <div className="p-4 border-b border-brand-secondary/20">
-          <div className="flex items-center gap-2">
-            <ImageIcon className="w-5 h-5 text-brand-secondary" />
-            <h3 className="text-brand-secondary font-mono font-semibold">
-              Signatures
-            </h3>
-          </div>
-        </div>
+      {/* Panel 2: State Images */}
+      <ExplorerPanel accent="secondary" width="w-[14%]" className="shrink-0">
+        <ExplorerPanelHeader
+          title="State Images"
+          icon={ImageIcon}
+          accent="secondary"
+          actions={
+            selectedState && (
+              <Badge
+                variant="outline"
+                className="text-[10px] border-brand-secondary/30 text-brand-secondary"
+              >
+                {imagesWithBboxes.length}
+              </Badge>
+            )
+          }
+        />
 
-        <ScrollArea className="flex-1">
-          <div className="p-3 space-y-3">
-            {!selectedState ? (
-              <div className="h-40 flex items-center justify-center text-text-muted italic text-xs font-mono">
-                Awaiting Target...
-              </div>
-            ) : (
-              imagesWithBboxes.map(({ stateImage }) => (
+        <ExplorerPanelContent scrollable padding="sm">
+          {!selectedState ? (
+            <ExplorerPanelEmptyState
+              message="Select a state"
+              icon={ImageIcon}
+            />
+          ) : imagesWithBboxes.length === 0 ? (
+            <ExplorerPanelEmptyState
+              message="No images found"
+              icon={ImageIcon}
+            />
+          ) : (
+            <ExplorerPanelList gap="md">
+              {imagesWithBboxes.map(({ stateImage }) => (
                 <StateImageThumbnail
                   key={`${selectedState.id}-${stateImage.id}`}
                   stateImage={stateImage}
@@ -435,144 +524,163 @@ export function StateExplorerView({
                   onMouseLeave={() => setHoveredImageId(null)}
                   isSelected={hoveredImageId === stateImage.id}
                 />
-              ))
-            )}
-          </div>
-        </ScrollArea>
-      </Card>
+              ))}
+            </ExplorerPanelList>
+          )}
+        </ExplorerPanelContent>
+      </ExplorerPanel>
 
-      {/* Panel 3: Main Canvas (Green) - Remaining space approx 61.4% */}
-      <Card className="flex-1 bg-surface-raised/60 border-brand-success/30 backdrop-blur-sm overflow-hidden flex flex-col relative">
-        <div className="p-4 border-b border-brand-success/20 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Maximize2 className="w-5 h-5 text-brand-success" />
-            <h3 className="text-brand-success font-mono font-semibold">
-              Visual Feed
-            </h3>
-          </div>
-
-          {/* Floating HUD Controls */}
-          <div className="flex items-center gap-2 bg-surface-canvas/80 rounded-lg p-2 border border-brand-success/30">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleZoomOut}
-              className="text-brand-success hover:bg-brand-success/20 h-7 w-7 p-0"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </Button>
-            <span className="text-[10px] font-mono text-brand-success w-10 text-center">
-              {Math.round(zoom * 100)}%
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleZoomIn}
-              className="text-brand-success hover:bg-brand-success/20 h-7 w-7 p-0"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </Button>
-            <div className="w-px h-5 bg-brand-success/30 mx-1" />
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleResetZoom}
-              className="text-brand-success hover:bg-brand-success/20 h-7 px-3 text-[10px] font-mono"
-            >
-              Reset
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleResetZoom}
-              className="text-brand-success hover:bg-brand-success/20 h-7 w-7 p-0"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-
-        <div
-          ref={containerRef}
-          className="flex-1 overflow-auto p-4 bg-surface-canvas/30 flex flex-col items-center"
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          style={{
-            cursor:
-              zoom > 1 && isDragging
-                ? "grabbing"
-                : zoom > 1
-                  ? "grab"
-                  : "default",
-          }}
-        >
-          {loadingScreenshots.has(selectedScreenshotId || "") ? (
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 className="h-10 w-10 animate-spin text-brand-success" />
-              <span className="text-brand-success text-xs font-mono animate-pulse">
-                Syncing Feed...
+      {/* Panel 3: Image Locations (Main Canvas) */}
+      <ExplorerPanel accent="success" className="flex-1">
+        <ExplorerPanelHeader
+          title="Image Locations"
+          icon={MapPin}
+          accent="success"
+          actions={
+            <div className="flex items-center gap-2 bg-surface-canvas/80 rounded-lg px-2 py-1 border border-brand-success/30">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleCopyImage}
+                title="Copy image to clipboard"
+                className="text-brand-success hover:bg-brand-success/20 h-6 w-6 p-0 mr-1"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </Button>
+              <div className="w-px h-4 bg-brand-success/30 mx-1" />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleZoomOut}
+                className="text-brand-success hover:bg-brand-success/20 h-6 w-6 p-0"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </Button>
+              <span className="text-[10px] font-mono text-brand-success w-10 text-center">
+                {Math.round(zoom * 100)}%
               </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleZoomIn}
+                className="text-brand-success hover:bg-brand-success/20 h-6 w-6 p-0"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </Button>
+              <div className="w-px h-4 bg-brand-success/30 mx-1" />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleResetZoom}
+                className="text-brand-success hover:bg-brand-success/20 h-6 w-6 p-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </Button>
             </div>
-          ) : selectedScreenshotId &&
-            screenshotCache.has(selectedScreenshotId) ? (
-            <canvas
-              ref={canvasRef}
-              className="rounded-lg shadow-[0_0_40px_rgba(0,0,0,0.5)] bg-surface-canvas border border-white/5"
-            />
-          ) : (
-            <div className="text-text-muted font-mono text-xs text-center space-y-2">
-              <div>No visual data for current state</div>
-              {stateScreenshotIds.length === 0 && (
-                <div className="animate-pulse">[ NO SOURCE FOUND ]</div>
+          }
+        />
+
+        <ExplorerPanelContent scrollable={false} padding="none">
+          {/* Two-layer scroll structure matching ScrollArea pattern exactly */}
+          <div data-slot="custom-scroll-root" className="absolute inset-0 overflow-hidden">
+            <div
+              ref={containerRef}
+              data-slot="custom-scroll-viewport"
+              className="h-full w-full overflow-y-auto overflow-x-hidden p-4 bg-surface-canvas/30 scrollbar-dark"
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              style={{
+                cursor:
+                  zoom > 1 && isDragging
+                    ? "grabbing"
+                    : zoom > 1
+                      ? "grab"
+                      : "default",
+              }}
+            >
+              <div className="flex flex-col items-center w-full">
+                {loadingScreenshots.has(selectedScreenshotId || "") ? (
+                  <div className="flex flex-col items-center gap-3 py-12">
+                    <Loader2 className="h-10 w-10 animate-spin text-brand-success" />
+                    <span className="text-brand-success text-xs font-mono animate-pulse">
+                      Loading...
+                    </span>
+                  </div>
+                ) : selectedScreenshotId &&
+                  screenshotCache.has(selectedScreenshotId) ? (
+                  <canvas
+                    ref={canvasRef}
+                    className="rounded-lg shadow-lg bg-surface-canvas border border-border-subtle"
+                  />
+                ) : (
+                  <ExplorerPanelEmptyState
+                    message="No screenshot available"
+                    icon={FileImage}
+                  />
+                )}
+              </div>
+
+              {/* Label for hovered image */}
+              {hoveredImageId && (
+                <div className="absolute bottom-4 left-4 bg-black/80 border border-brand-success/50 rounded px-3 py-1.5 backdrop-blur-sm">
+                  <div className="text-[10px] text-brand-success font-mono leading-tight whitespace-nowrap">
+                    {
+                      imagesWithBboxes.find(
+                        (i) => i.stateImage.id === hoveredImageId
+                      )?.stateImage.name
+                    }
+                  </div>
+                </div>
               )}
             </div>
-          )}
-
-          {/* Label for hovered signature */}
-          {hoveredImageId && (
-            <div className="absolute bottom-4 left-4 bg-black/80 border border-brand-success/50 rounded px-3 py-1.5 backdrop-blur-sm">
-              <div className="text-[10px] text-brand-success font-mono leading-tight whitespace-nowrap">
-                LOCK ON:{" "}
-                {
-                  imagesWithBboxes.find(
-                    (i) => i.stateImage.id === hoveredImageId
-                  )?.stateImage.name
-                }
-              </div>
-            </div>
-          )}
-        </div>
-      </Card>
-
-      {/* Panel 4: Screenshot Thumbnails (Cyan) - 11% (approx 66% of col-span-2) */}
-      <Card className="w-[11%] shrink-0 bg-surface-raised/60 border-brand-primary/30 backdrop-blur-sm overflow-hidden flex flex-col h-full">
-        <div className="p-4 border-b border-brand-primary/20">
-          <h3 className="text-brand-primary font-mono font-semibold text-xs">
-            Temporal Strip
-          </h3>
-        </div>
-
-        <ScrollArea className="flex-1">
-          <div className="p-3 space-y-4">
-            {stateScreenshotIds.map((ssId) => (
-              <ScreenshotThumbnail
-                key={ssId}
-                screenshotId={ssId}
-                isSelected={ssId === selectedScreenshotId}
-                screenshotCache={screenshotCache}
-                isLoading={loadingScreenshots.has(ssId)}
-                onClick={() => {
-                  setSelectedScreenshotId(ssId);
-                  setZoom(1);
-                  setPan({ x: 0, y: 0 });
-                }}
-              />
-            ))}
           </div>
-        </ScrollArea>
-      </Card>
+        </ExplorerPanelContent>
+      </ExplorerPanel>
+
+      {/* Panel 4: Screenshots - Only shows screenshots where selected state appears */}
+      <ExplorerPanel accent="primary" width="w-[12%]" className="shrink-0">
+        <ExplorerPanelHeader
+          title="Screenshots"
+          icon={Monitor}
+          accent="primary"
+          actions={
+            <Badge
+              variant="outline"
+              className="text-[10px] border-brand-primary/30 text-brand-primary"
+            >
+              {stateScreenshotIds.length}
+            </Badge>
+          }
+        />
+
+        <ExplorerPanelContent scrollable padding="sm">
+          {stateScreenshotIds.length === 0 ? (
+            <ExplorerPanelEmptyState
+              message="No screenshots"
+              icon={Monitor}
+            />
+          ) : (
+            <ExplorerPanelList gap="md">
+              {stateScreenshotIds.map((ssId) => (
+                <ScreenshotThumbnail
+                  key={ssId}
+                  screenshotId={ssId}
+                  isSelected={ssId === selectedScreenshotId}
+                  screenshotCache={screenshotCache}
+                  isLoading={loadingScreenshots.has(ssId)}
+                  onClick={() => {
+                    setSelectedScreenshotId(ssId);
+                    setZoom(1);
+                    setPan({ x: 0, y: 0 });
+                  }}
+                />
+              ))}
+            </ExplorerPanelList>
+          )}
+        </ExplorerPanelContent>
+      </ExplorerPanel>
     </div>
   );
 }
@@ -652,15 +760,14 @@ function StateImageThumbnail({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       className={`
-        p-2 rounded-lg border cursor-pointer transition-all w-full max-w-full
-        ${
-          isSelected
-            ? "border-brand-success bg-brand-success/20 shadow-[0_0_15px_rgba(0,255,136,0.2)]"
-            : "border-brand-secondary/20 bg-surface-canvas/50 hover:border-brand-secondary/50"
+        p-1.5 rounded border cursor-pointer transition-all w-full max-w-full overflow-hidden
+        ${isSelected
+          ? "border-brand-success bg-brand-success/20 shadow-[0_0_8px_rgba(77,184,157,0.2)]"
+          : "border-border-subtle bg-surface-canvas/50 hover:border-brand-secondary/50"
         }
       `}
     >
-      <div className="aspect-video bg-surface-canvas rounded border border-brand-secondary/20 mb-2 overflow-hidden flex items-center justify-center">
+      <div className="aspect-[4/3] bg-surface-canvas rounded border border-border-subtle mb-1 overflow-hidden flex items-center justify-center">
         {isLoading ? (
           <Loader2 className="h-3 w-3 animate-spin text-brand-secondary/50" />
         ) : thumbnailUrl ? (
@@ -670,14 +777,11 @@ function StateImageThumbnail({
             className="w-full h-full object-contain"
           />
         ) : (
-          <ImageIcon className="h-4 w-4 text-brand-secondary/30" />
+          <ImageIcon className="h-3 w-3 text-brand-secondary/30" />
         )}
       </div>
-      <div className="text-[10px] font-semibold text-white truncate">
+      <div className="text-[9px] font-semibold text-white truncate w-full" title={stateImage.name}>
         {stateImage.name}
-      </div>
-      <div className="text-[9px] text-text-muted font-mono uppercase tracking-wider">
-        {stateImage.extractionCategory || "Static"}
       </div>
     </div>
   );
@@ -702,18 +806,12 @@ function ScreenshotThumbnail({
   const imageUrl = screenshotCache.get(screenshotId);
 
   return (
-    <div
+    <ExplorerPanelThumbnail
+      selected={isSelected}
+      accent="primary"
       onClick={onClick}
-      className={`
-        rounded-lg border cursor-pointer transition-all overflow-hidden relative
-        ${
-          isSelected
-            ? "border-brand-primary shadow-[0_0_15px_rgba(0,217,255,0.3)] ring-1 ring-brand-primary/50"
-            : "border-brand-primary/20 hover:border-brand-primary/50"
-        }
-      `}
     >
-      <div className="aspect-video bg-surface-canvas">
+      <div className="w-full h-full bg-surface-canvas">
         {isLoading ? (
           <div className="w-full h-full flex items-center justify-center">
             <Loader2 className="h-4 w-4 animate-spin text-brand-primary/40" />
@@ -722,7 +820,8 @@ function ScreenshotThumbnail({
           <img
             src={imageUrl}
             alt={screenshotId}
-            className={`w-full h-full object-cover object-top transition-opacity duration-300 ${isSelected ? "opacity-100" : "opacity-60 hover:opacity-100"}`}
+            className={`w-full h-full object-cover object-top transition-opacity duration-300 ${isSelected ? "opacity-100" : "opacity-60 hover:opacity-100"
+              }`}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -734,12 +833,13 @@ function ScreenshotThumbnail({
         className={`p-1.5 ${isSelected ? "bg-brand-primary/20" : "bg-surface-canvas/70"}`}
       >
         <div
-          className={`text-[9px] font-mono truncate ${isSelected ? "text-brand-primary" : "text-text-muted"}`}
+          className={`text-[9px] font-mono truncate ${isSelected ? "text-brand-primary" : "text-text-muted"
+            }`}
         >
-          UUID: {screenshotId.slice(-8)}
+          {screenshotId.slice(-8)}
         </div>
       </div>
-    </div>
+    </ExplorerPanelThumbnail>
   );
 }
 
@@ -761,7 +861,6 @@ async function cropImage(
         return;
       }
 
-      // Ensure bbox is within image bounds
       const x = Math.max(0, Math.min(bbox.x, img.naturalWidth - 1));
       const y = Math.max(0, Math.min(bbox.y, img.naturalHeight - 1));
       const width = Math.min(bbox.width, img.naturalWidth - x);

@@ -235,11 +235,11 @@ const navItems: NavItem[] = [
         adminOnly: true,
       },
       {
-        id: "web-extraction",
-        label: "Web Extraction",
-        description: "Automatically discover states from web pages",
+        id: "extraction",
+        label: "Extraction",
+        description: "Discover states from web pages or desktop apps",
         icon: <Globe size={22} />,
-        route: "/automation-builder/web-extraction",
+        route: "/automation-builder/extraction",
         color: "#4ECDC4",
         badge: "beta",
       },
@@ -895,13 +895,22 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       {/* Header */}
       <div className="relative h-16 border-b border-border-subtle flex items-center justify-center px-3 py-2.5 bg-gradient-to-r from-cyan-500/5 via-purple-500/5 to-green-500/5">
         {isCollapsed ? (
-          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-            Q
-          </div>
+          <img
+            src="/q-logo.png"
+            alt="Qontinui"
+            className="h-10 w-auto"
+          />
         ) : (
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-            Qontinui
-          </h1>
+          <div className="flex items-center gap-1">
+            <img
+              src="/q-logo.png"
+              alt="Qontinui"
+              className="h-9 w-auto"
+            />
+            <span className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
+              ontinui
+            </span>
+          </div>
         )}
       </div>
 

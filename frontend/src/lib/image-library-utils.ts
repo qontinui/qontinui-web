@@ -5,16 +5,26 @@ import { ImageAsset } from "@/contexts/automation-context/types";
  */
 
 /**
+ * Options for creating an image asset
+ */
+export interface CreateImageAssetOptions {
+  /** Monitor indices where this image was captured from */
+  monitors?: number[];
+}
+
+/**
  * Converts a base64 data URL and metadata to an ImageAsset for the Image Library
  * @param imageData Base64 data URL of the image
  * @param name Name for the image asset
  * @param source Source of the image (pattern_optimization, image_extraction, or state_discovery)
+ * @param options Optional configuration including monitors
  * @returns ImageAsset object ready to be added to the Image Library
  */
 export function createImageAsset(
   imageData: string,
   name: string,
-  source: "pattern_optimization" | "image_extraction" | "state_discovery"
+  source: "pattern_optimization" | "image_extraction" | "state_discovery",
+  options?: CreateImageAssetOptions
 ): ImageAsset {
   // Calculate approximate size from base64 data
   // Base64 encoding increases size by ~33%, and we need to account for the data URL prefix
@@ -30,6 +40,7 @@ export function createImageAsset(
     usageCount: 0,
     usage: [],
     source,
+    monitors: options?.monitors,
   };
 }
 

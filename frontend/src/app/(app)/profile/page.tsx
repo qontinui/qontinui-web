@@ -133,7 +133,11 @@ export default function ProfilePage() {
       {/* Main Content */}
       <main className="p-6 max-w-7xl mx-auto">
         {/* User Header Section */}
-        <div className="mb-8">
+        <div
+          className="mb-8"
+          data-awas-action="get_current_user"
+          data-awas-element="user-profile-header"
+        >
           <div className="flex items-center justify-between mb-2">
             <div>
               <h2 className="text-3xl font-bold mb-2">

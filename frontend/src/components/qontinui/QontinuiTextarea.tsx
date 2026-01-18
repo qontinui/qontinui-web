@@ -1,7 +1,6 @@
 import * as React from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { styles } from "@/config/theme";
 
 /**
  * Qontinui-themed textarea component
@@ -28,11 +27,11 @@ export const QontinuiTextarea = React.forwardRef<
   const textareaId = React.useId();
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="form-group">
       {label && (
         <label
           htmlFor={textareaId}
-          className={cn(styles.text.primary, "text-sm font-medium")}
+          className="form-label"
         >
           {label}
         </label>
@@ -40,26 +39,15 @@ export const QontinuiTextarea = React.forwardRef<
       <Textarea
         ref={ref}
         id={textareaId}
-        className={cn(styles.input, error && "border-red-500", className)}
+        className={cn("input", error && "border-error", className)}
         aria-invalid={!!error}
         {...props}
       />
       {error && (
-        <span className="text-red-500 text-xs font-medium">{error}</span>
+        <span className="form-error">{error}</span>
       )}
     </div>
   );
 });
 
 QontinuiTextarea.displayName = "QontinuiTextarea";
-
-/**
- * Example usage:
- *
- * <QontinuiTextarea
- *   label="Description"
- *   placeholder="Enter description..."
- *   rows={4}
- *   error={errors.description}
- * />
- */

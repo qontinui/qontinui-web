@@ -51,6 +51,8 @@ export function DeleteConfirmationDialog({
             onClick={onConfirm}
             variant="destructive"
             className="w-full sm:w-auto"
+            data-awas-element="confirm-delete-button"
+            data-awas-trigger="click"
           >
             Delete
           </Button>

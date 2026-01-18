@@ -506,6 +506,9 @@ export default function Dashboard() {
                 onClick={handleNewProject}
                 className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
                 data-tour="new-project"
+                data-awas-action="create_project"
+                data-awas-element="new-project-button"
+                data-awas-trigger="click"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 New Project
@@ -531,6 +534,9 @@ export default function Dashboard() {
                   <Button
                     onClick={handleNewProject}
                     className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
+                    data-awas-action="create_project"
+                    data-awas-element="create-first-project-button"
+                    data-awas-trigger="click"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Create First Project
@@ -538,7 +544,11 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div
+                className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+                data-awas-action="list_projects"
+                data-awas-element="projects-grid"
+              >
                 {projects.map((project) => {
                   const isSelected = selectedProjectId === project.id;
                   return (
@@ -549,6 +559,9 @@ export default function Dashboard() {
                           ? "border-brand-primary shadow-[0_0_20px_var(--glow-primary)] ring-1 ring-brand-primary/50"
                           : "border-border-subtle/50 hover:border-brand-primary/30 hover:shadow-[0_0_20px_var(--glow-primary)]"
                       }`}
+                      data-awas-action="get_project"
+                      data-awas-element={`project-card-${project.id}`}
+                      data-awas-param-project_id={project.id}
                     >
                       <CardContent className="p-6">
                         <div className="mb-4">
@@ -592,6 +605,10 @@ export default function Dashboard() {
                                 ? "bg-brand-primary/30 text-brand-primary border border-brand-primary/50"
                                 : "bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:border-brand-primary/50"
                             }`}
+                            data-awas-action="get_project"
+                            data-awas-element={`select-project-${project.id}`}
+                            data-awas-trigger="click"
+                            data-awas-param-project_id={project.id}
                           >
                             {isSelected ? (
                               <>
@@ -613,6 +630,10 @@ export default function Dashboard() {
                               handleDeleteProject(project);
                             }}
                             className="border-border-default hover:border-red-500 hover:text-red-400 bg-transparent"
+                            data-awas-action="delete_project"
+                            data-awas-element={`delete-project-${project.id}`}
+                            data-awas-trigger="click"
+                            data-awas-param-project_id={project.id}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>

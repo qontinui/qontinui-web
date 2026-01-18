@@ -1,7 +1,6 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { styles } from "@/config/theme";
 
 /**
  * Qontinui-themed button variants
@@ -19,18 +18,18 @@ interface QontinuiButtonProps extends React.ComponentProps<typeof Button> {
   qontinuiVariant?: "cyan" | "green" | "purple" | "ghost";
 }
 
+const variantClasses = {
+  cyan: "btn-primary",
+  green: "btn-success",
+  purple: "btn-secondary",
+  ghost: "btn-ghost",
+};
+
 export function QontinuiButton({
   qontinuiVariant = "cyan",
   className,
   ...props
 }: QontinuiButtonProps) {
-  const variantClasses = {
-    cyan: styles.button.cyan,
-    green: styles.button.green,
-    purple: styles.button.purple,
-    ghost: styles.button.ghost,
-  };
-
   return (
     <Button
       className={cn(variantClasses[qontinuiVariant], className)}

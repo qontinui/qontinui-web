@@ -11,9 +11,7 @@
 
 "use client";
 
-import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   CheckCircle2,
@@ -25,20 +23,16 @@ import {
   FileSearch,
   ArrowRightLeft,
   Link as LinkIcon,
-  ExternalLink,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { ExtractionSession } from "@/services/extraction-service";
 
 interface ExtractionProgressBarProps {
   session: ExtractionSession;
-  /** Project ID for linking to extraction detail page */
-  projectId?: string;
 }
 
 export function ExtractionProgressBar({
   session,
-  projectId,
 }: ExtractionProgressBarProps) {
   const getStatusIcon = () => {
     switch (session.status) {
@@ -181,19 +175,6 @@ export function ExtractionProgressBar({
           <LinkIcon className="h-3.5 w-3.5" />
           <span>{formatUrls()}</span>
         </div>
-
-        {/* View Details Link */}
-        {projectId && (
-          <>
-            <div className="h-4 w-px bg-border shrink-0" />
-            <Link href={`/extractions/${session.id}?project=${projectId}`}>
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
-                <ExternalLink className="h-3 w-3 mr-1" />
-                View Details
-              </Button>
-            </Link>
-          </>
-        )}
 
         {/* Error indicator */}
         {session.error_message && (

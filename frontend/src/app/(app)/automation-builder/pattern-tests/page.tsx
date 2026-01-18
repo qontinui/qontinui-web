@@ -4,19 +4,16 @@
  * Pattern Tests Page
  *
  * Test pattern matching by selecting an image and screenshot,
- * then running the qontinui library's find action.
+ * then running the qontinui library's find action via the runner.
  */
 
-import { PatternMatchingTest } from "@/components/PatternMatching/PatternMatchingTest";
-import { useAutomation } from "@/contexts/automation-context";
 import { RequireProject } from "@/components/require-project";
+import PatternMatchingTest from "@/components/PatternMatching/PatternMatchingTest";
 
 export default function PatternTestsPage() {
-  const { screenshots } = useAutomation();
-
   return (
     <RequireProject pageName="Pattern Tests">
-      <PatternMatchingTest screenshots={screenshots} />
+      <PatternMatchingTest className="h-[calc(100vh-120px)]" />
     </RequireProject>
   );
 }

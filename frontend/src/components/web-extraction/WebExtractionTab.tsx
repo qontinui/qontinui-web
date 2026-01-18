@@ -27,6 +27,7 @@ import { TransitionsView } from "./TransitionsView";
 import { PlaywrightCollectorConfig } from "./PlaywrightCollectorConfig";
 import type { PlaywrightCollectorConfigState } from "./PlaywrightCollectorConfig";
 import { PlaywrightResultsView } from "./PlaywrightResultsView";
+import { PlaywrightStateExplorerView } from "./PlaywrightStateExplorerView";
 import { usePlaywrightExtraction } from "@/hooks/use-playwright-extraction";
 import { EdgeDetectionView } from "../vision-extraction/EdgeDetectionView";
 import { SAM3SegmentationView } from "../vision-extraction/SAM3SegmentationView";
@@ -56,7 +57,6 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
-  Terminal,
   MousePointerClick,
   Globe,
 } from "lucide-react";
@@ -119,6 +119,7 @@ export default function WebExtractionTab() {
     isStarting: isStartingPlaywright,
     isPolling: isPollingPlaywright,
     startExtraction: startPlaywrightExtraction,
+    results: playwrightResults,
   } = usePlaywrightExtraction();
 
   const [activeExtractionId, setActiveExtractionId] = useState<string | null>(
@@ -136,6 +137,35 @@ export default function WebExtractionTab() {
   const [isRunningVision, setIsRunningVision] = useState(false);
   const [selectedScreenshotForVision, setSelectedScreenshotForVision] =
     useState<string | null>(null);
+
+  // Debugging refs
+  const rootRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const logHeights = () => {
+      console.log("--- WebExtraction Layout Debug REFACTORED ---");
+      console.log("Window height:", window.innerHeight);
+      console.log("Root content height:", rootRef.current?.clientHeight);
+      console.log("Main container height:", containerRef.current?.clientHeight);
+      console.log("Tabs height:", tabsRef.current?.clientHeight);
+      console.log("Content height:", contentRef.current?.clientHeight);
+
+      if (contentRef.current) {
+        const style = window.getComputedStyle(contentRef.current);
+        console.log("Content computed height:", style.height);
+        console.log("Content overflow:", style.overflow);
+        console.log("Content display:", style.display);
+      }
+    };
+
+    logHeights();
+    window.addEventListener("resize", logHeights);
+    return () => window.removeEventListener("resize", logHeights);
+  }, [mainTab, configSubTab, resultsSubTab]);
+
 
   // Get vision results from annotations (populated by runner during extraction)
   // Aggregate results from all annotations that have vision_results
@@ -232,7 +262,29 @@ export default function WebExtractionTab() {
   const stateMachineStates: StateMachineState[] = useMemo(() => {
     // First try: use pre-built state machine from runner
     if (extractionDetail?.state_machine?.states?.length) {
-      return extractionDetail.state_machine.states;
+      // Process pre-built states to ensure unique stateImage IDs
+      // The runner may create stateImages with duplicate IDs when the same element
+      // appears on multiple screenshots. We need to make IDs unique.
+      let globalImageIndex = 0;
+
+      const processedStates = extractionDetail.state_machine.states.map((state) => ({
+        ...state,
+        stateImages: state.stateImages.map((img) => {
+          globalImageIndex++;
+          // Create a truly unique ID by combining state id, image index, and global counter
+          const uniqueId = `${state.id}-img-${globalImageIndex}`;
+          return {
+            ...img,
+            id: uniqueId,
+            patterns: img.patterns?.map((p, pIdx) => ({
+              ...p,
+              id: `${uniqueId}-pattern-${pIdx}`,
+            })) || [],
+          };
+        }),
+      }));
+
+      return processedStates;
     }
 
     // Fallback: convert annotation states to StateMachineState format
@@ -310,17 +362,21 @@ export default function WebExtractionTab() {
                 element.element_type ||
                 "Element";
 
-              // Skip duplicates by name (same element appearing on different pages)
-              if (seenElementNames.has(elementName)) continue;
-              seenElementNames.add(elementName);
+              // Skip duplicates by name within the same screenshot
+              // (same element on different screenshots needs separate entries with correct bboxes)
+              const dedupeKey = `${occurrence.screenshotId}-${elementName}`;
+              if (seenElementNames.has(dedupeKey)) continue;
+              seenElementNames.add(dedupeKey);
 
               const elementBbox = element.bbox || stateBbox;
+              // Use screenshotId in IDs to ensure uniqueness across screenshots
+              const uniqueId = `${occurrence.screenshotId}-${element.id}`;
               stateImages.push({
-                id: `stateimage-${element.id}`,
+                id: `stateimage-${uniqueId}`,
                 name: elementName,
                 patterns: [
                   {
-                    id: `pattern-${element.id}`,
+                    id: `pattern-${uniqueId}`,
                     name: elementName,
                     searchRegions: [elementBbox],
                     fixed: false,
@@ -427,6 +483,9 @@ export default function WebExtractionTab() {
       // Load annotations and transitions if extraction is completed
       if (detail.status === "completed") {
         const annots = await extractionService.getAnnotations(extractionId);
+        // Debug: log annotation screenshot_ids
+        console.log('[WebExtractionTab] annotations loaded:', annots.length);
+        console.log('[WebExtractionTab] annotation screenshot_ids:', annots.map(a => a.screenshot_id));
         setAnnotations(annots);
         // Load transitions from detail (if available)
         setTransitions(detail.transitions || []);
@@ -617,12 +676,17 @@ export default function WebExtractionTab() {
     config: PlaywrightCollectorConfigState
   ) => {
     try {
+      // Derive dry_run from maxRiskLevel
+      const isDryRun = config.maxRiskLevel === "dry_run";
+      // Map risk level: dry_run behaves like safe mode for element identification
+      const riskLevel: "safe" | "caution" = isDryRun ? "safe" : config.maxRiskLevel === "caution" ? "caution" : "safe";
+
       await startPlaywrightExtraction({
         url: config.url,
         max_depth: config.maxDepth,
         max_elements_per_page: config.maxElementsPerPage,
-        max_risk_level: config.maxRiskLevel,
-        dry_run: config.dryRun,
+        max_risk_level: riskLevel,
+        dry_run: isDryRun,
         additional_blocked_keywords: config.dangerousKeywords,
         additional_safe_keywords: config.safeKeywords,
         blocked_selectors: config.blockedSelectors,
@@ -636,7 +700,7 @@ export default function WebExtractionTab() {
     } catch (error) {
       console.error("Failed to start Playwright extraction:", error);
       toast.error(
-        "Failed to start Playwright extraction. Make sure qontinui-api is running."
+        "Failed to start Playwright extraction. Make sure the runner is running."
       );
     }
   };
@@ -667,35 +731,31 @@ export default function WebExtractionTab() {
 
   // Helper function to render extraction history sidebar
   const renderExtractionHistory = () => (
-    <Card className="bg-surface-raised/60 border-brand-primary/20 backdrop-blur-sm h-full overflow-hidden flex flex-col">
-      <div className="p-4 border-b border-brand-primary/10 shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-brand-primary" />
-            <Label className="text-brand-primary text-base font-mono font-semibold uppercase tracking-wider">
-              History
-            </Label>
-          </div>
-          {extractions && extractions.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleDeleteAllExtractions}
-              disabled={isDeletingAll}
-              className="text-red-400/60 hover:text-red-400 hover:bg-red-500/10 h-8 px-2 text-[10px] font-mono"
-            >
-              {isDeletingAll ? (
-                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-              ) : (
-                <Trash2 className="h-3 w-3 mr-1" />
-              )}
-              PURGE
-            </Button>
-          )}
+    <div className="explorer-panel explorer-panel-primary h-full">
+      <div className="explorer-panel-header">
+        <div className="flex items-center gap-2 flex-1">
+          <Clock className="h-4 w-4 text-brand-primary" />
+          <span className="explorer-panel-header-title">History</span>
         </div>
+        {extractions && extractions.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDeleteAllExtractions}
+            disabled={isDeletingAll}
+            className="text-red-400/60 hover:text-red-400 hover:bg-red-500/10 h-8 px-2 text-[10px] font-mono"
+          >
+            {isDeletingAll ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <Trash2 className="h-3 w-3 mr-1" />
+            )}
+            PURGE
+          </Button>
+        )}
       </div>
 
-      <ScrollArea className="flex-1 min-h-0">
+      <ScrollArea className="explorer-panel-content">
         <div className="p-4 space-y-3">
           {extractions && extractions.length > 0 ? (
             <div className="space-y-2">
@@ -706,11 +766,10 @@ export default function WebExtractionTab() {
                   <div
                     key={extraction.id}
                     className={`
-                      p-3 bg-surface-canvas/70 rounded-lg border transition-all cursor-pointer group relative
-                      ${
-                        isSelected
-                          ? "border-brand-primary shadow-[0_0_15px_rgba(0,217,255,0.2)] bg-brand-primary/5"
-                          : "border-brand-primary/10 hover:border-brand-primary/40 hover:bg-surface-canvas"
+                      p-3 rounded-lg border transition-all cursor-pointer group relative
+                      ${isSelected
+                        ? "explorer-panel-item-selected"
+                        : "explorer-panel-item"
                       }
                     `}
                     onClick={() =>
@@ -737,22 +796,16 @@ export default function WebExtractionTab() {
                     </div>
 
                     <div className="flex gap-2 mb-2">
-                      <Badge
-                        variant="outline"
-                        className="bg-brand-primary/5 text-brand-primary border-brand-primary/20 text-[9px] px-1.5 py-0"
-                      >
+                      <span className="badge badge-primary text-[9px] px-1.5 py-0">
                         {extraction.stats.pages_extracted || 0} PG
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className="bg-brand-secondary/5 text-brand-secondary border-brand-secondary/20 text-[9px] px-1.5 py-0"
-                      >
+                      </span>
+                      <span className="badge badge-secondary text-[9px] px-1.5 py-0">
                         {extraction.stats.states_found || 0} ST
-                      </Badge>
+                      </span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <div className="text-[9px] text-text-muted font-mono italic">
+                      <div className="text-caption font-mono italic">
                         {new Date(extraction.created_at).toLocaleDateString(
                           [],
                           { month: "short", day: "numeric" }
@@ -775,16 +828,16 @@ export default function WebExtractionTab() {
               })}
             </div>
           ) : (
-            <div className="py-12 flex flex-col items-center justify-center text-text-muted">
-              <Clock className="h-8 w-8 mb-2 opacity-20" />
-              <p className="text-[10px] font-mono uppercase tracking-widest">
+            <div className="empty-state">
+              <Clock className="empty-state-icon" />
+              <p className="text-caption font-mono uppercase tracking-widest">
                 Archive Empty
               </p>
             </div>
           )}
         </div>
       </ScrollArea>
-    </Card>
+    </div>
   );
 
   if (!projectId) {
@@ -805,7 +858,7 @@ export default function WebExtractionTab() {
   const extractionIsComplete = extractionDetail?.status === "completed";
 
   return (
-    <div className="h-full bg-surface-canvas relative overflow-hidden flex flex-col web-extraction-root">
+    <div ref={rootRef} className="layout-full-height bg-surface-canvas relative web-extraction-root">
       {/* Background dot grid pattern */}
       <div
         className="absolute inset-0 opacity-20 pointer-events-none"
@@ -816,17 +869,11 @@ export default function WebExtractionTab() {
       />
 
       {/* Main content */}
-      <div className="relative z-10 flex-1 flex flex-col">
+      <div className="relative z-10 layout-full-height">
         {/* Header */}
         <header className="border-b border-brand-primary/20 bg-surface-canvas/90 backdrop-blur-sm shrink-0">
           <div className="container mx-auto px-6 py-4">
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Terminal className="w-8 h-8 text-brand-primary" />
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-success bg-clip-text text-transparent">
-                  Qontinui
-                </h1>
-              </div>
               <span className="text-sm text-brand-primary/60 font-mono uppercase tracking-widest pt-1">
                 Web Extraction
               </span>
@@ -835,11 +882,12 @@ export default function WebExtractionTab() {
         </header>
 
         {/* Tabs & Content */}
-        <div className="container mx-auto px-6 py-6 flex-1 flex flex-col overflow-hidden min-h-0">
+        <div ref={containerRef} className="container mx-auto px-6 py-6 layout-full-height">
           <Tabs
+            ref={tabsRef}
             value={mainTab}
             onValueChange={(v) => setMainTab(v as MainTab)}
-            className="w-full flex-1 flex flex-col overflow-hidden min-h-0"
+            className="w-full layout-full-height"
           >
             <div className="flex items-center gap-3 mb-6 shrink-0">
               <TabsList className="bg-surface-raised/80 border border-brand-primary/20 p-1 backdrop-blur-sm h-11">
@@ -893,15 +941,16 @@ export default function WebExtractionTab() {
             {/* Configuration Tab */}
             <TabsContent
               value="configuration"
-              className="mt-0 flex-1 flex flex-col min-h-0 overflow-hidden data-[state=inactive]:hidden"
+              className="mt-0 layout-full-height data-[state=inactive]:hidden"
             >
               {/* Configuration Sub-tabs */}
               <Tabs
+                ref={contentRef}
                 value={configSubTab}
                 onValueChange={(v) => setConfigSubTab(v as ConfigSubTab)}
-                className="flex-1 flex flex-col min-h-0"
+                className="layout-full-height"
               >
-                <TabsList className="bg-surface-raised/80 border border-brand-primary/20 p-1 backdrop-blur-sm w-fit mb-4">
+                <TabsList className="bg-surface-raised/80 border border-brand-primary/20 p-1 backdrop-blur-sm w-fit mb-4 shrink-0">
                   <TabsTrigger
                     value="dom-extraction"
                     className="data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary font-mono flex items-center gap-2"
@@ -935,18 +984,20 @@ export default function WebExtractionTab() {
                 {/* DOM Extraction Config Sub-tab */}
                 <TabsContent
                   value="dom-extraction"
-                  className="flex-1 mt-0 data-[state=inactive]:hidden"
+                  className="flex-1 h-full flex flex-col mt-0 min-h-0 overflow-hidden data-[state=inactive]:hidden"
                 >
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full min-h-0">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 grid-rows-[1fr] gap-6 h-full">
                     {/* Left: Configuration Panel (2 columns) */}
-                    <div className="lg:col-span-2 min-w-0 h-full min-h-0 overflow-y-auto pr-2 custom-scrollbar">
-                      <ExtractionConfigPanel
-                        extractionConfig={extractionConfig}
-                      />
+                    <div className="lg:col-span-2 h-full min-h-0">
+                      <ScrollArea className="h-full pr-4">
+                        <ExtractionConfigPanel
+                          extractionConfig={extractionConfig}
+                        />
+                      </ScrollArea>
                     </div>
 
-                    {/* Right: Previous Extractions Sidebar (1 column) - Moved inside */}
-                    <div className="lg:col-span-1 h-full min-h-0 overflow-hidden">
+                    {/* Right: Previous Extractions Sidebar (1 column) */}
+                    <div className="lg:col-span-1 min-h-0 overflow-hidden">
                       {renderExtractionHistory()}
                     </div>
                   </div>
@@ -955,19 +1006,21 @@ export default function WebExtractionTab() {
                 {/* Playwright State Collector Config Sub-tab */}
                 <TabsContent
                   value="playwright-collector"
-                  className="flex-1 mt-0 data-[state=inactive]:hidden"
+                  className="flex-1 h-full flex flex-col mt-0 min-h-0 overflow-hidden data-[state=inactive]:hidden"
                 >
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full min-h-0">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 grid-rows-[1fr] gap-6 h-full">
                     {/* Left: Playwright Config Panel (2 columns) */}
-                    <div className="lg:col-span-2 min-w-0 h-full min-h-0 overflow-y-auto pr-2 custom-scrollbar">
-                      <PlaywrightCollectorConfig
-                        onStartExtraction={handleStartPlaywrightExtraction}
-                        isLoading={isStartingPlaywright || isPollingPlaywright}
-                      />
+                    <div className="lg:col-span-2 h-full min-h-0">
+                      <ScrollArea className="h-full pr-4 text-green-400">
+                        <PlaywrightCollectorConfig
+                          onStartExtraction={handleStartPlaywrightExtraction}
+                          isLoading={isStartingPlaywright || isPollingPlaywright}
+                        />
+                      </ScrollArea>
                     </div>
 
                     {/* Right: Info Panel (1 column) */}
-                    <div className="lg:col-span-1 h-full min-h-0 overflow-hidden">
+                    <div className="lg:col-span-1 min-h-0 overflow-hidden">
                       <Card className="bg-surface-raised/60 border-green-500/20 backdrop-blur-sm h-full overflow-hidden flex flex-col">
                         <div className="p-4 border-b border-green-500/10 shrink-0">
                           <div className="flex items-center gap-2">
@@ -1016,7 +1069,7 @@ export default function WebExtractionTab() {
                             <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
                               <p className="text-xs text-yellow-400">
                                 <strong>Note:</strong> This feature requires
-                                qontinui-api to be running on port 8001.
+                                the runner to be running on port 9876.
                               </p>
                             </div>
                           </div>
@@ -1031,7 +1084,7 @@ export default function WebExtractionTab() {
             {/* Results Tab */}
             <TabsContent
               value="results"
-              className="mt-0 flex-1 flex flex-col gap-4 min-h-0 data-[state=inactive]:hidden"
+              className="mt-0 layout-full-height gap-4 data-[state=inactive]:hidden"
             >
               {!hasActiveExtraction ? (
                 <div className="py-12">
@@ -1061,20 +1114,8 @@ export default function WebExtractionTab() {
                 </Alert>
               ) : (
                 <>
-                  <style>{`
-                    [data-radix-scroll-area-viewport] {
-                      scrollbar-width: none !important;
-                      -ms-overflow-style: none !important;
-                    }
-                    [data-radix-scroll-area-viewport]::-webkit-scrollbar {
-                      display: none !important;
-                    }
-                  `}</style>
                   {/* Extraction Progress Bar - single horizontal line */}
-                  <ExtractionProgressBar
-                    session={extractionDetail}
-                    projectId={projectId}
-                  />
+                  <ExtractionProgressBar session={extractionDetail} />
 
                   {/* Results Sub-tabs */}
                   {extractionIsComplete && (
@@ -1083,7 +1124,7 @@ export default function WebExtractionTab() {
                       onValueChange={(v) =>
                         setResultsSubTab(v as ResultsSubTab)
                       }
-                      className="flex-1 flex flex-col min-h-0"
+                      className="layout-full-height"
                     >
                       <TabsList className="bg-surface-raised/80 border border-brand-success/20 p-1 backdrop-blur-sm w-fit mb-4">
                         <TabsTrigger
@@ -1271,7 +1312,7 @@ export default function WebExtractionTab() {
                         )}
                       </TabsContent>
 
-                      <TabsContent value="ocr" className="flex-1 min-h-0 mt-0">
+                      <TabsContent value="ocr" className="layout-full-height mt-0">
                         {visionResults ? (
                           <OCRDetectionView
                             screenshotSource={selectedScreenshotForVision || ""}
@@ -1297,10 +1338,12 @@ export default function WebExtractionTab() {
 
                       <TabsContent
                         value="playwright"
-                        className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden"
+                        className="mt-0 layout-full-height data-[state=inactive]:hidden"
                       >
-                        {playwrightJob ? (
-                          <PlaywrightResultsView job={playwrightJob} />
+                        {playwrightJob?.status === "completed" && playwrightResults ? (
+                          <PlaywrightStateExplorerView results={playwrightResults} />
+                        ) : playwrightJob ? (
+                          <PlaywrightResultsView job={playwrightJob} results={playwrightResults} />
                         ) : (
                           <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
                             <MousePointerClick className="h-16 w-16 text-green-400/30" />

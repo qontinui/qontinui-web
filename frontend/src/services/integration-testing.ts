@@ -1,5 +1,5 @@
 // services/integration-testing.ts
-// Service for Integration Testing API calls to qontinui-api
+// Service for Integration Testing API calls to runner
 
 import { ApiConfig } from "./api-config";
 import type {
@@ -13,14 +13,14 @@ import type {
 /**
  * Integration Testing Service
  *
- * Communicates with qontinui-api to run integration tests in MOCK mode.
+ * Communicates with runner to run integration tests in MOCK mode.
  * Integration tests execute workflows using historical data instead of live GUI.
  */
 class IntegrationTestingService {
   private apiUrl: string;
 
   constructor() {
-    this.apiUrl = ApiConfig.getApiUrl();
+    this.apiUrl = ApiConfig.getRunnerUrl();
   }
 
   /**
@@ -398,9 +398,9 @@ class IntegrationTestingService {
   }
 
   /**
-   * Check if the qontinui-api is available
+   * Check if the runner is available
    *
-   * @returns True if the API is reachable
+   * @returns True if the runner is reachable
    */
   async checkApiHealth(): Promise<boolean> {
     try {

@@ -49,13 +49,13 @@ import {
 
 import type {
   PlaywrightExtractionJob,
-  PlaywrightExtractedClickable,
-  PlaywrightSkippedElement,
-  PlaywrightExtractionMetrics,
-} from "@/types/extraction";
+  PlaywrightExtractionResults,
+} from "@/hooks/use-playwright-extraction";
+import type { PlaywrightClickable } from "@/lib/runner-client";
 
 interface PlaywrightResultsViewProps {
   job: PlaywrightExtractionJob;
+  results?: PlaywrightExtractionResults | null;
 }
 
 function getRiskIcon(risk: string) {
@@ -89,7 +89,12 @@ function getRiskBadgeVariant(
   }
 }
 
-function MetricsCard({ metrics }: { metrics: PlaywrightExtractionMetrics }) {
+type ExtractionMetrics = NonNullable<PlaywrightExtractionResults["metrics"]>;
+
+function MetricsCard({ metrics }: { metrics: ExtractionMetrics | undefined }) {
+  if (!metrics) {
+    return null;
+  }
   return (
     <Card className="border-cyan-500/30 bg-cyan-500/5">
       <CardHeader className="py-3">
@@ -130,25 +135,23 @@ function MetricsCard({ metrics }: { metrics: PlaywrightExtractionMetrics }) {
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Verification Rate</span>
                 <span className="font-medium">
-                  {((metrics.verification_rate || 0) * 100).toFixed(1)}%
+                  {metrics.total_found > 0
+                    ? ((metrics.verified / metrics.total_found) * 100).toFixed(1)
+                    : 0}%
                 </span>
               </div>
               <Progress
-                value={(metrics.verification_rate || 0) * 100}
+                value={metrics.total_found > 0
+                  ? (metrics.verified / metrics.total_found) * 100
+                  : 0}
                 className="h-2"
               />
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span className="text-green-500">
                   {metrics.verified} verified
                 </span>
-                <span className="text-red-500">{metrics.failed} failed</span>
+                <span className="text-red-500">{metrics.unverified || 0} unverified</span>
               </div>
-              {metrics.avg_confidence !== undefined && (
-                <p className="text-xs text-muted-foreground">
-                  Average confidence:{" "}
-                  {(metrics.avg_confidence * 100).toFixed(1)}%
-                </p>
-              )}
             </div>
           </>
         )}
@@ -164,8 +167,8 @@ function MetricsCard({ metrics }: { metrics: PlaywrightExtractionMetrics }) {
   );
 }
 
-function ElementImage({ element }: { element: PlaywrightExtractedClickable }) {
-  if (!element.screenshot_base64) {
+function ElementImage({ element }: { element: PlaywrightClickable }) {
+  if (!element.screenshot) {
     return (
       <div className="w-16 h-16 bg-muted rounded flex items-center justify-center">
         <ImageIcon className="h-6 w-6 text-muted-foreground" />
@@ -178,7 +181,7 @@ function ElementImage({ element }: { element: PlaywrightExtractedClickable }) {
       <DialogTrigger asChild>
         <button className="w-16 h-16 rounded overflow-hidden border border-border hover:border-primary transition-colors">
           <img
-            src={`data:image/png;base64,${element.screenshot_base64}`}
+            src={`data:image/png;base64,${element.screenshot}`}
             alt={element.text || element.selector}
             className="w-full h-full object-contain"
           />
@@ -192,7 +195,7 @@ function ElementImage({ element }: { element: PlaywrightExtractedClickable }) {
         </DialogHeader>
         <div className="flex justify-center">
           <img
-            src={`data:image/png;base64,${element.screenshot_base64}`}
+            src={`data:image/png;base64,${element.screenshot}`}
             alt={element.text || element.selector}
             className="max-h-[60vh] object-contain"
           />
@@ -218,7 +221,7 @@ function ElementImage({ element }: { element: PlaywrightExtractedClickable }) {
 function ElementsTable({
   elements,
 }: {
-  elements: PlaywrightExtractedClickable[];
+  elements: PlaywrightClickable[];
 }) {
   const [search, setSearch] = useState("");
   const [filterVerified, setFilterVerified] = useState<
@@ -240,11 +243,11 @@ function ElementsTable({
       }
 
       // Verification filter
-      if (filterVerified === "verified" && !el.is_verified) return false;
-      if (filterVerified === "unverified" && el.is_verified) return false;
+      if (filterVerified === "verified" && !el.verified) return false;
+      if (filterVerified === "unverified" && el.verified) return false;
 
       // Risk filter
-      if (filterRisk !== "all" && el.risk_level.toLowerCase() !== filterRisk)
+      if (filterRisk !== "all" && el.risk_level?.toLowerCase() !== filterRisk)
         return false;
 
       return true;
@@ -327,9 +330,9 @@ function ElementsTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
-                    {getRiskIcon(element.risk_level)}
-                    <Badge variant={getRiskBadgeVariant(element.risk_level)}>
-                      {element.risk_level}
+                    {getRiskIcon(element.risk_level || "unknown")}
+                    <Badge variant={getRiskBadgeVariant(element.risk_level || "unknown")}>
+                      {element.risk_level || "unknown"}
                     </Badge>
                   </div>
                 </TableCell>
@@ -348,13 +351,13 @@ function ElementsTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    {element.is_verified ? (
+                    {element.verified ? (
                       <CheckCircle2 className="h-4 w-4 text-green-500" />
                     ) : (
                       <XCircle className="h-4 w-4 text-red-500" />
                     )}
                     <span className="text-sm">
-                      {(element.match_confidence * 100).toFixed(0)}%
+                      {((element.verification_confidence || 0) * 100).toFixed(0)}%
                     </span>
                   </div>
                 </TableCell>
@@ -371,16 +374,18 @@ function ElementsTable({
   );
 }
 
+type SkippedElement = NonNullable<PlaywrightExtractionResults["skipped_dangerous"]>[number];
+
 function SkippedElementsList({
   elements,
 }: {
-  elements: PlaywrightSkippedElement[];
+  elements: SkippedElement[];
 }) {
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set());
 
   // Group by URL
   const groupedByUrl = useMemo(() => {
-    const groups: Record<string, PlaywrightSkippedElement[]> = {};
+    const groups: Record<string, SkippedElement[]> = {};
     for (const el of elements) {
       if (!groups[el.url]) {
         groups[el.url] = [];
@@ -501,8 +506,23 @@ function ErrorsList({ errors }: { errors: string[] }) {
   );
 }
 
-export function PlaywrightResultsView({ job }: PlaywrightResultsViewProps) {
-  if (!job.result) {
+export function PlaywrightResultsView({ job, results }: PlaywrightResultsViewProps) {
+  // Show progress when job is running
+  if (job.status === "running" || job.status === "pending") {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <p className="text-muted-foreground">
+          {job.progress_message || `Extraction ${job.status}...`}
+        </p>
+        {job.progress_percent !== undefined && (
+          <Progress value={job.progress_percent} className="w-64" />
+        )}
+      </div>
+    );
+  }
+
+  if (!results) {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">No results available</p>
@@ -510,8 +530,11 @@ export function PlaywrightResultsView({ job }: PlaywrightResultsViewProps) {
     );
   }
 
-  const { clickables, skipped_dangerous, metrics, pages_visited, errors } =
-    job.result;
+  const clickables = results.clickables || [];
+  const skipped_dangerous = results.skipped_dangerous || [];
+  const metrics = results.metrics;
+  const pages_visited = results.pages_visited || [];
+  const errors = results.errors || [];
 
   return (
     <div className="space-y-4">

@@ -1,0 +1,875 @@
+/**
+ * Qontinui Web Component Style Schema
+ *
+ * Comprehensive CSS-based component style system for qontinui-web.
+ * Provides consistent styling utilities for web-specific components.
+ *
+ * Design tokens are imported via globals.css from @qontinui/design-tokens
+ * Color variables used:
+ *   --qontinui-brand-primary (#4A90D9)
+ *   --qontinui-brand-secondary (#8B6BB5)
+ *   --qontinui-brand-success (#4DB89D)
+ *   --qontinui-surface-canvas (#111115)
+ *   --qontinui-surface-raised (#1E1E22)
+ */
+
+@layer components {
+  /* ============================================
+   * Typography Scale
+   * Consistent text styles across the app
+   * ============================================ */
+
+  /* Headings */
+  .text-h1 {
+    @apply text-2xl font-bold leading-tight tracking-tight;
+  }
+
+  .text-h2 {
+    @apply text-xl font-semibold leading-tight;
+  }
+
+  .text-h3 {
+    @apply text-lg font-semibold leading-snug;
+  }
+
+  .text-h4 {
+    @apply text-base font-semibold leading-normal;
+  }
+
+  /* Body text */
+  .text-body {
+    @apply text-sm leading-normal;
+  }
+
+  .text-body-lg {
+    @apply text-base leading-relaxed;
+  }
+
+  .text-body-sm {
+    @apply text-xs leading-normal;
+  }
+
+  /* Labels and captions */
+  .text-label {
+    @apply text-sm font-medium leading-none;
+  }
+
+  .text-label-sm {
+    @apply text-xs font-medium leading-none;
+  }
+
+  .text-caption {
+    @apply text-xs text-muted-foreground leading-normal;
+  }
+
+  /* Code/monospace */
+  .text-code {
+    @apply text-sm font-mono leading-normal;
+  }
+
+  .text-code-sm {
+    @apply text-xs font-mono leading-normal;
+  }
+
+  /* Stats/numbers */
+  .text-stat {
+    @apply text-3xl font-bold tabular-nums leading-none;
+  }
+
+  .text-stat-sm {
+    @apply text-xl font-semibold tabular-nums leading-none;
+  }
+
+  /* ============================================
+   * Button System
+   * Consistent button styles with brand colors
+   * ============================================ */
+
+  /* Primary button - main brand action */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface-canvas disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 bg-brand-primary text-white hover:bg-brand-primary/90 focus:ring-brand-primary/50;
+  }
+
+  /* Secondary button - secondary/build actions */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface-canvas disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 bg-brand-secondary/20 text-brand-secondary border border-brand-secondary/50 hover:bg-brand-secondary/30 focus:ring-brand-secondary/50;
+  }
+
+  /* Success button - confirmation/success actions */
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface-canvas disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 bg-brand-success text-white hover:bg-brand-success/90 focus:ring-brand-success/50;
+  }
+
+  /* Ghost button - minimal visual weight */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface-canvas disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 bg-transparent text-muted-foreground hover:bg-surface-hover hover:text-foreground focus:ring-border-strong/50;
+  }
+
+  /* Destructive button - danger/delete actions */
+  .btn-destructive {
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface-canvas disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 bg-error text-white hover:bg-error/90 focus:ring-error/50;
+  }
+
+  /* Button sizes */
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+
+  .btn-icon {
+    @apply p-2;
+  }
+
+  /* ============================================
+   * Card System
+   * Container components for grouping content
+   * ============================================ */
+
+  /* Base card */
+  .card {
+    @apply bg-surface-raised border border-border-default rounded-lg;
+  }
+
+  /* Card with hover effect */
+  .card-hover {
+    @apply bg-surface-raised border border-border-default rounded-lg transition-all hover:border-border-strong hover:bg-surface-hover;
+  }
+
+  /* Selected card state */
+  .card-selected {
+    @apply bg-surface-raised border border-brand-primary rounded-lg ring-1 ring-brand-primary/50 shadow-[0_0_12px_var(--glow-primary)];
+  }
+
+  /* Card header */
+  .card-header {
+    @apply px-4 py-3 border-b border-border-subtle;
+  }
+
+  /* Card content */
+  .card-content {
+    @apply px-4 py-4;
+  }
+
+  /* Card footer */
+  .card-footer {
+    @apply px-4 py-3 border-t border-border-subtle;
+  }
+
+  /* ============================================
+   * Explorer Panel System
+   * For state/element viewers (extracted from theme.ts)
+   * ============================================ */
+
+  /* Panel container - base */
+  .explorer-panel {
+    @apply bg-surface-raised/60 border rounded-lg backdrop-blur-sm overflow-hidden flex flex-col h-full;
+  }
+
+  /* Panel header */
+  .explorer-panel-header {
+    @apply px-4 py-3 border-b flex items-center gap-2 shrink-0;
+  }
+
+  /* Panel header title */
+  .explorer-panel-header-title {
+    @apply font-mono font-semibold text-sm uppercase tracking-wide;
+  }
+
+  /* Panel content - scrollable area that fills remaining space */
+  /* Note: overflow is controlled by the ExplorerPanelContent component, not here */
+  .explorer-panel-content {
+    @apply flex-1 min-h-0 relative;
+  }
+
+  /* Ensure ScrollArea fills the panel content area using absolute positioning */
+  .explorer-panel-content>[data-slot="scroll-area"] {
+    position: absolute !important;
+    inset: 0 !important;
+  }
+
+  /* Ensure ScrollArea viewport inside explorer panels is scrollable */
+  .explorer-panel-content [data-slot="scroll-area-viewport"] {
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Custom scroll container support (for panels that need custom event handlers) */
+  /* Matches ScrollArea pattern: absolute positioning only, flex from JSX classes */
+  .explorer-panel-content>[data-slot="custom-scroll-root"] {
+    position: absolute !important;
+    inset: 0 !important;
+  }
+
+  /* Custom scroll viewport - matches ScrollArea viewport pattern exactly */
+  /* Uses height: 100% like ScrollArea for proper scroll behavior */
+  .explorer-panel-content [data-slot="custom-scroll-viewport"] {
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Panel item - selectable */
+  .explorer-panel-item {
+    @apply w-full p-3 rounded-lg border text-left transition-all border-border-subtle bg-surface-canvas/50 hover:border-brand-primary/40 hover:bg-brand-primary/5;
+  }
+
+  /* Panel item - selected */
+  .explorer-panel-item-selected {
+    @apply w-full p-3 rounded-lg border text-left transition-all border-brand-primary bg-brand-primary/20 shadow-[0_0_15px_var(--glow-primary)];
+  }
+
+  /* Panel thumbnail */
+  .explorer-panel-thumbnail {
+    @apply rounded-lg border cursor-pointer transition-all overflow-hidden aspect-video border-border-subtle hover:border-brand-primary/40;
+  }
+
+  /* Panel thumbnail - selected */
+  .explorer-panel-thumbnail-selected {
+    @apply rounded-lg border cursor-pointer transition-all overflow-hidden aspect-video border-brand-primary shadow-[0_0_15px_var(--glow-primary)] ring-1 ring-brand-primary/50;
+  }
+
+  /* Explorer panel accent variants */
+  .explorer-panel-primary {
+    @apply border-brand-primary/30;
+  }
+
+  .explorer-panel-primary .explorer-panel-header {
+    @apply border-brand-primary/20;
+  }
+
+  .explorer-panel-primary .explorer-panel-header-title {
+    @apply text-brand-primary;
+  }
+
+  .explorer-panel-secondary {
+    @apply border-brand-secondary/30;
+  }
+
+  .explorer-panel-secondary .explorer-panel-header {
+    @apply border-brand-secondary/20;
+  }
+
+  .explorer-panel-secondary .explorer-panel-header-title {
+    @apply text-brand-secondary;
+  }
+
+  .explorer-panel-success {
+    @apply border-brand-success/30;
+  }
+
+  .explorer-panel-success .explorer-panel-header {
+    @apply border-brand-success/20;
+  }
+
+  .explorer-panel-success .explorer-panel-header-title {
+    @apply text-brand-success;
+  }
+
+  /* ============================================
+   * Form Elements
+   * Input, select, checkbox, radio styles
+   * ============================================ */
+
+  /* Text input */
+  .input {
+    @apply w-full px-3 py-2 bg-surface-canvas border border-border-default text-foreground placeholder:text-muted-foreground rounded-md transition-colors focus:border-brand-primary focus:ring-1 focus:ring-brand-primary focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Select dropdown */
+  .select {
+    @apply w-full px-3 py-2 bg-surface-canvas border border-border-default text-foreground rounded-md transition-colors focus:border-brand-primary focus:ring-1 focus:ring-brand-primary focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed appearance-none cursor-pointer;
+  }
+
+  /* Checkbox */
+  .checkbox {
+    @apply w-4 h-4 rounded border border-border-default bg-surface-canvas text-brand-primary focus:ring-brand-primary focus:ring-offset-surface-canvas;
+  }
+
+  /* Radio button */
+  .radio {
+    @apply w-4 h-4 rounded-full border border-border-default bg-surface-canvas text-brand-primary focus:ring-brand-primary focus:ring-offset-surface-canvas;
+  }
+
+  /* Form group container */
+  .form-group {
+    @apply space-y-2;
+  }
+
+  /* Form label */
+  .form-label {
+    @apply block text-sm font-medium text-foreground;
+  }
+
+  /* Form error message */
+  .form-error {
+    @apply text-xs text-error mt-1;
+  }
+
+  /* ============================================
+   * Badge System
+   * For inline status indicators
+   * ============================================ */
+
+  /* Badge base */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium;
+  }
+
+  /* Badge variants */
+  .badge-muted {
+    @apply bg-muted/50 text-muted-foreground;
+  }
+
+  .badge-success {
+    @apply bg-success-muted text-success;
+  }
+
+  .badge-warning {
+    @apply bg-warning-muted text-warning;
+  }
+
+  .badge-danger {
+    @apply bg-error-muted text-error;
+  }
+
+  .badge-info {
+    @apply bg-info-muted text-info;
+  }
+
+  .badge-primary {
+    @apply bg-brand-primary/15 text-brand-primary;
+  }
+
+  .badge-secondary {
+    @apply bg-brand-secondary/15 text-brand-secondary;
+  }
+
+  /* ============================================
+   * Status Indicators
+   * For top-level status banners
+   * ============================================ */
+
+  /* Status banner base */
+  .status-banner {
+    @apply px-4 py-3 rounded-lg;
+  }
+
+  /* Status banner variants */
+  .status-idle {
+    @apply bg-muted/30 text-muted-foreground;
+  }
+
+  .status-running {
+    @apply bg-success-muted text-success;
+  }
+
+  .status-error {
+    @apply bg-error-muted text-error;
+  }
+
+  .status-success {
+    @apply bg-success-muted text-success;
+  }
+
+  .status-warning {
+    @apply bg-warning-muted text-warning;
+  }
+
+  /* ============================================
+   * Empty States
+   * For when there's no content to display
+   * ============================================ */
+
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-12 text-muted-foreground;
+  }
+
+  .empty-state-icon {
+    @apply w-12 h-12 mb-4 opacity-50;
+  }
+
+  .empty-state-title {
+    @apply text-lg font-medium mb-2 text-foreground;
+  }
+
+  .empty-state-desc {
+    @apply text-sm text-center max-w-sm;
+  }
+
+  /* ============================================
+   * Tab Navigation
+   * For horizontal navigation tabs
+   * ============================================ */
+
+  /* Tab container */
+  .tab-container {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  /* Tab item - base */
+  .tab-item {
+    @apply flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors;
+  }
+
+  /* Tab item - inactive */
+  .tab-inactive {
+    @apply bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground;
+  }
+
+  /* Tab item - active */
+  .tab-active {
+    @apply bg-brand-primary/20 text-brand-primary;
+  }
+
+  /* Tab accent variants */
+  .tab-accent-primary {
+    @apply bg-brand-primary/20 text-brand-primary;
+  }
+
+  .tab-accent-secondary {
+    @apply bg-brand-secondary/20 text-brand-secondary;
+  }
+
+  .tab-accent-success {
+    @apply bg-brand-success/20 text-brand-success;
+  }
+
+  .tab-accent-blue {
+    @apply bg-blue-500/20 text-blue-400;
+  }
+
+  .tab-accent-green {
+    @apply bg-green-500/20 text-green-400;
+  }
+
+  .tab-accent-amber {
+    @apply bg-amber-500/20 text-amber-400;
+  }
+
+  .tab-accent-purple {
+    @apply bg-purple-500/20 text-purple-400;
+  }
+
+  .tab-accent-red {
+    @apply bg-red-500/20 text-red-400;
+  }
+
+  /* ============================================
+   * Panel System
+   * Modern, clean design with subtle backgrounds
+   * ============================================ */
+
+  /* Main panel container */
+  .panel {
+    @apply rounded-lg bg-card/50;
+  }
+
+  /* Panel with hover */
+  .panel-interactive {
+    @apply rounded-lg bg-card/50 hover:bg-card/70 transition-colors;
+  }
+
+  /* Panel header */
+  .panel-header {
+    @apply flex items-center justify-between px-3 py-2;
+  }
+
+  /* Panel header button (collapsible) */
+  .panel-header-btn {
+    @apply w-full flex items-center justify-between px-3 py-2 hover:bg-muted/30 rounded-lg transition-colors;
+  }
+
+  /* Panel title with icon */
+  .panel-title {
+    @apply flex items-center gap-2 text-sm font-medium;
+  }
+
+  /* Panel content */
+  .panel-content {
+    @apply px-3 pb-3;
+  }
+
+  /* Panel content with scroll */
+  .panel-content-scroll {
+    @apply max-h-48 overflow-auto px-2 pb-2;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  .panel-content-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .panel-content-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .panel-content-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 3px;
+  }
+
+  .panel-content-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: var(--border-interactive);
+  }
+
+  /* ============================================
+   * Item Card System
+   * For grid items like tasks, workflows
+   * ============================================ */
+
+  .item-card {
+    @apply p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors;
+  }
+
+  .item-card-accent {
+    @apply p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-all;
+  }
+
+  .item-card-header {
+    @apply flex items-start gap-3;
+  }
+
+  .item-card-icon {
+    @apply w-5 h-5 flex-shrink-0 mt-0.5;
+  }
+
+  .item-card-content {
+    @apply flex-1 min-w-0;
+  }
+
+  .item-card-title {
+    @apply font-medium truncate;
+  }
+
+  .item-card-desc {
+    @apply text-sm text-muted-foreground line-clamp-2 mt-1;
+  }
+
+  .item-card-action {
+    @apply flex-shrink-0 p-2 rounded-lg transition-colors disabled:opacity-50;
+  }
+
+  /* ============================================
+   * Scroll Container System
+   * For proper scrolling in flex/grid layouts
+   * ============================================ */
+
+  /**
+   * Use these classes together for scrollable flex layouts:
+   * - Parent: .scroll-container (or overflow-hidden)
+   * - Flex child: .scroll-area-flex
+   * - Scrollable wrapper: .scroll-area
+   *
+   * Example:
+   * <div class="flex flex-col h-full scroll-container">
+   *   <header class="shrink-0">Fixed header</header>
+   *   <div class="scroll-area-flex">
+   *     <div class="scroll-area scrollbar-dark">
+   *       ...scrollable content...
+   *     </div>
+   *   </div>
+   * </div>
+   */
+
+  /* Container that constrains scroll children */
+  .scroll-container {
+    @apply overflow-hidden;
+  }
+
+  /* Flex child that fills available space and allows scroll */
+  .scroll-area-flex {
+    @apply flex-1 min-h-0 overflow-hidden;
+  }
+
+  /* The actual scrollable area */
+  .scroll-area {
+    @apply h-full overflow-auto;
+  }
+
+  /* Scrollable area with y-only scroll */
+  .scroll-area-y {
+    @apply h-full overflow-y-auto overflow-x-hidden;
+  }
+
+  /* Scrollable area with x-only scroll */
+  .scroll-area-x {
+    @apply w-full overflow-x-auto overflow-y-hidden;
+  }
+
+  /* Grid layout that fills container height */
+  .grid-fill {
+    @apply h-full;
+  }
+
+  /* Grid column that should scroll */
+  .grid-scroll-col {
+    @apply h-full overflow-hidden;
+  }
+
+  /* Full height layout container for dashboards - prevents height leaks */
+  .layout-full-height {
+    @apply h-full flex-1 flex flex-col min-h-0 overflow-hidden;
+  }
+
+  /* ============================================
+   * Log Container
+   * For displaying log/console output
+   * ============================================ */
+
+  .log-container {
+    @apply bg-surface-canvas/50 border border-border-subtle rounded-lg p-4 font-mono text-sm;
+  }
+
+  .log-entry {
+    @apply py-1 border-b border-border-subtle/50 last:border-0;
+  }
+
+  .log-timestamp {
+    @apply text-muted-foreground text-xs mr-2;
+  }
+
+  .log-level-info {
+    @apply text-info;
+  }
+
+  .log-level-warn {
+    @apply text-warning;
+  }
+
+  .log-level-error {
+    @apply text-error;
+  }
+
+  .log-level-success {
+    @apply text-success;
+  }
+}
+
+@layer utilities {
+  /* ============================================
+   * Z-Index Scale
+   * Semantic z-index values
+   * ============================================ */
+
+  .z-dropdown {
+    z-index: 10;
+  }
+
+  .z-sticky {
+    z-index: 20;
+  }
+
+  .z-sidebar {
+    z-index: 30;
+  }
+
+  .z-popover {
+    z-index: 40;
+  }
+
+  .z-modal-backdrop {
+    z-index: 50;
+  }
+
+  .z-modal {
+    z-index: 60;
+  }
+
+  .z-toast {
+    z-index: 70;
+  }
+
+  .z-tooltip {
+    z-index: 80;
+  }
+
+  .z-max {
+    z-index: 100;
+  }
+
+  /* ============================================
+   * Elevation (Shadow) Scale
+   * ============================================ */
+
+  .elevation-flat {
+    box-shadow: none;
+  }
+
+  .elevation-raised {
+    @apply shadow-sm;
+  }
+
+  .elevation-floating {
+    @apply shadow-md;
+  }
+
+  .elevation-overlay {
+    @apply shadow-lg;
+  }
+
+  .elevation-prominent {
+    @apply shadow-xl;
+  }
+
+  /* ============================================
+   * Glow Effects
+   * Soft glow effects using brand colors
+   * ============================================ */
+
+  .glow-primary {
+    box-shadow: 0 0 12px var(--glow-primary);
+  }
+
+  .glow-secondary {
+    box-shadow: 0 0 12px var(--glow-secondary);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 12px var(--glow-success);
+  }
+
+  /* ============================================
+   * Pattern Backgrounds
+   * ============================================ */
+
+  .grid-dots {
+    background-image: radial-gradient(circle,
+        rgba(255, 255, 255, 0.1) 1px,
+        transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  /* ============================================
+   * Scrollbar Utilities
+   * ============================================ */
+
+  .scrollbar-dark {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 3px;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-thumb:hover {
+    background-color: var(--border-interactive);
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ============================================
+   * Animation Utilities
+   * ============================================ */
+
+  .animate-slideDown {
+    animation: slideDown 0.2s ease-out;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slideUp {
+    animation: slideUp 0.2s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  .pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite alternate;
+  }
+
+  @keyframes pulse-glow {
+    from {
+      box-shadow: 0 0 12px var(--glow-primary);
+    }
+
+    to {
+      box-shadow: 0 0 20px var(--glow-primary);
+    }
+  }
+
+  /* ============================================
+   * Text Utilities
+   * ============================================ */
+
+  .text-ellipsis-start {
+    direction: rtl;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .text-ellipsis-start span {
+    direction: ltr;
+    unicode-bidi: bidi-override;
+  }
+
+  .gradient-text {
+    background: linear-gradient(to right,
+        var(--brand-primary),
+        var(--brand-secondary),
+        var(--brand-success));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}

@@ -14,7 +14,7 @@ import type {
   AutomationLog,
 } from "@/types/automation";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // Re-export types for backwards compatibility
 export type { User, Project, UserUpdate, ProjectCreate, ProjectUpdate };
@@ -992,89 +992,6 @@ class ApiClient {
 
     // Fallback without token (backend will try cookie auth)
     return baseUrl;
-  }
-
-  // ===== Extraction Endpoints =====
-
-  /**
-   * Get extraction session details with annotations
-   */
-  async getExtractionSession(extractionId: string): Promise<unknown> {
-    const response = await this.fetchWithAuth(`/extractions/${extractionId}`);
-    if (!response.ok) {
-      throw new Error("Failed to get extraction session");
-    }
-    return response.json();
-  }
-
-  /**
-   * List extraction sessions for a project
-   */
-  async listExtractionSessions(
-    projectId: string,
-    params?: {
-      skip?: number;
-      limit?: number;
-      status?: string;
-    }
-  ): Promise<unknown[]> {
-    const queryParams = new URLSearchParams();
-    if (params?.skip !== undefined)
-      queryParams.append("skip", params.skip.toString());
-    if (params?.limit !== undefined)
-      queryParams.append("limit", params.limit.toString());
-    if (params?.status) queryParams.append("status", params.status);
-
-    const url = `/projects/${projectId}/extractions${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
-    const response = await this.fetchWithAuth(url);
-
-    if (!response.ok) {
-      throw new Error("Failed to list extraction sessions");
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Delete an extraction session
-   */
-  async deleteExtractionSession(extractionId: string): Promise<void> {
-    const response = await this.fetchWithAuth(`/extractions/${extractionId}`, {
-      method: "DELETE",
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to delete extraction session");
-    }
-  }
-
-  /**
-   * Import states from extraction to workflow
-   */
-  async importExtractionStates(
-    extractionId: string,
-    data: {
-      state_ids?: string[];
-      target_workflow_id?: string;
-    }
-  ): Promise<{
-    imported_states: number;
-    imported_transitions: number;
-    workflow_id: string | null;
-  }> {
-    const response = await this.fetchWithAuth(
-      `/extractions/${extractionId}/import-states`,
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to import extraction states");
-    }
-
-    return response.json();
   }
 
   // ===== Tree Events Endpoints =====

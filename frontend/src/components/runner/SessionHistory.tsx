@@ -126,11 +126,21 @@ export function SessionHistory() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
       {/* Runs List */}
-      <Card className="lg:col-span-1 flex flex-col">
+      <Card
+        className="lg:col-span-1 flex flex-col"
+        data-awas-action="list_automation_sessions"
+        data-awas-element="session-history-list"
+      >
         <CardHeader>
           <div className="flex items-center justify-between mb-4">
             <CardTitle>Execution History</CardTitle>
-            <Button size="sm" variant="outline" onClick={loadRuns}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={loadRuns}
+              data-awas-element="refresh-sessions-button"
+              data-awas-trigger="click"
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
@@ -145,7 +155,10 @@ export function SessionHistory() {
               />
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger>
+              <SelectTrigger
+                data-awas-element="session-status-filter"
+                data-awas-param-status={filterStatus}
+              >
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -182,6 +195,10 @@ export function SessionHistory() {
                         ? "bg-primary/10 border border-primary"
                         : "hover:bg-muted/50 border border-transparent"
                     }`}
+                    data-awas-action="get_automation_session"
+                    data-awas-element={`session-item-${run.id}`}
+                    data-awas-trigger="click"
+                    data-awas-param-session_id={run.id}
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">

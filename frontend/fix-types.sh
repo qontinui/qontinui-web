@@ -5,13 +5,7 @@
 
 cd "$(dirname "$0")"
 
-# Fix 1: Remove unused GitBranch import
-sed -i '/GitBranch,$/d' "src/app/(app)/extractions/[extractionId]/page.tsx"
-
-# Fix 2: Fix extractionToDelete string | undefined issue
-sed -i 's/formatUrls(extractionToDelete\.source_urls)/formatUrls(extractionToDelete.source_urls) || ""/' "src/app/(app)/extractions/page.tsx"
-
-# Fix 3: Remove unused imports in WebExtractionTab
+# Fix 1: Remove unused imports in WebExtractionTab
 sed -i '/^import { Separator }/d' "src/components/web-extraction/WebExtractionTab.tsx"
 sed -i 's/  ArrowLeft,$//' "src/components/web-extraction/WebExtractionTab.tsx"
 

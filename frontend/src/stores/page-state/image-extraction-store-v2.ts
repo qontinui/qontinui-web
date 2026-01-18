@@ -42,6 +42,7 @@ export interface ExtractionResultData {
     width: number;
     height: number;
   };
+  monitors?: number[]; // Monitor indices the extracted region came from
 }
 
 /** Mask editor state */

@@ -93,7 +93,7 @@ export const IntegrationTestPlayback: React.FC<
 
       try {
         const response = await fetch(
-          `${ApiConfig.QONTINUI_API_URL}/api/capture/frames/playback`,
+          `${ApiConfig.RUNNER_URL}/api/capture/frames/playback`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },

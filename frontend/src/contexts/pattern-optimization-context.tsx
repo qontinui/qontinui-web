@@ -396,9 +396,9 @@ export function PatternOptimizationProvider({
         regionsCount: regions.length,
       });
 
-      // Call real qontinui API for pattern optimization
+      // Call runner for pattern optimization
       const response = await fetch(
-        "http://localhost:8001/api/v1/optimize-pattern",
+        "http://localhost:9876/api/v1/optimize-pattern",
         {
           method: "POST",
           headers: {
@@ -592,9 +592,9 @@ export function PatternOptimizationProvider({
           region: pattern.region,
         }));
 
-        // Call API to create StateImage
+        // Call runner to create StateImage
         const response = await fetch(
-          "http://localhost:8001/api/v1/create-state-image",
+          "http://localhost:9876/api/v1/create-state-image",
           {
             method: "POST",
             headers: {

@@ -218,7 +218,7 @@ export default function IntegrationTestingPage() {
     }
 
     if (apiHealthy === false) {
-      setError("qontinui-api is offline. Please start the API server.");
+      setError("Runner is offline. Please start the runner.");
       return;
     }
 
@@ -405,10 +405,10 @@ export default function IntegrationTestingPage() {
                 <div className="flex items-center gap-2 text-yellow-400">
                   <AlertCircle className="w-5 h-5" />
                   <span>
-                    qontinui-api is not reachable at{" "}
-                    {process.env.NEXT_PUBLIC_QONTINUI_API_URL ||
-                      "http://localhost:8001"}
-                    . Start the API to run integration tests.
+                    Runner is not reachable at{" "}
+                    {process.env.NEXT_PUBLIC_RUNNER_URL ||
+                      "http://localhost:9876"}
+                    . Start the runner to run integration tests.
                   </span>
                 </div>
               </CardContent>

@@ -41,7 +41,7 @@ export function FeedbackForm({ open, onOpenChange }: FeedbackFormProps) {
 
     try {
       const API_BASE_URL =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const url = `${API_BASE_URL}/api/v1/feedback`;
 
       console.log("Submitting feedback to:", url);

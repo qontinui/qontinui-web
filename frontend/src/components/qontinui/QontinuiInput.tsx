@@ -1,7 +1,6 @@
 import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { styles } from "@/config/theme";
 
 /**
  * Qontinui-themed input component
@@ -26,11 +25,11 @@ export const QontinuiInput = React.forwardRef<
   const inputId = React.useId();
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="form-group">
       {label && (
         <label
           htmlFor={inputId}
-          className={cn(styles.text.primary, "text-sm font-medium")}
+          className="form-label"
         >
           {label}
         </label>
@@ -38,25 +37,15 @@ export const QontinuiInput = React.forwardRef<
       <Input
         ref={ref}
         id={inputId}
-        className={cn(styles.input, error && "border-red-500", className)}
+        className={cn("input", error && "border-error", className)}
         aria-invalid={!!error}
         {...props}
       />
       {error && (
-        <span className="text-red-500 text-xs font-medium">{error}</span>
+        <span className="form-error">{error}</span>
       )}
     </div>
   );
 });
 
 QontinuiInput.displayName = "QontinuiInput";
-
-/**
- * Example usage:
- *
- * <QontinuiInput
- *   label="Username"
- *   placeholder="Enter your username"
- *   error={errors.username}
- * />
- */

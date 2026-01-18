@@ -456,6 +456,8 @@ export interface PlaywrightExtractedClickable {
   match_confidence: number;
   /** Base64 encoded screenshot of the element */
   screenshot_base64?: string | null;
+  /** ID of the full-page screenshot this element belongs to */
+  screenshot_id?: string | null;
   /** Error message if extraction failed */
   error?: string | null;
 }
@@ -511,6 +513,8 @@ export interface PlaywrightExtractionJob {
     metrics: PlaywrightExtractionMetrics;
     pages_visited: string[];
     errors: string[];
+    /** Full-page screenshots as base64, keyed by screenshot_id */
+    page_screenshots?: Record<string, string>;
   } | null;
   /** Error message if failed */
   error: string | null;

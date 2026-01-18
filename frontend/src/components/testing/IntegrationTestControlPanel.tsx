@@ -407,7 +407,7 @@ export function IntegrationTestControlPanel({
           {apiHealthy === null
             ? "Checking API connection..."
             : apiHealthy === false
-              ? "qontinui-api is offline"
+              ? "runner is offline"
               : "Tests run in mock mode using historical data"}
         </div>
       </CardContent>

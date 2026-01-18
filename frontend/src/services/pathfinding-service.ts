@@ -2,7 +2,7 @@
  * Pathfinding Service
  *
  * Validates reachability of multiple target states using the multistate
- * pathfinding algorithm via qontinui-api.
+ * pathfinding algorithm via the runner.
  */
 
 import { ApiConfig } from "./api-config";
@@ -53,7 +53,7 @@ class PathfindingService {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = ApiConfig.getApiUrl();
+    this.baseUrl = ApiConfig.getRunnerUrl();
   }
 
   /**
@@ -221,7 +221,7 @@ class PathfindingService {
   }
 
   /**
-   * Check if qontinui-api pathfinding service is available.
+   * Check if runner pathfinding service is available.
    */
   async isAvailable(): Promise<boolean> {
     try {

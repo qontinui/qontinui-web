@@ -14,9 +14,9 @@ import { StateDiscoveryAPIClient } from "./stateDiscovery/apiClient";
 import { StateDiscoveryWebSocketManager } from "./stateDiscovery/websocketManager";
 import { StateDiscoveryStateManager } from "./stateDiscovery/stateManager";
 
-// Use the Qontinui API URL for State Discovery endpoints
+// Use the main backend URL for State Discovery endpoints
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const API_PATH = "/api";
 
 export function useStateDiscovery() {

@@ -23,7 +23,7 @@ export class RAGDashboardService {
 
   constructor(httpClient: HttpClient) {
     this.httpClient = httpClient;
-    // Use main backend (port 8000) via Next.js proxy, not qontinui-api (port 8001)
+    // Use main backend (port 8000) via Next.js proxy
     this.apiUrl = ApiConfig.getBaseUrl();
   }
 

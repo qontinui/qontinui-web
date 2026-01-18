@@ -84,7 +84,7 @@ interface ScreenshotPickerProps {
   regionDimensions?: { width: number; height: number } | null;
   additionalInfo?: React.ReactNode;
   className?: string;
-  /** Enable capture from screen functionality (requires qontinui-api running) */
+  /** Enable capture from screen functionality (requires runner running) */
   enableCapture?: boolean;
   /**
    * Callback for multi-monitor captures with position data.
@@ -244,10 +244,9 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         setCountdown(null);
       }
 
-      // Capture from all selected monitors using qontinui-api directly
-      // (Runner returns file paths, but we need base64 data for the frontend)
+      // Capture from all selected monitors using runner directly
       const apiUrl =
-        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+        process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
 
       console.log(
         "[ScreenshotPicker] Starting capture for monitors:",
@@ -360,7 +359,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
       toast.error("Failed to capture screenshot", {
         description:
           (error as Error).message ||
-          "Make sure qontinui-api is running on port 8001",
+          "Make sure runner is running on port 9876",
       });
     } finally {
       setIsCapturing(false);

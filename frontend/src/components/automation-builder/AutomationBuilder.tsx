@@ -53,6 +53,10 @@ import {
   validateProject,
   type ProjectValidationResult,
 } from "@/lib/project-validator";
+import { AccessibilityExplorer } from "@/components/accessibility";
+import { Accessibility, ChevronUp, ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function AutomationBuilder() {
   // State
@@ -66,6 +70,8 @@ export function AutomationBuilder() {
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [validationResults, setValidationResults] =
     useState<ProjectValidationResult | null>(null);
+  const [accessibilityPanelOpen, setAccessibilityPanelOpen] = useState(false);
+  const accessibilityPanelHeight = 300; // Fixed height for now, can add resize later
 
   // Context
   const {
@@ -539,93 +545,136 @@ export function AutomationBuilder() {
 
   return (
     <div
-      className="flex h-[calc(100vh-4rem)] overflow-hidden"
+      className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden"
       data-tutorial-id="automation-builder-container"
     >
-      {/* Left Panel - Library */}
-      <div
-        className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-r border-border-subtle bg-surface-raised/50 overflow-hidden flex flex-col"
-        data-tutorial-id="action-library"
-      >
-        {/* Mode Selector */}
+      {/* Main content area */}
+      <div className="flex flex-1 min-h-0">
+        {/* Left Panel - Library */}
         <div
-          className="p-4 border-b border-border-subtle"
-          data-tutorial-id="mode-selector"
+          className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-r border-border-subtle bg-surface-raised/50 overflow-hidden flex flex-col"
+          data-tutorial-id="action-library"
         >
-          <BuilderModeSelector mode={mode} onModeChange={setMode} />
+          {/* Mode Selector */}
+          <div
+            className="p-4 border-b border-border-subtle"
+            data-tutorial-id="mode-selector"
+          >
+            <BuilderModeSelector mode={mode} onModeChange={setMode} />
+          </div>
+
+          {/* Library */}
+          <div className="flex-1 p-4 overflow-y-auto">
+            <UnifiedProcessLibrary
+              selectedItem={selectedItem}
+              onSelectItem={handleSelectItem}
+              onDeleteItem={handleDeleteItem}
+              onDeleteItems={handleDeleteItems}
+              onUpdateWorkflow={handleUpdateWorkflow}
+              onCreateSequential={handleCreateSequential}
+              onCreateGraph={handleCreateGraph}
+              onConvertItem={openConversion}
+            />
+          </div>
         </div>
 
-        {/* Library */}
-        <div className="flex-1 p-4 overflow-y-auto">
-          <UnifiedProcessLibrary
-            selectedItem={selectedItem}
-            onSelectItem={handleSelectItem}
-            onDeleteItem={handleDeleteItem}
-            onDeleteItems={handleDeleteItems}
-            onUpdateWorkflow={handleUpdateWorkflow}
-            onCreateSequential={handleCreateSequential}
-            onCreateGraph={handleCreateGraph}
-            onConvertItem={openConversion}
-          />
+        {/* Center Panel - Editor */}
+        <div
+          className="flex-1 min-w-0 flex flex-col overflow-hidden"
+          data-tutorial-id="workflow-editor"
+        >
+          {/* Toolbar */}
+          <div className="flex items-center justify-between border-b border-border-subtle bg-surface-canvas">
+            <EditorToolbar
+              item={selectedItem}
+              mode={mode}
+              onDelete={() => selectedItem && handleDeleteItem(selectedItem)}
+              onDuplicate={handleDuplicateItem}
+              onConvert={() => selectedItem && openConversion(selectedItem)}
+              onShare={handleShare}
+              onExport={handleExport}
+              onImport={handleImport}
+              onVerifyProject={handleVerifyProject}
+              onExportProject={handleExportProject}
+              className="border-b-0"
+            />
+            {/* Accessibility Toggle */}
+            <div className="flex items-center gap-2 px-4">
+              <Button
+                variant={accessibilityPanelOpen ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setAccessibilityPanelOpen(!accessibilityPanelOpen)}
+                className={cn(
+                  "gap-2",
+                  accessibilityPanelOpen
+                    ? "bg-purple-500/20 text-purple-400 border border-purple-500/50 hover:bg-purple-500/30"
+                    : "text-text-muted hover:text-white hover:bg-surface-raised"
+                )}
+                title="Toggle Accessibility Explorer"
+              >
+                <Accessibility className="h-4 w-4" />
+                <span className="hidden xl:inline">Accessibility</span>
+                {accessibilityPanelOpen ? (
+                  <ChevronDown className="h-3 w-3" />
+                ) : (
+                  <ChevronUp className="h-3 w-3" />
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Editor Content */}
+          <div className="flex-1 overflow-y-auto">{renderEditor()}</div>
+        </div>
+
+        {/* Right Panel - Properties */}
+        <div
+          className={`${
+            mode === "graph"
+              ? "w-[20rem] xl:w-[22rem] 2xl:w-[24rem]"
+              : "w-[22rem] xl:w-[26rem] 2xl:w-[30rem]"
+          } flex-shrink-0 border-l border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto`}
+          data-tutorial-id="properties-panel"
+        >
+          {selectedItem && !selectedAction ? (
+            // Show item metadata when no action is selected
+            <ItemMetadataPanel
+              item={selectedItem}
+              onUpdate={handleUpdateItem}
+              currentPermission={myPermission}
+              collaboratorCount={collaborators.length}
+              onOpenShare={handleShare}
+              states={states}
+            />
+          ) : (
+            // Show action properties when an action is selected
+            <ActionProperties
+              action={
+                selectedAction as import("@/components/action-properties/types").Action
+              }
+              onUpdateAction={
+                handleUpdateAction as (
+                  action: import("@/components/action-properties/types").Action
+                ) => void
+              }
+            />
+          )}
         </div>
       </div>
 
-      {/* Center Panel - Editor */}
-      <div
-        className="flex-1 min-w-0 flex flex-col overflow-hidden"
-        data-tutorial-id="workflow-editor"
-      >
-        {/* Toolbar */}
-        <EditorToolbar
-          item={selectedItem}
-          mode={mode}
-          onDelete={() => selectedItem && handleDeleteItem(selectedItem)}
-          onDuplicate={handleDuplicateItem}
-          onConvert={() => selectedItem && openConversion(selectedItem)}
-          onShare={handleShare}
-          onExport={handleExport}
-          onImport={handleImport}
-          onVerifyProject={handleVerifyProject}
-          onExportProject={handleExportProject}
-        />
-
-        {/* Editor Content */}
-        <div className="flex-1 overflow-y-auto">{renderEditor()}</div>
-      </div>
-
-      {/* Right Panel - Properties */}
-      <div
-        className={`${
-          mode === "graph"
-            ? "w-[20rem] xl:w-[22rem] 2xl:w-[24rem]"
-            : "w-[22rem] xl:w-[26rem] 2xl:w-[30rem]"
-        } flex-shrink-0 border-l border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto`}
-        data-tutorial-id="properties-panel"
-      >
-        {selectedItem && !selectedAction ? (
-          // Show item metadata when no action is selected
-          <ItemMetadataPanel
-            item={selectedItem}
-            onUpdate={handleUpdateItem}
-            currentPermission={myPermission}
-            collaboratorCount={collaborators.length}
-            onOpenShare={handleShare}
-            states={states}
+      {/* Bottom Panel - Accessibility Explorer (collapsible) */}
+      {accessibilityPanelOpen && (
+        <div
+          className="flex-shrink-0 border-t border-border-subtle bg-surface-panel"
+          style={{ height: accessibilityPanelHeight }}
+        >
+          <AccessibilityExplorer
+            apiUrl="http://localhost:9876"
+            showSettings={true}
+            className="h-full"
           />
-        ) : (
-          // Show action properties when an action is selected
-          <ActionProperties
-            action={
-              selectedAction as import("@/components/action-properties/types").Action
-            }
-            onUpdateAction={
-              handleUpdateAction as (
-                action: import("@/components/action-properties/types").Action
-              ) => void
-            }
-          />
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Conversion Dialog */}
       <ConversionDialog />

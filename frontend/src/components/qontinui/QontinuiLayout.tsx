@@ -1,6 +1,5 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { styles } from "@/config/theme";
 
 /**
  * Qontinui page layout components
@@ -22,7 +21,7 @@ export function QontinuiPage({
   return (
     <div
       className={cn(
-        "h-screen bg-[#0A0A0B] text-white flex flex-col overflow-hidden",
+        "h-screen bg-surface-canvas text-white flex flex-col overflow-hidden",
         className
       )}
       {...props}
@@ -45,7 +44,10 @@ export function QontinuiHeader({
   ...props
 }: QontinuiHeaderProps) {
   return (
-    <header className={cn(styles.header, "px-6 py-4", className)} {...props}>
+    <header
+      className={cn("bg-surface-raised border-b border-border-subtle px-6 py-4", className)}
+      {...props}
+    >
       {children}
     </header>
   );
@@ -70,12 +72,12 @@ export function QontinuiHeaderTitle({
   return (
     <div>
       <h1
-        className={cn("text-2xl font-semibold text-white", className)}
+        className={cn("text-h2 text-foreground", className)}
         {...props}
       >
         {children}
       </h1>
-      {subtitle && <p className="text-text-muted text-sm mt-1">{subtitle}</p>}
+      {subtitle && <p className="text-caption mt-1">{subtitle}</p>}
     </div>
   );
 }
@@ -109,7 +111,7 @@ export function QontinuiMain({
 }: QontinuiMainProps) {
   return (
     <main
-      className={cn("flex-1 overflow-auto bg-[#0A0A0B]", className)}
+      className={cn("flex-1 overflow-auto bg-surface-canvas", className)}
       {...props}
     >
       {children}
@@ -169,7 +171,7 @@ export function QontinuiSidebar({
 }: QontinuiSidebarProps) {
   return (
     <aside
-      className={cn(styles.sidebar, "w-64 p-4 overflow-y-auto", className)}
+      className={cn("bg-surface-raised/50 border-r border-border-subtle w-64 p-4 overflow-y-auto", className)}
       {...props}
     >
       {children}
@@ -188,7 +190,10 @@ export function QontinuiToolbar({
   ...props
 }: QontinuiToolbarProps) {
   return (
-    <div className={cn(styles.toolbar, "px-6 py-3", className)} {...props}>
+    <div
+      className={cn("bg-surface-raised border-b border-border-subtle px-6 py-3", className)}
+      {...props}
+    >
       {children}
     </div>
   );
@@ -220,10 +225,10 @@ export function QontinuiSection({
       {(title || description) && (
         <div className="space-y-1">
           {title && (
-            <h2 className="text-lg font-semibold text-white">{title}</h2>
+            <h2 className="text-h3 text-foreground">{title}</h2>
           )}
           {description && (
-            <p className="text-sm text-text-muted">{description}</p>
+            <p className="text-body-sm text-muted-foreground">{description}</p>
           )}
         </div>
       )}
@@ -231,34 +236,3 @@ export function QontinuiSection({
     </section>
   );
 }
-
-/**
- * Example usage:
- *
- * <QontinuiPage>
- *   <QontinuiHeader>
- *     <div className="flex items-center justify-between">
- *       <QontinuiHeaderTitle subtitle="Manage your automation">
- *         My Page
- *       </QontinuiHeaderTitle>
- *       <QontinuiHeaderActions>
- *         <CreateButton>Create New</CreateButton>
- *       </QontinuiHeaderActions>
- *     </div>
- *   </QontinuiHeader>
- *
- *   <div className="flex flex-1 overflow-hidden">
- *     <QontinuiSidebar>
- *       Sidebar content
- *     </QontinuiSidebar>
- *
- *     <QontinuiMain>
- *       <QontinuiContainer>
- *         <QontinuiSection title="My Section" description="Section description">
- *           Content here
- *         </QontinuiSection>
- *       </QontinuiContainer>
- *     </QontinuiMain>
- *   </div>
- * </QontinuiPage>
- */

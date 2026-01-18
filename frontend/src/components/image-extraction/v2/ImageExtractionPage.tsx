@@ -170,11 +170,12 @@ export const ImageExtractionPage: React.FC = () => {
       if (existingImage) {
         imageAsset = existingImage;
       } else {
-        // Create new image asset
+        // Create new image asset with monitor info
         imageAsset = createImageAsset(
           extractedResult.croppedImage,
           saveDialog.imageName,
-          "image_extraction"
+          "image_extraction",
+          { monitors: extractedResult.monitors }
         );
 
         // Add mask to imageAsset if present
@@ -197,6 +198,7 @@ export const ImageExtractionPage: React.FC = () => {
         hasUrl: !!imageAsset.url,
         urlLength: imageAsset.url?.length,
         hasMask: !!imageAsset.mask,
+        monitors: imageAsset.monitors,
         isNewImage,
       });
 

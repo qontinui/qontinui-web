@@ -2,15 +2,18 @@
  * Qontinui Theme Configuration
  *
  * Centralized theme tokens for consistent styling across the application.
- * Updated to professional palette - softer than neon while maintaining hierarchy.
+ * These are VALUES that need programmatic JavaScript access (charts, canvas, ReactFlow, etc.)
  *
- * Migration Guide:
- * - Replace `colors.cyan` with `colors.brand.primary`
- * - Replace `colors.purple` with `colors.brand.secondary`
- * - Replace `colors.green` with `colors.brand.success`
- * - Replace `colors.canvas` with `colors.surface.canvas`
- * - Replace `colors.panel` with `colors.surface.raised`
- * - Replace `styles.button.cyan` with `styles.button.primary`
+ * For CSS-based component styling, use the CSS classes in:
+ *   src/styles/components.css
+ *
+ * Available CSS classes include:
+ * - Typography: .text-h1, .text-body, .text-label, etc.
+ * - Buttons: .btn-primary, .btn-secondary, .btn-success, .btn-ghost
+ * - Cards: .card, .card-hover, .card-selected
+ * - Explorer panels: .explorer-panel, .explorer-panel-primary, etc.
+ * - Form elements: .input, .select, .form-group, .form-label
+ * - Badges: .badge, .badge-success, .badge-warning, etc.
  */
 
 // Re-export from design system for gradual migration
@@ -18,6 +21,7 @@ export { colors as designColors } from "@/design-system/tokens";
 
 /**
  * Core color palette - Professional colors
+ * Use these for programmatic color access (charts, canvas, etc.)
  */
 export const colors = {
   // Brand colors
@@ -67,36 +71,11 @@ export const colors = {
     secondary: "rgba(139, 107, 181, 0.2)",
     success: "rgba(77, 184, 157, 0.2)",
   },
-
-  // Legacy colors (for backward compatibility during migration)
-  /** @deprecated Use colors.surface.canvas */
-  canvas: "#111115",
-  /** @deprecated Use colors.surface.raised */
-  panel: "#1E1E22",
-  /** @deprecated Use colors.brand.primary */
-  cyan: "#4A90D9",
-  /** @deprecated Use colors.brand.success */
-  green: "#4DB89D",
-  /** @deprecated Use colors.brand.secondary */
-  purple: "#8B6BB5",
-  /** @deprecated Use colors.border.subtle */
-  borderDark: "#2A2A30",
-  /** @deprecated Use colors.border.default */
-  borderMedium: "#3A3A42",
-  /** @deprecated */
-  dotPattern: "#3A3A42",
-  /** @deprecated Use colors.text.primary */
-  textPrimary: "#FFFFFF",
-  /** @deprecated Use colors.text.secondary */
-  textSecondary: "#E4E4E7",
-  /** @deprecated Use colors.text.tertiary */
-  textTertiary: "#A1A1AA",
-  /** @deprecated Use colors.text.muted */
-  textMuted: "#71717A",
 } as const;
 
 /**
  * Semantic color tokens
+ * Useful for mapping colors to semantic meanings
  */
 export const semanticColors = {
   background: {
@@ -129,76 +108,8 @@ export const semanticColors = {
 } as const;
 
 /**
- * Tailwind utility class combinations
- */
-export const styles = {
-  // Canvas and containers
-  canvas: "bg-surface-canvas",
-  panel: "bg-surface-raised",
-
-  // Headers and toolbars
-  header: "bg-surface-raised border-b border-border-subtle",
-  toolbar: "bg-surface-raised border-b border-border-subtle",
-
-  // Sidebars
-  sidebar: "bg-surface-raised/50 border-r border-border-subtle",
-
-  // Cards and panels
-  card: "bg-surface-raised border border-border-default rounded-lg",
-  cardHover:
-    "bg-surface-raised border border-border-default rounded-lg hover:border-border-strong",
-  cardSelected:
-    "bg-surface-raised border border-brand-primary rounded-lg ring-1 ring-brand-primary",
-
-  // Buttons
-  button: {
-    primary:
-      "bg-brand-primary text-white font-medium hover:bg-brand-primary/90",
-    secondary:
-      "bg-brand-secondary text-white font-medium hover:bg-brand-secondary/90",
-    success:
-      "bg-brand-success text-white font-medium hover:bg-brand-success/90",
-    ghost:
-      "bg-transparent hover:bg-surface-hover text-gray-300 hover:text-white",
-    destructive: "bg-error text-white font-medium hover:bg-error/90",
-    // Legacy aliases
-    /** @deprecated Use button.primary */
-    cyan: "bg-brand-primary text-white font-medium hover:bg-brand-primary/90",
-    /** @deprecated Use button.success */
-    green: "bg-brand-success text-white font-medium hover:bg-brand-success/90",
-    /** @deprecated Use button.secondary */
-    purple:
-      "bg-brand-secondary text-white font-medium hover:bg-brand-secondary/90",
-  },
-
-  // Inputs
-  input:
-    "bg-surface-canvas border border-border-default text-white placeholder:text-muted-foreground focus:border-brand-primary focus:ring-1 focus:ring-brand-primary rounded-md",
-  select:
-    "bg-surface-canvas border border-border-default text-white focus:border-brand-primary focus:ring-1 focus:ring-brand-primary rounded-md",
-
-  // Text
-  text: {
-    primary: "text-white",
-    secondary: "text-gray-200",
-    tertiary: "text-gray-400",
-    muted: "text-gray-500",
-  },
-
-  // Dialogs and modals
-  dialog: "bg-surface-raised border border-border-default rounded-lg",
-  dialogOverlay: "bg-black/80",
-
-  // Dividers
-  divider: "border-border-subtle",
-
-  // Focus states
-  focus:
-    "focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2 focus:ring-offset-surface-canvas",
-} as const;
-
-/**
  * ReactFlow configuration
+ * Used for workflow/state diagram backgrounds
  */
 export const reactFlow = {
   background: {
@@ -211,6 +122,7 @@ export const reactFlow = {
 
 /**
  * Spacing and sizing tokens
+ * Used for consistent layout calculations
  */
 export const spacing = {
   toolbar: {
@@ -231,6 +143,7 @@ export const spacing = {
 
 /**
  * Animation and transition tokens
+ * Used for consistent animation timing
  */
 export const animation = {
   duration: {
@@ -246,7 +159,8 @@ export const animation = {
 } as const;
 
 /**
- * Shadow effects (softer than neon)
+ * Shadow effects
+ * Used for programmatic shadow application (e.g., in style props)
  */
 export const shadows = {
   glow: {
@@ -266,7 +180,6 @@ export const shadows = {
  */
 export type ThemeColors = typeof colors;
 export type SemanticColors = typeof semanticColors;
-export type ThemeStyles = typeof styles;
 export type ThemeSpacing = typeof spacing;
 export type ThemeAnimation = typeof animation;
 export type ThemeShadows = typeof shadows;

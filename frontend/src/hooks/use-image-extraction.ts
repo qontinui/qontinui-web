@@ -187,6 +187,21 @@ export function useImageExtraction() {
   // ===== Extraction =====
 
   /**
+   * Helper function to check if two rectangles overlap
+   */
+  const rectanglesOverlap = (
+    r1: { x: number; y: number; width: number; height: number },
+    r2: { x: number; y: number; width: number; height: number }
+  ): boolean => {
+    return !(
+      r1.x + r1.width <= r2.x ||
+      r2.x + r2.width <= r1.x ||
+      r1.y + r1.height <= r2.y ||
+      r2.y + r2.height <= r1.y
+    );
+  };
+
+  /**
    * Extract the selected region with current settings
    */
   const handleExtract = useCallback(async () => {
@@ -199,6 +214,7 @@ export function useImageExtraction() {
     }
 
     let sourceImageDataUrl: string;
+    let monitors: number[] | undefined;
 
     if (isCompositeMode && compositeScreenshots.length > 0) {
       // Create composite image first
@@ -211,8 +227,25 @@ export function useImageExtraction() {
         }));
       const compositeResult = await createCompositeImage(compositeInput);
       sourceImageDataUrl = compositeResult.dataUrl;
+
+      // Determine which monitors the selected region overlaps with
+      const overlappingMonitors = compositeScreenshots
+        .filter((s) =>
+          rectanglesOverlap(selectedRegion, {
+            x: s.monitor.x,
+            y: s.monitor.y,
+            width: s.monitor.width,
+            height: s.monitor.height,
+          })
+        )
+        .map((s) => s.monitor.index);
+
+      if (overlappingMonitors.length > 0) {
+        monitors = overlappingMonitors.sort((a, b) => a - b);
+      }
     } else if (currentScreenshot) {
       sourceImageDataUrl = currentScreenshot.dataUrl;
+      // Single screenshot mode - no monitor info available
     } else {
       throw new Error("No screenshot available");
     }
@@ -231,6 +264,7 @@ export function useImageExtraction() {
       croppedImage: result.croppedImage,
       mask: result.mask,
       bounds: result.bounds,
+      monitors,
     });
 
     return result;

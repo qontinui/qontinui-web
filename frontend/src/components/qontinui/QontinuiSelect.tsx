@@ -10,7 +10,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { styles } from "@/config/theme";
 
 /**
  * Qontinui-themed select component
@@ -63,11 +62,11 @@ export function QontinuiSelect({
   const selectId = React.useId();
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="form-group">
       {label && (
         <label
           htmlFor={selectId}
-          className={cn(styles.text.primary, "text-sm font-medium")}
+          className="form-label"
         >
           {label}
         </label>
@@ -75,18 +74,18 @@ export function QontinuiSelect({
       <Select value={value} onValueChange={onValueChange} disabled={disabled}>
         <SelectTrigger
           id={selectId}
-          className={cn(styles.select, error && "border-red-500")}
+          className={cn("select", error && "border-error")}
           aria-invalid={!!error}
         >
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
-        <SelectContent className="bg-[#27272A] border border-border-default">
+        <SelectContent className="bg-surface-raised border border-border-default">
           <SelectGroup>
             {options.map((option) => (
               <SelectItem
                 key={option.value}
                 value={option.value}
-                className="text-text-secondary focus:bg-[#0A0A0B] focus:text-white"
+                className="text-muted-foreground focus:bg-surface-canvas focus:text-foreground"
               >
                 {option.label}
               </SelectItem>
@@ -95,24 +94,8 @@ export function QontinuiSelect({
         </SelectContent>
       </Select>
       {error && (
-        <span className="text-red-500 text-xs font-medium">{error}</span>
+        <span className="form-error">{error}</span>
       )}
     </div>
   );
 }
-
-/**
- * Example usage:
- *
- * <QontinuiSelect
- *   label="Select State"
- *   placeholder="Choose a state..."
- *   options={[
- *     { value: "login", label: "Login State" },
- *     { value: "dashboard", label: "Dashboard State" },
- *   ]}
- *   value={selectedState}
- *   onValueChange={setSelectedState}
- *   error={errors.state}
- * />
- */

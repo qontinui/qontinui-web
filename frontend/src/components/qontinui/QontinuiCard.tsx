@@ -9,7 +9,6 @@ import {
   CardAction,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { styles } from "@/config/theme";
 
 /**
  * Qontinui-themed card components
@@ -37,10 +36,10 @@ export function QontinuiCard({
     <Card
       className={cn(
         selected
-          ? styles.cardSelected
+          ? "card-selected"
           : hoverable
-            ? styles.cardHover
-            : styles.card,
+            ? "card-hover"
+            : "card",
         className
       )}
       {...props}
@@ -56,7 +55,7 @@ export function QontinuiCardHeader({
   ...props
 }: React.ComponentProps<typeof CardHeader>) {
   return (
-    <CardHeader className={cn(styles.text.primary, className)} {...props} />
+    <CardHeader className={cn("text-foreground", className)} {...props} />
   );
 }
 
@@ -68,7 +67,7 @@ export function QontinuiCardTitle({
   ...props
 }: React.ComponentProps<typeof CardTitle>) {
   return (
-    <CardTitle className={cn(styles.text.primary, className)} {...props} />
+    <CardTitle className={cn("text-foreground", className)} {...props} />
   );
 }
 
@@ -81,7 +80,7 @@ export function QontinuiCardDescription({
 }: React.ComponentProps<typeof CardDescription>) {
   return (
     <CardDescription
-      className={cn(styles.text.secondary, className)}
+      className={cn("text-muted-foreground", className)}
       {...props}
     />
   );
@@ -95,7 +94,7 @@ export function QontinuiCardContent({
   ...props
 }: React.ComponentProps<typeof CardContent>) {
   return (
-    <CardContent className={cn(styles.text.secondary, className)} {...props} />
+    <CardContent className={cn("text-muted-foreground", className)} {...props} />
   );
 }
 
@@ -118,20 +117,3 @@ export function QontinuiCardAction({
 }: React.ComponentProps<typeof CardAction>) {
   return <CardAction className={className} {...props} />;
 }
-
-/**
- * Example usage:
- *
- * <QontinuiCard selected={isSelected} hoverable>
- *   <QontinuiCardHeader>
- *     <QontinuiCardTitle>Card Title</QontinuiCardTitle>
- *     <QontinuiCardDescription>Card description</QontinuiCardDescription>
- *   </QontinuiCardHeader>
- *   <QontinuiCardContent>
- *     Card content goes here
- *   </QontinuiCardContent>
- *   <QontinuiCardFooter>
- *     Footer content
- *   </QontinuiCardFooter>
- * </QontinuiCard>
- */

@@ -21,6 +21,7 @@ from qontinui_schemas.api.execution import (
     ActionReliabilityStats,
     ActionStatus,
     ActionType,
+    CoverageData,
     ExecutionRunComplete,
     ExecutionRunCompleteResponse,
     ExecutionRunCreate,
@@ -137,7 +138,11 @@ def model_to_run_response(run: ExecutionRun) -> ExecutionRunResponse:
             RunnerMetadata(**run.runner_metadata)
             if run.runner_metadata
             else RunnerMetadata(
-                runner_version="unknown", os="unknown", hostname="unknown"
+                runner_version="unknown",
+                os="unknown",
+                hostname="unknown",
+                screen_resolution=None,
+                python_version=None,
             )
         ),
         workflow_metadata=(
@@ -165,8 +170,8 @@ def model_to_action_response(action: ActionExecution) -> ActionExecutionResponse
             action.status.value if hasattr(action.status, "value") else action.status
         ),
         started_at=action.started_at,
-        completed_at=action.completed_at,
-        duration_ms=action.duration_ms,
+        completed_at=action.completed_at or action.started_at,
+        duration_ms=action.duration_ms or 0,
         from_state=action.from_state,
         to_state=action.to_state,
         error_message=action.error_message,
@@ -388,7 +393,11 @@ class ExecutionRunService:
                 RunnerMetadata(**run.runner_metadata)
                 if run.runner_metadata
                 else RunnerMetadata(
-                    runner_version="unknown", os="unknown", hostname="unknown"
+                    runner_version="unknown",
+                    os="unknown",
+                    hostname="unknown",
+                    screen_resolution=None,
+                    python_version=None,
                 )
             ),
             workflow_metadata=(
@@ -400,7 +409,11 @@ class ExecutionRunService:
             description=run.description,
             configuration=run.configuration or {},
             stats=stats,
-            coverage=run.coverage_data,
+            coverage=(
+                CoverageData(**run.coverage_data)
+                if run.coverage_data
+                else None
+            ),
             updated_at=run.updated_at,
         )
 

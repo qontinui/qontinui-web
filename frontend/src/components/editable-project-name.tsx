@@ -106,12 +106,18 @@ export function EditableProjectName({
           className="h-7 py-0 px-2 text-lg font-semibold bg-surface-canvas border-brand-primary text-white"
           maxLength={255}
           disabled={isSaving}
+          data-awas-action="update_project"
+          data-awas-element="edit-project-name-input"
+          data-awas-param-name={editedName}
         />
         <button
           onClick={handleSave}
           disabled={isSaving}
           className="p-1 rounded hover:bg-green-500/20 text-green-400 transition-colors"
           title="Save"
+          data-awas-action="update_project"
+          data-awas-element="save-project-name-button"
+          data-awas-trigger="click"
         >
           <Check className="w-4 h-4" />
         </button>
@@ -142,6 +148,8 @@ export function EditableProjectName({
         onClick={handleStartEditing}
         className="p-1 rounded opacity-0 group-hover/name:opacity-100 hover:bg-surface-raised/50 text-text-muted hover:text-brand-primary transition-all"
         title="Edit name"
+        data-awas-element="edit-project-name-button"
+        data-awas-trigger="click"
       >
         <Pencil className="w-3.5 h-3.5" />
       </button>

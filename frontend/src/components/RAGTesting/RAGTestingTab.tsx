@@ -60,13 +60,9 @@ import type {
 } from "@/types/rag-testing";
 import type { RAGElement } from "@/types/rag-builder";
 
-// Qontinui API base URL (for RAG matching)
-const QONTINUI_API_URL =
-  process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
-
-// Runner API base URL (for local SAM3 segmentation)
-const RUNNER_API_URL =
-  process.env.NEXT_PUBLIC_RUNNER_API_URL || "http://localhost:9876";
+// Runner API base URL (for SAM3 segmentation and RAG matching)
+const RUNNER_URL =
+  process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
 
 // Score color based on confidence
 function getScoreColor(score: number): string {
@@ -198,7 +194,7 @@ export function RAGTestingTab() {
       setLoadingElements(true);
       try {
         const response = await fetch(
-          `${QONTINUI_API_URL}/api/rag/projects/${projectId}/elements`
+          `${RUNNER_URL}/api/rag/projects/${projectId}/elements`
         );
         if (!response.ok) {
           // 404 is expected when no RAG config exists - not an error, just no elements
@@ -612,7 +608,7 @@ export function RAGTestingTab() {
       }> = [];
 
       try {
-        const segmentResponse = await fetch(`${RUNNER_API_URL}/rag/segment`, {
+        const segmentResponse = await fetch(`${RUNNER_URL}/rag/segment`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -674,7 +670,7 @@ export function RAGTestingTab() {
         }
       );
 
-      // Step 2: If we have RAG elements, do matching via qontinui-api
+      // Step 2: If we have RAG elements, do matching via runner
       let matches: RAGFindMatch[] = [];
       let matchProcessingTime = 0;
 
@@ -694,7 +690,7 @@ export function RAGTestingTab() {
           };
 
           const fetchResponse = await fetch(
-            `${QONTINUI_API_URL}/api/rag/projects/${projectId}/find`,
+            `${RUNNER_URL}/api/rag/projects/${projectId}/find`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },

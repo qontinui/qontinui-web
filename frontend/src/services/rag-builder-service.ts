@@ -6,7 +6,7 @@ import type { RAGFindRequest, RAGFindResponse } from "@/types/rag-testing";
  * RAG Builder Service
  *
  * API client for managing RAG elements, states, and transitions.
- * Communicates with the qontinui-api backend (port 8001).
+ * Communicates with the runner backend (port 9876).
  */
 
 // ============================================================================
@@ -70,9 +70,9 @@ export class RAGBuilderService {
 
   constructor(httpClient: HttpClient) {
     this.httpClient = httpClient;
-    // Use Qontinui API (port 8001) instead of main backend
+    // Use runner (port 9876) instead of main backend
     this.apiUrl =
-      process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+      process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
   }
 
   // ==========================================================================

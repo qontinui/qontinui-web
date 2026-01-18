@@ -1,0 +1,234 @@
+{
+  "schemaVersion": "1.0",
+  "appName": "Qontinui Web",
+  "description": "Visual automation platform for AI-driven testing and automation",
+  "baseUrl": "http://localhost:8000",
+  "conformanceLevel": "L2",
+  "actions": [
+    {
+      "id": "list_projects",
+      "name": "List Projects",
+      "method": "GET",
+      "endpoint": "/api/v1/projects",
+      "intent": "Retrieve all automation projects accessible to the current user",
+      "sideEffect": false,
+      "parameters": [],
+      "outputSchema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "string"},
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "created_at": {"type": "string"},
+            "updated_at": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "id": "create_project",
+      "name": "Create Project",
+      "method": "POST",
+      "endpoint": "/api/v1/projects",
+      "intent": "Create a new automation project",
+      "sideEffect": true,
+      "parameters": [
+        {
+          "name": "name",
+          "location": "body",
+          "type": "string",
+          "required": true,
+          "description": "Name of the project"
+        },
+        {
+          "name": "description",
+          "location": "body",
+          "type": "string",
+          "required": false,
+          "description": "Optional description of the project"
+        }
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "maxLength": 255},
+          "description": {"type": "string", "maxLength": 1000}
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "id": "get_project",
+      "name": "Get Project",
+      "method": "GET",
+      "endpoint": "/api/v1/projects/{project_id}",
+      "intent": "Retrieve details of a specific project by ID",
+      "sideEffect": false,
+      "parameters": [
+        {
+          "name": "project_id",
+          "location": "path",
+          "type": "string",
+          "required": true,
+          "description": "UUID of the project to retrieve"
+        }
+      ]
+    },
+    {
+      "id": "update_project",
+      "name": "Update Project",
+      "method": "PUT",
+      "endpoint": "/api/v1/projects/{project_id}",
+      "intent": "Update an existing project's name or description",
+      "sideEffect": true,
+      "parameters": [
+        {
+          "name": "project_id",
+          "location": "path",
+          "type": "string",
+          "required": true,
+          "description": "UUID of the project to update"
+        },
+        {
+          "name": "name",
+          "location": "body",
+          "type": "string",
+          "required": false,
+          "description": "New name for the project"
+        },
+        {
+          "name": "description",
+          "location": "body",
+          "type": "string",
+          "required": false,
+          "description": "New description for the project"
+        }
+      ]
+    },
+    {
+      "id": "delete_project",
+      "name": "Delete Project",
+      "method": "DELETE",
+      "endpoint": "/api/v1/projects/{project_id}",
+      "intent": "Permanently delete a project and all its associated data",
+      "sideEffect": true,
+      "parameters": [
+        {
+          "name": "project_id",
+          "location": "path",
+          "type": "string",
+          "required": true,
+          "description": "UUID of the project to delete"
+        }
+      ]
+    },
+    {
+      "id": "list_automation_sessions",
+      "name": "List Automation Sessions",
+      "method": "GET",
+      "endpoint": "/api/v1/automation/sessions",
+      "intent": "List all automation sessions with optional filtering",
+      "sideEffect": false,
+      "parameters": [
+        {
+          "name": "project_id",
+          "location": "query",
+          "type": "string",
+          "required": false,
+          "description": "Filter sessions by project ID"
+        },
+        {
+          "name": "status",
+          "location": "query",
+          "type": "string",
+          "required": false,
+          "description": "Filter sessions by status",
+          "enum": ["pending", "running", "completed", "failed", "cancelled"]
+        },
+        {
+          "name": "limit",
+          "location": "query",
+          "type": "integer",
+          "required": false,
+          "description": "Maximum number of sessions to return",
+          "default": 50
+        },
+        {
+          "name": "offset",
+          "location": "query",
+          "type": "integer",
+          "required": false,
+          "description": "Number of sessions to skip",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "id": "get_automation_session",
+      "name": "Get Automation Session",
+      "method": "GET",
+      "endpoint": "/api/v1/automation/sessions/{session_id}",
+      "intent": "Retrieve details and statistics for a specific automation session",
+      "sideEffect": false,
+      "parameters": [
+        {
+          "name": "session_id",
+          "location": "path",
+          "type": "string",
+          "required": true,
+          "description": "UUID of the automation session"
+        }
+      ]
+    },
+    {
+      "id": "get_session_timeline",
+      "name": "Get Session Timeline",
+      "method": "GET",
+      "endpoint": "/api/v1/automation/sessions/{session_id}/timeline",
+      "intent": "Retrieve the execution timeline for an automation session",
+      "sideEffect": false,
+      "parameters": [
+        {
+          "name": "session_id",
+          "location": "path",
+          "type": "string",
+          "required": true,
+          "description": "UUID of the automation session"
+        }
+      ]
+    },
+    {
+      "id": "get_current_user",
+      "name": "Get Current User",
+      "method": "GET",
+      "endpoint": "/api/v1/auth/users/me",
+      "intent": "Retrieve the currently authenticated user's profile",
+      "sideEffect": false,
+      "parameters": []
+    },
+    {
+      "id": "get_subscription",
+      "name": "Get Subscription",
+      "method": "GET",
+      "endpoint": "/api/v1/billing/subscription",
+      "intent": "Retrieve the current user's subscription status and tier",
+      "sideEffect": false,
+      "parameters": []
+    },
+    {
+      "id": "get_usage",
+      "name": "Get Usage",
+      "method": "GET",
+      "endpoint": "/api/v1/billing/usage",
+      "intent": "Retrieve the current user's resource usage statistics",
+      "sideEffect": false,
+      "parameters": []
+    }
+  ],
+  "auth": {
+    "type": "bearer_token",
+    "headerName": "Authorization"
+  }
+}

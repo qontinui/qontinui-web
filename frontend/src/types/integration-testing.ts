@@ -441,7 +441,7 @@ export interface HighlightRegion {
 // =============================================================================
 
 /**
- * Request to run an integration test via qontinui-api
+ * Request to run an integration test via runner
  */
 export interface IntegrationTestRequest {
   project_id: string;

@@ -14,7 +14,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Loader2, FileImage, Maximize2 } from "lucide-react";
 import { runnerClient } from "@/lib/runner-client";
-import { getStateBoundingBox, getStateColorByIndex } from "./utils/bbox-utils";
+import {
+  getStateBoundingBox,
+  getStateColorByIndex,
+  getStateImageBoundingBox,
+  unionBoundingBoxes,
+} from "./utils/bbox-utils";
 import type {
   ExtractionAnnotation,
   StateMachineState,
@@ -178,13 +183,43 @@ export function PageAnalysisView({
         ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
 
         // Filter states to only those visible on this screenshot
+        // and compute per-screenshot bounding boxes (not union across all screenshots)
         const screenshotId = selectedAnnotation.screenshot_id;
-        const statesForThisPage = statesWithColors.filter(({ state }) => {
-          // Check if any of the state's images belong to this screenshot
-          return state.stateImages.some(
-            (img) => img.screenshotId === screenshotId || !img.screenshotId
+        const isFirstAnnotation = annotations.length > 0 && annotations[0]?.screenshot_id === screenshotId;
+        const statesForThisPage: Array<{
+          state: StateMachineState;
+          bbox: BoundingBox;
+          color: { fill: string; stroke: string };
+        }> = [];
+
+        for (const { state, color } of statesWithColors) {
+          // Get only stateImages that belong to this screenshot
+          // If stateImage has no screenshotId, only show on first screenshot to avoid duplicates
+          const imagesOnThisScreenshot = state.stateImages.filter(
+            (img) => {
+              if (!img.screenshotId) {
+                return isFirstAnnotation;
+              }
+              return img.screenshotId === screenshotId;
+            }
           );
-        });
+
+          if (imagesOnThisScreenshot.length === 0) continue;
+
+          // Compute bbox from only the images on THIS screenshot
+          const bboxes = imagesOnThisScreenshot
+            .map((img) => getStateImageBoundingBox(img))
+            .filter((b): b is BoundingBox => b !== null);
+
+          const screenshotBbox = unionBoundingBoxes(bboxes);
+          if (!screenshotBbox) continue;
+
+          statesForThisPage.push({
+            state,
+            bbox: screenshotBbox,
+            color,
+          });
+        }
 
         // Draw state bounding boxes for this page only
         for (const { state, bbox, color } of statesForThisPage) {
@@ -228,6 +263,7 @@ export function PageAnalysisView({
     loadScreenshot,
     screenshotCache,
     containerWidth,
+    annotations,
   ]);
 
   return (
@@ -303,9 +339,9 @@ export function PageAnalysisView({
                   {statesWithColors
                     .filter(({ state }) => {
                       const screenshotId = selectedAnnotation?.screenshot_id;
+                      // Only show states that have images on this specific screenshot
                       return state.stateImages.some(
-                        (img) =>
-                          img.screenshotId === screenshotId || !img.screenshotId
+                        (img) => img.screenshotId === screenshotId
                       );
                     })
                     .map(({ state, color }) => (

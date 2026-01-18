@@ -14,7 +14,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { styles } from "@/config/theme";
 
 /**
  * Qontinui-themed dialog components
@@ -27,7 +26,12 @@ export function QontinuiDialogContent({
   className,
   ...props
 }: QontinuiDialogContentProps) {
-  return <DialogContent className={cn(styles.dialog, className)} {...props} />;
+  return (
+    <DialogContent
+      className={cn("bg-surface-raised border border-border-default rounded-lg", className)}
+      {...props}
+    />
+  );
 }
 
 export function QontinuiDialogOverlay({
@@ -35,7 +39,7 @@ export function QontinuiDialogOverlay({
   ...props
 }: React.ComponentProps<typeof DialogOverlay>) {
   return (
-    <DialogOverlay className={cn(styles.dialogOverlay, className)} {...props} />
+    <DialogOverlay className={cn("bg-black/80", className)} {...props} />
   );
 }
 
@@ -51,7 +55,7 @@ export function QontinuiDialogTitle({
   ...props
 }: React.ComponentProps<typeof DialogTitle>) {
   return (
-    <DialogTitle className={cn(styles.text.primary, className)} {...props} />
+    <DialogTitle className={cn("text-foreground", className)} {...props} />
   );
 }
 
@@ -61,7 +65,7 @@ export function QontinuiDialogDescription({
 }: React.ComponentProps<typeof DialogDescription>) {
   return (
     <DialogDescription
-      className={cn(styles.text.secondary, className)}
+      className={cn("text-muted-foreground", className)}
       {...props}
     />
   );
@@ -74,32 +78,5 @@ export function QontinuiDialogFooter({
   return <DialogFooter className={className} {...props} />;
 }
 
-// Re-export base components that don&apos;t need theming
+// Re-export base components that don't need theming
 export { Dialog, DialogTrigger, DialogClose, DialogPortal };
-
-/**
- * Example usage:
- *
- * <Dialog>
- *   <DialogTrigger asChild>
- *     <Button>Open Dialog</Button>
- *   </DialogTrigger>
- *   <QontinuiDialogContent>
- *     <QontinuiDialogHeader>
- *       <QontinuiDialogTitle>Dialog Title</QontinuiDialogTitle>
- *       <QontinuiDialogDescription>
- *         Dialog description goes here
- *       </QontinuiDialogDescription>
- *     </QontinuiDialogHeader>
- *     <div className="py-4">
- *       Dialog content
- *     </div>
- *     <QontinuiDialogFooter>
- *       <DialogClose asChild>
- *         <GhostButton>Cancel</GhostButton>
- *       </DialogClose>
- *       <CreateButton>Confirm</CreateButton>
- *     </QontinuiDialogFooter>
- *   </QontinuiDialogContent>
- * </Dialog>
- */

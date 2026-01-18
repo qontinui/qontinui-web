@@ -9,6 +9,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   Loader2,
+  Eye,
+  Info,
+  ChevronDown,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -31,19 +34,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  usePlaywrightExtractionConfig,
+  type PlaywrightExtractionConfigState,
+} from "@/hooks/use-playwright-extraction";
 
-export interface PlaywrightCollectorConfigState {
-  url: string;
-  maxDepth: number;
-  maxElementsPerPage: number;
-  maxRiskLevel: "safe" | "caution";
-  dryRun: boolean;
-  verifyExtractions: boolean;
-  verificationThreshold: number;
-  dangerousKeywords: string[];
-  safeKeywords: string[];
-  blockedSelectors: string[];
-}
+// Re-export the type for backwards compatibility
+export type PlaywrightCollectorConfigState = PlaywrightExtractionConfigState;
 
 // Default dangerous keywords (from safety.py)
 const DEFAULT_DANGEROUS_KEYWORDS = [
@@ -116,18 +118,8 @@ export function PlaywrightCollectorConfig({
   isLoading = false,
   disabled = false,
 }: PlaywrightCollectorConfigProps) {
-  const [config, setConfig] = useState<PlaywrightCollectorConfigState>({
-    url: "",
-    maxDepth: 2,
-    maxElementsPerPage: 50,
-    maxRiskLevel: "safe",
-    dryRun: true,
-    verifyExtractions: true,
-    verificationThreshold: 0.85,
-    dangerousKeywords: [],
-    safeKeywords: [],
-    blockedSelectors: [],
-  });
+  // Use the persistence hook for config state
+  const { config, updateConfig, isLoaded } = usePlaywrightExtractionConfig();
 
   const [newDangerousKeyword, setNewDangerousKeyword] = useState("");
   const [newSafeKeyword, setNewSafeKeyword] = useState("");
@@ -138,22 +130,20 @@ export function PlaywrightCollectorConfig({
       newDangerousKeyword.trim() &&
       !config.dangerousKeywords.includes(newDangerousKeyword.trim())
     ) {
-      setConfig((prev) => ({
-        ...prev,
+      updateConfig({
         dangerousKeywords: [
-          ...prev.dangerousKeywords,
+          ...config.dangerousKeywords,
           newDangerousKeyword.trim().toLowerCase(),
         ],
-      }));
+      });
       setNewDangerousKeyword("");
     }
   };
 
   const handleRemoveDangerousKeyword = (keyword: string) => {
-    setConfig((prev) => ({
-      ...prev,
-      dangerousKeywords: prev.dangerousKeywords.filter((k) => k !== keyword),
-    }));
+    updateConfig({
+      dangerousKeywords: config.dangerousKeywords.filter((k) => k !== keyword),
+    });
   };
 
   const handleAddSafeKeyword = () => {
@@ -161,22 +151,20 @@ export function PlaywrightCollectorConfig({
       newSafeKeyword.trim() &&
       !config.safeKeywords.includes(newSafeKeyword.trim())
     ) {
-      setConfig((prev) => ({
-        ...prev,
+      updateConfig({
         safeKeywords: [
-          ...prev.safeKeywords,
+          ...config.safeKeywords,
           newSafeKeyword.trim().toLowerCase(),
         ],
-      }));
+      });
       setNewSafeKeyword("");
     }
   };
 
   const handleRemoveSafeKeyword = (keyword: string) => {
-    setConfig((prev) => ({
-      ...prev,
-      safeKeywords: prev.safeKeywords.filter((k) => k !== keyword),
-    }));
+    updateConfig({
+      safeKeywords: config.safeKeywords.filter((k) => k !== keyword),
+    });
   };
 
   const handleAddBlockedSelector = () => {
@@ -184,19 +172,17 @@ export function PlaywrightCollectorConfig({
       newBlockedSelector.trim() &&
       !config.blockedSelectors.includes(newBlockedSelector.trim())
     ) {
-      setConfig((prev) => ({
-        ...prev,
-        blockedSelectors: [...prev.blockedSelectors, newBlockedSelector.trim()],
-      }));
+      updateConfig({
+        blockedSelectors: [...config.blockedSelectors, newBlockedSelector.trim()],
+      });
       setNewBlockedSelector("");
     }
   };
 
   const handleRemoveBlockedSelector = (selector: string) => {
-    setConfig((prev) => ({
-      ...prev,
-      blockedSelectors: prev.blockedSelectors.filter((s) => s !== selector),
-    }));
+    updateConfig({
+      blockedSelectors: config.blockedSelectors.filter((s) => s !== selector),
+    });
   };
 
   const handleStartExtraction = () => {
@@ -213,8 +199,33 @@ export function PlaywrightCollectorConfig({
     }
   };
 
+  // Show loading state while config is being loaded from localStorage
+  if (!isLoaded) {
+    return (
+      <div className="space-y-4 pb-6">
+        <Card className="border-cyan-500/30 bg-cyan-500/5 animate-pulse">
+          <CardHeader className="py-3">
+            <div className="h-4 w-24 bg-cyan-500/20 rounded" />
+          </CardHeader>
+          <CardContent>
+            <div className="h-10 w-full bg-cyan-500/10 rounded" />
+          </CardContent>
+        </Card>
+        <Card className="border-purple-500/30 bg-purple-500/5 animate-pulse">
+          <CardHeader className="py-3">
+            <div className="h-4 w-32 bg-purple-500/20 rounded" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="h-10 w-full bg-purple-500/10 rounded" />
+            <div className="h-10 w-full bg-purple-500/10 rounded" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-6">
       {/* Target URL */}
       <Card className="border-cyan-500/30 bg-cyan-500/5">
         <CardHeader className="py-3">
@@ -232,9 +243,7 @@ export function PlaywrightCollectorConfig({
               type="url"
               placeholder="https://example.com"
               value={config.url}
-              onChange={(e) =>
-                setConfig((prev) => ({ ...prev, url: e.target.value }))
-              }
+              onChange={(e) => updateConfig({ url: e.target.value })}
               className={
                 !config.url || isValidUrl(config.url) ? "" : "border-red-500"
               }
@@ -266,10 +275,7 @@ export function PlaywrightCollectorConfig({
                 max={5}
                 value={config.maxDepth}
                 onChange={(e) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    maxDepth: parseInt(e.target.value) || 0,
-                  }))
+                  updateConfig({ maxDepth: parseInt(e.target.value) || 0 })
                 }
               />
             </div>
@@ -287,10 +293,7 @@ export function PlaywrightCollectorConfig({
                 max={200}
                 value={config.maxElementsPerPage}
                 onChange={(e) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    maxElementsPerPage: parseInt(e.target.value) || 50,
-                  }))
+                  updateConfig({ maxElementsPerPage: parseInt(e.target.value) || 50 })
                 }
               />
             </div>
@@ -301,18 +304,24 @@ export function PlaywrightCollectorConfig({
               htmlFor="riskLevel"
               className="text-xs text-muted-foreground"
             >
-              Maximum Risk Level to Auto-Click
+              Extraction Mode
             </Label>
             <Select
               value={config.maxRiskLevel}
-              onValueChange={(value: "safe" | "caution") =>
-                setConfig((prev) => ({ ...prev, maxRiskLevel: value }))
+              onValueChange={(value: "dry_run" | "safe" | "caution") =>
+                updateConfig({ maxRiskLevel: value })
               }
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="dry_run">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-4 w-4 text-blue-500" />
+                    Dry Run (Identify Only, No Clicking)
+                  </div>
+                </SelectItem>
                 <SelectItem value="safe">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4 text-green-500" />
@@ -331,27 +340,33 @@ export function PlaywrightCollectorConfig({
 
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label htmlFor="dryRun" className="text-sm">
-                Dry Run Mode
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Identify elements without clicking them
-              </p>
-            </div>
-            <Switch
-              id="dryRun"
-              checked={config.dryRun}
-              onCheckedChange={(checked) =>
-                setConfig((prev) => ({ ...prev, dryRun: checked }))
-              }
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="verify" className="text-sm">
-                Verify Extractions
-              </Label>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="verify" className="text-sm">
+                  Verify Extractions
+                </Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs">
+                      <p className="text-xs">
+                        <strong>How it works:</strong> Each extracted element is captured as an image,
+                        then pattern matching searches for it in the full page screenshot.
+                        Elements that can be reliably found are marked as &quot;verified&quot;.
+                      </p>
+                      <p className="text-xs mt-2">
+                        <strong>No existing patterns required</strong> - patterns are created
+                        automatically from the extracted elements.
+                      </p>
+                      <p className="text-xs mt-2 text-muted-foreground">
+                        This helps filter out elements that may be too generic or visually
+                        ambiguous for reliable automation.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <p className="text-xs text-muted-foreground">
                 Use pattern matching to verify detectability
               </p>
@@ -360,7 +375,7 @@ export function PlaywrightCollectorConfig({
               id="verify"
               checked={config.verifyExtractions}
               onCheckedChange={(checked) =>
-                setConfig((prev) => ({ ...prev, verifyExtractions: checked }))
+                updateConfig({ verifyExtractions: checked })
               }
             />
           </div>
@@ -382,10 +397,7 @@ export function PlaywrightCollectorConfig({
                 step={0.05}
                 value={config.verificationThreshold}
                 onChange={(e) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    verificationThreshold: parseFloat(e.target.value),
-                  }))
+                  updateConfig({ verificationThreshold: parseFloat(e.target.value) })
                 }
                 className="h-2"
               />
@@ -405,29 +417,38 @@ export function PlaywrightCollectorConfig({
         <CardContent className="space-y-4">
           {/* Dangerous Keywords */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">
-                Additional Dangerous Keywords (will be blocked)
-              </Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="outline" className="text-xs">
-                      {DEFAULT_DANGEROUS_KEYWORDS.length} defaults
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p className="text-xs">
-                      Default blocked:{" "}
-                      {DEFAULT_DANGEROUS_KEYWORDS.slice(0, 10).join(", ")}...
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            <Label className="text-xs text-muted-foreground">
+              Dangerous Keywords (will be blocked)
+            </Label>
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                <Button variant="outline" size="sm" className="w-full justify-between text-xs h-8">
+                  <span className="flex items-center gap-2">
+                    <ShieldAlert className="h-3 w-3 text-red-500" />
+                    View {DEFAULT_DANGEROUS_KEYWORDS.length} default blocked keywords
+                  </span>
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <ScrollArea className="h-24 mt-2 rounded-md border border-red-500/20 bg-red-500/5 p-2">
+                  <div className="flex flex-wrap gap-1">
+                    {DEFAULT_DANGEROUS_KEYWORDS.map((keyword) => (
+                      <Badge
+                        key={keyword}
+                        variant="outline"
+                        className="text-xs bg-red-500/10 text-red-400 border-red-500/30"
+                      >
+                        {keyword}
+                      </Badge>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CollapsibleContent>
+            </Collapsible>
             <div className="flex gap-2">
               <Input
-                placeholder="Add keyword to block..."
+                placeholder="Add custom keyword to block..."
                 value={newDangerousKeyword}
                 onChange={(e) => setNewDangerousKeyword(e.target.value)}
                 onKeyDown={(e) =>
@@ -444,49 +465,61 @@ export function PlaywrightCollectorConfig({
               </Button>
             </div>
             {config.dangerousKeywords.length > 0 && (
-              <ScrollArea className="h-20">
-                <div className="flex flex-wrap gap-1">
-                  {config.dangerousKeywords.map((keyword) => (
-                    <Badge
-                      key={keyword}
-                      variant="destructive"
-                      className="text-xs cursor-pointer hover:bg-destructive/80"
-                      onClick={() => handleRemoveDangerousKeyword(keyword)}
-                    >
-                      {keyword}
-                      <X className="h-3 w-3 ml-1" />
-                    </Badge>
-                  ))}
-                </div>
-              </ScrollArea>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Custom blocked keywords:</p>
+                <ScrollArea className="h-20">
+                  <div className="flex flex-wrap gap-1">
+                    {config.dangerousKeywords.map((keyword) => (
+                      <Badge
+                        key={keyword}
+                        variant="destructive"
+                        className="text-xs cursor-pointer hover:bg-destructive/80"
+                        onClick={() => handleRemoveDangerousKeyword(keyword)}
+                      >
+                        {keyword}
+                        <X className="h-3 w-3 ml-1" />
+                      </Badge>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
             )}
           </div>
 
           {/* Safe Keywords */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">
-                Additional Safe Keywords (will be allowed)
-              </Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="outline" className="text-xs">
-                      {DEFAULT_SAFE_KEYWORDS.length} defaults
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p className="text-xs">
-                      Default safe:{" "}
-                      {DEFAULT_SAFE_KEYWORDS.slice(0, 10).join(", ")}...
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            <Label className="text-xs text-muted-foreground">
+              Safe Keywords (will be allowed)
+            </Label>
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                <Button variant="outline" size="sm" className="w-full justify-between text-xs h-8">
+                  <span className="flex items-center gap-2">
+                    <ShieldCheck className="h-3 w-3 text-green-500" />
+                    View {DEFAULT_SAFE_KEYWORDS.length} default safe keywords
+                  </span>
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <ScrollArea className="h-24 mt-2 rounded-md border border-green-500/20 bg-green-500/5 p-2">
+                  <div className="flex flex-wrap gap-1">
+                    {DEFAULT_SAFE_KEYWORDS.map((keyword) => (
+                      <Badge
+                        key={keyword}
+                        variant="outline"
+                        className="text-xs bg-green-500/10 text-green-400 border-green-500/30"
+                      >
+                        {keyword}
+                      </Badge>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CollapsibleContent>
+            </Collapsible>
             <div className="flex gap-2">
               <Input
-                placeholder="Add safe keyword..."
+                placeholder="Add custom safe keyword..."
                 value={newSafeKeyword}
                 onChange={(e) => setNewSafeKeyword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddSafeKeyword()}
@@ -501,21 +534,24 @@ export function PlaywrightCollectorConfig({
               </Button>
             </div>
             {config.safeKeywords.length > 0 && (
-              <ScrollArea className="h-20">
-                <div className="flex flex-wrap gap-1">
-                  {config.safeKeywords.map((keyword) => (
-                    <Badge
-                      key={keyword}
-                      variant="secondary"
-                      className="text-xs cursor-pointer hover:bg-secondary/80 bg-green-500/20 text-green-400"
-                      onClick={() => handleRemoveSafeKeyword(keyword)}
-                    >
-                      {keyword}
-                      <X className="h-3 w-3 ml-1" />
-                    </Badge>
-                  ))}
-                </div>
-              </ScrollArea>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Custom safe keywords:</p>
+                <ScrollArea className="h-20">
+                  <div className="flex flex-wrap gap-1">
+                    {config.safeKeywords.map((keyword) => (
+                      <Badge
+                        key={keyword}
+                        variant="secondary"
+                        className="text-xs cursor-pointer hover:bg-secondary/80 bg-green-500/20 text-green-400"
+                        onClick={() => handleRemoveSafeKeyword(keyword)}
+                      >
+                        {keyword}
+                        <X className="h-3 w-3 ml-1" />
+                      </Badge>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
             )}
           </div>
 
@@ -585,9 +621,9 @@ export function PlaywrightCollectorConfig({
         )}
       </Button>
 
-      {!config.dryRun && (
+      {config.maxRiskLevel !== "dry_run" && (
         <p className="text-xs text-yellow-500 text-center">
-          Warning: Dry run is disabled. The collector will click on elements.
+          Warning: The collector will click on elements. Use &quot;Dry Run&quot; mode for safe exploration.
         </p>
       )}
     </div>
