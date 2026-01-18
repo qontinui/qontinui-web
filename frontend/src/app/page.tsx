@@ -40,7 +40,17 @@ function LandingContent() {
       {/* Header with Sign In button or Dashboard link */}
       <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-primary">Qontinui</h2>
+          <div
+            className="flex items-center gap-1 cursor-pointer"
+            onClick={() => router.push("/")}
+          >
+            <img
+              src="/q-logo.png"
+              alt="Qontinui"
+              className="h-8 w-auto"
+            />
+            <span className="text-2xl font-bold text-primary">ontinui</span>
+          </div>
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
@@ -149,7 +159,7 @@ function LandingContent() {
       <section className="py-20 px-4">
         <div className="container mx-auto">
           <h2 className="text-3xl md:text-4xl font-bold text-center mb-16">
-            Why Qontinui Changes Everything
+            Why Qontinui Stands Out
           </h2>
 
           <div className="grid md:grid-cols-3 gap-8">
