@@ -103,13 +103,16 @@ warn_unused_configs = true
 check_untyped_defs = true
 strict_equality = true
 ignore_missing_imports = true
-exclude = ["alembic", "migrations", "tests"]
+exclude = ["alembic", "migrations", "tests", "user_projects"]
 # Use package mode to properly resolve module names
 # Run with: MYPYPATH=stubs poetry run mypy app
 packages = ["app"]
 # Disable some noisy checks for gradual adoption
 warn_unreachable = false
 mypy_path = "stubs"
+# Enable explicit package bases to resolve duplicate module names
+explicit_package_bases = true
+namespace_packages = true
 
 [tool.ruff]
 line-length = 88

@@ -53,10 +53,10 @@ def _generate_single_thumbnail(
             img = img.convert("RGB")
 
         # Auto-rotate based on EXIF orientation
-        if img is not None:
-            img = ImageOps.exif_transpose(img)
-        if img is None:
+        transposed = ImageOps.exif_transpose(img)
+        if transposed is None:
             raise ValueError("Failed to process image")
+        img = transposed
 
         # Resize using LANCZOS (high-quality downsampling)
         thumbnail = img.copy()
@@ -213,10 +213,10 @@ class ImageProcessingService:
                 img = img.convert("RGB")
 
             # Auto-rotate based on EXIF orientation
-            if img is not None:
-                img = ImageOps.exif_transpose(img)
-            if img is None:
+            transposed = ImageOps.exif_transpose(img)
+            if transposed is None:
                 raise ValueError("Failed to process image")
+            img = transposed
 
             thumbnails = {}
 
@@ -329,10 +329,10 @@ class ImageProcessingService:
                 img = img.convert("RGB")
 
             # Auto-rotate based on EXIF orientation
-            if img is not None:
-                img = ImageOps.exif_transpose(img)
-            if img is None:
+            transposed = ImageOps.exif_transpose(img)
+            if transposed is None:
                 raise ValueError("Failed to process image")
+            img = transposed
 
             # Optimize and convert
             output = io.BytesIO()
