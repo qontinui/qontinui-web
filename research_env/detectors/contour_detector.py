@@ -4,10 +4,9 @@ Contour-based detection using adaptive thresholding
 
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
-import numpy as np
 
 from .base_detector import BaseDetector
 
@@ -21,7 +20,7 @@ class ContourDetector(BaseDetector):
     def __init__(self):
         super().__init__("Contour Detector")
 
-    def detect(self, image_path: str, **params) -> List[BBox]:
+    def detect(self, image_path: str, **params) -> list[BBox]:
         """
         Detect elements using adaptive thresholding
 
@@ -84,7 +83,7 @@ class ContourDetector(BaseDetector):
 
         return boxes
 
-    def get_param_grid(self) -> List[Dict[str, Any]]:
+    def get_param_grid(self) -> list[dict[str, Any]]:
         """Parameter grid for hyperparameter search"""
         return [
             # Adaptive threshold with different parameters

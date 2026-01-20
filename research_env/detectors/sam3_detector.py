@@ -10,7 +10,7 @@ For PyTorch: pip install torch==2.7.0 torchvision torchaudio --index-url https:/
 
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -86,7 +86,7 @@ class SAM3Detector(BaseDetector):
             print(f"Error loading SAM3: {e}")
             self.sam_available = False
 
-    def detect(self, image_path: str, **params) -> List[BBox]:
+    def detect(self, image_path: str, **params) -> list[BBox]:
         """
         Detect elements using SAM3
 
@@ -196,7 +196,7 @@ class SAM3Detector(BaseDetector):
             traceback.print_exc()
             return []
 
-    def get_param_grid(self) -> List[Dict[str, Any]]:
+    def get_param_grid(self) -> list[dict[str, Any]]:
         """Parameter grid for hyperparameter search"""
         if not self.sam_available:
             return []

@@ -4,10 +4,9 @@ MSER (Maximally Stable Extremal Regions) based detection
 
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
-import numpy as np
 
 from .base_detector import BaseDetector
 
@@ -21,7 +20,7 @@ class MSERDetector(BaseDetector):
     def __init__(self):
         super().__init__("MSER Detector")
 
-    def detect(self, image_path: str, **params) -> List[BBox]:
+    def detect(self, image_path: str, **params) -> list[BBox]:
         """
         Detect elements using MSER
 
@@ -72,7 +71,7 @@ class MSERDetector(BaseDetector):
 
         return boxes
 
-    def get_param_grid(self) -> List[Dict[str, Any]]:
+    def get_param_grid(self) -> list[dict[str, Any]]:
         """Parameter grid for hyperparameter search"""
         return [
             # Conservative - larger stable regions

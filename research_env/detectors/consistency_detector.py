@@ -4,14 +4,14 @@ Consistency Detector - Finds unchanging elements across multiple screenshots
 
 import os
 import sys
-from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from detectors.base_detector import MultiScreenshotDetector
 from evaluator import BBox, MultiScreenshotDataset
+
+from detectors.base_detector import MultiScreenshotDetector
 
 
 class ConsistencyDetector(MultiScreenshotDetector):
@@ -27,7 +27,7 @@ class ConsistencyDetector(MultiScreenshotDetector):
 
     def detect_multi(
         self, dataset: MultiScreenshotDataset, **params
-    ) -> Dict[int, List[BBox]]:
+    ) -> dict[int, list[BBox]]:
         """
         Detect elements by finding consistent regions across screenshots
 
@@ -91,8 +91,8 @@ class ConsistencyDetector(MultiScreenshotDetector):
         return results
 
     def _align_screenshots(
-        self, screenshots: List[Tuple[int, np.ndarray]], method: str = "simple"
-    ) -> List[Tuple[int, np.ndarray]]:
+        self, screenshots: list[tuple[int, np.ndarray]], method: str = "simple"
+    ) -> list[tuple[int, np.ndarray]]:
         """
         Align screenshots to compensate for small shifts
 
@@ -155,12 +155,16 @@ class ConsistencyDetector(MultiScreenshotDetector):
                     # Apply shift if significant
                     shift_x, shift_y = int(shift[0]), int(shift[1])
                     if abs(shift_x) > 1 or abs(shift_y) > 1:
-                        M = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
-                        img_aligned = cv2.warpAffine(img, M, (ref_width, ref_height))
+                        transform_matrix = np.float32(
+                            [[1, 0, shift_x], [0, 1, shift_y]]
+                        )
+                        img_aligned = cv2.warpAffine(
+                            img, transform_matrix, (ref_width, ref_height)
+                        )
                         aligned.append((screenshot_id, img_aligned))
                     else:
                         aligned.append((screenshot_id, img))
-                except:
+                except Exception:
                     # If phase correlation fails, use unaligned image
                     aligned.append((screenshot_id, img))
 
@@ -172,7 +176,7 @@ class ConsistencyDetector(MultiScreenshotDetector):
 
     def _compute_consistency_map(
         self,
-        screenshots: List[Tuple[int, np.ndarray]],
+        screenshots: list[tuple[int, np.ndarray]],
         consistency_threshold: float = 0.9,
         edge_weight: float = 0.3,
     ) -> np.ndarray:
@@ -245,10 +249,10 @@ class ConsistencyDetector(MultiScreenshotDetector):
         self,
         mask: np.ndarray,
         min_area: int = 100,
-        max_area: Optional[int] = None,
+        max_area: int | None = None,
         min_width: int = 5,
         min_height: int = 5,
-    ) -> List[BBox]:
+    ) -> list[BBox]:
         """
         Extract bounding boxes from a binary consistency mask
 
@@ -287,7 +291,7 @@ class ConsistencyDetector(MultiScreenshotDetector):
 
         return boxes
 
-    def get_param_grid(self) -> List[Dict]:
+    def get_param_grid(self) -> list[dict]:
         """Return parameter grid for hyperparameter search"""
         return [
             # Conservative detection (high consistency required)

@@ -3,7 +3,6 @@
 Verify that the research environment is set up correctly
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -38,7 +37,6 @@ def check_dependencies():
 
     # Check for contrib
     try:
-        import cv2.ximgproc
 
         print("✓ opencv-contrib-python (selective search)")
     except AttributeError:
@@ -47,11 +45,11 @@ def check_dependencies():
 
     # Check for SAM2 (optional)
     try:
-        import torch
+        import torch  # noqa: F401
 
         print("✓ torch (SAM2 support)")
         try:
-            from sam2.build_sam import build_sam2
+            from sam2.build_sam import build_sam2  # noqa: F401
 
             print("✓ SAM2 installed")
         except ImportError:

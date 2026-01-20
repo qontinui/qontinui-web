@@ -409,11 +409,7 @@ class ExecutionRunService:
             description=run.description,
             configuration=run.configuration or {},
             stats=stats,
-            coverage=(
-                CoverageData(**run.coverage_data)
-                if run.coverage_data
-                else None
-            ),
+            coverage=(CoverageData(**run.coverage_data) if run.coverage_data else None),
             updated_at=run.updated_at,
         )
 

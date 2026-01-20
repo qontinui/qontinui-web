@@ -10,7 +10,7 @@
  * - Image Extraction (Template matching)
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useProjectLoader } from "@/hooks/use-project-loader";
 import { useUnifiedExtractionConfig } from "@/hooks/use-unified-extraction-config";
 import { RequireProject } from "@/components/require-project";
@@ -22,6 +22,10 @@ import {
   type UITarsProgress,
 } from "@/components/extraction/UITarsProgressPanel";
 import { ExtractionConfigPanel } from "@/components/web-extraction/ExtractionConfigPanel";
+import { StateExplorerView } from "@/components/web-extraction/StateExplorerView";
+import { extractionService } from "@/services/service-factory";
+import { useAuth } from "@/contexts/auth-context";
+import { useCreateExtraction } from "@/hooks/use-extractions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -31,6 +35,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Label } from "@/components/ui/label";
 import { Loader2, Play, AlertCircle, Info, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import type {
+  ExtractionSessionDetail,
+  ExtractionAnnotation,
+  StateMachineState,
+  StateMachineStateImage,
+  ElementAnnotation,
+} from "@/types/extraction";
 
 type MainTab = "configuration" | "results";
 
@@ -48,6 +59,8 @@ const RUNNER_API_URL = "http://localhost:9876";
 function UnifiedExtractionContent() {
   const { projectId } = useProjectLoader();
   const extractionConfig = useUnifiedExtractionConfig();
+  const { getAccessToken } = useAuth();
+  const createExtraction = useCreateExtraction();
 
   const [mainTab, setMainTab] = useState<MainTab>("configuration");
   const [isExtracting, setIsExtracting] = useState(false);
@@ -77,8 +90,197 @@ function UnifiedExtractionContent() {
   });
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { config, setMethod, setSelectedMonitors, setUitarsConfig, isLoaded } =
+  // Extraction data state (for showing results)
+  const [extractionDetail, setExtractionDetail] = useState<ExtractionSessionDetail | null>(null);
+  const [annotations, setAnnotations] = useState<ExtractionAnnotation[]>([]);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+
+  const { config, setMethod, setUitarsConfig, isLoaded } =
     extractionConfig;
+
+  // Load extraction detail and annotations from backend
+  const loadExtractionDetail = useCallback(async (extractionId: string, silent = false) => {
+    try {
+      if (!silent) {
+        setIsLoadingDetail(true);
+      }
+      console.log("[Extraction] Fetching detail for:", extractionId);
+      const detail = await extractionService.getExtractionDetail(extractionId);
+      console.log("[Extraction] Detail received:", {
+        id: detail.id,
+        status: detail.status,
+        hasStateMachine: !!detail.state_machine,
+        statesCount: detail.state_machine?.states?.length ?? 0,
+      });
+      setExtractionDetail(detail);
+
+      // Load annotations
+      console.log("[Extraction] Fetching annotations...");
+      const annots = await extractionService.getAnnotations(extractionId);
+      console.log("[Extraction] Annotations received:", {
+        count: annots.length,
+        firstAnnotation: annots[0] ? {
+          screenshotId: annots[0].screenshot_id,
+          statesCount: annots[0].states?.length ?? 0,
+          elementsCount: annots[0].elements?.length ?? 0,
+        } : null,
+      });
+      setAnnotations(annots);
+    } catch (error) {
+      console.error("[Extraction] Failed to load extraction detail:", error);
+      if (!silent) {
+        toast.error("Failed to load extraction details");
+      }
+    } finally {
+      if (!silent) {
+        setIsLoadingDetail(false);
+      }
+    }
+  }, []);
+
+  // Convert extraction data to StateMachineState format for StateExplorerView
+  const stateMachineStates: StateMachineState[] = useMemo(() => {
+    // First try: use pre-built state machine from runner
+    if (extractionDetail?.state_machine?.states?.length) {
+      let globalImageIndex = 0;
+      const processedStates = extractionDetail.state_machine.states.map((state) => ({
+        ...state,
+        stateImages: state.stateImages.map((img) => {
+          globalImageIndex++;
+          const uniqueId = `${state.id}-img-${globalImageIndex}`;
+          return {
+            ...img,
+            id: uniqueId,
+            patterns: img.patterns?.map((p, pIdx) => ({
+              ...p,
+              id: `${uniqueId}-pattern-${pIdx}`,
+            })) || [],
+          };
+        }),
+      }));
+      return processedStates;
+    }
+
+    // Fallback: convert annotation states to StateMachineState format
+    if (annotations.length > 0) {
+      interface StateOccurrence {
+        stateId: string;
+        stateName: string;
+        stateBbox: { x: number; y: number; width: number; height: number };
+        elements: ElementAnnotation[];
+        screenshotId: string;
+        sourceUrl: string;
+      }
+
+      const statesByName = new Map<string, StateOccurrence[]>();
+
+      for (const annotation of annotations) {
+        const elementMap = new Map<string, ElementAnnotation>();
+        for (const element of annotation.elements || []) {
+          elementMap.set(element.id, element);
+        }
+
+        for (const state of annotation.states || []) {
+          const stateName = state.name || "Unknown State";
+          const stateElements: ElementAnnotation[] = [];
+          for (const elementId of state.element_ids || []) {
+            const element = elementMap.get(elementId);
+            if (element) {
+              stateElements.push(element);
+            }
+          }
+
+          if (!statesByName.has(stateName)) {
+            statesByName.set(stateName, []);
+          }
+          statesByName.get(stateName)!.push({
+            stateId: state.id,
+            stateName,
+            stateBbox: state.bbox || { x: 0, y: 0, width: 200, height: 80 },
+            elements: stateElements,
+            screenshotId: annotation.screenshot_id,
+            sourceUrl: annotation.source_url,
+          });
+        }
+      }
+
+      const result: StateMachineState[] = [];
+      let stateIndex = 0;
+
+      for (const [stateName, occurrences] of statesByName) {
+        const firstOccurrence = occurrences[0];
+        if (!firstOccurrence) continue;
+
+        const stateBbox = firstOccurrence.stateBbox;
+        const stateImages: StateMachineStateImage[] = [];
+        const seenElementNames = new Set<string>();
+
+        for (const occurrence of occurrences) {
+          if (occurrence.elements.length > 0) {
+            for (const element of occurrence.elements) {
+              const elementName = element.name || element.text || element.element_type || "Element";
+              const dedupeKey = `${occurrence.screenshotId}-${elementName}`;
+              if (seenElementNames.has(dedupeKey)) continue;
+              seenElementNames.add(dedupeKey);
+
+              const elementBbox = element.bbox || stateBbox;
+              const uniqueId = `${occurrence.screenshotId}-${element.id}`;
+              stateImages.push({
+                id: `stateimage-${uniqueId}`,
+                name: elementName,
+                patterns: [{
+                  id: `pattern-${uniqueId}`,
+                  name: elementName,
+                  searchRegions: [elementBbox],
+                  fixed: false,
+                }],
+                shared: false,
+                searchRegions: [elementBbox],
+                screenshotId: occurrence.screenshotId,
+                sourceUrl: occurrence.sourceUrl,
+              });
+            }
+          }
+        }
+
+        if (stateImages.length === 0) {
+          stateImages.push({
+            id: `stateimage-${firstOccurrence.stateId}`,
+            name: stateName,
+            patterns: [{
+              id: `pattern-${firstOccurrence.stateId}`,
+              name: stateName,
+              searchRegions: [stateBbox],
+              fixed: false,
+            }],
+            shared: false,
+            searchRegions: [stateBbox],
+            screenshotId: firstOccurrence.screenshotId,
+            sourceUrl: firstOccurrence.sourceUrl,
+          });
+        }
+
+        result.push({
+          id: firstOccurrence.stateId,
+          name: stateName,
+          description: `Extracted from ${firstOccurrence.sourceUrl || "page"}`,
+          stateImages,
+          regions: [],
+          locations: [],
+          strings: [],
+          position: { x: stateBbox.x, y: stateBbox.y },
+          initial: stateIndex === 0,
+          isFinal: false,
+        });
+
+        stateIndex++;
+      }
+
+      return result;
+    }
+
+    return [];
+  }, [extractionDetail?.state_machine?.states, annotations]);
 
   // Poll for UI-TARS extraction status
   const pollExtractionStatus = useCallback(async () => {
@@ -122,61 +324,72 @@ function UnifiedExtractionContent() {
     }
   }, [config.uitarsConfig.maxSteps]);
 
-  // Poll for web extraction status
+  // Poll for web extraction status from backend (same approach as old WebExtractionTab)
   const pollWebExtractionStatus = useCallback(async () => {
+    const extractionId = webExtractionProgress.extractionId;
+    if (!extractionId) return;
+
     try {
-      const response = await runnerClient.getExtractionStatus();
-      if (response.success && response.data) {
-        const { is_running, stats } = response.data;
+      // Poll backend for status - this is the authoritative source
+      const detail = await extractionService.getExtractionDetail(extractionId);
+      console.log("[Extraction] Backend status:", detail.status, "stats:", detail.stats);
 
-        if (!is_running) {
-          // Extraction finished
-          setIsExtracting(false);
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = null;
-          }
-
-          // Determine if it was success or failure based on errors
-          const hasErrors = (stats?.errors ?? 0) > 0;
-          setWebExtractionProgress((prev) => ({
-            ...prev,
-            status: hasErrors ? "failed" : "completed",
-            statesFound: stats?.states_found ?? 0,
-            transitionsFound: stats?.transitions_found ?? 0,
-            pagesExtracted: stats?.pages_extracted ?? 0,
-            errors: stats?.errors ?? 0,
-          }));
-
-          if (hasErrors) {
-            toast.error(`Extraction completed with ${stats?.errors} errors`);
-          } else {
-            toast.success("Web extraction completed successfully!");
-          }
-        } else {
-          // Still running, update progress
-          setWebExtractionProgress((prev) => ({
-            ...prev,
-            status: "running",
-            statesFound: stats?.states_found ?? 0,
-            transitionsFound: stats?.transitions_found ?? 0,
-            pagesExtracted: stats?.pages_extracted ?? 0,
-            errors: stats?.errors ?? 0,
-          }));
-        }
+      // Update progress from backend stats
+      if (detail.stats) {
+        const stats = detail.stats as {
+          states_found?: number;
+          transitions_found?: number;
+          pages_extracted?: number;
+          errors?: number;
+        };
+        setWebExtractionProgress((prev) => ({
+          ...prev,
+          statesFound: stats.states_found ?? prev.statesFound,
+          transitionsFound: stats.transitions_found ?? prev.transitionsFound,
+          pagesExtracted: stats.pages_extracted ?? prev.pagesExtracted,
+          errors: stats.errors ?? prev.errors,
+        }));
       }
+
+      if (detail.status === "completed") {
+        // Backend says completed - extraction is fully done and data is synced
+        setIsExtracting(false);
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+        setWebExtractionProgress((prev) => ({
+          ...prev,
+          status: "completed",
+        }));
+        toast.success("Web extraction completed successfully!");
+      } else if (detail.status === "failed") {
+        // Backend says failed
+        setIsExtracting(false);
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+        setWebExtractionProgress((prev) => ({
+          ...prev,
+          status: "failed",
+          errorMessage: detail.error_message || "Extraction failed",
+        }));
+        toast.error(`Extraction failed: ${detail.error_message || "Unknown error"}`);
+      }
+      // If status is still "running" or "pending", keep polling
     } catch (error) {
       console.error("Error polling web extraction status:", error);
     }
-  }, []);
+  }, [webExtractionProgress.extractionId]);
 
   // Start polling when extraction starts
   useEffect(() => {
     if (isExtracting && config.method === "web") {
       // Initial poll
       pollWebExtractionStatus();
-      // Set up polling interval (every 2 seconds)
-      pollingRef.current = setInterval(pollWebExtractionStatus, 2000);
+      // Set up polling interval (every 3 seconds, same as old WebExtractionTab)
+      pollingRef.current = setInterval(pollWebExtractionStatus, 3000);
     } else if (isExtracting && (config.method === "uitars-web" || config.method === "uitars-desktop")) {
       // Initial poll
       pollExtractionStatus();
@@ -191,6 +404,19 @@ function UnifiedExtractionContent() {
       }
     };
   }, [isExtracting, config.method, pollExtractionStatus, pollWebExtractionStatus]);
+
+  // Load extraction detail when web extraction completes
+  useEffect(() => {
+    if (
+      config.method === "web" &&
+      webExtractionProgress.status === "completed" &&
+      webExtractionProgress.extractionId &&
+      !extractionDetail // Only load if we don't already have the detail
+    ) {
+      console.log("[Extraction] Loading detail for:", webExtractionProgress.extractionId);
+      loadExtractionDetail(webExtractionProgress.extractionId);
+    }
+  }, [config.method, webExtractionProgress.status, webExtractionProgress.extractionId, extractionDetail, loadExtractionDetail]);
 
   // Stop extraction handler
   const handleStopExtraction = async () => {
@@ -247,8 +473,19 @@ function UnifiedExtractionContent() {
 
     try {
       if (config.method === "web") {
-        // Web extraction - use the correct endpoint
+        // Web extraction - create backend session first, then start extraction on runner
         const validUrls = config.webConfig.urls.filter((u) => u.trim() !== "");
+
+        // Check if runner is available
+        const runnerAvailable = await runnerClient.isAvailable();
+        if (!runnerAvailable) {
+          toast.error("Desktop Runner is not connected. Please start the qontinui-runner application.");
+          return;
+        }
+
+        // Reset states
+        setExtractionDetail(null);
+        setAnnotations([]);
 
         // Reset web extraction progress
         setWebExtractionProgress({
@@ -260,6 +497,31 @@ function UnifiedExtractionContent() {
           errors: 0,
         });
 
+        // Create backend extraction session first
+        const sessionResult = await createExtraction.mutateAsync({
+          projectId,
+          data: {
+            source_urls: validUrls,
+            config: {
+              viewports: [[1920, 1080]],
+              capture_hover_states: config.webConfig.captureHover,
+              capture_focus_states: config.webConfig.captureFocus,
+              max_depth: config.webConfig.maxDepth,
+              max_pages: config.webConfig.maxPages,
+            },
+          },
+        });
+
+        // Store extraction ID
+        setWebExtractionProgress((prev) => ({
+          ...prev,
+          extractionId: sessionResult.id,
+        }));
+
+        // Get auth token for runner to sync with backend
+        const authToken = await getAccessToken();
+
+        // Start extraction on runner with backend session details
         const response = await runnerClient.startExtraction({
           urls: validUrls,
           viewports: [[1920, 1080]],
@@ -267,17 +529,22 @@ function UnifiedExtractionContent() {
           capture_focus_states: config.webConfig.captureFocus,
           max_depth: config.webConfig.maxDepth,
           max_pages: config.webConfig.maxPages,
+          session_id: sessionResult.id,
+          backend_url: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+          auth_token: authToken || undefined,
         });
 
         if (!response.success) {
+          // Mark session as failed
+          try {
+            await extractionService.updateExtraction(sessionResult.id, {
+              status: "failed",
+              error_message: response.error || "Failed to start extraction on runner",
+            });
+          } catch (updateError) {
+            console.error("Failed to update extraction status:", updateError);
+          }
           throw new Error(response.error || "Failed to start web extraction");
-        }
-
-        if (response.data?.extraction_id) {
-          setWebExtractionProgress((prev) => ({
-            ...prev,
-            extractionId: response.data!.extraction_id!,
-          }));
         }
 
         toast.info("Starting web extraction...");
@@ -652,9 +919,9 @@ function UnifiedExtractionContent() {
             {/* Results Tab */}
             <TabsContent
               value="results"
-              className="mt-0 layout-full-height data-[state=inactive]:hidden"
+              className="mt-0 layout-full-height data-[state=inactive]:hidden flex flex-col"
             >
-              <div className="space-y-6 py-6">
+              <div className="flex flex-col gap-4 flex-1 min-h-0">
                 {/* Show Web Extraction progress */}
                 {config.method === "web" && webExtractionProgress.status === "running" && (
                   <Card className="p-6 bg-surface-raised/60 border-border-subtle">
@@ -717,28 +984,64 @@ function UnifiedExtractionContent() {
                   </Alert>
                 )}
 
-                {/* Show Web Extraction completed results summary */}
+                {/* Show Web Extraction completed results */}
                 {config.method === "web" && webExtractionProgress.status === "completed" && (
-                  <Card className="p-6 bg-surface-raised/60 border-brand-success/30">
-                    <div className="flex items-center gap-3 mb-4">
-                      <CheckCircle2 className="h-5 w-5 text-brand-success" />
-                      <h3 className="text-lg font-semibold text-brand-success">
-                        Web Extraction Complete
-                      </h3>
-                    </div>
-                    <p className="text-sm text-text-muted mb-4">
-                      Discovered {webExtractionProgress.statesFound} states and{" "}
-                      {webExtractionProgress.transitionsFound} transitions from{" "}
-                      {webExtractionProgress.pagesExtracted} pages. The results
-                      are ready to be imported into your state machine.
-                    </p>
-                    <Button
-                      variant="outline"
-                      className="border-brand-success/50 text-brand-success hover:bg-brand-success/10"
-                    >
-                      Import to State Machine
-                    </Button>
-                  </Card>
+                  <>
+                    {/* Summary header */}
+                    <Card className="p-4 bg-surface-raised/60 border-brand-success/30">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle2 className="h-5 w-5 text-brand-success" />
+                          <h3 className="text-lg font-semibold text-brand-success">
+                            Web Extraction Complete
+                          </h3>
+                          <span className="text-sm text-text-muted">
+                            Discovered {webExtractionProgress.statesFound} states and{" "}
+                            {webExtractionProgress.transitionsFound} transitions from{" "}
+                            {webExtractionProgress.pagesExtracted} pages.
+                          </span>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-brand-success/50 text-brand-success hover:bg-brand-success/10"
+                        >
+                          Import to State Machine
+                        </Button>
+                      </div>
+                    </Card>
+
+                    {/* State Explorer View */}
+                    {isLoadingDetail ? (
+                      <div className="flex items-center justify-center py-24">
+                        <div className="flex flex-col items-center gap-4">
+                          <Loader2 className="h-12 w-12 animate-spin text-brand-success" />
+                          <p className="text-brand-success font-mono animate-pulse uppercase tracking-widest text-xs">
+                            Loading extraction results...
+                          </p>
+                        </div>
+                      </div>
+                    ) : stateMachineStates.length > 0 ? (
+                      <div className="flex-1 min-h-[500px]">
+                        <StateExplorerView
+                          states={stateMachineStates}
+                          annotations={annotations}
+                          extractionId={
+                            extractionDetail?.stats?.screenshot_extraction_id ||
+                            webExtractionProgress.extractionId ||
+                            undefined
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <Alert className="bg-surface-raised/60 border-brand-primary/30 backdrop-blur-sm">
+                        <AlertCircle className="h-4 w-4 text-brand-primary" />
+                        <AlertDescription className="text-text-secondary font-mono">
+                          No states found in the extraction results. The extraction may still be syncing data.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </>
                 )}
 
                 {/* Show Web Extraction failed message */}

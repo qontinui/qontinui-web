@@ -4,7 +4,7 @@ Edge-based GUI element detection using Canny edge detection
 
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -21,7 +21,7 @@ class EdgeBasedDetector(BaseDetector):
     def __init__(self):
         super().__init__("Edge-Based Detector")
 
-    def detect(self, image_path: str, **params) -> List[BBox]:
+    def detect(self, image_path: str, **params) -> list[BBox]:
         """
         Detect elements using Canny edge detection
 
@@ -76,7 +76,7 @@ class EdgeBasedDetector(BaseDetector):
 
         return boxes
 
-    def get_param_grid(self) -> List[Dict[str, Any]]:
+    def get_param_grid(self) -> list[dict[str, Any]]:
         """Parameter grid for hyperparameter search"""
         return [
             # Conservative - high thresholds

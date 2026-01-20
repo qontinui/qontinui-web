@@ -13,14 +13,10 @@ This script autonomously:
 
 import json
 import os
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
-import cv2
-import numpy as np
 from detectors import (
     ColorClusterDetector,
     ContourDetector,
@@ -52,7 +48,7 @@ class ResearchNotes:
 
         # Create or load existing notes
         if os.path.exists(notes_file):
-            with open(notes_file, "r") as f:
+            with open(notes_file) as f:
                 self.existing_notes = f.read()
         else:
             self.existing_notes = ""
@@ -80,7 +76,7 @@ Achieve 100% precision and 100% recall in detecting GUI elements from screenshot
             f.write(header)
 
     def add_iteration_notes(
-        self, iteration: int, results: List[EvaluationResult], insights: str
+        self, iteration: int, results: list[EvaluationResult], insights: str
     ):
         """Add notes for an iteration"""
         with open(self.notes_file, "a") as f:
@@ -100,7 +96,7 @@ Achieve 100% precision and 100% recall in detecting GUI elements from screenshot
                 f.write(f"- Time: {best.processing_time:.3f}s\n\n")
 
                 if not best.is_perfect():
-                    f.write(f"**Issues:**\n")
+                    f.write("**Issues:**\n")
                     f.write(f"- Missing elements: {best.false_negatives}\n")
                     f.write(f"- False positives: {best.false_positives}\n\n")
 
@@ -130,7 +126,7 @@ Achieve 100% precision and 100% recall in detecting GUI elements from screenshot
         """Add notes when perfect detection is achieved"""
         with open(self.notes_file, "a") as f:
             f.write(f"\n{'='*80}\n")
-            f.write(f"# 🎉 SUCCESS - Perfect Detection Achieved!\n")
+            f.write("# 🎉 SUCCESS - Perfect Detection Achieved!\n")
             f.write(f"{'='*80}\n\n")
             f.write(f"**Method:** {winning_method}\n")
             f.write(f"**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -165,15 +161,15 @@ class ResearchEnvironment:
 
         # Load ground truth
         self.ground_truth_file = None
-        self.ground_truth_boxes: List[BBox] = []
-        self.test_screenshots: List[Path] = []
-        self.annotated_screenshot: Optional[Path] = None
+        self.ground_truth_boxes: list[BBox] = []
+        self.test_screenshots: list[Path] = []
+        self.annotated_screenshot: Path | None = None
         self.boundary_width: int = 0
 
         # Multi-screenshot mode
         self.multi_screenshot_mode: bool = False
-        self.multi_screenshot_dataset: Optional[MultiScreenshotDataset] = None
-        self.multi_screenshot_evaluator: Optional[MultiScreenshotEvaluator] = None
+        self.multi_screenshot_dataset: MultiScreenshotDataset | None = None
+        self.multi_screenshot_evaluator: MultiScreenshotEvaluator | None = None
 
         # Single-screenshot detectors
         self.detectors = [
@@ -193,9 +189,9 @@ class ResearchEnvironment:
         ]
 
         # Track best results
-        self.best_result: Optional[EvaluationResult] = None
-        self.best_params: Optional[Dict] = None
-        self.best_detector: Optional[str] = None
+        self.best_result: EvaluationResult | None = None
+        self.best_params: dict | None = None
+        self.best_detector: str | None = None
 
     def load_ground_truth(self):
         """Load ground truth annotations"""
@@ -204,7 +200,7 @@ class ResearchEnvironment:
 
         if not annotation_files:
             print("❌ No annotation files found!")
-            print(f"   Please annotate screenshots using the annotation tool.")
+            print("   Please annotate screenshots using the annotation tool.")
             print(f"   Annotations should be in: {self.annotations_dir}")
             return False
 
@@ -212,7 +208,7 @@ class ResearchEnvironment:
         self.ground_truth_file = annotation_files[0]
         print(f"📝 Loading ground truth from: {self.ground_truth_file.name}")
 
-        with open(self.ground_truth_file, "r") as f:
+        with open(self.ground_truth_file) as f:
             data = json.load(f)
 
         # Detect format version to determine single vs multi-screenshot mode
@@ -304,8 +300,8 @@ class ResearchEnvironment:
             return True
 
     def test_detector(
-        self, detector, image_path: str, params: Dict
-    ) -> Tuple[List[BBox], float]:
+        self, detector, image_path: str, params: dict
+    ) -> tuple[list[BBox], float]:
         """Test a detector with given parameters"""
         start_time = time.time()
         try:
@@ -317,7 +313,7 @@ class ResearchEnvironment:
             processing_time = time.time() - start_time
             return [], processing_time
 
-    def run_iteration(self, iteration: int) -> List[EvaluationResult]:
+    def run_iteration(self, iteration: int) -> list[EvaluationResult]:
         """Run one iteration of testing"""
         print(f"\n{'='*80}")
         print(f"ITERATION {iteration}")
@@ -367,13 +363,13 @@ class ResearchEnvironment:
 
                 # If perfect, save and report
                 if result.is_perfect():
-                    print(f"\n   🎉 PERFECT DETECTION ACHIEVED!")
+                    print("\n   🎉 PERFECT DETECTION ACHIEVED!")
                     self._save_result(result, detector.name, params)
                     return results
 
         return results
 
-    def run_multi_screenshot_iteration(self, iteration: int) -> List[EvaluationResult]:
+    def run_multi_screenshot_iteration(self, iteration: int) -> list[EvaluationResult]:
         """Run one iteration of multi-screenshot testing"""
         print(f"\n{'='*80}")
         print(f"MULTI-SCREENSHOT ITERATION {iteration}")
@@ -438,13 +434,13 @@ class ResearchEnvironment:
 
                     # If perfect, save and report
                     if aggregated_result.is_perfect():
-                        print(f"\n   🎉 PERFECT DETECTION ACHIEVED!")
+                        print("\n   🎉 PERFECT DETECTION ACHIEVED!")
                         self._save_result(aggregated_result, detector.name, params)
                         return results
 
         return results
 
-    def _save_result(self, result: EvaluationResult, detector_name: str, params: Dict):
+    def _save_result(self, result: EvaluationResult, detector_name: str, params: dict):
         """Save a result to file"""
         result_file = (
             self.results_dir
@@ -461,7 +457,7 @@ class ResearchEnvironment:
         with open(result_file, "w") as f:
             json.dump(data, f, indent=2)
 
-    def generate_insights(self, results: List[EvaluationResult]) -> str:
+    def generate_insights(self, results: list[EvaluationResult]) -> str:
         """Generate insights from iteration results"""
         if not results:
             return "No results to analyze."
@@ -504,7 +500,7 @@ class ResearchEnvironment:
 
         return "\n".join(insights) if insights else "No clear patterns yet."
 
-    def refine_strategy(self, iteration: int, results: List[EvaluationResult]) -> bool:
+    def refine_strategy(self, iteration: int, results: list[EvaluationResult]) -> bool:
         """
         Refine detection strategy based on results
         Returns True if refinement was made, False if no more refinements possible
@@ -614,13 +610,13 @@ class ResearchEnvironment:
             print(f"  F1: {self.best_result.f1:.2%}")
 
             if not self.best_result.is_perfect():
-                print(f"\n⚠ Perfect detection not achieved")
+                print("\n⚠ Perfect detection not achieved")
                 print(f"  Missing: {self.best_result.false_negatives} elements")
                 print(f"  False positives: {self.best_result.false_positives}")
-                print(f"\n💡 Consider:")
-                print(f"  - Adding more detection strategies")
-                print(f"  - Expanding parameter grids")
-                print(f"  - Using ensemble methods")
+                print("\n💡 Consider:")
+                print("  - Adding more detection strategies")
+                print("  - Expanding parameter grids")
+                print("  - Using ensemble methods")
         else:
             print("❌ No successful detections")
 

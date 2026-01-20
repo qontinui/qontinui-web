@@ -4,7 +4,7 @@ Color-based detection using k-means clustering and color segmentation
 
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -21,7 +21,7 @@ class ColorClusterDetector(BaseDetector):
     def __init__(self):
         super().__init__("Color Cluster Detector")
 
-    def detect(self, image_path: str, **params) -> List[BBox]:
+    def detect(self, image_path: str, **params) -> list[BBox]:
         """
         Detect elements using color clustering
 
@@ -81,7 +81,7 @@ class ColorClusterDetector(BaseDetector):
 
         return boxes
 
-    def get_param_grid(self) -> List[Dict[str, Any]]:
+    def get_param_grid(self) -> list[dict[str, Any]]:
         """Parameter grid for hyperparameter search"""
         return [
             {"n_clusters": 4, "use_hsv": False},

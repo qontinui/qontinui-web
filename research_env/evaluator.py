@@ -7,7 +7,6 @@ Strict metrics: 100% precision and 100% recall required
 import json
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -28,10 +27,10 @@ class BBox:
         return (self.x2 - self.x1) * (self.y2 - self.y1)
 
     @property
-    def center(self) -> Tuple[int, int]:
+    def center(self) -> tuple[int, int]:
         return ((self.x1 + self.x2) // 2, (self.y1 + self.y2) // 2)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "bbox": [self.x1, self.y1, self.x2, self.y2],
             "label": self.label,
@@ -53,15 +52,15 @@ class EvaluationResult:
     false_negatives: int
     avg_iou: float
     processing_time: float
-    matches: List[Tuple[BBox, BBox, float]]  # (ground_truth, prediction, iou)
-    unmatched_gt: List[BBox]
-    unmatched_pred: List[BBox]
+    matches: list[tuple[BBox, BBox, float]]  # (ground_truth, prediction, iou)
+    unmatched_gt: list[BBox]
+    unmatched_pred: list[BBox]
 
     def is_perfect(self) -> bool:
         """Check if detection is perfect (100% precision and recall)"""
         return self.precision == 1.0 and self.recall == 1.0
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "method_name": self.method_name,
             "precision": self.precision,
@@ -134,8 +133,8 @@ class Evaluator:
         return intersection / union if union > 0 else 0.0
 
     def match_boxes(
-        self, ground_truth: List[BBox], predictions: List[BBox]
-    ) -> Tuple[List[Tuple[BBox, BBox, float]], List[BBox], List[BBox]]:
+        self, ground_truth: list[BBox], predictions: list[BBox]
+    ) -> tuple[list[tuple[BBox, BBox, float]], list[BBox], list[BBox]]:
         """
         Match predicted boxes to ground truth using Hungarian algorithm
 
@@ -194,8 +193,8 @@ class Evaluator:
     def evaluate(
         self,
         method_name: str,
-        ground_truth: List[BBox],
-        predictions: List[BBox],
+        ground_truth: list[BBox],
+        predictions: list[BBox],
         processing_time: float,
     ) -> EvaluationResult:
         """
@@ -253,14 +252,14 @@ class Evaluator:
         )
 
     @staticmethod
-    def load_ground_truth(annotation_file: str) -> Tuple[List[BBox], int]:
+    def load_ground_truth(annotation_file: str) -> tuple[list[BBox], int]:
         """
         Load ground truth from annotation file
 
         Returns:
             Tuple of (boxes, boundary_width)
         """
-        with open(annotation_file, "r") as f:
+        with open(annotation_file) as f:
             data = json.load(f)
 
         boxes = []
@@ -284,9 +283,9 @@ class Evaluator:
     @staticmethod
     def visualize_results(
         image_path: str,
-        ground_truth: List[BBox],
-        predictions: List[BBox],
-        matches: List[Tuple[BBox, BBox, float]],
+        ground_truth: list[BBox],
+        predictions: list[BBox],
+        matches: list[tuple[BBox, BBox, float]],
         output_path: str,
     ):
         """Create visualization of detection results"""
@@ -333,7 +332,7 @@ class Evaluator:
         cv2.imwrite(output_path, img)
 
 
-def compare_methods(results: List[EvaluationResult]) -> str:
+def compare_methods(results: list[EvaluationResult]) -> str:
     """Generate comparison report for multiple methods"""
     if not results:
         return "No results to compare"
@@ -385,7 +384,7 @@ class ScreenshotInfo:
 
     path: str
     screenshot_id: int
-    metadata: Dict = None
+    metadata: dict = None
 
     def __post_init__(self):
         if self.metadata is None:
@@ -398,15 +397,15 @@ class MultiScreenshotAnnotation:
 
     element_id: str
     label: str
-    screenshot_bboxes: Dict[int, List[int]]  # screenshot_id -> [x1, y1, x2, y2]
-    mask_path: Optional[str] = None  # Path to pixel-level mask (optional)
-    metadata: Dict = None
+    screenshot_bboxes: dict[int, list[int]]  # screenshot_id -> [x1, y1, x2, y2]
+    mask_path: str | None = None  # Path to pixel-level mask (optional)
+    metadata: dict = None
 
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
 
-    def get_bbox(self, screenshot_id: int) -> Optional[BBox]:
+    def get_bbox(self, screenshot_id: int) -> BBox | None:
         """Get bounding box for a specific screenshot"""
         bbox_coords = self.screenshot_bboxes.get(screenshot_id)
         if bbox_coords is None:
@@ -419,7 +418,7 @@ class MultiScreenshotAnnotation:
             label=self.label,
         )
 
-    def get_all_bboxes(self) -> Dict[int, BBox]:
+    def get_all_bboxes(self) -> dict[int, BBox]:
         """Get all bounding boxes as BBox objects"""
         return {sid: self.get_bbox(sid) for sid in self.screenshot_bboxes.keys()}
 
@@ -428,24 +427,24 @@ class MultiScreenshotAnnotation:
 class MultiScreenshotDataset:
     """Dataset containing multiple screenshots with cross-screenshot annotations"""
 
-    screenshots: List[ScreenshotInfo]
-    annotations: List[MultiScreenshotAnnotation]
+    screenshots: list[ScreenshotInfo]
+    annotations: list[MultiScreenshotAnnotation]
     format_version: str = "2.0"
     boundary_width: int = 0
-    metadata: Dict = None
+    metadata: dict = None
 
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
 
-    def get_screenshot_by_id(self, screenshot_id: int) -> Optional[ScreenshotInfo]:
+    def get_screenshot_by_id(self, screenshot_id: int) -> ScreenshotInfo | None:
         """Get screenshot info by ID"""
         for screenshot in self.screenshots:
             if screenshot.screenshot_id == screenshot_id:
                 return screenshot
         return None
 
-    def get_annotations_for_screenshot(self, screenshot_id: int) -> List[BBox]:
+    def get_annotations_for_screenshot(self, screenshot_id: int) -> list[BBox]:
         """Get all annotations for a specific screenshot as BBox list"""
         boxes = []
         for ann in self.annotations:
@@ -469,9 +468,9 @@ class MultiScreenshotEvaluator:
         self,
         method_name: str,
         dataset: MultiScreenshotDataset,
-        predictions: Dict[int, List[BBox]],  # screenshot_id -> list of detected boxes
+        predictions: dict[int, list[BBox]],  # screenshot_id -> list of detected boxes
         processing_time: float,
-    ) -> Dict[int, EvaluationResult]:
+    ) -> dict[int, EvaluationResult]:
         """
         Evaluate predictions across multiple screenshots
 
@@ -509,7 +508,7 @@ class MultiScreenshotEvaluator:
         return results
 
     def aggregate_results(
-        self, results: Dict[int, EvaluationResult]
+        self, results: dict[int, EvaluationResult]
     ) -> EvaluationResult:
         """
         Aggregate results across multiple screenshots into a single result
@@ -592,7 +591,7 @@ def load_multi_screenshot_dataset(
     Raises:
         ValueError: If format is invalid
     """
-    with open(annotation_file, "r") as f:
+    with open(annotation_file) as f:
         data = json.load(f)
 
     format_version = data.get("format_version", "1.0")

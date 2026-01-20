@@ -3,6 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def find_files_with_error():
     """Find all files with setState synchronously error"""
     frontend_dir = Path(__file__).parent
@@ -23,7 +24,7 @@ def find_files_with_error():
                 capture_output=True,
                 text=True,
                 cwd=frontend_dir,
-                timeout=30
+                timeout=30,
             )
 
             if "Calling setState synchronously" in result.stdout:
@@ -34,6 +35,7 @@ def find_files_with_error():
             print(f"Error on {tsx_file}: {e}", file=sys.stderr)
 
     return files_with_errors
+
 
 if __name__ == "__main__":
     files = find_files_with_error()

@@ -4,7 +4,7 @@ Template-based detection using corner detection and pattern matching
 
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -21,7 +21,7 @@ class TemplateDetector(BaseDetector):
     def __init__(self):
         super().__init__("Template/Corner Detector")
 
-    def detect(self, image_path: str, **params) -> List[BBox]:
+    def detect(self, image_path: str, **params) -> list[BBox]:
         """
         Detect elements using corner detection
 
@@ -101,7 +101,7 @@ class TemplateDetector(BaseDetector):
 
         return boxes
 
-    def get_param_grid(self) -> List[Dict[str, Any]]:
+    def get_param_grid(self) -> list[dict[str, Any]]:
         """Parameter grid for hyperparameter search"""
         return [
             # High quality - fewer corners

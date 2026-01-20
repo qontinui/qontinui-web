@@ -4,7 +4,6 @@ Mask Generator - Generates pixel-level masks for GUI elements across screenshots
 
 import os
 import sys
-from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -30,8 +29,8 @@ class MaskGenerator:
         dataset: MultiScreenshotDataset,
         stability_threshold: float = 0.9,
         edge_weight: float = 0.3,
-        output_dir: Optional[str] = None,
-    ) -> Dict[str, np.ndarray]:
+        output_dir: str | None = None,
+    ) -> dict[str, np.ndarray]:
         """
         Generate pixel-level masks for all annotated elements in the dataset
 
@@ -75,10 +74,10 @@ class MaskGenerator:
     def _generate_mask_for_annotation(
         self,
         annotation: MultiScreenshotAnnotation,
-        screenshot_images: Dict[int, np.ndarray],
+        screenshot_images: dict[int, np.ndarray],
         stability_threshold: float = 0.9,
         edge_weight: float = 0.3,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """
         Generate a pixel-level mask for a specific annotated element
 
@@ -146,7 +145,7 @@ class MaskGenerator:
     def _generate_mask_for_box(
         self,
         bbox: BBox,
-        screenshots: List[np.ndarray],
+        screenshots: list[np.ndarray],
         stability_threshold: float = 0.9,
         edge_weight: float = 0.3,
     ) -> np.ndarray:
@@ -190,7 +189,7 @@ class MaskGenerator:
 
     def _compute_pixel_stability(
         self,
-        regions: List[np.ndarray],
+        regions: list[np.ndarray],
         stability_threshold: float = 0.9,
         edge_weight: float = 0.3,
     ) -> np.ndarray:
@@ -257,7 +256,7 @@ class MaskGenerator:
 
         return stability_mask
 
-    def compute_mask_quality(self, mask: np.ndarray, bbox: BBox) -> Dict[str, float]:
+    def compute_mask_quality(self, mask: np.ndarray, bbox: BBox) -> dict[str, float]:
         """
         Compute quality metrics for a generated mask
 
