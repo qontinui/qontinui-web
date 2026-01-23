@@ -20,7 +20,6 @@ logger = structlog.get_logger(__name__)
 # Export fastapi-users dependencies
 from app.auth.config import (
     current_active_user,
-    current_active_user_optional,
     current_superuser,
     current_verified_user,
 )

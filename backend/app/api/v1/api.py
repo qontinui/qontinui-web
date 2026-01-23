@@ -44,6 +44,7 @@ from app.api.v1.endpoints import (
     rag_builder,
     rag_dashboard,
     recordings,
+    render_logs,
     runner_command_ws,
     runner_devices,
     runner_status_ws,
@@ -57,6 +58,7 @@ from app.api.v1.endpoints import (
 from app.api.v1.endpoints import testing as testing_pkg
 from app.api.v1.endpoints import (
     training_datasets,
+    ui_bridge_states,
     users,
     variables,
     versions,
@@ -170,3 +172,9 @@ api_router.include_router(
 )
 # Unified task runs - the single endpoint for all task types
 api_router.include_router(task_runs.router, prefix="/task-runs", tags=["task-runs"])
+# Render logging for development debugging (disabled in production)
+api_router.include_router(
+    render_logs.router, prefix="/render-logs", tags=["render-logs"]
+)
+# UI Bridge state discovery and management
+api_router.include_router(ui_bridge_states.router, tags=["ui-bridge-states"])
