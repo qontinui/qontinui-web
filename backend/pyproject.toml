@@ -105,7 +105,7 @@ warn_unused_configs = true
 check_untyped_defs = true
 strict_equality = true
 ignore_missing_imports = true
-exclude = ["alembic", "migrations", "tests", "user_projects", "scripts", "test_.*\\.py$", "create-.*\\.py$"]
+exclude = ["alembic/", "migrations/", "tests/", "user_projects/", "scripts/", "test_.*\\.py$", "create-.*\\.py$"]
 # Use package mode to properly resolve module names
 # Run with: MYPYPATH=stubs poetry run mypy app
 packages = ["app"]
