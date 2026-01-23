@@ -47,6 +47,7 @@ pandas = "^2.2.0"
 pyarrow = "^17.0.0"
 radon = "^6.0.1"
 qontinui-schemas = {path = "../../qontinui-schemas", develop = true}
+qontinui = {path = "../../qontinui", develop = true}
 pgvector = "^0.4.2"
 geoip2 = "^5.2.0"
 
@@ -104,7 +105,7 @@ warn_unused_configs = true
 check_untyped_defs = true
 strict_equality = true
 ignore_missing_imports = true
-exclude = ["alembic", "migrations", "tests", "user_projects", "scripts"]
+exclude = ["alembic", "migrations", "tests", "user_projects", "scripts", "test_.*\\.py$", "create-.*\\.py$"]
 # Use package mode to properly resolve module names
 # Run with: MYPYPATH=stubs poetry run mypy app
 packages = ["app"]
@@ -114,6 +115,7 @@ mypy_path = "stubs"
 # Enable explicit package bases to resolve duplicate module names
 explicit_package_bases = true
 namespace_packages = true
+disable_error_code = ["import-untyped"]
 
 [tool.ruff]
 line-length = 88
