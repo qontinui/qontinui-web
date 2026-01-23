@@ -37,18 +37,18 @@ class GUIScreenshotGenerator:
     def __init__(self, width: int = 800, height: int = 600):
         self.width = width
         self.height = height
-        self.elements = []  # Ground truth elements
+        self.elements: list[dict[str, object]] = []  # Ground truth elements
 
     def generate_button(
         self,
-        draw: ImageDraw.Draw,
+        draw: ImageDraw.ImageDraw,
         x: int,
         y: int,
         width: int,
         height: int,
         text: str,
         color: str = "#4CAF50",
-    ):
+    ) -> None:
         """Generate a button"""
         # Button background
         draw.rectangle(
@@ -69,8 +69,8 @@ class GUIScreenshotGenerator:
         )
 
     def generate_text_input(
-        self, draw: ImageDraw.Draw, x: int, y: int, width: int, height: int = 30
-    ):
+        self, draw: ImageDraw.ImageDraw, x: int, y: int, width: int, height: int = 30
+    ) -> None:
         """Generate a text input field"""
         # Input background
         draw.rectangle(
@@ -85,7 +85,7 @@ class GUIScreenshotGenerator:
             }
         )
 
-    def generate_menu_bar(self, draw: ImageDraw.Draw, items: list[str]):
+    def generate_menu_bar(self, draw: ImageDraw.ImageDraw, items: list[str]) -> None:
         """Generate a menu bar at the top"""
         bar_height = 40
         draw.rectangle([0, 0, self.width, bar_height], fill="#333333")
@@ -105,13 +105,13 @@ class GUIScreenshotGenerator:
 
     def generate_dialog_box(
         self,
-        draw: ImageDraw.Draw,
+        draw: ImageDraw.ImageDraw,
         x: int,
         y: int,
         width: int,
         height: int,
         title: str = "Dialog",
-    ):
+    ) -> None:
         """Generate a dialog box"""
         # Dialog background
         draw.rectangle(
@@ -143,7 +143,7 @@ class GUIScreenshotGenerator:
             draw, x + width - 90, button_y, 80, 35, "Cancel", "#F44336"
         )
 
-    def generate_sidebar(self, draw: ImageDraw.Draw, items: list[str]):
+    def generate_sidebar(self, draw: ImageDraw.ImageDraw, items: list[str]) -> None:
         """Generate a sidebar navigation"""
         sidebar_width = 200
         draw.rectangle([0, 40, sidebar_width, self.height], fill="#424242")
@@ -169,7 +169,9 @@ class GUIScreenshotGenerator:
             }
         )
 
-    def generate_screenshot(self, variation: int = 0) -> tuple[Image.Image, list[dict]]:
+    def generate_screenshot(
+        self, variation: int = 0
+    ) -> tuple[Image.Image, list[dict[str, object]]]:
         """Generate a complete GUI screenshot"""
         # Create image
         img = Image.new("RGB", (self.width, self.height), color="#EEEEEE")

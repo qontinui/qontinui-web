@@ -22,6 +22,9 @@ def create_test_image(width: int = 3000, height: int = 2000) -> bytes:
     img = Image.new("RGB", (width, height))
     pixels = img.load()
 
+    if pixels is None:
+        raise ValueError("Failed to load image pixels")
+
     for y in range(height):
         for x in range(width):
             r = int(255 * x / width)

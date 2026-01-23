@@ -67,6 +67,7 @@ ruff = "^0.14"
 types-python-jose = "^3.5.0.20250531"
 types-passlib = "^1.7.7.20250602"
 bandit = "^1.9.2"
+types-requests = "^2.32.4.20260107"
 
 
 [build-system]
@@ -103,7 +104,7 @@ warn_unused_configs = true
 check_untyped_defs = true
 strict_equality = true
 ignore_missing_imports = true
-exclude = ["alembic", "migrations", "tests", "user_projects"]
+exclude = ["alembic", "migrations", "tests", "user_projects", "scripts"]
 # Use package mode to properly resolve module names
 # Run with: MYPYPATH=stubs poetry run mypy app
 packages = ["app"]
@@ -163,6 +164,7 @@ ignore = [
 known-first-party = ["app"]
 
 # Optional ML dependencies
+
 
 
 [tool.poetry.group.ml]

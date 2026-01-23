@@ -41,9 +41,9 @@ class FileMigrator:
 
     def __init__(self, dry_run: bool = False):
         self.dry_run = dry_run
-        self.uploaded = []
-        self.failed = []
-        self.skipped = []
+        self.uploaded: list[dict[str, str]] = []
+        self.failed: list[dict[str, str]] = []
+        self.skipped: list[dict[str, str]] = []
 
     async def migrate_avatars(self, db: AsyncSession):
         """Migrate avatar files"""
