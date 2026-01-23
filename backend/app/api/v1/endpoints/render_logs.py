@@ -397,7 +397,7 @@ async def clear_render_logs(
 
     # Execute delete (cascades to images)
     result = await db.execute(log_query)
-    deleted_snapshots = result.rowcount
+    deleted_snapshots = result.rowcount  # type: ignore[attr-defined]
     await db.commit()
 
     logger.info(
@@ -450,7 +450,7 @@ async def cleanup_old_render_logs(
 
     # Delete old logs (cascades to images)
     result = await db.execute(delete(RenderLog).filter(RenderLog.timestamp < cutoff))
-    deleted_snapshots = result.rowcount
+    deleted_snapshots = result.rowcount  # type: ignore[attr-defined]
     await db.commit()
 
     logger.info(
